@@ -1,6 +1,7 @@
 # Backup de estado actual - ERP MYC
 
 Fecha: 2026-06-17
+Ultima actualizacion: 2026-06-17 13:37:28 CST
 
 ## Ruta actual del proyecto
 
@@ -10,7 +11,15 @@ Fecha: 2026-06-17
 
 La carpeta padre antes se llamaba `ERP MYC`, pero fue renombrada a `myc_erp`. No hay problema con el cambio. De ahora en adelante todas las rutas deben apuntar a `myc_erp`.
 
-Nota importante: esta carpeta no tiene repositorio Git activo en este momento. El comando `git status` responde `fatal: not a git repository`.
+Git ya esta inicializado.
+
+Ultimo commit conocido:
+
+```text
+66f8b58 ERP MYC - Base MVP clients and quotations
+```
+
+Nota importante: despues de ese commit existen cambios backend pendientes de commit para `service_orders`, `equipment`, migraciones y este backup.
 
 ## Objetivo del sistema
 
@@ -147,16 +156,22 @@ backend/
       module.py
       client.py
       quotation.py
+      service_order.py
+      equipment.py
       audit_log.py
     routers/
       health.py
       modules.py
       clients.py
       quotations.py
+      service_orders.py
+      equipment.py
     services/
       modules.py
       clients.py
       quotations.py
+      service_orders.py
+      equipment.py
       audit_logs.py
     utils/
   migrations/
@@ -165,6 +180,8 @@ backend/
     versions/
       c0fa71033b73_create_mvp_schema.py
       917baf3a5378_add_quotation_advisor.py
+      5d6e7f8a9b10_expand_service_orders.py
+      6f7a8b9c0d11_update_equipment_status.py
 
 frontend/
   index.html
@@ -208,6 +225,7 @@ health
 modules
 clients
 quotations
+service_orders
 ```
 
 Rutas base:
@@ -246,6 +264,38 @@ POST /api/quotations/{quotation_id}/cancel
 DELETE /api/quotations/{quotation_id}
 ```
 
+Ordenes de servicio:
+
+```text
+GET /api/service-orders
+POST /api/service-orders
+GET /api/service-orders/{service_order_id}
+PATCH /api/service-orders/{service_order_id}
+POST /api/service-orders/{service_order_id}/confirm
+POST /api/service-orders/{service_order_id}/call
+POST /api/service-orders/{service_order_id}/start
+POST /api/service-orders/{service_order_id}/capture
+POST /api/service-orders/{service_order_id}/quality
+POST /api/service-orders/{service_order_id}/pending-payment
+POST /api/service-orders/{service_order_id}/release
+POST /api/service-orders/{service_order_id}/close
+DELETE /api/service-orders/{service_order_id}
+```
+
+Equipos:
+
+```text
+GET /api/equipment
+POST /api/equipment
+GET /api/equipment/{equipment_id}
+PATCH /api/equipment/{equipment_id}
+POST /api/equipment/{equipment_id}/realizing
+POST /api/equipment/{equipment_id}/calibrated
+POST /api/equipment/{equipment_id}/labeled
+POST /api/equipment/{equipment_id}/not-done
+DELETE /api/equipment/{equipment_id}
+```
+
 Los `DELETE` actuales hacen borrado logico, no borrado fisico.
 
 ## Modulos MVP 1 definidos
@@ -265,6 +315,8 @@ Modulos funcionales construidos hasta ahora:
 ```text
 clients
 quotations
+service_orders
+equipment
 ```
 
 ## Tablas iniciales modeladas
@@ -337,13 +389,15 @@ Cada alta, edicion, cambio de estado y baja logica escribe auditoria.
 
 ## Ordenes de servicio
 
-El modelo existe, pero todavia no hay router funcional de ordenes de servicio.
+El modulo backend ya existe con schema, service y router.
 
-Modelo principal:
+Archivos principales:
 
 ```text
-service_orders
-service_order_items
+backend/app/models/service_order.py
+backend/app/schemas/service_order.py
+backend/app/services/service_orders.py
+backend/app/routers/service_orders.py
 ```
 
 Campos principales:
@@ -352,10 +406,106 @@ Campos principales:
 folio
 client_id
 quotation_id
+advisor_id
+technician_id
 status
-scheduled_date
+agenda_date
+service_date
+total_equipment
+completed_equipment
+requires_payment
 closed_at
 notes
+```
+
+Estados definidos:
+
+```text
+scheduled
+confirmed
+called
+in_progress
+technical_review
+capture
+quality_review
+pending_payment
+released
+closed
+cancelled
+```
+
+Al crear una orden desde `quotation_id`, se valida que la cotizacion pertenezca al cliente y se copian sus partidas activas a `service_order_items`.
+
+## Equipos
+
+El modulo backend ya existe con schema, service y router.
+
+Archivos principales:
+
+```text
+backend/app/models/equipment.py
+backend/app/schemas/equipment.py
+backend/app/services/equipment.py
+backend/app/routers/equipment.py
+```
+
+Regla principal:
+
+```text
+Todo equipo debe pertenecer a una service_order activa.
+```
+
+Campos principales:
+
+```text
+service_order_id
+service_order_item_id
+status
+name
+brand
+model
+serial_number
+internal_id
+range_or_capacity
+initial_condition
+notes
+```
+
+Estados definidos:
+
+```text
+registered
+realizing
+calibrated
+labeled
+not_done
+cancelled
+```
+
+Transiciones principales:
+
+```text
+registered -> realizing, not_done, cancelled
+realizing -> calibrated, not_done, cancelled
+calibrated -> labeled, not_done, cancelled
+labeled/not_done/cancelled -> estados terminales
+```
+
+Cada alta, edicion, cambio de estado y baja logica escribe auditoria.
+
+El modulo sincroniza contadores de la orden:
+
+```text
+service_orders.total_equipment
+service_orders.completed_equipment
+```
+
+Para `completed_equipment` cuentan equipos activos con estado:
+
+```text
+calibrated
+labeled
+not_done
 ```
 
 ## Regla arquitectonica principal
@@ -377,6 +527,8 @@ Migraciones actuales:
 ```text
 c0fa71033b73_create_mvp_schema.py
 917baf3a5378_add_quotation_advisor.py
+5d6e7f8a9b10_expand_service_orders.py
+6f7a8b9c0d11_update_equipment_status.py
 ```
 
 La segunda migracion agrega:
@@ -386,6 +538,53 @@ quotations.advisor_id
 indice ix_quotations_advisor_id
 foreign key hacia users.id
 ```
+
+La tercera migracion amplia ordenes de servicio:
+
+```text
+advisor_id
+technician_id
+scheduled_date -> agenda_date
+service_date
+total_equipment
+completed_equipment
+requires_payment
+foreign keys hacia users.id
+```
+
+La cuarta migracion actualiza estados iniciales de equipos:
+
+```text
+equipment.status: pending -> registered
+```
+
+Estado de PostgreSQL local verificado:
+
+```text
+alembic current -> 6f7a8b9c0d11 (head)
+```
+
+## Verificacion backend
+
+Verificaciones ejecutadas correctamente:
+
+```text
+../venv/bin/python -m compileall app
+../venv/bin/alembic heads
+../venv/bin/alembic upgrade head --sql
+../venv/bin/alembic upgrade head
+```
+
+Prueba con `fastapi.testclient.TestClient` contra la base local:
+
+```text
+GET / -> 200
+GET /api/health -> 200
+GET /api/service-orders -> 200 []
+GET /api/equipment -> 200 []
+```
+
+Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
 
 ## Frontend actual
 
@@ -408,7 +607,7 @@ Certificados
 Finanzas
 ```
 
-La UI todavia es una base visual. No hay formularios completos conectados para clientes, cotizaciones u ordenes.
+La UI todavia es una base visual. No hay formularios completos conectados para clientes, cotizaciones, ordenes o equipos.
 
 ## Comandos de arranque
 
@@ -436,9 +635,8 @@ npm run dev
 
 ## Pendientes inmediatos recomendados
 
-1. Inicializar Git o confirmar si este proyecto se debe copiar dentro de otro repo existente.
+1. Hacer commit de los cambios backend pendientes.
 2. Instalar dependencias frontend con `npm install`.
-3. Verificar migraciones contra PostgreSQL real.
-4. Crear router/servicio/schemas de `service_orders`.
-5. Conectar frontend a los endpoints de clientes y cotizaciones.
-6. Agregar autenticacion, usuarios y permisos reales.
+3. Crear modulo Hoja de Campo.
+4. Conectar frontend a los endpoints de clientes, cotizaciones, ordenes de servicio y equipos.
+5. Agregar autenticacion, usuarios y permisos reales.

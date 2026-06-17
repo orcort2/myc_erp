@@ -14,7 +14,7 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     service_order_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("service_order_items.id"), index=True
     )
-    status: Mapped[str] = mapped_column(String(60), default="pending", index=True)
+    status: Mapped[str] = mapped_column(String(60), default="registered", index=True)
     name: Mapped[str] = mapped_column(String(180))
     brand: Mapped[str | None] = mapped_column(String(120))
     model: Mapped[str | None] = mapped_column(String(120))
@@ -25,4 +25,3 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     service_order: Mapped["ServiceOrder"] = relationship(back_populates="equipment")
-

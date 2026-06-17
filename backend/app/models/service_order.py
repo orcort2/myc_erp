@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import Boolean, Date, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -13,13 +13,21 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     folio: Mapped[str] = mapped_column(String(40), unique=True, index=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
     quotation_id: Mapped[int | None] = mapped_column(ForeignKey("quotations.id"), index=True)
-    status: Mapped[str] = mapped_column(String(60), default="open", index=True)
-    scheduled_date: Mapped[date | None] = mapped_column(Date)
+    advisor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    technician_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(60), default="scheduled", index=True)
+    agenda_date: Mapped[date | None] = mapped_column(Date)
+    service_date: Mapped[date | None] = mapped_column(Date)
     closed_at: Mapped[date | None] = mapped_column(Date)
+    total_equipment: Mapped[int] = mapped_column(default=0)
+    completed_equipment: Mapped[int] = mapped_column(default=0)
+    requires_payment: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
 
     client: Mapped["Client"] = relationship(back_populates="service_orders")
     quotation: Mapped["Quotation | None"] = relationship(back_populates="service_orders")
+    advisor: Mapped["User | None"] = relationship(foreign_keys=[advisor_id])
+    technician: Mapped["User | None"] = relationship(foreign_keys=[technician_id])
     items: Mapped[list["ServiceOrderItem"]] = relationship(
         back_populates="service_order", cascade="all, delete-orphan"
     )
@@ -38,4 +46,3 @@ class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     status: Mapped[str] = mapped_column(String(60), default="pending")
 
     service_order: Mapped[ServiceOrder] = relationship(back_populates="items")
-
