@@ -65,7 +65,7 @@ def _ensure_service_order_item(
         )
 
 
-def _sync_service_order_equipment_counts(db: Session, service_order_id: int) -> None:
+def sync_service_order_equipment_counts(db: Session, service_order_id: int) -> None:
     total_equipment = db.scalar(
         select(func.count(Equipment.id)).where(
             Equipment.service_order_id == service_order_id,
@@ -119,7 +119,7 @@ def create_equipment(
     equipment = Equipment(**payload.model_dump(), status="registered")
     db.add(equipment)
     db.flush()
-    _sync_service_order_equipment_counts(db, equipment.service_order_id)
+    sync_service_order_equipment_counts(db, equipment.service_order_id)
     write_audit_log(
         db,
         action="equipment.created",
@@ -189,7 +189,7 @@ def change_status(
         )
     previous_status = equipment.status
     equipment.status = new_status
-    _sync_service_order_equipment_counts(db, equipment.service_order_id)
+    sync_service_order_equipment_counts(db, equipment.service_order_id)
     write_audit_log(
         db,
         action=f"equipment.{new_status}",
@@ -213,7 +213,7 @@ def deactivate_equipment(
     equipment.status = "cancelled"
     equipment.deleted_at = datetime.now(timezone.utc)
     equipment.deleted_by = user_id
-    _sync_service_order_equipment_counts(db, equipment.service_order_id)
+    sync_service_order_equipment_counts(db, equipment.service_order_id)
     write_audit_log(
         db,
         action="equipment.deactivated",

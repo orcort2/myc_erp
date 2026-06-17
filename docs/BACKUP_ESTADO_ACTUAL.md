@@ -1,7 +1,7 @@
 # Backup de estado actual - ERP MYC
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-17 13:37:28 CST
+Ultima actualizacion: 2026-06-17 13:42:44 CST
 
 ## Ruta actual del proyecto
 
@@ -19,7 +19,7 @@ Ultimo commit conocido:
 66f8b58 ERP MYC - Base MVP clients and quotations
 ```
 
-Nota importante: despues de ese commit existen cambios backend pendientes de commit para `service_orders`, `equipment`, migraciones y este backup.
+Nota importante: despues de ese commit existen cambios backend pendientes de commit para `service_orders`, `equipment`, `field_sheets`, migraciones y este backup.
 
 ## Objetivo del sistema
 
@@ -151,6 +151,7 @@ backend/
       quotation.py
       service_order.py
       equipment.py
+      field_sheet.py
       audit_log.py
     schemas/
       module.py
@@ -158,6 +159,7 @@ backend/
       quotation.py
       service_order.py
       equipment.py
+      field_sheet.py
       audit_log.py
     routers/
       health.py
@@ -166,12 +168,14 @@ backend/
       quotations.py
       service_orders.py
       equipment.py
+      field_sheets.py
     services/
       modules.py
       clients.py
       quotations.py
       service_orders.py
       equipment.py
+      field_sheets.py
       audit_logs.py
     utils/
   migrations/
@@ -182,6 +186,7 @@ backend/
       917baf3a5378_add_quotation_advisor.py
       5d6e7f8a9b10_expand_service_orders.py
       6f7a8b9c0d11_update_equipment_status.py
+      7a8b9c0d1e12_create_field_sheets.py
 
 frontend/
   index.html
@@ -296,6 +301,18 @@ POST /api/equipment/{equipment_id}/not-done
 DELETE /api/equipment/{equipment_id}
 ```
 
+Hojas de campo:
+
+```text
+GET /api/field-sheets
+POST /api/field-sheets
+GET /api/field-sheets/{field_sheet_id}
+PATCH /api/field-sheets/{field_sheet_id}
+POST /api/field-sheets/{field_sheet_id}/complete
+POST /api/field-sheets/{field_sheet_id}/review
+DELETE /api/field-sheets/{field_sheet_id}
+```
+
 Los `DELETE` actuales hacen borrado logico, no borrado fisico.
 
 ## Modulos MVP 1 definidos
@@ -317,6 +334,7 @@ clients
 quotations
 service_orders
 equipment
+field_sheets
 ```
 
 ## Tablas iniciales modeladas
@@ -331,6 +349,7 @@ quotation_items
 service_orders
 service_order_items
 equipment
+field_sheets
 audit_logs
 ```
 
@@ -508,6 +527,76 @@ labeled
 not_done
 ```
 
+## Hojas de Campo
+
+El modulo backend ya existe con modelo, schema, service y router.
+
+Archivos principales:
+
+```text
+backend/app/models/field_sheet.py
+backend/app/schemas/field_sheet.py
+backend/app/services/field_sheets.py
+backend/app/routers/field_sheets.py
+```
+
+Reglas principales:
+
+```text
+Una hoja de campo pertenece a un equipo.
+Un equipo solo puede tener una hoja de campo activa.
+No se manejan fotos ni archivos en esta primera version.
+```
+
+Campos tecnicos principales:
+
+```text
+equipment_id
+status
+initial_condition
+final_condition
+pattern_used
+results
+observations
+evidence_notes
+method
+environmental_conditions
+technician_notes
+```
+
+Estados definidos:
+
+```text
+draft
+in_progress
+completed
+under_review
+approved
+rejected
+cancelled
+```
+
+Regla para completar:
+
+```text
+No se puede completar si falta:
+- initial_condition
+- final_condition
+- pattern_used
+- results
+- observations o evidence_notes
+```
+
+Al completar:
+
+```text
+field_sheets.status -> completed
+equipment.status -> calibrated
+service_orders.completed_equipment se recalcula
+audit_log registra el cambio
+certificate_ready queda registrado en auditoria como preparacion para certificado futuro
+```
+
 ## Regla arquitectonica principal
 
 Nada critico se borra realmente.
@@ -529,6 +618,7 @@ c0fa71033b73_create_mvp_schema.py
 917baf3a5378_add_quotation_advisor.py
 5d6e7f8a9b10_expand_service_orders.py
 6f7a8b9c0d11_update_equipment_status.py
+7a8b9c0d1e12_create_field_sheets.py
 ```
 
 La segunda migracion agrega:
@@ -558,10 +648,18 @@ La cuarta migracion actualiza estados iniciales de equipos:
 equipment.status: pending -> registered
 ```
 
+La quinta migracion crea hojas de campo:
+
+```text
+field_sheets
+foreign key hacia equipment.id
+indice unico parcial uq_field_sheets_active_equipment para impedir mas de una hoja activa por equipo
+```
+
 Estado de PostgreSQL local verificado:
 
 ```text
-alembic current -> 6f7a8b9c0d11 (head)
+alembic current -> 7a8b9c0d1e12 (head)
 ```
 
 ## Verificacion backend
@@ -582,6 +680,8 @@ GET / -> 200
 GET /api/health -> 200
 GET /api/service-orders -> 200 []
 GET /api/equipment -> 200 []
+GET /api/field-sheets -> 200 []
+Flujo rollback: client 201, service_order 201, equipment 201 registered, field_sheet 201 draft, complete_missing 422, patch 200 in_progress, complete 200 completed, equipment_after_complete 200 calibrated, review 200 under_review
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
@@ -607,7 +707,7 @@ Certificados
 Finanzas
 ```
 
-La UI todavia es una base visual. No hay formularios completos conectados para clientes, cotizaciones, ordenes o equipos.
+La UI todavia es una base visual. No hay formularios completos conectados para clientes, cotizaciones, ordenes, equipos u hojas de campo.
 
 ## Comandos de arranque
 
@@ -637,6 +737,6 @@ npm run dev
 
 1. Hacer commit de los cambios backend pendientes.
 2. Instalar dependencias frontend con `npm install`.
-3. Crear modulo Hoja de Campo.
-4. Conectar frontend a los endpoints de clientes, cotizaciones, ordenes de servicio y equipos.
+3. Definir siguiente modulo backend: certificados o evidencias, segun prioridad operativa.
+4. Conectar frontend a los endpoints de clientes, cotizaciones, ordenes de servicio, equipos y hojas de campo.
 5. Agregar autenticacion, usuarios y permisos reales.

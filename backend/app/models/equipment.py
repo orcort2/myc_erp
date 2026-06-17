@@ -25,3 +25,6 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
     service_order: Mapped["ServiceOrder"] = relationship(back_populates="equipment")
+    field_sheets: Mapped[list["FieldSheet"]] = relationship(
+        back_populates="equipment", cascade="all, delete-orphan"
+    )
