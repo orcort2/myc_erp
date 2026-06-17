@@ -3,6 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.routers import (
+    auth,
+    certificates,
     clients,
     equipment,
     field_sheets,
@@ -28,12 +30,14 @@ app.add_middleware(
 )
 
 app.include_router(health.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
 app.include_router(quotations.router, prefix="/api")
 app.include_router(service_orders.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
+app.include_router(certificates.router, prefix="/api")
 
 
 @app.get("/")

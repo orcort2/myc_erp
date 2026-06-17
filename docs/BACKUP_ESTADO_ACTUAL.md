@@ -1,7 +1,7 @@
 # Backup de estado actual - ERP MYC
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-17 13:42:44 CST
+Ultima actualizacion: 2026-06-17 14:05:41 CST
 
 ## Ruta actual del proyecto
 
@@ -19,7 +19,7 @@ Ultimo commit conocido:
 66f8b58 ERP MYC - Base MVP clients and quotations
 ```
 
-Nota importante: despues de ese commit existen cambios backend pendientes de commit para `service_orders`, `equipment`, `field_sheets`, migraciones y este backup.
+Nota importante: despues de ese commit existen cambios backend pendientes de commit para `auth`, `service_orders`, `equipment`, `field_sheets`, `certificates`, migraciones y este backup.
 
 ## Objetivo del sistema
 
@@ -152,16 +152,20 @@ backend/
       service_order.py
       equipment.py
       field_sheet.py
+      certificate.py
       audit_log.py
     schemas/
+      auth.py
       module.py
       client.py
       quotation.py
       service_order.py
       equipment.py
       field_sheet.py
+      certificate.py
       audit_log.py
     routers/
+      auth.py
       health.py
       modules.py
       clients.py
@@ -169,13 +173,16 @@ backend/
       service_orders.py
       equipment.py
       field_sheets.py
+      certificates.py
     services/
+      auth.py
       modules.py
       clients.py
       quotations.py
       service_orders.py
       equipment.py
       field_sheets.py
+      certificates.py
       audit_logs.py
     utils/
   migrations/
@@ -187,6 +194,8 @@ backend/
       5d6e7f8a9b10_expand_service_orders.py
       6f7a8b9c0d11_update_equipment_status.py
       7a8b9c0d1e12_create_field_sheets.py
+      8b9c0d1e2f13_create_certificates.py
+      9c0d1e2f3a14_add_user_roles.py
 
 frontend/
   index.html
@@ -227,10 +236,14 @@ Routers incluidos:
 
 ```text
 health
+auth
 modules
 clients
 quotations
 service_orders
+equipment
+field_sheets
+certificates
 ```
 
 Rutas base:
@@ -239,6 +252,15 @@ Rutas base:
 GET /
 GET /api/health
 GET /api/modules
+```
+
+Auth:
+
+```text
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/refresh
+GET /api/auth/me
 ```
 
 Clientes:
@@ -313,6 +335,21 @@ POST /api/field-sheets/{field_sheet_id}/review
 DELETE /api/field-sheets/{field_sheet_id}
 ```
 
+Certificados:
+
+```text
+GET /api/certificates
+POST /api/certificates
+GET /api/certificates/{certificate_id}
+PATCH /api/certificates/{certificate_id}
+POST /api/certificates/{certificate_id}/generate
+POST /api/certificates/{certificate_id}/quality
+POST /api/certificates/{certificate_id}/approve
+POST /api/certificates/{certificate_id}/release
+POST /api/certificates/{certificate_id}/suspend
+DELETE /api/certificates/{certificate_id}
+```
+
 Los `DELETE` actuales hacen borrado logico, no borrado fisico.
 
 ## Modulos MVP 1 definidos
@@ -330,11 +367,13 @@ audit_logs
 Modulos funcionales construidos hasta ahora:
 
 ```text
+auth
 clients
 quotations
 service_orders
 equipment
 field_sheets
+certificates
 ```
 
 ## Tablas iniciales modeladas
@@ -342,6 +381,7 @@ field_sheets
 ```text
 users
 roles
+user_roles
 clients
 client_contacts
 quotations
@@ -350,8 +390,81 @@ service_orders
 service_order_items
 equipment
 field_sheets
+certificates
 audit_logs
 ```
+
+## Auth y Roles
+
+El modulo backend ya existe con schema, service y router.
+
+Archivos principales:
+
+```text
+backend/app/models/user.py
+backend/app/schemas/auth.py
+backend/app/services/auth.py
+backend/app/routers/auth.py
+backend/app/core/security.py
+```
+
+Tablas:
+
+```text
+users
+roles
+user_roles
+```
+
+Roles iniciales sembrados por migracion:
+
+```text
+Administrador
+Comercial
+Tecnico
+Captura
+Calidad
+Finanzas
+Cliente
+```
+
+Tokens:
+
+```text
+access_token JWT
+refresh_token JWT
+token_type bearer
+```
+
+Hash de password:
+
+```text
+pbkdf2_sha256 via passlib
+```
+
+Nota tecnica: se evito `bcrypt` porque la combinacion instalada `passlib` + `bcrypt 5` falla en este entorno.
+
+Permisos iniciales definidos en codigo:
+
+```text
+Administrador -> *
+Comercial -> clients.*, quotations.*, service_orders.*
+Tecnico -> equipment.*, field_sheets.*
+Captura -> certificates.create, certificates.generate, field_sheets.read
+Calidad -> certificates.quality, certificates.approve, field_sheets.read
+Finanzas -> payments.*, invoices.*, release.*
+Cliente -> portal.read
+```
+
+Ya existen helpers:
+
+```text
+get_current_user()
+require_permission(permission)
+user_has_permission(user, permission)
+```
+
+Los endpoints operativos todavia no estan protegidos masivamente para no romper el flujo de desarrollo. La proteccion por permisos se debe aplicar gradualmente al construir Quality y al endurecer acciones sensibles.
 
 ## Cotizaciones
 
@@ -597,6 +710,81 @@ audit_log registra el cambio
 certificate_ready queda registrado en auditoria como preparacion para certificado futuro
 ```
 
+## Certificados
+
+El modulo backend ya existe con modelo, schema, service y router.
+
+Archivos principales:
+
+```text
+backend/app/models/certificate.py
+backend/app/schemas/certificate.py
+backend/app/services/certificates.py
+backend/app/routers/certificates.py
+```
+
+Relacion principal:
+
+```text
+Service Order
+  -> Equipment
+  -> Field Sheet
+  -> Certificate
+```
+
+Un certificado pertenece a:
+
+```text
+service_order_id
+equipment_id
+field_sheet_id
+```
+
+Campos principales:
+
+```text
+folio
+service_order_id
+equipment_id
+field_sheet_id
+certificate_type
+status
+issued_on
+released_on
+title
+notes
+```
+
+Tipos de certificado:
+
+```text
+acreditado -> folio MYCA-MM-AAAA-XXXX
+trazable -> folio MYCT-MM-AAAA-XXXX
+```
+
+Estados definidos:
+
+```text
+draft
+generated
+quality_review
+approved
+released
+cancelled
+suspended
+```
+
+Reglas principales:
+
+```text
+La orden de servicio debe estar activa.
+El equipo debe pertenecer a la orden indicada.
+El equipo debe estar calibrated o labeled.
+La hoja de campo debe pertenecer al equipo indicado.
+La hoja de campo debe estar completed, under_review o approved.
+Una hoja de campo solo puede tener un certificado activo.
+```
+
 ## Regla arquitectonica principal
 
 Nada critico se borra realmente.
@@ -619,6 +807,8 @@ c0fa71033b73_create_mvp_schema.py
 5d6e7f8a9b10_expand_service_orders.py
 6f7a8b9c0d11_update_equipment_status.py
 7a8b9c0d1e12_create_field_sheets.py
+8b9c0d1e2f13_create_certificates.py
+9c0d1e2f3a14_add_user_roles.py
 ```
 
 La segunda migracion agrega:
@@ -656,10 +846,27 @@ foreign key hacia equipment.id
 indice unico parcial uq_field_sheets_active_equipment para impedir mas de una hoja activa por equipo
 ```
 
+La sexta migracion crea certificados:
+
+```text
+certificates
+foreign keys hacia service_orders.id, equipment.id y field_sheets.id
+indice unico parcial uq_certificates_active_field_sheet para impedir mas de un certificado activo por hoja de campo
+folio unico
+```
+
+La septima migracion agrega roles funcionales:
+
+```text
+user_roles
+roles iniciales
+migracion de users.role_id hacia user_roles cuando exista role_id
+```
+
 Estado de PostgreSQL local verificado:
 
 ```text
-alembic current -> 7a8b9c0d1e12 (head)
+alembic current -> 9c0d1e2f3a14 (head)
 ```
 
 ## Verificacion backend
@@ -681,7 +888,10 @@ GET /api/health -> 200
 GET /api/service-orders -> 200 []
 GET /api/equipment -> 200 []
 GET /api/field-sheets -> 200 []
+GET /api/certificates -> 200 []
+Auth rollback: register 200 Tecnico, me 200, login 200 Tecnico, refresh 200 bearer
 Flujo rollback: client 201, service_order 201, equipment 201 registered, field_sheet 201 draft, complete_missing 422, patch 200 in_progress, complete 200 completed, equipment_after_complete 200 calibrated, review 200 under_review
+Flujo rollback certificado: client 201, service_order 201, equipment 201 registered, field_sheet 201 draft, field_sheet_patch 200 in_progress, field_sheet_complete 200 completed, certificate 201 MYCA-06-2026-0001 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
@@ -707,7 +917,7 @@ Certificados
 Finanzas
 ```
 
-La UI todavia es una base visual. No hay formularios completos conectados para clientes, cotizaciones, ordenes, equipos u hojas de campo.
+La UI todavia es una base visual. No hay formularios completos conectados para auth, clientes, cotizaciones, ordenes, equipos, hojas de campo o certificados.
 
 ## Comandos de arranque
 
@@ -737,6 +947,6 @@ npm run dev
 
 1. Hacer commit de los cambios backend pendientes.
 2. Instalar dependencias frontend con `npm install`.
-3. Definir siguiente modulo backend: certificados o evidencias, segun prioridad operativa.
-4. Conectar frontend a los endpoints de clientes, cotizaciones, ordenes de servicio, equipos y hojas de campo.
-5. Agregar autenticacion, usuarios y permisos reales.
+3. Crear modulo de calidad para revision formal de certificados.
+4. Conectar frontend a los endpoints de clientes, cotizaciones, ordenes de servicio, equipos, hojas de campo y certificados.
+5. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.

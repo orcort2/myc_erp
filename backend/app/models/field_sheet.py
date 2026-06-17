@@ -21,3 +21,4 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     technician_notes: Mapped[str | None] = mapped_column(Text)
 
     equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
+    certificates: Mapped[list["Certificate"]] = relationship(back_populates="field_sheet")

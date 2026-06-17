@@ -32,6 +32,7 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         back_populates="service_order", cascade="all, delete-orphan"
     )
     equipment: Mapped[list["Equipment"]] = relationship(back_populates="service_order")
+    certificates: Mapped[list["Certificate"]] = relationship(back_populates="service_order")
 
 
 class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):

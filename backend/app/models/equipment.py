@@ -28,3 +28,4 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     field_sheets: Mapped[list["FieldSheet"]] = relationship(
         back_populates="equipment", cascade="all, delete-orphan"
     )
+    certificates: Mapped[list["Certificate"]] = relationship(back_populates="equipment")

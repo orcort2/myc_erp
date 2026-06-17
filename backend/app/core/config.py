@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     )
     secret_key: str = "change-this-secret-key"
     access_token_expire_minutes: int = 60 * 8
+    refresh_token_expire_minutes: int = 60 * 24 * 30
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     storage_root: str = "storage"
 
@@ -25,4 +26,3 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
-
