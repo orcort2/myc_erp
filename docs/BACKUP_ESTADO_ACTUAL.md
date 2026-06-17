@@ -1,7 +1,9 @@
-# Backup de estado actual - ERP MYC
+# Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-17 14:05:41 CST
+Ultima actualizacion: 2026-06-17 17:27:09 CST
+
+Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
 ## Ruta actual del proyecto
 
@@ -16,10 +18,34 @@ Git ya esta inicializado.
 Ultimo commit conocido:
 
 ```text
+a0051a2 Add auth, roles and permissions foundation
+```
+
+Commits recientes:
+
+```text
+a0051a2 Add auth, roles and permissions foundation
+e53b18d Add equipment and field sheets modules
+4546e2c Add service orders and equipment modules
 66f8b58 ERP MYC - Base MVP clients and quotations
 ```
 
-Nota importante: despues de ese commit existen cambios backend pendientes de commit para `auth`, `service_orders`, `equipment`, `field_sheets`, `certificates`, migraciones y este backup.
+Estado Git verificado:
+
+```text
+M backend/app/core/config.py
+M docs/BACKUP_ESTADO_ACTUAL.md
+M frontend/index.html
+M frontend/src/pages/App.jsx
+M frontend/src/services/api.js
+M frontend/src/styles/global.css
+?? frontend/assets/
+?? frontend/package-lock.json
+?? frontend/src/assets/
+```
+
+El cambio backend pendiente es CORS para permitir tambien `http://127.0.0.1:5174` cuando Vite usa puerto alterno.
+`frontend/assets/` contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en `frontend/src/assets/myc-logo.png`.
 
 ## Objetivo del sistema
 
@@ -64,6 +90,7 @@ Frontend:
 React
 Vite
 Lucide React
+History API para rutas simples sin react-router
 ```
 
 Archivos:
@@ -119,14 +146,17 @@ python-multipart
 
 ## Dependencias frontend
 
-Pendiente:
+Ya existe `frontend/node_modules/`, por lo que `npm install` ya fue ejecutado localmente.
+
+Existe `frontend/package-lock.json`, pero esta pendiente de commit.
+
+Para reinstalar o actualizar dependencias:
 
 ```bash
 cd frontend
 npm install
 ```
 
-No existe verificacion de `frontend/node_modules` como instalado.
 
 ## Estructura principal actual
 
@@ -200,7 +230,14 @@ backend/
 frontend/
   index.html
   package.json
+  package-lock.json
+  assets/
+    Logo sin fondo MYC.png
+  node_modules/
   src/
+    assets/
+      myc-logo.png
+      myc-logo.svg
     main.jsx
     pages/App.jsx
     components/ModuleCard.jsx
@@ -878,6 +915,7 @@ Verificaciones ejecutadas correctamente:
 ../venv/bin/alembic heads
 ../venv/bin/alembic upgrade head --sql
 ../venv/bin/alembic upgrade head
+npm run build
 ```
 
 Prueba con `fastapi.testclient.TestClient` contra la base local:
@@ -896,6 +934,25 @@ Flujo rollback certificado: client 201, service_order 201, equipment 201 registe
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
 
+Prueba visual en navegador local:
+
+```text
+Frontend Vite: http://127.0.0.1:5174/
+Backend FastAPI: http://127.0.0.1:8000/
+Crear usuario: Isaac Administrador -> dashboard
+Dashboard muestra MYC SYSTEM, usuario Isaac Administrador y Rol: Administrador
+Dashboard muestra subtitulo Sistema principal
+Dashboard carga contadores reales
+Dashboard muestra 10 modulos tipo app launcher
+Dashboard principal no renderiza sidebar
+Vistas de modulo como /dashboard#clientes renderizan sidebar con navegacion completa y fecha/hora visible
+Logo cargado desde frontend/src/assets/myc-logo.png
+Logout vuelve a /login
+Acceso directo a /dashboard sin token vuelve a /login
+Login con usuario creado vuelve a /dashboard
+Responsive movil validado: dashboard sin sidebar, modulos apilados en una columna
+```
+
 ## Frontend actual
 
 Pantalla inicial en:
@@ -904,20 +961,81 @@ Pantalla inicial en:
 frontend/src/pages/App.jsx
 ```
 
-Renderiza un shell con sidebar, flujo principal y tarjetas de modulos:
+Rutas frontend implementadas:
 
 ```text
-CRM y Leads
-Cotizaciones
-Agenda
-Llamados
-Ordenes de servicio
-Calidad
-Certificados
-Finanzas
+/login
+/dashboard
 ```
 
-La UI todavia es una base visual. No hay formularios completos conectados para auth, clientes, cotizaciones, ordenes, equipos, hojas de campo o certificados.
+Fase 1 implementada:
+
+```text
+Login real contra POST /api/auth/login
+Registro inicial contra POST /api/auth/register
+Guardado de access_token y refresh_token en localStorage
+Obtencion de usuario con GET /api/auth/me
+Logout
+Proteccion de /dashboard
+Sidebar
+Topbar
+Layout principal
+```
+
+Fase 2 inicial implementada:
+
+```text
+Dashboard modular Liquid Glass con branding MYC SYSTEM.
+Dashboard muestra logo + MYC SYSTEM + Sistema principal.
+Vistas de modulo muestran logo + MYC SYSTEM + fecha/hora.
+En /dashboard no hay sidebar; el dashboard queda como launcher principal.
+En /dashboard#modulo se activa layout de modulo con navegacion lateral.
+Tipografia ajustada para legibilidad: titulos 22px en modulos, descripciones 15px, mejor contraste y sin overflow en desktop/movil.
+Span de bienvenida/rol en dashboard ajustado a 16.5px, mayor contraste y fondo translúcido.
+Contadores reales visibles en modulos y resumen operativo:
+- Clientes
+- Cotizaciones
+- Ordenes de servicio
+- Equipos
+- Hojas de campo
+- Certificados
+```
+
+Modulos visibles en /dashboard:
+
+```text
+Clientes
+CRM
+Ventas / Cotizaciones
+Servicios
+Ordenes de servicio
+Equipos
+Hojas de campo
+Certificados
+Finanzas
+Configuracion
+```
+
+Estado visual por modulo:
+
+```text
+Activo
+Pendiente
+En desarrollo
+```
+
+Variables visuales principales definidas en `frontend/src/styles/global.css`:
+
+```text
+--myc-primary
+--myc-primary-dark
+--myc-accent
+--myc-bg
+--glass-bg
+--glass-border
+```
+
+La UI todavia no tiene CRUD visual completo de clientes. Ese es el siguiente modulo frontend recomendado.
 
 ## Comandos de arranque
 
@@ -945,8 +1063,8 @@ npm run dev
 
 ## Pendientes inmediatos recomendados
 
-1. Hacer commit de los cambios backend pendientes.
-2. Instalar dependencias frontend con `npm install`.
+1. Decidir si se commitea `frontend/package-lock.json`.
+2. Crear primer CRUD visual completo: Clientes.
 3. Crear modulo de calidad para revision formal de certificados.
-4. Conectar frontend a los endpoints de clientes, cotizaciones, ordenes de servicio, equipos, hojas de campo y certificados.
+4. Conectar frontend profundo a cotizaciones, ordenes de servicio, equipos, hojas de campo y certificados.
 5. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
