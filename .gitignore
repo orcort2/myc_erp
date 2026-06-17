@@ -1,0 +1,17 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+node_modules/
+dist/
+.env
+tmp/
+output/
+storage/temporales/*
+!storage/temporales/.gitkeep
+
+venv/
+__pycache__/
+.DS_Store
+.env
+node_modules/
