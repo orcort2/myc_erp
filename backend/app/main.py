@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.routers import (
     auth,
+    catalog_items,
     certificates,
     clients,
     equipment,
@@ -33,6 +34,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
+app.include_router(catalog_items.router, prefix="/api")
 app.include_router(quotations.router, prefix="/api")
 app.include_router(service_orders.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")

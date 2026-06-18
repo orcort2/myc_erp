@@ -17,10 +17,22 @@ QuotationStatus = Literal[
 
 
 class QuotationItemBase(BaseModel):
-    service_name: str = Field(min_length=1, max_length=180)
+    catalog_item_id: int | None = None
+    service_name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = None
     quantity: int = Field(default=1, ge=1)
+    unit: str | None = Field(default=None, max_length=80)
+    sat_key: str | None = Field(default=None, max_length=40)
+    sat_unit: str | None = Field(default=None, max_length=40)
+    internal_unit: str | None = Field(default=None, max_length=80)
     unit_price: Decimal = Field(default=Decimal("0.00"), ge=0)
+    discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    commodity: str | None = Field(default=None, max_length=40)
+    calibration_scope: str | None = Field(default=None, max_length=60)
+    quotation_legend: str | None = None
+    tax_object: str | None = Field(default=None, max_length=20)
+    tax_rate: Decimal = Field(default=Decimal("16.00"), ge=0)
 
 
 class QuotationItemCreate(QuotationItemBase):
@@ -28,16 +40,29 @@ class QuotationItemCreate(QuotationItemBase):
 
 
 class QuotationItemUpdate(BaseModel):
+    catalog_item_id: int | None = None
     service_name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = None
     quantity: int | None = Field(default=None, ge=1)
+    unit: str | None = Field(default=None, max_length=80)
+    sat_key: str | None = Field(default=None, max_length=40)
+    sat_unit: str | None = Field(default=None, max_length=40)
+    internal_unit: str | None = Field(default=None, max_length=80)
     unit_price: Decimal | None = Field(default=None, ge=0)
+    discount_percent: Decimal | None = Field(default=None, ge=0)
+    currency: str | None = Field(default=None, min_length=3, max_length=3)
+    commodity: str | None = Field(default=None, max_length=40)
+    calibration_scope: str | None = Field(default=None, max_length=60)
+    quotation_legend: str | None = None
+    tax_object: str | None = Field(default=None, max_length=20)
+    tax_rate: Decimal | None = Field(default=None, ge=0)
 
 
 class QuotationItemRead(QuotationItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    tax_total: Decimal
     total: Decimal
     is_active: bool
     created_at: datetime

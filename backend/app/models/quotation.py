@@ -33,11 +33,23 @@ class QuotationItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "quotation_items"
 
     quotation_id: Mapped[int] = mapped_column(ForeignKey("quotations.id"), index=True)
+    catalog_item_id: Mapped[int | None] = mapped_column(ForeignKey("catalog_items.id"), index=True)
     service_name: Mapped[str] = mapped_column(String(180))
     description: Mapped[str | None] = mapped_column(Text)
     quantity: Mapped[int] = mapped_column(default=1)
+    unit: Mapped[str | None] = mapped_column(String(80))
+    sat_key: Mapped[str | None] = mapped_column(String(40))
+    sat_unit: Mapped[str | None] = mapped_column(String(40))
+    internal_unit: Mapped[str | None] = mapped_column(String(80))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    discount_percent: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=0)
+    currency: Mapped[str | None] = mapped_column(String(3))
+    commodity: Mapped[str | None] = mapped_column(String(40))
+    calibration_scope: Mapped[str | None] = mapped_column(String(60))
+    quotation_legend: Mapped[str | None] = mapped_column(Text)
+    tax_object: Mapped[str | None] = mapped_column(String(20))
+    tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=16)
+    tax_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
 
     quotation: Mapped[Quotation] = relationship(back_populates="items")
-

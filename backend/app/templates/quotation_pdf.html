@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Cotizacion {{ quotation.folio }}</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 18mm 15mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      color: #102a36;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10.5px;
+      line-height: 1.42;
+      margin: 0;
+    }
+
+    .header {
+      align-items: flex-start;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .brand {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      width: 48%;
+    }
+
+    .brand img {
+      height: 58px;
+      object-fit: contain;
+      width: 82px;
+    }
+
+    .brand h1 {
+      color: #064f56;
+      font-size: 15px;
+      margin: 0 0 3px;
+      text-transform: uppercase;
+    }
+
+    .brand p,
+    .company-info p,
+    .box p {
+      margin: 0;
+    }
+
+    .company-info {
+      color: #375763;
+      font-size: 9.5px;
+      text-align: right;
+      width: 42%;
+    }
+
+    .title {
+      border-bottom: 2px solid #078a8f;
+      border-top: 2px solid #078a8f;
+      margin: 10px 0 16px;
+      padding: 10px 0;
+      text-align: center;
+    }
+
+    .title h2 {
+      color: #073846;
+      font-size: 25px;
+      letter-spacing: 2px;
+      margin: 0;
+    }
+
+    .title p {
+      color: #3d626c;
+      font-size: 11px;
+      margin: 3px 0 0;
+    }
+
+    .meta {
+      display: grid;
+      gap: 8px;
+      grid-template-columns: 1.3fr 1fr 1fr;
+      margin-bottom: 14px;
+    }
+
+    .meta-card,
+    .box,
+    .totals,
+    .signature {
+      border: 1px solid #b8d5d7;
+      border-radius: 8px;
+      padding: 10px;
+    }
+
+    .meta-card {
+      background: #f3fbfb;
+      min-height: 54px;
+    }
+
+    .meta-card span,
+    .box h3,
+    .totals span {
+      color: #50717b;
+      display: block;
+      font-size: 8.5px;
+      font-weight: 700;
+      letter-spacing: .7px;
+      text-transform: uppercase;
+    }
+
+    .meta-card strong {
+      color: #073846;
+      display: block;
+      font-size: 14px;
+      margin-top: 4px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr 1fr;
+      margin-bottom: 14px;
+    }
+
+    .box h3 {
+      margin: 0 0 7px;
+    }
+
+    .box strong {
+      color: #0c3a48;
+      display: block;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    table {
+      border-collapse: collapse;
+      margin-top: 8px;
+      width: 100%;
+    }
+
+    th {
+      background: #073846;
+      color: #fff;
+      font-size: 8.5px;
+      padding: 7px 6px;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    td {
+      border-bottom: 1px solid #d9e8e9;
+      padding: 7px 6px;
+      vertical-align: top;
+    }
+
+    .numeric {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .description {
+      width: 34%;
+    }
+
+    .legend {
+      color: #0a7b80;
+      display: block;
+      font-size: 8.8px;
+      font-weight: 700;
+      margin-top: 3px;
+    }
+
+    .empty {
+      color: #6f858b;
+      padding: 18px;
+      text-align: center;
+    }
+
+    .summary {
+      align-items: flex-start;
+      display: flex;
+      gap: 14px;
+      justify-content: flex-end;
+      margin: 14px 0;
+    }
+
+    .total-words {
+      border-top: 1px solid #b8d5d7;
+      color: #0d3b48;
+      flex: 1;
+      font-size: 10px;
+      padding-top: 10px;
+    }
+
+    .totals {
+      min-width: 210px;
+      padding: 0;
+    }
+
+    .totals div {
+      align-items: center;
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 10px;
+    }
+
+    .totals div + div {
+      border-top: 1px solid #d9e8e9;
+    }
+
+    .totals .grand {
+      background: #073846;
+      border-radius: 0 0 7px 7px;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .notes {
+      margin-top: 12px;
+    }
+
+    .notes p {
+      margin: 3px 0;
+    }
+
+    .signature {
+      margin-top: 24px;
+      min-height: 76px;
+      text-align: center;
+    }
+
+    .signature-line {
+      border-top: 1px solid #66858d;
+      margin: 42px auto 7px;
+      width: 230px;
+    }
+
+    footer {
+      border-top: 1px solid #d0e2e4;
+      color: #6a8086;
+      font-size: 8.5px;
+      margin-top: 20px;
+      padding-top: 8px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <section class="brand">
+      {% if logo_uri %}
+      <img alt="MYC" src="{{ logo_uri }}">
+      {% endif %}
+      <div>
+        <h1>Metrolog&iacute;a y Servicios MYC</h1>
+        <p>Servicios de metrolog&iacute;a, calibraci&oacute;n, venta y soporte t&eacute;cnico especializado.</p>
+      </div>
+    </section>
+    <section class="company-info">
+      <p><strong>Metrolog&iacute;a y Servicios MYC</strong></p>
+      <p>Soluciones t&eacute;cnicas, calibraci&oacute;n y soporte especializado.</p>
+      <p>RFC: MYC000000XXX</p>
+      <p>contacto@mycmetrology.com.mx</p>
+      <p>www.mycmetrology.com.mx</p>
+    </section>
+  </header>
+
+  <section class="title">
+    <h2>COTIZACI&Oacute;N</h2>
+    <p>Propuesta comercial de servicios, calibraci&oacute;n y soluciones t&eacute;cnicas</p>
+  </section>
+
+  <section class="meta">
+    <article class="meta-card">
+      <span>Folio</span>
+      <strong>{{ quotation.folio }}</strong>
+    </article>
+    <article class="meta-card">
+      <span>Emisi&oacute;n</span>
+      <strong>{{ quotation.issued_on|date }}</strong>
+    </article>
+    <article class="meta-card">
+      <span>Vigencia</span>
+      <strong>{{ quotation.valid_until|date }}</strong>
+    </article>
+  </section>
+
+  <section class="grid">
+    <article class="box">
+      <h3>Datos del cliente</h3>
+      <strong>{{ client.commercial_name or client.legal_name }}</strong>
+      <p>Raz&oacute;n social: {{ client.legal_name }}</p>
+      <p>RFC: {{ client.rfc or "-" }}</p>
+      <p>Contacto: {{ contact.name if contact else "-" }}</p>
+      <p>Tel&eacute;fono: {{ client.phone or (contact.phone if contact else "-") or "-" }}</p>
+      <p>Correo: {{ client.email or (contact.email if contact else "-") or "-" }}</p>
+    </article>
+    <article class="box">
+      <h3>Datos fiscales</h3>
+      <strong>{{ client.legal_name }}</strong>
+      <p>RFC fiscal: {{ client.rfc or "-" }}</p>
+      <p>R&eacute;gimen fiscal: {{ client.tax_regime or "-" }}</p>
+      <p>C&oacute;digo postal fiscal: -</p>
+      <p>Uso CFDI: -</p>
+      <p>Condiciones de pago: {{ client.payment_terms or "Por definir" }}</p>
+    </article>
+  </section>
+
+  <section>
+    <table>
+      <thead>
+        <tr>
+          <th class="description">Descripci&oacute;n</th>
+          <th>Cant.</th>
+          <th>Unidad</th>
+          <th>SAT</th>
+          <th class="numeric">P. unitario</th>
+          <th class="numeric">Desc.</th>
+          <th class="numeric">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if lines %}
+          {% for line in lines %}
+          <tr>
+            <td class="description">
+              {{ line.description }}
+              {% if line.legend %}<span class="legend">{{ line.legend }}</span>{% endif %}
+            </td>
+            <td>{{ line.quantity }}</td>
+            <td>{{ line.unit }}</td>
+            <td>{{ line.sat_key }} / {{ line.sat_unit }}</td>
+            <td class="numeric">{{ line.unit_price|money }}</td>
+            <td class="numeric">{{ line.discount_percent }}%</td>
+            <td class="numeric">{{ line.subtotal|money }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td class="empty" colspan="7">Sin partidas registradas</td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="summary">
+    <div class="total-words">
+      <strong>Total con letra:</strong><br>
+      {{ total_words }}
+    </div>
+    <div class="totals">
+      <div><span>Subtotal</span><strong>{{ subtotal|money }}</strong></div>
+      <div><span>IVA / Impuestos</span><strong>{{ tax_total|money }}</strong></div>
+      <div class="grand"><span>Total</span><strong>{{ total|money }}</strong></div>
+    </div>
+  </section>
+
+  <section class="grid notes">
+    <article class="box">
+      <h3>Condiciones comerciales</h3>
+      <p>1. Precios expresados en moneda nacional, salvo indicaci&oacute;n contraria.</p>
+      <p>2. Vigencia sujeta a la fecha indicada en esta cotizaci&oacute;n.</p>
+      <p>3. Tiempos de entrega y alcance final se confirman al recibir autorizaci&oacute;n.</p>
+    </article>
+    <article class="box">
+      <h3>Notas</h3>
+      <p>{{ quotation.notes or "Sin notas adicionales." }}</p>
+    </article>
+  </section>
+
+  <section class="signature">
+    <div class="signature-line"></div>
+    <strong>Firma / autorizaci&oacute;n del cliente</strong>
+  </section>
+
+  <footer>
+    Documento generado por MYC SYSTEM para Metrolog&iacute;a y Servicios MYC.
+  </footer>
+</body>
+</html>

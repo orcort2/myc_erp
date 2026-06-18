@@ -157,6 +157,78 @@ export async function updateQuotation(quotationId, payload) {
   });
 }
 
+export async function createQuotationItem(quotationId, payload) {
+  return request(`/quotations/${quotationId}/items`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateQuotationItem(quotationId, itemId, payload) {
+  return request(`/quotations/${quotationId}/items/${itemId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+function buildQuery(params = {}) {
+  const searchParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      searchParams.set(key, value);
+    }
+  });
+  const query = searchParams.toString();
+  return query ? `?${query}` : '';
+}
+
+export async function listCatalogItems(params = {}) {
+  return request(`/catalog-items${buildQuery(params)}`);
+}
+
+export async function createCatalogItem(payload) {
+  return request('/catalog-items', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateCatalogItem(catalogItemId, payload) {
+  return request(`/catalog-items/${catalogItemId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteCatalogItem(catalogItemId) {
+  return request(`/catalog-items/${catalogItemId}`, {
+    method: 'DELETE'
+  });
+}
+
+export function getQuotationPdfUrl(quotationId) {
+  return `${API_URL}/quotations/${quotationId}/pdf`;
+}
+
+export async function downloadQuotationPdf(quotationId) {
+  const token = getAccessToken();
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(getQuotationPdfUrl(quotationId), { headers });
+  if (!response.ok) {
+    throw new Error('No se pudo generar el PDF de la cotizacion');
+  }
+
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const match = disposition.match(/filename="([^"]+)"/);
+  const filename = match?.[1] ?? `Cotizacion_${quotationId}.pdf`;
+  const blob = await response.blob();
+  return { blob, filename };
+}
+
 export async function changeQuotationStatus(quotationId, action, comment = null) {
   return request(`/quotations/${quotationId}/${action}`, {
     method: 'POST',

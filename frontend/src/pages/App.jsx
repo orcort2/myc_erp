@@ -4,6 +4,7 @@ import {
   Boxes,
   Building2,
   ClipboardList,
+  Download,
   FileCheck2,
   FileText,
   Gauge,
@@ -11,6 +12,7 @@ import {
   MessageSquareText,
   Settings,
   ShieldCheck,
+  Upload,
   UserRound
 } from 'lucide-react';
 import React from 'react';
@@ -21,15 +23,22 @@ import {
   changeQuotationStatus,
   clearTokens,
   createClient,
+  createCatalogItem,
   createQuotation,
+  createQuotationItem,
+  deleteCatalogItem,
   getAccessToken,
   getCurrentUser,
   getDashboardCounts,
   getQuotation,
+  getQuotationPdfUrl,
+  listCatalogItems,
   listClients,
   listQuotations,
   login,
   register,
+  downloadQuotationPdf,
+  updateCatalogItem,
   updateClient,
   updateQuotation
 } from '../services/api.js';
@@ -174,15 +183,145 @@ const emptyQuotationForm = {
   notes: ''
 };
 
+const emptyQuotationItemForm = {
+  catalogItemId: '',
+  description: '',
+  quantity: '1',
+  unit: 'Servicio',
+  unitPrice: '',
+  currency: 'MXN',
+  discount: '0',
+  observations: '',
+  satKey: ''
+};
+
 const emptyProductForm = {
+  category: '',
+  internalKey: '',
   name: '',
+  description: '',
   type: 'Servicio',
+  commodity: 'calibration',
+  calibrationScope: 'traceable',
+  quotationLegend: '',
   satKey: '',
   satUnit: '',
+  internalUnit: 'service',
+  customInternalUnit: '',
   basePrice: '',
+  sourceCurrency: 'MXN',
+  exchangeRate: '1',
   internalCost: '',
+  costCurrency: 'MXN',
+  margin: '',
+  taxObject: 'iva_16',
   status: 'Activo'
 };
+
+const clientTemplateColumns = [
+  'Nombre comercial',
+  'Razon social',
+  'RFC',
+  'Contacto principal',
+  'Correo',
+  'Telefono',
+  'Pais',
+  'Calle',
+  'Numero exterior',
+  'Numero interior',
+  'Colonia',
+  'Municipio / Ciudad',
+  'Estado',
+  'Codigo postal',
+  'Regimen fiscal',
+  'Uso CFDI',
+  'Estado del cliente'
+];
+
+const catalogTemplateColumns = [
+  'Tipo',
+  'Commodity',
+  'Categoria',
+  'Clave interna',
+  'Nombre',
+  'Descripcion',
+  'Clave SAT',
+  'Unidad SAT',
+  'Unidad interna',
+  'Unidad interna personalizada',
+  'Precio origen',
+  'Moneda origen',
+  'Tipo de cambio',
+  'Costo interno',
+  'Moneda de costo',
+  'Margen %',
+  'Precio final MXN',
+  'Objeto impuesto',
+  'Estado'
+];
+
+const serviceCategories = [
+  'Calibracion',
+  'Mantenimiento',
+  'Calificacion',
+  'Validacion',
+  'Capacitacion',
+  'Consultoria'
+];
+
+const productCategories = [
+  'Patrones',
+  'Equipos',
+  'Accesorios',
+  'Consumibles'
+];
+
+const validCatalogCurrencies = new Set(['MXN', 'USD', 'EUR']);
+
+const catalogTypeToApi = {
+  Producto: 'product',
+  Servicio: 'service'
+};
+
+const catalogTypeFromApi = {
+  product: 'Producto',
+  service: 'Servicio'
+};
+
+const catalogCommodityOptions = [
+  { value: 'calibration', label: 'Calibracion' },
+  { value: 'maintenance', label: 'Mantenimiento' },
+  { value: 'repair', label: 'Reparacion' },
+  { value: 'sale', label: 'Venta' },
+  { value: 'general_service', label: 'Servicio general' }
+];
+
+const calibrationScopeOptions = [
+  { value: 'accredited_iso_17025', label: 'Acreditado ISO/IEC 17025:2017' },
+  { value: 'traceable', label: 'Trazable' },
+  { value: 'accredited_linked_lab', label: 'Acreditado laboratorio vinculado' }
+];
+
+const internalUnitOptions = [
+  { value: 'service', label: 'Servicio' },
+  { value: 'piece', label: 'Pieza' },
+  { value: 'equipment', label: 'Equipo' },
+  { value: 'hour', label: 'Hora' },
+  { value: 'day', label: 'Dia' },
+  { value: 'package', label: 'Paquete' },
+  { value: 'lot', label: 'Lote' },
+  { value: 'meter', label: 'Metro' },
+  { value: 'kilogram', label: 'Kilogramo' },
+  { value: 'liter', label: 'Litro' },
+  { value: 'other', label: 'Otra' }
+];
+
+const taxObjectOptions = [
+  { value: 'iva_16', label: 'IVA 16%' },
+  { value: 'iva_0', label: 'IVA 0%' },
+  { value: 'exempt', label: 'Exento' },
+  { value: 'not_subject', label: 'No sujeto' }
+];
 
 const quotationStatusLabels = {
   draft: 'Draft',
@@ -249,6 +388,312 @@ function formatMoney(value) {
     currency: 'MXN',
     style: 'currency'
   }).format(amount);
+}
+
+function calculateFinalPriceMxn({ basePrice, exchangeRate, margin }) {
+  const price = Number(basePrice || 0);
+  const rate = Number(exchangeRate || 1);
+  const marginFactor = 1 + Number(margin || 0) / 100;
+  return price * rate * marginFactor;
+}
+
+function mapCatalogItemFromApi(item) {
+  return {
+    id: item.id,
+    type: catalogTypeFromApi[item.item_type] ?? item.item_type,
+    itemType: item.item_type,
+    commodity: item.commodity,
+    calibrationScope: item.calibration_scope ?? '',
+    quotationLegend: item.quotation_legend ?? '',
+    category: item.category ?? '',
+    internalKey: item.internal_key ?? '',
+    name: item.name ?? '',
+    description: item.description ?? '',
+    satKey: item.sat_key ?? '',
+    satUnit: item.sat_unit ?? '',
+    internalUnit: item.internal_unit ?? 'service',
+    customInternalUnit: item.custom_internal_unit ?? '',
+    basePrice: String(item.origin_price ?? ''),
+    sourceCurrency: item.origin_currency ?? 'MXN',
+    exchangeRate: String(item.exchange_rate ?? '1'),
+    internalCost: item.internal_cost == null ? '' : String(item.internal_cost),
+    costCurrency: item.cost_currency ?? 'MXN',
+    margin: String(item.margin_percent ?? ''),
+    finalPriceMxn: Number(item.final_price_mxn ?? 0),
+    taxObject: item.tax_object ?? 'iva_16',
+    taxRate: Number(item.tax_rate ?? 16),
+    status: item.is_active === false ? 'Inactivo' : 'Activo'
+  };
+}
+
+function mapCatalogPayloadFromForm(form) {
+  const commodity = form.commodity || 'general_service';
+  return {
+    item_type: catalogTypeToApi[form.type] ?? form.type,
+    commodity,
+    category: form.category.trim(),
+    name: form.name.trim(),
+    description: form.description.trim() || null,
+    sat_key: form.satKey.trim() || null,
+    sat_unit: form.satUnit.trim() || null,
+    internal_unit: form.internalUnit || 'service',
+    custom_internal_unit: form.internalUnit === 'other' ? form.customInternalUnit.trim() || null : null,
+    origin_price: Number(form.basePrice || 0),
+    origin_currency: form.sourceCurrency,
+    exchange_rate: Number(form.exchangeRate || 1),
+    margin_percent: Number(form.margin || 0),
+    internal_cost: form.internalCost === '' ? null : Number(form.internalCost),
+    cost_currency: form.internalCost === '' ? null : form.costCurrency,
+    calibration_scope: commodity === 'calibration' ? form.calibrationScope : null,
+    quotation_legend: commodity === 'general_service' ? form.quotationLegend.trim() : form.quotationLegend.trim() || null,
+    tax_object: form.taxObject || 'iva_16'
+  };
+}
+
+function normalizeKey(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function toCsvValue(value) {
+  const text = String(value ?? '');
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadCsv(filename, columns, rows = []) {
+  const content = [
+    columns.map(toCsvValue).join(','),
+    ...rows.map((row) => columns.map((column) => toCsvValue(row[column])).join(','))
+  ].join('\n');
+  const blob = new Blob([`\ufeff${content}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function parseDelimitedText(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) {
+    return { columns: [], rows: [] };
+  }
+
+  const separator = lines[0].includes('\t') ? '\t' : ',';
+  const columns = lines[0].split(separator).map((column) => column.replace(/^"|"$/g, '').trim());
+  const rows = lines.slice(1).map((line) => {
+    const values = line.split(separator).map((value) => value.replace(/^"|"$/g, '').trim());
+    return Object.fromEntries(columns.map((column, index) => [column, values[index] ?? '']));
+  });
+
+  return { columns, rows };
+}
+
+function getRowValue(row, names) {
+  const entries = Object.entries(row).map(([key, value]) => [normalizeKey(key), value]);
+  for (const name of names) {
+    const match = entries.find(([key]) => key === normalizeKey(name));
+    if (match) {
+      return match[1] ?? '';
+    }
+  }
+  return '';
+}
+
+function buildClientImportPreview(rows, existingClients) {
+  const existingRfc = new Set(existingClients.map((client) => normalizeKey(client.rfc)).filter(Boolean));
+  const existingEmail = new Set(existingClients.map((client) => normalizeKey(client.email)).filter(Boolean));
+  const existingName = new Set(
+    existingClients.map((client) => normalizeKey(client.commercial_name || client.legal_name)).filter(Boolean)
+  );
+
+  const seenRfc = new Set();
+  const seenEmail = new Set();
+  const seenName = new Set();
+
+  const reviewedRows = rows.map((row, index) => {
+    const name = row['Nombre comercial'] || row.nombre || row.Cliente || '';
+    const rfc = row.RFC || row.rfc || '';
+    const email = row.Correo || row.Email || row.email || '';
+    const postalCode = row['Codigo postal'] || row['Código postal'] || '';
+    const nameKey = normalizeKey(name);
+    const rfcKey = normalizeKey(rfc);
+    const emailKey = normalizeKey(email);
+    const errors = [];
+    const duplicates = [];
+
+    if (!name.trim()) {
+      errors.push('Nombre comercial obligatorio');
+    }
+    if (email.trim() && !isValidEmail(email.trim())) {
+      errors.push('Correo invalido');
+    }
+    if (postalCode.trim() && !/^\d+$/.test(postalCode.trim())) {
+      errors.push('Codigo postal no numerico');
+    }
+    if (rfcKey && (existingRfc.has(rfcKey) || seenRfc.has(rfcKey))) {
+      duplicates.push('RFC');
+    }
+    if (emailKey && (existingEmail.has(emailKey) || seenEmail.has(emailKey))) {
+      duplicates.push('Correo');
+    }
+    if (nameKey && (existingName.has(nameKey) || seenName.has(nameKey))) {
+      duplicates.push('Nombre');
+    }
+
+    if (rfcKey) seenRfc.add(rfcKey);
+    if (emailKey) seenEmail.add(emailKey);
+    if (nameKey) seenName.add(nameKey);
+
+    return {
+      id: `${index}-${nameKey || 'cliente'}`,
+      name: name || '-',
+      rfc: rfc || '-',
+      email: email || '-',
+      status: errors.length ? 'error' : duplicates.length ? 'duplicate' : 'valid',
+      errors,
+      duplicates,
+      raw: row
+    };
+  });
+
+  return {
+    rows: reviewedRows,
+    valid: reviewedRows.filter((row) => row.status === 'valid'),
+    duplicates: reviewedRows.filter((row) => row.status === 'duplicate'),
+    errors: reviewedRows.filter((row) => row.status === 'error')
+  };
+}
+
+function buildCatalogImportPreview(rows, existingItems) {
+  const existingName = new Set(existingItems.map((item) => normalizeKey(item.name)).filter(Boolean));
+  const existingInternalKey = new Set(existingItems.map((item) => normalizeKey(item.internalKey)).filter(Boolean));
+  const existingCategoryName = new Set(
+    existingItems.map((item) => `${normalizeKey(item.category)}|${normalizeKey(item.name)}`).filter((value) => value !== '|')
+  );
+  const seenName = new Set();
+  const seenInternalKey = new Set();
+  const seenCategoryName = new Set();
+
+  const reviewedRows = rows.map((row, index) => {
+    const type = getRowValue(row, ['Tipo']);
+    const category = getRowValue(row, ['Categoria', 'Categoría']);
+    const internalKey = getRowValue(row, ['Clave interna']);
+    const name = getRowValue(row, ['Nombre']);
+    const price = getRowValue(row, ['Precio origen']);
+    const currency = getRowValue(row, ['Moneda origen']);
+    const nameKey = normalizeKey(name);
+    const internalKeyKey = normalizeKey(internalKey);
+    const categoryNameKey = `${normalizeKey(category)}|${nameKey}`;
+    const errors = [];
+    const duplicates = [];
+
+    if (!name.trim()) errors.push('Nombre obligatorio');
+    if (!type.trim()) errors.push('Tipo obligatorio');
+    if (!category.trim()) errors.push('Categoria obligatoria');
+    if (price.trim() && Number.isNaN(Number(price))) errors.push('Precio no numerico');
+    if (currency.trim() && !validCatalogCurrencies.has(currency.trim().toUpperCase())) {
+      errors.push('Moneda no valida');
+    }
+    if (nameKey && (existingName.has(nameKey) || seenName.has(nameKey))) duplicates.push('Nombre');
+    if (internalKeyKey && (existingInternalKey.has(internalKeyKey) || seenInternalKey.has(internalKeyKey))) {
+      duplicates.push('Clave interna');
+    }
+    if (nameKey && category.trim() && (existingCategoryName.has(categoryNameKey) || seenCategoryName.has(categoryNameKey))) {
+      duplicates.push('Categoria + nombre');
+    }
+
+    if (nameKey) seenName.add(nameKey);
+    if (internalKeyKey) seenInternalKey.add(internalKeyKey);
+    if (nameKey && category.trim()) seenCategoryName.add(categoryNameKey);
+
+    return {
+      id: `${index}-${nameKey || 'concepto'}`,
+      name: name || '-',
+      type: type || '-',
+      category: category || '-',
+      price: price || '-',
+      currency: currency || '-',
+      status: errors.length ? 'error' : duplicates.length ? 'duplicate' : 'valid',
+      errors,
+      duplicates,
+      raw: row
+    };
+  });
+
+  return {
+    rows: reviewedRows,
+    valid: reviewedRows.filter((row) => row.status === 'valid'),
+    duplicates: reviewedRows.filter((row) => row.status === 'duplicate'),
+    errors: reviewedRows.filter((row) => row.status === 'error')
+  };
+}
+
+function getQuotationItems(quotation) {
+  return Array.isArray(quotation?.items) ? quotation.items.filter((item) => item.is_active !== false) : [];
+}
+
+function calculateLineAmounts(item) {
+  const quantity = Number(item.quantity || 0);
+  const unitPrice = Number(item.unit_price ?? item.unitPrice ?? 0);
+  const discount = Number(item.discount_percent ?? item.discount ?? 0);
+  const taxRate = Number(item.tax_rate ?? item.taxRate ?? 16);
+  const amount = quantity * unitPrice;
+  const discountAmount = amount * (discount / 100);
+  const subtotal = Math.max(amount - discountAmount, 0);
+  const tax = subtotal * (taxRate / 100);
+  return { amount, discountAmount, subtotal, tax, total: subtotal + tax };
+}
+
+function calculateQuotationSummary(quotation) {
+  const items = getQuotationItems(quotation);
+  const subtotal = items.length
+    ? items.reduce((total, item) => total + calculateLineAmounts(item).subtotal, 0)
+    : Number(quotation?.subtotal ?? 0);
+  const tax = items.length
+    ? items.reduce((total, item) => total + calculateLineAmounts(item).tax, 0)
+    : Number(quotation?.tax_total ?? 0);
+  const total = items.length ? subtotal + tax : Number(quotation?.total ?? 0);
+  return { subtotal, tax, total };
+}
+
+function calculateQuotationDraftSummary(quotation, draftItems = []) {
+  const savedSubtotal = getQuotationItems(quotation).reduce(
+    (total, item) => total + calculateLineAmounts(item).subtotal,
+    0
+  );
+  const draftSubtotal = draftItems.reduce(
+    (total, item) => total + calculateLineAmounts(item).subtotal,
+    0
+  );
+  const savedTax = getQuotationItems(quotation).reduce(
+    (total, item) => total + calculateLineAmounts(item).tax,
+    0
+  );
+  const draftTax = draftItems.reduce(
+    (total, item) => total + calculateLineAmounts(item).tax,
+    0
+  );
+  const fallbackSubtotal = Number(quotation?.subtotal ?? 0);
+  const subtotal = savedSubtotal || draftItems.length ? savedSubtotal + draftSubtotal : fallbackSubtotal;
+  const tax = savedSubtotal || draftItems.length ? savedTax + draftTax : Number(quotation?.tax_total ?? 0);
+  return { subtotal, tax, total: subtotal + tax };
+}
+
+function totalToSpanishText(value) {
+  const amount = Number(value || 0);
+  return `${formatMoney(amount)} MXN`;
 }
 
 function getClientContact(client) {
@@ -525,6 +970,11 @@ function ClientsPage() {
   const [form, setForm] = useState(emptyClientForm);
   const [editingClientId, setEditingClientId] = useState(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
+  const [isClientImportOpen, setIsClientImportOpen] = useState(false);
+  const [clientImportFileName, setClientImportFileName] = useState('');
+  const [clientImportColumns, setClientImportColumns] = useState([]);
+  const [clientImportPreview, setClientImportPreview] = useState(null);
+  const [clientImportMessage, setClientImportMessage] = useState('');
   const [clientModalTab, setClientModalTab] = useState('general');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -568,6 +1018,15 @@ function ClientsPage() {
     setClientModalTab('general');
     setValidationErrors({});
     setNotice('');
+    setError('');
+  }
+
+  function closeClientImportModal() {
+    setIsClientImportOpen(false);
+    setClientImportFileName('');
+    setClientImportColumns([]);
+    setClientImportPreview(null);
+    setClientImportMessage('');
     setError('');
   }
 
@@ -666,6 +1125,96 @@ function ClientsPage() {
     }
   }
 
+  function downloadClientTemplate() {
+    downloadCsv('plantilla_clientes_myc.csv', clientTemplateColumns, [
+      {
+        'Nombre comercial': 'Cliente Demo',
+        'Razon social': 'Cliente Demo SA de CV',
+        RFC: 'CDE010101AB1',
+        'Contacto principal': 'Contacto Compras',
+        Correo: 'compras@cliente.com',
+        Telefono: '5555555555',
+        Pais: 'Mexico',
+        Calle: 'Calle ejemplo',
+        'Numero exterior': '100',
+        'Numero interior': '',
+        Colonia: 'Centro',
+        'Municipio / Ciudad': 'Ciudad de Mexico',
+        Estado: 'CDMX',
+        'Codigo postal': '01000',
+        'Regimen fiscal': '601',
+        'Uso CFDI': 'G03',
+        'Estado del cliente': 'Activo'
+      }
+    ]);
+  }
+
+  function exportClients() {
+    const rows = clients.map((client) => {
+      const contact = getClientContact(client);
+      return {
+        'Nombre comercial': client.commercial_name ?? '',
+        'Razon social': client.legal_name ?? '',
+        RFC: client.rfc ?? '',
+        'Contacto principal': contact?.name ?? '',
+        Correo: client.email ?? contact?.email ?? '',
+        Telefono: client.phone ?? contact?.phone ?? '',
+        Pais: '',
+        Calle: '',
+        'Numero exterior': '',
+        'Numero interior': '',
+        Colonia: '',
+        'Municipio / Ciudad': '',
+        Estado: '',
+        'Codigo postal': '',
+        'Regimen fiscal': client.tax_regime ?? '',
+        'Uso CFDI': '',
+        'Estado del cliente': client.is_active ? 'Activo' : 'Inactivo'
+      };
+    });
+    downloadCsv('clientes_myc_export.csv', clientTemplateColumns, rows);
+  }
+
+  function downloadClientImportErrors() {
+    if (!clientImportPreview?.errors.length) {
+      return;
+    }
+    const rows = clientImportPreview.errors.map((row) => ({
+      ...row.raw,
+      Errores: row.errors.join(' | ')
+    }));
+    downloadCsv('clientes_myc_errores.csv', [...clientImportColumns, 'Errores'], rows);
+  }
+
+  function handleClientImportFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setClientImportFileName(file.name);
+    setClientImportMessage('');
+
+    if (/\.(xlsx|xls)$/i.test(file.name)) {
+      setClientImportColumns(clientTemplateColumns);
+      setClientImportPreview(buildClientImportPreview([], clients));
+      setClientImportMessage('Archivo Excel recibido. La lectura real de XLSX se conectara cuando el backend o parser dedicado este listo; por ahora usa CSV exportado desde Excel para vista previa.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { columns, rows } = parseDelimitedText(String(reader.result ?? ''));
+      setClientImportColumns(columns);
+      setClientImportPreview(buildClientImportPreview(rows, clients));
+    };
+    reader.readAsText(file);
+  }
+
+  function confirmClientImport() {
+    setClientImportMessage('Importacion preparada visualmente. No se enviaron datos al backend en esta version.');
+  }
+
   const modalTitle = editingClientId ? 'Editar cliente' : 'Nuevo cliente';
 
   return (
@@ -690,9 +1239,23 @@ function ClientsPage() {
             <p>Listado de clientes</p>
             <h2>{isLoading ? 'Cargando...' : `${clients.length} clientes`}</h2>
           </div>
-          <button className="primary-button" onClick={openNewClientModal} type="button">
-            Nuevo cliente
-          </button>
+          <div className="toolbar-actions">
+            <button className="table-button" onClick={() => setIsClientImportOpen(true)} type="button">
+              <Upload size={16} />
+              Importar Excel
+            </button>
+            <button className="table-button" onClick={exportClients} type="button">
+              <Download size={16} />
+              Exportar Excel
+            </button>
+            <button className="table-button" onClick={downloadClientTemplate} type="button">
+              <Download size={16} />
+              Descargar plantilla
+            </button>
+            <button className="primary-button" onClick={openNewClientModal} type="button">
+              Nuevo cliente
+            </button>
+          </div>
         </div>
 
         <div className="clients-table" aria-busy={isLoading}>
@@ -993,27 +1556,143 @@ function ClientsPage() {
           </section>
         </div>
       ) : null}
+
+      {isClientImportOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="client-modal import-modal" aria-modal="true" role="dialog">
+            <div className="section-heading">
+              <div>
+                <p>Clientes</p>
+                <h2>Importar clientes</h2>
+              </div>
+              <button className="icon-text-button" onClick={closeClientImportModal} type="button">
+                Cerrar
+              </button>
+            </div>
+
+            <div className="import-upload-zone">
+              <label>
+                Archivo Excel o CSV
+                <input accept=".xlsx,.xls,.csv,.tsv" onChange={handleClientImportFile} type="file" />
+              </label>
+              <div>
+                <strong>{clientImportFileName || 'Sin archivo seleccionado'}</strong>
+                <span>La importacion no se ejecuta automaticamente. Primero se revisa la vista previa.</span>
+              </div>
+            </div>
+
+            {clientImportMessage ? <div className="client-fiscal-note">{clientImportMessage}</div> : null}
+
+            <div className="import-template-grid">
+              <article>
+                <span>Columnas detectadas</span>
+                <strong>{clientImportColumns.length}</strong>
+              </article>
+              <article>
+                <span>Registros validos</span>
+                <strong>{clientImportPreview?.valid.length ?? 0}</strong>
+              </article>
+              <article>
+                <span>Posibles duplicados</span>
+                <strong>{clientImportPreview?.duplicates.length ?? 0}</strong>
+              </article>
+              <article>
+                <span>Con errores</span>
+                <strong>{clientImportPreview?.errors.length ?? 0}</strong>
+              </article>
+            </div>
+
+            <section className="import-preview-section">
+              <h3>Columnas esperadas / detectadas</h3>
+              <div className="import-chip-list">
+                {(clientImportColumns.length ? clientImportColumns : clientTemplateColumns).map((column) => (
+                  <span key={column}>{column}</span>
+                ))}
+              </div>
+            </section>
+
+            <section className="import-preview-section">
+              <h3>Vista previa</h3>
+              <div className="import-preview-list">
+                {clientImportPreview?.rows.length ? (
+                  clientImportPreview.rows.slice(0, 8).map((row) => (
+                    <article className={`import-row import-row--${row.status}`} key={row.id}>
+                      <strong>{row.name}</strong>
+                      <span>{row.rfc} · {row.email}</span>
+                      <small>
+                        {row.status === 'valid'
+                          ? 'Valido'
+                          : row.status === 'duplicate'
+                            ? `Duplicado posible: ${row.duplicates.join(', ')}`
+                            : row.errors.join(', ')}
+                      </small>
+                    </article>
+                  ))
+                ) : (
+                  <div className="clients-empty">Sube un CSV exportado desde Excel para ver registros en esta version.</div>
+                )}
+              </div>
+            </section>
+
+            <div className="client-form__actions client-form__actions--modal">
+              <button
+                className="table-button"
+                disabled={!clientImportPreview?.errors.length}
+                onClick={downloadClientImportErrors}
+                type="button"
+              >
+                Descargar errores
+              </button>
+              <button className="icon-text-button" onClick={closeClientImportModal} type="button">
+                Cancelar
+              </button>
+              <button
+                className="primary-button"
+                disabled={!clientImportPreview?.valid.length}
+                onClick={confirmClientImport}
+                type="button"
+              >
+                Confirmar importacion
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }
 
 function QuotationsPage() {
   const [salesTab, setSalesTab] = useState('quotations');
+  const [quotationDetailTab, setQuotationDetailTab] = useState('info');
   const [quotations, setQuotations] = useState([]);
   const [clients, setClients] = useState([]);
   const [quotationForm, setQuotationForm] = useState(emptyQuotationForm);
   const [detailForm, setDetailForm] = useState(emptyQuotationForm);
+  const [draftItems, setDraftItems] = useState([]);
   const [selectedQuotation, setSelectedQuotation] = useState(null);
-  // Catalogo visual local hasta que existan endpoints backend para productos y servicios.
   const [catalogItems, setCatalogItems] = useState([]);
   const [productForm, setProductForm] = useState(emptyProductForm);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [catalogFilters, setCatalogFilters] = useState({
+    type: 'Todos',
+    category: '',
+    currency: 'Todas',
+    status: 'Todos',
+    search: ''
+  });
+  const [catalogImportFileName, setCatalogImportFileName] = useState('');
+  const [catalogImportColumns, setCatalogImportColumns] = useState([]);
+  const [catalogImportPreview, setCatalogImportPreview] = useState(null);
+  const [catalogImportMessage, setCatalogImportMessage] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isCatalogImportOpen, setIsCatalogImportOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDetailSaving, setIsDetailSaving] = useState(false);
+  const [savingDraftIds, setSavingDraftIds] = useState(new Set());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -1022,16 +1701,36 @@ function QuotationsPage() {
     [clients]
   );
 
+  const filteredCatalogItems = useMemo(
+    () =>
+      catalogItems.filter((item) => {
+        const matchesType = catalogFilters.type === 'Todos' || item.type === catalogFilters.type;
+        const matchesCategory =
+          !catalogFilters.category || normalizeKey(item.category).includes(normalizeKey(catalogFilters.category));
+        const matchesCurrency = catalogFilters.currency === 'Todas' || item.sourceCurrency === catalogFilters.currency;
+        const matchesStatus = catalogFilters.status === 'Todos' || item.status === catalogFilters.status;
+        const searchKey = normalizeKey(`${item.name} ${item.internalKey} ${item.category}`);
+        const matchesSearch = !catalogFilters.search || searchKey.includes(normalizeKey(catalogFilters.search));
+        return matchesType && matchesCategory && matchesCurrency && matchesStatus && matchesSearch;
+      }),
+    [catalogFilters, catalogItems]
+  );
+
+
   async function loadQuotationData() {
     setError('');
     setIsLoading(true);
     try {
-      const [quotationItems, clientItems] = await Promise.all([
+      const [quotationItems, clientItems, catalogApiItems] = await Promise.all([
         listQuotations(),
-        listClients()
+        listClients(),
+        listCatalogItems({ is_active: true })
       ]);
       setQuotations(Array.isArray(quotationItems) ? quotationItems : []);
       setClients(Array.isArray(clientItems) ? clientItems : []);
+      setCatalogItems(
+        Array.isArray(catalogApiItems) ? catalogApiItems.map(mapCatalogItemFromApi) : []
+      );
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -1100,6 +1799,7 @@ function QuotationsPage() {
         validUntil: detail.valid_until ?? '',
         notes: detail.notes ?? ''
       });
+      setQuotationDetailTab('info');
       setIsDetailOpen(true);
     } catch (requestError) {
       setError(requestError.message);
@@ -1110,6 +1810,8 @@ function QuotationsPage() {
     setIsDetailOpen(false);
     setSelectedQuotation(null);
     setDetailForm(emptyQuotationForm);
+    setDraftItems([]);
+    setQuotationDetailTab('info');
     setError('');
   }
 
@@ -1169,18 +1871,63 @@ function QuotationsPage() {
     return quotationTransitions[quotation.status]?.has(action.nextStatus) ?? false;
   }
 
+  function openQuotationPdf(mode = 'view') {
+    if (!selectedQuotation) return;
+    const url = getQuotationPdfUrl(selectedQuotation.id);
+    const pdfWindow = window.open(url, '_blank', 'noopener,noreferrer');
+    if (mode === 'print' && pdfWindow) {
+      pdfWindow.addEventListener('load', () => {
+        pdfWindow.focus();
+        pdfWindow.print();
+      });
+    }
+  }
+
+  async function handleDownloadQuotationPdf() {
+    if (!selectedQuotation) return;
+    setError('');
+    setNotice('');
+    try {
+      const { blob, filename } = await downloadQuotationPdf(selectedQuotation.id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setNotice(`PDF ${filename} generado correctamente`);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
   function openProductModal(item = null) {
     setError('');
     setNotice('');
     if (item) {
       setEditingProductId(item.id);
       setProductForm({
+        category: item.category,
+        internalKey: item.internalKey,
         name: item.name,
+        description: item.description,
         type: item.type,
+        commodity: item.commodity,
+        calibrationScope: item.calibrationScope || 'traceable',
+        quotationLegend: item.quotationLegend,
         satKey: item.satKey,
         satUnit: item.satUnit,
+        internalUnit: item.internalUnit,
+        customInternalUnit: item.customInternalUnit,
         basePrice: item.basePrice,
+        sourceCurrency: item.sourceCurrency,
+        exchangeRate: item.exchangeRate,
         internalCost: item.internalCost,
+        costCurrency: item.costCurrency,
+        margin: item.margin,
+        taxObject: item.taxObject,
         status: item.status
       });
     } else {
@@ -1197,7 +1944,7 @@ function QuotationsPage() {
     setError('');
   }
 
-  function handleProductSubmit(event) {
+  async function handleProductSubmit(event) {
     event.preventDefault();
     setError('');
     setNotice('');
@@ -1206,24 +1953,267 @@ function QuotationsPage() {
       setError('Captura el nombre del producto o servicio.');
       return;
     }
+    if (!productForm.type.trim() || !productForm.category.trim()) {
+      setError('Selecciona tipo y categoria del concepto.');
+      return;
+    }
+    if (productForm.basePrice && Number.isNaN(Number(productForm.basePrice))) {
+      setError('El precio origen debe ser numerico.');
+      return;
+    }
+    if (!validCatalogCurrencies.has(productForm.sourceCurrency)) {
+      setError('Selecciona una moneda origen valida.');
+      return;
+    }
+    if (productForm.commodity === 'calibration' && !productForm.calibrationScope) {
+      setError('Selecciona el alcance de calibracion.');
+      return;
+    }
+    if (productForm.commodity === 'general_service' && !productForm.quotationLegend.trim()) {
+      setError('Captura la leyenda para cotizacion del servicio general.');
+      return;
+    }
+    if (productForm.internalUnit === 'other' && !productForm.customInternalUnit.trim()) {
+      setError('Captura la unidad interna personalizada.');
+      return;
+    }
 
-    const nextItem = {
-      ...productForm,
-      id: editingProductId ?? crypto.randomUUID(),
-      name: productForm.name.trim(),
-      satKey: productForm.satKey.trim(),
-      satUnit: productForm.satUnit.trim(),
-      basePrice: productForm.basePrice,
-      internalCost: productForm.internalCost
+    setIsSaving(true);
+    try {
+      const payload = mapCatalogPayloadFromForm(productForm);
+      const saved = editingProductId
+        ? await updateCatalogItem(editingProductId, payload)
+        : await createCatalogItem(payload);
+      const mapped = mapCatalogItemFromApi(saved);
+      setCatalogItems((current) =>
+        editingProductId
+          ? current.map((item) => (item.id === editingProductId ? mapped : item))
+          : [mapped, ...current]
+      );
+      setNotice(editingProductId ? 'Producto/servicio actualizado' : 'Producto/servicio agregado al catalogo');
+      closeProductModal();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDeleteCatalogItem(item) {
+    if (!window.confirm(`¿Desactivar ${item.name} del Catalogo MYC?`)) {
+      return;
+    }
+    setError('');
+    setNotice('');
+    try {
+      await deleteCatalogItem(item.id);
+      setCatalogItems((current) => current.filter((catalogItem) => catalogItem.id !== item.id));
+      setNotice('Producto/servicio desactivado del catalogo');
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  function updateCatalogFilter(field, value) {
+    setCatalogFilters((current) => ({ ...current, [field]: value }));
+  }
+
+  function openCatalogImportModal() {
+    setCatalogImportFileName('');
+    setCatalogImportColumns([]);
+    setCatalogImportPreview(null);
+    setCatalogImportMessage('');
+    setIsCatalogImportOpen(true);
+  }
+
+  function closeCatalogImportModal() {
+    setIsCatalogImportOpen(false);
+    setCatalogImportFileName('');
+    setCatalogImportColumns([]);
+    setCatalogImportPreview(null);
+    setCatalogImportMessage('');
+  }
+
+  function handleCatalogImportFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setCatalogImportFileName(file.name);
+    setCatalogImportMessage('');
+    if (/\.(xlsx|xls)$/i.test(file.name)) {
+      setCatalogImportColumns(catalogTemplateColumns);
+      setCatalogImportPreview(buildCatalogImportPreview([], catalogItems));
+      setCatalogImportMessage('Archivo Excel recibido. La lectura real XLSX se conectara despues; por ahora usa CSV exportado desde Excel para previsualizar por encabezados.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { columns, rows } = parseDelimitedText(String(reader.result ?? ''));
+      setCatalogImportColumns(columns);
+      setCatalogImportPreview(buildCatalogImportPreview(rows, catalogItems));
     };
+    reader.readAsText(file);
+  }
 
-    setCatalogItems((current) =>
-      editingProductId
-        ? current.map((item) => (item.id === editingProductId ? nextItem : item))
-        : [nextItem, ...current]
+  function confirmCatalogImport() {
+    setCatalogImportMessage('Importacion preparada visualmente. No se agregaron conceptos al catalogo ni se envio informacion al backend.');
+  }
+
+  function downloadCatalogImportErrors() {
+    if (!catalogImportPreview?.errors.length) return;
+    const rows = catalogImportPreview.errors.map((row) => ({
+      ...row.raw,
+      Errores: row.errors.join(' | ')
+    }));
+    downloadCsv('catalogo_myc_errores.csv', [...catalogImportColumns, 'Errores'], rows);
+  }
+
+  function addDraftItem() {
+    setError('');
+    setDraftItems((current) => [
+      ...current,
+      {
+        ...emptyQuotationItemForm,
+        id: crypto.randomUUID(),
+        isDraft: true,
+        catalogSearch: ''
+      }
+    ]);
+  }
+
+  function updateDraftItem(draftId, field, value) {
+    setDraftItems((current) =>
+      current.map((item) => (item.id === draftId ? { ...item, [field]: value } : item))
     );
-    setNotice(editingProductId ? 'Producto/servicio actualizado visualmente' : 'Producto/servicio agregado visualmente');
-    closeProductModal();
+  }
+
+  function selectDraftCatalogConcept(draftId, conceptId) {
+    const item = catalogItems.find((catalogItem) => catalogItem.id === conceptId);
+    if (!item) return;
+    setDraftItems((current) =>
+      current.map((draft) =>
+        draft.id === draftId
+          ? {
+              ...draft,
+              catalogItemId: item.id,
+              catalogSearch: item.name,
+              description: item.description || item.name,
+              unit: item.customInternalUnit || item.internalUnit || item.satUnit || 'Servicio',
+              unitPrice: String(item.finalPriceMxn ?? calculateFinalPriceMxn(item)),
+              currency: 'MXN',
+              satKey: item.satKey || '',
+              satUnit: item.satUnit || '',
+              internalUnit: item.internalUnit || '',
+              commodity: item.commodity || null,
+              calibrationScope: item.calibrationScope || null,
+              quotationLegend: item.quotationLegend || null,
+              taxObject: item.taxObject || 'iva_16',
+              taxRate: item.taxRate ?? 16
+            }
+          : draft
+      )
+    );
+  }
+
+  function cancelDraftItem(draftId) {
+    setDraftItems((current) => current.filter((item) => item.id !== draftId));
+  }
+
+  async function saveDraftItem(draft) {
+    if (!selectedQuotation) return;
+    if (!draft.description.trim()) {
+      setError('Captura la descripcion de la partida.');
+      return;
+    }
+
+    setSavingDraftIds((current) => new Set(current).add(draft.id));
+    setError('');
+    setNotice('');
+    try {
+      const updated = await createQuotationItem(selectedQuotation.id, {
+        catalog_item_id: draft.catalogItemId ? Number(draft.catalogItemId) : null,
+        service_name: draft.description.trim(),
+        description: draft.observations.trim() || null,
+        quantity: Number(draft.quantity || 1),
+        unit: draft.unit?.trim() || null,
+        sat_key: draft.satKey || null,
+        sat_unit: draft.satUnit || null,
+        internal_unit: draft.internalUnit || null,
+        unit_price: Number(draft.unitPrice || 0),
+        discount_percent: Number(draft.discount || 0),
+        currency: draft.currency || 'MXN',
+        commodity: draft.commodity || null,
+        calibration_scope: draft.calibrationScope || null,
+        quotation_legend: draft.quotationLegend || null,
+        tax_object: draft.taxObject || 'iva_16',
+        tax_rate: Number(draft.taxRate ?? 16)
+      });
+      setSelectedQuotation(updated);
+      setNotice(`Partida agregada a ${updated.folio}`);
+      setQuotationDetailTab('items');
+      setDraftItems((current) => current.filter((item) => item.id !== draft.id));
+      await loadQuotationData();
+    } catch (requestError) {
+      setError(`${requestError.message}. La linea se conserva como borrador para corregirla.`);
+    } finally {
+      setSavingDraftIds((current) => {
+        const next = new Set(current);
+        next.delete(draft.id);
+        return next;
+      });
+    }
+  }
+
+  function downloadCatalogTemplate() {
+    downloadCsv('plantilla_catalogo_myc.csv', catalogTemplateColumns, [
+      {
+        Tipo: 'Servicio',
+        Commodity: 'calibration',
+        Categoria: 'Calibracion',
+        'Clave interna': 'Generada por sistema',
+        Nombre: 'Calibracion de manometro',
+        Descripcion: 'Servicio de calibracion por alcance definido',
+        'Clave SAT': '81141504',
+        'Unidad SAT': 'E48',
+        'Unidad interna': 'service',
+        'Unidad interna personalizada': '',
+        'Precio origen': '1000',
+        'Moneda origen': 'MXN',
+        'Tipo de cambio': '1',
+        'Costo interno': '650',
+        'Moneda de costo': 'MXN',
+        'Margen %': '35',
+        'Precio final MXN': '1350',
+        'Objeto impuesto': 'iva_16',
+        Estado: 'Activo'
+      }
+    ]);
+  }
+
+  function exportCatalog() {
+    const rows = catalogItems.map((item) => ({
+      Tipo: item.type,
+      Commodity: item.commodity,
+      Categoria: item.category,
+      'Clave interna': item.internalKey,
+      Nombre: item.name,
+      Descripcion: item.description,
+      'Clave SAT': item.satKey,
+      'Unidad SAT': item.satUnit,
+      'Unidad interna': item.internalUnit,
+      'Unidad interna personalizada': item.customInternalUnit,
+      'Precio origen': item.basePrice,
+      'Moneda origen': item.sourceCurrency,
+      'Tipo de cambio': item.exchangeRate,
+      'Costo interno': item.internalCost,
+      'Moneda de costo': item.costCurrency,
+      'Margen %': item.margin,
+      'Precio final MXN': item.finalPriceMxn,
+      'Objeto impuesto': item.taxObject,
+      Estado: item.status
+    }));
+    downloadCsv('catalogo_myc_export.csv', catalogTemplateColumns, rows);
   }
 
   return (
@@ -1257,7 +2247,15 @@ function QuotationsPage() {
           onClick={() => setSalesTab('catalog')}
           type="button"
         >
-          Productos / Servicios
+          Catalogo MYC
+        </button>
+        <button
+          aria-selected={salesTab === 'template'}
+          className={salesTab === 'template' ? 'module-tab is-active' : 'module-tab'}
+          onClick={() => setSalesTab('template')}
+          type="button"
+        >
+          Plantilla cotizacion
         </button>
       </div>
 
@@ -1324,43 +2322,138 @@ function QuotationsPage() {
           )}
         </div>
       </section>
-      ) : (
+      ) : salesTab === 'catalog' ? (
       <section className="clients-list-panel">
         <div className="section-heading">
           <div>
-            <p>Catalogo visual</p>
-            <h2>{catalogItems.length} productos / servicios</h2>
+            <p>Catalogo MYC</p>
+            <h2>{filteredCatalogItems.length} conceptos visibles</h2>
           </div>
-          <button className="primary-button" onClick={() => openProductModal()} type="button">
-            Nuevo producto/servicio
-          </button>
+          <div className="toolbar-actions">
+            <button
+              className="table-button"
+              onClick={openCatalogImportModal}
+              type="button"
+            >
+              <Upload size={16} />
+              Importar Excel
+            </button>
+            <button className="table-button" onClick={exportCatalog} type="button">
+              <Download size={16} />
+              Exportar Excel
+            </button>
+            <button className="table-button" onClick={downloadCatalogTemplate} type="button">
+              <Download size={16} />
+              Descargar plantilla
+            </button>
+            <button className="primary-button" onClick={() => openProductModal()} type="button">
+              Nuevo producto/servicio
+            </button>
+          </div>
         </div>
 
         <div className="client-fiscal-note catalog-note">
-          Esta seccion es frontend visual. Se conectara al backend cuando exista el modulo de catalogo.
+          Cada servicio MYC debe existir como concepto independiente por magnitud, alcance y precio. Esta seccion es frontend visual hasta conectar backend.
+        </div>
+
+        <div className="import-chip-list catalog-rules">
+          <span>Duplicados: nombre normalizado</span>
+          <span>Duplicados: clave interna</span>
+          <span>Duplicados: categoria + nombre</span>
+          <span>Conversion V1: tipo de cambio manual</span>
+        </div>
+
+        <div className="catalog-category-map">
+          <section>
+            <h3>Servicios</h3>
+            <div className="import-chip-list">
+              {serviceCategories.map((category) => (
+                <span key={category}>{category}</span>
+              ))}
+            </div>
+          </section>
+          <section>
+            <h3>Productos</h3>
+            <div className="import-chip-list">
+              {productCategories.map((category) => (
+                <span key={category}>{category}</span>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <div className="catalog-filters">
+          <label>
+            Tipo
+            <select onChange={(event) => updateCatalogFilter('type', event.target.value)} value={catalogFilters.type}>
+              <option>Todos</option>
+              <option>Producto</option>
+              <option>Servicio</option>
+            </select>
+          </label>
+          <label>
+            Categoria
+            <input
+              onChange={(event) => updateCatalogFilter('category', event.target.value)}
+              placeholder="Filtrar categoria"
+              type="text"
+              value={catalogFilters.category}
+            />
+          </label>
+          <label>
+            Busqueda
+            <input
+              onChange={(event) => updateCatalogFilter('search', event.target.value)}
+              placeholder="Nombre o clave"
+              type="text"
+              value={catalogFilters.search}
+            />
+          </label>
+          <label>
+            Moneda
+            <select
+              onChange={(event) => updateCatalogFilter('currency', event.target.value)}
+              value={catalogFilters.currency}
+            >
+              <option>Todas</option>
+              <option>MXN</option>
+              <option>USD</option>
+              <option>EUR</option>
+            </select>
+          </label>
+          <label>
+            Estado
+            <select onChange={(event) => updateCatalogFilter('status', event.target.value)} value={catalogFilters.status}>
+              <option>Todos</option>
+              <option>Activo</option>
+              <option>Inactivo</option>
+            </select>
+          </label>
         </div>
 
         <div className="clients-table products-table">
           <div className="clients-table__head">
-            <span>Nombre</span>
             <span>Tipo</span>
+            <span>Categoria</span>
+            <span>Clave</span>
+            <span>Nombre</span>
             <span>Clave SAT</span>
-            <span>Unidad SAT</span>
-            <span>Precio base</span>
-            <span>Costo interno</span>
+            <span>Precio origen</span>
+            <span>Precio final MXN</span>
             <span>Estado</span>
             <span>Acciones</span>
           </div>
 
-          {catalogItems.length ? (
-            catalogItems.map((item) => (
+          {filteredCatalogItems.length ? (
+            filteredCatalogItems.map((item) => (
               <div className="clients-table__row" key={item.id}>
-                <span>{item.name}</span>
                 <span>{item.type}</span>
+                <span>{item.category || '-'}</span>
+                <span>{item.internalKey || '-'}</span>
+                <span>{item.name}</span>
                 <span>{item.satKey || '-'}</span>
-                <span>{item.satUnit || '-'}</span>
-                <span>{formatMoney(item.basePrice)}</span>
-                <span>{formatMoney(item.internalCost)}</span>
+                <span>{formatMoney(item.basePrice)} {item.sourceCurrency}</span>
+                <span>{formatMoney(item.finalPriceMxn ?? calculateFinalPriceMxn(item))}</span>
                 <span>
                   <mark className={item.status === 'Activo' ? 'status-pill' : 'status-pill status-pill--muted'}>
                     {item.status}
@@ -1370,12 +2463,112 @@ function QuotationsPage() {
                   <button className="table-button" onClick={() => openProductModal(item)} type="button">
                     Editar
                   </button>
+                  <button className="table-button" onClick={() => handleDeleteCatalogItem(item)} type="button">
+                    Desactivar
+                  </button>
                 </span>
               </div>
             ))
           ) : (
             <div className="clients-empty">Todavia no hay productos o servicios cargados en esta vista.</div>
           )}
+        </div>
+      </section>
+      ) : (
+      <section className="clients-list-panel quotation-template-panel">
+        <div className="section-heading">
+          <div>
+            <p>Plantilla visual</p>
+            <h2>Estructura de cotizacion MYC</h2>
+          </div>
+          <button
+            className="table-button"
+            onClick={() => setNotice('El PDF real se genera desde el detalle de cada cotizacion.')}
+            type="button"
+          >
+            PDF desde cotizacion
+          </button>
+        </div>
+
+        <div className="quotation-sheet">
+          <header className="quotation-sheet__header">
+            <div className="quotation-sheet__brand">
+              <img alt="MYC" src={mycLogo} />
+              <div>
+                <strong>Metrologia y Servicios MYC</strong>
+                <span>Servicios de metrologia, calibracion, venta y soporte tecnico especializado</span>
+              </div>
+            </div>
+          </header>
+
+          <section className="quotation-sheet__title-block">
+            <p>COTIZACION</p>
+            <span>Propuesta comercial de servicios, calibracion y soluciones tecnicas</span>
+          </section>
+
+          <div className="quotation-sheet__meta">
+            <article className="quotation-sheet__meta-card quotation-sheet__meta-card--folio">
+              <span>Folio</span>
+              <strong>MYC-06-2026-0001</strong>
+            </article>
+            <article className="quotation-sheet__meta-card">
+              <span>Emision</span>
+              <strong>18 jun 2026</strong>
+            </article>
+            <article className="quotation-sheet__meta-card">
+              <span>Vigencia</span>
+              <strong>15 dias</strong>
+            </article>
+          </div>
+
+          <div className="quotation-sheet__grid">
+            <section>
+              <h3>Datos del cliente</h3>
+              <p>Nombre comercial, contacto, correo, telefono y domicilio operativo.</p>
+            </section>
+            <section>
+              <h3>Datos fiscales</h3>
+              <p>Razon social, RFC, regimen fiscal, uso CFDI y codigo postal fiscal.</p>
+            </section>
+          </div>
+
+          <section className="quotation-lines-preview">
+            <h3>Partidas</h3>
+            <div className="quotation-lines-preview__head">
+              <span>Descripcion</span>
+              <span>Cantidad</span>
+              <span>Unidad</span>
+              <span>Precio unitario</span>
+              <span>Descuento</span>
+              <span>Importe</span>
+            </div>
+            <div className="quotation-lines-preview__row">
+              <span>Servicio de calibracion por concepto independiente</span>
+              <span>1</span>
+              <span>Servicio</span>
+              <span>$1,000.00</span>
+              <span>0%</span>
+              <span>$1,000.00</span>
+            </div>
+          </section>
+
+          <div className="quotation-sheet__totals">
+            <span>Subtotal $1,000.00</span>
+            <span>IVA $160.00</span>
+            <strong>Total $1,160.00</strong>
+            <small>Total con letra: mil ciento sesenta pesos 00/100 MXN</small>
+          </div>
+
+          <div className="quotation-sheet__grid">
+            <section>
+              <h3>Condiciones comerciales</h3>
+              <p>Tiempo de entrega, forma de pago, moneda, vigencia, alcance y condiciones aplicables.</p>
+            </section>
+            <section>
+              <h3>Notas y autorizacion</h3>
+              <p>Notas internas/externas, firma comercial, firma de autorizacion y trazabilidad futura.</p>
+            </section>
+          </div>
         </div>
       </section>
       )}
@@ -1450,6 +2643,17 @@ function QuotationsPage() {
               <mark className={`quotation-status quotation-status--large status-${selectedQuotation.status}`}>
                 {quotationStatusLabels[selectedQuotation.status] ?? selectedQuotation.status}
               </mark>
+              <div className="quotation-pdf-actions">
+                <button className="table-button" onClick={() => openQuotationPdf('view')} type="button">
+                  Vista PDF
+                </button>
+                <button className="table-button" onClick={handleDownloadQuotationPdf} type="button">
+                  Descargar PDF
+                </button>
+                <button className="table-button" onClick={() => openQuotationPdf('print')} type="button">
+                  Imprimir
+                </button>
+              </div>
               <button
                 className="icon-text-button"
                 onClick={closeQuotationDetail}
@@ -1459,109 +2663,406 @@ function QuotationsPage() {
               </button>
             </div>
 
-            <section className="quotation-section">
-              <div className="quotation-section__title">
-                <p>Resumen economico</p>
-                <h3>Total cotizado</h3>
-              </div>
-              <div className="quotation-summary">
-                <div>
-                  <span>Subtotal</span>
-                  <strong>{formatMoney(selectedQuotation.subtotal)}</strong>
-                </div>
-                <div>
-                  <span>IVA</span>
-                  <strong>{formatMoney(selectedQuotation.tax_total)}</strong>
-                </div>
-                <div className="quotation-total-card">
-                  <span>Total</span>
-                  <strong>{formatMoney(selectedQuotation.total)}</strong>
-                </div>
-              </div>
-            </section>
-
-            <form className="quotation-detail-form" onSubmit={handleDetailSubmit}>
-              <section className="quotation-section">
-                <div className="quotation-section__title">
-                  <p>Datos comerciales</p>
-                  <h3>Ficha editable</h3>
-                </div>
-                <div className="quotation-commercial-grid">
-                  <article>
-                    <span>Cliente</span>
-                    <strong>{getClientDisplayName(clientsById.get(selectedQuotation.client_id))}</strong>
-                  </article>
-                  <article>
-                    <span>Emision</span>
-                    <strong>{formatDate(selectedQuotation.issued_on)}</strong>
-                  </article>
-                  <label>
-                    Vigencia
-                    <input
-                      onChange={(event) => updateDetailForm('validUntil', event.target.value)}
-                      type="date"
-                      value={detailForm.validUntil}
-                    />
-                  </label>
-                  <article>
-                    <span>Asesor</span>
-                    <strong>{selectedQuotation.advisor_id ? `#${selectedQuotation.advisor_id}` : 'Sin asesor asignado'}</strong>
-                  </article>
-                </div>
-              </section>
-
-              <section className="quotation-section">
-                <div className="quotation-section__title">
-                  <p>Notas</p>
-                  <h3>Condiciones y observaciones</h3>
-                </div>
-                <label className="quotation-notes-field">
-                  <textarea
-                    onChange={(event) => updateDetailForm('notes', event.target.value)}
-                    placeholder="Sin notas registradas."
-                    rows={4}
-                    value={detailForm.notes}
-                  />
-                </label>
-              </section>
-
-              <div className="quotation-detail-save">
-                <span>Por ahora se editan vigencia y notas. Partidas y PDF se conectaran despues.</span>
-                <button className="primary-button" disabled={isDetailSaving} type="submit">
-                  {isDetailSaving ? 'Guardando...' : 'Guardar cambios'}
+            <div className="client-modal-tabs quotation-detail-tabs" role="tablist" aria-label="Detalle de cotizacion">
+              {[
+                ['info', 'Informacion'],
+                ['items', 'Partidas'],
+                ['history', 'Historial']
+              ].map(([key, label]) => (
+                <button
+                  aria-selected={quotationDetailTab === key}
+                  className={quotationDetailTab === key ? 'client-modal-tab is-active' : 'client-modal-tab'}
+                  key={key}
+                  onClick={() => setQuotationDetailTab(key)}
+                  type="button"
+                >
+                  {label}
                 </button>
-              </div>
-            </form>
+              ))}
+            </div>
 
-            <section className="quotation-section">
-              <div className="quotation-section__title">
-                <p>Acciones de estado</p>
-                <h3>Flujo comercial</h3>
-              </div>
-              <div className="quotation-actions">
-                {quotationActions.map((action) => (
-                  <button
-                    className="table-button"
-                    disabled={!isActionAllowed(selectedQuotation, action)}
-                    key={action.key}
-                    onClick={() => handleQuotationStatus(selectedQuotation, action)}
-                    type="button"
-                  >
-                    {action.label}
+            {quotationDetailTab === 'info' ? (
+              <>
+                <section className="quotation-section">
+                  <div className="quotation-section__title">
+                    <p>Resumen economico</p>
+                    <h3>Total cotizado</h3>
+                  </div>
+                  <div className="quotation-summary">
+                    <div>
+                      <span>Subtotal</span>
+                      <strong>{formatMoney(calculateQuotationSummary(selectedQuotation).subtotal)}</strong>
+                    </div>
+                    <div>
+                      <span>IVA</span>
+                      <strong>{formatMoney(calculateQuotationSummary(selectedQuotation).tax)}</strong>
+                    </div>
+                    <div className="quotation-total-card">
+                      <span>Total</span>
+                      <strong>{formatMoney(calculateQuotationSummary(selectedQuotation).total)}</strong>
+                    </div>
+                  </div>
+                </section>
+
+                <form className="quotation-detail-form" onSubmit={handleDetailSubmit}>
+                  <section className="quotation-section">
+                    <div className="quotation-section__title">
+                      <p>Datos comerciales</p>
+                      <h3>Ficha editable</h3>
+                    </div>
+                    <div className="quotation-commercial-grid">
+                      <article>
+                        <span>Cliente</span>
+                        <strong>{getClientDisplayName(clientsById.get(selectedQuotation.client_id))}</strong>
+                      </article>
+                      <article>
+                        <span>Emision</span>
+                        <strong>{formatDate(selectedQuotation.issued_on)}</strong>
+                      </article>
+                      <label>
+                        Vigencia
+                        <input
+                          onChange={(event) => updateDetailForm('validUntil', event.target.value)}
+                          type="date"
+                          value={detailForm.validUntil}
+                        />
+                      </label>
+                      <article>
+                        <span>Asesor</span>
+                        <strong>{selectedQuotation.advisor_id ? `#${selectedQuotation.advisor_id}` : 'Sin asesor asignado'}</strong>
+                      </article>
+                    </div>
+                  </section>
+
+                  <section className="quotation-section">
+                    <div className="quotation-section__title">
+                      <p>Notas</p>
+                      <h3>Condiciones y observaciones</h3>
+                    </div>
+                    <label className="quotation-notes-field">
+                      <textarea
+                        onChange={(event) => updateDetailForm('notes', event.target.value)}
+                        placeholder="Sin notas registradas."
+                        rows={4}
+                        value={detailForm.notes}
+                      />
+                    </label>
+                  </section>
+
+                  <div className="quotation-detail-save">
+                    <span>Se mantiene PATCH actual para vigencia y notas.</span>
+                    <button className="primary-button" disabled={isDetailSaving} type="submit">
+                      {isDetailSaving ? 'Guardando...' : 'Guardar cambios'}
+                    </button>
+                  </div>
+                </form>
+
+                <section className="quotation-section">
+                  <div className="quotation-section__title">
+                    <p>Acciones de estado</p>
+                    <h3>Flujo comercial</h3>
+                  </div>
+                  <div className="quotation-actions">
+                    {quotationActions.map((action) => (
+                      <button
+                        className="table-button"
+                        disabled={!isActionAllowed(selectedQuotation, action)}
+                        key={action.key}
+                        onClick={() => handleQuotationStatus(selectedQuotation, action)}
+                        type="button"
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              </>
+            ) : null}
+
+            {quotationDetailTab === 'items' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <div>
+                    <p>Partidas reales</p>
+                    <h3>{getQuotationItems(selectedQuotation).length + draftItems.length} partidas</h3>
+                  </div>
+                  <button className="primary-button" onClick={addDraftItem} type="button">
+                    + Agregar partida
                   </button>
+                </div>
+
+                <div className="quotation-items-table">
+                  <div className="quotation-items-table__head">
+                    <span>Descripcion</span>
+                    <span>Cantidad</span>
+                    <span>Unidad</span>
+                    <span>Precio unitario</span>
+                    <span>Descuento</span>
+                    <span>Subtotal</span>
+                    <span>Acciones</span>
+                  </div>
+                  {getQuotationItems(selectedQuotation).length || draftItems.length ? (
+                    <>
+                      {getQuotationItems(selectedQuotation).map((item) => {
+                        const amounts = calculateLineAmounts(item);
+                        return (
+                          <div className="quotation-items-table__row" key={item.id}>
+                            <span>{item.service_name}</span>
+                            <span>{item.quantity}</span>
+                            <span>{item.unit || 'Servicio'}</span>
+                            <span>{formatMoney(item.unit_price)}</span>
+                            <span>{item.discount_percent ?? 0}%</span>
+                            <span>{formatMoney(amounts.subtotal)}</span>
+                            <span className="clients-table__actions">
+                              <button className="table-button" disabled type="button">
+                                Editar despues
+                              </button>
+                              <button className="table-button" disabled type="button">
+                                Eliminar
+                              </button>
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {draftItems.map((draft) => {
+                        const amounts = calculateLineAmounts(draft);
+                        const filteredConcepts = catalogItems
+                          .filter((item) => item.status !== 'Inactivo')
+                          .filter((item) =>
+                            normalizeKey(`${item.name} ${item.category} ${item.internalKey}`).includes(normalizeKey(draft.catalogSearch))
+                          )
+                          .slice(0, 5);
+                        const isSavingDraft = savingDraftIds.has(draft.id);
+                        return (
+                          <div className="quotation-items-table__row quotation-items-table__row--draft" key={draft.id}>
+                          <span className="quote-line-concept">
+                            <mark className="status-pill status-pill--muted">Borrador</mark>
+                            <input
+                              list={`catalog-options-${draft.id}`}
+                              onChange={(event) => {
+                                const selected = catalogItems.find((item) => item.name === event.target.value);
+                                if (selected) {
+                                  selectDraftCatalogConcept(draft.id, selected.id);
+                                } else {
+                                  updateDraftItem(draft.id, 'catalogSearch', event.target.value);
+                                  updateDraftItem(draft.id, 'description', event.target.value);
+                                }
+                              }}
+                              placeholder="Buscar concepto / descripcion"
+                              type="text"
+                              value={draft.catalogSearch || draft.description}
+                            />
+                            <datalist id={`catalog-options-${draft.id}`}>
+                              {filteredConcepts.map((item) => (
+                                <option key={item.id} label={`${item.category} · ${item.internalKey}`} value={item.name} />
+                              ))}
+                            </datalist>
+                          </span>
+                          <span>
+                            <input
+                              min="1"
+                              onChange={(event) => updateDraftItem(draft.id, 'quantity', event.target.value)}
+                              type="number"
+                              value={draft.quantity}
+                            />
+                          </span>
+                          <span>
+                            <input
+                              onChange={(event) => updateDraftItem(draft.id, 'unit', event.target.value)}
+                              type="text"
+                              value={draft.unit}
+                            />
+                          </span>
+                          <span>
+                            <input
+                              min="0"
+                              onChange={(event) => updateDraftItem(draft.id, 'unitPrice', event.target.value)}
+                              step="0.01"
+                              type="number"
+                              value={draft.unitPrice}
+                            />
+                          </span>
+                          <span>
+                            <input
+                              min="0"
+                              onChange={(event) => updateDraftItem(draft.id, 'discount', event.target.value)}
+                              step="0.01"
+                              type="number"
+                              value={draft.discount}
+                            />
+                          </span>
+                          <span>{formatMoney(amounts.subtotal)}</span>
+                          <span className="clients-table__actions">
+                            <button
+                              className="table-button table-button--primary"
+                              disabled={isSavingDraft}
+                              onClick={() => saveDraftItem(draft)}
+                              type="button"
+                            >
+                              {isSavingDraft ? 'Guardando...' : 'Guardar partida'}
+                            </button>
+                            <button
+                              className="table-button"
+                              disabled={isSavingDraft}
+                              onClick={() => cancelDraftItem(draft.id)}
+                              type="button"
+                            >
+                              Cancelar borrador
+                            </button>
+                          </span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    <div className="clients-empty">Todavia no hay partidas en esta cotizacion.</div>
+                  )}
+                </div>
+
+                <div className="quotation-summary quotation-summary--items">
+                  <div>
+                    <span>Subtotal</span>
+                    <strong>{formatMoney(calculateQuotationDraftSummary(selectedQuotation, draftItems).subtotal)}</strong>
+                  </div>
+                  <div>
+                    <span>Impuestos</span>
+                    <strong>{formatMoney(calculateQuotationDraftSummary(selectedQuotation, draftItems).tax)}</strong>
+                  </div>
+                  <div className="quotation-total-card">
+                    <span>Total</span>
+                    <strong>{formatMoney(calculateQuotationDraftSummary(selectedQuotation, draftItems).total)}</strong>
+                  </div>
+                </div>
+                <div className="client-fiscal-note">
+                  Total con letra: {totalToSpanishText(calculateQuotationDraftSummary(selectedQuotation, draftItems).total)}
+                </div>
+              </section>
+            ) : null}
+
+            {quotationDetailTab === 'history' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Historial</p>
+                  <h3>Eventos de cotizacion</h3>
+                </div>
+                <div className="quotation-history-list">
+                  <article>
+                    <strong>Cotizacion creada</strong>
+                    <span>{formatDate(selectedQuotation.issued_on)}</span>
+                  </article>
+                  <article>
+                    <strong>Ultima actualizacion</strong>
+                    <span>{new Date(selectedQuotation.updated_at).toLocaleString('es-MX')}</span>
+                  </article>
+                  <article>
+                    <strong>Estado actual</strong>
+                    <span>{quotationStatusLabels[selectedQuotation.status] ?? selectedQuotation.status}</span>
+                  </article>
+                </div>
+              </section>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {isCatalogImportOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="client-modal import-modal" aria-modal="true" role="dialog">
+            <div className="section-heading">
+              <div>
+                <p>Catalogo MYC</p>
+                <h2>Importar conceptos</h2>
+              </div>
+              <button className="icon-text-button" onClick={closeCatalogImportModal} type="button">
+                Cerrar
+              </button>
+            </div>
+
+            <div className="import-upload-zone">
+              <label>
+                Archivo Excel o CSV
+                <input accept=".xlsx,.xls,.csv,.tsv" onChange={handleCatalogImportFile} type="file" />
+              </label>
+              <div>
+                <strong>{catalogImportFileName || 'Sin archivo seleccionado'}</strong>
+                <span>La vista previa busca columnas por encabezado, no por posicion.</span>
+              </div>
+            </div>
+
+            {catalogImportMessage ? <div className="client-fiscal-note">{catalogImportMessage}</div> : null}
+
+            <div className="import-template-grid">
+              <article>
+                <span>Columnas</span>
+                <strong>{catalogImportColumns.length}</strong>
+              </article>
+              <article>
+                <span>Validos</span>
+                <strong>{catalogImportPreview?.valid.length ?? 0}</strong>
+              </article>
+              <article>
+                <span>Duplicados</span>
+                <strong>{catalogImportPreview?.duplicates.length ?? 0}</strong>
+              </article>
+              <article>
+                <span>Errores</span>
+                <strong>{catalogImportPreview?.errors.length ?? 0}</strong>
+              </article>
+            </div>
+
+            <section className="import-preview-section">
+              <h3>Columnas esperadas / detectadas</h3>
+              <div className="import-chip-list">
+                {(catalogImportColumns.length ? catalogImportColumns : catalogTemplateColumns).map((column) => (
+                  <span key={column}>{column}</span>
                 ))}
               </div>
             </section>
 
-            <section className="quotation-future-area">
-              <h3>Preparado para siguientes iteraciones</h3>
-              <div>
-                <span>Partidas</span>
-                <span>IVA</span>
-                <span>PDF</span>
-                <span>Historial</span>
+            <section className="import-preview-section">
+              <h3>Vista previa</h3>
+              <div className="import-preview-list">
+                {catalogImportPreview?.rows.length ? (
+                  catalogImportPreview.rows.slice(0, 8).map((row) => (
+                    <article className={`import-row import-row--${row.status}`} key={row.id}>
+                      <strong>{row.name}</strong>
+                      <span>{row.type} · {row.category} · {row.price} {row.currency}</span>
+                      <small>
+                        {row.status === 'valid'
+                          ? 'Valido'
+                          : row.status === 'duplicate'
+                            ? `Duplicado posible: ${row.duplicates.join(', ')}`
+                            : row.errors.join(', ')}
+                      </small>
+                    </article>
+                  ))
+                ) : (
+                  <div className="clients-empty">Sube un CSV exportado desde Excel para previsualizar conceptos.</div>
+                )}
               </div>
             </section>
+
+            <div className="client-form__actions client-form__actions--modal">
+              <button
+                className="table-button"
+                disabled={!catalogImportPreview?.errors.length}
+                onClick={downloadCatalogImportErrors}
+                type="button"
+              >
+                Descargar errores
+              </button>
+              <button className="icon-text-button" onClick={closeCatalogImportModal} type="button">
+                Cancelar
+              </button>
+              <button
+                className="primary-button"
+                disabled={!catalogImportPreview?.valid.length}
+                onClick={confirmCatalogImport}
+                type="button"
+              >
+                Confirmar importacion
+              </button>
+            </div>
           </section>
         </div>
       ) : null}
@@ -1580,6 +3081,59 @@ function QuotationsPage() {
 
             <form className="client-form client-form--modal" noValidate onSubmit={handleProductSubmit}>
               <label>
+                Tipo
+                <select
+                  onChange={(event) => {
+                    const nextType = event.target.value;
+                    updateProductForm('type', nextType);
+                    updateProductForm('category', '');
+                    updateProductForm('commodity', nextType === 'Producto' ? 'sale' : 'calibration');
+                  }}
+                  value={productForm.type}
+                >
+                  <option>Producto</option>
+                  <option>Servicio</option>
+                </select>
+              </label>
+              <label>
+                Commodity
+                <select
+                  onChange={(event) => updateProductForm('commodity', event.target.value)}
+                  value={productForm.commodity}
+                >
+                  {catalogCommodityOptions
+                    .filter((option) =>
+                      productForm.type === 'Producto'
+                        ? option.value === 'sale'
+                        : option.value !== 'sale'
+                    )
+                    .map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Categoria
+                <select
+                  onChange={(event) => updateProductForm('category', event.target.value)}
+                  value={productForm.category}
+                >
+                  <option value="">Seleccionar categoria</option>
+                  {(productForm.type === 'Producto' ? productCategories : serviceCategories).map((category) => (
+                    <option key={category}>{category}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Clave interna generada
+                <input
+                  readOnly
+                  placeholder="Se genera al guardar"
+                  type="text"
+                  value={productForm.internalKey}
+                />
+              </label>
+              <label>
                 Nombre
                 <input
                   onChange={(event) => updateProductForm('name', event.target.value)}
@@ -1588,12 +3142,13 @@ function QuotationsPage() {
                   value={productForm.name}
                 />
               </label>
-              <label>
-                Tipo
-                <select onChange={(event) => updateProductForm('type', event.target.value)} value={productForm.type}>
-                  <option>Producto</option>
-                  <option>Servicio</option>
-                </select>
+              <label className="form-field--wide">
+                Descripcion
+                <textarea
+                  onChange={(event) => updateProductForm('description', event.target.value)}
+                  rows={3}
+                  value={productForm.description}
+                />
               </label>
               <label>
                 Clave SAT
@@ -1612,13 +3167,78 @@ function QuotationsPage() {
                 />
               </label>
               <label>
-                Precio base
+                Unidad interna
+                <select
+                  onChange={(event) => updateProductForm('internalUnit', event.target.value)}
+                  value={productForm.internalUnit}
+                >
+                  {internalUnitOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              {productForm.internalUnit === 'other' ? (
+                <label>
+                  Unidad personalizada
+                  <input
+                    onChange={(event) => updateProductForm('customInternalUnit', event.target.value)}
+                    type="text"
+                    value={productForm.customInternalUnit}
+                  />
+                </label>
+              ) : null}
+              {productForm.commodity === 'calibration' ? (
+                <label>
+                  Alcance de calibracion
+                  <select
+                    onChange={(event) => updateProductForm('calibrationScope', event.target.value)}
+                    value={productForm.calibrationScope}
+                  >
+                    {calibrationScopeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {productForm.commodity === 'general_service' ? (
+                <label className="form-field--wide">
+                  Leyenda para cotizacion
+                  <textarea
+                    onChange={(event) => updateProductForm('quotationLegend', event.target.value)}
+                    rows={2}
+                    value={productForm.quotationLegend}
+                  />
+                </label>
+              ) : null}
+              <label>
+                Precio origen
                 <input
                   min="0"
                   onChange={(event) => updateProductForm('basePrice', event.target.value)}
                   step="0.01"
                   type="number"
                   value={productForm.basePrice}
+                />
+              </label>
+              <label>
+                Moneda origen
+                <select
+                  onChange={(event) => updateProductForm('sourceCurrency', event.target.value)}
+                  value={productForm.sourceCurrency}
+                >
+                  <option>MXN</option>
+                  <option>USD</option>
+                  <option>EUR</option>
+                </select>
+              </label>
+              <label>
+                Tipo de cambio
+                <input
+                  min="0"
+                  onChange={(event) => updateProductForm('exchangeRate', event.target.value)}
+                  step="0.0001"
+                  type="number"
+                  value={productForm.exchangeRate}
                 />
               </label>
               <label>
@@ -1632,6 +3252,43 @@ function QuotationsPage() {
                 />
               </label>
               <label>
+                Moneda de costo
+                <select
+                  onChange={(event) => updateProductForm('costCurrency', event.target.value)}
+                  value={productForm.costCurrency}
+                >
+                  <option>MXN</option>
+                  <option>USD</option>
+                  <option>EUR</option>
+                </select>
+              </label>
+              <label>
+                Margen %
+                <input
+                  min="0"
+                  onChange={(event) => updateProductForm('margin', event.target.value)}
+                  step="0.01"
+                  type="number"
+                  value={productForm.margin}
+                />
+              </label>
+              <label>
+                Objeto impuesto
+                <select
+                  onChange={(event) => updateProductForm('taxObject', event.target.value)}
+                  value={productForm.taxObject}
+                >
+                  {taxObjectOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="price-preview-card">
+                <span>Precio final MXN</span>
+                <strong>{formatMoney(calculateFinalPriceMxn(productForm))}</strong>
+                <small>Manual: precio_origen x tipo_cambio x (1 + margen / 100)</small>
+              </div>
+              <label>
                 Estado
                 <select onChange={(event) => updateProductForm('status', event.target.value)} value={productForm.status}>
                   <option>Activo</option>
@@ -1639,12 +3296,16 @@ function QuotationsPage() {
                 </select>
               </label>
 
+              <div className="client-fiscal-note form-field--wide">
+                La conversion automatica se conectara posteriormente a un proveedor de tipo de cambio.
+              </div>
+
               <div className="client-form__actions client-form__actions--modal">
-                <button className="icon-text-button" onClick={closeProductModal} type="button">
+                <button className="icon-text-button" disabled={isSaving} onClick={closeProductModal} type="button">
                   Cancelar
                 </button>
-                <button className="primary-button" type="submit">
-                  {editingProductId ? 'Guardar cambios' : 'Agregar visualmente'}
+                <button className="primary-button" disabled={isSaving} type="submit">
+                  {isSaving ? 'Guardando...' : editingProductId ? 'Guardar cambios' : 'Agregar al catalogo'}
                 </button>
               </div>
             </form>

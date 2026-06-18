@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.client import Client
+from app.models.catalog_item import CatalogItem
 from app.models.quotation import Quotation, QuotationItem
 from app.schemas.quotation import (
     QuotationCreate,
@@ -16,7 +17,6 @@ from app.schemas.quotation import (
 )
 from app.services.audit_logs import write_audit_log
 
-TAX_RATE = Decimal("0.16")
 TERMINAL_STATUSES = {"accepted", "rejected", "expired", "cancelled"}
 ALLOWED_TRANSITIONS = {
     "draft": {"sent", "cancelled"},
@@ -31,6 +31,10 @@ ALLOWED_TRANSITIONS = {
 
 def _money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _decimal_or_zero(value: Decimal | None) -> Decimal:
+    return Decimal("0.00") if value is None else Decimal(value)
 
 
 def _json_safe(value):
@@ -56,6 +60,68 @@ def _ensure_client_exists(db: Session, client_id: int) -> None:
         )
 
 
+def _get_catalog_item(db: Session, catalog_item_id: int | None) -> CatalogItem | None:
+    if catalog_item_id is None:
+        return None
+    item = db.get(CatalogItem, catalog_item_id)
+    if item is None or not item.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Concepto de catalogo no encontrado",
+        )
+    return item
+
+
+def _quotation_item_values(
+    db: Session,
+    payload: QuotationItemCreate | QuotationItemUpdate,
+    *,
+    existing_item: QuotationItem | None = None,
+) -> dict:
+    values = payload.model_dump(exclude_unset=True)
+    catalog_item = _get_catalog_item(db, values.get("catalog_item_id"))
+    if catalog_item is not None:
+        values.setdefault("service_name", catalog_item.name)
+        values.setdefault("description", catalog_item.description)
+        values.setdefault(
+            "unit",
+            catalog_item.custom_internal_unit
+            if catalog_item.internal_unit == "other"
+            else catalog_item.internal_unit or catalog_item.sat_unit,
+        )
+        values.setdefault("sat_key", catalog_item.sat_key)
+        values.setdefault("sat_unit", catalog_item.sat_unit)
+        values.setdefault("internal_unit", catalog_item.internal_unit)
+        values.setdefault("unit_price", catalog_item.final_price_mxn)
+        values.setdefault("currency", "MXN")
+        values.setdefault("commodity", catalog_item.commodity)
+        values.setdefault("calibration_scope", catalog_item.calibration_scope)
+        values.setdefault("quotation_legend", catalog_item.quotation_legend)
+        values.setdefault("tax_object", catalog_item.tax_object)
+        values.setdefault("tax_rate", catalog_item.tax_rate)
+    if "currency" in values and values["currency"]:
+        values["currency"] = values["currency"].upper()
+    if existing_item is None and values.get("tax_object") is None:
+        values.setdefault("tax_object", "iva_16")
+    if existing_item is None and values.get("tax_rate") is None:
+        values["tax_rate"] = Decimal("16.00")
+    if existing_item is None and values.get("discount_percent") is None:
+        values["discount_percent"] = Decimal("0.00")
+    if existing_item is not None and "catalog_item_id" in values and values["catalog_item_id"] is None:
+        values["commodity"] = None
+        values["calibration_scope"] = None
+        values["quotation_legend"] = None
+        values["sat_key"] = None
+        values["sat_unit"] = None
+        values["internal_unit"] = None
+    if existing_item is None and not values.get("service_name"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Captura el nombre de la partida o selecciona un concepto del catalogo",
+        )
+    return values
+
+
 def _next_quotation_folio(db: Session, issued_on: date) -> str:
     prefix = f"MYC-{issued_on:%m}-{issued_on:%y}-"
     last_folio = db.scalar(
@@ -74,11 +140,16 @@ def _next_quotation_folio(db: Session, issued_on: date) -> str:
 def _recalculate_totals(quotation: Quotation) -> None:
     active_items = [item for item in quotation.items if item.is_active is not False]
     subtotal = Decimal("0.00")
+    tax_total = Decimal("0.00")
     for item in active_items:
-        item.total = _money(Decimal(item.quantity) * item.unit_price)
+        gross = Decimal(item.quantity) * _decimal_or_zero(item.unit_price)
+        discount = gross * (_decimal_or_zero(item.discount_percent) / Decimal("100"))
+        item.total = _money(gross - discount)
+        item.tax_total = _money(item.total * (_decimal_or_zero(item.tax_rate) / Decimal("100")))
         subtotal += item.total
+        tax_total += item.tax_total
     quotation.subtotal = _money(subtotal)
-    quotation.tax_total = _money(quotation.subtotal * TAX_RATE)
+    quotation.tax_total = _money(tax_total)
     quotation.total = _money(quotation.subtotal + quotation.tax_total)
 
 
@@ -122,7 +193,7 @@ def create_quotation(
         status="draft",
     )
     quotation.items = [
-        QuotationItem(**item.model_dump(), total=Decimal("0.00"))
+        QuotationItem(**_quotation_item_values(db, item), total=Decimal("0.00"))
         for item in payload.items
     ]
     _recalculate_totals(quotation)
@@ -189,7 +260,7 @@ def add_quotation_item(
             status_code=status.HTTP_409_CONFLICT,
             detail="No se pueden agregar partidas a una cotizacion en estado terminal",
         )
-    item = QuotationItem(**payload.model_dump(), total=Decimal("0.00"))
+    item = QuotationItem(**_quotation_item_values(db, payload), total=Decimal("0.00"))
     quotation.items.append(item)
     _recalculate_totals(quotation)
     db.flush()
@@ -227,7 +298,7 @@ def update_quotation_item(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Partida no encontrada",
         )
-    updates = payload.model_dump(exclude_unset=True)
+    updates = _quotation_item_values(db, payload, existing_item=item)
     previous_values = {key: getattr(item, key) for key in updates}
     for key, value in updates.items():
         setattr(item, key, value)

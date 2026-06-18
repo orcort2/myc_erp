@@ -20,6 +20,7 @@ from app.services.quotations import (
     update_quotation,
     update_quotation_item,
 )
+from app.services.quotation_pdfs import generate_quotation_pdf
 
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
@@ -46,6 +47,19 @@ def get_quotation_by_id(
     quotation_id: int, db: Session = Depends(get_db)
 ) -> QuotationRead:
     return get_quotation(db, quotation_id)
+
+
+@router.get("/{quotation_id}/pdf")
+def get_quotation_pdf(
+    quotation_id: int,
+    db: Session = Depends(get_db),
+) -> Response:
+    pdf_bytes, filename = generate_quotation_pdf(db, quotation_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.patch("/{quotation_id}", response_model=QuotationRead)

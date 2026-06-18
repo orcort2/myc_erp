@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-18 10:37 CST
+Ultima actualizacion: 2026-06-18 12:32:44 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -33,13 +33,27 @@ e53b18d Add equipment and field sheets modules
 Estado Git verificado:
 
 ```text
+M backend/app/main.py
+M backend/app/models/__init__.py
+M backend/app/models/quotation.py
+M backend/app/routers/quotations.py
+M backend/app/schemas/quotation.py
+M backend/app/services/quotations.py
+M backend/requirements.txt
 M docs/BACKUP_ESTADO_ACTUAL.md
 M frontend/src/pages/App.jsx
 M frontend/src/services/api.js
 M frontend/src/styles/global.css
+?? backend/app/models/catalog_item.py
+?? backend/app/routers/catalog_items.py
+?? backend/app/schemas/catalog_item.py
+?? backend/app/services/catalog_items.py
+?? backend/app/services/quotation_pdfs.py
+?? backend/app/templates/
+?? backend/migrations/versions/a1b2c3d4e5f6_add_catalog_items.py
+?? backend/migrations/versions/b2c3d4e5f6a7_complete_catalog_items.py
 ```
 
-El cambio backend pendiente es CORS para permitir tambien `http://127.0.0.1:5174` cuando Vite usa puerto alterno.
 `frontend/assets/` contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en `frontend/src/assets/myc-logo.png`.
 
 ## Objetivo del sistema
@@ -146,6 +160,8 @@ email-validator
 python-jose
 passlib
 python-multipart
+Jinja2
+weasyprint
 ```
 
 ## Dependencias frontend
@@ -187,6 +203,7 @@ backend/
       equipment.py
       field_sheet.py
       certificate.py
+      catalog_item.py
       audit_log.py
     schemas/
       auth.py
@@ -197,6 +214,7 @@ backend/
       equipment.py
       field_sheet.py
       certificate.py
+      catalog_item.py
       audit_log.py
     routers/
       auth.py
@@ -208,6 +226,7 @@ backend/
       equipment.py
       field_sheets.py
       certificates.py
+      catalog_items.py
     services/
       auth.py
       modules.py
@@ -217,7 +236,11 @@ backend/
       equipment.py
       field_sheets.py
       certificates.py
+      catalog_items.py
+      quotation_pdfs.py
       audit_logs.py
+    templates/
+      quotation_pdf.html
     utils/
   migrations/
     env.py
@@ -230,6 +253,8 @@ backend/
       7a8b9c0d1e12_create_field_sheets.py
       8b9c0d1e2f13_create_certificates.py
       9c0d1e2f3a14_add_user_roles.py
+      a1b2c3d4e5f6_add_catalog_items.py
+      b2c3d4e5f6a7_complete_catalog_items.py
 
 frontend/
   index.html
@@ -285,6 +310,7 @@ service_orders
 equipment
 field_sheets
 certificates
+catalog_items
 ```
 
 Rutas base:
@@ -320,6 +346,7 @@ Cotizaciones:
 GET /api/quotations
 POST /api/quotations
 GET /api/quotations/{quotation_id}
+GET /api/quotations/{quotation_id}/pdf
 PATCH /api/quotations/{quotation_id}
 POST /api/quotations/{quotation_id}/items
 PATCH /api/quotations/{quotation_id}/items/{item_id}
@@ -391,6 +418,16 @@ POST /api/certificates/{certificate_id}/suspend
 DELETE /api/certificates/{certificate_id}
 ```
 
+Catalogo MYC:
+
+```text
+GET /api/catalog-items
+POST /api/catalog-items
+GET /api/catalog-items/{catalog_item_id}
+PATCH /api/catalog-items/{catalog_item_id}
+DELETE /api/catalog-items/{catalog_item_id}
+```
+
 Los `DELETE` actuales hacen borrado logico, no borrado fisico.
 
 ## Modulos MVP 1 definidos
@@ -415,6 +452,7 @@ service_orders
 equipment
 field_sheets
 certificates
+catalog_items
 ```
 
 ## Tablas iniciales modeladas
@@ -433,6 +471,7 @@ equipment
 field_sheets
 certificates
 audit_logs
+catalog_items
 ```
 
 ## Auth y Roles
@@ -531,10 +570,12 @@ El folio de cotizacion se genera con formato:
 MYC-MM-AA-0001
 ```
 
-IVA configurado en codigo:
+Impuestos de cotizacion:
 
 ```text
-16%
+Las partidas usan tax_rate por linea.
+tax_object soportado: iva_16, iva_0, exempt, not_subject.
+El total suma subtotal, impuesto y total por partida.
 ```
 
 Estados permitidos:
@@ -559,6 +600,21 @@ accepted/rejected/expired/cancelled -> estados terminales, sin edicion
 ```
 
 Cada alta, edicion, cambio de estado y baja logica escribe auditoria.
+
+PDF de cotizacion implementado:
+
+```text
+Endpoint: GET /api/quotations/{quotation_id}/pdf
+Servicio: backend/app/services/quotation_pdfs.py
+Plantilla: backend/app/templates/quotation_pdf.html
+Motor: WeasyPrint
+Respuesta: application/pdf
+Content-Disposition: inline; filename="Cotizacion_<folio>.pdf"
+```
+
+El PDF usa identidad comercial de Metrologia y Servicios MYC, logo, folio, fecha de emision, vigencia, datos de cliente, datos fiscales, partidas, leyenda por partida, subtotal, impuestos, total, total con letra, condiciones comerciales, notas y firma/autorizacion.
+
+Si la cotizacion no tiene partidas, el PDF se genera con tabla vacia y mensaje "Sin partidas registradas".
 
 ## Ordenes de servicio
 
@@ -907,7 +963,7 @@ migracion de users.role_id hacia user_roles cuando exista role_id
 Estado de PostgreSQL local verificado:
 
 ```text
-alembic current -> 9c0d1e2f3a14 (head)
+alembic current -> b2c3d4e5f6a7 (head)
 ```
 
 ## Verificacion backend
@@ -919,6 +975,7 @@ Verificaciones ejecutadas correctamente:
 ../venv/bin/alembic heads
 ../venv/bin/alembic upgrade head --sql
 ../venv/bin/alembic upgrade head
+../venv/bin/alembic current
 npm run build
 ```
 
@@ -934,9 +991,12 @@ GET /api/certificates -> 200 []
 Auth rollback: register 200 Tecnico, me 200, login 200 Tecnico, refresh 200 bearer
 Flujo rollback: client 201, service_order 201, equipment 201 registered, field_sheet 201 draft, complete_missing 422, patch 200 in_progress, complete 200 completed, equipment_after_complete 200 calibrated, review 200 under_review
 Flujo rollback certificado: client 201, service_order 201, equipment 201 registered, field_sheet 201 draft, field_sheet_patch 200 in_progress, field_sheet_complete 200 completed, certificate 201 MYCA-06-2026-0001 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released
+PDF cotizacion: generate_quotation_pdf -> b'%PDF', endpoint TestClient GET /api/quotations/4/pdf -> 200 application/pdf, filename Cotizacion_MYC-06-26-0004.pdf, 42344 bytes
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
+
+Nota PDF: `pdftoppm`/`pdfinfo` no estan instalados en esta Mac, por lo que no se hizo render PNG con Poppler desde Codex.
 
 Prueba visual en navegador local:
 
@@ -1029,6 +1089,16 @@ Boton Cotizacion por cliente pide confirmacion antes de llamar POST /api/quotati
 Solo se envian al backend campos soportados por schema actual: legal_name, commercial_name, rfc, phone, email, tax_regime y contacts en alta.
 Contacto se crea en alta como primer contacto; backend actual no expone PATCH de contactos, domicilio ni campos CFDI dentro de ClientUpdate.
 Archivo duplicado frontend/src/styles/global (1).css eliminado; estilos consolidados en frontend/src/styles/global.css.
+Preparacion frontend de importacion/exportacion masiva agregada:
+- Botones Importar Excel, Exportar Excel y Descargar plantilla.
+- Plantilla descargable CSV compatible con Excel con campos comerciales, domicilio y fiscales.
+- Exportacion CSV compatible con Excel usando datos actuales disponibles en GET /api/clients.
+- Modal visual de importacion con carga de archivo, columnas detectadas/esperadas, registros validos, duplicados y errores.
+- Reglas visuales: nombre comercial obligatorio, correo valido si existe, codigo postal numerico.
+- Duplicados preparados por RFC, correo y nombre normalizado.
+- Boton Confirmar importacion preparado sin enviar datos al backend.
+- Descarga visual de errores como CSV corregible.
+- Lectura real XLSX queda pendiente de parser/backend; CSV exportado desde Excel ya permite vista previa frontend.
 ```
 
 Modulo Cotizaciones frontend iniciado:
@@ -1044,20 +1114,196 @@ Boton Nueva cotizacion abre modal Liquid Glass.
 Alta de cotizacion cableada contra POST /api/quotations con Cliente, Fecha vigencia y Notas.
 Detalle de cotizacion abre modal Liquid Glass reorganizado como ficha premium:
 - Encabezado con folio, cliente y badge grande de estado.
-- Resumen economico con subtotal, IVA y total destacado.
+- Subpestanas internas: Informacion, Partidas e Historial.
+- Resumen economico con subtotal, impuestos y total destacado.
 - Datos comerciales con emision, vigencia editable, cliente y asesor.
 - Notas editables.
 - Acciones de estado agrupadas.
+- Botones PDF agregados al modal: Vista PDF, Descargar PDF e Imprimir.
+- Vista PDF abre GET /api/quotations/{quotation_id}/pdf en nueva pestana.
+- Descargar PDF obtiene blob y descarga Cotizacion_<folio>.pdf.
+- Imprimir abre el PDF para usar impresion del navegador.
 Edicion limitada cableada contra PATCH /api/quotations/{id} para vigencia y notas.
-Area futura preparada visualmente para Partidas, IVA, PDF e Historial.
+Pestana Partidas implementada:
+- Boton + Agregar partida crea una linea editable dentro de la misma tabla; ya no abre modal adicional.
+- Cada linea nueva aparece como Borrador hasta guardarse.
+- La linea permite buscar concepto/descripcion con datalist del Catalogo MYC por nombre, categoria o clave.
+- Precarga descripcion, unidad, precio unitario, moneda y clave SAT cuando existe concepto.
+- Campos editables en linea: descripcion/concepto, cantidad, unidad, precio unitario y descuento %.
+- Acciones por linea borrador: Guardar partida y Cancelar borrador.
+- Las partidas existentes muestran acciones preparadas para edicion/eliminacion futura.
+- Calculo visual en tiempo real: importe, descuento, subtotal partida, impuestos por tasa de cada linea, total y total con letra.
+- Integracion inicial con backend usando POST /api/quotations/{quotation_id}/items.
+- Backend actual guarda service_name, description, quantity, unit, unit_price, descuento, moneda, SAT, commodity, calibration_scope, quotation_legend, tax_object y tax_rate.
+Pestana Historial preparada visualmente con fecha de creacion, ultima actualizacion y estado actual.
 Acciones visuales de estado cableadas contra endpoints existentes: send, waiting, accept, reject, expire y cancel.
 Las acciones de estado piden confirmacion y se deshabilitan si la transicion no aplica.
-Subpestanas internas agregadas al modulo: Cotizaciones y Productos / Servicios.
-Productos / Servicios existe como catalogo visual frontend-only, sin backend todavia.
-Catalogo visual muestra Nombre, Tipo, Clave SAT, Unidad SAT, Precio base, Costo interno, Estado y Acciones.
-Boton Nuevo producto/servicio abre modal Liquid Glass; alta/edicion se guarda solo en memoria de la sesion.
-El codigo deja comentario claro de que esta seccion se conectara al backend cuando exista el modulo de catalogo.
+Subpestanas internas agregadas al modulo: Cotizaciones, Catalogo MYC y Plantilla cotizacion.
+Catalogo MYC ya esta conectado al backend real /api/catalog-items.
+Catalogo MYC separa conceptos por Producto / Servicio y permite filtrar por tipo, categoria, moneda, estado y busqueda por nombre o clave.
+Categorias visibles:
+- Servicios: Calibracion, Mantenimiento, Calificacion, Validacion, Capacitacion, Consultoria.
+- Productos: Patrones, Equipos, Accesorios, Consumibles.
+Catalogo visual muestra Tipo, Categoria, Clave interna generada, Nombre, Clave SAT, Precio origen, Precio final MXN, Estado y Acciones.
+Botones visuales agregados: Nuevo producto/servicio, Importar Excel, Exportar Excel y Descargar plantilla.
+Plantilla de catalogo descargable CSV compatible con Excel.
+Importacion de catalogo preparada visualmente por nombre de encabezado, no por posicion.
+Validaciones visuales de importacion: nombre obligatorio, tipo obligatorio, categoria obligatoria, precio numerico, moneda valida y duplicados por nombre normalizado, clave interna y categoria + nombre.
+Campos de catalogo preparados/conectados: Tipo, Commodity, Categoria, Clave interna generada por backend, Nombre, Descripcion, Clave SAT, Unidad SAT, Unidad interna, Unidad interna personalizada, Precio origen, Moneda origen, Tipo de cambio, Costo interno, Moneda de costo, Margen %, Precio final MXN, Objeto impuesto y Estado.
+Reglas visibles: cada servicio MYC debe existir como concepto independiente por magnitud, alcance y precio.
+Duplicados preparados visualmente por nombre normalizado, clave interna y categoria + nombre.
+Multimoneda preparada en UI:
+- Moneda origen.
+- Precio origen.
+- Tipo de cambio manual.
+- Margen %.
+- Precio final MXN calculado con precio_origen x tipo_cambio x (1 + margen / 100).
+- Aviso visible de que la conversion automatica se conectara despues a proveedor de tipo de cambio.
+Boton Nuevo producto/servicio abre modal Liquid Glass; alta/edicion se guarda contra backend.
+Boton Desactivar hace baja logica contra DELETE /api/catalog-items/{catalog_item_id}.
+Plantilla visual de cotizacion agregada:
+- Documento usa identidad comercial "Metrologia y Servicios MYC"; no usa "MYC SYSTEM" dentro de la cotizacion.
+- Logo MYC e informacion comercial de MYC alineados como encabezado institucional superior izquierdo.
+- Titulo principal centrado "COTIZACION".
+- Subtitulo "Propuesta comercial de servicios, calibracion y soluciones tecnicas".
+- Folio, fecha de emision y vigencia en tarjetas destacadas; folio con mayor jerarquia visual.
+- Datos del cliente y datos fiscales.
+- Tabla de partidas con descripcion, cantidad, unidad, precio unitario, descuento e importe.
+- Subtotal, impuestos/IVA, total y total con letra.
+- Condiciones comerciales, notas, firmas/autorizacion preparada visualmente.
+La plantilla visual ya queda preparada para consumir partidas reales de cotizacion.
 No se implemento PDF ni impresion.
+```
+
+Modulo backend Catalogo MYC agregado:
+
+```text
+Modelo nuevo: backend/app/models/catalog_item.py
+Tabla: catalog_items
+Schemas: backend/app/schemas/catalog_item.py
+Service: backend/app/services/catalog_items.py
+Router: backend/app/routers/catalog_items.py
+Router registrado en backend/app/main.py bajo /api/catalog-items.
+
+Endpoints:
+GET    /api/catalog-items
+POST   /api/catalog-items
+GET    /api/catalog-items/{catalog_item_id}
+PATCH  /api/catalog-items/{catalog_item_id}
+DELETE /api/catalog-items/{catalog_item_id}
+
+Filtros GET:
+item_type
+commodity
+category
+origin_currency
+tax_object
+is_active
+search
+
+Search busca en:
+name
+internal_key
+description
+category
+sat_key
+sat_unit
+
+Campos principales:
+item_type
+commodity
+category
+internal_key
+name
+description
+sat_key
+sat_unit
+internal_unit
+custom_internal_unit
+origin_price
+origin_currency
+exchange_rate
+margin_percent
+final_price_mxn
+internal_cost
+cost_currency
+calibration_scope
+quotation_legend
+tax_object
+tax_rate
+
+Reglas implementadas:
+- item_type permitido: product, service.
+- commodity permitido: calibration, maintenance, repair, sale, general_service.
+- calibration_scope permitido: accredited_iso_17025, traceable, accredited_linked_lab o null.
+- internal_unit permitido: service, piece, equipment, hour, day, package, lot, meter, kilogram, liter, other.
+- tax_object permitido: iva_16, iva_0, exempt, not_subject.
+- tax_object default: iva_16.
+- tax_rate se normaliza automaticamente: iva_16 -> 16, iva_0/exempt/not_subject -> 0.
+- internal_key ya no se captura manualmente; se genera en backend.
+- Formatos de internal_key: SER-CAL-0001, SER-MAN-0001, SER-REP-0001, SER-GEN-0001 y PRO-VEN-0001.
+- Si item_type = product, commodity debe ser sale.
+- Si item_type = service, commodity no debe ser sale.
+- Si commodity = calibration, calibration_scope es obligatorio.
+- Si commodity != calibration, calibration_scope debe ser null.
+- Si internal_unit = other, custom_internal_unit es obligatorio.
+- final_price_mxn se calcula como origin_price * exchange_rate * (1 + margin_percent / 100).
+- final_price_mxn puede recibirse, pero se recalcula al cambiar origin_price, exchange_rate o margin_percent.
+- quotation_legend se autogenera para calibration, maintenance, repair y sale.
+- general_service exige quotation_legend manual.
+- Alta, edicion y baja logica escriben audit_log.
+
+Migracion nueva:
+backend/migrations/versions/a1b2c3d4e5f6_add_catalog_items.py
+backend/migrations/versions/b2c3d4e5f6a7_complete_catalog_items.py
+
+La migracion crea indices:
+internal_key
+name
+item_type
+commodity
+category
+is_active
+origin_currency
+tax_object
+
+Tambien crea unicidad parcial para internal_key activo cuando internal_key no es null.
+
+quotation_items extendido de forma compatible con columnas opcionales:
+catalog_item_id
+unit
+currency
+commodity
+calibration_scope
+quotation_legend
+sat_key
+sat_unit
+internal_unit
+tax_object
+tax_rate
+discount_percent
+tax_total
+
+Cuando se agrega una partida con catalog_item_id, el backend copia datos del catalogo a quotation_items para conservar historico de cotizacion:
+description
+unit
+unit_price
+currency
+commodity
+calibration_scope
+quotation_legend
+sat_key
+sat_unit
+internal_unit
+tax_object
+tax_rate
+
+Los totales de cotizacion se recalculan por linea:
+importe = quantity * unit_price
+descuento = importe * discount_percent / 100
+subtotal_linea = importe - descuento
+tax_total_linea = subtotal_linea * tax_rate / 100
+total_cotizacion = suma(subtotal_linea) + suma(tax_total_linea)
 ```
 
 Modulos visibles en /dashboard:
@@ -1094,7 +1340,7 @@ Variables visuales principales definidas en `frontend/src/styles/global.css`:
 --glass-border
 ```
 
-La UI todavia no tiene CRUD visual completo de clientes. Ese es el siguiente modulo frontend recomendado.
+La UI ya tiene CRUD visual inicial de Clientes y modulo Ventas/Cotizaciones con Catalogo MYC conectado al backend.
 
 ## Comandos de arranque
 
