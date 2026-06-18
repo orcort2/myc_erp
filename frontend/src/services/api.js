@@ -116,3 +116,50 @@ export async function getDashboardCounts() {
 
   return Object.fromEntries(results);
 }
+
+export async function listClients() {
+  return request('/clients');
+}
+
+export async function createClient(payload) {
+  return request('/clients', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateClient(clientId, payload) {
+  return request(`/clients/${clientId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createQuotation(payload) {
+  return request('/quotations', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function listQuotations() {
+  return request('/quotations');
+}
+
+export async function getQuotation(quotationId) {
+  return request(`/quotations/${quotationId}`);
+}
+
+export async function updateQuotation(quotationId, payload) {
+  return request(`/quotations/${quotationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function changeQuotationStatus(quotationId, action, comment = null) {
+  return request(`/quotations/${quotationId}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ comment })
+  });
+}

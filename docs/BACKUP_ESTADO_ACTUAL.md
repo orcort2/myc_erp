@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-17 17:27:09 CST
+Ultima actualizacion: 2026-06-18 10:37 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -33,15 +33,10 @@ e53b18d Add equipment and field sheets modules
 Estado Git verificado:
 
 ```text
-M backend/app/core/config.py
 M docs/BACKUP_ESTADO_ACTUAL.md
-M frontend/index.html
 M frontend/src/pages/App.jsx
 M frontend/src/services/api.js
 M frontend/src/styles/global.css
-?? frontend/assets/
-?? frontend/package-lock.json
-?? frontend/src/assets/
 ```
 
 El cambio backend pendiente es CORS para permitir tambien `http://127.0.0.1:5174` cuando Vite usa puerto alterno.
@@ -116,8 +111,17 @@ No esta dentro de `backend/.venv`.
 Para usarlo:
 
 ```bash
+cd /Users/saulcortes/Desktop/myc_erp
 source venv/bin/activate
 ```
+
+Cuando se active correctamente, la terminal debe mostrar algo parecido a:
+
+```text
+(venv) saulcortes@MacBook-Air-de-Saul myc_erp %
+```
+
+Si no aparece `(venv)` o los comandos usan el Python del sistema de macOS, significa que el entorno virtual no esta activo.
 
 O directamente:
 
@@ -1001,6 +1005,61 @@ Contadores reales visibles en modulos y resumen operativo:
 - Certificados
 ```
 
+Modulo Clientes frontend iniciado:
+
+```text
+/dashboard#clientes abre vista real de Clientes.
+Consume GET /api/clients para listado.
+Vista principal limpia con encabezado, boton Nuevo cliente y tabla/listado.
+Tabla principal muestra columnas clave: Cliente, RFC, Contacto, Telefono, Correo, Estado y Acciones.
+Listado tiene estados explicitos de carga, vacio y error.
+Formulario de cliente se abre en modal Liquid Glass; no queda fijo en pantalla.
+Modal de alta/edicion separado en pestanas: Datos generales, Domicilio y Datos fiscales.
+Datos generales: Nombre comercial, RFC, Contacto, Telefono, Correo y Estado.
+Domicilio preparado en frontend: Calle, Numero exterior, Numero interior, Colonia, Municipio/Ciudad, Estado, Codigo postal y Pais.
+Datos fiscales preparados en frontend: Razon social, RFC fiscal, Codigo postal fiscal, Regimen fiscal, Uso CFDI.
+Aviso fiscal visible: los datos fiscales completos se conectaran al modulo de facturacion.
+Botones visuales preparados: Subir constancia fiscal y Capturar manualmente. No hay extraccion automatica todavia.
+Modal de edicion reutiliza el mismo formulario, precarga datos y muestra Guardar cambios.
+Validaciones frontend: Nombre comercial requerido, RFC requerido, correo valido si se captura y codigos postales solo numericos.
+Botones del modal se deshabilitan durante guardado y el boton principal muestra Guardando...
+Alta de cliente cableada contra POST /api/clients.
+Edicion de cliente cableada contra PATCH /api/clients/{id}.
+Boton Cotizacion por cliente pide confirmacion antes de llamar POST /api/quotations.
+Solo se envian al backend campos soportados por schema actual: legal_name, commercial_name, rfc, phone, email, tax_regime y contacts en alta.
+Contacto se crea en alta como primer contacto; backend actual no expone PATCH de contactos, domicilio ni campos CFDI dentro de ClientUpdate.
+Archivo duplicado frontend/src/styles/global (1).css eliminado; estilos consolidados en frontend/src/styles/global.css.
+```
+
+Modulo Cotizaciones frontend iniciado:
+
+```text
+/dashboard#cotizaciones abre vista real de Ventas / Cotizaciones.
+Consume GET /api/quotations para listado y GET /api/clients para resolver nombres de cliente.
+Tabla principal muestra Folio, Cliente, Asesor, Fecha emision, Vigencia, Estado y Total.
+El boton Ver fue retirado; cada fila completa es clickeable y abre el detalle de cotizacion.
+Las filas tienen hover/focus visible y se pueden abrir con Enter al recibir foco.
+Estados visuales implementados: Draft, Sent, Waiting, Accepted, Rejected, Expired y Cancelled.
+Boton Nueva cotizacion abre modal Liquid Glass.
+Alta de cotizacion cableada contra POST /api/quotations con Cliente, Fecha vigencia y Notas.
+Detalle de cotizacion abre modal Liquid Glass reorganizado como ficha premium:
+- Encabezado con folio, cliente y badge grande de estado.
+- Resumen economico con subtotal, IVA y total destacado.
+- Datos comerciales con emision, vigencia editable, cliente y asesor.
+- Notas editables.
+- Acciones de estado agrupadas.
+Edicion limitada cableada contra PATCH /api/quotations/{id} para vigencia y notas.
+Area futura preparada visualmente para Partidas, IVA, PDF e Historial.
+Acciones visuales de estado cableadas contra endpoints existentes: send, waiting, accept, reject, expire y cancel.
+Las acciones de estado piden confirmacion y se deshabilitan si la transicion no aplica.
+Subpestanas internas agregadas al modulo: Cotizaciones y Productos / Servicios.
+Productos / Servicios existe como catalogo visual frontend-only, sin backend todavia.
+Catalogo visual muestra Nombre, Tipo, Clave SAT, Unidad SAT, Precio base, Costo interno, Estado y Acciones.
+Boton Nuevo producto/servicio abre modal Liquid Glass; alta/edicion se guarda solo en memoria de la sesion.
+El codigo deja comentario claro de que esta seccion se conectara al backend cuando exista el modulo de catalogo.
+No se implemento PDF ni impresion.
+```
+
 Modulos visibles en /dashboard:
 
 ```text
@@ -1046,7 +1105,16 @@ cd /Users/saulcortes/Desktop/myc_erp
 venv/bin/uvicorn backend.app.main:app --reload
 ```
 
-Si se ejecuta desde `backend/`, usar:
+Forma recomendada cuando se quiere activar el entorno y trabajar desde `backend/`:
+
+```bash
+cd /Users/saulcortes/Desktop/myc_erp
+source venv/bin/activate
+cd backend
+uvicorn app.main:app --reload
+```
+
+Si se ejecuta desde `backend/` sin activar el entorno, usar el binario del venv de forma explicita:
 
 ```bash
 cd /Users/saulcortes/Desktop/myc_erp/backend
@@ -1064,7 +1132,8 @@ npm run dev
 ## Pendientes inmediatos recomendados
 
 1. Decidir si se commitea `frontend/package-lock.json`.
-2. Crear primer CRUD visual completo: Clientes.
-3. Crear modulo de calidad para revision formal de certificados.
-4. Conectar frontend profundo a cotizaciones, ordenes de servicio, equipos, hojas de campo y certificados.
-5. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
+2. Conectar catalogo Productos / Servicios a backend cuando se defina schema y endpoints.
+3. Agregar partidas reales a cotizaciones.
+4. Crear modulo de calidad para revision formal de certificados.
+5. Conectar frontend profundo a ordenes de servicio, equipos, hojas de campo y certificados.
+6. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
