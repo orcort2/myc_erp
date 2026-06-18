@@ -65,7 +65,9 @@
       border-bottom: 2px solid #078a8f;
       border-top: 2px solid #078a8f;
       margin: 10px 0 16px;
-      padding: 10px 0;
+      min-height: 74px;
+      padding: 10px 124px;
+      position: relative;
       text-align: center;
     }
 
@@ -85,7 +87,7 @@
     .meta {
       display: grid;
       gap: 8px;
-      grid-template-columns: 1.3fr 1fr 1fr;
+      grid-template-columns: 1.2fr .9fr .9fr 1fr;
       margin-bottom: 14px;
     }
 
@@ -237,6 +239,29 @@
       text-align: center;
     }
 
+    .full-terms {
+      page-break-before: always;
+    }
+
+    .full-terms article {
+      border-bottom: 1px solid #d9e8e9;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+    }
+
+    .full-terms h3 {
+      color: #073846;
+      font-size: 13px;
+      margin: 0 0 6px;
+      text-transform: uppercase;
+    }
+
+    .full-terms p,
+    .terms-lines p {
+      margin: 0 0 4px;
+      white-space: pre-line;
+    }
+
     .signature-line {
       border-top: 1px solid #66858d;
       margin: 42px auto 7px;
@@ -251,6 +276,34 @@
       padding-top: 8px;
       text-align: center;
     }
+
+    .document-control {
+      border: 1px solid #b8d5d7;
+      border-radius: 7px 0 0 7px;
+      color: #0d3b48;
+      min-width: 124px;
+      padding: 4px 6px;
+      position: absolute;
+      right: 0;
+      text-align: right;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .document-control span {
+      color: #50717b;
+      display: block;
+      font-size: 7.8px;
+      font-weight: 700;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+    }
+
+    .document-control strong {
+      display: block;
+      font-size: 9.5px;
+      margin-bottom: 3px;
+    }
   </style>
 </head>
 <body>
@@ -260,22 +313,34 @@
       <img alt="MYC" src="{{ logo_uri }}">
       {% endif %}
       <div>
-        <h1>Metrolog&iacute;a y Servicios MYC</h1>
-        <p>Servicios de metrolog&iacute;a, calibraci&oacute;n, venta y soporte t&eacute;cnico especializado.</p>
+        <h1>{{ template_config.company_name }}</h1>
+        <p>{{ template_config.company_tagline or "" }}</p>
       </div>
     </section>
     <section class="company-info">
-      <p><strong>Metrolog&iacute;a y Servicios MYC</strong></p>
-      <p>Soluciones t&eacute;cnicas, calibraci&oacute;n y soporte especializado.</p>
-      <p>RFC: MYC000000XXX</p>
-      <p>contacto@mycmetrology.com.mx</p>
-      <p>www.mycmetrology.com.mx</p>
+      <p><strong>{{ template_config.company_name }}</strong></p>
+      <p>{{ template_config.company_tagline or "" }}</p>
+      <p>RFC: {{ template_config.company_rfc or "-" }}</p>
+      <p>{{ template_config.company_email or "-" }}</p>
+      <p>{{ template_config.company_website or "-" }}</p>
+      {% if template_config.company_phone %}<p>Tel: {{ template_config.company_phone }}</p>{% endif %}
+      {% if template_config.company_address %}<p>{{ template_config.company_address }}</p>{% endif %}
     </section>
   </header>
 
   <section class="title">
-    <h2>COTIZACI&Oacute;N</h2>
-    <p>Propuesta comercial de servicios, calibraci&oacute;n y soluciones t&eacute;cnicas</p>
+    <div class="document-control">
+      <span>C&oacute;digo</span>
+      <strong>{{ template_config.document_code or "-" }}</strong>
+      {% if template_config.document_revision %}
+      <span>Revisi&oacute;n</span>
+      <strong>{{ template_config.document_revision }}</strong>
+      {% endif %}
+      <span>Emisi&oacute;n</span>
+      <strong>{{ template_config.document_issued_on|date }}</strong>
+    </div>
+    <h2>{{ template_config.document_title }}</h2>
+    <p>{{ template_config.document_subtitle or "" }}</p>
   </section>
 
   <section class="meta">
@@ -290,6 +355,10 @@
     <article class="meta-card">
       <span>Vigencia</span>
       <strong>{{ quotation.valid_until|date }}</strong>
+    </article>
+    <article class="meta-card">
+      <span>Vendedor</span>
+      <strong>{{ advisor_name }}</strong>
     </article>
   </section>
 
@@ -367,9 +436,12 @@
   <section class="grid notes">
     <article class="box">
       <h3>Condiciones comerciales</h3>
-      <p>1. Precios expresados en moneda nacional, salvo indicaci&oacute;n contraria.</p>
-      <p>2. Vigencia sujeta a la fecha indicada en esta cotizaci&oacute;n.</p>
-      <p>3. Tiempos de entrega y alcance final se confirman al recibir autorizaci&oacute;n.</p>
+      <div class="terms-lines">
+        <p>{{ template_config.commercial_terms or "Sin condiciones comerciales configuradas." }}</p>
+      </div>
+      {% if template_config.show_summary_terms and template_config.terms_version %}
+      <p><strong>Versi&oacute;n de t&eacute;rminos:</strong> {{ template_config.terms_version }}</p>
+      {% endif %}
     </article>
     <article class="box">
       <h3>Notas</h3>
@@ -377,10 +449,39 @@
     </article>
   </section>
 
+  {% if template_config.show_acceptance_signature %}
   <section class="signature">
     <div class="signature-line"></div>
-    <strong>Firma / autorizaci&oacute;n del cliente</strong>
+    <strong>{{ template_config.acceptance_text or "Firma / autorizaci&oacute;n del cliente" }}</strong>
   </section>
+  {% endif %}
+
+  {% if template_config.show_full_terms %}
+  <section class="full-terms">
+    <article>
+      <h3>Condiciones comerciales</h3>
+      <p>{{ template_config.commercial_terms or "-" }}</p>
+    </article>
+    <article>
+      <h3>Condiciones metrol&oacute;gicas</h3>
+      <p>{{ template_config.metrological_terms or "-" }}</p>
+    </article>
+    <article>
+      <h3>Condiciones legales</h3>
+      <p>{{ template_config.legal_terms or "-" }}</p>
+    </article>
+    <article>
+      <h3>Aviso de privacidad</h3>
+      <p>{{ template_config.privacy_notice or "-" }}</p>
+    </article>
+    {% if template_config.show_acceptance_signature %}
+    <section class="signature">
+      <div class="signature-line"></div>
+      <strong>{{ template_config.acceptance_text or "Firma / autorizaci&oacute;n del cliente" }}</strong>
+    </section>
+    {% endif %}
+  </section>
+  {% endif %}
 
   <footer>
     Documento generado por MYC SYSTEM para Metrolog&iacute;a y Servicios MYC.

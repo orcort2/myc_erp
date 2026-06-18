@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-18 12:32:44 CST
+Ultima actualizacion: 2026-06-18 13:55:47 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -52,6 +52,11 @@ M frontend/src/styles/global.css
 ?? backend/app/templates/
 ?? backend/migrations/versions/a1b2c3d4e5f6_add_catalog_items.py
 ?? backend/migrations/versions/b2c3d4e5f6a7_complete_catalog_items.py
+?? backend/app/models/document_template.py
+?? backend/app/routers/document_templates.py
+?? backend/app/schemas/document_template.py
+?? backend/app/services/document_templates.py
+?? backend/migrations/versions/c3d4e5f6a7b8_add_document_templates.py
 ```
 
 `frontend/assets/` contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en `frontend/src/assets/myc-logo.png`.
@@ -204,6 +209,7 @@ backend/
       field_sheet.py
       certificate.py
       catalog_item.py
+      document_template.py
       audit_log.py
     schemas/
       auth.py
@@ -215,6 +221,7 @@ backend/
       field_sheet.py
       certificate.py
       catalog_item.py
+      document_template.py
       audit_log.py
     routers/
       auth.py
@@ -227,6 +234,7 @@ backend/
       field_sheets.py
       certificates.py
       catalog_items.py
+      document_templates.py
     services/
       auth.py
       modules.py
@@ -237,6 +245,7 @@ backend/
       field_sheets.py
       certificates.py
       catalog_items.py
+      document_templates.py
       quotation_pdfs.py
       audit_logs.py
     templates/
@@ -255,6 +264,7 @@ backend/
       9c0d1e2f3a14_add_user_roles.py
       a1b2c3d4e5f6_add_catalog_items.py
       b2c3d4e5f6a7_complete_catalog_items.py
+      c3d4e5f6a7b8_add_document_templates.py
 
 frontend/
   index.html
@@ -311,6 +321,7 @@ equipment
 field_sheets
 certificates
 catalog_items
+document_templates
 ```
 
 Rutas base:
@@ -350,6 +361,7 @@ GET /api/quotations/{quotation_id}/pdf
 PATCH /api/quotations/{quotation_id}
 POST /api/quotations/{quotation_id}/items
 PATCH /api/quotations/{quotation_id}/items/{item_id}
+DELETE /api/quotations/{quotation_id}/items/{item_id}
 POST /api/quotations/{quotation_id}/send
 POST /api/quotations/{quotation_id}/waiting
 POST /api/quotations/{quotation_id}/accept
@@ -428,6 +440,14 @@ PATCH /api/catalog-items/{catalog_item_id}
 DELETE /api/catalog-items/{catalog_item_id}
 ```
 
+Plantillas documentales:
+
+```text
+GET /api/document-templates/quotation
+PATCH /api/document-templates/quotation
+POST /api/document-templates/quotation/restore-defaults
+```
+
 Los `DELETE` actuales hacen borrado logico, no borrado fisico.
 
 ## Modulos MVP 1 definidos
@@ -453,6 +473,7 @@ equipment
 field_sheets
 certificates
 catalog_items
+document_templates
 ```
 
 ## Tablas iniciales modeladas
@@ -609,12 +630,51 @@ Servicio: backend/app/services/quotation_pdfs.py
 Plantilla: backend/app/templates/quotation_pdf.html
 Motor: WeasyPrint
 Respuesta: application/pdf
-Content-Disposition: inline; filename="Cotizacion_<folio>.pdf"
+Content-Disposition: inline; filename="Cotizacion_<folio>_<nombre_cliente>.pdf"
 ```
 
-El PDF usa identidad comercial de Metrologia y Servicios MYC, logo, folio, fecha de emision, vigencia, datos de cliente, datos fiscales, partidas, leyenda por partida, subtotal, impuestos, total, total con letra, condiciones comerciales, notas y firma/autorizacion.
+El PDF usa identidad comercial de Metrologia y Servicios MYC, logo, folio, fecha de emision, vigencia, vendedor, datos de cliente, datos fiscales, partidas, leyenda por partida, subtotal, impuestos, total, total con letra, condiciones comerciales, notas y firma/autorizacion.
+
+Control documental de plantilla:
+
+```text
+Codigo documental: FCA-23-2
+Revision: opcional, configurable desde document_templates
+Emision documental: 2025-03-28
+```
+
+Estas variables ahora viven en `document_templates` y se editan desde la pestaña Plantilla cotizacion.
+
+Ubicacion visual actual: el bloque documental se imprime pegado al extremo derecho utilizable del bloque de titulo, a la misma altura visual de COTIZACION, con padding compacto y texto alineado a la derecha para evitar sensacion de tarjeta flotante. Se retiro del pie de pagina para conservar el diseno actual del PDF y dejar el footer limpio.
+
+El nombre de archivo se sanitiza sin acentos, con espacios reemplazados por guiones y sin caracteres invalidos.
 
 Si la cotizacion no tiene partidas, el PDF se genera con tabla vacia y mensaje "Sin partidas registradas".
+
+Editor de plantilla PDF implementado:
+
+```text
+Modelo: backend/app/models/document_template.py
+Tabla: document_templates
+Schemas: backend/app/schemas/document_template.py
+Service: backend/app/services/document_templates.py
+Router: backend/app/routers/document_templates.py
+Migracion: backend/migrations/versions/c3d4e5f6a7b8_add_document_templates.py
+template_key de cotizacion: quotation
+```
+
+Campos editables:
+
+```text
+Identidad: nombre comercial, lema, RFC, correo, sitio web, direccion, telefono
+Documento: titulo, subtitulo, codigo documental, revision, fecha de emision documental
+Terminos: version, condiciones comerciales, metrologicas, legales, aviso de privacidad y texto de aceptacion
+Opciones: mostrar resumen, mostrar terminos completos en pagina adicional, mostrar firma de aceptacion
+```
+
+Si no existe registro `quotation`, el backend crea uno default con los valores actuales.
+
+El PDF ahora lee `document_templates` y ya no depende de textos fijos en HTML para identidad, control documental ni terminos.
 
 ## Ordenes de servicio
 
@@ -963,7 +1023,7 @@ migracion de users.role_id hacia user_roles cuando exista role_id
 Estado de PostgreSQL local verificado:
 
 ```text
-alembic current -> b2c3d4e5f6a7 (head)
+alembic current -> c3d4e5f6a7b8 (head)
 ```
 
 ## Verificacion backend
@@ -991,7 +1051,10 @@ GET /api/certificates -> 200 []
 Auth rollback: register 200 Tecnico, me 200, login 200 Tecnico, refresh 200 bearer
 Flujo rollback: client 201, service_order 201, equipment 201 registered, field_sheet 201 draft, complete_missing 422, patch 200 in_progress, complete 200 completed, equipment_after_complete 200 calibrated, review 200 under_review
 Flujo rollback certificado: client 201, service_order 201, equipment 201 registered, field_sheet 201 draft, field_sheet_patch 200 in_progress, field_sheet_complete 200 completed, certificate 201 MYCA-06-2026-0001 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released
-PDF cotizacion: generate_quotation_pdf -> b'%PDF', endpoint TestClient GET /api/quotations/4/pdf -> 200 application/pdf, filename Cotizacion_MYC-06-26-0004.pdf, 42344 bytes
+PDF cotizacion: generate_quotation_pdf -> b'%PDF', endpoint TestClient GET /api/quotations/4/pdf -> 200 application/pdf, filename Cotizacion_MYC-06-26-0004_Demo-MYC.pdf, 44284 bytes. Verificacion HTML: document-control dentro de title=True, document-control en footer=False. Verificacion visual con qlmanage: primera pagina renderizada correctamente con el codigo documental pegado al extremo derecho del bloque de cotizacion.
+PDF cotizacion verificacion posterior: generate_quotation_pdf -> b'%PDF', filename Cotizacion_MYC-06-26-0004_Demo-MYC.pdf, 44279 bytes. Verificacion HTML: document-control usa right: 0, text-align: right y padding compacto. Verificacion visual con qlmanage: primera pagina renderizada correctamente con el codigo documental alineado al borde derecho del contenido y sin afectar titulo, subtitulo, folio, emision, vigencia ni vendedor.
+Plantilla documental: TestClient GET /api/document-templates/quotation -> 200 FCA-23-2, PATCH document_revision -> 200, PDF posterior -> 200 application/pdf 44275 bytes
+Flujo cierre cotizaciones: TestClient creo cliente 201, cotizacion 201, agrego partida 200, edito partida 200, duplico partida 200, elimino partida 200 via DELETE /api/quotations/{quotation_id}/items/{item_id}, genero PDF 200 application/pdf b'%PDF', envio 200, acepto 200 y genero orden de servicio 201 copiando 1 partida activa.
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
@@ -1010,6 +1073,11 @@ Dashboard carga contadores reales
 Dashboard muestra 10 modulos tipo app launcher
 Dashboard principal no renderiza sidebar
 Vistas de modulo como /dashboard#clientes renderizan sidebar con navegacion completa y fecha/hora visible
+Sidebar interno ahora es colapsable/responsive:
+- Desktop: visible por defecto, boton para colapsar/expandir, modo colapsado con barra delgada e iconos.
+- Tablet/movil: oculto por defecto, boton menu en topbar, abre como overlay Liquid Glass.
+- Overlay movil cierra con click fuera, boton X, tecla Escape o al seleccionar modulo.
+El contenido principal se expande cuando el sidebar esta colapsado.
 Logo cargado desde frontend/src/assets/myc-logo.png
 Logout vuelve a /login
 Acceso directo a /dashboard sin token vuelve a /login
@@ -1054,6 +1122,7 @@ Dashboard muestra logo + MYC SYSTEM + Sistema principal.
 Vistas de modulo muestran logo + MYC SYSTEM + fecha/hora.
 En /dashboard no hay sidebar; el dashboard queda como launcher principal.
 En /dashboard#modulo se activa layout de modulo con navegacion lateral.
+La navegacion lateral en modulos puede colapsarse en desktop y abrirse como panel overlay en movil.
 Tipografia ajustada para legibilidad: titulos 22px en modulos, descripciones 15px, mejor contraste y sin overflow en desktop/movil.
 Span de bienvenida/rol en dashboard ajustado a 16.5px, mayor contraste y fondo translúcido.
 Contadores reales visibles en modulos y resumen operativo:
@@ -1128,17 +1197,31 @@ Pestana Partidas implementada:
 - Boton + Agregar partida crea una linea editable dentro de la misma tabla; ya no abre modal adicional.
 - Cada linea nueva aparece como Borrador hasta guardarse.
 - La linea permite buscar concepto/descripcion con datalist del Catalogo MYC por nombre, categoria o clave.
-- Precarga descripcion, unidad, precio unitario, moneda y clave SAT cuando existe concepto.
-- Campos editables en linea: descripcion/concepto, cantidad, unidad, precio unitario y descuento %.
+- Precarga descripcion, unidad, precio unitario, moneda, clave SAT, unidad SAT, impuesto, commodity, alcance de calibracion y leyenda de cotizacion cuando existe concepto.
+- Campos editables en linea: descripcion/concepto, cantidad, unidad, precio unitario, descuento %, impuesto y leyenda de cotizacion.
 - Acciones por linea borrador: Guardar partida y Cancelar borrador.
-- Las partidas existentes muestran acciones preparadas para edicion/eliminacion futura.
+- Las partidas existentes ya permiten Editar, Guardar, Cancelar, Duplicar y Eliminar.
+- Eliminar partida pide confirmacion y usa DELETE /api/quotations/{quotation_id}/items/{item_id} con baja logica y recalculo de totales.
+- Duplicar partida crea un nuevo borrador editable con los mismos datos para revisar antes de guardar.
+- Las partidas quedan bloqueadas en estados terminales: accepted, rejected, expired y cancelled.
 - Calculo visual en tiempo real: importe, descuento, subtotal partida, impuestos por tasa de cada linea, total y total con letra.
-- Integracion inicial con backend usando POST /api/quotations/{quotation_id}/items.
+- Integracion backend usando POST, PATCH y DELETE de quotation_items.
 - Backend actual guarda service_name, description, quantity, unit, unit_price, descuento, moneda, SAT, commodity, calibration_scope, quotation_legend, tax_object y tax_rate.
+- El modal advierte antes de abrir, descargar o imprimir PDF cuando la cotizacion no tiene partidas.
+- Si la cotizacion esta accepted, muestra accion Generar orden de servicio.
+- Generar orden de servicio llama POST /api/service-orders con client_id, quotation_id y notes; backend copia partidas activas a service_order_items.
 Pestana Historial preparada visualmente con fecha de creacion, ultima actualizacion y estado actual.
 Acciones visuales de estado cableadas contra endpoints existentes: send, waiting, accept, reject, expire y cancel.
 Las acciones de estado piden confirmacion y se deshabilitan si la transicion no aplica.
 Subpestanas internas agregadas al modulo: Cotizaciones, Catalogo MYC y Plantilla cotizacion.
+Plantilla cotizacion ahora es editor configurable de PDF:
+- Carga GET /api/document-templates/quotation.
+- Guarda PATCH /api/document-templates/quotation.
+- Restaura defaults con POST /api/document-templates/quotation/restore-defaults.
+- Si falla la carga, usa valores por defecto en frontend.
+- Permite editar identidad, titulo/subtitulo, codigo documental, revision, emision documental, version de terminos, condiciones comerciales, condiciones metrologicas, condiciones legales, aviso de privacidad, firma de aceptacion y opciones de visibilidad.
+- Incluye vista previa visual y boton Vista PDF de prueba usando una cotizacion existente.
+- La vista previa del editor replica la ubicacion del control documental junto al titulo de cotizacion para coincidir con el PDF.
 Catalogo MYC ya esta conectado al backend real /api/catalog-items.
 Catalogo MYC separa conceptos por Producto / Servicio y permite filtrar por tipo, categoria, moneda, estado y busqueda por nombre o clave.
 Categorias visibles:
@@ -1161,6 +1244,13 @@ Multimoneda preparada en UI:
 - Aviso visible de que la conversion automatica se conectara despues a proveedor de tipo de cambio.
 Boton Nuevo producto/servicio abre modal Liquid Glass; alta/edicion se guarda contra backend.
 Boton Desactivar hace baja logica contra DELETE /api/catalog-items/{catalog_item_id}.
+Boton Agregar a cotizacion crea una partida borrador dentro de la cotizacion abierta; si no hay cotizacion abierta, pide abrir una primero.
+Importacion CSV real conectada para Clientes y Catalogo MYC:
+- Lee encabezados por nombre, no por posicion.
+- Mantiene vista previa, validos, duplicados y errores.
+- Confirmar importacion crea registros validos contra backend.
+- Descarga errores o fallas de importacion en CSV corregible.
+- XLSX directo queda pendiente; se acepta CSV compatible con Excel en esta fase.
 Plantilla visual de cotizacion agregada:
 - Documento usa identidad comercial "Metrologia y Servicios MYC"; no usa "MYC SYSTEM" dentro de la cotizacion.
 - Logo MYC e informacion comercial de MYC alineados como encabezado institucional superior izquierdo.
@@ -1172,7 +1262,7 @@ Plantilla visual de cotizacion agregada:
 - Subtotal, impuestos/IVA, total y total con letra.
 - Condiciones comerciales, notas, firmas/autorizacion preparada visualmente.
 La plantilla visual ya queda preparada para consumir partidas reales de cotizacion.
-No se implemento PDF ni impresion.
+PDF real e impresion ya estan conectados desde el modal de cotizacion.
 ```
 
 Modulo backend Catalogo MYC agregado:
@@ -1378,8 +1468,7 @@ npm run dev
 ## Pendientes inmediatos recomendados
 
 1. Decidir si se commitea `frontend/package-lock.json`.
-2. Conectar catalogo Productos / Servicios a backend cuando se defina schema y endpoints.
-3. Agregar partidas reales a cotizaciones.
-4. Crear modulo de calidad para revision formal de certificados.
-5. Conectar frontend profundo a ordenes de servicio, equipos, hojas de campo y certificados.
-6. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
+2. Crear vista frontend real de Ordenes de Servicio usando las ordenes generadas desde cotizaciones aceptadas.
+3. Crear modulo de calidad para revision formal de certificados.
+4. Conectar frontend profundo a equipos, hojas de campo y certificados.
+5. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.

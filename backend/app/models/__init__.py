@@ -3,6 +3,7 @@ from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 from app.models.catalog_item import CatalogItem
 from app.models.certificate import Certificate
 from app.models.client import Client, ClientContact
+from app.models.document_template import DocumentTemplate
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
 from app.models.quotation import Quotation, QuotationItem
@@ -15,6 +16,7 @@ __all__ = [
     "Certificate",
     "Client",
     "ClientContact",
+    "DocumentTemplate",
     "Equipment",
     "FieldSheet",
     "IntegerPkMixin",

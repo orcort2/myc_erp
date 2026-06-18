@@ -7,6 +7,7 @@ from app.routers import (
     catalog_items,
     certificates,
     clients,
+    document_templates,
     equipment,
     field_sheets,
     health,
@@ -35,6 +36,7 @@ app.include_router(auth.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
 app.include_router(catalog_items.router, prefix="/api")
+app.include_router(document_templates.router, prefix="/api")
 app.include_router(quotations.router, prefix="/api")
 app.include_router(service_orders.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")

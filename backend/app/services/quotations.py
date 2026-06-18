@@ -316,6 +316,54 @@ def update_quotation_item(
     return get_quotation(db, quotation.id)
 
 
+def deactivate_quotation_item(
+    db: Session,
+    quotation_id: int,
+    item_id: int,
+    *,
+    user_id: int | None = None,
+) -> Quotation:
+    quotation = get_quotation(db, quotation_id)
+    if quotation.status in TERMINAL_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se pueden eliminar partidas de una cotizacion en estado terminal",
+        )
+    item = next((item for item in quotation.items if item.id == item_id and item.is_active), None)
+    if item is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Partida no encontrada",
+        )
+    previous_values = {
+        "service_name": item.service_name,
+        "quantity": item.quantity,
+        "total": item.total,
+        "is_active": item.is_active,
+    }
+    item.is_active = False
+    item.deleted_at = datetime.now(timezone.utc)
+    item.deleted_by = user_id
+    _recalculate_totals(quotation)
+    write_audit_log(
+        db,
+        action="quotation.item_deactivated",
+        entity="quotations",
+        entity_id=quotation.id,
+        user_id=user_id,
+        previous_values=_json_safe(previous_values),
+        new_values=_json_safe(
+            {
+                "item_id": item.id,
+                "is_active": False,
+                "quotation_total": quotation.total,
+            }
+        ),
+    )
+    db.commit()
+    return get_quotation(db, quotation.id)
+
+
 def change_quotation_status(
     db: Session,
     quotation_id: int,

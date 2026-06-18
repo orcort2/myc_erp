@@ -9,11 +9,15 @@ import {
   FileText,
   Gauge,
   LogOut,
+  Menu,
   MessageSquareText,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   ShieldCheck,
   Upload,
-  UserRound
+  UserRound,
+  X
 } from 'lucide-react';
 import React from 'react';
 import { useEffect, useMemo, useState } from 'react';
@@ -26,21 +30,27 @@ import {
   createCatalogItem,
   createQuotation,
   createQuotationItem,
+  createServiceOrder,
   deleteCatalogItem,
+  deleteQuotationItem,
   getAccessToken,
   getCurrentUser,
   getDashboardCounts,
   getQuotation,
   getQuotationPdfUrl,
+  getQuotationTemplate,
   listCatalogItems,
   listClients,
   listQuotations,
   login,
   register,
   downloadQuotationPdf,
+  restoreQuotationTemplateDefaults,
   updateCatalogItem,
   updateClient,
-  updateQuotation
+  updateQuotation,
+  updateQuotationItem,
+  updateQuotationTemplate
 } from '../services/api.js';
 
 const navigation = [
@@ -192,7 +202,14 @@ const emptyQuotationItemForm = {
   currency: 'MXN',
   discount: '0',
   observations: '',
-  satKey: ''
+  satKey: '',
+  satUnit: '',
+  internalUnit: '',
+  commodity: null,
+  calibrationScope: null,
+  quotationLegend: '',
+  taxObject: 'iva_16',
+  taxRate: '16'
 };
 
 const emptyProductForm = {
@@ -216,6 +233,35 @@ const emptyProductForm = {
   margin: '',
   taxObject: 'iva_16',
   status: 'Activo'
+};
+
+const defaultQuotationTemplate = {
+  name: 'Plantilla de cotizacion MYC',
+  company_name: 'Metrologia y Servicios MYC',
+  company_tagline: 'Servicios de metrologia, calibracion, venta y soporte tecnico especializado.',
+  company_rfc: 'MYC000000XXX',
+  company_email: 'contacto@mycmetrology.com.mx',
+  company_website: 'www.mycmetrology.com.mx',
+  company_address: '',
+  company_phone: '',
+  document_title: 'COTIZACION',
+  document_subtitle: 'Propuesta comercial de servicios, calibracion y soluciones tecnicas',
+  document_code: 'FCA-23-2',
+  document_revision: '',
+  document_issued_on: '2025-03-28',
+  terms_version: 'V1',
+  commercial_terms: [
+    'Precios expresados en moneda nacional, salvo indicacion contraria.',
+    'Vigencia sujeta a la fecha indicada en esta cotizacion.',
+    'Tiempos de entrega y alcance final se confirman al recibir autorizacion.'
+  ].join('\n'),
+  metrological_terms: 'Los servicios metrologicos se ejecutan conforme al alcance tecnico autorizado y a la disponibilidad de patrones aplicables.',
+  legal_terms: 'La autorizacion de esta cotizacion implica aceptacion de las condiciones comerciales, tecnicas y documentales descritas.',
+  privacy_notice: 'Los datos del cliente se usan exclusivamente para fines comerciales, operativos, documentales y de facturacion relacionados con el servicio solicitado.',
+  acceptance_text: 'Acepto las condiciones comerciales, metrologicas y legales de la presente cotizacion.',
+  show_summary_terms: true,
+  show_full_terms: true,
+  show_acceptance_signature: true
 };
 
 const clientTemplateColumns = [
@@ -448,6 +494,32 @@ function mapCatalogPayloadFromForm(form) {
     quotation_legend: commodity === 'general_service' ? form.quotationLegend.trim() : form.quotationLegend.trim() || null,
     tax_object: form.taxObject || 'iva_16'
   };
+}
+
+function mapTemplateFromApi(template) {
+  return {
+    ...defaultQuotationTemplate,
+    ...(template ?? {}),
+    document_revision: template?.document_revision ?? '',
+    document_issued_on: template?.document_issued_on ?? defaultQuotationTemplate.document_issued_on,
+    company_address: template?.company_address ?? '',
+    company_phone: template?.company_phone ?? '',
+    show_summary_terms: template?.show_summary_terms ?? true,
+    show_full_terms: template?.show_full_terms ?? true,
+    show_acceptance_signature: template?.show_acceptance_signature ?? true
+  };
+}
+
+function mapTemplatePayload(form) {
+  const payload = { ...form };
+  delete payload.id;
+  delete payload.template_key;
+  delete payload.is_active;
+  delete payload.created_at;
+  delete payload.updated_at;
+  payload.document_revision = payload.document_revision?.trim() || null;
+  payload.document_issued_on = payload.document_issued_on || null;
+  return payload;
 }
 
 function normalizeKey(value) {
@@ -691,6 +763,52 @@ function calculateQuotationDraftSummary(quotation, draftItems = []) {
   return { subtotal, tax, total: subtotal + tax };
 }
 
+function quotationItemToForm(item) {
+  return {
+    catalogItemId: item.catalog_item_id || '',
+    description: item.service_name || '',
+    quantity: String(item.quantity ?? 1),
+    unit: item.unit || 'Servicio',
+    unitPrice: String(item.unit_price ?? 0),
+    currency: item.currency || 'MXN',
+    discount: String(item.discount_percent ?? 0),
+    observations: item.description || '',
+    satKey: item.sat_key || '',
+    satUnit: item.sat_unit || '',
+    internalUnit: item.internal_unit || '',
+    commodity: item.commodity || null,
+    calibrationScope: item.calibration_scope || null,
+    quotationLegend: item.quotation_legend || '',
+    taxObject: item.tax_object || 'iva_16',
+    taxRate: String(item.tax_rate ?? 16)
+  };
+}
+
+function buildQuotationItemPayload(itemForm) {
+  return {
+    catalog_item_id: itemForm.catalogItemId ? Number(itemForm.catalogItemId) : null,
+    service_name: itemForm.description.trim(),
+    description: itemForm.observations?.trim() || null,
+    quantity: Number(itemForm.quantity || 1),
+    unit: itemForm.unit?.trim() || null,
+    sat_key: itemForm.satKey || null,
+    sat_unit: itemForm.satUnit || null,
+    internal_unit: itemForm.internalUnit || null,
+    unit_price: Number(itemForm.unitPrice || 0),
+    discount_percent: Number(itemForm.discount || 0),
+    currency: itemForm.currency || 'MXN',
+    commodity: itemForm.commodity || null,
+    calibration_scope: itemForm.calibrationScope || null,
+    quotation_legend: itemForm.quotationLegend || null,
+    tax_object: itemForm.taxObject || 'iva_16',
+    tax_rate: Number(itemForm.taxRate ?? 16)
+  };
+}
+
+function isQuotationTerminal(quotation) {
+  return ['accepted', 'rejected', 'expired', 'cancelled'].includes(quotation?.status);
+}
+
 function totalToSpanishText(value) {
   const amount = Number(value || 0);
   return `${formatMoney(amount)} MXN`;
@@ -889,10 +1007,66 @@ function LoginPage({ onAuthenticated }) {
 }
 
 function AppLayout({ children, onLogout, showSidebar = false, subtitle, user }) {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (!showSidebar) {
+      setIsMobileSidebarOpen(false);
+      return undefined;
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        setIsMobileSidebarOpen(false);
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [showSidebar]);
+
+  function navigateFromSidebar(path) {
+    navigate(path);
+    setIsMobileSidebarOpen(false);
+  }
+
+  const shellClassName = [
+    'app-shell',
+    showSidebar ? 'app-shell--module' : 'app-shell--dashboard',
+    showSidebar && isSidebarCollapsed ? 'is-sidebar-collapsed' : '',
+    showSidebar && isMobileSidebarOpen ? 'is-mobile-sidebar-open' : ''
+  ].filter(Boolean).join(' ');
+
   return (
-    <main className={showSidebar ? 'app-shell app-shell--module' : 'app-shell app-shell--dashboard'}>
+    <main className={shellClassName}>
       {showSidebar ? (
+        <>
+        <button
+          aria-label="Cerrar navegacion lateral"
+          className="sidebar-overlay"
+          onClick={() => setIsMobileSidebarOpen(false)}
+          type="button"
+        />
         <aside className="sidebar">
+          <div className="sidebar__controls">
+            <button
+              aria-label="Cerrar navegacion"
+              className="sidebar-mobile-close"
+              onClick={() => setIsMobileSidebarOpen(false)}
+              type="button"
+            >
+              <X size={18} />
+            </button>
+            <button
+              aria-label={isSidebarCollapsed ? 'Expandir navegacion lateral' : 'Colapsar navegacion lateral'}
+              className="sidebar-collapse-button"
+              onClick={() => setIsSidebarCollapsed((current) => !current)}
+              type="button"
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            </button>
+          </div>
           <BrandLockup subtitle={subtitle} />
 
           <nav className="nav-list" aria-label="Navegacion principal">
@@ -902,8 +1076,9 @@ function AppLayout({ children, onLogout, showSidebar = false, subtitle, user }) 
                 <button
                   className="nav-item"
                   key={item.label}
-                  onClick={() => navigate(item.path)}
+                  onClick={() => navigateFromSidebar(item.path)}
                   type="button"
+                  title={item.label}
                 >
                   <Icon size={18} />
                   <span>{item.label}</span>
@@ -912,10 +1087,21 @@ function AppLayout({ children, onLogout, showSidebar = false, subtitle, user }) 
             })}
           </nav>
         </aside>
+        </>
       ) : null}
 
       <section className="workspace">
         <header className="topbar">
+          {showSidebar ? (
+            <button
+              aria-label="Abrir navegacion lateral"
+              className="sidebar-menu-button"
+              onClick={() => setIsMobileSidebarOpen(true)}
+              type="button"
+            >
+              <Menu size={19} />
+            </button>
+          ) : null}
           <BrandLockup compact subtitle={subtitle} />
           <div className="topbar__identity">
             <UserRound size={20} />
@@ -1211,8 +1397,54 @@ function ClientsPage() {
     reader.readAsText(file);
   }
 
-  function confirmClientImport() {
-    setClientImportMessage('Importacion preparada visualmente. No se enviaron datos al backend en esta version.');
+  async function confirmClientImport() {
+    const validRows = clientImportPreview?.valid ?? [];
+    if (!validRows.length) return;
+    setIsSaving(true);
+    setError('');
+    setClientImportMessage('');
+    try {
+      let imported = 0;
+      const failed = [];
+      for (const row of validRows) {
+        const raw = row.raw;
+        const commercialName = getRowValue(raw, ['Nombre comercial', 'nombre', 'Cliente']);
+        const legalName = getRowValue(raw, ['Razon social', 'Razón social']);
+        const contactName = getRowValue(raw, ['Contacto principal', 'Contacto']);
+        const email = getRowValue(raw, ['Correo', 'Email']);
+        const phone = getRowValue(raw, ['Telefono', 'Teléfono']);
+        try {
+          await createClient({
+            commercial_name: commercialName.trim(),
+            legal_name: legalName.trim() || commercialName.trim(),
+            rfc: getRowValue(raw, ['RFC']).trim().toUpperCase() || null,
+            email: email.trim() || null,
+            phone: phone.trim() || null,
+            tax_regime: getRowValue(raw, ['Regimen fiscal', 'Régimen fiscal']).trim() || null,
+            contacts: contactName.trim()
+              ? [
+                  {
+                    name: contactName.trim(),
+                    email: email.trim() || null,
+                    phone: phone.trim() || null,
+                    position: null
+                  }
+                ]
+              : []
+          });
+          imported += 1;
+        } catch (requestError) {
+          failed.push({ ...raw, Errores: requestError.message });
+        }
+      }
+      if (failed.length) {
+        downloadCsv('clientes_myc_importacion_fallida.csv', [...clientImportColumns, 'Errores'], failed);
+      }
+      setClientImportMessage(`Importacion finalizada: ${imported} clientes creados${failed.length ? `, ${failed.length} con error` : ''}.`);
+      await loadClients();
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   const modalTitle = editingClientId ? 'Editar cliente' : 'Nuevo cliente';
@@ -1673,6 +1905,7 @@ function QuotationsPage() {
   const [selectedQuotation, setSelectedQuotation] = useState(null);
   const [catalogItems, setCatalogItems] = useState([]);
   const [productForm, setProductForm] = useState(emptyProductForm);
+  const [templateForm, setTemplateForm] = useState(defaultQuotationTemplate);
   const [editingProductId, setEditingProductId] = useState(null);
   const [catalogFilters, setCatalogFilters] = useState({
     type: 'Todos',
@@ -1685,6 +1918,7 @@ function QuotationsPage() {
   const [catalogImportColumns, setCatalogImportColumns] = useState([]);
   const [catalogImportPreview, setCatalogImportPreview] = useState(null);
   const [catalogImportMessage, setCatalogImportMessage] = useState('');
+  const [editingItemForms, setEditingItemForms] = useState({});
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -1692,7 +1926,9 @@ function QuotationsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDetailSaving, setIsDetailSaving] = useState(false);
+  const [isTemplateSaving, setIsTemplateSaving] = useState(false);
   const [savingDraftIds, setSavingDraftIds] = useState(new Set());
+  const [savingItemIds, setSavingItemIds] = useState(new Set());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -1721,15 +1957,33 @@ function QuotationsPage() {
     setError('');
     setIsLoading(true);
     try {
-      const [quotationItems, clientItems, catalogApiItems] = await Promise.all([
+      const [quotationResult, clientResult, catalogResult, templateResult] = await Promise.allSettled([
         listQuotations(),
         listClients(),
-        listCatalogItems({ is_active: true })
+        listCatalogItems({ is_active: true }),
+        getQuotationTemplate()
       ]);
+      if (quotationResult.status === 'rejected') {
+        throw quotationResult.reason;
+      }
+      if (clientResult.status === 'rejected') {
+        throw clientResult.reason;
+      }
+      if (catalogResult.status === 'rejected') {
+        throw catalogResult.reason;
+      }
+      const quotationItems = quotationResult.value;
+      const clientItems = clientResult.value;
+      const catalogApiItems = catalogResult.value;
       setQuotations(Array.isArray(quotationItems) ? quotationItems : []);
       setClients(Array.isArray(clientItems) ? clientItems : []);
       setCatalogItems(
         Array.isArray(catalogApiItems) ? catalogApiItems.map(mapCatalogItemFromApi) : []
+      );
+      setTemplateForm(
+        templateResult.status === 'fulfilled'
+          ? mapTemplateFromApi(templateResult.value)
+          : defaultQuotationTemplate
       );
     } catch (requestError) {
       setError(requestError.message);
@@ -1752,6 +2006,53 @@ function QuotationsPage() {
 
   function updateProductForm(field, value) {
     setProductForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateTemplateForm(field, value) {
+    setTemplateForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleTemplateSubmit(event) {
+    event.preventDefault();
+    setError('');
+    setNotice('');
+    setIsTemplateSaving(true);
+    try {
+      const updated = await updateQuotationTemplate(mapTemplatePayload(templateForm));
+      setTemplateForm(mapTemplateFromApi(updated));
+      setNotice('Plantilla de cotizacion guardada correctamente');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsTemplateSaving(false);
+    }
+  }
+
+  async function handleRestoreTemplateDefaults() {
+    if (!window.confirm('¿Restaurar los valores por defecto de la plantilla de cotizacion?')) {
+      return;
+    }
+    setError('');
+    setNotice('');
+    setIsTemplateSaving(true);
+    try {
+      const restored = await restoreQuotationTemplateDefaults();
+      setTemplateForm(mapTemplateFromApi(restored));
+      setNotice('Plantilla restaurada a valores por defecto');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsTemplateSaving(false);
+    }
+  }
+
+  function openTemplatePdfPreview() {
+    const sampleQuotation = quotations[0];
+    if (!sampleQuotation) {
+      setNotice('Crea una cotizacion para generar una vista PDF de prueba.');
+      return;
+    }
+    window.open(getQuotationPdfUrl(sampleQuotation.id), '_blank', 'noopener,noreferrer');
   }
 
   function closeQuotationModal() {
@@ -1811,6 +2112,7 @@ function QuotationsPage() {
     setSelectedQuotation(null);
     setDetailForm(emptyQuotationForm);
     setDraftItems([]);
+    setEditingItemForms({});
     setQuotationDetailTab('info');
     setError('');
   }
@@ -1873,6 +2175,10 @@ function QuotationsPage() {
 
   function openQuotationPdf(mode = 'view') {
     if (!selectedQuotation) return;
+    if (!getQuotationItems(selectedQuotation).length) {
+      const shouldContinue = window.confirm('La cotizacion no tiene partidas registradas. ¿Deseas generar el PDF de todos modos?');
+      if (!shouldContinue) return;
+    }
     const url = getQuotationPdfUrl(selectedQuotation.id);
     const pdfWindow = window.open(url, '_blank', 'noopener,noreferrer');
     if (mode === 'print' && pdfWindow) {
@@ -1885,10 +2191,18 @@ function QuotationsPage() {
 
   async function handleDownloadQuotationPdf() {
     if (!selectedQuotation) return;
+    if (!getQuotationItems(selectedQuotation).length) {
+      const shouldContinue = window.confirm('La cotizacion no tiene partidas registradas. ¿Deseas descargar el PDF de todos modos?');
+      if (!shouldContinue) return;
+    }
     setError('');
     setNotice('');
     try {
-      const { blob, filename } = await downloadQuotationPdf(selectedQuotation.id);
+      const { blob, filename } = await downloadQuotationPdf(
+        selectedQuotation.id,
+        selectedQuotation,
+        getClientDisplayName(clientsById.get(selectedQuotation.client_id))
+      );
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
@@ -2056,8 +2370,57 @@ function QuotationsPage() {
     reader.readAsText(file);
   }
 
-  function confirmCatalogImport() {
-    setCatalogImportMessage('Importacion preparada visualmente. No se agregaron conceptos al catalogo ni se envio informacion al backend.');
+  async function confirmCatalogImport() {
+    const validRows = catalogImportPreview?.valid ?? [];
+    if (!validRows.length) return;
+    setIsSaving(true);
+    setError('');
+    setCatalogImportMessage('');
+    try {
+      let imported = 0;
+      const failed = [];
+      for (const row of validRows) {
+        const raw = row.raw;
+        const type = getRowValue(raw, ['Tipo']);
+        const commodity = getRowValue(raw, ['Commodity']);
+        const category = getRowValue(raw, ['Categoria', 'Categoría']);
+        const name = getRowValue(raw, ['Nombre']);
+        const form = {
+          ...emptyProductForm,
+          type: type || 'Servicio',
+          commodity: commodity || (type === 'Producto' ? 'sale' : 'general_service'),
+          category,
+          name,
+          description: getRowValue(raw, ['Descripcion', 'Descripción']),
+          satKey: getRowValue(raw, ['Clave SAT']),
+          satUnit: getRowValue(raw, ['Unidad SAT']),
+          internalUnit: getRowValue(raw, ['Unidad interna']) || 'service',
+          customInternalUnit: getRowValue(raw, ['Unidad interna personalizada']),
+          basePrice: getRowValue(raw, ['Precio origen']) || '0',
+          sourceCurrency: (getRowValue(raw, ['Moneda origen']) || 'MXN').toUpperCase(),
+          exchangeRate: getRowValue(raw, ['Tipo de cambio']) || '1',
+          internalCost: getRowValue(raw, ['Costo interno']),
+          costCurrency: (getRowValue(raw, ['Moneda de costo']) || 'MXN').toUpperCase(),
+          margin: getRowValue(raw, ['Margen %']) || '0',
+          taxObject: getRowValue(raw, ['Objeto impuesto']) || 'iva_16',
+          quotationLegend: getRowValue(raw, ['Leyenda cotizacion', 'Leyenda cotización']),
+          calibrationScope: getRowValue(raw, ['Alcance calibracion', 'Alcance calibración']) || 'traceable'
+        };
+        try {
+          const saved = await createCatalogItem(mapCatalogPayloadFromForm(form));
+          setCatalogItems((current) => [mapCatalogItemFromApi(saved), ...current]);
+          imported += 1;
+        } catch (requestError) {
+          failed.push({ ...raw, Errores: requestError.message });
+        }
+      }
+      if (failed.length) {
+        downloadCsv('catalogo_myc_importacion_fallida.csv', [...catalogImportColumns, 'Errores'], failed);
+      }
+      setCatalogImportMessage(`Importacion finalizada: ${imported} conceptos creados${failed.length ? `, ${failed.length} con error` : ''}.`);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function downloadCatalogImportErrors() {
@@ -2131,24 +2494,7 @@ function QuotationsPage() {
     setError('');
     setNotice('');
     try {
-      const updated = await createQuotationItem(selectedQuotation.id, {
-        catalog_item_id: draft.catalogItemId ? Number(draft.catalogItemId) : null,
-        service_name: draft.description.trim(),
-        description: draft.observations.trim() || null,
-        quantity: Number(draft.quantity || 1),
-        unit: draft.unit?.trim() || null,
-        sat_key: draft.satKey || null,
-        sat_unit: draft.satUnit || null,
-        internal_unit: draft.internalUnit || null,
-        unit_price: Number(draft.unitPrice || 0),
-        discount_percent: Number(draft.discount || 0),
-        currency: draft.currency || 'MXN',
-        commodity: draft.commodity || null,
-        calibration_scope: draft.calibrationScope || null,
-        quotation_legend: draft.quotationLegend || null,
-        tax_object: draft.taxObject || 'iva_16',
-        tax_rate: Number(draft.taxRate ?? 16)
-      });
+      const updated = await createQuotationItem(selectedQuotation.id, buildQuotationItemPayload(draft));
       setSelectedQuotation(updated);
       setNotice(`Partida agregada a ${updated.folio}`);
       setQuotationDetailTab('items');
@@ -2162,6 +2508,165 @@ function QuotationsPage() {
         next.delete(draft.id);
         return next;
       });
+    }
+  }
+
+  function startEditQuotationItem(item) {
+    setError('');
+    setEditingItemForms((current) => ({
+      ...current,
+      [item.id]: quotationItemToForm(item)
+    }));
+  }
+
+  function updateEditingItem(itemId, field, value) {
+    setEditingItemForms((current) => ({
+      ...current,
+      [itemId]: {
+        ...(current[itemId] ?? emptyQuotationItemForm),
+        [field]: value
+      }
+    }));
+  }
+
+  function cancelEditQuotationItem(itemId) {
+    setEditingItemForms((current) => {
+      const next = { ...current };
+      delete next[itemId];
+      return next;
+    });
+  }
+
+  async function saveEditedQuotationItem(itemId) {
+    if (!selectedQuotation) return;
+    const form = editingItemForms[itemId];
+    if (!form?.description?.trim()) {
+      setError('Captura la descripcion de la partida.');
+      return;
+    }
+    setSavingItemIds((current) => new Set(current).add(itemId));
+    setError('');
+    setNotice('');
+    try {
+      const updated = await updateQuotationItem(
+        selectedQuotation.id,
+        itemId,
+        buildQuotationItemPayload(form)
+      );
+      setSelectedQuotation(updated);
+      cancelEditQuotationItem(itemId);
+      setNotice(`Partida actualizada en ${updated.folio}`);
+      await loadQuotationData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(itemId);
+        return next;
+      });
+    }
+  }
+
+  async function deleteSavedQuotationItem(item) {
+    if (!selectedQuotation) return;
+    if (!window.confirm('¿Eliminar esta partida de la cotización?')) {
+      return;
+    }
+    setSavingItemIds((current) => new Set(current).add(item.id));
+    setError('');
+    setNotice('');
+    try {
+      const updated = await deleteQuotationItem(selectedQuotation.id, item.id);
+      setSelectedQuotation(updated);
+      cancelEditQuotationItem(item.id);
+      setNotice('Partida eliminada de la cotizacion');
+      await loadQuotationData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingItemIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  }
+
+  function duplicateQuotationItem(item) {
+    setQuotationDetailTab('items');
+    setDraftItems((current) => [
+      ...current,
+      {
+        ...quotationItemToForm(item),
+        id: crypto.randomUUID(),
+        isDraft: true,
+        catalogSearch: item.service_name || ''
+      }
+    ]);
+    setNotice('Partida duplicada como borrador. Revisa y guarda para agregarla.');
+  }
+
+  async function addCatalogItemToQuotation(item) {
+    setSalesTab('quotations');
+    if (!selectedQuotation) {
+      setNotice('Abre una cotizacion para agregar este concepto como partida.');
+      return;
+    }
+    if (isQuotationTerminal(selectedQuotation)) {
+      setError('No se pueden agregar partidas a una cotizacion en estado terminal.');
+      return;
+    }
+    setQuotationDetailTab('items');
+    setDraftItems((current) => [
+      ...current,
+      {
+        ...emptyQuotationItemForm,
+        id: crypto.randomUUID(),
+        isDraft: true,
+        catalogSearch: item.name,
+        catalogItemId: item.id,
+        description: item.description || item.name,
+        unit: item.customInternalUnit || item.internalUnit || item.satUnit || 'Servicio',
+        unitPrice: String(item.finalPriceMxn ?? calculateFinalPriceMxn(item)),
+        currency: 'MXN',
+        satKey: item.satKey || '',
+        satUnit: item.satUnit || '',
+        internalUnit: item.internalUnit || '',
+        commodity: item.commodity || null,
+        calibrationScope: item.calibrationScope || null,
+        quotationLegend: item.quotationLegend || '',
+        taxObject: item.taxObject || 'iva_16',
+        taxRate: String(item.taxRate ?? 16)
+      }
+    ]);
+    setIsDetailOpen(true);
+    setNotice(`${item.name} agregado como borrador de partida.`);
+  }
+
+  async function handleGenerateServiceOrder() {
+    if (!selectedQuotation) return;
+    if (selectedQuotation.status !== 'accepted') {
+      setError('Solo una cotizacion aceptada puede generar orden de servicio.');
+      return;
+    }
+    if (!window.confirm(`¿Generar orden de servicio desde ${selectedQuotation.folio}?`)) {
+      return;
+    }
+    setError('');
+    setNotice('');
+    try {
+      const serviceOrder = await createServiceOrder({
+        client_id: selectedQuotation.client_id,
+        quotation_id: selectedQuotation.id,
+        notes: selectedQuotation.notes || `Generada desde cotizacion ${selectedQuotation.folio}`
+      });
+      setNotice(`Orden de servicio ${serviceOrder.folio} creada correctamente`);
+      if (window.confirm('Orden de servicio creada correctamente. ¿Ir a Orden de Servicio?')) {
+        window.location.hash = 'ordenes';
+      }
+    } catch (requestError) {
+      setError(requestError.message);
     }
   }
 
@@ -2353,7 +2858,7 @@ function QuotationsPage() {
         </div>
 
         <div className="client-fiscal-note catalog-note">
-          Cada servicio MYC debe existir como concepto independiente por magnitud, alcance y precio. Esta seccion es frontend visual hasta conectar backend.
+          Cada servicio MYC debe existir como concepto independiente por magnitud, alcance y precio. Esta seccion ya guarda contra el Catalogo MYC del backend.
         </div>
 
         <div className="import-chip-list catalog-rules">
@@ -2460,6 +2965,9 @@ function QuotationsPage() {
                   </mark>
                 </span>
                 <span className="clients-table__actions">
+                  <button className="table-button table-button--primary" onClick={() => addCatalogItemToQuotation(item)} type="button">
+                    Agregar a cotizacion
+                  </button>
                   <button className="table-button" onClick={() => openProductModal(item)} type="button">
                     Editar
                   </button>
@@ -2478,96 +2986,249 @@ function QuotationsPage() {
       <section className="clients-list-panel quotation-template-panel">
         <div className="section-heading">
           <div>
-            <p>Plantilla visual</p>
-            <h2>Estructura de cotizacion MYC</h2>
+            <p>Editor PDF</p>
+            <h2>Plantilla de cotizacion</h2>
           </div>
-          <button
-            className="table-button"
-            onClick={() => setNotice('El PDF real se genera desde el detalle de cada cotizacion.')}
-            type="button"
-          >
-            PDF desde cotizacion
-          </button>
+          <div className="toolbar-actions">
+            <button className="table-button" onClick={openTemplatePdfPreview} type="button">
+              Vista PDF de prueba
+            </button>
+            <button
+              className="table-button"
+              disabled={isTemplateSaving}
+              onClick={handleRestoreTemplateDefaults}
+              type="button"
+            >
+              Restaurar valores
+            </button>
+            <button
+              className="primary-button"
+              disabled={isTemplateSaving}
+              form="quotation-template-form"
+              type="submit"
+            >
+              {isTemplateSaving ? 'Guardando...' : 'Guardar plantilla'}
+            </button>
+          </div>
         </div>
 
-        <div className="quotation-sheet">
-          <header className="quotation-sheet__header">
-            <div className="quotation-sheet__brand">
-              <img alt="MYC" src={mycLogo} />
-              <div>
-                <strong>Metrologia y Servicios MYC</strong>
-                <span>Servicios de metrologia, calibracion, venta y soporte tecnico especializado</span>
+        <div className="template-editor-layout">
+          <form id="quotation-template-form" className="template-editor-form" onSubmit={handleTemplateSubmit}>
+            <section className="quotation-section">
+              <div className="quotation-section__title">
+                <p>Identidad</p>
+                <h3>Datos visibles de MYC</h3>
               </div>
+              <div className="template-editor-grid">
+                <label>
+                  Nombre comercial visible
+                  <input value={templateForm.company_name} onChange={(event) => updateTemplateForm('company_name', event.target.value)} />
+                </label>
+                <label>
+                  RFC de MYC
+                  <input value={templateForm.company_rfc || ''} onChange={(event) => updateTemplateForm('company_rfc', event.target.value)} />
+                </label>
+                <label className="form-field--wide">
+                  Lema / descripcion
+                  <input value={templateForm.company_tagline || ''} onChange={(event) => updateTemplateForm('company_tagline', event.target.value)} />
+                </label>
+                <label>
+                  Correo
+                  <input value={templateForm.company_email || ''} onChange={(event) => updateTemplateForm('company_email', event.target.value)} />
+                </label>
+                <label>
+                  Sitio web
+                  <input value={templateForm.company_website || ''} onChange={(event) => updateTemplateForm('company_website', event.target.value)} />
+                </label>
+                <label>
+                  Telefono
+                  <input value={templateForm.company_phone || ''} onChange={(event) => updateTemplateForm('company_phone', event.target.value)} />
+                </label>
+                <label className="form-field--wide">
+                  Direccion
+                  <textarea rows={2} value={templateForm.company_address || ''} onChange={(event) => updateTemplateForm('company_address', event.target.value)} />
+                </label>
+              </div>
+            </section>
+
+            <section className="quotation-section">
+              <div className="quotation-section__title">
+                <p>Documento</p>
+                <h3>Control documental</h3>
+              </div>
+              <div className="template-editor-grid">
+                <label>
+                  Titulo principal
+                  <input value={templateForm.document_title} onChange={(event) => updateTemplateForm('document_title', event.target.value)} />
+                </label>
+                <label>
+                  Codigo documental
+                  <input value={templateForm.document_code || ''} onChange={(event) => updateTemplateForm('document_code', event.target.value)} />
+                </label>
+                <label className="form-field--wide">
+                  Subtitulo
+                  <input value={templateForm.document_subtitle || ''} onChange={(event) => updateTemplateForm('document_subtitle', event.target.value)} />
+                </label>
+                <label>
+                  Revision
+                  <input value={templateForm.document_revision || ''} onChange={(event) => updateTemplateForm('document_revision', event.target.value)} />
+                </label>
+                <label>
+                  Fecha de emision documental
+                  <input type="date" value={templateForm.document_issued_on || ''} onChange={(event) => updateTemplateForm('document_issued_on', event.target.value)} />
+                </label>
+                <label>
+                  Version de terminos
+                  <input value={templateForm.terms_version || ''} onChange={(event) => updateTemplateForm('terms_version', event.target.value)} />
+                </label>
+              </div>
+            </section>
+
+            <section className="quotation-section">
+              <div className="quotation-section__title">
+                <p>Condiciones</p>
+                <h3>Textos imprimibles</h3>
+              </div>
+              <label className="form-field--wide">
+                Condiciones comerciales
+                <textarea rows={4} value={templateForm.commercial_terms || ''} onChange={(event) => updateTemplateForm('commercial_terms', event.target.value)} />
+              </label>
+              <label className="form-field--wide">
+                Condiciones metrologicas
+                <textarea rows={4} value={templateForm.metrological_terms || ''} onChange={(event) => updateTemplateForm('metrological_terms', event.target.value)} />
+              </label>
+              <label className="form-field--wide">
+                Condiciones legales
+                <textarea rows={4} value={templateForm.legal_terms || ''} onChange={(event) => updateTemplateForm('legal_terms', event.target.value)} />
+              </label>
+              <label className="form-field--wide">
+                Aviso de privacidad
+                <textarea rows={4} value={templateForm.privacy_notice || ''} onChange={(event) => updateTemplateForm('privacy_notice', event.target.value)} />
+              </label>
+              <label className="form-field--wide">
+                Firma de aceptacion
+                <textarea rows={2} value={templateForm.acceptance_text || ''} onChange={(event) => updateTemplateForm('acceptance_text', event.target.value)} />
+              </label>
+            </section>
+
+            <section className="quotation-section">
+              <div className="quotation-section__title">
+                <p>Opciones PDF</p>
+                <h3>Visibilidad en impresion</h3>
+              </div>
+              <div className="template-toggle-list">
+                <label>
+                  <input type="checkbox" checked={templateForm.show_summary_terms} onChange={(event) => updateTemplateForm('show_summary_terms', event.target.checked)} />
+                  Mostrar terminos resumidos en pagina 1
+                </label>
+                <label>
+                  <input type="checkbox" checked={templateForm.show_full_terms} onChange={(event) => updateTemplateForm('show_full_terms', event.target.checked)} />
+                  Mostrar terminos completos como pagina adicional
+                </label>
+                <label>
+                  <input type="checkbox" checked={templateForm.show_acceptance_signature} onChange={(event) => updateTemplateForm('show_acceptance_signature', event.target.checked)} />
+                  Mostrar firma de aceptacion
+                </label>
+              </div>
+            </section>
+          </form>
+
+          <div className="quotation-sheet template-live-preview">
+            <header className="quotation-sheet__header">
+              <div className="quotation-sheet__brand">
+                <img alt="MYC" src={mycLogo} />
+                <div>
+                  <strong>{templateForm.company_name}</strong>
+                  <span>{templateForm.company_tagline}</span>
+                </div>
+              </div>
+            </header>
+
+            <section className="quotation-sheet__title-block">
+              <div className="quotation-sheet__document-control">
+                <span>Codigo</span>
+                <strong>{templateForm.document_code || '-'}</strong>
+                {templateForm.document_revision ? (
+                  <>
+                    <span>Revision</span>
+                    <strong>{templateForm.document_revision}</strong>
+                  </>
+                ) : null}
+                <span>Emision</span>
+                <strong>{templateForm.document_issued_on || '-'}</strong>
+              </div>
+              <p>{templateForm.document_title}</p>
+              <span>{templateForm.document_subtitle}</span>
+            </section>
+
+            <div className="quotation-sheet__meta quotation-sheet__meta--four">
+              <article className="quotation-sheet__meta-card quotation-sheet__meta-card--folio">
+                <span>Folio</span>
+                <strong>MYC-06-26-0001</strong>
+              </article>
+              <article className="quotation-sheet__meta-card">
+                <span>Emision</span>
+                <strong>18/06/2026</strong>
+              </article>
+              <article className="quotation-sheet__meta-card">
+                <span>Vigencia</span>
+                <strong>15 dias</strong>
+              </article>
+              <article className="quotation-sheet__meta-card">
+                <span>Vendedor</span>
+                <strong>Por definir</strong>
+              </article>
             </div>
-          </header>
 
-          <section className="quotation-sheet__title-block">
-            <p>COTIZACION</p>
-            <span>Propuesta comercial de servicios, calibracion y soluciones tecnicas</span>
-          </section>
-
-          <div className="quotation-sheet__meta">
-            <article className="quotation-sheet__meta-card quotation-sheet__meta-card--folio">
-              <span>Folio</span>
-              <strong>MYC-06-2026-0001</strong>
-            </article>
-            <article className="quotation-sheet__meta-card">
-              <span>Emision</span>
-              <strong>18 jun 2026</strong>
-            </article>
-            <article className="quotation-sheet__meta-card">
-              <span>Vigencia</span>
-              <strong>15 dias</strong>
-            </article>
-          </div>
-
-          <div className="quotation-sheet__grid">
-            <section>
-              <h3>Datos del cliente</h3>
-              <p>Nombre comercial, contacto, correo, telefono y domicilio operativo.</p>
-            </section>
-            <section>
-              <h3>Datos fiscales</h3>
-              <p>Razon social, RFC, regimen fiscal, uso CFDI y codigo postal fiscal.</p>
-            </section>
-          </div>
-
-          <section className="quotation-lines-preview">
-            <h3>Partidas</h3>
-            <div className="quotation-lines-preview__head">
-              <span>Descripcion</span>
-              <span>Cantidad</span>
-              <span>Unidad</span>
-              <span>Precio unitario</span>
-              <span>Descuento</span>
-              <span>Importe</span>
+            <div className="quotation-sheet__grid">
+              <section>
+                <h3>Datos del cliente</h3>
+                <p>Nombre comercial, contacto, correo, telefono y domicilio operativo.</p>
+              </section>
+              <section>
+                <h3>Datos fiscales</h3>
+                <p>Razon social, RFC, regimen fiscal, uso CFDI y codigo postal fiscal.</p>
+              </section>
             </div>
-            <div className="quotation-lines-preview__row">
-              <span>Servicio de calibracion por concepto independiente</span>
-              <span>1</span>
-              <span>Servicio</span>
-              <span>$1,000.00</span>
-              <span>0%</span>
-              <span>$1,000.00</span>
+
+            <section className="quotation-lines-preview">
+              <h3>Partidas</h3>
+              <div className="quotation-lines-preview__head">
+                <span>Descripcion</span>
+                <span>Cantidad</span>
+                <span>Unidad</span>
+                <span>Precio unitario</span>
+                <span>Descuento</span>
+                <span>Importe</span>
+              </div>
+              <div className="quotation-lines-preview__row">
+                <span>Servicio de calibracion por concepto independiente</span>
+                <span>1</span>
+                <span>Servicio</span>
+                <span>$1,000.00</span>
+                <span>0%</span>
+                <span>$1,000.00</span>
+              </div>
+            </section>
+
+            <div className="quotation-sheet__totals">
+              <span>Subtotal $1,000.00</span>
+              <span>IVA $160.00</span>
+              <strong>Total $1,160.00</strong>
+              <small>Total con letra: mil ciento sesenta pesos 00/100 MXN</small>
             </div>
-          </section>
 
-          <div className="quotation-sheet__totals">
-            <span>Subtotal $1,000.00</span>
-            <span>IVA $160.00</span>
-            <strong>Total $1,160.00</strong>
-            <small>Total con letra: mil ciento sesenta pesos 00/100 MXN</small>
-          </div>
-
-          <div className="quotation-sheet__grid">
-            <section>
-              <h3>Condiciones comerciales</h3>
-              <p>Tiempo de entrega, forma de pago, moneda, vigencia, alcance y condiciones aplicables.</p>
-            </section>
-            <section>
-              <h3>Notas y autorizacion</h3>
-              <p>Notas internas/externas, firma comercial, firma de autorizacion y trazabilidad futura.</p>
-            </section>
+            <div className="quotation-sheet__grid">
+              <section>
+                <h3>Condiciones comerciales</h3>
+                <p>{templateForm.commercial_terms}</p>
+              </section>
+              <section>
+                <h3>Notas y autorizacion</h3>
+                <p>El control documental se imprime junto al encabezado de cotizacion.</p>
+                <p>{templateForm.acceptance_text}</p>
+              </section>
+            </div>
           </div>
         </div>
       </section>
@@ -2774,6 +3435,14 @@ function QuotationsPage() {
                         {action.label}
                       </button>
                     ))}
+                    <button
+                      className="primary-button"
+                      disabled={selectedQuotation.status !== 'accepted'}
+                      onClick={handleGenerateServiceOrder}
+                      type="button"
+                    >
+                      Generar orden de servicio
+                    </button>
                   </div>
                 </section>
               </>
@@ -2786,10 +3455,20 @@ function QuotationsPage() {
                     <p>Partidas reales</p>
                     <h3>{getQuotationItems(selectedQuotation).length + draftItems.length} partidas</h3>
                   </div>
-                  <button className="primary-button" onClick={addDraftItem} type="button">
+                  <button
+                    className="primary-button"
+                    disabled={isQuotationTerminal(selectedQuotation)}
+                    onClick={addDraftItem}
+                    type="button"
+                  >
                     + Agregar partida
                   </button>
                 </div>
+                {isQuotationTerminal(selectedQuotation) ? (
+                  <div className="client-fiscal-note">
+                    Esta cotizacion esta en estado terminal. Las partidas quedan bloqueadas para conservar el historico comercial.
+                  </div>
+                ) : null}
 
                 <div className="quotation-items-table">
                   <div className="quotation-items-table__head">
@@ -2804,22 +3483,139 @@ function QuotationsPage() {
                   {getQuotationItems(selectedQuotation).length || draftItems.length ? (
                     <>
                       {getQuotationItems(selectedQuotation).map((item) => {
-                        const amounts = calculateLineAmounts(item);
+                        const form = editingItemForms[item.id];
+                        const rowData = form || item;
+                        const amounts = calculateLineAmounts(rowData);
+                        const isSavingItem = savingItemIds.has(item.id);
+                        const isEditing = Boolean(form);
                         return (
                           <div className="quotation-items-table__row" key={item.id}>
-                            <span>{item.service_name}</span>
-                            <span>{item.quantity}</span>
-                            <span>{item.unit || 'Servicio'}</span>
-                            <span>{formatMoney(item.unit_price)}</span>
-                            <span>{item.discount_percent ?? 0}%</span>
+                            <span className="quote-line-concept">
+                              {isEditing ? (
+                                <>
+                                  <input
+                                    onChange={(event) => updateEditingItem(item.id, 'description', event.target.value)}
+                                    type="text"
+                                    value={form.description}
+                                  />
+                                  <input
+                                    onChange={(event) => updateEditingItem(item.id, 'quotationLegend', event.target.value)}
+                                    placeholder="Leyenda de cotizacion"
+                                    type="text"
+                                    value={form.quotationLegend || ''}
+                                  />
+                                  <select
+                                    onChange={(event) => {
+                                      const taxObject = event.target.value;
+                                      updateEditingItem(item.id, 'taxObject', taxObject);
+                                      updateEditingItem(item.id, 'taxRate', taxObject === 'iva_16' ? '16' : '0');
+                                    }}
+                                    value={form.taxObject || 'iva_16'}
+                                  >
+                                    <option value="iva_16">IVA 16%</option>
+                                    <option value="iva_0">IVA 0%</option>
+                                    <option value="exempt">Exento</option>
+                                    <option value="not_subject">No objeto</option>
+                                  </select>
+                                </>
+                              ) : (
+                                <>
+                                  <strong>{item.service_name}</strong>
+                                  {item.quotation_legend ? <small>{item.quotation_legend}</small> : null}
+                                  <small>Impuesto: {Number(item.tax_rate ?? 0)}%</small>
+                                </>
+                              )}
+                            </span>
+                            <span>
+                              {isEditing ? (
+                                <input
+                                  min="1"
+                                  onChange={(event) => updateEditingItem(item.id, 'quantity', event.target.value)}
+                                  type="number"
+                                  value={form.quantity}
+                                />
+                              ) : item.quantity}
+                            </span>
+                            <span>
+                              {isEditing ? (
+                                <input
+                                  onChange={(event) => updateEditingItem(item.id, 'unit', event.target.value)}
+                                  type="text"
+                                  value={form.unit}
+                                />
+                              ) : item.unit || 'Servicio'}
+                            </span>
+                            <span>
+                              {isEditing ? (
+                                <input
+                                  min="0"
+                                  onChange={(event) => updateEditingItem(item.id, 'unitPrice', event.target.value)}
+                                  step="0.01"
+                                  type="number"
+                                  value={form.unitPrice}
+                                />
+                              ) : formatMoney(item.unit_price)}
+                            </span>
+                            <span>
+                              {isEditing ? (
+                                <input
+                                  min="0"
+                                  onChange={(event) => updateEditingItem(item.id, 'discount', event.target.value)}
+                                  step="0.01"
+                                  type="number"
+                                  value={form.discount}
+                                />
+                              ) : `${item.discount_percent ?? 0}%`}
+                            </span>
                             <span>{formatMoney(amounts.subtotal)}</span>
                             <span className="clients-table__actions">
-                              <button className="table-button" disabled type="button">
-                                Editar despues
-                              </button>
-                              <button className="table-button" disabled type="button">
-                                Eliminar
-                              </button>
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    className="table-button table-button--primary"
+                                    disabled={isSavingItem}
+                                    onClick={() => saveEditedQuotationItem(item.id)}
+                                    type="button"
+                                  >
+                                    {isSavingItem ? 'Guardando...' : 'Guardar'}
+                                  </button>
+                                  <button
+                                    className="table-button"
+                                    disabled={isSavingItem}
+                                    onClick={() => cancelEditQuotationItem(item.id)}
+                                    type="button"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="table-button"
+                                    disabled={isQuotationTerminal(selectedQuotation)}
+                                    onClick={() => startEditQuotationItem(item)}
+                                    type="button"
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    className="table-button"
+                                    disabled={isQuotationTerminal(selectedQuotation)}
+                                    onClick={() => duplicateQuotationItem(item)}
+                                    type="button"
+                                  >
+                                    Duplicar
+                                  </button>
+                                  <button
+                                    className="table-button"
+                                    disabled={isQuotationTerminal(selectedQuotation) || isSavingItem}
+                                    onClick={() => deleteSavedQuotationItem(item)}
+                                    type="button"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </>
+                              )}
                             </span>
                           </div>
                         );
@@ -2857,6 +3653,25 @@ function QuotationsPage() {
                                 <option key={item.id} label={`${item.category} · ${item.internalKey}`} value={item.name} />
                               ))}
                             </datalist>
+                            <input
+                              onChange={(event) => updateDraftItem(draft.id, 'quotationLegend', event.target.value)}
+                              placeholder="Leyenda de cotizacion"
+                              type="text"
+                              value={draft.quotationLegend || ''}
+                            />
+                            <select
+                              onChange={(event) => {
+                                const taxObject = event.target.value;
+                                updateDraftItem(draft.id, 'taxObject', taxObject);
+                                updateDraftItem(draft.id, 'taxRate', taxObject === 'iva_16' ? '16' : '0');
+                              }}
+                              value={draft.taxObject || 'iva_16'}
+                            >
+                              <option value="iva_16">IVA 16%</option>
+                              <option value="iva_0">IVA 0%</option>
+                              <option value="exempt">Exento</option>
+                              <option value="not_subject">No objeto</option>
+                            </select>
                           </span>
                           <span>
                             <input

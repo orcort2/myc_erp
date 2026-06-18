@@ -15,6 +15,7 @@ from app.services.quotations import (
     change_quotation_status,
     create_quotation,
     deactivate_quotation,
+    deactivate_quotation_item,
     get_quotation,
     list_quotations,
     update_quotation,
@@ -88,6 +89,15 @@ def patch_quotation_item(
     db: Session = Depends(get_db),
 ) -> QuotationRead:
     return update_quotation_item(db, quotation_id, item_id, payload)
+
+
+@router.delete("/{quotation_id}/items/{item_id}", response_model=QuotationRead)
+def delete_quotation_item(
+    quotation_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+) -> QuotationRead:
+    return deactivate_quotation_item(db, quotation_id, item_id)
 
 
 @router.post("/{quotation_id}/send", response_model=QuotationRead)

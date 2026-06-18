@@ -171,6 +171,19 @@ export async function updateQuotationItem(quotationId, itemId, payload) {
   });
 }
 
+export async function deleteQuotationItem(quotationId, itemId) {
+  return request(`/quotations/${quotationId}/items/${itemId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function createServiceOrder(payload) {
+  return request('/service-orders', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 function buildQuery(params = {}) {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -206,11 +219,47 @@ export async function deleteCatalogItem(catalogItemId) {
   });
 }
 
+export async function getQuotationTemplate() {
+  return request('/document-templates/quotation');
+}
+
+export async function updateQuotationTemplate(payload) {
+  return request('/document-templates/quotation', {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function restoreQuotationTemplateDefaults() {
+  return request('/document-templates/quotation/restore-defaults', {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+}
+
 export function getQuotationPdfUrl(quotationId) {
   return `${API_URL}/quotations/${quotationId}/pdf`;
 }
 
-export async function downloadQuotationPdf(quotationId) {
+function sanitizePdfFilenamePart(value) {
+  return String(value ?? 'cotizacion')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .replace(/[^A-Za-z0-9_.-]+/g, '-')
+    .replace(/^[-_.]+|[-_.]+$/g, '') || 'cotizacion';
+}
+
+function getFilenameFromDisposition(disposition) {
+  const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (encodedMatch?.[1]) {
+    return decodeURIComponent(encodedMatch[1].replace(/"/g, ''));
+  }
+  const match = disposition.match(/filename="([^"]+)"/i);
+  return match?.[1] ?? null;
+}
+
+export async function downloadQuotationPdf(quotationId, quotation = null, clientName = '') {
   const token = getAccessToken();
   const headers = {};
   if (token) {
@@ -223,8 +272,9 @@ export async function downloadQuotationPdf(quotationId) {
   }
 
   const disposition = response.headers.get('Content-Disposition') ?? '';
-  const match = disposition.match(/filename="([^"]+)"/);
-  const filename = match?.[1] ?? `Cotizacion_${quotationId}.pdf`;
+  const filename =
+    getFilenameFromDisposition(disposition) ??
+    `Cotizacion_${sanitizePdfFilenamePart(quotation?.folio ?? quotationId)}_${sanitizePdfFilenamePart(clientName)}.pdf`;
   const blob = await response.blob();
   return { blob, filename };
 }

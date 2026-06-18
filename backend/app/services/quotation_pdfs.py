@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from re import sub
+from unicodedata import normalize
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy.orm import Session
 from weasyprint import HTML
 
 from app.models.quotation import Quotation, QuotationItem
+from app.models.user import User
+from app.services.document_templates import get_or_create_quotation_template
 from app.services.quotations import get_quotation
 
 
@@ -18,7 +20,6 @@ APP_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = APP_DIR.parents[1]
 TEMPLATE_DIR = APP_DIR / "templates"
 LOGO_PATH = PROJECT_ROOT / "frontend" / "src" / "assets" / "myc-logo.png"
-
 
 @dataclass(frozen=True)
 class PdfLine:
@@ -52,7 +53,8 @@ def _format_date(value: date | None) -> str:
 
 
 def _filename(value: str) -> str:
-    safe = sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_")
+    ascii_value = normalize("NFKD", value).encode("ascii", "ignore").decode("ascii")
+    safe = sub(r"[^A-Za-z0-9_.-]+", "-", ascii_value).strip("-_.")
     return safe or "cotizacion"
 
 
@@ -167,8 +169,18 @@ def _line_from_item(item: QuotationItem) -> PdfLine:
     )
 
 
-def _render_html(quotation: Quotation) -> str:
+def _advisor_name(db: Session, advisor_id: int | None) -> str:
+    if advisor_id is None:
+        return "Por definir"
+    advisor = db.get(User, advisor_id)
+    if advisor is None or not advisor.is_active:
+        return "Por definir"
+    return advisor.full_name or advisor.email or "Por definir"
+
+
+def _render_html(db: Session, quotation: Quotation) -> str:
     client = quotation.client
+    template_config = get_or_create_quotation_template(db)
     active_items = [item for item in quotation.items if item.is_active is not False]
     lines = [_line_from_item(item) for item in active_items]
     subtotal = sum((line.subtotal for line in lines), Decimal("0.00"))
@@ -192,12 +204,15 @@ def _render_html(quotation: Quotation) -> str:
         tax_total=_money(tax_total),
         total=_money(total),
         total_words=_total_to_words(total),
+        advisor_name=_advisor_name(db, quotation.advisor_id),
+        template_config=template_config,
         logo_uri=LOGO_PATH.as_uri() if LOGO_PATH.exists() else None,
     )
 
 
 def generate_quotation_pdf(db: Session, quotation_id: int) -> tuple[bytes, str]:
     quotation = get_quotation(db, quotation_id)
-    html = _render_html(quotation)
+    html = _render_html(db, quotation)
     pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
-    return pdf, f"Cotizacion_{_filename(quotation.folio)}.pdf"
+    client_name = quotation.client.commercial_name or quotation.client.legal_name
+    return pdf, f"Cotizacion_{_filename(quotation.folio)}_{_filename(client_name)}.pdf"
