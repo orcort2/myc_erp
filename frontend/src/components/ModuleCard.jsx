@@ -1,3 +1,4 @@
+
 export function ModuleCard({ module }) {
   const Icon = module.icon;
 

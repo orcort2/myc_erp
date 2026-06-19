@@ -103,8 +103,7 @@ export async function getDashboardCounts() {
     ['quotations', '/quotations'],
     ['serviceOrders', '/service-orders'],
     ['equipment', '/equipment'],
-    ['fieldSheets', '/field-sheets'],
-    ['certificates', '/certificates']
+    ['fieldSheets', '/field-sheets']
   ];
 
   const results = await Promise.all(
@@ -114,7 +113,17 @@ export async function getDashboardCounts() {
     })
   );
 
-  return Object.fromEntries(results);
+  const certificates = await request('/certificates');
+  const certificateItems = Array.isArray(certificates) ? certificates : [];
+
+  return {
+    ...Object.fromEntries(results),
+    quality: certificateItems.filter((item) => ['generated', 'quality_review'].includes(item.status)).length,
+    certificates: certificateItems.length,
+    certificatesReview: certificateItems.filter((item) => ['generated', 'quality_review'].includes(item.status)).length,
+    certificatesApproved: certificateItems.filter((item) => item.status === 'approved').length,
+    certificatesReleased: certificateItems.filter((item) => item.status === 'released').length
+  };
 }
 
 export async function listClients() {
@@ -182,6 +191,128 @@ export async function createServiceOrder(payload) {
     method: 'POST',
     body: JSON.stringify(payload)
   });
+}
+
+export async function listServiceOrders() {
+  return request('/service-orders');
+}
+
+export async function getServiceOrder(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}`);
+}
+
+export async function updateServiceOrder(serviceOrderId, payload) {
+  return request(`/service-orders/${serviceOrderId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function changeServiceOrderStatus(serviceOrderId, action, comment = null) {
+  return request(`/service-orders/${serviceOrderId}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ comment })
+  });
+}
+
+export async function listEquipment(params = {}) {
+  return request(`/equipment${buildQuery(params)}`);
+}
+
+export async function createEquipment(payload) {
+  return request('/equipment', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateEquipment(equipmentId, payload) {
+  return request(`/equipment/${equipmentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteEquipment(equipmentId) {
+  return request(`/equipment/${equipmentId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function changeEquipmentStatus(equipmentId, action, comment = null) {
+  return request(`/equipment/${equipmentId}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ comment })
+  });
+}
+
+export async function listFieldSheets(params = {}) {
+  return request(`/field-sheets${buildQuery(params)}`);
+}
+
+export async function getFieldSheet(fieldSheetId) {
+  return request(`/field-sheets/${fieldSheetId}`);
+}
+
+export async function createFieldSheet(payload) {
+  return request('/field-sheets', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateFieldSheet(fieldSheetId, payload) {
+  return request(`/field-sheets/${fieldSheetId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function completeFieldSheet(fieldSheetId, comment = null) {
+  return request(`/field-sheets/${fieldSheetId}/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ comment })
+  });
+}
+
+export async function reviewFieldSheet(fieldSheetId, comment = null) {
+  return request(`/field-sheets/${fieldSheetId}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ comment })
+  });
+}
+
+export async function listCertificates(params = {}) {
+  return request(`/certificates${buildQuery(params)}`);
+}
+
+export async function getCertificate(certificateId) {
+  return request(`/certificates/${certificateId}`);
+}
+
+export async function createCertificate(payload) {
+  return request('/certificates', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateCertificate(certificateId, payload) {
+  return request(`/certificates/${certificateId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function changeCertificateStatus(certificateId, action, comment = null) {
+  return request(`/certificates/${certificateId}/${action}`, {
+    method: 'POST',
+    body: JSON.stringify({ comment })
+  });
+}
+
+export async function listAuditLogs(params = {}) {
+  return request(`/audit-logs${buildQuery(params)}`);
 }
 
 function buildQuery(params = {}) {

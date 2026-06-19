@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-18 13:55:47 CST
+Ultima actualizacion: 2026-06-19 09:07:54 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -34,29 +34,13 @@ Estado Git verificado:
 
 ```text
 M backend/app/main.py
-M backend/app/models/__init__.py
-M backend/app/models/quotation.py
-M backend/app/routers/quotations.py
-M backend/app/schemas/quotation.py
-M backend/app/services/quotations.py
-M backend/requirements.txt
+M backend/app/schemas/audit_log.py
+M backend/app/services/audit_logs.py
 M docs/BACKUP_ESTADO_ACTUAL.md
 M frontend/src/pages/App.jsx
 M frontend/src/services/api.js
 M frontend/src/styles/global.css
-?? backend/app/models/catalog_item.py
-?? backend/app/routers/catalog_items.py
-?? backend/app/schemas/catalog_item.py
-?? backend/app/services/catalog_items.py
-?? backend/app/services/quotation_pdfs.py
-?? backend/app/templates/
-?? backend/migrations/versions/a1b2c3d4e5f6_add_catalog_items.py
-?? backend/migrations/versions/b2c3d4e5f6a7_complete_catalog_items.py
-?? backend/app/models/document_template.py
-?? backend/app/routers/document_templates.py
-?? backend/app/schemas/document_template.py
-?? backend/app/services/document_templates.py
-?? backend/migrations/versions/c3d4e5f6a7b8_add_document_templates.py
+?? backend/app/routers/audit_logs.py
 ```
 
 `frontend/assets/` contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en `frontend/src/assets/myc-logo.png`.
@@ -313,6 +297,7 @@ Routers incluidos:
 ```text
 health
 auth
+audit_logs
 modules
 clients
 quotations
@@ -329,6 +314,7 @@ Rutas base:
 ```text
 GET /
 GET /api/health
+GET /api/audit-logs
 GET /api/modules
 ```
 
@@ -448,6 +434,12 @@ PATCH /api/document-templates/quotation
 POST /api/document-templates/quotation/restore-defaults
 ```
 
+Audit logs:
+
+```text
+GET /api/audit-logs
+```
+
 Los `DELETE` actuales hacen borrado logico, no borrado fisico.
 
 ## Modulos MVP 1 definidos
@@ -472,6 +464,8 @@ service_orders
 equipment
 field_sheets
 certificates
+quality
+audit_logs
 catalog_items
 document_templates
 ```
@@ -1055,6 +1049,10 @@ PDF cotizacion: generate_quotation_pdf -> b'%PDF', endpoint TestClient GET /api/
 PDF cotizacion verificacion posterior: generate_quotation_pdf -> b'%PDF', filename Cotizacion_MYC-06-26-0004_Demo-MYC.pdf, 44279 bytes. Verificacion HTML: document-control usa right: 0, text-align: right y padding compacto. Verificacion visual con qlmanage: primera pagina renderizada correctamente con el codigo documental alineado al borde derecho del contenido y sin afectar titulo, subtitulo, folio, emision, vigencia ni vendedor.
 Plantilla documental: TestClient GET /api/document-templates/quotation -> 200 FCA-23-2, PATCH document_revision -> 200, PDF posterior -> 200 application/pdf 44275 bytes
 Flujo cierre cotizaciones: TestClient creo cliente 201, cotizacion 201, agrego partida 200, edito partida 200, duplico partida 200, elimino partida 200 via DELETE /api/quotations/{quotation_id}/items/{item_id}, genero PDF 200 application/pdf b'%PDF', envio 200, acepto 200 y genero orden de servicio 201 copiando 1 partida activa.
+Flujo frontend Ordenes de Servicio/API: TestClient creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, edito orden con agenda_date/service_date 200, creo equipo 201, cambio equipo a realizing 200, GET /api/service-orders 200 y GET /api/equipment?service_order_id={id} 200 con 1 equipo.
+Flujo Hoja de Campo/API: TestClient creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, guardo datos tecnicos 200, completo hoja 200, valido equipo_after_complete -> calibrated, envio hoja a revision 200 y queda under_review.
+Flujo frontend Certificados/API: TestClient con rollback creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, guardo datos tecnicos 200, completo hoja 200, envio a revision 200, valido equipo_after_sheet -> calibrated, creo certificado 201 MYCT-06-2026-0001 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released.
+Flujo Calidad/API: TestClient con rollback creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, completo hoja 200, envio hoja a revision 200, creo certificado 201 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released, GET /api/audit-logs?entity=certificates&entity_id={id} -> 200 con acciones certificate.created, certificate.generated, certificate.quality_review, certificate.approved y certificate.released.
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
@@ -1092,6 +1090,35 @@ Pantalla inicial en:
 ```text
 frontend/src/pages/App.jsx
 ```
+
+Refactor frontend principal completado:
+
+```text
+frontend/src/components/AppLayout.jsx
+frontend/src/components/BrandLockup.jsx
+frontend/src/pages/ClientsPage.jsx
+frontend/src/pages/QuotationsPage.jsx
+frontend/src/pages/ServiceOrdersPage.jsx
+frontend/src/pages/EquipmentPage.jsx
+frontend/src/pages/FieldSheetsPage.jsx
+frontend/src/pages/CertificatesPage.jsx
+frontend/src/pages/QualityPage.jsx
+frontend/src/pages/LoginPage.jsx
+frontend/src/pages/DashboardHome.jsx
+frontend/src/pages/ModulePage.jsx
+frontend/src/utils/routing.js
+```
+
+Estado del refactor:
+- `ClientsPage` esta extraido, importado desde `App.jsx` y sin segunda definicion dentro de `App.jsx`.
+- `QuotationsPage` fue extraido completo con sus dependencias de cotizaciones, catalogo, partidas, plantilla y PDF.
+- `ServiceOrdersPage` fue extraido completo con su flujo de orden, equipos y hoja de campo.
+- `CertificatesPage` y `QualityPage` fueron extraidos completos.
+- `LoginPage`, `DashboardHome`, `ModulePage`, `AppLayout` y `BrandLockup` fueron separados sin cambiar comportamiento visual.
+- `EquipmentPage` y `FieldSheetsPage` existen como paginas propias conservando el placeholder visual anterior.
+- `App.jsx` queda como orquestador minimo de sesion, ruta hash, layout y seleccion/render de pagina.
+- `App.jsx` ya no contiene paginas completas ni definiciones duplicadas.
+- Verificacion frontend: `npm run build` correcto.
 
 Rutas frontend implementadas:
 
@@ -1265,6 +1292,155 @@ La plantilla visual ya queda preparada para consumir partidas reales de cotizaci
 PDF real e impresion ya estan conectados desde el modal de cotizacion.
 ```
 
+Modulo Ordenes de Servicio frontend iniciado:
+
+```text
+/dashboard#ordenes abre vista real de Ordenes de Servicio.
+Consume GET /api/service-orders, GET /api/clients, GET /api/quotations, GET /api/equipment, GET /api/field-sheets y GET /api/certificates.
+Vista principal muestra tabla clickeable con Folio, Cliente, Cotizacion origen, Estado, Fecha agenda, Fecha servicio, Equipos, Tecnico y Acciones.
+Estados visuales implementados: scheduled, confirmed, called, in_progress, technical_review, capture, quality_review, pending_payment, released, closed y cancelled.
+Al abrir una orden se muestra modal Liquid Glass con subpestanas:
+- Informacion
+- Equipos
+- Hoja de campo
+- Historial
+Pestana Informacion muestra folio, cliente, cotizacion origen, asesor, tecnico, fecha agenda, fecha servicio, total de equipos, equipos completados, requiere pago, estado y notas.
+Edicion de orden conectada contra PATCH /api/service-orders/{service_order_id} para agenda_date, service_date, technician_id, requires_payment y notes.
+Acciones de estado conectadas:
+- confirm
+- call
+- start
+- capture
+- quality
+- pending-payment
+- release
+- close
+Las acciones piden confirmacion y se deshabilitan segun transiciones permitidas conocidas.
+Pestana Equipos conectada a backend:
+- Lista equipos filtrados por service_order_id.
+- Alta contra POST /api/equipment.
+- Edicion contra PATCH /api/equipment/{equipment_id}.
+- Baja logica contra DELETE /api/equipment/{equipment_id}.
+- Cambios de estado contra realizing, calibrated, labeled y not-done.
+Pestana Hoja de campo conectada:
+- Desde cada equipo se puede Abrir Hoja de Campo.
+- Si el equipo no tiene hoja activa, crea una con POST /api/field-sheets.
+- Si ya tiene hoja activa, la abre con GET /api/field-sheets/{field_sheet_id}.
+- Modal Liquid Glass amplio con subpestanas Informacion, Datos tecnicos e Historial.
+- Informacion muestra orden, cliente, equipo, marca, modelo, serie y estado actual.
+- Datos tecnicos conecta initial_condition, final_condition, pattern_used, results, observations, evidence_notes, method, environmental_conditions y technician_notes.
+- Guardar usa PATCH /api/field-sheets/{field_sheet_id}.
+- Completar valida en frontend condicion inicial/final, patron, resultados y observaciones o evidencia antes de llamar POST /api/field-sheets/{field_sheet_id}/complete.
+- Enviar a revision usa POST /api/field-sheets/{field_sheet_id}/review.
+- Al completar, backend cambia equipo a calibrated y recalcula contadores de orden.
+- Si la hoja esta completed, under_review o approved y el equipo esta calibrated o labeled, permite Crear certificado.
+- Crear certificado desde Hoja de Campo pide tipo acreditado/trazable con selector y llama POST /api/certificates.
+- Si ya existe certificado activo para la hoja, bloquea el boton y muestra Certificado creado.
+Pestana Historial muestra creacion, ultima actualizacion, estado actual y cotizacion origen; audit_log queda preparado para conectar despues.
+```
+
+Modulo Certificados frontend implementado:
+
+```text
+/dashboard#certificados abre vista real de Certificados.
+Consume GET /api/certificates, GET /api/service-orders, GET /api/equipment, GET /api/field-sheets y GET /api/clients.
+Vista principal del modulo separa informacion en pestanas:
+- Pendientes
+- En revision
+- Aprobados
+- Liberados
+- Todos
+Pestana Pendientes muestra hojas de campo con status completed, under_review o approved que todavia no tienen certificado activo.
+La vista Pendientes valida que el equipo vinculado este calibrated o labeled antes de permitir crear certificado.
+Crear certificado desde Pendientes abre modal Liquid Glass con tipo de certificado acreditado/trazable y notas.
+Alta de certificado conectada contra POST /api/certificates con service_order_id, equipment_id, field_sheet_id y certificate_type.
+Listado de certificados muestra Folio, Cliente, Orden de Servicio, Equipo, Tipo, Estado, Fecha emision, Fecha liberacion y Acciones.
+Las filas de certificados son clickeables y abren ficha de certificado.
+Modal de certificado Liquid Glass amplio con subpestanas:
+- Informacion
+- Datos tecnicos
+- Calidad
+- Historial
+Informacion muestra folio, tipo, cliente, orden de servicio, equipo, hoja de campo, emision, liberacion, estado y notas.
+Notas editables contra PATCH /api/certificates/{certificate_id}; se bloquean en released y cancelled.
+Datos tecnicos muestra en lectura la hoja de campo: condicion inicial, condicion final, patron utilizado, resultados, observaciones, evidencia/notas, metodo, condiciones ambientales y notas del tecnico.
+Calidad conecta acciones:
+- Generar -> POST /api/certificates/{id}/generate
+- Enviar a calidad -> POST /api/certificates/{id}/quality
+- Aprobar -> POST /api/certificates/{id}/approve
+- Liberar -> POST /api/certificates/{id}/release
+- Suspender -> POST /api/certificates/{id}/suspend
+Cada accion pide confirmacion, muestra loading, propaga errores claros y refresca certificado/listados.
+Badges visuales implementados para draft, generated, quality_review, approved, released, cancelled y suspended.
+Folios se muestran con jerarquia visual:
+- acreditado: MYCA-MM-AAAA-XXXX
+- trazable: MYCT-MM-AAAA-XXXX
+Historial muestra creacion, ultima actualizacion, estado actual, orden de servicio origen, equipo origen y hoja de campo origen.
+Dashboard actualiza contadores reales:
+- Total certificados
+- Certificados en revision
+- Certificados liberados
+No se construyo PDF de certificado, firma digital, facturacion, finanzas ni CRM.
+```
+
+Modulo Calidad frontend implementado:
+
+```text
+/dashboard#calidad abre vista transversal para supervision de certificados.
+Consume GET /api/certificates, GET /api/service-orders, GET /api/equipment, GET /api/field-sheets, GET /api/clients y GET /api/audit-logs.
+Vista principal separada en pestanas:
+- Pendientes
+- En revision
+- Aprobados
+- Liberados
+- Suspendidos
+Pendientes muestra certificados en estados generated y quality_review.
+Tabla principal muestra:
+- Folio
+- Cliente
+- Orden de Servicio
+- Equipo
+- Tecnico
+- Fecha
+- Estado
+Cada fila abre modal Liquid Glass de revision.
+Ficha de revision incluye pestanas:
+- Certificado
+- Hoja de Campo
+- Equipo
+- Historial
+Certificado muestra folio, tipo, estado y notas.
+Hoja de Campo muestra condicion inicial, condicion final, patron, resultados, observaciones, metodo y condiciones ambientales.
+Equipo muestra nombre, marca, modelo, serie y estado.
+Historial consume audit_logs reales del backend para entity=certificates y entity_id del certificado.
+Historial muestra fecha, usuario, accion, estado anterior y estado nuevo.
+Acciones de Calidad conectadas:
+- Aprobar -> POST /api/certificates/{id}/approve
+- Solicitar correccion -> POST /api/certificates/{id}/suspend con comentario de correccion
+- Suspender -> POST /api/certificates/{id}/suspend
+- Liberar -> POST /api/certificates/{id}/release
+Nota tecnica: Solicitar correccion hoy reutiliza la transicion suspend porque el backend todavia no tiene un estado separado para correccion solicitada.
+Dashboard actualiza contadores:
+- Certificados pendientes calidad
+- Certificados aprobados
+- Certificados liberados
+```
+
+Modulo backend Audit Logs expuesto:
+
+```text
+Router nuevo: backend/app/routers/audit_logs.py
+Schema extendido: backend/app/schemas/audit_log.py
+Service extendido: backend/app/services/audit_logs.py
+Ruta expuesta: GET /api/audit-logs
+Filtros soportados:
+- entity
+- entity_id
+- user_id
+- limit
+La respuesta ahora incluye user_name ademas de user_id para facilitar la lectura en frontend.
+```
+
 Modulo backend Catalogo MYC agregado:
 
 ```text
@@ -1407,6 +1583,7 @@ Ordenes de servicio
 Equipos
 Hojas de campo
 Certificados
+Calidad
 Finanzas
 Configuracion
 ```
@@ -1468,7 +1645,7 @@ npm run dev
 ## Pendientes inmediatos recomendados
 
 1. Decidir si se commitea `frontend/package-lock.json`.
-2. Crear vista frontend real de Ordenes de Servicio usando las ordenes generadas desde cotizaciones aceptadas.
-3. Crear modulo de calidad para revision formal de certificados.
-4. Conectar frontend profundo a equipos, hojas de campo y certificados.
+2. Separar en backend/frontend la accion Solicitar correccion de la accion Suspender con estado o transicion propia.
+3. Conectar flujo de liberacion documental con roles/permisos y validaciones finales.
+4. Definir siguiente fase de PDF real de certificado y plantilla documental de certificados.
 5. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
