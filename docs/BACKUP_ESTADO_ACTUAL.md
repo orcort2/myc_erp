@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-19 09:07:54 CST
+Ultima actualizacion: 2026-06-19 11:50 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -307,6 +307,7 @@ field_sheets
 certificates
 catalog_items
 document_templates
+users
 ```
 
 Rutas base:
@@ -325,6 +326,15 @@ POST /api/auth/register
 POST /api/auth/login
 POST /api/auth/refresh
 GET /api/auth/me
+```
+
+Usuarios / Configuración:
+
+```text
+GET /api/users
+GET /api/users/roles
+PATCH /api/users/{user_id}/roles
+PATCH /api/users/{user_id}/status
 ```
 
 Clientes:
@@ -1107,20 +1117,29 @@ frontend/src/pages/LoginPage.jsx
 frontend/src/pages/DashboardHome.jsx
 frontend/src/pages/ModulePage.jsx
 frontend/src/utils/routing.js
+frontend/src/pages/SettingsPage.jsx
 ```
 
-Estado del refactor:
-- `ClientsPage` esta extraido, importado desde `App.jsx` y sin segunda definicion dentro de `App.jsx`.
-- `QuotationsPage` fue extraido completo con sus dependencias de cotizaciones, catalogo, partidas, plantilla y PDF.
-- `ServiceOrdersPage` fue extraido completo con su flujo de orden, equipos y hoja de campo.
-- `CertificatesPage` y `QualityPage` fueron extraidos completos.
-- `LoginPage`, `DashboardHome`, `ModulePage`, `AppLayout` y `BrandLockup` fueron separados sin cambiar comportamiento visual.
-- `EquipmentPage` y `FieldSheetsPage` existen como paginas propias conservando el placeholder visual anterior.
-- `App.jsx` queda como orquestador minimo de sesion, ruta hash, layout y seleccion/render de pagina.
-- `App.jsx` ya no contiene paginas completas ni definiciones duplicadas.
-- Verificacion frontend: `npm run build` correcto.
+## Actualizacion refactor frontend - 2026-06-19
 
-Rutas frontend implementadas:
+El refactor principal de frontend ya compila correctamente.
+
+Verificacion:
+- `npm run build` correcto.
+- Dashboard levanta sin pantalla blanca.
+- Clientes levanta sin pantalla blanca.
+- Cotizaciones levanta sin pantalla blanca.
+- Ordenes de servicio levanta sin pantalla blanca.
+- Certificados levanta sin pantalla blanca.
+- Calidad levanta sin pantalla blanca.
+- EquipmentPage y FieldSheetsPage existen como paginas separadas, pero por ahora conservan placeholder visual mediante ModulePage.
+
+Correcciones manuales realizadas:
+- Se agregaron imports faltantes de React en paginas/componentes extraidos.
+- Se corrigieron hooks faltantes como `useMemo`, `useEffect` y `useState`.
+- Se corrigieron imports faltantes como `ModulePage`, `ShieldCheck` y `mycLogo` donde aplicaba.
+- `App.jsx` queda como orquestador minimo de sesion, rutas hash, layout y render de paginas.
+- Ya no hay pantallas blancas por errores de React runtime.
 
 ```text
 /login
@@ -1519,6 +1538,46 @@ Reglas implementadas:
 - general_service exige quotation_legend manual.
 - Alta, edicion y baja logica escriben audit_log.
 
+## Módulo Configuración implementado - 2026-06-19
+
+Se inició el módulo Configuración en `/dashboard#configuracion`.
+
+Backend agregado:
+- `backend/app/schemas/user.py`
+- `backend/app/services/users.py`
+- `backend/app/routers/users.py`
+- Router registrado en `backend/app/main.py`.
+
+Endpoints disponibles:
+- `GET /api/users`
+- `GET /api/users/roles`
+- `PATCH /api/users/{user_id}/roles`
+- `PATCH /api/users/{user_id}/status`
+
+Frontend agregado:
+- `frontend/src/pages/SettingsPage.jsx`
+- Funciones nuevas en `frontend/src/services/api.js`:
+  - `listUsers()`
+  - `listRoles()`
+  - `updateUserRoles(userId, roleNames)`
+  - `updateUserStatus(userId, isActive)`
+
+Estado funcional:
+- Configuración ya aparece en el dashboard.
+- Solo usuarios con permiso suficiente pueden acceder.
+- Administrador puede ver usuarios.
+- Administrador puede cambiar rol desde selector.
+- Administrador puede activar/desactivar usuarios.
+- Se agregó CSS visual para tabla, select de rol, badges de estado y botones de acción.
+- Se validó visualmente en navegador local sin pantalla blanca.
+
+Pendiente inmediato:
+- Evitar que se desactive o cambie de rol al último Administrador activo.
+- Registrar en audit_logs los cambios de rol y estado de usuarios.
+- Activar botón Nuevo usuario con modal.
+- Crear vista de Auditoría dentro de Configuración.
+- Después mover permisos hardcodeados a base de datos.
+
 Migracion nueva:
 backend/migrations/versions/a1b2c3d4e5f6_add_catalog_items.py
 backend/migrations/versions/b2c3d4e5f6a7_complete_catalog_items.py
@@ -1644,8 +1703,11 @@ npm run dev
 
 ## Pendientes inmediatos recomendados
 
-1. Decidir si se commitea `frontend/package-lock.json`.
-2. Separar en backend/frontend la accion Solicitar correccion de la accion Suspender con estado o transicion propia.
-3. Conectar flujo de liberacion documental con roles/permisos y validaciones finales.
-4. Definir siguiente fase de PDF real de certificado y plantilla documental de certificados.
-5. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
+1. Hacer commit del estado actual estable.
+2. Blindar último Administrador activo.
+3. Registrar auditoría para cambios de usuarios/roles.
+4. Activar modal Nuevo usuario en Configuración.
+5. Crear pestaña Auditoría dentro de Configuración.
+6. Separar en backend/frontend la acción Solicitar corrección de Suspender.
+7. Definir PDF real de certificado y plantilla documental de certificados.
+8. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.

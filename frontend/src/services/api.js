@@ -315,6 +315,32 @@ export async function listAuditLogs(params = {}) {
   return request(`/audit-logs${buildQuery(params)}`);
 }
 
+export async function listUsers() {
+  return request('/users');
+}
+
+export async function listRoles() {
+  return request('/users/roles');
+}
+
+export async function updateUserRoles(userId, roleNames) {
+  return request(`/users/${userId}/roles`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      role_names: roleNames
+    })
+  });
+}
+
+export async function updateUserStatus(userId, isActive) {
+  return request(`/users/${userId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      is_active: isActive
+    })
+  });
+}
+
 function buildQuery(params = {}) {
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -416,3 +442,4 @@ export async function changeQuotationStatus(quotationId, action, comment = null)
     body: JSON.stringify({ comment })
   });
 }
+

@@ -16,6 +16,7 @@ import ModulePage from './ModulePage.jsx';
 import QualityPage from './QualityPage.jsx';
 import QuotationsPage from './QuotationsPage.jsx';
 import ServiceOrdersPage from './ServiceOrdersPage.jsx';
+import SettingsPage from './SettingsPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -138,6 +139,8 @@ export function App() {
         <CertificatesPage />
       ) : selectedModule?.key === 'quality' ? (
         <QualityPage />
+      ) : selectedModule?.key === 'settings' ? (
+        <SettingsPage />  
       ) : selectedModule ? (
         <ModulePage module={selectedModule} timestamp={now} />
       ) : (

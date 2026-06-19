@@ -2623,3 +2623,117 @@ button {
     width: 100%;
   }
 }
+
+/* ==========================================
+   CONFIGURACION
+========================================== */
+
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.settings-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-toolbar h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.settings-table thead {
+  background: rgba(255,255,255,0.08);
+}
+
+.settings-table th {
+  padding: 14px;
+  text-align: left;
+  font-weight: 700;
+  color: #083344;
+}
+
+.settings-table td {
+  padding: 14px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+}
+
+.settings-table tbody tr {
+  transition: all 0.25s ease;
+}
+
+.settings-table tbody tr:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+.settings-role-select {
+  width: 100%;
+  min-width: 180px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,0.1);
+  background: white;
+  font-size: 0.95rem;
+}
+
+.settings-action-button {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.25s ease;
+}
+
+.settings-action-button:hover {
+  transform: translateY(-2px);
+}
+
+.settings-action-button.activate {
+  background: #16a34a;
+  color: white;
+}
+
+.settings-action-button.deactivate {
+  background: #dc2626;
+  color: white;
+}
+
+.settings-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.settings-status::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.settings-status.active::before {
+  background: #22c55e;
+}
+
+.settings-status.inactive::before {
+  background: #ef4444;
+}
+
+.settings-card {
+  background: rgba(255,255,255,0.12);
+  backdrop-filter: blur(12px);
+  border-radius: 18px;
+  padding: 20px;
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+}

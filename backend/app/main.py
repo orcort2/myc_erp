@@ -15,6 +15,7 @@ from app.routers import (
     modules,
     quotations,
     service_orders,
+    users,
 )
 
 
@@ -44,6 +45,7 @@ app.include_router(service_orders.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
 app.include_router(certificates.router, prefix="/api")
+app.include_router(users.router, prefix="/api")
 
 
 @app.get("/")
