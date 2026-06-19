@@ -40,7 +40,13 @@ async function request(path, options = {}) {
     let message = 'No se pudo completar la solicitud';
     try {
       const payload = await response.json();
-      message = typeof payload.detail === 'string' ? payload.detail : message;
+      if (typeof payload.detail === 'string') {
+        message = payload.detail;
+      } else if (payload.detail && typeof payload.detail.message === 'string') {
+        message = payload.detail.message;
+      } else if (typeof payload.message === 'string') {
+        message = payload.message;
+      }
     } catch {
       // Keep default message when response is not JSON.
     }
@@ -323,6 +329,20 @@ export async function listRoles() {
   return request('/users/roles');
 }
 
+export async function createUser(payload) {
+  return request('/users', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateUser(userId, payload) {
+  return request(`/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function updateUserRoles(userId, roleNames) {
   return request(`/users/${userId}/roles`, {
     method: 'PATCH',
@@ -442,4 +462,3 @@ export async function changeQuotationStatus(quotationId, action, comment = null)
     body: JSON.stringify({ comment })
   });
 }
-

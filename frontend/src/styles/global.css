@@ -2737,3 +2737,76 @@ button {
   border: 1px solid rgba(255,255,255,0.15);
   box-shadow: 0 10px 30px rgba(0,0,0,0.08);
 }
+
+.secondary-button {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(8, 51, 68, 0.12);
+  border-radius: 6px;
+  color: #083344;
+  display: inline-flex;
+  font-weight: 700;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 18px;
+}
+
+.settings-users-table__row {
+  cursor: pointer;
+}
+
+.settings-users-table__row:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  outline-offset: -2px;
+}
+
+.settings-user-modal {
+  max-width: 720px;
+}
+
+.settings-user-modal__header {
+  align-items: flex-start;
+  margin-bottom: 20px;
+}
+
+.settings-user-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-label {
+  color: #083344;
+  display: flex;
+  flex-direction: column;
+  font-size: 0.92rem;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.text-input {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(15, 118, 110, 0.16);
+  border-radius: 10px;
+  color: #0f172a;
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.text-input:focus {
+  border-color: var(--myc-primary);
+  box-shadow: 0 0 0 3px rgba(53, 208, 186, 0.18);
+  outline: none;
+}
+
+.settings-checkbox {
+  align-items: center;
+  color: #083344;
+  display: inline-flex;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.settings-checkbox input {
+  accent-color: var(--myc-primary);
+}

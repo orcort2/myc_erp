@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-19 11:50 CST
+Ultima actualizacion: 2026-06-19 14:59:53 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -33,14 +33,15 @@ e53b18d Add equipment and field sheets modules
 Estado Git verificado:
 
 ```text
-M backend/app/main.py
-M backend/app/schemas/audit_log.py
-M backend/app/services/audit_logs.py
+M backend/app/routers/users.py
+M backend/app/schemas/user.py
+M backend/app/services/auth.py
+M backend/app/services/users.py
 M docs/BACKUP_ESTADO_ACTUAL.md
-M frontend/src/pages/App.jsx
+M frontend/src/pages/SettingsPage.jsx
 M frontend/src/services/api.js
 M frontend/src/styles/global.css
-?? backend/app/routers/audit_logs.py
+?? backend/app/core/permissions.py
 ```
 
 `frontend/assets/` contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en `frontend/src/assets/myc-logo.png`.
@@ -180,6 +181,7 @@ backend/
     core/
       config.py
       db.py
+      permissions.py
       security.py
       folios.py
       init_db.py
@@ -198,6 +200,7 @@ backend/
     schemas/
       auth.py
       module.py
+      user.py
       client.py
       quotation.py
       service_order.py
@@ -211,6 +214,7 @@ backend/
       auth.py
       health.py
       modules.py
+      users.py
       clients.py
       quotations.py
       service_orders.py
@@ -222,6 +226,7 @@ backend/
     services/
       auth.py
       modules.py
+      users.py
       clients.py
       quotations.py
       service_orders.py
@@ -331,8 +336,10 @@ GET /api/auth/me
 Usuarios / Configuración:
 
 ```text
+POST /api/users
 GET /api/users
 GET /api/users/roles
+PATCH /api/users/{user_id}
 PATCH /api/users/{user_id}/roles
 PATCH /api/users/{user_id}/status
 ```
@@ -531,6 +538,7 @@ Captura
 Calidad
 Finanzas
 Cliente
+Desarrollador
 ```
 
 Tokens:
@@ -556,9 +564,10 @@ Administrador -> *
 Comercial -> clients.*, quotations.*, service_orders.*
 Tecnico -> equipment.*, field_sheets.*
 Captura -> certificates.create, certificates.generate, field_sheets.read
-Calidad -> certificates.quality, certificates.approve, field_sheets.read
+Calidad -> certificates.read, certificates.quality, certificates.approve, certificates.release, field_sheets.read, service_orders.read
 Finanzas -> payments.*, invoices.*, release.*
 Cliente -> portal.read
+Desarrollador -> users.read, users.manage, settings.read, settings.manage
 ```
 
 Ya existen helpers:
@@ -567,6 +576,14 @@ Ya existen helpers:
 get_current_user()
 require_permission(permission)
 user_has_permission(user, permission)
+```
+
+Estado actual del modelo de roles:
+
+```text
+El sistema sigue usando users.roles mediante user_roles como fuente operativa de permisos.
+users.role_id sigue existiendo por compatibilidad legado, pero se sincroniza con el primer rol asignado.
+No se elimino role_id para no romper auth, migraciones previas ni frontend existente.
 ```
 
 Los endpoints operativos todavia no estan protegidos masivamente para no romper el flujo de desarrollo. La proteccion por permisos se debe aplicar gradualmente al construir Quality y al endurecer acciones sensibles.
@@ -1063,6 +1080,7 @@ Flujo frontend Ordenes de Servicio/API: TestClient creo cliente 201, cotizacion 
 Flujo Hoja de Campo/API: TestClient creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, guardo datos tecnicos 200, completo hoja 200, valido equipo_after_complete -> calibrated, envio hoja a revision 200 y queda under_review.
 Flujo frontend Certificados/API: TestClient con rollback creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, guardo datos tecnicos 200, completo hoja 200, envio a revision 200, valido equipo_after_sheet -> calibrated, creo certificado 201 MYCT-06-2026-0001 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released.
 Flujo Calidad/API: TestClient con rollback creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, completo hoja 200, envio hoja a revision 200, creo certificado 201 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released, GET /api/audit-logs?entity=certificates&entity_id={id} -> 200 con acciones certificate.created, certificate.generated, certificate.quality_review, certificate.approved y certificate.released.
+Usuarios/Configuracion verificado 2026-06-19: `../venv/bin/python -m compileall app` OK, `../venv/bin/alembic current` -> c3d4e5f6a7b8 (head), `app.openapi()` expone `/api/users`, `/api/users/roles`, `/api/users/{user_id}`, `/api/users/{user_id}/roles` y `/api/users/{user_id}/status`, `ROLE_PERMISSIONS` conserva `Administrador -> *` y `Desarrollador -> users.read/users.manage`, prueba de servicio con usuario temporal: crear usuario -> editar usuario -> cambiar rol -> desactivar -> limpieza final OK.
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
@@ -1540,43 +1558,56 @@ Reglas implementadas:
 
 ## Módulo Configuración implementado - 2026-06-19
 
-Se inició el módulo Configuración en `/dashboard#configuracion`.
+Ruta activa:
 
-Backend agregado:
+```text
+/dashboard#settings
+```
+
+Backend actual de usuarios:
+- `backend/app/core/permissions.py`
 - `backend/app/schemas/user.py`
 - `backend/app/services/users.py`
 - `backend/app/routers/users.py`
-- Router registrado en `backend/app/main.py`.
+- `backend/app/services/auth.py`
 
-Endpoints disponibles:
+Endpoints activos:
+- `POST /api/users`
 - `GET /api/users`
 - `GET /api/users/roles`
+- `PATCH /api/users/{user_id}`
 - `PATCH /api/users/{user_id}/roles`
 - `PATCH /api/users/{user_id}/status`
 
-Frontend agregado:
+Blindajes implementados:
+- No permite quitarse a si mismo el rol Administrador.
+- No permite quitar el rol Administrador al ultimo administrador activo.
+- No permite desactivar al ultimo administrador activo.
+- No permite que un administrador desactive su propia cuenta.
+- `require_permission()` sigue operando con `ROLE_PERMISSIONS` desde `backend/app/core/permissions.py`.
+- `Administrador` conserva `"*"`.
+- `users.read` y `users.manage` quedan definidos para el rol `Desarrollador`.
+
+Frontend actual:
 - `frontend/src/pages/SettingsPage.jsx`
-- Funciones nuevas en `frontend/src/services/api.js`:
-  - `listUsers()`
-  - `listRoles()`
-  - `updateUserRoles(userId, roleNames)`
-  - `updateUserStatus(userId, isActive)`
+- `frontend/src/services/api.js`
 
-Estado funcional:
-- Configuración ya aparece en el dashboard.
-- Solo usuarios con permiso suficiente pueden acceder.
-- Administrador puede ver usuarios.
-- Administrador puede cambiar rol desde selector.
-- Administrador puede activar/desactivar usuarios.
-- Se agregó CSS visual para tabla, select de rol, badges de estado y botones de acción.
-- Se validó visualmente en navegador local sin pantalla blanca.
+Funciones frontend activas:
+- Listado real de usuarios y roles.
+- Boton `Nuevo usuario`.
+- Modal de creacion con nombre completo, correo, contraseña y rol.
+- Modal de edicion por fila con nombre completo, correo, rol y estado activo/inactivo.
+- Cambio rapido de rol desde selector dentro de la tabla.
+- Activar/desactivar usuario desde boton rapido.
+- Guardado contra `createUser(payload)` y `updateUser(userId, payload)`.
+- Recarga/actualizacion local del listado y mensajes claros de exito/error.
+- Estilo visual coherente con el ERP usando modal Liquid Glass, tabla y badges existentes.
 
-Pendiente inmediato:
-- Evitar que se desactive o cambie de rol al último Administrador activo.
-- Registrar en audit_logs los cambios de rol y estado de usuarios.
-- Activar botón Nuevo usuario con modal.
-- Crear vista de Auditoría dentro de Configuración.
-- Después mover permisos hardcodeados a base de datos.
+Pendiente inmediato de Configuración:
+- Registrar cambios de usuarios en `audit_logs`.
+- Crear vista de auditoria dentro de Configuración.
+- Evaluar migracion futura si se quiere eliminar por completo `role_id`.
+- Mover permisos hardcodeados a base de datos en una fase posterior.
 
 Migracion nueva:
 backend/migrations/versions/a1b2c3d4e5f6_add_catalog_items.py
@@ -1704,10 +1735,9 @@ npm run dev
 ## Pendientes inmediatos recomendados
 
 1. Hacer commit del estado actual estable.
-2. Blindar último Administrador activo.
-3. Registrar auditoría para cambios de usuarios/roles.
-4. Activar modal Nuevo usuario en Configuración.
-5. Crear pestaña Auditoría dentro de Configuración.
-6. Separar en backend/frontend la acción Solicitar corrección de Suspender.
-7. Definir PDF real de certificado y plantilla documental de certificados.
-8. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
+2. Registrar auditoría para cambios de usuarios/roles.
+3. Crear pestaña Auditoría dentro de Configuración.
+4. Separar en backend/frontend la acción Solicitar corrección de Suspender.
+5. Definir PDF real de certificado y plantilla documental de certificados.
+6. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
+7. Evaluar si `role_id` ya puede retirarse con migración dedicada o si se mantiene como compatibilidad controlada.

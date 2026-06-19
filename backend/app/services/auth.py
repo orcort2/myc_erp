@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.db import get_db
+from app.core.permissions import INITIAL_ROLES, ROLE_PERMISSIONS
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -14,26 +15,6 @@ from app.core.security import (
 from app.models.user import Role, User
 from app.schemas.auth import UserLogin, UserRegister
 
-
-INITIAL_ROLES = {
-    "Administrador": "Acceso total al sistema.",
-    "Comercial": "Gestion comercial, clientes y cotizaciones.",
-    "Tecnico": "Gestion tecnica de equipos y hojas de campo.",
-    "Captura": "Captura y generacion documental.",
-    "Calidad": "Revision y aprobacion de certificados.",
-    "Finanzas": "Pagos, facturacion y liberacion financiera.",
-    "Cliente": "Acceso limitado para cliente externo.",
-}
-
-ROLE_PERMISSIONS = {
-    "Administrador": {"*"},
-    "Comercial": {"clients.*", "quotations.*", "service_orders.*"},
-    "Tecnico": {"equipment.*", "field_sheets.*"},
-    "Captura": {"certificates.create", "certificates.generate", "field_sheets.read"},
-    "Calidad": {"certificates.quality", "certificates.approve", "field_sheets.read"},
-    "Finanzas": {"payments.*", "invoices.*", "release.*"},
-    "Cliente": {"portal.read"},
-}
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
