@@ -44,6 +44,7 @@ function AuditSettingsPanel() {
   const [filters, setFilters] = useState(DEFAULT_FILTERS);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedLog, setSelectedLog] = useState(null);
 
   const actionOptions = useMemo(() => {
     const actions = new Set(logs.map((log) => log.action).filter(Boolean));
@@ -195,8 +196,8 @@ function AuditSettingsPanel() {
         </div>
       </form>
 
-      <div className="clients-table audit-log-table">
-        <div className="clients-table__head">
+        <div className="audit-log-table">
+          <div className="audit-log-table__head">
           <span>Fecha</span>
           <span>Usuario</span>
           <span>Accion</span>
@@ -209,7 +210,17 @@ function AuditSettingsPanel() {
           <div className="clients-empty">Cargando auditoria...</div>
         ) : logs.length ? (
           logs.map((log) => (
-            <div className="clients-table__row" key={log.id}>
+            <div
+              className="audit-log-table__row audit-log-row"
+              key={log.id}
+              onClick={() => setSelectedLog(log)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(event) =>{
+                if (event.key === 'Enter'){
+                  setSelectedLog(log);
+                }
+              }}>
               <span>{new Date(log.created_at).toLocaleString('es-MX')}</span>
               <span>{log.user_name ?? 'Sistema'}</span>
               <span>
@@ -221,9 +232,63 @@ function AuditSettingsPanel() {
             </div>
           ))
         ) : (
-          <div className="clients-empty">No hay registros de auditoria para los filtros seleccionados.</div>
+          <div className="audit-log-empty">No hay registros de auditoria para los filtros seleccionados.</div>
         )}
       </div>
+
+              {selectedLog ? (
+          <div className="modal-backdrop" role="presentation" onClick={() => setSelectedLog(null)}>
+            <section
+              className="client-modal audit-detail-modal"
+              aria-modal="true"
+              role="dialog"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="section-heading">
+                <div>
+                  <p>Detalle de auditoría</p>
+                  <h2>{selectedLog.action}</h2>
+                  <span>
+                    {new Date(selectedLog.created_at).toLocaleString('es-MX')} · {selectedLog.user_name ?? 'Sistema'}
+                  </span>
+                </div>
+                <button className="icon-text-button" type="button" onClick={() => setSelectedLog(null)}>
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="audit-detail-grid">
+                <article>
+                  <span>Entidad</span>
+                  <strong>{selectedLog.entity}</strong>
+                </article>
+                <article>
+                  <span>ID entidad</span>
+                  <strong>{selectedLog.entity_id ?? 'N/A'}</strong>
+                </article>
+                <article>
+                  <span>Usuario</span>
+                  <strong>{selectedLog.user_name ?? 'Sistema'}</strong>
+                </article>
+                <article>
+                  <span>Comentario</span>
+                  <strong>{selectedLog.comment ?? 'Sin comentario'}</strong>
+                </article>
+              </div>
+
+              <div className="audit-detail-values">
+                <article>
+                  <h3>Antes</h3>
+                  <pre>{JSON.stringify(selectedLog.previous_values ?? {}, null, 2)}</pre>
+                </article>
+                <article>
+                  <h3>Después</h3>
+                  <pre>{JSON.stringify(selectedLog.new_values ?? {}, null, 2)}</pre>
+                </article>
+              </div>
+            </section>
+          </div>
+        ) : null}
     </section>
   );
 }
