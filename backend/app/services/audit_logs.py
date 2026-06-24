@@ -33,6 +33,7 @@ def write_audit_log(
 def list_audit_logs(
     db: Session,
     *,
+    action: str | None = None,
     entity: str | None = None,
     entity_id: int | None = None,
     user_id: int | None = None,
@@ -44,6 +45,8 @@ def list_audit_logs(
         .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
         .limit(limit)
     )
+    if action is not None:
+        query = query.where(AuditLog.action == action)
     if entity is not None:
         query = query.where(AuditLog.entity == entity)
     if entity_id is not None:

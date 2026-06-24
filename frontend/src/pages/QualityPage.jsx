@@ -1,6 +1,7 @@
 import { ShieldCheck } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import {
   equipmentStatusLabels,
   certificateStatusLabels,
@@ -19,6 +20,7 @@ import {
   listServiceOrders
 } from '../services/api.js';
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
+import useConfirmDialog from '../utils/useConfirmDialog.js';
 
 function getTechnicianLabel(order) {
   return order?.technician_id ? `#${order.technician_id}` : 'Por asignar';
@@ -52,6 +54,7 @@ function QualityPage() {
   const [loadingAction, setLoadingAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -158,27 +161,32 @@ function QualityPage() {
 
   async function handleQualityAction(actionKey, label, comment = null) {
     if (!selectedCertificate) return;
-    if (!window.confirm(`¿${label} certificado ${selectedCertificate.folio}?`)) {
-      return;
-    }
-    setLoadingAction(actionKey + label);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await changeCertificateStatus(selectedCertificate.id, actionKey, comment);
-      const logs = await listAuditLogs({ entity: 'certificates', entity_id: updated.id, limit: 100 });
-      setSelectedCertificate(updated);
-      setAuditLogs(Array.isArray(logs) ? logs : []);
-      setCertificates((current) =>
-        current.map((certificate) => (certificate.id === updated.id ? updated : certificate))
-      );
-      setNotice(`Certificado ${updated.folio} actualizado a ${certificateStatusLabels[updated.status] ?? updated.status}`);
-      await loadQualityData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoadingAction('');
-    }
+    openConfirm({
+      title: 'Confirmar accion de calidad',
+      message: `El certificado ${selectedCertificate.folio} cambiará mediante la acción "${label}".`,
+      confirmText: label,
+      variant: 'danger',
+      onConfirm: async () => {
+        setLoadingAction(actionKey + label);
+        setError('');
+        setNotice('');
+        try {
+          const updated = await changeCertificateStatus(selectedCertificate.id, actionKey, comment);
+          const logs = await listAuditLogs({ entity: 'certificates', entity_id: updated.id, limit: 100 });
+          setSelectedCertificate(updated);
+          setAuditLogs(Array.isArray(logs) ? logs : []);
+          setCertificates((current) =>
+            current.map((certificate) => (certificate.id === updated.id ? updated : certificate))
+          );
+          setNotice(`Certificado ${updated.folio} actualizado a ${certificateStatusLabels[updated.status] ?? updated.status}`);
+          await loadQualityData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setLoadingAction('');
+        }
+      }
+    });
   }
 
   const selectedContext = selectedCertificate ? getCertificateContext(selectedCertificate) : {};
@@ -492,6 +500,18 @@ function QualityPage() {
           </section>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        cancelText={confirmDialog?.cancelText}
+        confirmText={confirmDialog?.confirmText}
+        isLoading={Boolean(confirmDialog?.isConfirming)}
+        isOpen={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        onClose={closeConfirm}
+        onConfirm={handleConfirm}
+        title={confirmDialog?.title}
+        variant={confirmDialog?.variant}
+      />
     </section>
   );
 }

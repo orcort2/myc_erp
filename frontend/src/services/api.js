@@ -150,6 +150,12 @@ export async function updateClient(clientId, payload) {
   });
 }
 
+export async function deleteClient(clientId) {
+  return request(`/clients/${clientId}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function createQuotation(payload) {
   return request('/quotations', {
     method: 'POST',
@@ -211,6 +217,12 @@ export async function updateServiceOrder(serviceOrderId, payload) {
   return request(`/service-orders/${serviceOrderId}`, {
     method: 'PATCH',
     body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteServiceOrder(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}`, {
+    method: 'DELETE'
   });
 }
 
@@ -288,6 +300,12 @@ export async function reviewFieldSheet(fieldSheetId, comment = null) {
   });
 }
 
+export async function deleteFieldSheet(fieldSheetId) {
+  return request(`/field-sheets/${fieldSheetId}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function listCertificates(params = {}) {
   return request(`/certificates${buildQuery(params)}`);
 }
@@ -314,6 +332,12 @@ export async function changeCertificateStatus(certificateId, action, comment = n
   return request(`/certificates/${certificateId}/${action}`, {
     method: 'POST',
     body: JSON.stringify({ comment })
+  });
+}
+
+export async function deleteCertificate(certificateId) {
+  return request(`/certificates/${certificateId}`, {
+    method: 'DELETE'
   });
 }
 
@@ -358,6 +382,12 @@ export async function updateUserStatus(userId, isActive) {
     body: JSON.stringify({
       is_active: isActive
     })
+  });
+}
+
+export async function deleteQuotation(quotationId) {
+  return request(`/quotations/${quotationId}`, {
+    method: 'DELETE'
   });
 }
 

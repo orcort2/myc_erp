@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.security import hash_password
 from app.models.user import Role, User
 from app.schemas.user import UserAdminCreate
+from app.services.audit_logs import write_audit_log
 from app.services.auth import ensure_initial_roles
 
 
@@ -44,6 +45,15 @@ def _assign_roles(user: User, roles: list[Role]) -> None:
     user.roles = roles
     primary_role = roles[0] if roles else None
     user.role_id = primary_role.id if primary_role else None
+
+
+def _serialize_user_for_audit(user: User) -> dict:
+    return {
+        "email": user.email,
+        "full_name": user.full_name,
+        "is_active": user.is_active,
+        "role_names": [role.name for role in user.roles],
+    }
 
 
 def count_active_admins(db: Session) -> int:
@@ -87,7 +97,11 @@ def get_user_or_404(db: Session, user_id: int) -> User:
     return user
 
 
-def create_user_admin(db: Session, payload: UserAdminCreate) -> User:
+def create_user_admin(
+    db: Session,
+    payload: UserAdminCreate,
+    current_user: User | None = None,
+) -> User:
     normalized_email = payload.email.strip().lower()
     normalized_name = payload.full_name.strip()
 
@@ -107,6 +121,17 @@ def create_user_admin(db: Session, payload: UserAdminCreate) -> User:
     )
     _assign_roles(user, roles)
     db.add(user)
+    db.flush()
+    write_audit_log(
+        db,
+        action="user.created",
+        entity="users",
+        entity_id=user.id,
+        user_id=current_user.id if current_user else None,
+        previous_values=None,
+        new_values=_serialize_user_for_audit(user),
+        comment="Usuario creado desde configuracion",
+    )
     db.commit()
     return get_user_or_404(db, user.id)
 
@@ -118,6 +143,7 @@ def update_user_roles(
     current_user: User | None = None,
 ) -> User:
     user = get_user_or_404(db, user_id)
+    previous_values = _serialize_user_for_audit(user)
     roles = _resolve_active_roles(db, role_names)
 
     current_roles = {role.name for role in user.roles}
@@ -138,6 +164,16 @@ def update_user_roles(
 
     _assign_roles(user, roles)
     db.add(user)
+    write_audit_log(
+        db,
+        action="user.role_changed",
+        entity="users",
+        entity_id=user.id,
+        user_id=current_user.id if current_user else None,
+        previous_values=previous_values,
+        new_values=_serialize_user_for_audit(user),
+        comment="Cambio de rol de usuario",
+    )
     db.commit()
     return get_user_or_404(db, user.id)
 
@@ -149,6 +185,7 @@ def update_user_status(
     current_user: User | None = None,
 ) -> User:
     user = get_user_or_404(db, user_id)
+    previous_values = _serialize_user_for_audit(user)
     current_roles = {role.name for role in user.roles}
 
     if user.is_active and not is_active:
@@ -165,6 +202,16 @@ def update_user_status(
 
     user.is_active = is_active
     db.add(user)
+    write_audit_log(
+        db,
+        action="user.activated" if is_active else "user.deactivated",
+        entity="users",
+        entity_id=user.id,
+        user_id=current_user.id if current_user else None,
+        previous_values=previous_values,
+        new_values=_serialize_user_for_audit(user),
+        comment="Cambio de estado de usuario",
+    )
     db.commit()
     return get_user_or_404(db, user.id)
 
@@ -179,6 +226,8 @@ def update_user_admin(
     current_user: User | None = None,
 ) -> User:
     user = get_user_or_404(db, user_id)
+    previous_values = _serialize_user_for_audit(user)
+    changed_fields: set[str] = set()
 
     if email is not None:
         normalized_email = email.strip().lower()
@@ -190,21 +239,38 @@ def update_user_admin(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Ya existe un usuario con ese correo.",
             )
-        user.email = normalized_email
+        if user.email != normalized_email:
+            user.email = normalized_email
+            changed_fields.add("email")
 
     if full_name is not None:
-        user.full_name = full_name.strip()
+        normalized_name = full_name.strip()
+        if user.full_name != normalized_name:
+            user.full_name = normalized_name
+            changed_fields.add("full_name")
 
     if is_active is not None and user.is_active != is_active:
         update_user_status(db, user_id, is_active, current_user)
         user = get_user_or_404(db, user_id)
+        previous_values = _serialize_user_for_audit(user)
 
     if role_names is not None:
         updated_user = update_user_roles(db, user_id, role_names, current_user)
         user = updated_user
+        previous_values = _serialize_user_for_audit(user)
 
-    if email is not None or full_name is not None:
+    if changed_fields:
         db.add(user)
+        write_audit_log(
+            db,
+            action="user.updated",
+            entity="users",
+            entity_id=user.id,
+            user_id=current_user.id if current_user else None,
+            previous_values=previous_values,
+            new_values=_serialize_user_for_audit(user),
+            comment=f"Campos actualizados: {', '.join(sorted(changed_fields))}",
+        )
         db.commit()
 
     return get_user_or_404(db, user.id)

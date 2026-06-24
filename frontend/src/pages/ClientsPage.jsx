@@ -1,24 +1,26 @@
 import { Building2, Download, Upload } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import SelectionActionBar from '../components/SelectionActionBar.jsx';
 import { emptyClientForm } from '../constants/forms.js';
 import { clientModalTabs, clientTemplateColumns } from '../constants/templates.js';
-import { createClient, createQuotation, listClients, updateClient } from '../services/api.js';
+import { createClient, createQuotation, deleteClient, listClients, updateClient } from '../services/api.js';
+import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { downloadCsv, parseDelimitedText } from '../utils/csv.js';
 import {
   buildClientImportPreview,
   getClientContact,
   getFirstValidationTab,
   getRowValue,
-  isValidEmail,
   toClientCreatePayload,
   toClientPayload,
   validateClientForm
 } from '../utils/clients.js';
-import { getClientDisplayName, normalizeKey } from '../utils/formatters.js';
 
 function ClientsPage() {
   const [clients, setClients] = useState([]);
+  const [selectedClientIds, setSelectedClientIds] = useState([]);
   const [form, setForm] = useState(emptyClientForm);
   const [editingClientId, setEditingClientId] = useState(null);
   const [isClientModalOpen, setIsClientModalOpen] = useState(false);
@@ -33,6 +35,7 @@ function ClientsPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [validationErrors, setValidationErrors] = useState({});
+  const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
   async function loadClients() {
     setError('');
@@ -40,6 +43,7 @@ function ClientsPage() {
     try {
       const items = await listClients();
       setClients(Array.isArray(items) ? items : []);
+      setSelectedClientIds([]);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -54,9 +58,7 @@ function ClientsPage() {
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
     setValidationErrors((current) => {
-      if (!current[field]) {
-        return current;
-      }
+      if (!current[field]) return current;
       const next = { ...current };
       delete next[field];
       return next;
@@ -145,11 +147,8 @@ function ClientsPage() {
         await createClient(toClientCreatePayload(form));
         setNotice('Cliente creado');
       }
-      setForm(emptyClientForm);
-      setEditingClientId(null);
-      setIsClientModalOpen(false);
-      setClientModalTab('general');
-      setValidationErrors({});
+
+      resetForm();
       await loadClients();
     } catch (requestError) {
       setError(requestError.message);
@@ -159,22 +158,89 @@ function ClientsPage() {
   }
 
   async function handleCreateQuotation(client) {
-    if (!window.confirm('¿Crear nueva cotización para este cliente?')) {
-      return;
-    }
+    openConfirm({
+      title: 'Crear cotización',
+      message: `Se creará una nueva cotización para ${client.legal_name ?? client.commercial_name}.`,
+      confirmText: 'Crear cotización',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          const quotation = await createQuotation({
+            client_id: client.id,
+            items: [],
+            notes: `Cotización creada desde cliente ${client.legal_name ?? client.commercial_name}`
+          });
+          setNotice(`Cotización ${quotation.folio} creada para ${client.legal_name ?? client.commercial_name}`);
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
+  }
 
-    setError('');
-    setNotice('');
-    try {
-      const quotation = await createQuotation({
-        client_id: client.id,
-        items: [],
-        notes: `Cotizacion creada desde cliente ${client.legal_name}`
-      });
-      setNotice(`Cotizacion ${quotation.folio} creada para ${client.legal_name}`);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+  async function handleDeactivateClient(client) {
+    openConfirm({
+      title: 'Dar de baja cliente',
+      message: `Esta acción dará de baja el cliente ${client.legal_name ?? client.commercial_name}.\nNo se eliminará físicamente el registro.`,
+      confirmText: 'Dar de baja cliente',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        setIsSaving(true);
+        try {
+          await deleteClient(client.id);
+          if (editingClientId === client.id) resetForm();
+          setNotice('Cliente dado de baja');
+          await loadClients();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
+  }
+
+  function toggleClientSelection(clientId) {
+    setSelectedClientIds((current) =>
+      current.includes(clientId)
+        ? current.filter((id) => id !== clientId)
+        : [...current, clientId]
+    );
+  }
+
+  function clearClientSelection() {
+    setSelectedClientIds([]);
+  }
+
+  const selectedClients = clients.filter((client) => selectedClientIds.includes(client.id));
+  const selectedClient = selectedClients.length === 1 ? selectedClients[0] : null;
+
+  function buildClientExportRows(items) {
+    return items.map((client) => {
+      const contact = getClientContact(client);
+      return {
+        'Nombre comercial': client.commercial_name ?? '',
+        'Razon social': client.legal_name ?? '',
+        RFC: client.rfc ?? '',
+        'Contacto principal': contact?.name ?? '',
+        Correo: client.email ?? contact?.email ?? '',
+        Telefono: client.phone ?? contact?.phone ?? '',
+        Pais: '',
+        Calle: '',
+        'Numero exterior': '',
+        'Numero interior': '',
+        Colonia: '',
+        'Municipio / Ciudad': '',
+        Estado: '',
+        'Codigo postal': '',
+        'Regimen fiscal': client.tax_regime ?? '',
+        'Uso CFDI': '',
+        'Estado del cliente': client.is_active ? 'Activo' : 'Inactivo'
+      };
+    });
   }
 
   function downloadClientTemplate() {
@@ -202,47 +268,27 @@ function ClientsPage() {
   }
 
   function exportClients() {
-    const rows = clients.map((client) => {
-      const contact = getClientContact(client);
-      return {
-        'Nombre comercial': client.commercial_name ?? '',
-        'Razon social': client.legal_name ?? '',
-        RFC: client.rfc ?? '',
-        'Contacto principal': contact?.name ?? '',
-        Correo: client.email ?? contact?.email ?? '',
-        Telefono: client.phone ?? contact?.phone ?? '',
-        Pais: '',
-        Calle: '',
-        'Numero exterior': '',
-        'Numero interior': '',
-        Colonia: '',
-        'Municipio / Ciudad': '',
-        Estado: '',
-        'Codigo postal': '',
-        'Regimen fiscal': client.tax_regime ?? '',
-        'Uso CFDI': '',
-        'Estado del cliente': client.is_active ? 'Activo' : 'Inactivo'
-      };
-    });
-    downloadCsv('clientes_myc_export.csv', clientTemplateColumns, rows);
+    downloadCsv('clientes_myc_export.csv', clientTemplateColumns, buildClientExportRows(clients));
+  }
+
+  function exportSelectedClients() {
+    downloadCsv('clientes_myc_seleccionados.csv', clientTemplateColumns, buildClientExportRows(selectedClients));
   }
 
   function downloadClientImportErrors() {
-    if (!clientImportPreview?.errors.length) {
-      return;
-    }
+    if (!clientImportPreview?.errors.length) return;
+
     const rows = clientImportPreview.errors.map((row) => ({
       ...row.raw,
       Errores: row.errors.join(' | ')
     }));
+
     downloadCsv('clientes_myc_errores.csv', [...clientImportColumns, 'Errores'], rows);
   }
 
   function handleClientImportFile(event) {
     const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
+    if (!file) return;
 
     setClientImportFileName(file.name);
     setClientImportMessage('');
@@ -250,7 +296,9 @@ function ClientsPage() {
     if (/\.(xlsx|xls)$/i.test(file.name)) {
       setClientImportColumns(clientTemplateColumns);
       setClientImportPreview(buildClientImportPreview([], clients));
-      setClientImportMessage('Archivo Excel recibido. La lectura real de XLSX se conectara cuando el backend o parser dedicado este listo; por ahora usa CSV exportado desde Excel para vista previa.');
+      setClientImportMessage(
+        'Archivo Excel recibido. La lectura real de XLSX se conectará cuando el backend o parser dedicado esté listo; por ahora usa CSV exportado desde Excel para vista previa.'
+      );
       return;
     }
 
@@ -266,12 +314,15 @@ function ClientsPage() {
   async function confirmClientImport() {
     const validRows = clientImportPreview?.valid ?? [];
     if (!validRows.length) return;
+
     setIsSaving(true);
     setError('');
     setClientImportMessage('');
+
     try {
       let imported = 0;
       const failed = [];
+
       for (const row of validRows) {
         const raw = row.raw;
         const commercialName = getRowValue(raw, ['Nombre comercial', 'nombre', 'Cliente']);
@@ -279,6 +330,7 @@ function ClientsPage() {
         const contactName = getRowValue(raw, ['Contacto principal', 'Contacto']);
         const email = getRowValue(raw, ['Correo', 'Email']);
         const phone = getRowValue(raw, ['Telefono', 'Teléfono']);
+
         try {
           await createClient({
             commercial_name: commercialName.trim(),
@@ -303,10 +355,15 @@ function ClientsPage() {
           failed.push({ ...raw, Errores: requestError.message });
         }
       }
+
       if (failed.length) {
         downloadCsv('clientes_myc_importacion_fallida.csv', [...clientImportColumns, 'Errores'], failed);
       }
-      setClientImportMessage(`Importacion finalizada: ${imported} clientes creados${failed.length ? `, ${failed.length} con error` : ''}.`);
+
+      setClientImportMessage(
+        `Importación finalizada: ${imported} clientes creados${failed.length ? `, ${failed.length} con error` : ''}.`
+      );
+
       await loadClients();
     } finally {
       setIsSaving(false);
@@ -322,9 +379,9 @@ function ClientsPage() {
           <Building2 size={28} />
         </span>
         <div>
-          <p>Modulo MYC SYSTEM</p>
+          <p>Módulo MYC SYSTEM</p>
           <h1>Clientes</h1>
-          <span>Base operativa para cotizaciones, ordenes de servicio y certificados.</span>
+          <span>Base operativa para cotizaciones, órdenes de servicio y certificados.</span>
         </div>
       </div>
 
@@ -356,15 +413,36 @@ function ClientsPage() {
           </div>
         </div>
 
+        <SelectionActionBar
+          selectedCount={selectedClientIds.length}
+          onClear={clearClientSelection}
+          actions={[
+            ...(selectedClient
+              ? [
+                  { label: 'Editar', onClick: () => startEdit(selectedClient) },
+                  { label: 'Cotización', onClick: () => handleCreateQuotation(selectedClient) },
+                  {
+                    label: 'Dar de baja',
+                    variant: 'danger',
+                    onClick: () => handleDeactivateClient(selectedClient)
+                  }
+                ]
+              : []),
+            ...(selectedClientIds.length > 1
+              ? [{ label: 'Exportar seleccionados', onClick: exportSelectedClients }]
+              : [])
+          ]}
+        />
+
         <div className="clients-table" aria-busy={isLoading}>
           <div className="clients-table__head">
+            <span></span>
             <span>Cliente</span>
             <span>RFC</span>
             <span>Contacto</span>
-            <span>Telefono</span>
+            <span>Teléfono</span>
             <span>Correo</span>
             <span>Estado</span>
-            <span>Acciones</span>
           </div>
 
           {isLoading ? (
@@ -372,8 +450,21 @@ function ClientsPage() {
           ) : clients.length ? (
             clients.map((client) => {
               const contact = getClientContact(client);
+              const isSelected = selectedClientIds.includes(client.id);
+
               return (
-                <div className="clients-table__row" key={client.id}>
+                <div
+                  className={isSelected ? 'clients-table__row table-row--selected' : 'clients-table__row'}
+                  key={client.id}
+                >
+                  <span>
+                    <input
+                      checked={isSelected}
+                      className="row-selector"
+                      onChange={() => toggleClientSelection(client.id)}
+                      type="checkbox"
+                    />
+                  </span>
                   <span>{client.commercial_name || client.legal_name}</span>
                   <span>{client.rfc || '-'}</span>
                   <span>{contact?.name || '-'}</span>
@@ -384,23 +475,11 @@ function ClientsPage() {
                       {client.is_active ? 'Activo' : 'Inactivo'}
                     </mark>
                   </span>
-                  <span className="clients-table__actions">
-                    <button className="table-button" onClick={() => startEdit(client)} type="button">
-                      Editar
-                    </button>
-                    <button
-                      className="table-button table-button--primary"
-                      onClick={() => handleCreateQuotation(client)}
-                      type="button"
-                    >
-                      Cotizacion
-                    </button>
-                  </span>
                 </div>
               );
             })
           ) : (
-            <div className="clients-empty">Todavia no hay clientes registrados.</div>
+            <div className="clients-empty">Todavía no hay clientes registrados.</div>
           )}
         </div>
       </section>
@@ -417,9 +496,7 @@ function ClientsPage() {
 
             {error ? <div className="form-error dashboard-error">{error}</div> : null}
             {Object.keys(validationErrors).length ? (
-              <div className="form-error dashboard-error">
-                Revisa los campos marcados antes de guardar.
-              </div>
+              <div className="form-error dashboard-error">Revisa los campos marcados antes de guardar.</div>
             ) : null}
 
             <div className="client-modal-tabs" role="tablist" aria-label="Secciones del cliente">
@@ -453,6 +530,7 @@ function ClientsPage() {
                       <span className="field-error">{validationErrors.commercialName}</span>
                     ) : null}
                   </label>
+
                   <label>
                     RFC
                     <input
@@ -465,6 +543,7 @@ function ClientsPage() {
                     />
                     {validationErrors.rfc ? <span className="field-error">{validationErrors.rfc}</span> : null}
                   </label>
+
                   <label>
                     Contacto
                     <input
@@ -474,14 +553,12 @@ function ClientsPage() {
                       value={form.contactName}
                     />
                   </label>
+
                   <label>
-                    Telefono
-                    <input
-                      onChange={(event) => updateForm('phone', event.target.value)}
-                      type="tel"
-                      value={form.phone}
-                    />
+                    Teléfono
+                    <input onChange={(event) => updateForm('phone', event.target.value)} type="tel" value={form.phone} />
                   </label>
+
                   <label>
                     Correo
                     <input
@@ -492,13 +569,10 @@ function ClientsPage() {
                     />
                     {validationErrors.email ? <span className="field-error">{validationErrors.email}</span> : null}
                   </label>
+
                   <label>
                     Estado
-                    <select
-                      disabled
-                      onChange={(event) => updateForm('status', event.target.value)}
-                      value={form.status}
-                    >
+                    <select disabled onChange={(event) => updateForm('status', event.target.value)} value={form.status}>
                       <option>Activo</option>
                       <option>Inactivo</option>
                     </select>
@@ -510,14 +584,10 @@ function ClientsPage() {
                 <>
                   <label>
                     Calle
-                    <input
-                      onChange={(event) => updateForm('street', event.target.value)}
-                      type="text"
-                      value={form.street}
-                    />
+                    <input onChange={(event) => updateForm('street', event.target.value)} type="text" value={form.street} />
                   </label>
                   <label>
-                    Numero exterior
+                    Número exterior
                     <input
                       onChange={(event) => updateForm('exteriorNumber', event.target.value)}
                       type="text"
@@ -525,7 +595,7 @@ function ClientsPage() {
                     />
                   </label>
                   <label>
-                    Numero interior
+                    Número interior
                     <input
                       onChange={(event) => updateForm('interiorNumber', event.target.value)}
                       type="text"
@@ -542,11 +612,7 @@ function ClientsPage() {
                   </label>
                   <label>
                     Municipio / Ciudad
-                    <input
-                      onChange={(event) => updateForm('city', event.target.value)}
-                      type="text"
-                      value={form.city}
-                    />
+                    <input onChange={(event) => updateForm('city', event.target.value)} type="text" value={form.city} />
                   </label>
                   <label>
                     Estado
@@ -557,7 +623,7 @@ function ClientsPage() {
                     />
                   </label>
                   <label>
-                    Codigo postal
+                    Código postal
                     <input
                       aria-invalid={Boolean(validationErrors.postalCode)}
                       inputMode="numeric"
@@ -570,12 +636,8 @@ function ClientsPage() {
                     ) : null}
                   </label>
                   <label>
-                    Pais
-                    <input
-                      onChange={(event) => updateForm('country', event.target.value)}
-                      type="text"
-                      value={form.country}
-                    />
+                    País
+                    <input onChange={(event) => updateForm('country', event.target.value)} type="text" value={form.country} />
                   </label>
                 </>
               ) : null}
@@ -583,7 +645,7 @@ function ClientsPage() {
               {clientModalTab === 'fiscal' ? (
                 <>
                   <label>
-                    Razon social
+                    Razón social
                     <input
                       onChange={(event) => updateForm('fiscalLegalName', event.target.value)}
                       type="text"
@@ -600,7 +662,7 @@ function ClientsPage() {
                     />
                   </label>
                   <label>
-                    Codigo postal fiscal
+                    Código postal fiscal
                     <input
                       aria-invalid={Boolean(validationErrors.fiscalPostalCode)}
                       inputMode="numeric"
@@ -613,7 +675,7 @@ function ClientsPage() {
                     ) : null}
                   </label>
                   <label>
-                    Regimen fiscal
+                    Régimen fiscal
                     <input
                       onChange={(event) => updateForm('taxRegime', event.target.value)}
                       type="text"
@@ -622,12 +684,9 @@ function ClientsPage() {
                   </label>
                   <label>
                     Uso CFDI
-                    <input
-                      onChange={(event) => updateForm('cfdiUse', event.target.value)}
-                      type="text"
-                      value={form.cfdiUse}
-                    />
+                    <input onChange={(event) => updateForm('cfdiUse', event.target.value)} type="text" value={form.cfdiUse} />
                   </label>
+
                   <div className="client-form__visual-actions">
                     <button className="table-button" disabled={isSaving} type="button">
                       Subir constancia fiscal
@@ -636,9 +695,8 @@ function ClientsPage() {
                       Capturar manualmente
                     </button>
                   </div>
-                  <div className="client-fiscal-note">
-                    Los datos fiscales completos se conectaran al modulo de facturacion.
-                  </div>
+
+                  <div className="client-fiscal-note">Los datos fiscales completos se conectarán al módulo de facturación.</div>
                 </>
               ) : null}
 
@@ -650,6 +708,33 @@ function ClientsPage() {
                   {isSaving ? 'Guardando...' : editingClientId ? 'Guardar cambios' : 'Guardar cliente'}
                 </button>
               </div>
+
+              {editingClientId ? (
+                <section className="danger-zone">
+                  <div className="danger-zone__copy">
+                    <p>Zona de baja</p>
+                    <span>
+                      Esta acción dará de baja el cliente. No se eliminará físicamente y el backend validará dependencias
+                      activas.
+                    </span>
+                  </div>
+                  <div className="toolbar-actions">
+                    <button
+                      className="table-button table-button--danger"
+                      disabled={isSaving}
+                      onClick={() =>
+                        handleDeactivateClient({
+                          id: editingClientId,
+                          legal_name: form.fiscalLegalName || form.commercialName
+                        })
+                      }
+                      type="button"
+                    >
+                      Dar de baja cliente
+                    </button>
+                  </div>
+                </section>
+              ) : null}
             </form>
           </section>
         </div>
@@ -675,7 +760,7 @@ function ClientsPage() {
               </label>
               <div>
                 <strong>{clientImportFileName || 'Sin archivo seleccionado'}</strong>
-                <span>La importacion no se ejecuta automaticamente. Primero se revisa la vista previa.</span>
+                <span>La importación no se ejecuta automáticamente. Primero se revisa la vista previa.</span>
               </div>
             </div>
 
@@ -687,7 +772,7 @@ function ClientsPage() {
                 <strong>{clientImportColumns.length}</strong>
               </article>
               <article>
-                <span>Registros validos</span>
+                <span>Registros válidos</span>
                 <strong>{clientImportPreview?.valid.length ?? 0}</strong>
               </article>
               <article>
@@ -716,10 +801,12 @@ function ClientsPage() {
                   clientImportPreview.rows.slice(0, 8).map((row) => (
                     <article className={`import-row import-row--${row.status}`} key={row.id}>
                       <strong>{row.name}</strong>
-                      <span>{row.rfc} · {row.email}</span>
+                      <span>
+                        {row.rfc} · {row.email}
+                      </span>
                       <small>
                         {row.status === 'valid'
-                          ? 'Valido'
+                          ? 'Válido'
                           : row.status === 'duplicate'
                             ? `Duplicado posible: ${row.duplicates.join(', ')}`
                             : row.errors.join(', ')}
@@ -727,35 +814,37 @@ function ClientsPage() {
                     </article>
                   ))
                 ) : (
-                  <div className="clients-empty">Sube un CSV exportado desde Excel para ver registros en esta version.</div>
+                  <div className="clients-empty">Sube un CSV exportado desde Excel para ver registros en esta versión.</div>
                 )}
               </div>
             </section>
 
             <div className="client-form__actions client-form__actions--modal">
-              <button
-                className="table-button"
-                disabled={!clientImportPreview?.errors.length}
-                onClick={downloadClientImportErrors}
-                type="button"
-              >
+              <button className="table-button" disabled={!clientImportPreview?.errors.length} onClick={downloadClientImportErrors} type="button">
                 Descargar errores
               </button>
               <button className="icon-text-button" onClick={closeClientImportModal} type="button">
                 Cancelar
               </button>
-              <button
-                className="primary-button"
-                disabled={!clientImportPreview?.valid.length}
-                onClick={confirmClientImport}
-                type="button"
-              >
-                Confirmar importacion
+              <button className="primary-button" disabled={!clientImportPreview?.valid.length} onClick={confirmClientImport} type="button">
+                Confirmar importación
               </button>
             </div>
           </section>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        cancelText={confirmDialog?.cancelText}
+        confirmText={confirmDialog?.confirmText}
+        isLoading={Boolean(confirmDialog?.isConfirming)}
+        isOpen={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        onClose={closeConfirm}
+        onConfirm={handleConfirm}
+        title={confirmDialog?.title}
+        variant={confirmDialog?.variant}
+      />
     </section>
   );
 }

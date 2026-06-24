@@ -2,6 +2,7 @@ import { ClipboardList, X } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import {
   emptyServiceOrderForm,
   emptyEquipmentForm,
@@ -26,6 +27,8 @@ import {
   createEquipment,
   createFieldSheet,
   deleteEquipment,
+  deleteFieldSheet,
+  deleteServiceOrder,
   getFieldSheet,
   listCertificates,
   listClients,
@@ -38,6 +41,7 @@ import {
   updateFieldSheet,
   updateServiceOrder
 } from '../services/api.js';
+import useConfirmDialog from '../utils/useConfirmDialog.js';
 import {
   fieldSheetToForm,
   buildFieldSheetPayload,
@@ -69,6 +73,7 @@ function ServiceOrdersPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -207,19 +212,24 @@ function ServiceOrdersPage() {
 
   async function handleServiceOrderStatus(order, action) {
     const nextLabel = serviceOrderStatusLabels[action.nextStatus] ?? action.nextStatus;
-    if (!window.confirm(`¿Cambiar orden ${order.folio} a ${nextLabel}?`)) {
-      return;
-    }
-    setError('');
-    setNotice('');
-    try {
-      const updated = await changeServiceOrderStatus(order.id, action.key);
-      setSelectedOrder(updated);
-      setNotice(`Orden ${updated.folio} actualizada a ${serviceOrderStatusLabels[updated.status]}`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    openConfirm({
+      title: 'Confirmar cambio de estado',
+      message: `La orden ${order.folio} cambiará a ${nextLabel}.`,
+      confirmText: `Cambiar a ${nextLabel}`,
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          const updated = await changeServiceOrderStatus(order.id, action.key);
+          setSelectedOrder(updated);
+          setNotice(`Orden ${updated.folio} actualizada a ${serviceOrderStatusLabels[updated.status]}`);
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   function openEquipmentModal(item = null) {
@@ -292,19 +302,24 @@ function ServiceOrdersPage() {
   }
 
   async function handleDeleteEquipment(item) {
-    if (!window.confirm(`¿Eliminar equipo ${item.name}?`)) {
-      return;
-    }
-    setError('');
-    setNotice('');
-    try {
-      await deleteEquipment(item.id);
-      setEquipment((current) => current.filter((equipmentItem) => equipmentItem.id !== item.id));
-      setNotice('Equipo eliminado');
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    openConfirm({
+      title: 'Dar de baja equipo',
+      message: `Esta acción dará de baja el equipo ${item.name}.\nNo se eliminará físicamente y se recalcularán los contadores de la orden.`,
+      confirmText: 'Dar de baja equipo',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          await deleteEquipment(item.id);
+          setEquipment((current) => current.filter((equipmentItem) => equipmentItem.id !== item.id));
+          setNotice('Equipo dado de baja');
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   function isEquipmentActionAllowed(item, action) {
@@ -313,21 +328,26 @@ function ServiceOrdersPage() {
 
   async function handleEquipmentStatus(item, action) {
     const nextLabel = equipmentStatusLabels[action.nextStatus] ?? action.nextStatus;
-    if (!window.confirm(`¿Cambiar equipo ${item.name} a ${nextLabel}?`)) {
-      return;
-    }
-    setError('');
-    setNotice('');
-    try {
-      const updated = await changeEquipmentStatus(item.id, action.key);
-      setEquipment((current) =>
-        current.map((equipmentItem) => (equipmentItem.id === updated.id ? updated : equipmentItem))
-      );
-      setNotice(`Equipo actualizado a ${equipmentStatusLabels[updated.status]}`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    openConfirm({
+      title: 'Confirmar cambio de equipo',
+      message: `El equipo ${item.name} cambiará a ${nextLabel}.`,
+      confirmText: `Cambiar a ${nextLabel}`,
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          const updated = await changeEquipmentStatus(item.id, action.key);
+          setEquipment((current) =>
+            current.map((equipmentItem) => (equipmentItem.id === updated.id ? updated : equipmentItem))
+          );
+          setNotice(`Equipo actualizado a ${equipmentStatusLabels[updated.status]}`);
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   async function openFieldSheetForEquipment(item) {
@@ -462,27 +482,78 @@ function ServiceOrdersPage() {
       setError('Selecciona un tipo de certificado valido.');
       return;
     }
-    if (!window.confirm(`¿Crear certificado ${fieldSheetCertificateType} para ${selectedEquipmentForSheet.name}?`)) {
-      return;
-    }
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const created = await createCertificate({
-        service_order_id: selectedOrder.id,
-        equipment_id: selectedEquipmentForSheet.id,
-        field_sheet_id: selectedFieldSheet.id,
-        certificate_type: fieldSheetCertificateType
-      });
-      setCertificates((current) => [created, ...current]);
-      setNotice(`Certificado ${created.folio} creado`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
+    openConfirm({
+      title: 'Crear certificado',
+      message: `Se creará un certificado ${fieldSheetCertificateType} para ${selectedEquipmentForSheet.name}.`,
+      confirmText: 'Crear certificado',
+      onConfirm: async () => {
+        setIsSaving(true);
+        setError('');
+        setNotice('');
+        try {
+          const created = await createCertificate({
+            service_order_id: selectedOrder.id,
+            equipment_id: selectedEquipmentForSheet.id,
+            field_sheet_id: selectedFieldSheet.id,
+            certificate_type: fieldSheetCertificateType
+          });
+          setCertificates((current) => [created, ...current]);
+          setNotice(`Certificado ${created.folio} creado`);
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
+  }
+
+  async function handleDeleteServiceOrder() {
+    if (!selectedOrder) return;
+    openConfirm({
+      title: 'Dar de baja orden de servicio',
+      message: `Esta acción dará de baja la orden ${selectedOrder.folio}.\nNo se eliminará físicamente y puede afectar equipos, hojas y certificados relacionados.`,
+      confirmText: 'Dar de baja orden',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          await deleteServiceOrder(selectedOrder.id);
+          closeOrderDetail();
+          setNotice('Orden de servicio dada de baja');
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
+  }
+
+  async function handleDeleteFieldSheet() {
+    if (!selectedFieldSheet) return;
+    openConfirm({
+      title: 'Dar de baja hoja de campo',
+      message: `Esta acción dará de baja la hoja de campo #${selectedFieldSheet.id}.\nNo se eliminará físicamente y puede afectar certificados relacionados.`,
+      confirmText: 'Dar de baja hoja',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        setIsSaving(true);
+        try {
+          await deleteFieldSheet(selectedFieldSheet.id);
+          closeFieldSheetModal();
+          setNotice('Hoja de campo dada de baja');
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
   }
 
   return (
@@ -685,6 +756,18 @@ function ServiceOrdersPage() {
                         {action.label}
                       </button>
                     ))}
+                  </div>
+                </section>
+
+                <section className="danger-zone">
+                  <div className="danger-zone__copy">
+                    <p>Zona de baja</p>
+                    <span>Esta acción dará de baja la orden de servicio. No se eliminará físicamente y el backend validará dependencias activas.</span>
+                  </div>
+                  <div className="toolbar-actions">
+                    <button className="table-button table-button--danger" onClick={handleDeleteServiceOrder} type="button">
+                      Dar de baja orden
+                    </button>
                   </div>
                 </section>
               </>
@@ -1027,6 +1110,18 @@ function ServiceOrdersPage() {
                     </button>
                   </div>
                 </div>
+
+                <section className="danger-zone">
+                  <div className="danger-zone__copy">
+                    <p>Zona de baja</p>
+                    <span>Esta acción dará de baja la hoja de campo. No se eliminará físicamente y puede impactar certificados relacionados.</span>
+                  </div>
+                  <div className="toolbar-actions">
+                    <button className="table-button table-button--danger" disabled={isSaving} onClick={handleDeleteFieldSheet} type="button">
+                      Dar de baja hoja de campo
+                    </button>
+                  </div>
+                </section>
               </section>
             ) : null}
 
@@ -1059,6 +1154,18 @@ function ServiceOrdersPage() {
           </section>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        cancelText={confirmDialog?.cancelText}
+        confirmText={confirmDialog?.confirmText}
+        isLoading={Boolean(confirmDialog?.isConfirming)}
+        isOpen={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        onClose={closeConfirm}
+        onConfirm={handleConfirm}
+        title={confirmDialog?.title}
+        variant={confirmDialog?.variant}
+      />
     </section>
   );
 }

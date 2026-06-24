@@ -31,7 +31,7 @@ def post_user_admin(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("users.manage")),
 ) -> User:
-    return create_user_admin(db, payload)
+    return create_user_admin(db, payload, current_user)
 
 
 @router.patch("/{user_id}", response_model=UserAdminRead)

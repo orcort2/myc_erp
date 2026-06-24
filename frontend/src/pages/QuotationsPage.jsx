@@ -2,6 +2,7 @@ import { Download, FileText, Upload } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import {
   catalogCommodityOptions,
   calibrationScopeOptions,
@@ -22,6 +23,7 @@ import {
   createQuotationItem,
   createServiceOrder,
   deleteCatalogItem,
+  deleteQuotation,
   deleteQuotationItem,
   downloadQuotationPdf,
   getQuotation,
@@ -38,6 +40,7 @@ import {
 } from '../services/api.js';
 import { downloadCsv, parseDelimitedText } from '../utils/csv.js';
 import { getRowValue } from '../utils/clients.js';
+import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { formatDate, formatMoney, getClientDisplayName, normalizeKey } from '../utils/formatters.js';
 
 const defaultQuotationTemplate = {
@@ -373,6 +376,7 @@ function QuotationsPage() {
   const [savingItemIds, setSavingItemIds] = useState(new Set());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -471,21 +475,25 @@ function QuotationsPage() {
   }
 
   async function handleRestoreTemplateDefaults() {
-    if (!window.confirm('¿Restaurar los valores por defecto de la plantilla de cotizacion?')) {
-      return;
-    }
-    setError('');
-    setNotice('');
-    setIsTemplateSaving(true);
-    try {
-      const restored = await restoreQuotationTemplateDefaults();
-      setTemplateForm(mapTemplateFromApi(restored));
-      setNotice('Plantilla restaurada a valores por defecto');
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsTemplateSaving(false);
-    }
+    openConfirm({
+      title: 'Restaurar plantilla',
+      message: 'Se restaurarán los valores por defecto de la plantilla de cotización.',
+      confirmText: 'Restaurar valores',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        setIsTemplateSaving(true);
+        try {
+          const restored = await restoreQuotationTemplateDefaults();
+          setTemplateForm(mapTemplateFromApi(restored));
+          setNotice('Plantilla restaurada a valores por defecto');
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsTemplateSaving(false);
+        }
+      }
+    });
   }
 
   function openTemplatePdfPreview() {
@@ -590,37 +598,37 @@ function QuotationsPage() {
 
   async function handleQuotationStatus(quotation, action) {
     const nextLabel = quotationStatusLabels[action.nextStatus] ?? action.nextStatus;
-    if (!window.confirm(`¿Cambiar cotizacion ${quotation.folio} a ${nextLabel}?`)) {
-      return;
-    }
-
-    setError('');
-    setNotice('');
-    try {
-      const updated = await changeQuotationStatus(quotation.id, action.key);
-      setNotice(`Cotizacion ${updated.folio} actualizada a ${quotationStatusLabels[updated.status]}`);
-      setSelectedQuotation(updated);
-      setDetailForm({
-        clientId: String(updated.client_id ?? ''),
-        validUntil: updated.valid_until ?? '',
-        notes: updated.notes ?? ''
-      });
-      await loadQuotationData();
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    openConfirm({
+      title: 'Confirmar cambio de estado',
+      message: `La cotización ${quotation.folio} cambiará a ${nextLabel}.`,
+      confirmText: `Cambiar a ${nextLabel}`,
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          const updated = await changeQuotationStatus(quotation.id, action.key);
+          setNotice(`Cotizacion ${updated.folio} actualizada a ${quotationStatusLabels[updated.status]}`);
+          setSelectedQuotation(updated);
+          setDetailForm({
+            clientId: String(updated.client_id ?? ''),
+            validUntil: updated.valid_until ?? '',
+            notes: updated.notes ?? ''
+          });
+          await loadQuotationData();
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   function isActionAllowed(quotation, action) {
     return quotationTransitions[quotation.status]?.has(action.nextStatus) ?? false;
   }
 
-  function openQuotationPdf(mode = 'view') {
+  function continueOpenQuotationPdf(mode = 'view') {
     if (!selectedQuotation) return;
-    if (!getQuotationItems(selectedQuotation).length) {
-      const shouldContinue = window.confirm('La cotizacion no tiene partidas registradas. ¿Deseas generar el PDF de todos modos?');
-      if (!shouldContinue) return;
-    }
     const url = getQuotationPdfUrl(selectedQuotation.id);
     const pdfWindow = window.open(url, '_blank', 'noopener,noreferrer');
     if (mode === 'print' && pdfWindow) {
@@ -631,12 +639,39 @@ function QuotationsPage() {
     }
   }
 
+  function openQuotationPdf(mode = 'view') {
+    if (!selectedQuotation) return;
+    if (!getQuotationItems(selectedQuotation).length) {
+      openConfirm({
+        title: 'Continuar sin partidas',
+        message: 'La cotización no tiene partidas registradas. El PDF se generará como documento vacío.',
+        confirmText: mode === 'print' ? 'Abrir para imprimir' : 'Abrir PDF',
+        onConfirm: async () => {
+          continueOpenQuotationPdf(mode);
+        }
+      });
+      return;
+    }
+    continueOpenQuotationPdf(mode);
+  }
+
   async function handleDownloadQuotationPdf() {
     if (!selectedQuotation) return;
     if (!getQuotationItems(selectedQuotation).length) {
-      const shouldContinue = window.confirm('La cotizacion no tiene partidas registradas. ¿Deseas descargar el PDF de todos modos?');
-      if (!shouldContinue) return;
+      openConfirm({
+        title: 'Descargar PDF sin partidas',
+        message: 'La cotización no tiene partidas registradas. Se descargará el PDF de todos modos.',
+        confirmText: 'Descargar PDF',
+        onConfirm: async () => {
+          await handleDownloadQuotationPdfConfirmed();
+        }
+      });
+      return;
     }
+    await handleDownloadQuotationPdfConfirmed();
+  }
+
+  async function handleDownloadQuotationPdfConfirmed() {
     setError('');
     setNotice('');
     try {
@@ -756,18 +791,23 @@ function QuotationsPage() {
   }
 
   async function handleDeleteCatalogItem(item) {
-    if (!window.confirm(`¿Desactivar ${item.name} del Catalogo MYC?`)) {
-      return;
-    }
-    setError('');
-    setNotice('');
-    try {
-      await deleteCatalogItem(item.id);
-      setCatalogItems((current) => current.filter((catalogItem) => catalogItem.id !== item.id));
-      setNotice('Producto/servicio desactivado del catalogo');
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    openConfirm({
+      title: 'Desactivar concepto del catálogo',
+      message: `Esta acción dará de baja ${item.name} del Catálogo MYC.\nNo se eliminará físicamente.`,
+      confirmText: 'Desactivar concepto',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          await deleteCatalogItem(item.id);
+          setCatalogItems((current) => current.filter((catalogItem) => catalogItem.id !== item.id));
+          setNotice('Producto/servicio desactivado del catalogo');
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   function updateCatalogFilter(field, value) {
@@ -1012,27 +1052,32 @@ function QuotationsPage() {
 
   async function deleteSavedQuotationItem(item) {
     if (!selectedQuotation) return;
-    if (!window.confirm('¿Eliminar esta partida de la cotización?')) {
-      return;
-    }
-    setSavingItemIds((current) => new Set(current).add(item.id));
-    setError('');
-    setNotice('');
-    try {
-      const updated = await deleteQuotationItem(selectedQuotation.id, item.id);
-      setSelectedQuotation(updated);
-      cancelEditQuotationItem(item.id);
-      setNotice('Partida eliminada de la cotizacion');
-      await loadQuotationData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setSavingItemIds((current) => {
-        const next = new Set(current);
-        next.delete(item.id);
-        return next;
-      });
-    }
+    openConfirm({
+      title: 'Dar de baja partida',
+      message: 'Esta acción dará de baja la partida de la cotización. No se eliminará físicamente.',
+      confirmText: 'Dar de baja partida',
+      variant: 'danger',
+      onConfirm: async () => {
+        setSavingItemIds((current) => new Set(current).add(item.id));
+        setError('');
+        setNotice('');
+        try {
+          const updated = await deleteQuotationItem(selectedQuotation.id, item.id);
+          setSelectedQuotation(updated);
+          cancelEditQuotationItem(item.id);
+          setNotice('Partida eliminada de la cotizacion');
+          await loadQuotationData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setSavingItemIds((current) => {
+            const next = new Set(current);
+            next.delete(item.id);
+            return next;
+          });
+        }
+      }
+    });
   }
 
   function duplicateQuotationItem(item) {
@@ -1092,24 +1137,48 @@ function QuotationsPage() {
       setError('Solo una cotizacion aceptada puede generar orden de servicio.');
       return;
     }
-    if (!window.confirm(`¿Generar orden de servicio desde ${selectedQuotation.folio}?`)) {
-      return;
-    }
-    setError('');
-    setNotice('');
-    try {
-      const serviceOrder = await createServiceOrder({
-        client_id: selectedQuotation.client_id,
-        quotation_id: selectedQuotation.id,
-        notes: selectedQuotation.notes || `Generada desde cotizacion ${selectedQuotation.folio}`
-      });
-      setNotice(`Orden de servicio ${serviceOrder.folio} creada correctamente`);
-      if (window.confirm('Orden de servicio creada correctamente. ¿Ir a Orden de Servicio?')) {
-        window.location.hash = 'ordenes';
+    openConfirm({
+      title: 'Generar orden de servicio',
+      message: `Se generará una orden de servicio desde ${selectedQuotation.folio}.`,
+      confirmText: 'Generar orden',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          const serviceOrder = await createServiceOrder({
+            client_id: selectedQuotation.client_id,
+            quotation_id: selectedQuotation.id,
+            notes: selectedQuotation.notes || `Generada desde cotizacion ${selectedQuotation.folio}`
+          });
+          setNotice(`Orden de servicio ${serviceOrder.folio} creada correctamente. Puedes verla en el módulo de Órdenes de Servicio.`);
+        } catch (requestError) {
+          setError(requestError.message);
+        }
       }
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+    });
+  }
+
+  async function handleDeleteQuotationRecord() {
+    if (!selectedQuotation) return;
+    openConfirm({
+      title: 'Dar de baja cotización',
+      message: `Esta acción dará de baja la cotización ${selectedQuotation.folio}.\nNo se eliminará físicamente y dejará de aparecer en el listado activo.`,
+      confirmText: 'Dar de baja cotización',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          await deleteQuotation(selectedQuotation.id);
+          setIsDetailOpen(false);
+          setSelectedQuotation(null);
+          setNotice('Cotización dada de baja');
+          await loadQuotationData();
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   function downloadCatalogTemplate() {
@@ -1887,6 +1956,18 @@ function QuotationsPage() {
                     </button>
                   </div>
                 </section>
+
+                <section className="danger-zone">
+                  <div className="danger-zone__copy">
+                    <p>Zona de baja</p>
+                    <span>Esta acción dará de baja la cotización. No se eliminará físicamente y el backend conservará sus validaciones de estado.</span>
+                  </div>
+                  <div className="toolbar-actions">
+                    <button className="table-button table-button--danger" onClick={handleDeleteQuotationRecord} type="button">
+                      Dar de baja cotización
+                    </button>
+                  </div>
+                </section>
               </>
             ) : null}
 
@@ -2569,6 +2650,18 @@ function QuotationsPage() {
           </section>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        cancelText={confirmDialog?.cancelText}
+        confirmText={confirmDialog?.confirmText}
+        isLoading={Boolean(confirmDialog?.isConfirming)}
+        isOpen={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        onClose={closeConfirm}
+        onConfirm={handleConfirm}
+        title={confirmDialog?.title}
+        variant={confirmDialog?.variant}
+      />
     </section>
   );
 }

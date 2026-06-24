@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { FileCheck2, X } from 'lucide-react';
 
 
+import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import { emptyCertificateForm } from '../constants/forms.js';
 import {
   equipmentStatusLabels,
@@ -17,6 +18,7 @@ import {
 import {
   changeCertificateStatus,
   createCertificate,
+  deleteCertificate,
   getCertificate,
   listCertificates,
   listClients,
@@ -25,6 +27,7 @@ import {
   listServiceOrders,
   updateCertificate
 } from '../services/api.js';
+import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
 
 function CertificatesPage() {
@@ -45,6 +48,7 @@ function CertificatesPage() {
   const [loadingAction, setLoadingAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -270,25 +274,52 @@ function CertificatesPage() {
   async function handleCertificateAction(action) {
     if (!selectedCertificate) return;
     const nextLabel = certificateStatusLabels[action.nextStatus] ?? action.nextStatus;
-    if (!window.confirm(`¿Cambiar certificado ${selectedCertificate.folio} a ${nextLabel}?`)) {
-      return;
-    }
-    setLoadingAction(action.key);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await changeCertificateStatus(selectedCertificate.id, action.key);
-      setSelectedCertificate(updated);
-      setCertificates((current) =>
-        current.map((certificate) => (certificate.id === updated.id ? updated : certificate))
-      );
-      setNotice(`Certificado ${updated.folio} actualizado a ${certificateStatusLabels[updated.status]}`);
-      await loadCertificateData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoadingAction('');
-    }
+    openConfirm({
+      title: 'Confirmar cambio de certificado',
+      message: `El certificado ${selectedCertificate.folio} cambiará a ${nextLabel}.`,
+      confirmText: `Cambiar a ${nextLabel}`,
+      variant: 'danger',
+      onConfirm: async () => {
+        setLoadingAction(action.key);
+        setError('');
+        setNotice('');
+        try {
+          const updated = await changeCertificateStatus(selectedCertificate.id, action.key);
+          setSelectedCertificate(updated);
+          setCertificates((current) =>
+            current.map((certificate) => (certificate.id === updated.id ? updated : certificate))
+          );
+          setNotice(`Certificado ${updated.folio} actualizado a ${certificateStatusLabels[updated.status]}`);
+          await loadCertificateData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setLoadingAction('');
+        }
+      }
+    });
+  }
+
+  async function handleDeleteCertificateRecord() {
+    if (!selectedCertificate) return;
+    openConfirm({
+      title: 'Dar de baja certificado',
+      message: `Esta acción dará de baja el certificado ${selectedCertificate.folio}.\nNo se eliminará físicamente y es una acción administrativa distinta de suspender o cambiar estado.`,
+      confirmText: 'Dar de baja certificado',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          await deleteCertificate(selectedCertificate.id);
+          closeCertificateDetail();
+          setNotice('Certificado dado de baja');
+          await loadCertificateData();
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   const selectedContext = selectedCertificate ? getCertificateContext(selectedCertificate) : {};
@@ -644,25 +675,37 @@ function CertificatesPage() {
             ) : null}
 
             {certificateDetailTab === 'quality' ? (
-              <section className="quotation-section">
-                <div className="quotation-section__title">
-                  <p>Calidad</p>
-                  <h3>Flujo de certificado</h3>
-                </div>
-                <div className="quotation-actions">
-                  {certificateActions.map((action) => (
-                    <button
-                      className={action.key === 'release' ? 'table-button table-button--primary' : 'table-button'}
-                      disabled={Boolean(loadingAction) || !isCertificateActionAllowed(selectedCertificate, action)}
-                      key={action.key}
-                      onClick={() => handleCertificateAction(action)}
-                      type="button"
-                    >
-                      {loadingAction === action.key ? 'Procesando...' : action.label}
-                    </button>
-                  ))}
-                </div>
-              </section>
+              <>
+                <section className="quotation-section">
+                  <div className="quotation-section__title">
+                    <p>Calidad</p>
+                    <h3>Flujo de certificado</h3>
+                  </div>
+                  <div className="quotation-actions">
+                    {certificateActions.map((action) => (
+                      <button
+                        className={action.key === 'release' ? 'table-button table-button--primary' : 'table-button'}
+                        disabled={Boolean(loadingAction) || !isCertificateActionAllowed(selectedCertificate, action)}
+                        key={action.key}
+                        onClick={() => handleCertificateAction(action)}
+                        type="button"
+                      >
+                        {loadingAction === action.key ? 'Procesando...' : action.label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="quotation-section danger-zone">
+                  <div className="danger-zone__copy">
+                    <p>Zona de baja</p>
+                    <span>Esta acción da de baja el certificado sin borrarlo físicamente. No sustituye suspender ni cambiar estado.</span>
+                  </div>
+                  <button className="table-button table-button--danger" onClick={handleDeleteCertificateRecord} type="button">
+                    Dar de baja certificado
+                  </button>
+                </section>
+              </>
             ) : null}
 
             {certificateDetailTab === 'history' ? (
@@ -702,6 +745,18 @@ function CertificatesPage() {
           </section>
         </div>
       ) : null}
+
+      <ConfirmDialog
+        cancelText={confirmDialog?.cancelText}
+        confirmText={confirmDialog?.confirmText}
+        isLoading={Boolean(confirmDialog?.isConfirming)}
+        isOpen={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        onClose={closeConfirm}
+        onConfirm={handleConfirm}
+        title={confirmDialog?.title}
+        variant={confirmDialog?.variant}
+      />
     </section>
   );
 }

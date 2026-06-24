@@ -63,6 +63,7 @@ ROLE_PERMISSIONS = {
         "service_orders.read_own",
     },
     "Desarrollador": {
+        "audit_logs.read",
         "users.read",
         "users.manage",
         "settings.read",
@@ -83,4 +84,5 @@ PERMISSIONS = {
     "CERTIFICATES_READ": "certificates.read",
     "CERTIFICATES_CREATE": "certificates.create",
     "CERTIFICATES_APPROVE": "certificates.approve",
+    "AUDIT_LOGS_READ": "audit_logs.read",
 }

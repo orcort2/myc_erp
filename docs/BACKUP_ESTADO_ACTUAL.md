@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-19 14:59:53 CST
+Ultima actualizacion: 2026-06-19 15:23:42 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -33,15 +33,24 @@ e53b18d Add equipment and field sheets modules
 Estado Git verificado:
 
 ```text
+M backend/app/core/permissions.py
+M backend/app/routers/audit_logs.py
 M backend/app/routers/users.py
-M backend/app/schemas/user.py
 M backend/app/services/auth.py
+M backend/app/services/audit_logs.py
 M backend/app/services/users.py
 M docs/BACKUP_ESTADO_ACTUAL.md
+M frontend/src/pages/CertificatesPage.jsx
+M frontend/src/pages/ClientsPage.jsx
+M frontend/src/pages/QualityPage.jsx
+M frontend/src/pages/QuotationsPage.jsx
+M frontend/src/pages/ServiceOrdersPage.jsx
 M frontend/src/pages/SettingsPage.jsx
 M frontend/src/services/api.js
 M frontend/src/styles/global.css
-?? backend/app/core/permissions.py
+?? frontend/src/components/ConfirmDialog.jsx
+?? frontend/src/pages/settings/
+?? frontend/src/utils/useConfirmDialog.js
 ```
 
 `frontend/assets/` contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en `frontend/src/assets/myc-logo.png`.
@@ -266,11 +275,15 @@ frontend/
     assets/
       myc-logo.png
       myc-logo.svg
+    components/
+      ConfirmDialog.jsx
     main.jsx
     pages/App.jsx
     components/ModuleCard.jsx
+    pages/settings/
     services/api.js
     styles/global.css
+    utils/useConfirmDialog.js
 
 storage/
   cotizaciones/
@@ -455,6 +468,16 @@ Audit logs:
 
 ```text
 GET /api/audit-logs
+```
+
+Filtros disponibles:
+
+```text
+action
+entity
+entity_id
+user_id
+limit
 ```
 
 Los `DELETE` actuales hacen borrado logico, no borrado fisico.
@@ -1081,6 +1104,8 @@ Flujo Hoja de Campo/API: TestClient creo cliente 201, cotizacion 201, agrego par
 Flujo frontend Certificados/API: TestClient con rollback creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, guardo datos tecnicos 200, completo hoja 200, envio a revision 200, valido equipo_after_sheet -> calibrated, creo certificado 201 MYCT-06-2026-0001 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released.
 Flujo Calidad/API: TestClient con rollback creo cliente 201, cotizacion 201, agrego partida 200, envio 200, acepto 200, genero orden de servicio 201, creo equipo 201, creo hoja de campo 201, completo hoja 200, envio hoja a revision 200, creo certificado 201 draft, generate 200 generated, quality 200 quality_review, approve 200 approved, release 200 released, GET /api/audit-logs?entity=certificates&entity_id={id} -> 200 con acciones certificate.created, certificate.generated, certificate.quality_review, certificate.approved y certificate.released.
 Usuarios/Configuracion verificado 2026-06-19: `../venv/bin/python -m compileall app` OK, `../venv/bin/alembic current` -> c3d4e5f6a7b8 (head), `app.openapi()` expone `/api/users`, `/api/users/roles`, `/api/users/{user_id}`, `/api/users/{user_id}/roles` y `/api/users/{user_id}/status`, `ROLE_PERMISSIONS` conserva `Administrador -> *` y `Desarrollador -> users.read/users.manage`, prueba de servicio con usuario temporal: crear usuario -> editar usuario -> cambiar rol -> desactivar -> limpieza final OK.
+Auditoria/Configuracion verificado 2026-06-19: `../venv/bin/python -m compileall app` OK, `../venv/bin/alembic current` -> c3d4e5f6a7b8 (head), `app.openapi()` expone `/api/audit-logs` con filtros `action`, `entity`, `entity_id`, `user_id` y `limit`, `npm run build` OK, prueba real con usuario temporal genero `user.created`, `user.updated`, `user.role_changed` y `user.deactivated`; registros eliminados despues de validar para no dejar ruido en base local.
+Confirmaciones/Bajas logicas frontend verificado 2026-06-19: `../venv/bin/python -m compileall app` OK, `../venv/bin/alembic current` -> c3d4e5f6a7b8 (head), `npm run build` OK, busqueda `rg -n "window\\.confirm|alert\\(|prompt\\(" frontend/src` sin coincidencias.
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
@@ -1408,6 +1433,9 @@ Calidad conecta acciones:
 - Liberar -> POST /api/certificates/{id}/release
 - Suspender -> POST /api/certificates/{id}/suspend
 Cada accion pide confirmacion, muestra loading, propaga errores claros y refresca certificado/listados.
+La ficha de certificado incluye Zona de baja con `Dar de baja certificado` usando DELETE logico /api/certificates/{certificate_id}.
+La baja logica cierra modal, recarga listados y muestra notice.
+No usa confirmaciones nativas del navegador.
 Badges visuales implementados para draft, generated, quality_review, approved, released, cancelled y suspended.
 Folios se muestran con jerarquia visual:
 - acreditado: MYCA-MM-AAAA-XXXX
@@ -1457,10 +1485,49 @@ Acciones de Calidad conectadas:
 - Suspender -> POST /api/certificates/{id}/suspend
 - Liberar -> POST /api/certificates/{id}/release
 Nota tecnica: Solicitar correccion hoy reutiliza la transicion suspend porque el backend todavia no tiene un estado separado para correccion solicitada.
+Todas las acciones de Calidad usan confirmacion interna MYC; ya no se usa `window.confirm`.
 Dashboard actualiza contadores:
 - Certificados pendientes calidad
 - Certificados aprobados
 - Certificados liberados
+```
+
+## Confirmaciones internas y bajas logicas frontend - 2026-06-19
+
+```text
+Componente global nuevo:
+- frontend/src/components/ConfirmDialog.jsx
+
+Hook reusable nuevo:
+- frontend/src/utils/useConfirmDialog.js
+
+Reglas visuales implementadas:
+- Confirmacion interna Liquid Glass para acciones sensibles.
+- Cierre con Escape y click fuera solo si no esta procesando.
+- Variante danger para acciones destructivas.
+- Mensajes claros de baja logica: no se elimina fisicamente el registro.
+
+Funciones API frontend activas:
+- deleteClient(clientId)
+- deleteQuotation(quotationId)
+- deleteQuotationItem(quotationId, itemId)
+- deleteServiceOrder(serviceOrderId)
+- deleteEquipment(equipmentId)
+- deleteFieldSheet(fieldSheetId)
+- deleteCertificate(certificateId)
+- deleteCatalogItem(catalogItemId)
+
+Cobertura actual en frontend:
+- Clientes: Dar de baja cliente desde tabla y modal.
+- Cotizaciones: Dar de baja cotizacion, eliminar partida, desactivar catalogo y confirmaciones de acciones criticas.
+- Ordenes de servicio: Dar de baja orden, dar de baja equipo, dar de baja hoja de campo y confirmaciones de cambios de estado.
+- Certificados: Dar de baja certificado y confirmaciones de flujo documental.
+- Calidad: confirmaciones internas para aprobar, solicitar correccion, suspender y liberar.
+- Configuracion/Usuarios: confirmaciones internas para cambio rapido de rol y activacion/desactivacion.
+
+Estado actual:
+- No quedan `window.confirm`, `window.alert` ni `prompt` dentro de `frontend/src`.
+- Los DELETE siguen siendo logicos y el backend conserva la validacion final.
 ```
 
 Modulo backend Audit Logs expuesto:
@@ -1570,6 +1637,10 @@ Backend actual de usuarios:
 - `backend/app/services/users.py`
 - `backend/app/routers/users.py`
 - `backend/app/services/auth.py`
+- `backend/app/models/audit_log.py`
+- `backend/app/schemas/audit_log.py`
+- `backend/app/services/audit_logs.py`
+- `backend/app/routers/audit_logs.py`
 
 Endpoints activos:
 - `POST /api/users`
@@ -1578,6 +1649,7 @@ Endpoints activos:
 - `PATCH /api/users/{user_id}`
 - `PATCH /api/users/{user_id}/roles`
 - `PATCH /api/users/{user_id}/status`
+- `GET /api/audit-logs`
 
 Blindajes implementados:
 - No permite quitarse a si mismo el rol Administrador.
@@ -1587,12 +1659,19 @@ Blindajes implementados:
 - `require_permission()` sigue operando con `ROLE_PERMISSIONS` desde `backend/app/core/permissions.py`.
 - `Administrador` conserva `"*"`.
 - `users.read` y `users.manage` quedan definidos para el rol `Desarrollador`.
+- `audit_logs.read` queda disponible para el rol `Desarrollador`.
 
 Frontend actual:
 - `frontend/src/pages/SettingsPage.jsx`
+- `frontend/src/pages/settings/UsersSettingsPanel.jsx`
+- `frontend/src/pages/settings/AuditSettingsPanel.jsx`
+- `frontend/src/pages/settings/UserModal.jsx`
 - `frontend/src/services/api.js`
 
 Funciones frontend activas:
+- Navegacion interna de Configuracion:
+  - Usuarios
+  - Auditoria
 - Listado real de usuarios y roles.
 - Boton `Nuevo usuario`.
 - Modal de creacion con nombre completo, correo, contraseña y rol.
@@ -1602,12 +1681,28 @@ Funciones frontend activas:
 - Guardado contra `createUser(payload)` y `updateUser(userId, payload)`.
 - Recarga/actualizacion local del listado y mensajes claros de exito/error.
 - Estilo visual coherente con el ERP usando modal Liquid Glass, tabla y badges existentes.
+- Pestaña Auditoria consume `GET /api/audit-logs`.
+- Auditoria muestra Fecha, Usuario, Accion, Entidad, ID entidad y Resumen del cambio.
+- Auditoria filtra por Accion, Entidad, Usuario y Limite.
+- Auditoria incluye estados de carga, vacio y error.
+
+Auditoria backend de usuarios:
+- `POST /api/users` registra `user.created`.
+- `/api/auth/register` registra `user.created` sin romper bootstrap inicial y sin requerir `current_user`.
+- `PATCH /api/users/{user_id}` registra `user.updated` cuando cambia nombre o correo.
+- `PATCH /api/users/{user_id}/roles` registra `user.role_changed`.
+- `PATCH /api/users/{user_id}/status` registra `user.activated` o `user.deactivated`.
+- Los logs usan:
+  - `entity = users`
+  - `entity_id = id del usuario afectado`
+  - `user_id = usuario que ejecuto el cambio cuando existe`
+  - `previous_values` y `new_values` sin contraseñas ni hashes
+- Nunca se guarda `password`, `hashed_password`, `access_token` ni `refresh_token` en auditoria.
 
 Pendiente inmediato de Configuración:
-- Registrar cambios de usuarios en `audit_logs`.
-- Crear vista de auditoria dentro de Configuración.
 - Evaluar migracion futura si se quiere eliminar por completo `role_id`.
 - Mover permisos hardcodeados a base de datos en una fase posterior.
+- Agregar auditoria a otros modulos sensibles fuera de Usuarios.
 
 Migracion nueva:
 backend/migrations/versions/a1b2c3d4e5f6_add_catalog_items.py
@@ -1735,9 +1830,8 @@ npm run dev
 ## Pendientes inmediatos recomendados
 
 1. Hacer commit del estado actual estable.
-2. Registrar auditoría para cambios de usuarios/roles.
-3. Crear pestaña Auditoría dentro de Configuración.
-4. Separar en backend/frontend la acción Solicitar corrección de Suspender.
-5. Definir PDF real de certificado y plantilla documental de certificados.
-6. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
-7. Evaluar si `role_id` ya puede retirarse con migración dedicada o si se mantiene como compatibilidad controlada.
+2. Separar en backend/frontend la acción Solicitar corrección de Suspender.
+3. Definir PDF real de certificado y plantilla documental de certificados.
+4. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
+5. Evaluar si `role_id` ya puede retirarse con migración dedicada o si se mantiene como compatibilidad controlada.
+6. Extender `audit_logs` a clientes, cotizaciones, ordenes, equipos y hojas de campo con el mismo nivel de detalle.

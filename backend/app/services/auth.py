@@ -14,6 +14,7 @@ from app.core.security import (
 )
 from app.models.user import Role, User
 from app.schemas.auth import UserLogin, UserRegister
+from app.services.audit_logs import write_audit_log
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -83,8 +84,25 @@ def register_user(db: Session, payload: UserRegister) -> dict:
     )
     user.roles = roles
     db.add(user)
+    db.flush()
+    write_audit_log(
+        db,
+        action="user.created",
+        entity="users",
+        entity_id=user.id,
+        user_id=None,
+        previous_values=None,
+        new_values={
+            "email": user.email,
+            "full_name": user.full_name,
+            "is_active": user.is_active,
+            "role_names": [role.name for role in roles],
+        },
+        comment="Registro inicial o alta desde auth.register",
+    )
     db.commit()
-    return _build_tokens(_get_user(db, user.id))
+    refreshed_user = _get_user(db, user.id)
+    return _build_tokens(refreshed_user)
 
 
 def authenticate_user(db: Session, payload: UserLogin) -> dict:
