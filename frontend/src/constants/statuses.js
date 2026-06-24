@@ -35,6 +35,7 @@ export const certificateStatusLabels = {
   draft: 'Borrador',
   generated: 'Generado',
   quality_review: 'En revision',
+  correction_requested: 'Correccion solicitada',
   approved: 'Aprobado',
   released: 'Liberado',
   cancelled: 'Cancelado',
@@ -115,9 +116,26 @@ export const certificateActions = [
 
 export const certificateTransitions = {
   draft: new Set(['generated', 'suspended']),
-  generated: new Set(['quality_review', 'suspended']),
-  quality_review: new Set(['approved', 'suspended']),
-  approved: new Set(['released', 'suspended']),
+  generated: new Set([
+    'quality_review',
+    'suspended',
+    'correction_requested'
+  ]),
+  quality_review: new Set([
+    'approved',
+    'suspended',
+    'correction_requested'
+  ]),
+  correction_requested: new Set([
+    'draft',
+    'generated',
+    'suspended'
+  ]),
+  approved: new Set([
+    'released',
+    'suspended',
+    'correction_requested'
+  ]),
   released: new Set([]),
   cancelled: new Set([]),
   suspended: new Set([])

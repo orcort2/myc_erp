@@ -1,7 +1,7 @@
 # Backup de estado actual - MYC SYSTEM
 
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-19 15:23:42 CST
+Ultima actualizacion: 2026-06-24 14:26:24 CST
 
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 
@@ -18,39 +18,26 @@ Git ya esta inicializado.
 Ultimo commit conocido:
 
 ```text
-a0051a2 Add auth, roles and permissions foundation
+0223813 se agrego la configuración de adutoria, colocando el front
 ```
 
 Commits recientes:
 
 ```text
-a0051a2 Add auth, roles and permissions foundation
-e53b18d Add equipment and field sheets modules
-4546e2c Add service orders and equipment modules
-66f8b58 ERP MYC - Base MVP clients and quotations
+0223813 se agrego la configuración de adutoria, colocando el front
+98f971d se agregaron archivos de ayuda, se mejoran botones, se pule css de algunas pestañas
+f444882 Complete users management module
+d64d834 se instala un pequeño modulo de configuración para la gestion de usuarios
+de884e0 se separaon archivos del app principal, cada pestaña vive independiente
 ```
 
 Estado Git verificado:
 
 ```text
-M backend/app/core/permissions.py
-M backend/app/routers/audit_logs.py
-M backend/app/routers/users.py
-M backend/app/services/auth.py
-M backend/app/services/audit_logs.py
-M backend/app/services/users.py
-M docs/BACKUP_ESTADO_ACTUAL.md
-M frontend/src/pages/CertificatesPage.jsx
-M frontend/src/pages/ClientsPage.jsx
-M frontend/src/pages/QualityPage.jsx
-M frontend/src/pages/QuotationsPage.jsx
-M frontend/src/pages/ServiceOrdersPage.jsx
-M frontend/src/pages/SettingsPage.jsx
-M frontend/src/services/api.js
-M frontend/src/styles/global.css
-?? frontend/src/components/ConfirmDialog.jsx
-?? frontend/src/pages/settings/
-?? frontend/src/utils/useConfirmDialog.js
+On branch main
+Your branch is up to date with origin/main.
+Changes not staged for commit:
+  modified: docs/BACKUP_ESTADO_ACTUAL.md
 ```
 
 `frontend/assets/` contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en `frontend/src/assets/myc-logo.png`.
@@ -1106,6 +1093,26 @@ Flujo Calidad/API: TestClient con rollback creo cliente 201, cotizacion 201, agr
 Usuarios/Configuracion verificado 2026-06-19: `../venv/bin/python -m compileall app` OK, `../venv/bin/alembic current` -> c3d4e5f6a7b8 (head), `app.openapi()` expone `/api/users`, `/api/users/roles`, `/api/users/{user_id}`, `/api/users/{user_id}/roles` y `/api/users/{user_id}/status`, `ROLE_PERMISSIONS` conserva `Administrador -> *` y `Desarrollador -> users.read/users.manage`, prueba de servicio con usuario temporal: crear usuario -> editar usuario -> cambiar rol -> desactivar -> limpieza final OK.
 Auditoria/Configuracion verificado 2026-06-19: `../venv/bin/python -m compileall app` OK, `../venv/bin/alembic current` -> c3d4e5f6a7b8 (head), `app.openapi()` expone `/api/audit-logs` con filtros `action`, `entity`, `entity_id`, `user_id` y `limit`, `npm run build` OK, prueba real con usuario temporal genero `user.created`, `user.updated`, `user.role_changed` y `user.deactivated`; registros eliminados despues de validar para no dejar ruido en base local.
 Confirmaciones/Bajas logicas frontend verificado 2026-06-19: `../venv/bin/python -m compileall app` OK, `../venv/bin/alembic current` -> c3d4e5f6a7b8 (head), `npm run build` OK, busqueda `rg -n "window\\.confirm|alert\\(|prompt\\(" frontend/src` sin coincidencias.
+Revision integral 2026-06-24:
+- `git status` -> working tree clean en `main`, sincronizado con `origin/main`.
+- `../venv/bin/python -m compileall app` OK.
+- `../venv/bin/alembic current` -> `c3d4e5f6a7b8 (head)`.
+- `../venv/bin/python - <<'PY' ... app.openapi()` confirma rutas activas para:
+  - auth
+  - audit_logs
+  - users
+  - clients
+  - quotations
+  - service_orders
+  - equipment
+  - field_sheets
+  - certificates
+  - catalog_items
+  - document_templates
+  - modules
+  - health
+- `npm run build` OK en frontend.
+- `rg -n "window\\.confirm|alert\\(|prompt\\(" frontend/src` sin coincidencias.
 ```
 
 Nota: `TestClient` muestra un warning de Starlette sobre `httpx`/`httpx2`, pero no bloquea la prueba.
@@ -1628,7 +1635,7 @@ Reglas implementadas:
 Ruta activa:
 
 ```text
-/dashboard#settings
+/dashboard#configuracion
 ```
 
 Backend actual de usuarios:
@@ -1829,9 +1836,9 @@ npm run dev
 
 ## Pendientes inmediatos recomendados
 
-1. Hacer commit del estado actual estable.
-2. Separar en backend/frontend la acción Solicitar corrección de Suspender.
-3. Definir PDF real de certificado y plantilla documental de certificados.
-4. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
-5. Evaluar si `role_id` ya puede retirarse con migración dedicada o si se mantiene como compatibilidad controlada.
-6. Extender `audit_logs` a clientes, cotizaciones, ordenes, equipos y hojas de campo con el mismo nivel de detalle.
+1. Separar en backend/frontend la acción `Solicitar correccion` de `Suspender` con estado o flujo propio.
+2. Definir PDF real de certificado y plantilla documental de certificados.
+3. Aplicar permisos gradualmente en endpoints sensibles usando `require_permission()`.
+4. Evaluar si `role_id` ya puede retirarse con migración dedicada o si se mantiene como compatibilidad controlada.
+5. Extender `audit_logs` a clientes, cotizaciones, ordenes, equipos y hojas de campo con el mismo nivel de detalle.
+6. Convertir `Equipos` y `Hojas de campo` desde placeholder independiente a vistas autónomas si se decide separarlas del flujo de Ordenes.

@@ -14,6 +14,7 @@ from app.services.certificates import (
     deactivate_certificate,
     get_certificate,
     list_certificates,
+    request_correction,
     update_certificate,
 )
 
@@ -77,6 +78,13 @@ def quality_certificate(
 ) -> CertificateRead:
     return change_status(db, certificate_id, "quality_review", payload)
 
+@router.post("/{certificate_id}/request-correction", response_model=CertificateRead)
+def request_certificate_correction(
+    certificate_id: int,
+    payload: CertificateStatusChange | None = None,
+    db: Session = Depends(get_db),
+) -> CertificateRead:
+    return request_correction(db, certificate_id, payload)
 
 @router.post("/{certificate_id}/approve", response_model=CertificateRead)
 def approve_certificate(

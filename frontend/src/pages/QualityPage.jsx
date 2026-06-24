@@ -363,10 +363,10 @@ function QualityPage() {
                     <button
                       className="table-button"
                       disabled={Boolean(loadingAction) || !['generated', 'quality_review'].includes(selectedCertificate.status)}
-                      onClick={() => handleQualityAction('suspend', 'Solicitar correccion', 'Correccion solicitada por calidad')}
+                      onClick={() => handleQualityAction('request-correction', 'Solicitar correccion', 'Correccion solicitada por calidad')}
                       type="button"
                     >
-                      {loadingAction === 'suspendSolicitar correccion' ? 'Procesando...' : 'Solicitar correccion'}
+                      {loadingAction === 'request-correctionSolicitar correccion' ? 'Procesando...' : 'Solicitar correccion'}
                     </button>
                     <button
                       className="table-button"

@@ -18,11 +18,13 @@ from app.services.audit_logs import write_audit_log
 
 
 TERMINAL_STATUSES = {"released", "cancelled"}
+
 ALLOWED_TRANSITIONS = {
     "draft": {"generated", "cancelled", "suspended"},
-    "generated": {"quality_review", "cancelled", "suspended"},
-    "quality_review": {"approved", "cancelled", "suspended"},
-    "approved": {"released", "suspended"},
+    "generated": {"quality_review", "cancelled", "suspended", "correction_requested"},
+    "quality_review": {"approved", "cancelled", "suspended", "correction_requested"},
+    "correction_requested": {"draft", "generated", "cancelled", "suspended"},
+    "approved": {"released", "suspended", "correction_requested"},
     "released": set(),
     "cancelled": set(),
     "suspended": {"draft", "cancelled"},
@@ -260,6 +262,20 @@ def change_status(
     db.commit()
     return get_certificate(db, certificate.id)
 
+def request_correction(
+    db: Session,
+    certificate_id: int,
+    payload: CertificateStatusChange | None = None,
+    *,
+    user_id: int | None = None,
+) -> Certificate:
+    return change_status(
+        db,
+        certificate_id,
+        "correction_requested",
+        payload,
+        user_id=user_id,
+    )
 
 def deactivate_certificate(
     db: Session, certificate_id: int, *, user_id: int | None = None
