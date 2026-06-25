@@ -1,4 +1,7 @@
+from io import BytesIO
+
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -17,6 +20,7 @@ from app.services.field_sheets import (
     review_field_sheet,
     update_field_sheet,
 )
+from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 
 
 router = APIRouter(prefix="/field-sheets", tags=["field-sheets"])
@@ -48,6 +52,19 @@ def get_field_sheet_by_id(
     field_sheet_id: int, db: Session = Depends(get_db)
 ) -> FieldSheetRead:
     return get_field_sheet(db, field_sheet_id)
+
+
+@router.get("/{field_sheet_id}/pdf")
+def get_field_sheet_pdf(
+    field_sheet_id: int,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    pdf_bytes, filename = generate_field_sheet_pdf(db, field_sheet_id)
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.patch("/{field_sheet_id}", response_model=FieldSheetRead)

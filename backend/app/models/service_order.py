@@ -11,6 +11,7 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "service_orders"
 
     folio: Mapped[str] = mapped_column(String(40), unique=True, index=True)
+    work_order_number: Mapped[int] = mapped_column(unique=True, index=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
     quotation_id: Mapped[int | None] = mapped_column(ForeignKey("quotations.id"), index=True)
     advisor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)

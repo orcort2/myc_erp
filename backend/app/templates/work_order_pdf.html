@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      @page {
+        margin: 18mm 14mm 20mm;
+        size: A4;
+      }
+      body {
+        color: #172033;
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        margin: 0;
+      }
+      .header {
+        align-items: flex-start;
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
+      .brand {
+        display: flex;
+        gap: 12px;
+      }
+      .brand img {
+        height: 64px;
+        width: auto;
+      }
+      .brand-copy h1 {
+        color: #0f3d73;
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      .brand-copy p {
+        margin: 0;
+      }
+      .folio-box {
+        border: 1px solid #0f3d73;
+        min-width: 140px;
+        padding: 10px 12px;
+        text-align: center;
+      }
+      .folio-box strong {
+        color: #b42318;
+        display: block;
+        font-size: 26px;
+        line-height: 1;
+        margin-top: 4px;
+      }
+      .detail-grid {
+        border: 1px solid #9cb2c9;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-bottom: 12px;
+      }
+      .detail-grid article {
+        border-right: 1px solid #d6e0ea;
+        border-top: 1px solid #d6e0ea;
+        min-height: 58px;
+        padding: 8px 10px;
+      }
+      .detail-grid article:nth-child(-n + 2) {
+        border-top: 0;
+      }
+      .detail-grid article:nth-child(2n) {
+        border-right: 0;
+      }
+      .label {
+        color: #667085;
+        display: block;
+        font-size: 10px;
+        font-weight: 700;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      .items th,
+      .items td {
+        border: 1px solid #a7b7c7;
+        padding: 6px 7px;
+        vertical-align: top;
+      }
+      .items th {
+        background: #eaf1f7;
+        font-size: 10px;
+        text-transform: uppercase;
+      }
+      .items td {
+        height: 26px;
+      }
+      .section {
+        margin-top: 12px;
+      }
+      .section h2 {
+        color: #0f3d73;
+        font-size: 12px;
+        margin: 0 0 6px;
+        text-transform: uppercase;
+      }
+      .box {
+        border: 1px solid #a7b7c7;
+        min-height: 56px;
+        padding: 8px 10px;
+        white-space: pre-wrap;
+      }
+      .signatures {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-top: 14px;
+      }
+      .signature {
+        border: 1px solid #a7b7c7;
+        min-height: 84px;
+        padding: 8px 10px;
+      }
+      .footer-note {
+        color: #475467;
+        font-size: 9px;
+        margin-top: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <div class="brand">
+        {% if logo_uri %}
+        <img alt="MYC" src="{{ logo_uri }}" />
+        {% endif %}
+        <div class="brand-copy">
+          <h1>ORDEN DE TRABAJO</h1>
+          <p>Metrología y Servicios MYC</p>
+          <p>Recepción, control y salida de equipos</p>
+        </div>
+      </div>
+      <div class="folio-box">
+        OT
+        <strong>{{ service_order.work_order_number }}</strong>
+      </div>
+    </header>
+
+    <section class="detail-grid">
+      <article>
+        <span class="label">Fecha</span>
+        <strong>{{ service_order.created_at|date }}</strong>
+      </article>
+      <article>
+        <span class="label">Orden de servicio</span>
+        <strong>{{ service_order.folio }}</strong>
+      </article>
+      <article>
+        <span class="label">Cliente</span>
+        <strong>{{ client.commercial_name or client.legal_name }}</strong>
+      </article>
+      <article>
+        <span class="label">Atención</span>
+        <strong>{{ contact.name if contact else client.commercial_name or client.legal_name }}</strong>
+      </article>
+      <article>
+        <span class="label">Dirección</span>
+        <strong>{{ client_address or '-' }}</strong>
+      </article>
+      <article>
+        <span class="label">Agenda / servicio</span>
+        <strong>{{ service_order.agenda_date|date }} / {{ service_order.service_date|date }}</strong>
+      </article>
+    </section>
+
+    <table class="items">
+      <thead>
+        <tr>
+          <th style="width: 6%">#</th>
+          <th style="width: 8%">Cant.</th>
+          <th>Descripción</th>
+          <th style="width: 16%">Marca</th>
+          <th style="width: 16%">Modelo</th>
+          <th style="width: 18%">No. serie</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in equipment_lines %}
+        <tr>
+          <td>{{ line.index }}</td>
+          <td>{{ line.quantity if line.quantity else '' }}</td>
+          <td>{{ line.description }}</td>
+          <td>{{ line.brand }}</td>
+          <td>{{ line.model }}</td>
+          <td>{{ line.serial_number }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <section class="section">
+      <h2>Observaciones</h2>
+      <div class="box">{{ service_order.notes or 'Sin observaciones registradas.' }}</div>
+    </section>
+
+    <section class="signatures">
+      <article class="signature">
+        <span class="label">Recibió</span>
+      </article>
+      <article class="signature">
+        <span class="label">Responsable MYC</span>
+        <strong>{{ service_order.technician.full_name if service_order.technician else 'Por definir' }}</strong>
+      </article>
+      <article class="signature">
+        <span class="label">Cotización / pedido</span>
+        <strong>{{ service_order.quotation.folio if service_order.quotation else '-' }}</strong>
+      </article>
+    </section>
+
+    <p class="footer-note">
+      Documento operativo interno para control de recepción y trazabilidad documental del servicio.
+    </p>
+  </body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      @page { margin: 14mm 12mm 16mm; size: A4; }
+      body { color: #172033; font-family: Arial, sans-serif; font-size: 10px; margin: 0; }
+      .page-break { break-before: page; }
+      .header { align-items: flex-start; display: flex; justify-content: space-between; margin-bottom: 10px; }
+      .brand { align-items: center; display: flex; gap: 10px; }
+      .brand img { height: 54px; width: auto; }
+      .title h1 { color: #0f3d73; font-size: 15px; margin: 0; text-transform: uppercase; }
+      .title p { margin: 2px 0 0; }
+      .code { border: 1px solid #8ea2b6; padding: 8px 10px; text-align: right; }
+      .code strong { color: #b42318; display: block; font-size: 20px; }
+      .grid { display: grid; gap: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 10px; }
+      .card { border: 1px solid #a7b7c7; min-height: 46px; padding: 6px 8px; }
+      .label { color: #667085; display: block; font-size: 9px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; }
+      table { border-collapse: collapse; width: 100%; }
+      .results th, .results td { border: 1px solid #a7b7c7; padding: 5px 6px; }
+      .results th { background: #eaf1f7; font-size: 9px; text-transform: uppercase; }
+      .results td { height: 22px; }
+      .row-two { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
+      .box { border: 1px solid #a7b7c7; min-height: 56px; padding: 8px 10px; white-space: pre-wrap; }
+      .signatures { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 10px; }
+      .signature { border: 1px solid #a7b7c7; min-height: 70px; padding: 8px 10px; }
+      .footer { color: #475467; font-size: 9px; margin-top: 8px; text-align: right; }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <div class="brand">
+        {% if logo_uri %}<img alt="MYC" src="{{ logo_uri }}" />{% endif %}
+        <div class="title">
+          <h1>Hoja de Campo Eléctrica</h1>
+          <p>Amperímetro, multímetro, megaóhmetro y afines</p>
+        </div>
+      </div>
+      <div class="code">
+        Orden de trabajo
+        <strong>{{ field_sheet.work_order_number or service_order.work_order_number }}</strong>
+      </div>
+    </header>
+
+    <section class="grid">
+      <article class="card"><span class="label">Cliente</span><strong>{{ client.commercial_name or client.legal_name }}</strong></article>
+      <article class="card"><span class="label">Equipo</span><strong>{{ equipment.name }}</strong></article>
+      <article class="card"><span class="label">Marca / modelo</span><strong>{{ equipment.brand or '-' }} / {{ equipment.model or '-' }}</strong></article>
+      <article class="card"><span class="label">Serie</span><strong>{{ equipment.serial_number or '-' }}</strong></article>
+      <article class="card"><span class="label">Recepción</span><strong>{{ field_sheet.reception_date|date }}</strong></article>
+      <article class="card"><span class="label">Calibración</span><strong>{{ field_sheet.calibration_date|date }}</strong></article>
+      <article class="card"><span class="label">Humedad</span><strong>{{ field_sheet.environment_humidity_start or '-' }} / {{ field_sheet.environment_humidity_end or '-' }}</strong></article>
+      <article class="card"><span class="label">Temperatura</span><strong>{{ field_sheet.environment_temperature_start or '-' }} / {{ field_sheet.environment_temperature_end or '-' }}</strong></article>
+    </section>
+
+    {% set main_section = sections[0] if sections else none %}
+    <table class="results">
+      <thead>
+        <tr>
+          <th style="width: 8%">#</th>
+          <th>Patrón</th>
+          <th>Indicación 1</th>
+          <th>Indicación 2</th>
+          <th>Indicación 3</th>
+          <th style="width: 12%">Unidad</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in main_section.rows if main_section %}
+        <tr>
+          <td>{{ row.row_number }}</td>
+          <td>{{ row.pattern_value or '' }}</td>
+          <td>{{ row.ibc_value_1 or '' }}</td>
+          <td>{{ row.ibc_value_2 or '' }}</td>
+          <td>{{ row.ibc_value_3 or '' }}</td>
+          <td>{{ row.unit or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <section class="row-two">
+      <article>
+        <span class="label">Condición inicial</span>
+        <div class="box">{{ field_sheet.initial_condition or '-' }}</div>
+      </article>
+      <article>
+        <span class="label">Condición final</span>
+        <div class="box">{{ field_sheet.final_condition or '-' }}</div>
+      </article>
+      <article>
+        <span class="label">Método / patrón</span>
+        <div class="box">{{ field_sheet.pattern_used or '-' }}{% if field_sheet.method %}\n\nMétodo: {{ field_sheet.method }}{% endif %}</div>
+      </article>
+      <article>
+        <span class="label">Observaciones</span>
+        <div class="box">{{ field_sheet.observations or '-' }}</div>
+      </article>
+    </section>
+
+    <section class="signatures">
+      <article class="signature"><span class="label">Calibró</span><strong>{{ field_sheet.calibrated_by or '-' }}</strong></article>
+      <article class="signature"><span class="label">Revisó</span><strong>{{ field_sheet.reviewed_by or '-' }}</strong></article>
+      <article class="signature"><span class="label">Reporte</span><strong>{{ field_sheet.report_made_by or '-' }}</strong></article>
+    </section>
+
+    <p class="footer">FCA-30 R1 · Página 1</p>
+
+    <div class="page-break"></div>
+
+    <header class="header">
+      <div class="title">
+        <h1>Resultados complementarios</h1>
+        <p>{{ equipment.name }} · OT {{ field_sheet.work_order_number or service_order.work_order_number }}</p>
+      </div>
+      <div class="code">
+        Hoja 2
+        <strong>2/2</strong>
+      </div>
+    </header>
+
+    {% for section in sections[1:] %}
+    <section style="margin-bottom: 10px;">
+      <span class="label">{{ section.title }}</span>
+      <table class="results">
+        <thead>
+          <tr>
+            <th style="width: 8%">#</th>
+            <th>Patrón</th>
+            <th>Indicación 1</th>
+            <th>Indicación 2</th>
+            <th>Indicación 3</th>
+            <th style="width: 12%">Unidad</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in section.rows %}
+          <tr>
+            <td>{{ row.row_number }}</td>
+            <td>{{ row.pattern_value or '' }}</td>
+            <td>{{ row.ibc_value_1 or '' }}</td>
+            <td>{{ row.ibc_value_2 or '' }}</td>
+            <td>{{ row.ibc_value_3 or '' }}</td>
+            <td>{{ row.unit or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endfor %}
+  </body>
+</html>

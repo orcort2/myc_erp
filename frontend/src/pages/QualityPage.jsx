@@ -78,7 +78,7 @@ function QualityPage() {
 
   const displayedCertificates = useMemo(() => {
     if (activeTab === 'pending') {
-      return certificates.filter((certificate) => ['generated', 'quality_review'].includes(certificate.status));
+      return certificates.filter((certificate) => ['generated', 'quality_review', 'correction_requested'].includes(certificate.status));
     }
     if (activeTab === 'review') {
       return certificates.filter((certificate) => certificate.status === 'quality_review');
@@ -212,7 +212,7 @@ function QualityPage() {
 
       <section className="operations-band certificates-summary" aria-label="Resumen de calidad">
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['generated', 'quality_review'].includes(certificate.status)).length}</strong>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['generated', 'quality_review', 'correction_requested'].includes(certificate.status)).length}</strong>
           <span>Pendientes calidad</span>
         </div>
         <div className="operations-band__metric">
@@ -362,11 +362,19 @@ function QualityPage() {
                     </button>
                     <button
                       className="table-button"
-                      disabled={Boolean(loadingAction) || !['generated', 'quality_review'].includes(selectedCertificate.status)}
+                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'correction_requested')}
                       onClick={() => handleQualityAction('request-correction', 'Solicitar correccion', 'Correccion solicitada por calidad')}
                       type="button"
                     >
                       {loadingAction === 'request-correctionSolicitar correccion' ? 'Procesando...' : 'Solicitar correccion'}
+                    </button>
+                    <button
+                      className="table-button"
+                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'draft')}
+                      onClick={() => handleQualityAction('draft', 'Regresar a borrador', 'Reapertura para correccion documental')}
+                      type="button"
+                    >
+                      {loadingAction === 'draftRegresar a borrador' ? 'Procesando...' : 'Regresar a borrador'}
                     </button>
                     <button
                       className="table-button"

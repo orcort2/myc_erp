@@ -1,7 +1,7 @@
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.folios import FolioRequest, generate_folio
@@ -101,12 +101,23 @@ def _next_service_order_folio(db: Session, issued_on: date) -> str:
     )
 
 
+def _next_work_order_number(db: Session) -> int:
+    last_number = db.scalar(select(func.max(ServiceOrder.work_order_number)))
+    return max(int(last_number or 7000) + 1, 7001)
+
+
 def list_service_orders(
     db: Session, *, include_inactive: bool = False
 ) -> list[ServiceOrder]:
     query = (
         select(ServiceOrder)
-        .options(selectinload(ServiceOrder.items))
+        .options(
+            selectinload(ServiceOrder.items),
+            selectinload(ServiceOrder.equipment),
+            selectinload(ServiceOrder.client).selectinload(Client.contacts),
+            selectinload(ServiceOrder.quotation),
+            selectinload(ServiceOrder.certificates),
+        )
         .order_by(ServiceOrder.created_at.desc())
     )
     if not include_inactive:
@@ -118,7 +129,13 @@ def get_service_order(db: Session, service_order_id: int) -> ServiceOrder:
     service_order = db.scalar(
         select(ServiceOrder)
         .where(ServiceOrder.id == service_order_id)
-        .options(selectinload(ServiceOrder.items))
+        .options(
+            selectinload(ServiceOrder.items),
+            selectinload(ServiceOrder.equipment),
+            selectinload(ServiceOrder.client).selectinload(Client.contacts),
+            selectinload(ServiceOrder.quotation),
+            selectinload(ServiceOrder.certificates),
+        )
     )
     if service_order is None or not service_order.is_active:
         raise HTTPException(
@@ -143,6 +160,7 @@ def create_service_order(
 
     service_order = ServiceOrder(
         folio=_next_service_order_folio(db, date.today()),
+        work_order_number=_next_work_order_number(db),
         client_id=payload.client_id,
         quotation_id=payload.quotation_id,
         advisor_id=payload.advisor_id,
@@ -181,6 +199,7 @@ def create_service_order(
         user_id=user_id,
         new_values={
             "folio": service_order.folio,
+            "work_order_number": service_order.work_order_number,
             "client_id": service_order.client_id,
             "quotation_id": service_order.quotation_id,
             "status": service_order.status,

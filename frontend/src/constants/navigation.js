@@ -6,8 +6,10 @@ import {
   ClipboardList,
   FileCheck2,
   FileText,
+  FlaskConical,
   Gauge,
   MessageSquareText,
+  Ruler,
   Settings,
   ShieldCheck
 } from 'lucide-react';
@@ -23,6 +25,8 @@ export const navigation = [
   { label: 'Hojas de campo', icon: BadgeCheck, path: '/dashboard#hojas' },
   { label: 'Certificados', icon: FileCheck2, path: '/dashboard#certificados' },
   { label: 'Calidad', icon: ShieldCheck, path: '/dashboard#calidad' },
+  { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
+  { label: 'Procedimientos', icon: FlaskConical, path: '/dashboard#procedimientos' },
   { label: 'Finanzas', icon: Banknote, path: '/dashboard#finanzas' },
   { label: 'Configuracion', icon: Settings, path: '/dashboard#configuracion' }
 ];
@@ -99,6 +103,22 @@ export const modules = [
     icon: ShieldCheck,
     path: '/dashboard#calidad',
     status: 'Activo'
+  },
+  {
+    key: 'standards',
+    name: 'Patrones',
+    description: 'Gestion de equipos patron, vigencias e incertidumbres por rango.',
+    icon: Ruler,
+    path: '/dashboard#patrones',
+    status: 'En desarrollo'
+  },
+  {
+    key: 'procedures',
+    name: 'Procedimientos',
+    description: 'Base de procedimientos de calibracion, perfiles y reglas de decision.',
+    icon: FlaskConical,
+    path: '/dashboard#procedimientos',
+    status: 'En desarrollo'
   },
   {
     key: 'finance',

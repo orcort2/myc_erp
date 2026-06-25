@@ -88,18 +88,92 @@ export const emptyEquipmentForm = {
 };
 
 export const emptyFieldSheetForm = {
+  templateKey: 'general',
+  calibrationProcedureId: '',
+  calibrationPlace: '',
+  receptionDate: '',
+  calibrationDate: '',
+  nextCalibrationDate: '',
+  environmentHumidityStart: '',
+  environmentHumidityEnd: '',
+  environmentTemperatureStart: '',
+  environmentTemperatureEnd: '',
+  equipmentGeneralCondition: '',
+  considerEquipmentDeviations: false,
+  units: '',
+  calibratedBy: '',
+  reviewedBy: '',
+  reportMadeBy: '',
+  purchaseOrderOrQuotation: '',
   initialCondition: '',
   finalCondition: '',
+  resultsSummary: '',
   patternUsed: '',
-  results: '',
   observations: '',
   evidenceNotes: '',
   method: '',
   environmentalConditions: '',
-  technicianNotes: ''
+  technicianNotes: '',
+  resultsRows: [],
+  referenceStandards: [],
+  newReferenceStandardId: '',
+  newReferenceStandardUsageRole: 'primary',
+  newReferenceStandardMeasurementSection: '',
+  newReferenceStandardNotes: ''
 };
 
 export const emptyCertificateForm = {
   certificateType: 'trazable',
   notes: ''
+};
+
+export const emptyReferenceStandardForm = {
+  internalCode: '',
+  name: '',
+  description: '',
+  ownerCompany: 'MYC',
+  magnitude: '',
+  brand: '',
+  model: '',
+  serialNumber: '',
+  identification: '',
+  unit: '',
+  rangeMin: '',
+  rangeMax: '',
+  resolution: '',
+  coverageFactorK: '2',
+  provider: '',
+  calibrationLaboratory: '',
+  certificateNumber: '',
+  certificateFilePath: '',
+  calibratedOn: '',
+  nextCalibrationOn: '',
+  status: 'active',
+  notes: ''
+};
+
+export const emptyReferenceStandardUncertaintyForm = {
+  rangeMin: '',
+  rangeMax: '',
+  unit: '',
+  uncertaintyValue: '',
+  coverageFactorK: '2',
+  distribution: '',
+  notes: ''
+};
+
+export const emptyCalibrationProcedureForm = {
+  code: '',
+  name: '',
+  description: '',
+  magnitude: '',
+  profileKey: '',
+  version: '1.0',
+  issuerCompany: 'MYC',
+  certificateType: 'trazable',
+  requiredReadings: '',
+  decisionRule: '',
+  acceptanceCriteria: '',
+  notes: '',
+  status: 'draft'
 };

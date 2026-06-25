@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -17,6 +18,9 @@ from app.services.service_orders import (
     list_service_orders,
     update_service_order,
 )
+from app.services.work_order_pdfs import generate_work_order_pdf
+
+from io import BytesIO
 
 
 router = APIRouter(prefix="/service-orders", tags=["service-orders"])
@@ -43,6 +47,19 @@ def get_service_order_by_id(
     service_order_id: int, db: Session = Depends(get_db)
 ) -> ServiceOrderRead:
     return get_service_order(db, service_order_id)
+
+
+@router.get("/{service_order_id}/work-order-pdf")
+def get_service_order_work_order_pdf(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    pdf_bytes, filename = generate_work_order_pdf(db, service_order_id)
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.patch("/{service_order_id}", response_model=ServiceOrderRead)

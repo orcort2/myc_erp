@@ -86,6 +86,15 @@ def request_certificate_correction(
 ) -> CertificateRead:
     return request_correction(db, certificate_id, payload)
 
+
+@router.post("/{certificate_id}/draft", response_model=CertificateRead)
+def return_certificate_to_draft(
+    certificate_id: int,
+    payload: CertificateStatusChange | None = None,
+    db: Session = Depends(get_db),
+) -> CertificateRead:
+    return change_status(db, certificate_id, "draft", payload)
+
 @router.post("/{certificate_id}/approve", response_model=CertificateRead)
 def approve_certificate(
     certificate_id: int,

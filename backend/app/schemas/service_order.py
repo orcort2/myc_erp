@@ -76,6 +76,7 @@ class ServiceOrderRead(ServiceOrderBase):
 
     id: int
     folio: str
+    work_order_number: int
     status: ServiceOrderStatus
     closed_at: date | None = None
     is_active: bool

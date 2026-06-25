@@ -13,10 +13,12 @@ import EquipmentPage from './EquipmentPage.jsx';
 import FieldSheetsPage from './FieldSheetsPage.jsx';
 import LoginPage from './LoginPage.jsx';
 import ModulePage from './ModulePage.jsx';
+import ProceduresPage from './ProceduresPage.jsx';
 import QualityPage from './QualityPage.jsx';
 import QuotationsPage from './QuotationsPage.jsx';
 import ServiceOrdersPage from './ServiceOrdersPage.jsx';
 import SettingsPage from './SettingsPage.jsx';
+import StandardsPage from './StandardsPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -139,6 +141,10 @@ export function App() {
         <CertificatesPage />
       ) : selectedModule?.key === 'quality' ? (
         <QualityPage />
+      ) : selectedModule?.key === 'standards' ? (
+        <StandardsPage />
+      ) : selectedModule?.key === 'procedures' ? (
+        <ProceduresPage />
       ) : selectedModule?.key === 'settings' ? (
         <SettingsPage />  
       ) : selectedModule ? (

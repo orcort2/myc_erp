@@ -1227,22 +1227,102 @@ button {
   gap: 7px;
 }
 
+.field-sheet-form-grid input,
+.field-sheet-form-grid select,
 .field-sheet-form-grid textarea {
   background: rgba(255, 255, 255, 0.68);
   border: 1px solid rgba(8, 117, 111, 0.18);
   border-radius: 8px;
   color: var(--myc-navy);
   font: inherit;
-  font-weight: 720;
-  min-height: 82px;
+  min-height: 42px;
   outline: none;
   padding: 10px 12px;
+}
+
+.field-sheet-form-grid textarea {
+  font-weight: 720;
+  min-height: 82px;
   resize: vertical;
 }
 
+.field-sheet-form-grid input:focus,
+.field-sheet-form-grid select:focus,
 .field-sheet-form-grid textarea:focus {
   border-color: var(--myc-primary);
   box-shadow: 0 0 0 3px rgba(70, 216, 196, 0.16);
+}
+
+.field-sheet-results-stack {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.field-sheet-results-panel {
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(201, 255, 247, 0.28);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.field-sheet-results-table .clients-table__head,
+.field-sheet-results-table .clients-table__row {
+  grid-template-columns: 60px repeat(6, minmax(130px, 1fr));
+}
+
+.field-sheet-results-row input {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(8, 117, 111, 0.16);
+  border-radius: 8px;
+  color: var(--myc-navy);
+  font: inherit;
+  min-height: 36px;
+  outline: none;
+  padding: 8px 10px;
+  width: 100%;
+}
+
+.field-sheet-results-row input:focus {
+  border-color: var(--myc-primary);
+  box-shadow: 0 0 0 3px rgba(70, 216, 196, 0.14);
+}
+
+.field-sheet-reference-builder {
+  display: grid;
+  gap: 10px;
+}
+
+.field-sheet-reference-list {
+  display: grid;
+  gap: 10px;
+}
+
+.field-sheet-reference-card {
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.3);
+  border: 1px solid rgba(201, 255, 247, 0.3);
+  border-radius: 8px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.field-sheet-reference-card div {
+  display: grid;
+  gap: 4px;
+}
+
+.field-sheet-reference-card span {
+  color: var(--myc-soft-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.field-sheet-reference-empty {
+  color: var(--myc-soft-text);
+  font-size: 13px;
 }
 
 .read-only-grid article {

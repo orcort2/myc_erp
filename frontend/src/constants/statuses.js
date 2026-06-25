@@ -109,6 +109,8 @@ export const certificateTabs = [
 export const certificateActions = [
   { key: 'generate', nextStatus: 'generated', label: 'Generar' },
   { key: 'quality', nextStatus: 'quality_review', label: 'Enviar a calidad' },
+  { key: 'request-correction', nextStatus: 'correction_requested', label: 'Solicitar correccion' },
+  { key: 'draft', nextStatus: 'draft', label: 'Regresar a borrador' },
   { key: 'approve', nextStatus: 'approved', label: 'Aprobar' },
   { key: 'release', nextStatus: 'released', label: 'Liberar' },
   { key: 'suspend', nextStatus: 'suspended', label: 'Suspender' }
@@ -138,7 +140,7 @@ export const certificateTransitions = {
   ]),
   released: new Set([]),
   cancelled: new Set([]),
-  suspended: new Set([])
+  suspended: new Set(['draft'])
 };
 
 export const certificateReadyFieldSheetStatuses = new Set(['completed', 'under_review', 'approved']);
@@ -151,6 +153,20 @@ export const qualityTabs = [
   { key: 'released', label: 'Liberados' },
   { key: 'suspended', label: 'Suspendidos' }
 ];
+
+export const referenceStandardStatusLabels = {
+  active: 'Activo',
+  expired: 'Vencido',
+  out_of_service: 'Fuera de servicio',
+  inactive: 'Inactivo'
+};
+
+export const calibrationProcedureStatusLabels = {
+  active: 'Activo',
+  inactive: 'Inactivo',
+  draft: 'Borrador',
+  obsolete: 'Obsoleto'
+};
 
 export const quotationActions = [
   { key: 'send', label: 'Enviar', nextStatus: 'sent' },
@@ -170,4 +186,3 @@ export const quotationTransitions = {
   expired: new Set(),
   cancelled: new Set()
 };
-

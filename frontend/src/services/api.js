@@ -306,6 +306,48 @@ export async function deleteFieldSheet(fieldSheetId) {
   });
 }
 
+export function getWorkOrderPdfUrl(serviceOrderId) {
+  return `${API_URL}/service-orders/${serviceOrderId}/work-order-pdf`;
+}
+
+export async function downloadWorkOrderPdf(serviceOrderId, workOrderNumber = null, clientName = '') {
+  const token = getAccessToken();
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(getWorkOrderPdfUrl(serviceOrderId), { headers });
+  if (!response.ok) {
+    throw new Error('No se pudo generar el PDF de la orden de trabajo');
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filename =
+    getFilenameFromDisposition(disposition) ??
+    `Orden_Trabajo_${sanitizePdfFilenamePart(workOrderNumber ?? serviceOrderId)}_${sanitizePdfFilenamePart(clientName)}.pdf`;
+  return { blob: await response.blob(), filename };
+}
+
+export function getFieldSheetPdfUrl(fieldSheetId) {
+  return `${API_URL}/field-sheets/${fieldSheetId}/pdf`;
+}
+
+export async function downloadFieldSheetPdf(fieldSheetId, workOrderNumber = null, equipmentName = '') {
+  const token = getAccessToken();
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(getFieldSheetPdfUrl(fieldSheetId), { headers });
+  if (!response.ok) {
+    throw new Error('No se pudo generar el PDF de la hoja de campo');
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filename =
+    getFilenameFromDisposition(disposition) ??
+    `Hoja_Campo_${sanitizePdfFilenamePart(workOrderNumber ?? fieldSheetId)}_${sanitizePdfFilenamePart(equipmentName)}.pdf`;
+  return { blob: await response.blob(), filename };
+}
+
 export async function listCertificates(params = {}) {
   return request(`/certificates${buildQuery(params)}`);
 }
@@ -404,6 +446,93 @@ function buildQuery(params = {}) {
 
 export async function listCatalogItems(params = {}) {
   return request(`/catalog-items${buildQuery(params)}`);
+}
+
+export async function listReferenceStandards(params = {}) {
+  return request(`/reference-standards${buildQuery(params)}`);
+}
+
+export async function getReferenceStandard(standardId) {
+  return request(`/reference-standards/${standardId}`);
+}
+
+export async function createReferenceStandard(payload) {
+  return request('/reference-standards', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateReferenceStandard(standardId, payload) {
+  return request(`/reference-standards/${standardId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteReferenceStandard(standardId) {
+  return request(`/reference-standards/${standardId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function createReferenceStandardUncertainty(standardId, payload) {
+  return request(`/reference-standards/${standardId}/uncertainties`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateReferenceStandardUncertainty(standardId, uncertaintyId, payload) {
+  return request(`/reference-standards/${standardId}/uncertainties/${uncertaintyId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteReferenceStandardUncertainty(standardId, uncertaintyId) {
+  return request(`/reference-standards/${standardId}/uncertainties/${uncertaintyId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function listCalibrationProcedures(params = {}) {
+  return request(`/calibration-procedures${buildQuery(params)}`);
+}
+
+export async function getCalibrationProcedure(procedureId) {
+  return request(`/calibration-procedures/${procedureId}`);
+}
+
+export async function createCalibrationProcedure(payload) {
+  return request('/calibration-procedures', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateCalibrationProcedure(procedureId, payload) {
+  return request(`/calibration-procedures/${procedureId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteCalibrationProcedure(procedureId) {
+  return request(`/calibration-procedures/${procedureId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function listMetrologyProfiles() {
+  return request('/metrology/profiles');
+}
+
+export async function calculateMetrologyPreview(payload) {
+  return request('/metrology/calculate-preview', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function createCatalogItem(payload) {

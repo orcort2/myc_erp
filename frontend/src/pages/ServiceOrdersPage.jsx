@@ -24,17 +24,23 @@ import {
   changeServiceOrderStatus,
   completeFieldSheet,
   createCertificate,
+  downloadFieldSheetPdf,
+  downloadWorkOrderPdf,
   createEquipment,
   createFieldSheet,
   deleteEquipment,
   deleteFieldSheet,
   deleteServiceOrder,
   getFieldSheet,
+  getFieldSheetPdfUrl,
+  getWorkOrderPdfUrl,
+  listCalibrationProcedures,
   listCertificates,
   listClients,
   listEquipment,
   listFieldSheets,
   listQuotations,
+  listReferenceStandards,
   listServiceOrders,
   reviewFieldSheet,
   updateEquipment,
@@ -45,7 +51,10 @@ import useConfirmDialog from '../utils/useConfirmDialog.js';
 import {
   fieldSheetToForm,
   buildFieldSheetPayload,
-  getFieldSheetCompletionErrors
+  fieldSheetTemplateRowConfig,
+  getFieldSheetCompletionErrors,
+  updateFieldSheetResultCell,
+  updateFieldSheetResultsRowsForTemplate
 } from '../utils/fieldSheets.js';
 import { formatDate, getClientDisplayName } from '../utils/formatters.js';
 
@@ -56,6 +65,8 @@ function ServiceOrdersPage() {
   const [equipment, setEquipment] = useState([]);
   const [fieldSheets, setFieldSheets] = useState([]);
   const [certificates, setCertificates] = useState([]);
+  const [referenceStandards, setReferenceStandards] = useState([]);
+  const [calibrationProcedures, setCalibrationProcedures] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedEquipmentForSheet, setSelectedEquipmentForSheet] = useState(null);
   const [selectedFieldSheet, setSelectedFieldSheet] = useState(null);
@@ -116,13 +127,24 @@ function ServiceOrdersPage() {
     setError('');
     setIsLoading(true);
     try {
-      const [ordersResult, clientsResult, quotationsResult, equipmentResult, fieldSheetResult, certificatesResult] = await Promise.all([
+      const [
+        ordersResult,
+        clientsResult,
+        quotationsResult,
+        equipmentResult,
+        fieldSheetResult,
+        certificatesResult,
+        referenceStandardsResult,
+        proceduresResult
+      ] = await Promise.all([
         listServiceOrders(),
         listClients(),
         listQuotations(),
         listEquipment(),
         listFieldSheets(),
-        listCertificates()
+        listCertificates(),
+        listReferenceStandards(),
+        listCalibrationProcedures()
       ]);
       setServiceOrders(Array.isArray(ordersResult) ? ordersResult : []);
       setClients(Array.isArray(clientsResult) ? clientsResult : []);
@@ -130,6 +152,8 @@ function ServiceOrdersPage() {
       setEquipment(Array.isArray(equipmentResult) ? equipmentResult : []);
       setFieldSheets(Array.isArray(fieldSheetResult) ? fieldSheetResult : []);
       setCertificates(Array.isArray(certificatesResult) ? certificatesResult : []);
+      setReferenceStandards(Array.isArray(referenceStandardsResult) ? referenceStandardsResult : []);
+      setCalibrationProcedures(Array.isArray(proceduresResult) ? proceduresResult : []);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -385,6 +409,133 @@ function ServiceOrdersPage() {
 
   function updateFieldSheetForm(field, value) {
     setFieldSheetForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function addReferenceStandardToFieldSheet() {
+    if (!fieldSheetForm.newReferenceStandardId) {
+      setError('Selecciona un patron para agregarlo.');
+      return;
+    }
+    const selectedReferenceStandard = referenceStandards.find(
+      (item) => String(item.id) === fieldSheetForm.newReferenceStandardId
+    );
+    if (!selectedReferenceStandard) {
+      setError('El patron seleccionado ya no esta disponible.');
+      return;
+    }
+    const alreadyExists = fieldSheetForm.referenceStandards.some(
+      (item) =>
+        item.referenceStandardId === fieldSheetForm.newReferenceStandardId &&
+        item.usageRole === (fieldSheetForm.newReferenceStandardUsageRole || 'primary') &&
+        (item.measurementSection || '') === (fieldSheetForm.newReferenceStandardMeasurementSection || '')
+    );
+    if (alreadyExists) {
+      setError('Ese patron ya fue agregado con el mismo rol y seccion.');
+      return;
+    }
+    setFieldSheetForm((current) => ({
+      ...current,
+      referenceStandards: [
+        ...current.referenceStandards,
+        {
+          referenceStandardId: current.newReferenceStandardId,
+          usageRole: current.newReferenceStandardUsageRole || 'primary',
+          measurementSection: current.newReferenceStandardMeasurementSection || '',
+          notes: current.newReferenceStandardNotes || '',
+          referenceStandard: selectedReferenceStandard
+        }
+      ],
+      newReferenceStandardId: '',
+      newReferenceStandardUsageRole: 'primary',
+      newReferenceStandardMeasurementSection: '',
+      newReferenceStandardNotes: ''
+    }));
+    setError('');
+  }
+
+  function removeReferenceStandardFromFieldSheet(indexToRemove) {
+    setFieldSheetForm((current) => ({
+      ...current,
+      referenceStandards: current.referenceStandards.filter((_, index) => index !== indexToRemove)
+    }));
+  }
+
+  function updateFieldSheetTemplate(templateKey) {
+    setFieldSheetForm((current) => updateFieldSheetResultsRowsForTemplate(current, templateKey));
+  }
+
+  function updateFieldSheetResult(rowIndex, field, value) {
+    setFieldSheetForm((current) => ({
+      ...current,
+      resultsRows: updateFieldSheetResultCell(current.resultsRows, rowIndex, field, value)
+    }));
+  }
+
+  function triggerBlobDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function openWorkOrderPdf(mode = 'view') {
+    if (!selectedOrder) return;
+    const pdfWindow = window.open(getWorkOrderPdfUrl(selectedOrder.id), '_blank', 'noopener,noreferrer');
+    if (mode === 'print' && pdfWindow) {
+      pdfWindow.addEventListener('load', () => {
+        pdfWindow.focus();
+        pdfWindow.print();
+      });
+    }
+  }
+
+  async function handleDownloadWorkOrderPdf() {
+    if (!selectedOrder) return;
+    setError('');
+    setNotice('');
+    try {
+      const { blob, filename } = await downloadWorkOrderPdf(
+        selectedOrder.id,
+        selectedOrder.work_order_number,
+        getClientDisplayName(clientsById.get(selectedOrder.client_id))
+      );
+      triggerBlobDownload(blob, filename);
+      setNotice(`PDF ${filename} generado correctamente`);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  function openFieldSheetPdf(mode = 'view') {
+    if (!selectedFieldSheet) return;
+    const pdfWindow = window.open(getFieldSheetPdfUrl(selectedFieldSheet.id), '_blank', 'noopener,noreferrer');
+    if (mode === 'print' && pdfWindow) {
+      pdfWindow.addEventListener('load', () => {
+        pdfWindow.focus();
+        pdfWindow.print();
+      });
+    }
+  }
+
+  async function handleDownloadFieldSheetPdf() {
+    if (!selectedFieldSheet || !selectedEquipmentForSheet) return;
+    setError('');
+    setNotice('');
+    try {
+      const { blob, filename } = await downloadFieldSheetPdf(
+        selectedFieldSheet.id,
+        selectedFieldSheet.work_order_number,
+        selectedEquipmentForSheet.name
+      );
+      triggerBlobDownload(blob, filename);
+      setNotice(`PDF ${filename} generado correctamente`);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   }
 
   async function saveFieldSheet() {
@@ -669,6 +820,10 @@ function ServiceOrdersPage() {
                     </div>
                     <div className="quotation-commercial-grid service-order-info-grid">
                       <article>
+                        <span>Orden de trabajo</span>
+                        <strong>OT {selectedOrder.work_order_number ?? '-'}</strong>
+                      </article>
+                      <article>
                         <span>Cliente</span>
                         <strong>{getClientDisplayName(clientsById.get(selectedOrder.client_id))}</strong>
                       </article>
@@ -733,9 +888,20 @@ function ServiceOrdersPage() {
 
                   <div className="quotation-detail-save">
                     <span>Guarda agenda, servicio, tecnico, pago y notas.</span>
-                    <button className="primary-button" disabled={isSaving} type="submit">
-                      {isSaving ? 'Guardando...' : 'Guardar cambios'}
-                    </button>
+                    <div className="toolbar-actions">
+                      <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
+                        Ver orden PDF
+                      </button>
+                      <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">
+                        Descargar PDF
+                      </button>
+                      <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">
+                        Imprimir
+                      </button>
+                      <button className="primary-button" disabled={isSaving} type="submit">
+                        {isSaving ? 'Guardando...' : 'Guardar cambios'}
+                      </button>
+                    </div>
                   </div>
                 </form>
 
@@ -997,6 +1163,10 @@ function ServiceOrdersPage() {
                 </div>
                 <div className="quotation-commercial-grid service-order-info-grid">
                   <article>
+                    <span>Orden de trabajo</span>
+                    <strong>OT {selectedFieldSheet.work_order_number ?? selectedOrder.work_order_number ?? '-'}</strong>
+                  </article>
+                  <article>
                     <span>Orden de Servicio</span>
                     <strong>{selectedOrder.folio}</strong>
                   </article>
@@ -1021,6 +1191,10 @@ function ServiceOrdersPage() {
                     <strong>{selectedEquipmentForSheet.serial_number || '-'}</strong>
                   </article>
                   <article>
+                    <span>Plantilla</span>
+                    <strong>{fieldSheetForm.templateKey === 'electrica' ? 'Eléctrica' : 'General'}</strong>
+                  </article>
+                  <article>
                     <span>Estado actual</span>
                     <strong>{fieldSheetStatusLabels[selectedFieldSheet.status] ?? selectedFieldSheet.status}</strong>
                   </article>
@@ -1036,6 +1210,157 @@ function ServiceOrdersPage() {
                 </div>
                 <div className="field-sheet-form-grid">
                   <label>
+                    Plantilla
+                    <select
+                      disabled={selectedFieldSheet.status !== 'draft' || isSaving}
+                      value={fieldSheetForm.templateKey}
+                      onChange={(event) => updateFieldSheetTemplate(event.target.value)}
+                    >
+                      <option value="general">General</option>
+                      <option value="electrica">Eléctrica</option>
+                    </select>
+                  </label>
+                  <label>
+                    Procedimiento de calibracion
+                    <select value={fieldSheetForm.calibrationProcedureId} onChange={(event) => updateFieldSheetForm('calibrationProcedureId', event.target.value)}>
+                      <option value="">Sin procedimiento</option>
+                      {calibrationProcedures.map((procedure) => (
+                        <option key={procedure.id} value={procedure.id}>
+                          {procedure.code} v{procedure.version} · {procedure.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Lugar de calibracion
+                    <input type="text" value={fieldSheetForm.calibrationPlace} onChange={(event) => updateFieldSheetForm('calibrationPlace', event.target.value)} />
+                  </label>
+                  <label className="form-field--wide">
+                    Patrones utilizados
+                    <div className="field-sheet-reference-builder">
+                      <select value={fieldSheetForm.newReferenceStandardId || ''} onChange={(event) => updateFieldSheetForm('newReferenceStandardId', event.target.value)}>
+                        <option value="">Selecciona patron</option>
+                        {referenceStandards.map((standard) => (
+                          <option key={standard.id} value={standard.id}>
+                            {standard.internal_code} · {standard.name}
+                          </option>
+                        ))}
+                      </select>
+                      <select value={fieldSheetForm.newReferenceStandardUsageRole || 'primary'} onChange={(event) => updateFieldSheetForm('newReferenceStandardUsageRole', event.target.value)}>
+                        <option value="primary">Primario</option>
+                        <option value="secondary">Secundario</option>
+                        <option value="auxiliary">Auxiliar</option>
+                        <option value="environmental">Ambiental</option>
+                        <option value="other">Otro</option>
+                      </select>
+                      <input type="text" placeholder="Seccion de medicion" value={fieldSheetForm.newReferenceStandardMeasurementSection || ''} onChange={(event) => updateFieldSheetForm('newReferenceStandardMeasurementSection', event.target.value)} />
+                      <input type="text" placeholder="Notas de uso" value={fieldSheetForm.newReferenceStandardNotes || ''} onChange={(event) => updateFieldSheetForm('newReferenceStandardNotes', event.target.value)} />
+                      <button className="table-button" type="button" onClick={addReferenceStandardToFieldSheet}>
+                        Agregar patron
+                      </button>
+                    </div>
+                    <div className="field-sheet-reference-list">
+                      {fieldSheetForm.referenceStandards.length ? (
+                        fieldSheetForm.referenceStandards.map((item, index) => {
+                          const standard = item.referenceStandard || referenceStandards.find((row) => String(row.id) === item.referenceStandardId);
+                          return (
+                            <article className="field-sheet-reference-card" key={`${item.referenceStandardId}-${item.usageRole}-${item.measurementSection}-${index}`}>
+                              <div>
+                                <strong>{standard?.internal_code || 'Patron'} · {standard?.name || item.referenceStandardId}</strong>
+                                <span>
+                                  {item.usageRole} · {item.measurementSection || 'sin seccion'} · {standard?.magnitude || '-'}
+                                </span>
+                                <span>
+                                  Estado: {standard?.effective_status || standard?.status || '-'} · Vigencia: {standard?.next_calibration_on || '-'}
+                                </span>
+                                <span>
+                                  Rango: {[standard?.range_min, standard?.range_max, standard?.unit].filter((value) => value !== null && value !== undefined && value !== '').join(' / ') || '-'}
+                                </span>
+                                <span>
+                                  Incertidumbres activas: {Array.isArray(standard?.uncertainties) ? standard.uncertainties.filter((row) => row.is_active !== false).length : 0}
+                                </span>
+                                {standard?.effective_status === 'expired' || standard?.status === 'out_of_service' ? (
+                                  <mark className={`quotation-status status-${standard.effective_status || standard.status}`}>
+                                    Advertencia: patron vencido o fuera de servicio
+                                  </mark>
+                                ) : null}
+                              </div>
+                              <button className="table-button table-button--danger" type="button" onClick={() => removeReferenceStandardFromFieldSheet(index)}>
+                                Quitar
+                              </button>
+                            </article>
+                          );
+                        })
+                      ) : (
+                        <span className="field-sheet-reference-empty">Aun no se asignan patrones a esta hoja.</span>
+                      )}
+                    </div>
+                  </label>
+                  <label>
+                    Fecha recepcion
+                    <input type="date" value={fieldSheetForm.receptionDate} onChange={(event) => updateFieldSheetForm('receptionDate', event.target.value)} />
+                  </label>
+                  <label>
+                    Fecha calibracion
+                    <input type="date" value={fieldSheetForm.calibrationDate} onChange={(event) => updateFieldSheetForm('calibrationDate', event.target.value)} />
+                  </label>
+                  <label>
+                    Proxima calibracion
+                    <input type="date" value={fieldSheetForm.nextCalibrationDate} onChange={(event) => updateFieldSheetForm('nextCalibrationDate', event.target.value)} />
+                  </label>
+                  <label>
+                    Cotizacion / pedido
+                    <input type="text" value={fieldSheetForm.purchaseOrderOrQuotation} onChange={(event) => updateFieldSheetForm('purchaseOrderOrQuotation', event.target.value)} />
+                  </label>
+                  <label>
+                    Humedad inicial
+                    <input type="text" value={fieldSheetForm.environmentHumidityStart} onChange={(event) => updateFieldSheetForm('environmentHumidityStart', event.target.value)} />
+                  </label>
+                  <label>
+                    Humedad final
+                    <input type="text" value={fieldSheetForm.environmentHumidityEnd} onChange={(event) => updateFieldSheetForm('environmentHumidityEnd', event.target.value)} />
+                  </label>
+                  <label>
+                    Temperatura inicial
+                    <input type="text" value={fieldSheetForm.environmentTemperatureStart} onChange={(event) => updateFieldSheetForm('environmentTemperatureStart', event.target.value)} />
+                  </label>
+                  <label>
+                    Temperatura final
+                    <input type="text" value={fieldSheetForm.environmentTemperatureEnd} onChange={(event) => updateFieldSheetForm('environmentTemperatureEnd', event.target.value)} />
+                  </label>
+                  <label>
+                    Condicion general equipo
+                    <select value={fieldSheetForm.equipmentGeneralCondition} onChange={(event) => updateFieldSheetForm('equipmentGeneralCondition', event.target.value)}>
+                      <option value="">Sin definir</option>
+                      <option value="ok">OK</option>
+                      <option value="not_ok">No OK</option>
+                    </select>
+                  </label>
+                  <label className="service-order-checkbox">
+                    <input
+                      checked={fieldSheetForm.considerEquipmentDeviations}
+                      onChange={(event) => updateFieldSheetForm('considerEquipmentDeviations', event.target.checked)}
+                      type="checkbox"
+                    />
+                    Considerar desviaciones del equipo
+                  </label>
+                  <label>
+                    Unidades
+                    <input type="text" value={fieldSheetForm.units} onChange={(event) => updateFieldSheetForm('units', event.target.value)} />
+                  </label>
+                  <label>
+                    Calibro
+                    <input type="text" value={fieldSheetForm.calibratedBy} onChange={(event) => updateFieldSheetForm('calibratedBy', event.target.value)} />
+                  </label>
+                  <label>
+                    Reviso
+                    <input type="text" value={fieldSheetForm.reviewedBy} onChange={(event) => updateFieldSheetForm('reviewedBy', event.target.value)} />
+                  </label>
+                  <label>
+                    Reporte
+                    <input type="text" value={fieldSheetForm.reportMadeBy} onChange={(event) => updateFieldSheetForm('reportMadeBy', event.target.value)} />
+                  </label>
+                  <label>
                     Condicion inicial
                     <textarea rows={3} value={fieldSheetForm.initialCondition} onChange={(event) => updateFieldSheetForm('initialCondition', event.target.value)} />
                   </label>
@@ -1048,8 +1373,8 @@ function ServiceOrdersPage() {
                     <textarea rows={3} value={fieldSheetForm.patternUsed} onChange={(event) => updateFieldSheetForm('patternUsed', event.target.value)} />
                   </label>
                   <label>
-                    Resultados
-                    <textarea rows={3} value={fieldSheetForm.results} onChange={(event) => updateFieldSheetForm('results', event.target.value)} />
+                    Resumen de resultados
+                    <textarea rows={3} value={fieldSheetForm.resultsSummary} onChange={(event) => updateFieldSheetForm('resultsSummary', event.target.value)} />
                   </label>
                   <label>
                     Metodo
@@ -1072,9 +1397,58 @@ function ServiceOrdersPage() {
                     <textarea rows={3} value={fieldSheetForm.technicianNotes} onChange={(event) => updateFieldSheetForm('technicianNotes', event.target.value)} />
                   </label>
                 </div>
+                <div className="field-sheet-results-stack">
+                  {(fieldSheetTemplateRowConfig[fieldSheetForm.templateKey] ?? fieldSheetTemplateRowConfig.general).map((section) => {
+                    const sectionRows = fieldSheetForm.resultsRows.filter((row) => row.sectionKey === section.key);
+                    return (
+                      <section className="field-sheet-results-panel" key={section.key}>
+                        <div className="quotation-section__title">
+                          <p>Resultados estructurados</p>
+                          <h3>{section.label}</h3>
+                        </div>
+                        <div className="clients-table field-sheet-results-table">
+                          <div className="clients-table__head">
+                            <span>#</span>
+                            <span>Patron</span>
+                            <span>Lectura 1</span>
+                            <span>Lectura 2</span>
+                            <span>Lectura 3</span>
+                            <span>Unidad</span>
+                            <span>Notas</span>
+                          </div>
+                          {sectionRows.map((row) => {
+                            const rowIndex = fieldSheetForm.resultsRows.findIndex(
+                              (item) => item.sectionKey === row.sectionKey && item.rowNumber === row.rowNumber
+                            );
+                            return (
+                              <div className="clients-table__row field-sheet-results-row" key={`${row.sectionKey}-${row.rowNumber}`}>
+                                <span>{row.rowNumber}</span>
+                                <span><input type="text" value={row.patternValue} onChange={(event) => updateFieldSheetResult(rowIndex, 'patternValue', event.target.value)} /></span>
+                                <span><input type="text" value={row.ibcValue1} onChange={(event) => updateFieldSheetResult(rowIndex, 'ibcValue1', event.target.value)} /></span>
+                                <span><input type="text" value={row.ibcValue2} onChange={(event) => updateFieldSheetResult(rowIndex, 'ibcValue2', event.target.value)} /></span>
+                                <span><input type="text" value={row.ibcValue3} onChange={(event) => updateFieldSheetResult(rowIndex, 'ibcValue3', event.target.value)} /></span>
+                                <span><input type="text" value={row.unit} onChange={(event) => updateFieldSheetResult(rowIndex, 'unit', event.target.value)} /></span>
+                                <span><input type="text" value={row.notes} onChange={(event) => updateFieldSheetResult(rowIndex, 'notes', event.target.value)} /></span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
                 <div className="quotation-detail-save">
-                  <span>Para completar se requieren condicion inicial/final, patron, resultados y observaciones o evidencia.</span>
+                  <span>Para completar se requieren condición inicial/final, resultados estructurados y observaciones o evidencia.</span>
                   <div className="toolbar-actions">
+                    <button className="table-button" onClick={() => openFieldSheetPdf('view')} type="button">
+                      Ver PDF
+                    </button>
+                    <button className="table-button" onClick={handleDownloadFieldSheetPdf} type="button">
+                      Descargar PDF
+                    </button>
+                    <button className="table-button" onClick={() => openFieldSheetPdf('print')} type="button">
+                      Imprimir
+                    </button>
                     <button className="table-button" disabled={isSaving} onClick={saveFieldSheet} type="button">
                       Guardar
                     </button>
@@ -1143,6 +1517,10 @@ function ServiceOrdersPage() {
                   <article>
                     <strong>Estado actual</strong>
                     <span>{fieldSheetStatusLabels[selectedFieldSheet.status] ?? selectedFieldSheet.status}</span>
+                  </article>
+                  <article>
+                    <strong>Orden de trabajo</strong>
+                    <span>OT {selectedFieldSheet.work_order_number ?? selectedOrder.work_order_number ?? '-'}</span>
                   </article>
                   <article>
                     <strong>Equipo</strong>

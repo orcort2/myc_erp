@@ -8,6 +8,7 @@ CertificateStatus = Literal[
     "draft",
     "generated",
     "quality_review",
+    "correction_requested",
     "approved",
     "released",
     "cancelled",
