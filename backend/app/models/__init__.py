@@ -5,6 +5,13 @@ from app.models.catalog_item import CatalogItem
 from app.models.certificate import Certificate
 from app.models.client import Client, ClientContact
 from app.models.document_template import DocumentTemplate
+from app.models.controlled_document import (
+    ControlledDocument,
+    ControlledDocumentVersion,
+    DocumentInterpretation,
+    TechnicalProfile,
+    TechnicalProfileAllowedPattern,
+)
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.models.quotation import Quotation, QuotationItem
@@ -12,6 +19,10 @@ from app.models.reference_standard import (
     FieldSheetReferenceStandard,
     ReferenceStandard,
     ReferenceStandardUncertainty,
+)
+from app.models.reference_standard_certificate import (
+    ReferenceStandardCertificate,
+    ReferenceStandardCertificateUncertainty,
 )
 from app.models.service_order import ServiceOrder, ServiceOrderItem
 from app.models.user import Role, User
@@ -23,6 +34,9 @@ __all__ = [
     "Certificate",
     "Client",
     "ClientContact",
+    "ControlledDocument",
+    "ControlledDocumentVersion",
+    "DocumentInterpretation",
     "DocumentTemplate",
     "Equipment",
     "FieldSheet",
@@ -32,11 +46,15 @@ __all__ = [
     "Quotation",
     "QuotationItem",
     "ReferenceStandard",
+    "ReferenceStandardCertificate",
+    "ReferenceStandardCertificateUncertainty",
     "ReferenceStandardUncertainty",
     "Role",
     "ServiceOrder",
     "ServiceOrderItem",
     "SoftDeleteMixin",
     "TimestampMixin",
+    "TechnicalProfile",
+    "TechnicalProfileAllowedPattern",
     "User",
 ]

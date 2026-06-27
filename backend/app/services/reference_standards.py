@@ -7,6 +7,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.reference_standard import ReferenceStandard, ReferenceStandardUncertainty
+from app.models.reference_standard_certificate import ReferenceStandardCertificate
 from app.schemas.reference_standard import (
     ReferenceStandardCreate,
     ReferenceStandardUncertaintyCreate,
@@ -19,6 +20,7 @@ from app.services.audit_logs import write_audit_log
 def _with_relations():
     return (
         selectinload(ReferenceStandard.uncertainties),
+        selectinload(ReferenceStandard.certificates).selectinload(ReferenceStandardCertificate.uncertainties),
         selectinload(ReferenceStandard.field_sheet_links),
     )
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.models.reference_standard import FieldSheetReferenceStandard, ReferenceStandard
+from app.models.reference_standard_certificate import ReferenceStandardCertificate
 from app.models.service_order import ServiceOrder
 from app.models.calibration_procedure import CalibrationProcedure
 from app.schemas.field_sheet import (
@@ -185,6 +186,7 @@ def _resolve_reference_standards(
     standards = list(
         db.scalars(
             select(ReferenceStandard)
+            .options(selectinload(ReferenceStandard.certificates).selectinload(ReferenceStandardCertificate.uncertainties))
             .where(ReferenceStandard.id.in_(standard_ids))
             .where(ReferenceStandard.is_active.is_(True))
         ).all()
@@ -290,7 +292,21 @@ def _apply_results_updates(field_sheet: FieldSheet, results_rows: list[FieldShee
     field_sheet.results_rows = new_rows
 
 
-def _apply_reference_standard_updates(field_sheet: FieldSheet, items: list) -> None:
+def _first_current_certificate(standard: ReferenceStandard) -> ReferenceStandardCertificate | None:
+    current = [
+        certificate
+        for certificate in standard.certificates
+        if certificate.is_current and certificate.status == "active"
+    ]
+    return current[0] if current else None
+
+
+def _apply_reference_standard_updates(
+    field_sheet: FieldSheet,
+    items: list,
+    resolved: list[tuple[FieldSheetReferenceStandard, ReferenceStandard]] | None = None,
+) -> None:
+    standards_by_id = {standard.id: standard for _, standard in (resolved or [])}
     existing_by_key = {
         (link.reference_standard_id, link.usage_role, link.measurement_section): link
         for link in field_sheet.reference_standard_links
@@ -299,15 +315,45 @@ def _apply_reference_standard_updates(field_sheet: FieldSheet, items: list) -> N
     for item in items:
         key = (item.reference_standard_id, item.usage_role, item.measurement_section)
         existing = existing_by_key.get(key)
+        standard = standards_by_id.get(item.reference_standard_id)
+        certificate = _first_current_certificate(standard) if standard is not None else None
+        uncertainty = (
+            next((row for row in certificate.uncertainties if row.is_active), None)
+            if certificate is not None
+            else None
+        )
         if existing is not None:
             existing.notes = item.notes
+            if certificate is not None:
+                existing.reference_standard_certificate_id = certificate.id
+                existing.selected_uncertainty_id = uncertainty.id if uncertainty is not None else None
+                existing.selection_status = "auto_selected"
+                existing.validation_snapshot = {
+                    "certificate_number": certificate.certificate_number,
+                    "certificate_expiration_date": certificate.expiration_date.isoformat()
+                    if certificate.expiration_date
+                    else None,
+                    "uncertainty_id": uncertainty.id if uncertainty is not None else None,
+                }
             new_links.append(existing)
         else:
             new_links.append(
                 FieldSheetReferenceStandard(
                     reference_standard_id=item.reference_standard_id,
+                    reference_standard_certificate_id=certificate.id if certificate is not None else None,
+                    selected_uncertainty_id=uncertainty.id if uncertainty is not None else None,
                     usage_role=item.usage_role,
                     measurement_section=item.measurement_section,
+                    selection_status="auto_selected" if certificate is not None else None,
+                    validation_snapshot={
+                        "certificate_number": certificate.certificate_number,
+                        "certificate_expiration_date": certificate.expiration_date.isoformat()
+                        if certificate.expiration_date
+                        else None,
+                        "uncertainty_id": uncertainty.id if uncertainty is not None else None,
+                    }
+                    if certificate is not None
+                    else None,
                     notes=item.notes,
                 )
             )
@@ -390,8 +436,8 @@ def create_field_sheet(
         if payload.results_rows
         else _default_result_rows(payload.template_key)
     )
-    _resolve_reference_standards(db, payload.reference_standards)
-    _apply_reference_standard_updates(field_sheet, payload.reference_standards)
+    resolved_standards = _resolve_reference_standards(db, payload.reference_standards)
+    _apply_reference_standard_updates(field_sheet, payload.reference_standards, resolved_standards)
     db.add(field_sheet)
     db.flush()
     if field_sheet.calibration_procedure_id is not None:
@@ -468,8 +514,8 @@ def update_field_sheet(
         _apply_results_updates(field_sheet, payload.results_rows)
     if payload.reference_standards is not None:
         previous_links = _serialize_field_sheet(field_sheet)["reference_standards"]
-        _resolve_reference_standards(db, payload.reference_standards)
-        _apply_reference_standard_updates(field_sheet, payload.reference_standards)
+        resolved_standards = _resolve_reference_standards(db, payload.reference_standards)
+        _apply_reference_standard_updates(field_sheet, payload.reference_standards, resolved_standards)
         previous_ids = {item["reference_standard_id"] for item in previous_links}
         new_ids = {item.reference_standard_id for item in payload.reference_standards}
         for added_id in sorted(new_ids - previous_ids):

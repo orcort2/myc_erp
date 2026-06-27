@@ -1,6 +1,7 @@
 import {
   BadgeCheck,
   Banknote,
+  BookOpenCheck,
   Boxes,
   Building2,
   ClipboardList,
@@ -25,6 +26,7 @@ export const navigation = [
   { label: 'Hojas de campo', icon: BadgeCheck, path: '/dashboard#hojas' },
   { label: 'Certificados', icon: FileCheck2, path: '/dashboard#certificados' },
   { label: 'Calidad', icon: ShieldCheck, path: '/dashboard#calidad' },
+  { label: 'Biblioteca Documental', icon: BookOpenCheck, path: '/dashboard#biblioteca-documental' },
   { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
   { label: 'Procedimientos', icon: FlaskConical, path: '/dashboard#procedimientos' },
   { label: 'Finanzas', icon: Banknote, path: '/dashboard#finanzas' },
@@ -102,6 +104,14 @@ export const modules = [
     description: 'Revision transversal, aprobacion y control final de certificados.',
     icon: ShieldCheck,
     path: '/dashboard#calidad',
+    status: 'Activo'
+  },
+  {
+    key: 'documentLibrary',
+    name: 'Biblioteca Documental',
+    description: 'Documentos controlados, interpretaciones ejecutables y perfiles tecnicos.',
+    icon: BookOpenCheck,
+    path: '/dashboard#biblioteca-documental',
     status: 'Activo'
   },
   {

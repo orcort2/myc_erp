@@ -9,15 +9,21 @@ from app.routers import (
     catalog_items,
     certificates,
     clients,
+    document_interpretations,
     document_templates,
+    documents,
     equipment,
     field_sheets,
     health,
     metrology,
     modules,
+    operational_engines,
+    pattern_selection,
     quotations,
     reference_standards,
+    reference_standard_certificates,
     service_orders,
+    technical_profiles,
     users,
 )
 
@@ -46,15 +52,21 @@ app.include_router(audit_logs.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
 app.include_router(catalog_items.router, prefix="/api")
+app.include_router(documents.router, prefix="/api")
+app.include_router(document_interpretations.router, prefix="/api")
 app.include_router(document_templates.router, prefix="/api")
 app.include_router(reference_standards.router, prefix="/api")
+app.include_router(reference_standard_certificates.router, prefix="/api")
 app.include_router(calibration_procedures.router, prefix="/api")
 app.include_router(quotations.router, prefix="/api")
 app.include_router(service_orders.router, prefix="/api")
+app.include_router(technical_profiles.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
 app.include_router(certificates.router, prefix="/api")
 app.include_router(metrology.router, prefix="/api")
+app.include_router(operational_engines.router, prefix="/api")
+app.include_router(pattern_selection.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 
 

@@ -107,6 +107,10 @@ class ReferenceStandardRead(ReferenceStandardBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    current_certificate_id: int | None = None
+    current_certificate_number: str | None = None
+    current_certificate_expiration_date: date | None = None
+    current_certificate_status: str | None = None
     uncertainties: list[ReferenceStandardUncertaintyRead] = Field(default_factory=list)
 
 
@@ -125,6 +129,11 @@ class FieldSheetReferenceStandardRead(FieldSheetReferenceStandardBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    reference_standard_certificate_id: int | None = None
+    selected_uncertainty_id: int | None = None
+    selection_status: str | None = None
+    selection_notes: str | None = None
+    validation_snapshot: dict | None = None
     created_at: datetime
     updated_at: datetime
     reference_standard: ReferenceStandardRead

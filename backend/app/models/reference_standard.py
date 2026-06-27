@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Date, ForeignKey, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -43,6 +43,40 @@ class ReferenceStandard(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     field_sheet_links: Mapped[list["FieldSheetReferenceStandard"]] = relationship(
         back_populates="reference_standard"
     )
+    certificates: Mapped[list["ReferenceStandardCertificate"]] = relationship(
+        back_populates="reference_standard",
+        cascade="all, delete-orphan",
+        order_by="ReferenceStandardCertificate.created_at.desc()",
+    )
+
+    @property
+    def current_certificate(self):
+        current = [
+            certificate
+            for certificate in self.certificates
+            if certificate.is_current and certificate.status == "active"
+        ]
+        return current[0] if current else None
+
+    @property
+    def current_certificate_id(self) -> int | None:
+        certificate = self.current_certificate
+        return certificate.id if certificate else None
+
+    @property
+    def current_certificate_number(self) -> str | None:
+        certificate = self.current_certificate
+        return certificate.certificate_number if certificate else None
+
+    @property
+    def current_certificate_expiration_date(self) -> date | None:
+        certificate = self.current_certificate
+        return certificate.expiration_date if certificate else None
+
+    @property
+    def current_certificate_status(self) -> str | None:
+        certificate = self.current_certificate
+        return certificate.effective_status if certificate else None
 
     @property
     def effective_status(self) -> str:
@@ -88,9 +122,20 @@ class FieldSheetReferenceStandard(IntegerPkMixin, TimestampMixin, Base):
     reference_standard_id: Mapped[int] = mapped_column(
         ForeignKey("reference_standards.id"), index=True
     )
+    reference_standard_certificate_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reference_standard_certificates.id"), index=True
+    )
+    selected_uncertainty_id: Mapped[int | None] = mapped_column(
+        ForeignKey("reference_standard_certificate_uncertainties.id"), index=True
+    )
     usage_role: Mapped[str] = mapped_column(String(40), default="primary")
     measurement_section: Mapped[str | None] = mapped_column(String(80))
+    selection_status: Mapped[str | None] = mapped_column(String(40))
+    selection_notes: Mapped[str | None] = mapped_column(Text)
+    validation_snapshot: Mapped[dict | None] = mapped_column(JSON)
     notes: Mapped[str | None] = mapped_column(Text)
 
     field_sheet: Mapped["FieldSheet"] = relationship(back_populates="reference_standard_links")
     reference_standard: Mapped["ReferenceStandard"] = relationship(back_populates="field_sheet_links")
+    reference_standard_certificate: Mapped["ReferenceStandardCertificate | None"] = relationship()
+    selected_uncertainty: Mapped["ReferenceStandardCertificateUncertainty | None"] = relationship()

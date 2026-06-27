@@ -9,6 +9,7 @@ import { getCurrentPath, navigate } from '../utils/routing.js';
 import CertificatesPage from './CertificatesPage.jsx';
 import ClientsPage from './ClientsPage.jsx';
 import DashboardHome from './DashboardHome.jsx';
+import DocumentLibraryPage from './DocumentLibraryPage.jsx';
 import EquipmentPage from './EquipmentPage.jsx';
 import FieldSheetsPage from './FieldSheetsPage.jsx';
 import LoginPage from './LoginPage.jsx';
@@ -141,6 +142,8 @@ export function App() {
         <CertificatesPage />
       ) : selectedModule?.key === 'quality' ? (
         <QualityPage />
+      ) : selectedModule?.key === 'documentLibrary' ? (
+        <DocumentLibraryPage />
       ) : selectedModule?.key === 'standards' ? (
         <StandardsPage />
       ) : selectedModule?.key === 'procedures' ? (

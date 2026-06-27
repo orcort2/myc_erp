@@ -43,9 +43,11 @@ import {
   listReferenceStandards,
   listServiceOrders,
   reviewFieldSheet,
+  suggestFieldSheetPatterns,
   updateEquipment,
   updateFieldSheet,
-  updateServiceOrder
+  updateServiceOrder,
+  validateFieldSheetPatterns
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 import {
@@ -74,6 +76,7 @@ function ServiceOrdersPage() {
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
   const [fieldSheetForm, setFieldSheetForm] = useState(emptyFieldSheetForm);
   const [fieldSheetCertificateType, setFieldSheetCertificateType] = useState('trazable');
+  const [fieldSheetPatternSelection, setFieldSheetPatternSelection] = useState(null);
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [activeTab, setActiveTab] = useState('info');
   const [fieldSheetTab, setFieldSheetTab] = useState('info');
@@ -386,6 +389,7 @@ function ServiceOrdersPage() {
       setSelectedFieldSheet(sheet);
       setFieldSheetForm(fieldSheetToForm(sheet));
       setFieldSheetCertificateType('trazable');
+      setFieldSheetPatternSelection(null);
       setFieldSheetTab('info');
       setIsFieldSheetModalOpen(true);
       if (!existing) {
@@ -403,6 +407,7 @@ function ServiceOrdersPage() {
     setSelectedFieldSheet(null);
     setFieldSheetForm(emptyFieldSheetForm);
     setFieldSheetCertificateType('trazable');
+    setFieldSheetPatternSelection(null);
     setFieldSheetTab('info');
     setError('');
   }
@@ -458,6 +463,28 @@ function ServiceOrdersPage() {
       ...current,
       referenceStandards: current.referenceStandards.filter((_, index) => index !== indexToRemove)
     }));
+  }
+
+  async function suggestPatternsForCurrentFieldSheet() {
+    if (!selectedFieldSheet) return;
+    setError('');
+    try {
+      const result = await suggestFieldSheetPatterns(selectedFieldSheet.id);
+      setFieldSheetPatternSelection(result);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  async function validatePatternsForCurrentFieldSheet() {
+    if (!selectedFieldSheet) return;
+    setError('');
+    try {
+      const result = await validateFieldSheetPatterns(selectedFieldSheet.id);
+      setFieldSheetPatternSelection(result);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   }
 
   function updateFieldSheetTemplate(templateKey) {
@@ -1295,6 +1322,36 @@ function ServiceOrdersPage() {
                         <span className="field-sheet-reference-empty">Aun no se asignan patrones a esta hoja.</span>
                       )}
                     </div>
+                    <div className="toolbar-actions">
+                      <button className="table-button" type="button" onClick={suggestPatternsForCurrentFieldSheet}>
+                        Sugerir patrones
+                      </button>
+                      <button className="table-button" type="button" onClick={validatePatternsForCurrentFieldSheet}>
+                        Validar patrones seleccionados
+                      </button>
+                    </div>
+                    {fieldSheetPatternSelection ? (
+                      <div className="pattern-selection-panel">
+                        <strong>{fieldSheetPatternSelection.errors?.length ? 'Error' : fieldSheetPatternSelection.warnings?.length ? 'Advertencia' : 'Valido'}</strong>
+                        <span>{fieldSheetPatternSelection.explanation}</span>
+                        {(fieldSheetPatternSelection.errors ?? []).map((item) => <mark className="quotation-status status-rejected" key={item}>{item}</mark>)}
+                        {(fieldSheetPatternSelection.warnings ?? []).map((item) => <mark className="quotation-status status-draft" key={item}>{item}</mark>)}
+                        <div className="field-sheet-reference-list">
+                          {(fieldSheetPatternSelection.selected_recommendations ?? []).map((candidate) => (
+                            <article className="field-sheet-reference-card" key={candidate.pattern_id}>
+                              <div>
+                                <strong>{candidate.pattern_code} · {candidate.pattern_name}</strong>
+                                <span>Rango: {[candidate.range_min, candidate.range_max, candidate.unit].filter((value) => value !== null && value !== undefined && value !== '').join(' / ') || '-'}</span>
+                                <span>Certificado: {candidate.current_certificate_number || '-'} · Vence: {candidate.current_certificate_expiration_date || '-'}</span>
+                                <span>Incertidumbre: {candidate.applicable_uncertainty ?? '-'} {candidate.uncertainty_unit || ''} · k {candidate.k_factor ?? '-'}</span>
+                                <span>{candidate.validation_messages?.join(' · ') || 'Recomendado por mejor compatibilidad.'}</span>
+                              </div>
+                              <mark className={`quotation-status status-${candidate.validation_status}`}>{candidate.validation_status}</mark>
+                            </article>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </label>
                   <label>
                     Fecha recepcion

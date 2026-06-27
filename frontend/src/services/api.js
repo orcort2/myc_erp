@@ -496,6 +496,68 @@ export async function deleteReferenceStandardUncertainty(standardId, uncertainty
   });
 }
 
+export async function listReferenceStandardCertificates(params = {}) {
+  return request(`/reference-standard-certificates${buildQuery(params)}`);
+}
+
+export async function createReferenceStandardCertificate(standardId, payload) {
+  return request(`/reference-standards/${standardId}/certificates`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateReferenceStandardCertificate(certificateId, payload) {
+  return request(`/reference-standard-certificates/${certificateId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function activateReferenceStandardCertificate(certificateId) {
+  return request(`/reference-standard-certificates/${certificateId}/activate`, {
+    method: 'POST'
+  });
+}
+
+export async function suspendReferenceStandardCertificate(certificateId) {
+  return request(`/reference-standard-certificates/${certificateId}/suspend`, {
+    method: 'POST'
+  });
+}
+
+export async function createReferenceStandardCertificateUncertainty(certificateId, payload) {
+  return request(`/reference-standard-certificates/${certificateId}/uncertainties`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateReferenceStandardCertificateUncertainty(uncertaintyId, payload) {
+  return request(`/reference-standard-certificates/uncertainties/${uncertaintyId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteReferenceStandardCertificateUncertainty(uncertaintyId) {
+  return request(`/reference-standard-certificates/uncertainties/${uncertaintyId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function suggestFieldSheetPatterns(fieldSheetId) {
+  return request(`/field-sheets/${fieldSheetId}/suggest-patterns`, {
+    method: 'POST'
+  });
+}
+
+export async function validateFieldSheetPatterns(fieldSheetId) {
+  return request(`/field-sheets/${fieldSheetId}/validate-selected-patterns`, {
+    method: 'POST'
+  });
+}
+
 export async function listCalibrationProcedures(params = {}) {
   return request(`/calibration-procedures${buildQuery(params)}`);
 }
@@ -533,6 +595,96 @@ export async function calculateMetrologyPreview(payload) {
     method: 'POST',
     body: JSON.stringify(payload)
   });
+}
+
+export async function listControlledDocuments(params = {}) {
+  return request(`/documents${buildQuery(params)}`);
+}
+
+export async function createControlledDocument(payload) {
+  return request('/documents', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateControlledDocument(documentId, payload) {
+  return request(`/documents/${documentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createControlledDocumentVersion(documentId, payload) {
+  return request(`/documents/${documentId}/versions`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function activateControlledDocumentVersion(documentId, versionId) {
+  return request(`/documents/${documentId}/versions/${versionId}/activate`, {
+    method: 'POST'
+  });
+}
+
+export async function archiveControlledDocument(documentId, payload) {
+  return request(`/documents/${documentId}/archive`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function listDocumentInterpretations(params = {}) {
+  return request(`/document-interpretations${buildQuery(params)}`);
+}
+
+export async function createDocumentInterpretation(payload) {
+  return request('/document-interpretations', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateDocumentInterpretation(interpretationId, payload) {
+  return request(`/document-interpretations/${interpretationId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function approveDocumentInterpretation(interpretationId) {
+  return request(`/document-interpretations/${interpretationId}/approve`, {
+    method: 'POST'
+  });
+}
+
+export async function listTechnicalProfiles(params = {}) {
+  return request(`/technical-profiles${buildQuery(params)}`);
+}
+
+export async function createTechnicalProfile(payload) {
+  return request('/technical-profiles', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateTechnicalProfile(profileId, payload) {
+  return request(`/technical-profiles/${profileId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function approveTechnicalProfile(profileId) {
+  return request(`/technical-profiles/${profileId}/approve`, {
+    method: 'POST'
+  });
+}
+
+export async function resolveTechnicalProfiles(params = {}) {
+  return request(`/technical-profiles/resolve${buildQuery(params)}`);
 }
 
 export async function createCatalogItem(payload) {

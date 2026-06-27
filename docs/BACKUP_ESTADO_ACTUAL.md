@@ -1,6 +1,6 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-25 12:49:59 CST
+Ultima actualizacion: 2026-06-26 17:05:51 CST
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 Ruta actual del proyecto
 /Users/saulcortes/Desktop/myc_erp
@@ -15,28 +15,214 @@ f444882 Complete users management module
 d64d834 se instala un pequeño modulo de configuración para la gestion de usuarios
 de884e0 se separaon archivos del app principal, cada pestaña vive independiente
 Estado Git verificado:
+M backend/app/core/permissions.py
+M backend/app/main.py
 M backend/app/models/__init__.py
-M backend/app/models/field_sheet.py
-M backend/app/models/service_order.py
-M backend/app/routers/field_sheets.py
-M backend/app/routers/service_orders.py
-M backend/app/schemas/field_sheet.py
-M backend/app/schemas/service_order.py
+M backend/app/models/reference_standard.py
+M backend/app/schemas/reference_standard.py
 M backend/app/services/field_sheets.py
-M backend/app/services/service_orders.py
+M backend/app/services/reference_standards.py
 M docs/BACKUP_ESTADO_ACTUAL.md
-M frontend/src/constants/forms.js
+M frontend/src/constants/navigation.js
+M frontend/src/pages/App.jsx
 M frontend/src/pages/ServiceOrdersPage.jsx
+M frontend/src/pages/StandardsPage.jsx
 M frontend/src/services/api.js
 M frontend/src/styles/global.css
-M frontend/src/utils/fieldSheets.js
-?? backend/app/services/field_sheet_pdfs.py
-?? backend/app/services/work_order_pdfs.py
-?? backend/app/templates/field_sheet_electrical_pdf.html
-?? backend/app/templates/field_sheet_general_pdf.html
-?? backend/app/templates/work_order_pdf.html
-?? backend/migrations/versions/d4e5f6a7b8c9_add_work_orders_and_field_sheet_templates.py
+?? backend/app/models/controlled_document.py
+?? backend/app/models/reference_standard_certificate.py
+?? backend/app/routers/document_interpretations.py
+?? backend/app/routers/documents.py
+?? backend/app/routers/operational_engines.py
+?? backend/app/routers/pattern_selection.py
+?? backend/app/routers/reference_standard_certificates.py
+?? backend/app/routers/technical_profiles.py
+?? backend/app/schemas/controlled_document.py
+?? backend/app/schemas/operational_engine.py
+?? backend/app/schemas/pattern_selection.py
+?? backend/app/schemas/reference_standard_certificate.py
+?? backend/app/services/calculation_engine.py
+?? backend/app/services/certificate_preparation_engine.py
+?? backend/app/services/controlled_documents.py
+?? backend/app/services/document_interpretations.py
+?? backend/app/services/document_selection_engine.py
+?? backend/app/services/folio_engine.py
+?? backend/app/services/label_engine.py
+?? backend/app/services/operational_flow.py
+?? backend/app/services/pattern_selection_engine.py
+?? backend/app/services/reference_standard_certificates.py
+?? backend/app/services/standards_validation_engine.py
+?? backend/app/services/technical_capture_engine.py
+?? backend/app/services/technical_profiles.py
+?? backend/migrations/versions/a2b3c4d5e6f7_add_reference_standard_certificates.py
+?? backend/migrations/versions/f1a2b3c4d5e6_add_documental_core.py
+?? frontend/src/pages/DocumentLibraryPage.jsx
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-06-26 17:05:51 CST - Fase 2 motor de patrones, certificados de patron y selector inteligente:
+Se profundizo el modulo de patrones separando patron fisico de certificado metrologico vigente/historico, manteniendo compatibilidad con `reference_standards` y `reference_standard_uncertainties`.
+Backend nuevo:
+- Modelo `ReferenceStandardCertificate` en `backend/app/models/reference_standard_certificate.py`.
+- Modelo `ReferenceStandardCertificateUncertainty` para incertidumbres por certificado vigente/historico.
+- Relacion `ReferenceStandard.certificates` y propiedades resumen de certificado vigente: `current_certificate_id`, `current_certificate_number`, `current_certificate_expiration_date`, `current_certificate_status`.
+- Campos historicos en `field_sheet_reference_standards`: `reference_standard_certificate_id`, `selected_uncertainty_id`, `selection_status`, `selection_notes`, `validation_snapshot`.
+- Schemas en `backend/app/schemas/reference_standard_certificate.py` y `backend/app/schemas/pattern_selection.py`.
+- Servicio `backend/app/services/reference_standard_certificates.py`.
+- Servicio `backend/app/services/pattern_selection_engine.py`.
+- Routers `backend/app/routers/reference_standard_certificates.py` y `backend/app/routers/pattern_selection.py`.
+- Registro de routers en `backend/app/main.py`; la app queda con 27 rutas.
+Migracion:
+- `backend/migrations/versions/a2b3c4d5e6f7_add_reference_standard_certificates.py`.
+- Ejecutada localmente con `../venv/bin/alembic upgrade head`.
+- Resultado: `Running upgrade f1a2b3c4d5e6 -> a2b3c4d5e6f7, add reference standard certificates`.
+- Verificacion DB: `cert_tables 2`, `snapshot_columns 5`.
+Reglas implementadas:
+- Un patron puede tener multiples certificados historicos.
+- Solo un certificado queda vigente por patron mediante indice unico parcial `uq_reference_standard_current_certificate`.
+- Activar certificado marca `is_current=true`, `status=active`, obsoleta/desmarca certificados vigentes anteriores y no permite activar vencidos.
+- La incertidumbre aplicable se obtiene desde el certificado vigente, con compatibilidad legada intacta.
+- Al agregar patrones a una hoja, si existe certificado vigente se guarda snapshot inicial con certificado e incertidumbre asociada.
+Selector inteligente:
+- Endpoint `POST /api/pattern-selection/candidates`.
+- Endpoint `POST /api/field-sheets/{field_sheet_id}/suggest-patterns`.
+- Endpoint `POST /api/field-sheets/{field_sheet_id}/validate-selected-patterns`.
+- Evalua magnitud, estado activo, certificado vigente, vencimiento, rango requerido, perfil tecnico, patrones permitidos/preferidos e incertidumbre aplicable.
+- Devuelve candidatos, recomendaciones, warnings, errores y explicacion.
+Permisos:
+- `reference_standard_certificates.read`
+- `reference_standard_certificates.create`
+- `reference_standard_certificates.update`
+- `reference_standard_certificates.approve`
+- `pattern_selection.execute`
+- Calidad y Desarrollador pueden administrar certificados de patron y ejecutar selector.
+- Tecnico y Captura pueden leer certificados de patron y ejecutar selector.
+Frontend:
+- `StandardsPage.jsx` ahora incluye seccion Certificados del Patron dentro del modal de patron.
+- Permite listar, crear, editar, activar y suspender certificados de patron.
+- Permite agregar y editar incertidumbres por rango dentro del certificado del patron.
+- `ServiceOrdersPage.jsx` agrega botones `Sugerir patrones` y `Validar patrones seleccionados` en la hoja de campo.
+- Muestra recomendados, certificados vigentes, vencimientos, incertidumbre aplicable, warnings y errores sin bloquear el flujo.
+- API frontend extendida en `frontend/src/services/api.js`.
+Auditoria:
+- `reference_standard_certificate.created`
+- `reference_standard_certificate.updated`
+- `reference_standard_certificate.activated`
+- `reference_standard_certificate.suspended`
+- `reference_standard_certificate.uncertainty.created`
+- `reference_standard_certificate.uncertainty.updated`
+- `reference_standard_certificate.uncertainty.deactivated`
+- `pattern_selection.candidates_generated`
+- `field_sheet.patterns_validated`
+Validacion ejecutada:
+- `venv/bin/python -m compileall backend/app` -> OK.
+- desde backend: `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"` -> ERP MYC 27.
+- `../venv/bin/alembic upgrade head` -> OK.
+- consulta DB -> `cert_tables 2`, `snapshot_columns 5`.
+- `npm run build` en frontend -> OK.
+Notas:
+- No se implemento PDF final de certificado, OCR, IA para leer documentos, sellos ni firmas digitales.
+- No se elimino ni modifico destructivamente `reference_standard_uncertainties`; queda como legado compatible.
+
+Actualizacion 2026-06-26 16:53:47 CST - Fase 1 nucleo documental y motor base:
+Se implemento la base documental del sistema sobre la arquitectura actual, sin crear proyecto nuevo y sin modificar el flujo operativo existente.
+Backend nuevo:
+- Modelo `ControlledDocument` en `backend/app/models/controlled_document.py`.
+- Modelo `ControlledDocumentVersion` con versionamiento documental y una sola version activa por documento.
+- Modelo `DocumentInterpretation` para interpretacion ejecutable de documentos.
+- Modelo `TechnicalProfile` para perfil tecnico de calibracion.
+- Modelo `TechnicalProfileAllowedPattern` conectado inicialmente a `reference_standards` como tabla formal de patrones.
+- Schemas en `backend/app/schemas/controlled_document.py`.
+- Servicios en `backend/app/services/controlled_documents.py`, `document_interpretations.py` y `technical_profiles.py`.
+- Routers en `backend/app/routers/documents.py`, `document_interpretations.py` y `technical_profiles.py`.
+- Registro de routers en `backend/app/main.py`; la app queda con 25 rutas.
+Migracion:
+- `backend/migrations/versions/f1a2b3c4d5e6_add_documental_core.py`.
+- Ejecutada localmente con `../venv/bin/alembic upgrade head`.
+- Resultado: `Running upgrade e5f6a7b8c9d0 -> f1a2b3c4d5e6, add documental core`.
+Datos semilla:
+- 7 documentos controlados: MDG-01, FCA-02, PMP-01, FCA-15-7, FPV-01, FCA-22, FCA-18-1.
+- 1 perfil tecnico: PT-PRESION-MANOMETRO-ACR-001.
+- Verificacion directa en DB: documents 7, profiles 1.
+Permisos:
+- Se agregaron permisos `documents.*`, `document_interpretations.*` y `technical_profiles.*`.
+- Administrador conserva `*`.
+- Calidad puede crear/editar/aprobar documentos, interpretaciones y perfiles.
+- Tecnico, Captura y Comercial pueden leer la biblioteca documental segun alcance inicial.
+Endpoints nuevos:
+- GET /api/documents
+- GET /api/documents/{document_id}
+- POST /api/documents
+- PATCH /api/documents/{document_id}
+- POST /api/documents/{document_id}/versions
+- POST /api/documents/{document_id}/versions/{version_id}/activate
+- PATCH /api/documents/{document_id}/archive
+- GET /api/document-interpretations
+- GET /api/document-interpretations/{interpretation_id}
+- POST /api/document-interpretations
+- PATCH /api/document-interpretations/{interpretation_id}
+- POST /api/document-interpretations/{interpretation_id}/approve
+- POST /api/document-interpretations/{interpretation_id}/new-version
+- GET /api/technical-profiles
+- GET /api/technical-profiles/resolve
+- GET /api/technical-profiles/{profile_id}
+- POST /api/technical-profiles
+- PATCH /api/technical-profiles/{profile_id}
+- POST /api/technical-profiles/{profile_id}/approve
+- POST /api/technical-profiles/{profile_id}/new-version
+Frontend:
+- Nuevo modulo visible `Biblioteca Documental` en navegacion.
+- Nueva pagina `frontend/src/pages/DocumentLibraryPage.jsx`.
+- Pestañas: Documentos, Interpretaciones, Perfiles Tecnicos.
+- Permite listar, filtrar, crear/editar documentos, registrar versiones, activar versiones, crear/editar/aprobar interpretaciones, crear/editar/aprobar perfiles y resolver perfil tecnico por coincidencia exacta inicial.
+- API frontend extendida en `frontend/src/services/api.js`.
+Auditoria:
+- Se audita creacion/actualizacion de documento, version creada, version activada, archivado documental, creacion/actualizacion/aprobacion/nueva version de interpretacion, creacion/actualizacion/aprobacion/nueva version de perfil tecnico.
+Validacion ejecutada:
+- `venv/bin/python -m compileall backend/app` -> OK.
+- desde backend: `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"` -> ERP MYC 25.
+- `../venv/bin/alembic upgrade head` -> OK.
+- consulta DB semilla -> documents 7, profiles 1.
+- `npm run build` en frontend -> OK.
+Notas:
+- No se implemento calculo de incertidumbre, seleccion inteligente real de patrones, generacion de certificados, OCR, IA de lectura PDF, firma digital ni sellos.
+- `DocumentTemplate` existente se conserva para plantillas comerciales/PDF; el nuevo nucleo documental vive separado como documento controlado versionable.
+
+Actualizacion 2026-06-26 12:24:12 CST - Fase B motores operativos/documentales:
+Se agrego la primera capa backend de motores internos reutilizables sin migraciones nuevas y sin romper APIs existentes.
+Archivos nuevos:
+- backend/app/schemas/operational_engine.py
+- backend/app/routers/operational_engines.py
+- backend/app/services/operational_flow.py
+- backend/app/services/document_selection_engine.py
+- backend/app/services/standards_validation_engine.py
+- backend/app/services/folio_engine.py
+- backend/app/services/certificate_preparation_engine.py
+- backend/app/services/technical_capture_engine.py
+- backend/app/services/calculation_engine.py
+- backend/app/services/label_engine.py
+Se registro el router en backend/app/main.py.
+Endpoints nuevos:
+- GET /api/operational-engines/flow
+- GET /api/operational-engines/field-sheets/{field_sheet_id}/document-selection
+- POST /api/operational-engines/field-sheets/{field_sheet_id}/validate-standards
+- POST /api/operational-engines/folios/certificates/suggest
+- POST /api/operational-engines/field-sheets/{field_sheet_id}/prepare-certificate
+- GET /api/operational-engines/field-sheets/{field_sheet_id}/technical-capture
+- POST /api/operational-engines/calculation
+- GET /api/operational-engines/certificates/{certificate_id}/label
+Alcance implementado:
+- Motor de flujo operativo: determina etapa actual, siguiente, acciones permitidas y bloqueadas desde OS/equipo/hoja/certificado.
+- Motor de seleccion documental: resuelve plantilla de hoja, certificado y etiqueta con criterios basados en procedimiento, magnitud, equipo, servicio y tipo de certificado.
+- Motor de validacion de patrones: valida patron activo, vigencia, magnitud, rango, incertidumbre y roles; devuelve VALIDO/ADVERTENCIA/ERROR.
+- Motor de folios: sugiere folios MYCA/MYCT por mes, anio y consecutivo, permite fecha/consecutivo/manual y audita sugerencias.
+- Motor de preparacion de certificado: crea certificado draft desde hoja completada/en revision/aprobada, sin PDF final.
+- Motor de captura tecnica: checklist separado para confirmar procedimiento, plantilla, patrones y folio antes de calculo.
+- Motor de calculo superior: consume metrology_engine.py y devuelve promedios, errores, incertidumbres, criterio de aceptacion y tablas estructuradas.
+- Motor de etiquetas: prepara payload documental con folio, cliente, equipo, fechas, tipo y estado.
+Validacion ejecutada:
+- venv/bin/python -m compileall backend/app -> OK
+- desde backend: ../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))" -> ERP MYC 22
+
 Objetivo del sistema
 Construir un ERP para MYC orientado al flujo real de calidad y operacion:
 Lead
