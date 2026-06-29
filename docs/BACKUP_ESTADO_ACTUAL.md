@@ -1792,6 +1792,11 @@ se puede realizar fuera de entorno virtual
 para levantarlo en tunel 
 cd /Users/saulcortes/Desktop/myc_erp
 ./scripts/start-tunnel.sh
+validar con scripts de build. 
+./scripts/build.sh
+
+entrar en myc dev tools. 
+./scripts/myc.sh
 
 
 Referencias documentales anexadas - 2026-06-24
