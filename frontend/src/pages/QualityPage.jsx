@@ -17,7 +17,8 @@ import {
   listClients,
   listEquipment,
   listFieldSheets,
-  listServiceOrders
+  listServiceOrders,
+  manualAcceptCertificateMatch
 } from '../services/api.js';
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
@@ -78,16 +79,19 @@ function QualityPage() {
 
   const displayedCertificates = useMemo(() => {
     if (activeTab === 'pending') {
-      return certificates.filter((certificate) => ['generated', 'quality_review', 'correction_requested'].includes(certificate.status));
+      return certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'quality_rejected'].includes(certificate.status));
     }
     if (activeTab === 'review') {
-      return certificates.filter((certificate) => certificate.status === 'quality_review');
+      return certificates.filter((certificate) => ['ready_for_quality', 'quality_review'].includes(certificate.status));
     }
     if (activeTab === 'approved') {
-      return certificates.filter((certificate) => certificate.status === 'approved');
+      return certificates.filter((certificate) => ['quality_approved', 'pdf_pending'].includes(certificate.status));
+    }
+    if (activeTab === 'pdf') {
+      return certificates.filter((certificate) => certificate.status === 'pdf_uploaded');
     }
     if (activeTab === 'released') {
-      return certificates.filter((certificate) => certificate.status === 'released');
+      return certificates.filter((certificate) => ['released_to_client', 'released'].includes(certificate.status));
     }
     if (activeTab === 'suspended') {
       return certificates.filter((certificate) => certificate.status === 'suspended');
@@ -212,15 +216,15 @@ function QualityPage() {
 
       <section className="operations-band certificates-summary" aria-label="Resumen de calidad">
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['generated', 'quality_review', 'correction_requested'].includes(certificate.status)).length}</strong>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'quality_rejected'].includes(certificate.status)).length}</strong>
           <span>Pendientes calidad</span>
         </div>
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => certificate.status === 'approved').length}</strong>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['quality_approved', 'pdf_pending'].includes(certificate.status)).length}</strong>
           <span>Aprobados</span>
         </div>
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => certificate.status === 'released').length}</strong>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['released_to_client', 'released'].includes(certificate.status)).length}</strong>
           <span>Liberados</span>
         </div>
       </section>
@@ -329,7 +333,7 @@ function QualityPage() {
                   <div className="quotation-commercial-grid service-order-info-grid">
                     <article>
                       <span>Folio</span>
-                      <strong>{selectedCertificate.folio}</strong>
+                      <strong>{selectedCertificate.expected_folio ?? selectedCertificate.folio}</strong>
                     </article>
                     <article>
                       <span>Tipo</span>
@@ -338,6 +342,14 @@ function QualityPage() {
                     <article>
                       <span>Estado</span>
                       <strong>{certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status}</strong>
+                    </article>
+                    <article>
+                      <span>PDF</span>
+                      <strong>{selectedCertificate.final_pdf_original_filename || 'Pendiente'}</strong>
+                    </article>
+                    <article>
+                      <span>Matching</span>
+                      <strong>{selectedCertificate.match_status || 'pending'}</strong>
                     </article>
                     <article className="form-field--wide">
                       <span>Notas</span>
@@ -354,27 +366,19 @@ function QualityPage() {
                   <div className="toolbar-actions quality-actions">
                     <button
                       className="table-button table-button--primary"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'approved')}
-                      onClick={() => handleQualityAction('approve', 'Aprobar')}
+                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'quality_approved')}
+                      onClick={() => handleQualityAction('quality-approve', 'Aprobar calidad')}
                       type="button"
                     >
-                      {loadingAction === 'approveAprobar' ? 'Procesando...' : 'Aprobar'}
+                      {loadingAction === 'quality-approveAprobar calidad' ? 'Procesando...' : 'Aprobar calidad'}
                     </button>
                     <button
                       className="table-button"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'correction_requested')}
-                      onClick={() => handleQualityAction('request-correction', 'Solicitar correccion', 'Correccion solicitada por calidad')}
+                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'quality_rejected')}
+                      onClick={() => handleQualityAction('quality-reject', 'Rechazar', 'Rechazo solicitado por calidad')}
                       type="button"
                     >
-                      {loadingAction === 'request-correctionSolicitar correccion' ? 'Procesando...' : 'Solicitar correccion'}
-                    </button>
-                    <button
-                      className="table-button"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'draft')}
-                      onClick={() => handleQualityAction('draft', 'Regresar a borrador', 'Reapertura para correccion documental')}
-                      type="button"
-                    >
-                      {loadingAction === 'draftRegresar a borrador' ? 'Procesando...' : 'Regresar a borrador'}
+                      {loadingAction === 'quality-rejectRechazar' ? 'Procesando...' : 'Rechazar'}
                     </button>
                     <button
                       className="table-button"
@@ -386,11 +390,30 @@ function QualityPage() {
                     </button>
                     <button
                       className="table-button table-button--primary"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'released')}
-                      onClick={() => handleQualityAction('release', 'Liberar')}
+                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'released_to_client')}
+                      onClick={() => handleQualityAction('release-to-client', 'Liberar cliente')}
                       type="button"
                     >
-                      {loadingAction === 'releaseLiberar' ? 'Procesando...' : 'Liberar'}
+                      {loadingAction === 'release-to-clientLiberar cliente' ? 'Procesando...' : 'Liberar cliente'}
+                    </button>
+                    <button
+                      className="table-button"
+                      disabled={Boolean(loadingAction) || !selectedCertificate.final_pdf_path}
+                      onClick={async () => {
+                        setLoadingAction('manual-match');
+                        try {
+                          const updated = await manualAcceptCertificateMatch(selectedCertificate.id, 'Aceptado manualmente por calidad');
+                          setSelectedCertificate(updated);
+                          await loadQualityData();
+                        } catch (requestError) {
+                          setError(requestError.message);
+                        } finally {
+                          setLoadingAction('');
+                        }
+                      }}
+                      type="button"
+                    >
+                      Aceptar match
                     </button>
                   </div>
                 </section>

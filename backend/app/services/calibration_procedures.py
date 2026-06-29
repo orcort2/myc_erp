@@ -20,6 +20,8 @@ def _serialize_procedure(item: CalibrationProcedure) -> dict:
         "version": item.version,
         "issuer_company": item.issuer_company,
         "certificate_type": item.certificate_type,
+        "uncertainty_model_id": item.uncertainty_model_id,
+        "uncertainty_model_version_id": item.uncertainty_model_version_id,
         "status": item.status,
         "required_readings": item.required_readings,
     }

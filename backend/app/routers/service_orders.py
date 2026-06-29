@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,8 @@ from app.schemas.service_order import (
     ServiceOrderStatusChange,
     ServiceOrderUpdate,
 )
+from app.schemas.certificate import CertificateBulkUploadRead
+from app.services.certificates import bulk_upload_certificate_pdfs
 from app.services.service_orders import (
     change_status,
     close_service_order,
@@ -60,6 +62,15 @@ def get_service_order_work_order_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+@router.post("/{service_order_id}/certificate-pdfs", response_model=CertificateBulkUploadRead)
+def upload_service_order_certificate_pdfs(
+    service_order_id: int,
+    files: list[UploadFile] = File(...),
+    db: Session = Depends(get_db),
+) -> CertificateBulkUploadRead:
+    return bulk_upload_certificate_pdfs(db, service_order_id, files)
 
 
 @router.patch("/{service_order_id}", response_model=ServiceOrderRead)

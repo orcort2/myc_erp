@@ -25,6 +25,14 @@ from app.models.reference_standard_certificate import (
     ReferenceStandardCertificateUncertainty,
 )
 from app.models.service_order import ServiceOrder, ServiceOrderItem
+from app.models.uncertainty import (
+    UncertaintyCalculation,
+    UncertaintyComponent,
+    UncertaintyFormula,
+    UncertaintyModel,
+    UncertaintyModelException,
+    UncertaintyModelVersion,
+)
 from app.models.user import Role, User
 
 __all__ = [
@@ -56,5 +64,11 @@ __all__ = [
     "TimestampMixin",
     "TechnicalProfile",
     "TechnicalProfileAllowedPattern",
+    "UncertaintyCalculation",
+    "UncertaintyComponent",
+    "UncertaintyFormula",
+    "UncertaintyModel",
+    "UncertaintyModelException",
+    "UncertaintyModelVersion",
     "User",
 ]

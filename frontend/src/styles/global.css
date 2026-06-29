@@ -110,9 +110,30 @@ body {
   display: block;
 }
 
+.flow-test-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.json-preview {
+  background: rgba(5, 31, 45, 0.92);
+  border: 1px solid rgba(201, 255, 247, 0.28);
+  border-radius: 8px;
+  color: #eaf4f2;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 14px 0 0;
+  max-height: 480px;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+}
+
 @media (max-width: 1120px) {
   .document-library-grid,
-  .document-library-filters {
+  .document-library-filters,
+  .flow-test-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -1547,6 +1568,12 @@ button {
   background: rgba(235, 241, 245, 0.72);
   border-color: rgba(55, 80, 99, 0.22);
   color: #253d4f;
+}
+
+.status-pill--danger {
+  background: rgba(255, 236, 232, 0.82);
+  border-color: rgba(172, 54, 38, 0.24);
+  color: #8d2a1d;
 }
 
 .quotation-status {

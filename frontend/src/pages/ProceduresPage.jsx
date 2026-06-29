@@ -9,6 +9,8 @@ import {
   deleteCalibrationProcedure,
   listCalibrationProcedures,
   listMetrologyProfiles,
+  listUncertaintyModels,
+  listUncertaintyModelVersions,
   updateCalibrationProcedure
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
@@ -21,6 +23,8 @@ function mapProcedurePayload(form) {
     description: form.description.trim() || null,
     magnitude: form.magnitude.trim(),
     profile_key: form.profileKey || null,
+    uncertainty_model_id: form.uncertaintyModelId === '' ? null : Number(form.uncertaintyModelId),
+    uncertainty_model_version_id: form.uncertaintyModelVersionId === '' ? null : Number(form.uncertaintyModelVersionId),
     version: form.version.trim(),
     issuer_company: form.issuerCompany,
     certificate_type: form.certificateType,
@@ -35,6 +39,8 @@ function mapProcedurePayload(form) {
 function ProceduresPage() {
   const [procedures, setProcedures] = useState([]);
   const [profiles, setProfiles] = useState([]);
+  const [uncertaintyModels, setUncertaintyModels] = useState([]);
+  const [uncertaintyVersions, setUncertaintyVersions] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
   const [selectedProcedure, setSelectedProcedure] = useState(null);
   const [procedureForm, setProcedureForm] = useState(emptyCalibrationProcedureForm);
@@ -62,6 +68,8 @@ function ProceduresPage() {
       ]);
       setProcedures(Array.isArray(proceduresResult) ? proceduresResult : []);
       setProfiles(Array.isArray(profilesResult) ? profilesResult : []);
+      const modelsResult = await listUncertaintyModels();
+      setUncertaintyModels(Array.isArray(modelsResult) ? modelsResult : []);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -89,6 +97,8 @@ function ProceduresPage() {
       description: item.description ?? '',
       magnitude: item.magnitude ?? '',
       profileKey: item.profile_key ?? '',
+      uncertaintyModelId: item.uncertainty_model_id ?? '',
+      uncertaintyModelVersionId: item.uncertainty_model_version_id ?? '',
       version: item.version ?? '1.0',
       issuerCompany: item.issuer_company ?? 'MYC',
       certificateType: item.certificate_type ?? 'trazable',
@@ -102,6 +112,23 @@ function ProceduresPage() {
     setError('');
     setNotice('');
   }
+
+  useEffect(() => {
+    async function loadVersions() {
+      const modelId = procedureForm.uncertaintyModelId;
+      if (!modelId) {
+        setUncertaintyVersions([]);
+        return;
+      }
+      try {
+        const versions = await listUncertaintyModelVersions(modelId);
+        setUncertaintyVersions(Array.isArray(versions) ? versions : []);
+      } catch (requestError) {
+        setError(requestError.message);
+      }
+    }
+    loadVersions();
+  }, [procedureForm.uncertaintyModelId]);
 
   function closeModal() {
     setIsModalOpen(false);
@@ -223,6 +250,7 @@ function ProceduresPage() {
             <span>Nombre</span>
             <span>Magnitud</span>
             <span>Perfil</span>
+            <span>Incertidumbre</span>
             <span>Certificado</span>
             <span>Estado</span>
             <span>Actualizado</span>
@@ -237,6 +265,7 @@ function ProceduresPage() {
                 <span>{item.name}</span>
                 <span>{item.magnitude}</span>
                 <span>{item.profile_key || '-'}</span>
+                <span>{item.uncertainty_model_version_id ? `Version #${item.uncertainty_model_version_id}` : (item.uncertainty_model_id ? `Modelo #${item.uncertainty_model_id}` : '-')}</span>
                 <span>{item.certificate_type}</span>
                 <span>
                   <mark className={`quotation-status status-${item.status}`}>
@@ -295,6 +324,40 @@ function ProceduresPage() {
                       {profile.display_name} · {profile.profile_key}
                     </option>
                   ))}
+                </select>
+              </label>
+              <label>
+                Modelo de incertidumbre
+                <select
+                  value={procedureForm.uncertaintyModelId}
+                  onChange={(event) => setProcedureForm((current) => ({
+                    ...current,
+                    uncertaintyModelId: event.target.value,
+                    uncertaintyModelVersionId: ''
+                  }))}
+                >
+                  <option value="">Sin modelo</option>
+                  {uncertaintyModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.code} · {model.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Version aprobada
+                <select
+                  value={procedureForm.uncertaintyModelVersionId}
+                  onChange={(event) => setProcedureForm((current) => ({ ...current, uncertaintyModelVersionId: event.target.value }))}
+                >
+                  <option value="">Resolver automaticamente</option>
+                  {uncertaintyVersions
+                    .filter((version) => version.status === 'approved')
+                    .map((version) => (
+                      <option key={version.id} value={version.id}>
+                        v{version.version_number} · {version.status}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label>

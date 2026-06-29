@@ -24,6 +24,8 @@ class CalibrationProcedureBase(BaseModel):
     version: str = Field(min_length=1, max_length=40)
     issuer_company: CalibrationProcedureIssuerCompany = "MYC"
     certificate_type: CalibrationProcedureCertificateType = "trazable"
+    uncertainty_model_id: int | None = None
+    uncertainty_model_version_id: int | None = None
     required_readings: int | None = Field(default=None, ge=1)
     decision_rule: str | None = None
     acceptance_criteria: str | None = None
@@ -44,6 +46,8 @@ class CalibrationProcedureUpdate(BaseModel):
     version: str | None = Field(default=None, min_length=1, max_length=40)
     issuer_company: CalibrationProcedureIssuerCompany | None = None
     certificate_type: CalibrationProcedureCertificateType | None = None
+    uncertainty_model_id: int | None = None
+    uncertainty_model_version_id: int | None = None
     required_readings: int | None = Field(default=None, ge=1)
     decision_rule: str | None = None
     acceptance_criteria: str | None = None

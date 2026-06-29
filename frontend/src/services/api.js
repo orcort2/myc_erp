@@ -60,6 +60,33 @@ async function request(path, options = {}) {
   return response.json();
 }
 
+async function uploadRequest(path, formData, options = {}) {
+  const token = getAccessToken();
+  const headers = {
+    ...(options.headers ?? {})
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    method: options.method ?? 'POST',
+    headers,
+    body: formData
+  });
+  if (!response.ok) {
+    let message = 'No se pudo completar la solicitud';
+    try {
+      const payload = await response.json();
+      message = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message ?? payload.message ?? message;
+    } catch {
+      // Keep default message.
+    }
+    throw new Error(message);
+  }
+  return response.status === 204 ? null : response.json();
+}
+
 export async function login(email, password) {
   const payload = await request('/auth/login', {
     method: 'POST',
@@ -377,6 +404,31 @@ export async function changeCertificateStatus(certificateId, action, comment = n
   });
 }
 
+export async function uploadCertificatePdf(certificateId, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return uploadRequest(`/certificates/${certificateId}/upload-pdf`, formData);
+}
+
+export async function validateCertificatePdfMatch(certificateId) {
+  return request(`/certificates/${certificateId}/validate-pdf-match`, {
+    method: 'POST'
+  });
+}
+
+export async function manualAcceptCertificateMatch(certificateId, comment = null) {
+  return request(`/certificates/${certificateId}/manual-accept-match`, {
+    method: 'POST',
+    body: JSON.stringify({ comment })
+  });
+}
+
+export async function bulkUploadCertificatePdfs(serviceOrderId, files) {
+  const formData = new FormData();
+  Array.from(files).forEach((file) => formData.append('files', file));
+  return uploadRequest(`/service-orders/${serviceOrderId}/certificate-pdfs`, formData);
+}
+
 export async function deleteCertificate(certificateId) {
   return request(`/certificates/${certificateId}`, {
     method: 'DELETE'
@@ -685,6 +737,103 @@ export async function approveTechnicalProfile(profileId) {
 
 export async function resolveTechnicalProfiles(params = {}) {
   return request(`/technical-profiles/resolve${buildQuery(params)}`);
+}
+
+export async function listUncertaintyModels(params = {}) {
+  return request(`/uncertainty/models${buildQuery(params)}`);
+}
+
+export async function createUncertaintyModel(payload) {
+  return request('/uncertainty/models', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateUncertaintyModel(modelId, payload) {
+  return request(`/uncertainty/models/${modelId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function listUncertaintyModelVersions(modelId) {
+  return request(`/uncertainty/models/${modelId}/versions`);
+}
+
+export async function getUncertaintyModelVersion(versionId) {
+  return request(`/uncertainty/model-versions/${versionId}`);
+}
+
+export async function createUncertaintyModelVersion(modelId, payload) {
+  return request(`/uncertainty/models/${modelId}/versions`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateUncertaintyModelVersion(versionId, payload) {
+  return request(`/uncertainty/model-versions/${versionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function changeUncertaintyModelVersionStatus(versionId, action) {
+  return request(`/uncertainty/model-versions/${versionId}/${action}`, {
+    method: 'POST'
+  });
+}
+
+export async function cloneUncertaintyModelVersion(versionId, payload) {
+  return request(`/uncertainty/model-versions/${versionId}/clone`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createUncertaintyComponent(versionId, payload) {
+  return request(`/uncertainty/model-versions/${versionId}/components`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateUncertaintyComponent(componentId, payload) {
+  return request(`/uncertainty/components/${componentId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteUncertaintyComponent(componentId) {
+  return request(`/uncertainty/components/${componentId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function createUncertaintyFormula(versionId, payload) {
+  return request(`/uncertainty/model-versions/${versionId}/formulas`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateUncertaintyFormula(formulaId, payload) {
+  return request(`/uncertainty/formulas/${formulaId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteUncertaintyFormula(formulaId) {
+  return request(`/uncertainty/formulas/${formulaId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function getUncertaintyPreview(fieldSheetId) {
+  return request(`/uncertainty/field-sheets/${fieldSheetId}/preview`);
 }
 
 export async function createCatalogItem(payload) {

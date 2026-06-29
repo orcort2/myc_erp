@@ -168,6 +168,8 @@ export const emptyCalibrationProcedureForm = {
   description: '',
   magnitude: '',
   profileKey: '',
+  uncertaintyModelId: '',
+  uncertaintyModelVersionId: '',
   version: '1.0',
   issuerCompany: 'MYC',
   certificateType: 'trazable',

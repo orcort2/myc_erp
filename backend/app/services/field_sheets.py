@@ -600,6 +600,7 @@ def complete_field_sheet(
             "status": "completed",
             "equipment_status": "calibrated",
             "certificate_ready": True,
+            "external_certificate_flow": True,
         },
         comment=payload.comment if payload else None,
     )

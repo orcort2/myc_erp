@@ -6,10 +6,13 @@ import {
   Building2,
   ClipboardList,
   FileCheck2,
+  FileUp,
   FileText,
   FlaskConical,
   Gauge,
+  Calculator,
   MessageSquareText,
+  Network,
   Ruler,
   Settings,
   ShieldCheck
@@ -25,10 +28,12 @@ export const navigation = [
   { label: 'Equipos', icon: Boxes, path: '/dashboard#equipos' },
   { label: 'Hojas de campo', icon: BadgeCheck, path: '/dashboard#hojas' },
   { label: 'Certificados', icon: FileCheck2, path: '/dashboard#certificados' },
+  { label: 'Captura', icon: FileUp, path: '/dashboard#captura' },
   { label: 'Calidad', icon: ShieldCheck, path: '/dashboard#calidad' },
   { label: 'Biblioteca Documental', icon: BookOpenCheck, path: '/dashboard#biblioteca-documental' },
   { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
   { label: 'Procedimientos', icon: FlaskConical, path: '/dashboard#procedimientos' },
+  { label: 'Prueba de flujo', icon: Network, path: '/dashboard#prueba-flujo' },
   { label: 'Finanzas', icon: Banknote, path: '/dashboard#finanzas' },
   { label: 'Configuracion', icon: Settings, path: '/dashboard#configuracion' }
 ];
@@ -99,6 +104,14 @@ export const modules = [
     status: 'Activo'
   },
   {
+    key: 'capture',
+    name: 'Captura',
+    description: 'Certificados externos en Excel, PDF final y matching documental.',
+    icon: FileUp,
+    path: '/dashboard#captura',
+    status: 'Activo'
+  },
+  {
     key: 'quality',
     name: 'Calidad',
     description: 'Revision transversal, aprobacion y control final de certificados.',
@@ -129,6 +142,22 @@ export const modules = [
     icon: FlaskConical,
     path: '/dashboard#procedimientos',
     status: 'En desarrollo'
+  },
+  {
+    key: 'uncertainty',
+    name: 'Incertidumbre',
+    description: 'Modelos versionables, componentes, formulas y preview tecnico.',
+    icon: Calculator,
+    path: '/dashboard#incertidumbre',
+    status: 'Experimental'
+  },
+  {
+    key: 'flowTest',
+    name: 'Prueba de flujo',
+    description: 'Auditoria visual del flujo Cliente a Preview de Incertidumbre.',
+    icon: Network,
+    path: '/dashboard#prueba-flujo',
+    status: 'Activo'
   },
   {
     key: 'finance',

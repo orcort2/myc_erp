@@ -1,0 +1,72 @@
+#!/bin/bash
+
+ROOT="/Users/saulcortes/Desktop/myc_erp"
+
+case "$1" in
+  local)
+    "$ROOT/scripts/start-local.sh"
+    ;;
+
+  tunnel)
+    "$ROOT/scripts/start-tunnel.sh"
+    ;;
+
+  doctor)
+    "$ROOT/scripts/doctor.sh"
+    ;;
+
+  status)
+    "$ROOT/scripts/status.sh"
+    ;;
+
+  stop)
+    "$ROOT/scripts/stop.sh"
+    ;;
+
+  restart)
+    "$ROOT/scripts/restart-local.sh"
+    ;;
+
+  build)
+    "$ROOT/scripts/build.sh"
+    ;;
+
+  update)
+    "$ROOT/scripts/update.sh"
+    ;;
+
+  backup)
+    "$ROOT/scripts/backup-db.sh"
+    ;;
+
+  clean)
+    "$ROOT/scripts/clean.sh"
+    ;;
+
+  menu|"")
+    "$ROOT/scripts/myc.sh"
+    ;;
+
+  help)
+    echo "MYC SYSTEM CLI"
+    echo ""
+    echo "Comandos disponibles:"
+    echo "  myc local     Levanta backend + frontend local"
+    echo "  myc tunnel    Levanta frontend conectado al API publico"
+    echo "  myc doctor    Revisa estado del proyecto"
+    echo "  myc status    Muestra procesos activos"
+    echo "  myc stop      Detiene backend y frontend"
+    echo "  myc restart   Reinicia local"
+    echo "  myc build     Valida backend, migraciones y frontend"
+    echo "  myc update    Actualiza dependencias/migraciones/build"
+    echo "  myc backup    Respalda base de datos"
+    echo "  myc clean     Limpia temporales"
+    echo "  myc menu      Abre menu interactivo"
+    ;;
+
+  *)
+    echo "Comando no reconocido: $1"
+    echo "Usa: myc help"
+    exit 1
+    ;;
+esac

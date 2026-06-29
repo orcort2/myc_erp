@@ -33,10 +33,20 @@ export const fieldSheetStatusLabels = {
 
 export const certificateStatusLabels = {
   draft: 'Borrador',
+  expected: 'Esperado',
+  field_sheet_ready: 'Hoja lista',
+  capture_pending: 'Pendiente captura',
+  capture_in_progress: 'En captura',
+  ready_for_quality: 'Listo para calidad',
   generated: 'Generado',
   quality_review: 'En revision',
+  quality_rejected: 'Rechazado calidad',
   correction_requested: 'Correccion solicitada',
+  quality_approved: 'Aprobado calidad',
   approved: 'Aprobado',
+  pdf_pending: 'PDF pendiente',
+  pdf_uploaded: 'PDF subido',
+  released_to_client: 'Liberado al cliente',
   released: 'Liberado',
   cancelled: 'Cancelado',
   suspended: 'Suspendido'
@@ -100,47 +110,42 @@ export const certificateTypeLabels = {
 
 export const certificateTabs = [
   { key: 'pending', label: 'Pendientes' },
+  { key: 'capture', label: 'Captura' },
   { key: 'review', label: 'En revision' },
   { key: 'approved', label: 'Aprobados' },
+  { key: 'pdf', label: 'PDF' },
   { key: 'released', label: 'Liberados' },
   { key: 'all', label: 'Todos' }
 ];
 
 export const certificateActions = [
-  { key: 'generate', nextStatus: 'generated', label: 'Generar' },
-  { key: 'quality', nextStatus: 'quality_review', label: 'Enviar a calidad' },
-  { key: 'request-correction', nextStatus: 'correction_requested', label: 'Solicitar correccion' },
-  { key: 'draft', nextStatus: 'draft', label: 'Regresar a borrador' },
-  { key: 'approve', nextStatus: 'approved', label: 'Aprobar' },
-  { key: 'release', nextStatus: 'released', label: 'Liberar' },
+  { key: 'start-capture', nextStatus: 'capture_in_progress', label: 'Iniciar captura' },
+  { key: 'send-to-quality', nextStatus: 'ready_for_quality', label: 'Enviar a calidad' },
+  { key: 'quality-reject', nextStatus: 'quality_rejected', label: 'Rechazar calidad' },
+  { key: 'quality-approve', nextStatus: 'quality_approved', label: 'Aprobar calidad' },
+  { key: 'release-to-client', nextStatus: 'released_to_client', label: 'Liberar cliente' },
   { key: 'suspend', nextStatus: 'suspended', label: 'Suspender' }
 ];
 
 export const certificateTransitions = {
-  draft: new Set(['generated', 'suspended']),
-  generated: new Set([
-    'quality_review',
-    'suspended',
-    'correction_requested'
-  ]),
-  quality_review: new Set([
-    'approved',
-    'suspended',
-    'correction_requested'
-  ]),
-  correction_requested: new Set([
-    'draft',
-    'generated',
-    'suspended'
-  ]),
-  approved: new Set([
-    'released',
-    'suspended',
-    'correction_requested'
-  ]),
+  draft: new Set(['expected', 'capture_pending', 'suspended']),
+  expected: new Set(['field_sheet_ready', 'capture_pending', 'capture_in_progress', 'suspended']),
+  field_sheet_ready: new Set(['capture_pending', 'capture_in_progress', 'suspended']),
+  capture_pending: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
+  capture_in_progress: new Set(['ready_for_quality', 'quality_rejected', 'suspended']),
+  ready_for_quality: new Set(['quality_review', 'quality_approved', 'quality_rejected', 'suspended']),
+  generated: new Set(['quality_review', 'quality_rejected', 'suspended']),
+  quality_review: new Set(['quality_approved', 'quality_rejected', 'suspended']),
+  quality_rejected: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
+  correction_requested: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
+  quality_approved: new Set(['pdf_pending', 'pdf_uploaded', 'released_to_client', 'suspended']),
+  approved: new Set(['pdf_pending', 'pdf_uploaded', 'released_to_client', 'suspended']),
+  pdf_pending: new Set(['pdf_uploaded', 'released_to_client', 'suspended']),
+  pdf_uploaded: new Set(['released_to_client', 'suspended']),
+  released_to_client: new Set([]),
   released: new Set([]),
   cancelled: new Set([]),
-  suspended: new Set(['draft'])
+  suspended: new Set(['capture_pending'])
 };
 
 export const certificateReadyFieldSheetStatuses = new Set(['completed', 'under_review', 'approved']);
@@ -150,6 +155,7 @@ export const qualityTabs = [
   { key: 'pending', label: 'Pendientes' },
   { key: 'review', label: 'En revision' },
   { key: 'approved', label: 'Aprobados' },
+  { key: 'pdf', label: 'PDF' },
   { key: 'released', label: 'Liberados' },
   { key: 'suspended', label: 'Suspendidos' }
 ];

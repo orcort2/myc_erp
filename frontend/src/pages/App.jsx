@@ -8,10 +8,12 @@ import { formatModuleDateTime } from '../utils/formatters.js';
 import { getCurrentPath, navigate } from '../utils/routing.js';
 import CertificatesPage from './CertificatesPage.jsx';
 import ClientsPage from './ClientsPage.jsx';
+import CapturePage from './CapturePage.jsx';
 import DashboardHome from './DashboardHome.jsx';
 import DocumentLibraryPage from './DocumentLibraryPage.jsx';
 import EquipmentPage from './EquipmentPage.jsx';
 import FieldSheetsPage from './FieldSheetsPage.jsx';
+import FlowTestPage from './FlowTestPage.jsx';
 import LoginPage from './LoginPage.jsx';
 import ModulePage from './ModulePage.jsx';
 import ProceduresPage from './ProceduresPage.jsx';
@@ -20,6 +22,7 @@ import QuotationsPage from './QuotationsPage.jsx';
 import ServiceOrdersPage from './ServiceOrdersPage.jsx';
 import SettingsPage from './SettingsPage.jsx';
 import StandardsPage from './StandardsPage.jsx';
+import UncertaintyPage from './UncertaintyPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -140,6 +143,8 @@ export function App() {
         <FieldSheetsPage module={selectedModule} timestamp={now} />
       ) : selectedModule?.key === 'certificates' ? (
         <CertificatesPage />
+      ) : selectedModule?.key === 'capture' ? (
+        <CapturePage />
       ) : selectedModule?.key === 'quality' ? (
         <QualityPage />
       ) : selectedModule?.key === 'documentLibrary' ? (
@@ -148,6 +153,10 @@ export function App() {
         <StandardsPage />
       ) : selectedModule?.key === 'procedures' ? (
         <ProceduresPage />
+      ) : selectedModule?.key === 'uncertainty' ? (
+        <UncertaintyPage />
+      ) : selectedModule?.key === 'flowTest' ? (
+        <FlowTestPage />
       ) : selectedModule?.key === 'settings' ? (
         <SettingsPage />  
       ) : selectedModule ? (

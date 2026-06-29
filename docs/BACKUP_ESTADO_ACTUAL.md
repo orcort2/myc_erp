@@ -1,6 +1,6 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-26 17:05:51 CST
+Ultima actualizacion: 2026-06-29 15:59:18 CST
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 Ruta actual del proyecto
 /Users/saulcortes/Desktop/myc_erp
@@ -18,46 +18,240 @@ Estado Git verificado:
 M backend/app/core/permissions.py
 M backend/app/main.py
 M backend/app/models/__init__.py
-M backend/app/models/reference_standard.py
-M backend/app/schemas/reference_standard.py
+M backend/app/models/calibration_procedure.py
+M backend/app/models/certificate.py
+M backend/app/models/field_sheet.py
+M backend/app/routers/certificates.py
+M backend/app/routers/service_orders.py
+M backend/app/schemas/calibration_procedure.py
+M backend/app/schemas/certificate.py
+M backend/app/services/calibration_procedures.py
+M backend/app/services/certificates.py
 M backend/app/services/field_sheets.py
-M backend/app/services/reference_standards.py
 M docs/BACKUP_ESTADO_ACTUAL.md
+M frontend/src/constants/forms.js
 M frontend/src/constants/navigation.js
+M frontend/src/constants/statuses.js
 M frontend/src/pages/App.jsx
-M frontend/src/pages/ServiceOrdersPage.jsx
-M frontend/src/pages/StandardsPage.jsx
+M frontend/src/pages/ProceduresPage.jsx
+M frontend/src/pages/QualityPage.jsx
 M frontend/src/services/api.js
 M frontend/src/styles/global.css
-?? backend/app/models/controlled_document.py
-?? backend/app/models/reference_standard_certificate.py
-?? backend/app/routers/document_interpretations.py
-?? backend/app/routers/documents.py
-?? backend/app/routers/operational_engines.py
-?? backend/app/routers/pattern_selection.py
-?? backend/app/routers/reference_standard_certificates.py
-?? backend/app/routers/technical_profiles.py
-?? backend/app/schemas/controlled_document.py
-?? backend/app/schemas/operational_engine.py
-?? backend/app/schemas/pattern_selection.py
-?? backend/app/schemas/reference_standard_certificate.py
-?? backend/app/services/calculation_engine.py
-?? backend/app/services/certificate_preparation_engine.py
-?? backend/app/services/controlled_documents.py
-?? backend/app/services/document_interpretations.py
-?? backend/app/services/document_selection_engine.py
-?? backend/app/services/folio_engine.py
-?? backend/app/services/label_engine.py
-?? backend/app/services/operational_flow.py
-?? backend/app/services/pattern_selection_engine.py
-?? backend/app/services/reference_standard_certificates.py
-?? backend/app/services/standards_validation_engine.py
-?? backend/app/services/technical_capture_engine.py
-?? backend/app/services/technical_profiles.py
-?? backend/migrations/versions/a2b3c4d5e6f7_add_reference_standard_certificates.py
-?? backend/migrations/versions/f1a2b3c4d5e6_add_documental_core.py
-?? frontend/src/pages/DocumentLibraryPage.jsx
+?? backend/app/models/uncertainty.py
+?? backend/app/routers/client_portal.py
+?? backend/app/routers/uncertainty.py
+?? backend/app/schemas/uncertainty.py
+?? backend/app/services/certificate_matching_engine.py
+?? backend/app/services/uncertainty_engine.py
+?? backend/migrations/versions/b3c4d5e6f7a8_add_uncertainty_engine.py
+?? backend/migrations/versions/c4d5e6f7a8b9_version_uncertainty_models.py
+?? backend/migrations/versions/d5e6f7a8b9c0_external_certificate_pdf_flow.py
+?? backend/migrations/versions/e6f7a8b9c0d1_allow_certificate_without_field_sheet.py
+?? frontend/src/pages/CapturePage.jsx
+?? frontend/src/pages/FlowTestPage.jsx
+?? frontend/src/pages/UncertaintyPage.jsx
+?? scripts/myc
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-06-29 15:59:18 CST - Reorientacion operativa a certificados externos PDF:
+Decision operativa:
+- Se cancela como prioridad la generacion automatica de certificados desde el Motor de Incertidumbre.
+- Los certificados finales se elaboran manualmente en Excel por Captura y se suben al ERP como PDF.
+- El Motor de Incertidumbre queda experimental/no bloqueante; completar hoja de campo ya no ejecuta ni exige calculo de incertidumbre.
+Flujo principal aprobado:
+- Cliente -> Cotizacion -> Orden de Servicio -> Orden de Trabajo PDF -> Alta de Equipos -> Folio esperado -> Hoja de Campo digital -> Captura Excel -> Calidad -> PDF final -> Matching documental -> Liberacion al cliente.
+Backend certificados externos:
+- `Certificate` ahora controla certificado esperado y PDF externo.
+- Campos agregados: `expected_folio`, `final_pdf_path`, `final_pdf_original_filename`, `final_pdf_uploaded_at`, `final_pdf_uploaded_by_id`, `capture_started_at`, `capture_started_by_id`, `sent_to_quality_at`, `sent_to_quality_by_id`, `quality_reviewed_at`, `quality_reviewed_by_id`, `quality_rejection_reason`, `released_to_client_at`, `released_to_client_by_id`, `external_source`, `match_status`, `match_details`, `client_visible`.
+- `certificates.field_sheet_id` ahora permite NULL para reservar folio/certificado esperado antes de tener hoja de campo.
+- Estados nuevos soportados: `expected`, `field_sheet_ready`, `capture_pending`, `capture_in_progress`, `ready_for_quality`, `quality_review`, `quality_rejected`, `quality_approved`, `pdf_pending`, `pdf_uploaded`, `released_to_client`, `cancelled`, `suspended`.
+- Estados legacy `generated`, `approved`, `released`, `correction_requested` se conservan/mapean para compatibilidad.
+Motor de matching documental:
+- Nuevo servicio `backend/app/services/certificate_matching_engine.py`.
+- Valida sin OCR pesado usando nombre de archivo y metadata: folio esperado, serie, identificacion interna, nombre de equipo y numero de orden de trabajo.
+- Resultado guarda `match_status` y `match_details` con score, checks, warnings y errores.
+- Estados de match: `pending`, `matched`, `warning`, `mismatch`, `manual_accepted`.
+Endpoints nuevos:
+- POST /api/certificates/{id}/start-capture
+- POST /api/certificates/{id}/send-to-quality
+- POST /api/certificates/{id}/quality-approve
+- POST /api/certificates/{id}/quality-reject
+- POST /api/certificates/{id}/upload-pdf
+- POST /api/certificates/{id}/validate-pdf-match
+- POST /api/certificates/{id}/release-to-client
+- POST /api/certificates/{id}/manual-accept-match
+- POST /api/service-orders/{id}/certificate-pdfs
+- GET /api/client-portal/quotations
+- GET /api/client-portal/service-orders
+- GET /api/client-portal/certificates
+- GET /api/client-portal/certificates/{id}/pdf
+Almacenamiento:
+- PDFs finales se guardan bajo `storage/certificados/{work_order_number}/`.
+- Se preserva nombre original en `final_pdf_original_filename`.
+Migraciones:
+- `backend/migrations/versions/d5e6f7a8b9c0_external_certificate_pdf_flow.py`.
+- `backend/migrations/versions/e6f7a8b9c0d1_allow_certificate_without_field_sheet.py`.
+- Base actual: `e6f7a8b9c0d1 (head)`.
+Auditoria:
+- `certificate.capture_started`
+- `certificate.sent_to_quality`
+- `certificate.quality_approved`
+- `certificate.quality_rejected`
+- `certificate.pdf_uploaded`
+- `certificate.pdf_match_validated`
+- `certificate.pdf_match_manual_accepted`
+- `certificate.released_to_client`
+- `certificate.bulk_pdf_upload`
+- `client_portal.certificate_downloaded`
+Frontend:
+- Nuevo modulo `Captura` en `/dashboard#captura`.
+- `CapturePage.jsx` lista certificados esperados, permite iniciar captura, enviar a calidad, cargar PDF individual, cargar PDFs masivos por orden y validar match.
+- `QualityPage.jsx` se actualizo para flujo externo: revisar listos para calidad, aprobar, rechazar, liberar al cliente y aceptar match manual.
+- `FlowTestPage.jsx` ahora valida Cliente -> Cotizacion -> Orden -> Equipo -> Hoja -> Folio esperado -> Captura -> Calidad -> PDF -> Match -> Cliente. Incertidumbre se muestra como experimental/no bloqueante.
+- `Incertidumbre` se mantiene como modulo experimental y ya no es parte obligatoria de la navegacion principal.
+- `api.js` ahora soporta upload multipart para PDFs y endpoints de matching/carga masiva.
+Portal cliente minimo:
+- Backend expone cotizaciones visibles, ordenes no canceladas y certificados con `client_visible=true`.
+- El cliente no ve hojas de campo desde estos endpoints.
+- Descarga de PDF registra auditoria `client_portal.certificate_downloaded`.
+Facturacion futura:
+- No se implemento timbrado CFDI ni PAC.
+- Se confirma preparacion existente de cliente/partidas para razon social, RFC, regimen fiscal, CP fiscal, uso CFDI, correo, domicilio, descripcion, cantidad, unidad interna, clave SAT, unidad SAT, precio, descuento, objeto impuesto, tasa IVA, subtotal/impuesto/total y moneda.
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app` -> OK.
+- `../venv/bin/alembic upgrade head` -> OK.
+- `../venv/bin/alembic current` -> `e6f7a8b9c0d1 (head)`.
+- `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"` -> `ERP MYC 29`.
+- OpenAPI -> 129 paths.
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `./scripts/myc build` -> OK.
+- `./scripts/myc doctor` -> OK.
+- `git diff --check` -> OK.
+Pendientes / limitaciones:
+- No se implemento timbrado CFDI, PAC, OCR pesado, lectura avanzada de PDFs, generacion automatica de certificados, editor Excel, firmas digitales, sellos anti plagio ni portal cliente avanzado.
+- Matching actual es documental basico por filename/metadata; queda preparado para OCR futuro.
+
+Actualizacion 2026-06-29 14:05:41 CST - Fase 3.1 refinamiento del motor de incertidumbre:
+Se refino el Motor de Incertidumbre para convertirlo en un motor versionable, aprobable, auditable y usable desde frontend para pruebas funcionales del flujo real.
+Arquitectura backend:
+- Se mantiene `UncertaintyModel` como entidad base del modelo metrologico.
+- Se agrego `UncertaintyModelVersion` como version tecnica aprobable del modelo.
+- Componentes y formulas ahora soportan `model_version_id` y quedan vinculados a una version especifica.
+- `UncertaintyCalculation` ahora guarda `uncertainty_model_version_id` ademas de `uncertainty_model_id`.
+- `UncertaintyModelException` ahora soporta `base_model_version_id` y `alternate_model_version_id`; las excepciones activas deben apuntar a version alterna aprobada.
+- `calibration_procedures` ahora soporta `uncertainty_model_version_id` para fijar version especifica o resolver automaticamente la version approved vigente desde el modelo.
+Migraciones:
+- `backend/migrations/versions/b3c4d5e6f7a8_add_uncertainty_engine.py` de Fase 3 sigue como base del motor inicial.
+- Nueva migracion `backend/migrations/versions/c4d5e6f7a8b9_version_uncertainty_models.py`.
+- Tablas nuevas: `uncertainty_model_versions`.
+- Campos nuevos: `uncertainty_components.model_version_id`, `uncertainty_formulas.model_version_id`, `calibration_procedures.uncertainty_model_version_id`, `uncertainty_model_exceptions.base_model_version_id`, `uncertainty_model_exceptions.alternate_model_version_id`, `uncertainty_calculations.uncertainty_model_version_id`.
+- La migracion mueve datos existentes de modelo/componentes/formulas hacia una version inicial por modelo.
+Reglas implementadas:
+- Solo versiones `approved` pueden usarse para calculos automaticos.
+- Versiones aprobadas no se editan directamente; se clonan para cambios.
+- Versiones `draft` pueden editarse.
+- Flujo de estados: `draft`, `in_review`, `approved`, `obsolete`, `archived`.
+- Enviar a revision, aprobar, obsoletar, archivar y clonar quedan auditados.
+- Los calculos historicos conservan snapshot con codigo de modelo, id/version exacta, estado al calcular, componentes, formulas, entradas, resultados, patron, certificado, incertidumbre, hoja, equipo y procedimiento.
+Endpoints nuevos/refinados:
+- GET /api/uncertainty/models
+- POST /api/uncertainty/models
+- GET /api/uncertainty/models/{model_id}
+- PATCH /api/uncertainty/models/{model_id}
+- GET /api/uncertainty/models/{model_id}/versions
+- POST /api/uncertainty/models/{model_id}/versions
+- GET /api/uncertainty/model-versions/{version_id}
+- PATCH /api/uncertainty/model-versions/{version_id}
+- POST /api/uncertainty/model-versions/{version_id}/submit-review
+- POST /api/uncertainty/model-versions/{version_id}/approve
+- POST /api/uncertainty/model-versions/{version_id}/obsolete
+- POST /api/uncertainty/model-versions/{version_id}/archive
+- POST /api/uncertainty/model-versions/{version_id}/clone
+- POST /api/uncertainty/model-versions/{version_id}/components
+- PATCH /api/uncertainty/components/{component_id}
+- DELETE /api/uncertainty/components/{component_id}
+- POST /api/uncertainty/model-versions/{version_id}/formulas
+- PATCH /api/uncertainty/formulas/{formula_id}
+- DELETE /api/uncertainty/formulas/{formula_id}
+- GET /api/uncertainty/exceptions
+- POST /api/uncertainty/exceptions
+- GET /api/uncertainty/field-sheets/{field_sheet_id}/preview
+Permisos:
+- Se agrego `uncertainty_models.approve`.
+- Calidad y Desarrollador pueden aprobar, obsoletar y archivar versiones.
+- Tecnico y Captura conservan ejecucion de preview/calculo, sin modificar modelos.
+Frontend:
+- Nueva pagina `frontend/src/pages/UncertaintyPage.jsx`.
+- Nuevo modulo/navegacion `Incertidumbre` en `/dashboard#incertidumbre`.
+- Permite listar modelos, crear modelo, ver versiones, crear version, agregar componentes, agregar formulas, enviar a revision, aprobar, obsoletar, clonar y probar preview con hoja de campo.
+- Nueva pagina `frontend/src/pages/FlowTestPage.jsx`.
+- Nuevo modulo/navegacion `Prueba de flujo` en `/dashboard#prueba-flujo`.
+- Permite auditar visualmente Cliente -> Cotizacion -> Orden -> Equipo -> Hoja -> Procedimiento -> Perfil -> Patron -> Certificado -> Modelo -> Version -> Preview.
+- La vista muestra mensajes claros cuando falta procedimiento, patron, certificado, version aprobada, resultados o incertidumbre aplicable.
+- `ProceduresPage.jsx` ahora permite asignar modelo de incertidumbre y version aprobada/resolucion automatica al procedimiento.
+- `api.js` queda extendido con endpoints del motor versionado y preview.
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app` -> OK.
+- `../venv/bin/alembic upgrade head` -> OK, aplico `c4d5e6f7a8b9`.
+- `../venv/bin/alembic current` -> `c4d5e6f7a8b9 (head)`.
+- `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"` -> `ERP MYC 28`.
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `./scripts/myc build` -> OK fuera del sandbox por conexion local a PostgreSQL.
+- `./scripts/myc doctor` -> OK fuera del sandbox; dentro del sandbox PostgreSQL local fue bloqueado con `Operation not permitted`.
+Pendientes / limitaciones:
+- No se implemento PDF final de certificado, firmas, sellos, QR, portal cliente, facturacion, OCR, lectura automatica de PDF ni editor visual avanzado tipo Excel.
+- La UI de incertidumbre es minima de prueba, no editor avanzado.
+- La auditoria visual depende de datos existentes capturados en el ERP; si faltan relaciones, la vista reporta el faltante.
+
+Actualizacion 2026-06-29 13:41:26 CST - Fase 3 motor de incertidumbre:
+Se implemento el Motor de Incertidumbre en backend, sin interfaz grafica completa, para calcular automaticamente incertidumbre desde hoja de campo, equipo, procedimiento, patron seleccionado, certificado vigente e incertidumbre aplicable.
+Backend nuevo:
+- Modelo `UncertaintyModel` en `backend/app/models/uncertainty.py`.
+- Modelo `UncertaintyComponent` para componentes configurables por modelo.
+- Modelo `UncertaintyFormula` para formulas configurables como expresiones seguras.
+- Modelo `UncertaintyModelException` para asociar un modelo alternativo por excepcion tecnica autorizada.
+- Modelo `UncertaintyCalculation` para guardar snapshot completo de entradas, componentes, formulas, resultados, advertencias y errores.
+- Campo `uncertainty_model_id` en `calibration_procedures` para resolver el modelo desde el servicio/procedimiento.
+- Relacion `FieldSheet.uncertainty_calculations`.
+Servicios:
+- `backend/app/services/uncertainty_engine.py`.
+- Preview no persistente por hoja de campo.
+- Calculo persistente automatico al completar una hoja de campo.
+- Evaluacion segura de expresiones con funciones permitidas: `sqrt`, `combined`, `expanded`, `average`, `abs`, `min`, `max`, `round`, `pow`.
+- Componentes automaticos iniciales soportados: incertidumbre del patron, resolucion del patron, resolucion del IBC, repetibilidad, valor fijo y expresion.
+- El calculo conserva trazabilidad: equipo, procedimiento, modelo, excepcion aplicada, patron, certificado, incertidumbre seleccionada, filas de medicion, componentes y formulas.
+Endpoints nuevos:
+- GET /api/uncertainty/models
+- POST /api/uncertainty/models
+- GET /api/uncertainty/models/{model_id}
+- PATCH /api/uncertainty/models/{model_id}
+- POST /api/uncertainty/models/{model_id}/components
+- PATCH /api/uncertainty/models/{model_id}/components/{component_id}
+- POST /api/uncertainty/models/{model_id}/formulas
+- PATCH /api/uncertainty/models/{model_id}/formulas/{formula_id}
+- GET /api/uncertainty/exceptions
+- POST /api/uncertainty/exceptions
+- GET /api/uncertainty/field-sheets/{field_sheet_id}/preview
+Permisos:
+- `uncertainty.execute`
+- `uncertainty_models.read`
+- `uncertainty_models.create`
+- `uncertainty_models.update`
+- `uncertainty_models.exception`
+- Tecnico y Captura pueden ejecutar preview/calculo.
+- Calidad y Desarrollador pueden configurar modelos y excepciones.
+Migracion:
+- `backend/migrations/versions/b3c4d5e6f7a8_add_uncertainty_engine.py`.
+- Ejecutada localmente con `../venv/bin/alembic upgrade head`.
+- Resultado: `Running upgrade a2b3c4d5e6f7 -> b3c4d5e6f7a8, add uncertainty engine`.
+- `../venv/bin/alembic current` -> `b3c4d5e6f7a8 (head)`.
+Validacion ejecutada:
+- desde backend: `../venv/bin/python -m compileall app` -> OK.
+- desde backend: `../venv/bin/python -c "from app.main import app; print(len(app.routes)); print('OK')"` -> 28, OK.
+- consulta DB de `UncertaintyModel` -> OK.
+Notas:
+- No se implemento editor visual de formulas, interfaz grafica completa, certificados, PDFs, sellos, firmas, liberacion ni flujo de Calidad/Captura.
+- `scripts/myc` sigue no rastreado y no fue modificado por esta fase.
 
 Actualizacion 2026-06-26 17:05:51 CST - Fase 2 motor de patrones, certificados de patron y selector inteligente:
 Se profundizo el modulo de patrones separando patron fisico de certificado metrologico vigente/historico, manteniendo compatibilidad con `reference_standards` y `reference_standard_uncertainties`.

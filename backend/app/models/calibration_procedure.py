@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import String, Text
+from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -18,6 +18,12 @@ class CalibrationProcedure(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base
     version: Mapped[str] = mapped_column(String(40), index=True, default="1.0")
     issuer_company: Mapped[str] = mapped_column(String(40), index=True, default="MYC")
     certificate_type: Mapped[str] = mapped_column(String(40), index=True, default="trazable")
+    uncertainty_model_id: Mapped[int | None] = mapped_column(
+        ForeignKey("uncertainty_models.id"), index=True
+    )
+    uncertainty_model_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("uncertainty_model_versions.id"), index=True
+    )
     required_readings: Mapped[int | None] = mapped_column()
     decision_rule: Mapped[str | None] = mapped_column(Text)
     acceptance_criteria: Mapped[str | None] = mapped_column(Text)
@@ -25,3 +31,5 @@ class CalibrationProcedure(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base
     status: Mapped[str] = mapped_column(String(40), index=True, default="draft")
 
     field_sheets: Mapped[list["FieldSheet"]] = relationship(back_populates="calibration_procedure")
+    uncertainty_model: Mapped["UncertaintyModel | None"] = relationship()
+    uncertainty_model_version: Mapped["UncertaintyModelVersion | None"] = relationship()

@@ -57,6 +57,11 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         cascade="all, delete-orphan",
         order_by="FieldSheetResult.section_key, FieldSheetResult.row_number",
     )
+    uncertainty_calculations: Mapped[list["UncertaintyCalculation"]] = relationship(
+        back_populates="field_sheet",
+        cascade="all, delete-orphan",
+        order_by="UncertaintyCalculation.created_at.desc()",
+    )
 
     @property
     def reference_standards(self) -> list["FieldSheetReferenceStandard"]:
