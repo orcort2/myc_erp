@@ -1769,8 +1769,9 @@ Variables visuales principales definidas en frontend/src/styles/global.css:
 La UI ya tiene CRUD visual inicial de Clientes y modulo Ventas/Cotizaciones con Catalogo MYC conectado al backend.
 Comandos de arranque
 Backend:
-cd /Users/saulcortes/Desktop/myc_erp
-venv/bin/uvicorn backend.app.main:app --reload
+usar este codigo de arrance con entorno activo:
+cd /Users/saulcortes/Desktop/myc_erp/backend
+../venv/bin/uvicorn app.main:app --reload
 Forma recomendada cuando se quiere activar el entorno y trabajar desde backend/:
 cd /Users/saulcortes/Desktop/myc_erp
 source venv/bin/activate
@@ -1783,6 +1784,16 @@ Frontend:
 cd /Users/saulcortes/Desktop/myc_erp/frontend
 npm install
 npm run dev
+
+para trabajar de forma local. (ambos codigos levantan front y back con los scipts)
+cd /Users/saulcortes/Desktop/myc_erp
+./scripts/start-local.sh
+se puede realizar fuera de entorno virtual 
+para levantarlo en tunel 
+cd /Users/saulcortes/Desktop/myc_erp
+./scripts/start-tunnel.sh
+
+
 Referencias documentales anexadas - 2026-06-24
 Se anexaron PDFs reales de referencia para la siguiente fase documental del ERP:
 /Users/saulcortes/Library/Containers/net.whatsapp.WhatsApp/Data/tmp/documents/B7C9F687-FA4B-4038-BD41-FF0ACFF9AADC/MERCEDES BENZ LOPES MATEOS..pdf
