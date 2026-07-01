@@ -25,7 +25,7 @@ class WorkOrderEquipmentLine:
     quantity: int
     description: str
     brand: str
-    model: str
+    internal_id: str
     serial_number: str
     certificate_folio: str
 
@@ -71,21 +71,19 @@ def _build_equipment_lines(service_order: ServiceOrder) -> list[WorkOrderEquipme
             None,
         )
 
-        lines.append(
-            WorkOrderEquipmentLine(
-                index=index,
-                quantity=1,
-                description=equipment.name or "Equipo",
-                brand=equipment.brand or "",
-                model=equipment.model or "",
-                serial_number=equipment.serial_number or "",
-                certificate_folio=(
-                    certificate.expected_folio
-                    or certificate.folio
-                    if certificate
-                    else ""
-                ),
-            )
+        WorkOrderEquipmentLine(
+            index=index,
+            quantity=1,
+            description=equipment.name or "Equipo",
+            brand=equipment.brand or "",
+            internal_id=equipment.internal_id or "",
+            serial_number=equipment.serial_number or "",
+            certificate_folio=(
+                certificate.expected_folio
+                or certificate.folio
+                if certificate
+                else ""
+            ),
         )
 
     while len(lines) < 10:
@@ -95,7 +93,7 @@ def _build_equipment_lines(service_order: ServiceOrder) -> list[WorkOrderEquipme
                 quantity=0,
                 description="",
                 brand="",
-                model="",
+                internal_id="",
                 serial_number="",
                 certificate_folio="",
             )

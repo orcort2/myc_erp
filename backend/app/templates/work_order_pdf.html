@@ -4,220 +4,536 @@
     <meta charset="UTF-8" />
     <style>
       @page {
-        margin: 18mm 14mm 20mm;
-        size: A4;
+        size: Letter landscape;
+        margin: 4mm;
       }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
-        color: #172033;
-        font-family: Arial, sans-serif;
+        margin: 0;
+        color: #000;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8.6px;
+        line-height: 1.22;
+      }
+
+      .folio-value {
+        color: #c00000;
         font-size: 11px;
-        margin: 0;
+        font-weight: 700;
       }
-      .header {
-        align-items: flex-start;
-        display: flex;
-        justify-content: space-between;
-        margin-bottom: 12px;
+
+      .page {
+        width: 100%;
       }
-      .brand {
-        display: flex;
-        gap: 12px;
+
+      .blue {
+        color: #0070c0;
       }
-      .brand img {
-        height: 64px;
-        width: auto;
+
+      .line-blue {
+        border-bottom: 1px solid #0070c0;
       }
-      .brand-copy h1 {
-        color: #0f3d73;
-        font-size: 22px;
-        margin: 0 0 4px;
+
+      .bold {
+        font-weight: 700;
       }
-      .brand-copy p {
-        margin: 0;
-      }
-      .folio-box {
-        border: 1px solid #0f3d73;
-        min-width: 140px;
-        padding: 10px 12px;
+
+      .center {
         text-align: center;
       }
-      .folio-box strong {
-        color: #b42318;
-        display: block;
-        font-size: 26px;
-        line-height: 1;
-        margin-top: 4px;
+
+      .right {
+        text-align: right;
       }
-      .detail-grid {
-        border: 1px solid #9cb2c9;
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        margin-bottom: 12px;
-      }
-      .detail-grid article {
-        border-right: 1px solid #d6e0ea;
-        border-top: 1px solid #d6e0ea;
-        min-height: 58px;
-        padding: 8px 10px;
-      }
-      .detail-grid article:nth-child(-n + 2) {
-        border-top: 0;
-      }
-      .detail-grid article:nth-child(2n) {
-        border-right: 0;
-      }
-      .label {
-        color: #667085;
-        display: block;
-        font-size: 10px;
-        font-weight: 700;
-        margin-bottom: 4px;
-        text-transform: uppercase;
-      }
+
       table {
         border-collapse: collapse;
         width: 100%;
       }
-      .items th,
-      .items td {
-        border: 1px solid #a7b7c7;
-        padding: 6px 7px;
+
+      .top-layout {
+        margin-bottom: 5px;
+      }
+
+      .top-layout td {
+        border: 0;
         vertical-align: top;
       }
-      .items th {
-        background: #eaf1f7;
-        font-size: 10px;
-        text-transform: uppercase;
+
+      .logo-cell {
+        width: 28%;
+        text-align: center;
+        padding-top: 5px;
       }
-      .items td {
-        height: 26px;
+
+      .logo {
+        max-width: 125px;
+        max-height: 78px;
       }
-      .section {
-        margin-top: 12px;
+
+      .header-cell {
+        width: 44%;
+        text-align: center;
+        padding-top: 7px;
       }
-      .section h2 {
-        color: #0f3d73;
-        font-size: 12px;
-        margin: 0 0 6px;
-        text-transform: uppercase;
+
+      .header-line {
+        border-top: 2px solid #0070c0;
+        margin: 0 auto 2px;
+        width: 82%;
       }
-      .box {
-        border: 1px solid #a7b7c7;
-        min-height: 56px;
-        padding: 8px 10px;
-        white-space: pre-wrap;
+
+      .doc-title {
+        color: #0070c0;
+        font-size: 10.5px;
+        font-weight: 700;
+        line-height: 1.05;
       }
-      .signatures {
-        display: grid;
-        gap: 10px;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        margin-top: 14px;
+
+      .company-title {
+        color: #0070c0;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1.05;
       }
-      .signature {
-        border: 1px solid #a7b7c7;
-        min-height: 84px;
-        padding: 8px 10px;
+
+      .company-address {
+        font-size: 7.5px;
+        font-weight: 700;
+        line-height: 1.18;
       }
-      .footer-note {
-        color: #475467;
-        font-size: 9px;
-        margin-top: 10px;
+
+      .spacer-cell {
+        width: 28%;
+      }
+
+      .info-grid {
+        margin-bottom: 8px;
+      }
+
+      .info-grid td {
+        border: 0;
+        height: 17px;
+        padding: 2px 2px 1px;
+        vertical-align: bottom;
+      }
+
+      .label {
+        font-size: 6.4px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .field-line {
+        border-bottom: 1px solid #0070c0;
+        display: inline-block;
+        min-height: 12px;
+        padding: 0 4px 2px;
+        vertical-align: bottom;
+      }
+
+      .field-date {
+        width: 175px;
+      }
+
+      .field-medium {
+        width: 160px;
+      }
+
+      .field-large {
+        width: 320px;
+      }
+
+      .field-small {
+        width: 80px;
+      }
+
+      .equipment-table {
+        margin-top: 2px;
+      }
+
+      .equipment-table th,
+      .equipment-table td {
+        border: 1px solid #000;
+      }
+
+      .equipment-table th {
+        background: #9dc3e6;
+        font-size: 5.2px;
+        font-weight: 700;
+        height: 24px;
+        text-align: center;
+        vertical-align: middle;
+      }
+
+      .equipment-table td {
+        font-size: 8.4px;
+        height: 21px;
+        padding: 3px 4px;
+        vertical-align: middle;
+      }
+
+      .col-num {
+        width: 2.5%;
+        background: #9dc3e6;
+        font-weight: 700;
+        text-align: center;
+      }
+
+      .col-instrumento {
+        width: 32%;
+      }
+
+      .col-marca {
+        width: 15%;
+      }
+
+      .col-identificacion {
+        width: 13%;
+      }
+
+      .col-serie {
+        width: 16%;
+      }
+
+      .col-informe {
+        width: 16%;
+      }
+
+      .col-general-title {
+        width: 5.5%;
+      }
+
+      .estado-head {
+        font-size: 4.4px !important;
+        line-height: 1;
+      }
+
+      .estado-sub {
+        width: 2.75%;
+        font-size: 5px !important;
+      }
+
+      .observaciones-row td {
+        height: 28px;
+        font-size: 6px;
+        padding: 1px 3px;
+        vertical-align: top;
+      }
+
+      .signature-table {
+        margin-top: 4px;
+      }
+
+      .signature-table td {
+        border: 0;
+        font-size: 5.5px;
+        text-align: center;
+        vertical-align: bottom;
+      }
+
+      .signature-line {
+        border-bottom: 1px solid #0070c0;
+        height: 22px;
+        margin: 0 auto 2px;
+        width: 72%;
+      }
+
+      .received-line {
+        border-bottom: 1px solid #0070c0;
+        display: inline-block;
+        height: 9px;
+        width: 180px;
+      }
+
+      .conformidad {
+        border-bottom: 1px solid #0070c0;
+        font-size: 5.6px;
+        font-weight: 700;
+        margin-top: 4px;
+        padding-bottom: 1px;
+      }
+
+      .estado-note {
+        font-size: 5.4px;
+        font-weight: 700;
+        margin-top: 1px;
+      }
+
+      .conditions-title {
+        color: #0070c0;
+        font-size: 7px;
+        font-weight: 700;
+        margin: 8px 0 4px;
+        text-align: center;
+      }
+
+      .definition {
+        font-size: 5.9px;
+        line-height: 1.18;
+        margin-bottom: 5px;
+        text-align: justify;
+        white-space: normal;
+      }
+
+      .conditions-table td {
+        border: 0;
+        font-size: 6.4px;
+        line-height: 1.22;
+        padding: 1px 0;
+        text-align: justify;
+        vertical-align: top;
+      }
+
+      .condition-number {
+        width: 15px;
+        text-align: right !important;
+        padding-right: 3px !important;
+      }
+
+      .accept-block {
+        float: right;
+        font-size: 6.4px;
+        margin-right: 28px;
+        margin-top: -8px;
+        text-align: center;
+        width: 175px;
+      }
+
+      .accept-line {
+        border-bottom: 1px solid #0070c0;
+        height: 19px;
+        margin-bottom: 2px;
+      }
+
+      .footer {
+        font-size: 7px;
+        font-weight: 700;
+        line-height: 1.1;
+        margin-top: 8px;
+        text-align: center;
       }
     </style>
   </head>
+
   <body>
-    <header class="header">
-      <div class="brand">
-        {% if logo_uri %}
-        <img alt="MYC" src="{{ logo_uri }}" />
-        {% endif %}
-        <div class="brand-copy">
-          <h1>ORDEN DE TRABAJO</h1>
-          <p>Metrología y Servicios MYC</p>
-          <p>Recepción, control y salida de equipos</p>
-        </div>
-      </div>
-      <div class="folio-box">
-        OT
-        <strong>{{ service_order.work_order_number }}</strong>
-      </div>
-    </header>
-
-    <section class="detail-grid">
-      <article>
-        <span class="label">Fecha</span>
-        <strong>{{ service_order.created_at|date }}</strong>
-      </article>
-      <article>
-        <span class="label">Orden de servicio</span>
-        <strong>{{ service_order.folio }}</strong>
-      </article>
-      <article>
-        <span class="label">Cliente</span>
-        <strong>{{ client.commercial_name or client.legal_name }}</strong>
-      </article>
-      <article>
-        <span class="label">Atención</span>
-        <strong>{{ contact.name if contact else client.commercial_name or client.legal_name }}</strong>
-      </article>
-      <article>
-        <span class="label">Dirección</span>
-        <strong>{{ client_address or '-' }}</strong>
-      </article>
-      <article>
-        <span class="label">Agenda / servicio</span>
-        <strong>{{ service_order.agenda_date|date }} / {{ service_order.service_date|date }}</strong>
-      </article>
-    </section>
-
-    <table class="items">
-      <thead>
+    <main class="page">
+      <table class="top-layout">
         <tr>
-          <th style="width: 6%">#</th>
-          <th style="width: 8%">Cant.</th>
-          <th>Descripción</th>
-          <th style="width: 16%">Marca</th>
-          <th style="width: 16%">Modelo</th>
-          <th style="width: 16%">No. serie</th>
-          <th style="width: 16%">Folio cert.</th>
+          <td class="logo-cell">
+            {% if logo_uri %}
+            <img class="logo" src="{{ logo_uri }}" alt="MYC" />
+            {% else %}
+            <div class="bold">MYC</div>
+            {% endif %}
+          </td>
+
+          <td class="header-cell">
+            <div class="header-line"></div>
+            <div class="doc-title">ORDEN DE TRABAJO FPV-01</div>
+            <div class="company-title">Metrologia y Servicios MYC</div>
+            <div class="company-address">
+              Av. Cristóbal Colón 6086, Int. 57, San Pedro Tlaquepaque,
+              Jalisco C.P. 45601<br />
+              TEL: 33 5009 2659, CEL: 33 1398 8169
+            </div>
+          </td>
+
+          <td class="spacer-cell"></td>
         </tr>
-      </thead>
-      <tbody>
-        {% for line in equipment_lines %}
+      </table>
+
+      <table class="info-grid">
         <tr>
-          <td>{{ line.index }}</td>
-          <td>{{ line.quantity if line.quantity else '' }}</td>
-          <td>{{ line.description }}</td>
-          <td>{{ line.brand }}</td>
-          <td>{{ line.model }}</td>
-          <td>{{ line.serial_number }}</td>
-          <td>{{ line.certificate_folio }}</td>
+          <td style="width: 34%">
+            <span class="label">FECHA DE RECEPCION:</span>
+            <span class="field-line field-date">{{ service_order.created_at|date }}</span>
+          </td>
+          <td style="width: 34%">
+            <span class="label">FECHA DE ENTREGA:</span>
+            <span class="field-line field-date">{{ service_order.service_date|date }}</span>
+          </td>
+          <td style="width: 32%">
+            <span class="label">FOLIO:</span>
+            <span class="field-line field-medium folio-value">{{ service_order.work_order_number }}</span>
+          </td>
         </tr>
-        {% endfor %}
-      </tbody>
-    </table>
 
-    <section class="section">
-      <h2>Observaciones</h2>
-      <div class="box">{{ service_order.notes or 'Sin observaciones registradas.' }}</div>
-    </section>
+        <tr>
+          <td colspan="2">
+            <span class="label">EMPRESA/CLIENTE:</span>
+            <span class="field-line field-large">
+              {{ client.commercial_name or client.legal_name or "" }}
+            </span>
+          </td>
+          <td>
+            <span class="label">ATENCIÓN:</span>
+            <span class="field-line field-medium">
+              {{ contact.name if contact else "" }}
+            </span>
+          </td>
+        </tr>
 
-    <section class="signatures">
-      <article class="signature">
-        <span class="label">Recibió</span>
-      </article>
-      <article class="signature">
-        <span class="label">Responsable MYC</span>
-        <strong>{{ service_order.technician.full_name if service_order.technician else 'Por definir' }}</strong>
-      </article>
-      <article class="signature">
-        <span class="label">Cotización / pedido</span>
-        <strong>{{ service_order.quotation.folio if service_order.quotation else '-' }}</strong>
-      </article>
-    </section>
+        <tr>
+          <td colspan="2">
+            <span class="label">DOMICILIO:</span>
+            <span class="field-line field-large">{{ client_address or "" }}</span>
+          </td>
+          <td>
+            <span class="label">C.P:</span>
+            <span class="field-line field-small"></span>
+            <span class="label">CIUDAD:</span>
+            <span class="field-line field-small"></span>
+            <span class="label">ESTADO:</span>
+            <span class="field-line field-small"></span>
+          </td>
+        </tr>
+      </table>
 
-    <p class="footer-note">
-      Documento operativo interno para control de recepción y trazabilidad documental del servicio.
-    </p>
+      <table class="equipment-table">
+        <thead>
+          <tr>
+            <th rowspan="2" class="col-num">Nº</th>
+            <th rowspan="2" class="col-instrumento">INSTRUMENTO</th>
+            <th rowspan="2" class="col-marca">MARCA</th>
+            <th rowspan="2" class="col-identificacion">IDENTIFICACIÓN</th>
+            <th rowspan="2" class="col-serie">SERIE</th>
+            <th rowspan="2" class="col-informe">N° DE IFORME</th>
+            <th colspan="2" class="col-general-title estado-head">ESTADO GENERAL</th>
+          </tr>
+          <tr>
+            <th class="estado-sub">√</th>
+            <th class="estado-sub">*</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {% for line in equipment_lines %}
+          <tr>
+            <td class="col-num">{{ line.index }}</td>
+            <td>{{ line.description }}</td>
+            <td>{{ line.brand }}</td>
+            <td>{{ line.internal_id }}</td>
+            <td>{{ line.serial_number }}</td>
+            <td>{{ line.certificate_folio }}</td>
+            <td></td>
+            <td></td>
+          </tr>
+          {% endfor %}
+          <tr class="observaciones-row">
+            <td colspan="8">
+              <span class="bold">OBSERVACIONES:</span>
+              {{ service_order.notes or "" }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <table class="signature-table">
+        <tr>
+          <td style="width: 33%">
+            <div class="signature-line"></div>
+            <span class="bold">RECIBIO:</span>
+          </td>
+          <td style="width: 34%">
+            <div class="signature-line"></div>
+            <span class="bold">NOMBRE Y FIRMA DEL CLIENTE:</span>
+          </td>
+          <td style="width: 33%">
+            <span class="bold">ORDEN DE COMPRA /COTIZACIÓN</span>
+            <span class="received-line">
+              {{ service_order.quotation.folio if service_order.quotation else "" }}
+            </span>
+          </td>
+        </tr>
+      </table>
+
+      <div class="conformidad">RECIBÍ DE CONFORMIDAD INFORMES Nº</div>
+      <div class="estado-note">
+        ESTADO GENERAL √ = BUENO, ESTADO GENERAL * = MALO
+      </div>
+
+      <div class="conditions-title">CONDICIONES DEL SERVICIO</div>
+
+      <div class="definition">
+        <span class="bold">CALIBRACION (SEGÚN NMX-Z55)</span>
+        OPERACIÓN QUE BAJO CONDICIONES ESPECIFICADAS ESTABLECE, EN UNA PRIMERA
+        ETAPA, UNA RELACION ENTRE LOS VALORES Y SUS INCERTIDUMBRES DE MEDIDA
+        ASOCIADAS OBTENIDAS A PARTIR DE LOS PATRONES DE MEDIDA, Y LAS
+        CORRESPONDIENTES INDICACIONES CON SUS INCERTIDUMBRES ASOCIADAS Y EN UNA
+        SEGUNDA ETAPA, UTILIZA ESTA INFORMACION PARA ESTABLECER UNA RELACION
+        QUE PERMITA OBTENER UN RESULTADO DE MEDIDA A PARTIR DE UNA INDICACION.
+        POR LO TANTO, LA CALIBRACION NO INCLUYE LIMPIEZA, MANTENIMIENTO
+        PREVENTIVO/CORRECTIVO, REPARACION, NI AJUSTES.
+      </div>
+
+      <table class="conditions-table">
+        <tr>
+          <td class="condition-number">1.-</td>
+          <td>TIEMPO DE ENTREGA DEL SERVICIO ORDINARIO DE VERIFICACION O CALIBRACION : DE 3 A 5 DIAS HABILES A PARTIR DE LA RECEPCION DE SUS EQUIPOS.</td>
+        </tr>
+        <tr>
+          <td class="condition-number">2.-</td>
+          <td>TIEMPO DE ENTREGA DE SERVICIO URGENTE DE VERIFICACION O CALIBRACION: DE 1 A 2 DIAS HABILES A PARTIR DE LA RECEPCION DE SUS EQUIPOS, PREVIO ACUERDO, GENERAN UN CARGO ADICIONAL QUE SE COTIZARA POR SEPARADO</td>
+        </tr>
+        <tr>
+          <td class="condition-number">3.-</td>
+          <td>AJUSTES, REPARACIONES Y CAMBIO DE PARTES GENERAN UN CARGO ADICIONAL Y SE COTIZARA POR SEPARADO, EL TIEMPO DE ENTREGA DEPENDERA DEL SERVICIO A REALIZAR Y SERA ADICIONAL AL DE CALIBRACIÓN</td>
+        </tr>
+        <tr>
+          <td class="condition-number">4.-</td>
+          <td>SI REQUIERE EL SERVICIO DE MANTENIMIENTO PREVENTIVO, CORRECTIVO, REPARACION, VERIFICACION O CALIBRACION CON GARANTIA SOLICITELO EN LA COTIZACION.</td>
+        </tr>
+        <tr>
+          <td class="condition-number">5.-</td>
+          <td>NOSOTROS REALIZAMOS SUS SERVICIOS SIN CARGO EXTRA DENTRO DE LA ZONA METROPOLITANA DE GUADALAJARA JALISCO, TODO SERVICIO FUERA DEL AREA METROPOLITANA REQUIERE UN COSTO ADICIONAL</td>
+        </tr>
+        <tr>
+          <td class="condition-number">6.-</td>
+          <td>EL CLIENTE ES RESPONSABLE DE LOS DAÑOS Y/O VICIOS OCULTOS DEL EQUIPO O LOS QUE PUEDAN RESULTAR EN EL TRANSPORTE DE IDA Y VUELTA O LOS QUE RESULTEN EN EL PROCESO DE VERIFICACIÓN O CALIBRACIÓN</td>
+        </tr>
+        <tr>
+          <td class="condition-number">7.-</td>
+          <td>ES INDISPENSABLE RECIBIR SU AUTORIZACION DEL SERVICIO POR MEDIO DE ORDEN DE COMPRA O COTIZACION FIRMADA</td>
+        </tr>
+        <tr>
+          <td class="condition-number">8.-</td>
+          <td>NOSOTROS SOMOS RESPONSABLE DE LOS DAÑOS CAUSADOS POR INADECUADA OPERACIÓN Y/O MANEJO DEL (LOS) EQUIPO (S) Y LA RESPONSABILIDAD SERA LIMITADA AL COSTO DEL SERVICIO COTIZADO, Y/O LA REPARACIÓN Y/O LA REPOSICIÓN DEL EQUIPO SEGÚN DECIDAMOS</td>
+        </tr>
+        <tr>
+          <td class="condition-number">9.-</td>
+          <td>EL CLIENTE ES RESPONSABLE DE INDICAR LAS MEDIDAS Y/O EQUIPOS DE SEGURIDAD QUE NUESTRO PERSONAL DEBA CUMPLIR PARA LAS VERIFICACIONES O CALIBRACIONES EN SITIO, PREVIO AL SERVICIO COTIZADO</td>
+        </tr>
+        <tr>
+          <td class="condition-number">10.-</td>
+          <td>LOS INFORMES SE ENTREGAN DE 2 A 5 DIAS HABILES DESPUES DE REALIZAR EL SERVICIO DE VERIFICACION O CALIBRACION, LA REIMPRESION DE INFORMES TIENE UN COSTO EXTRA DE $350.00 Y DE ETIQUETAS DE $100.00</td>
+        </tr>
+        <tr>
+          <td class="condition-number">11.-</td>
+          <td>EN VERIFICACIONES O CALIBRACIONES EN SITIO, EL CLIENTE DEBERA PROPORCIONAR PERSONAL GUIA Y DE APOYO PARA DESMONTAR Y MONTAR LOS EQUIPOS A CALIBRAR, ASI MISMO DEBERA PROPORCIONAR UN ESPACIO ADECUADO CON LAS CONDICIONES AMBIENTALES Y DE SUMINISTRO NECESARIAS.</td>
+        </tr>
+        <tr>
+          <td class="condition-number">12.-</td>
+          <td>TODO MATERIAL E INSTRUMENTOS QUE PERMANEZCAN POR MAS DE 30 DIAS SE REMATARAN PARA RECUPERAR COSTOS SIN PREVIO AVISO AL CLIENTE, CORRIENDO A PARTIR DE LA FECHA DE RECEPCIÓN</td>
+        </tr>
+        <tr>
+          <td class="condition-number">13.-</td>
+          <td>CUALQUIER ERROR U OMISION DETECTADA EN LA COTIZACION O EN LA ORDEN DE TRABAJO SE DEBERA CORREGIR Y OMITIR LA COTIZACION U ORDEN DE TRABAJO ERRONEA.</td>
+        </tr>
+        <tr>
+          <td class="condition-number">14.-</td>
+          <td>FORMA DE PAGO: CONTRA ENTREGA DE INFORMES Y ETIQUETAS</td>
+        </tr>
+      </table>
+
+      <div class="accept-block">
+        <div>ACEPTO NOMBRE Y FIRMA</div>
+        <div class="accept-line"></div>
+      </div>
+    </main>
   </body>
 </html>
