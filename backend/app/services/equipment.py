@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -12,10 +12,15 @@ from app.schemas.equipment import (
     EquipmentUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.models.certificate import Certificate
+from app.models.quotation import QuotationItem
+from app.schemas.certificate import CertificateCreate
+from app.services.certificates import create_certificate
 
 
 COMPLETED_STATUSES = {"calibrated", "labeled", "not_done"}
 TERMINAL_STATUSES = {"labeled", "not_done", "cancelled"}
+MAX_EQUIPMENT_PER_SERVICE_ORDER = 10
 ALLOWED_TRANSITIONS = {
     "registered": {"realizing", "not_done", "cancelled"},
     "realizing": {"calibrated", "not_done", "cancelled"},
@@ -64,7 +69,6 @@ def _ensure_service_order_item(
             detail="Partida de orden de servicio no encontrada",
         )
 
-
 def sync_service_order_equipment_counts(db: Session, service_order_id: int) -> None:
     total_equipment = db.scalar(
         select(func.count(Equipment.id)).where(
@@ -108,6 +112,67 @@ def get_equipment(db: Session, equipment_id: int) -> Equipment:
         )
     return equipment
 
+def _certificate_type_from_service_order_item(
+    db: Session,
+    service_order_item_id: int | None,
+) -> str | None:
+    if service_order_item_id is None:
+        return None
+
+    service_item = db.get(ServiceOrderItem, service_order_item_id)
+    if service_item is None or service_item.quotation_item_id is None:
+        return None
+
+    quotation_item = db.get(QuotationItem, service_item.quotation_item_id)
+    if quotation_item is None:
+        return None
+
+    if quotation_item.commodity != "calibration":
+        return None
+
+    if quotation_item.calibration_scope == "accredited_iso_17025":
+        return "acreditado"
+
+    return "trazable"
+
+
+def _ensure_expected_certificate_for_equipment(
+    db: Session,
+    equipment: Equipment,
+    *,
+    user_id: int | None = None,
+) -> None:
+    exists = db.scalar(
+        select(Certificate.id).where(
+            Certificate.equipment_id == equipment.id,
+            Certificate.is_active.is_(True),
+        )
+    )
+    if exists is not None:
+        return
+
+    certificate_type = _certificate_type_from_service_order_item(
+        db,
+        equipment.service_order_item_id,
+    )
+
+    if certificate_type is None:
+        return
+
+    create_certificate(
+        db,
+        CertificateCreate(
+            service_order_id=equipment.service_order_id,
+            equipment_id=equipment.id,
+            field_sheet_id=None,
+            certificate_type=certificate_type,
+            issued_on=date.today(),
+            title=f"Certificado esperado - {equipment.name}",
+            notes="Certificado esperado creado automáticamente desde alta de equipo.",
+        ),
+        user_id=user_id,
+    )
+
 
 def create_equipment(
     db: Session, payload: EquipmentCreate, *, user_id: int | None = None
@@ -116,9 +181,39 @@ def create_equipment(
     _ensure_service_order_item(
         db, payload.service_order_id, payload.service_order_item_id
     )
+    active_equipment = db.scalar(
+        select(func.count(Equipment.id)).where(
+            Equipment.service_order_id == payload.service_order_id,
+            Equipment.is_active.is_(True),
+        )
+    )
+    if int(active_equipment or 0) >= MAX_EQUIPMENT_PER_SERVICE_ORDER:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta Orden de Trabajo ya tiene 10 equipos. Crea otra OT para continuar.",
+        )
     equipment = Equipment(**payload.model_dump(), status="registered")
     db.add(equipment)
     db.flush()
+
+    certificate_type = _certificate_type_from_service_order_item(
+        db,
+        equipment.service_order_item_id,
+    )
+
+    if certificate_type:
+        create_certificate(
+            db,
+            CertificateCreate(
+                service_order_id=equipment.service_order_id,
+                equipment_id=equipment.id,
+                field_sheet_id=None,
+                certificate_type=certificate_type,
+                notes="Certificado esperado generado automaticamente al dar de alta el equipo.",
+            ),
+            user_id=user_id,
+        )
+
     sync_service_order_equipment_counts(db, equipment.service_order_id)
     write_audit_log(
         db,

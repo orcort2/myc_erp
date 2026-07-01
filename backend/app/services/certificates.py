@@ -16,6 +16,8 @@ from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
 from app.models.service_order import ServiceOrder
 from app.schemas.certificate import (
+    CertificateBatchActionItemRead,
+    CertificateBatchActionRead,
     CertificateBulkUploadRead,
     CertificateCreate,
     CertificatePdfUploadRead,
@@ -23,11 +25,12 @@ from app.schemas.certificate import (
     CertificateUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.certificate_authentication import authenticate_certificate_pdf
 from app.services.certificate_matching_engine import validate_certificate_pdf_match
 
 
 TERMINAL_STATUSES = {"released_to_client", "released", "cancelled"}
-CAPTURE_READY_STATUSES = {"expected", "field_sheet_ready", "capture_pending", "quality_rejected", "correction_requested"}
+CAPTURE_READY_STATUSES = {"expected", "field_sheet_ready", "capture_pending", "quality_rejected", "correction_requested", "returned_to_technician"}
 QUALITY_READY_STATUSES = {"ready_for_quality", "quality_review"}
 QUALITY_APPROVED_STATUSES = {"quality_approved", "approved", "pdf_pending", "pdf_uploaded"}
 
@@ -48,9 +51,10 @@ ALLOWED_TRANSITIONS = {
     "ready_for_quality": {"quality_review", "quality_approved", "quality_rejected", "cancelled", "suspended"},
     "quality_review": {"quality_approved", "quality_rejected", "cancelled", "suspended"},
     "quality_rejected": {"capture_in_progress", "ready_for_quality", "cancelled", "suspended"},
+    "returned_to_technician": {"capture_in_progress", "ready_for_quality", "cancelled", "suspended"},
     "quality_approved": {"pdf_pending", "pdf_uploaded", "released_to_client", "suspended"},
     "pdf_pending": {"pdf_uploaded", "released_to_client", "suspended"},
-    "pdf_uploaded": {"released_to_client", "suspended"},
+    "pdf_uploaded": {"ready_for_quality", "released_to_client", "suspended"},
     "released_to_client": set(),
     "cancelled": set(),
     "suspended": {"capture_pending", "cancelled"},
@@ -299,6 +303,8 @@ def change_status(
         return quality_approve(db, certificate_id, payload, user_id=user_id)
     if new_status == "quality_rejected":
         return quality_reject(db, certificate_id, payload, user_id=user_id)
+    if new_status == "returned_to_technician":
+        return return_to_technician(db, certificate_id, payload, user_id=user_id)
     if new_status == "released_to_client":
         return release_to_client(db, certificate_id, payload, user_id=user_id)
     if new_status == "pdf_pending":
@@ -347,11 +353,15 @@ def send_to_quality(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
-    if certificate.status not in {"capture_in_progress", "capture_pending", "quality_rejected", "correction_requested"}:
+    if certificate.status not in {"capture_in_progress", "capture_pending", "pdf_uploaded", "quality_rejected", "correction_requested"}:
         raise HTTPException(status_code=409, detail="El certificado no puede enviarse a calidad desde este estado")
+    if not certificate.final_pdf_path:
+        raise HTTPException(status_code=409, detail="No se puede enviar a calidad sin PDF cargado")
     now = datetime.now(timezone.utc)
     certificate.sent_to_quality_at = now
     certificate.sent_to_quality_by_id = user_id
+    if certificate.service_order and certificate.service_order.status in {"capture", "technical_review", "in_progress"}:
+        certificate.service_order.status = "quality_review"
     return _set_status(
         db,
         certificate,
@@ -414,6 +424,40 @@ def quality_reject(
     )
 
 
+def return_to_technician(
+    db: Session,
+    certificate_id: int,
+    payload: CertificateStatusChange | None = None,
+    *,
+    user_id: int | None = None,
+) -> Certificate:
+    certificate = get_certificate(db, certificate_id)
+    if certificate.status not in {"capture_in_progress", "ready_for_quality", "quality_review", "quality_rejected", "pdf_uploaded"}:
+        raise HTTPException(status_code=409, detail="El certificado no puede regresarse al tecnico desde este estado")
+    reason = (payload.reason or payload.comment) if payload else None
+    if not reason or not reason.strip():
+        raise HTTPException(status_code=422, detail="El motivo de regreso al tecnico es obligatorio")
+    certificate.quality_rejection_reason = reason.strip()
+    if certificate.field_sheet is not None:
+        certificate.field_sheet.status = "returned_to_technician"
+        certificate.field_sheet.returned_to_technician_at = datetime.now(timezone.utc)
+        certificate.field_sheet.returned_to_technician_by_id = user_id
+        certificate.field_sheet.returned_to_technician_reason = reason.strip()
+    return _set_status(
+        db,
+        certificate,
+        "returned_to_technician",
+        action="certificate.returned_to_technician",
+        user_id=user_id,
+        comment=reason.strip(),
+        extra_values={
+            "reason": reason.strip(),
+            "field_sheet_id": certificate.field_sheet_id,
+            "field_sheet_status": "returned_to_technician" if certificate.field_sheet_id else None,
+        },
+    )
+
+
 def _safe_filename(name: str) -> str:
     return "".join(char if char.isalnum() or char in ".-_" else "_" for char in name).strip("._") or "certificado.pdf"
 
@@ -453,7 +497,17 @@ def upload_certificate_pdf(
     certificate.final_pdf_original_filename = original
     certificate.final_pdf_uploaded_at = now
     certificate.final_pdf_uploaded_by_id = user_id
-    certificate.status = "pdf_uploaded" if certificate.status in QUALITY_APPROVED_STATUSES else certificate.status
+    if certificate.status in {
+        "expected",
+        "field_sheet_ready",
+        "capture_pending",
+        "capture_in_progress",
+        "quality_rejected",
+        "returned_to_technician",
+    }:
+        certificate.status = "pdf_uploaded"
+    elif certificate.status in QUALITY_APPROVED_STATUSES:
+        certificate.status = "pdf_uploaded"
     result = validate_certificate_pdf_match(certificate, original)
     certificate.match_status = result["status"]
     certificate.match_details = result
@@ -546,6 +600,7 @@ def release_to_client(
     if certificate.match_status not in {"matched", "manual_accepted", "warning"}:
         raise HTTPException(status_code=409, detail="El PDF no tiene match aceptable")
     now = datetime.now(timezone.utc)
+    authenticate_certificate_pdf(db, certificate, user_id=user_id)
     certificate.client_visible = True
     certificate.released_to_client_at = now
     certificate.released_to_client_by_id = user_id
@@ -579,7 +634,17 @@ def bulk_upload_certificate_pdfs(
     user_id: int | None = None,
 ) -> CertificateBulkUploadRead:
     certificates = list_certificates(db, service_order_id=service_order_id)
+    if not certificates:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No hay certificados esperados para asociar PDFs.",
+        )
     pending = [item for item in certificates if item.status != "released_to_client"]
+    if not pending:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No hay certificados pendientes para asociar PDFs.",
+        )
     results: list[CertificatePdfUploadRead] = []
     used: set[int] = set()
     for upload in uploads:
@@ -627,6 +692,180 @@ def bulk_upload_certificate_pdfs(
     )
     db.commit()
     return summary
+
+
+def authenticate_certificates_for_service_order(
+    db: Session,
+    service_order_id: int,
+    *,
+    user_id: int | None = None,
+) -> CertificateBatchActionRead:
+    certificates = list_certificates(db, service_order_id=service_order_id)
+    results: list[CertificateBatchActionItemRead] = []
+    authenticated = 0
+    skipped = 0
+    errors = 0
+    allowed_statuses = QUALITY_APPROVED_STATUSES | {"quality_approved", "approved"}
+
+    for certificate in certificates:
+        folio = certificate.expected_folio or certificate.folio
+        if certificate.authenticated_pdf_path:
+            skipped += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=certificate.id,
+                    folio=folio,
+                    status="skipped",
+                    authenticated_pdf_path=certificate.authenticated_pdf_path,
+                    error="Ya tiene PDF autenticado",
+                )
+            )
+            continue
+        if (
+            not certificate.final_pdf_path
+            or certificate.status not in allowed_statuses
+            or certificate.match_status not in {"matched", "warning", "manual_accepted"}
+        ):
+            skipped += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=certificate.id,
+                    folio=folio,
+                    status="skipped",
+                    error="No cumple condiciones para autenticacion masiva",
+                )
+            )
+            continue
+        try:
+            updated = authenticate_certificate_pdf(db, certificate, user_id=user_id)
+            db.commit()
+            authenticated += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=updated.id,
+                    folio=folio,
+                    status="authenticated",
+                    authenticated_pdf_path=updated.authenticated_pdf_path,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - batch mode must continue per certificate.
+            db.rollback()
+            errors += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=certificate.id,
+                    folio=folio,
+                    status="error",
+                    error=str(exc),
+                )
+            )
+
+    return CertificateBatchActionRead(
+        service_order_id=service_order_id,
+        authenticated=authenticated,
+        skipped=skipped,
+        errors=errors,
+        results=results,
+    )
+
+
+def release_authenticated_certificates_for_service_order(
+    db: Session,
+    service_order_id: int,
+    *,
+    user_id: int | None = None,
+) -> CertificateBatchActionRead:
+    certificates = list_certificates(db, service_order_id=service_order_id)
+    results: list[CertificateBatchActionItemRead] = []
+    released = 0
+    skipped = 0
+    errors = 0
+
+    for certificate in certificates:
+        folio = certificate.expected_folio or certificate.folio
+        if certificate.client_visible or certificate.status == "released_to_client":
+            skipped += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=certificate.id,
+                    folio=folio,
+                    status="skipped",
+                    authenticated_pdf_path=certificate.authenticated_pdf_path,
+                    error="Ya esta liberado al cliente",
+                )
+            )
+            continue
+        if (
+            not certificate.authenticated_pdf_path
+            or not certificate.final_pdf_path
+            or certificate.match_status not in {"matched", "warning", "manual_accepted"}
+            or certificate.status not in QUALITY_APPROVED_STATUSES
+        ):
+            skipped += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=certificate.id,
+                    folio=folio,
+                    status="skipped",
+                    authenticated_pdf_path=certificate.authenticated_pdf_path,
+                    error="No cumple condiciones para liberacion masiva",
+                )
+            )
+            continue
+        try:
+            now = datetime.now(timezone.utc)
+            previous_status = certificate.status
+            certificate.client_visible = True
+            certificate.released_to_client_at = now
+            certificate.released_to_client_by_id = user_id
+            certificate.released_on = date.today()
+            certificate.status = "released_to_client"
+            write_audit_log(
+                db,
+                action="certificate.released_to_client",
+                entity="certificates",
+                entity_id=certificate.id,
+                user_id=user_id,
+                previous_values={"status": previous_status, "client_visible": False},
+                new_values={"status": "released_to_client", "client_visible": True},
+            )
+            db.commit()
+            released += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=certificate.id,
+                    folio=folio,
+                    status="released",
+                    authenticated_pdf_path=certificate.authenticated_pdf_path,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - batch mode must continue per certificate.
+            db.rollback()
+            errors += 1
+            results.append(
+                CertificateBatchActionItemRead(
+                    certificate_id=certificate.id,
+                    folio=folio,
+                    status="error",
+                    authenticated_pdf_path=certificate.authenticated_pdf_path,
+                    error=str(exc),
+                )
+            )
+
+    service_order = db.get(ServiceOrder, service_order_id)
+    if service_order is not None and certificates:
+        refreshed = list_certificates(db, service_order_id=service_order_id)
+        if refreshed and all(item.status == "released_to_client" for item in refreshed):
+            service_order.status = "pending_payment" if service_order.requires_payment else "released"
+            db.commit()
+
+    return CertificateBatchActionRead(
+        service_order_id=service_order_id,
+        released=released,
+        skipped=skipped,
+        errors=errors,
+        results=results,
+    )
 
 
 def deactivate_certificate(

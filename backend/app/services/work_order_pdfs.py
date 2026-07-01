@@ -27,6 +27,7 @@ class WorkOrderEquipmentLine:
     brand: str
     model: str
     serial_number: str
+    certificate_folio: str
 
 
 def _filename(value: str) -> str:
@@ -56,18 +57,37 @@ def _client_address(client: Client) -> str:
 
 
 def _build_equipment_lines(service_order: ServiceOrder) -> list[WorkOrderEquipmentLine]:
-    lines = [
-        WorkOrderEquipmentLine(
-            index=index,
-            quantity=1,
-            description=equipment.name or "Equipo",
-            brand=equipment.brand or "",
-            model=equipment.model or "",
-            serial_number=equipment.serial_number or "",
+    lines = []
+
+    for index, equipment in enumerate(
+        [item for item in service_order.equipment if item.is_active],
+        start=1,
+    ):
+        certificate = next(
+            (
+                item for item in equipment.certificates
+                if item.is_active
+            ),
+            None,
         )
-        for index, equipment in enumerate(service_order.equipment, start=1)
-        if equipment.is_active
-    ]
+
+        lines.append(
+            WorkOrderEquipmentLine(
+                index=index,
+                quantity=1,
+                description=equipment.name or "Equipo",
+                brand=equipment.brand or "",
+                model=equipment.model or "",
+                serial_number=equipment.serial_number or "",
+                certificate_folio=(
+                    certificate.expected_folio
+                    or certificate.folio
+                    if certificate
+                    else ""
+                ),
+            )
+        )
+
     while len(lines) < 10:
         lines.append(
             WorkOrderEquipmentLine(
@@ -77,8 +97,10 @@ def _build_equipment_lines(service_order: ServiceOrder) -> list[WorkOrderEquipme
                 brand="",
                 model="",
                 serial_number="",
+                certificate_folio="",
             )
         )
+
     return lines[:10]
 
 

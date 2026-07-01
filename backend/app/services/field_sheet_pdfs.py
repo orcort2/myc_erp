@@ -60,6 +60,7 @@ def _render_html(field_sheet: FieldSheet) -> str:
     equipment = field_sheet.equipment
     service_order = equipment.service_order
     client = service_order.client
+    certificate = next((item for item in equipment.certificates if item.is_active), None)
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
         autoescape=select_autoescape(("html", "xml")),
@@ -76,6 +77,7 @@ def _render_html(field_sheet: FieldSheet) -> str:
         equipment=equipment,
         service_order=service_order,
         client=client,
+        certificate_folio=(certificate.expected_folio or certificate.folio) if certificate else "-",
         sections=_group_sections(field_sheet),
         checkbox=_checkbox,
         logo_uri=LOGO_PATH.as_uri() if LOGO_PATH.exists() else None,

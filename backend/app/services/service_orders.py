@@ -228,6 +228,15 @@ def update_service_order(
     previous_values = {key: getattr(service_order, key) for key in updates}
     for key, value in updates.items():
         setattr(service_order, key, value)
+    if (
+        service_order.status == "scheduled"
+        and service_order.agenda_date
+        and service_order.service_date
+        and service_order.technician_id
+    ):
+        previous_values.setdefault("status", "scheduled")
+        updates["status"] = "confirmed"
+        service_order.status = "confirmed"
     write_audit_log(
         db,
         action="service_order.updated",

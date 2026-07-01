@@ -15,6 +15,7 @@ FieldSheetStatus = Literal[
     "in_progress",
     "completed",
     "under_review",
+    "returned_to_technician",
     "approved",
     "rejected",
     "cancelled",
@@ -131,6 +132,9 @@ class FieldSheetRead(FieldSheetBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    returned_to_technician_at: datetime | None = None
+    returned_to_technician_by_id: int | None = None
+    returned_to_technician_reason: str | None = None
     results_rows: list[FieldSheetResultRead] = Field(default_factory=list)
     calibration_procedure: CalibrationProcedureRead | None = None
     reference_standards: list[FieldSheetReferenceStandardRead] = Field(default_factory=list)

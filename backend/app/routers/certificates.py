@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -20,12 +23,14 @@ from app.services.certificates import (
     quality_reject,
     release_to_client,
     request_correction,
+    return_to_technician,
     send_to_quality,
     start_capture,
     update_certificate,
     upload_certificate_pdf,
     validate_pdf_match,
 )
+from app.services.certificate_authentication import authenticate_certificate_pdf
 
 
 router = APIRouter(prefix="/certificates", tags=["certificates"])
@@ -126,6 +131,15 @@ def quality_reject_certificate(
     return quality_reject(db, certificate_id, payload)
 
 
+@router.post("/{certificate_id}/return-to-technician", response_model=CertificateRead)
+def return_certificate_to_technician(
+    certificate_id: int,
+    payload: CertificateStatusChange,
+    db: Session = Depends(get_db),
+) -> CertificateRead:
+    return return_to_technician(db, certificate_id, payload)
+
+
 @router.post("/{certificate_id}/upload-pdf", response_model=CertificateRead)
 def upload_certificate_final_pdf(
     certificate_id: int,
@@ -150,6 +164,49 @@ def release_certificate_to_client(
     db: Session = Depends(get_db),
 ) -> CertificateRead:
     return release_to_client(db, certificate_id, payload)
+
+
+@router.post("/{certificate_id}/authenticate", response_model=CertificateRead)
+def authenticate_certificate(
+    certificate_id: int,
+    db: Session = Depends(get_db),
+) -> CertificateRead:
+    certificate = get_certificate(db, certificate_id)
+    authenticate_certificate_pdf(db, certificate)
+    db.commit()
+    return get_certificate(db, certificate_id)
+
+
+@router.get("/{certificate_id}/authenticated-pdf")
+def get_authenticated_certificate_pdf(
+    certificate_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    certificate = get_certificate(db, certificate_id)
+    if not certificate.authenticated_pdf_path:
+        raise HTTPException(status_code=404, detail="El certificado aun no tiene PDF autenticado")
+    path = Path(certificate.authenticated_pdf_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="PDF autenticado no encontrado")
+    folio = certificate.expected_folio or certificate.folio
+    code = certificate.authentication_code or "sin-codigo"
+    filename = f"Certificado_{folio}_{code}.pdf"
+    return FileResponse(path, media_type="application/pdf", filename=filename)
+
+
+@router.get("/{certificate_id}/original-pdf")
+def get_original_certificate_pdf(
+    certificate_id: int,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    certificate = get_certificate(db, certificate_id)
+    if not certificate.final_pdf_path:
+        raise HTTPException(status_code=404, detail="El certificado aun no tiene PDF original")
+    path = Path(certificate.final_pdf_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="PDF original no encontrado")
+    filename = certificate.final_pdf_original_filename or f"Certificado_{certificate.expected_folio or certificate.folio}.pdf"
+    return FileResponse(path, media_type="application/pdf", filename=filename)
 
 
 @router.post("/{certificate_id}/manual-accept-match", response_model=CertificateRead)

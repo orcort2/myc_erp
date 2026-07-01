@@ -134,7 +134,6 @@ export async function getDashboardCounts() {
   const endpoints = [
     ['clients', '/clients'],
     ['quotations', '/quotations'],
-    ['serviceOrders', '/service-orders'],
     ['equipment', '/equipment'],
     ['fieldSheets', '/field-sheets']
   ];
@@ -148,14 +147,48 @@ export async function getDashboardCounts() {
 
   const certificates = await request('/certificates');
   const certificateItems = Array.isArray(certificates) ? certificates : [];
+  const serviceOrders = await request('/service-orders');
+  const serviceOrderItems = Array.isArray(serviceOrders) ? serviceOrders : [];
+  const fieldSheets = await request('/field-sheets');
+  const fieldSheetItems = Array.isArray(fieldSheets) ? fieldSheets : [];
+  const openServiceOrders = serviceOrderItems.filter((item) => !['closed', 'cancelled'].includes(item.status));
+  const etsProgressValues = openServiceOrders.map((order) => {
+    const stageChecks = [
+      Boolean(order.quotation_id),
+      Boolean(order.agenda_date),
+      order.total_equipment > 0,
+      certificateItems.some((certificate) => certificate.service_order_id === order.id),
+      certificateItems.some((certificate) => certificate.service_order_id === order.id && certificate.final_pdf_path),
+      certificateItems.some((certificate) => certificate.service_order_id === order.id && ['quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(certificate.status)),
+      certificateItems.some((certificate) => certificate.service_order_id === order.id && certificate.authenticated_pdf_path),
+      !order.requires_payment || ['released', 'closed'].includes(order.status),
+      order.status === 'closed'
+    ];
+    return Math.round((stageChecks.filter(Boolean).length / stageChecks.length) * 100);
+  });
+  const etsAverageProgress = etsProgressValues.length
+    ? Math.round(etsProgressValues.reduce((sum, value) => sum + value, 0) / etsProgressValues.length)
+    : 0;
 
   return {
     ...Object.fromEntries(results),
-    quality: certificateItems.filter((item) => ['generated', 'quality_review'].includes(item.status)).length,
+    serviceOrders: serviceOrderItems.length,
+    servicesScheduled: serviceOrderItems.filter((item) => ['scheduled', 'confirmed', 'called'].includes(item.status)).length,
+    servicesInProgress: serviceOrderItems.filter((item) => ['in_progress', 'technical_review', 'capture', 'quality_review'].includes(item.status)).length,
+    servicesClosed: serviceOrderItems.filter((item) => item.status === 'closed').length,
+    capturePending: certificateItems.filter((item) => ['expected', 'field_sheet_ready', 'capture_pending', 'capture_in_progress', 'quality_rejected'].includes(item.status)).length,
+    quality: certificateItems.filter((item) => ['ready_for_quality', 'quality_review'].includes(item.status)).length,
+    qualityPending: certificateItems.filter((item) => ['ready_for_quality', 'quality_review'].includes(item.status)).length,
+    certificatesToRelease: certificateItems.filter((item) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(item.status)).length,
+    billingPending: serviceOrderItems.filter((item) => item.status === 'pending_payment' || item.requires_payment).length,
     certificates: certificateItems.length,
-    certificatesReview: certificateItems.filter((item) => ['generated', 'quality_review'].includes(item.status)).length,
-    certificatesApproved: certificateItems.filter((item) => item.status === 'approved').length,
-    certificatesReleased: certificateItems.filter((item) => item.status === 'released').length
+    certificatesReview: certificateItems.filter((item) => ['ready_for_quality', 'quality_review'].includes(item.status)).length,
+    certificatesApproved: certificateItems.filter((item) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(item.status)).length,
+    certificatesReleased: certificateItems.filter((item) => item.status === 'released_to_client').length,
+    authenticationPending: certificateItems.filter((item) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(item.status) && !item.authenticated_pdf_path).length,
+    authenticatedCertificates: certificateItems.filter((item) => item.authenticated_pdf_path).length,
+    returnedToTechnician: fieldSheetItems.filter((item) => item.status === 'returned_to_technician').length,
+    etsAverageProgress
   };
 }
 
@@ -423,10 +456,60 @@ export async function manualAcceptCertificateMatch(certificateId, comment = null
   });
 }
 
+export async function authenticateCertificate(certificateId) {
+  return request(`/certificates/${certificateId}/authenticate`, {
+    method: 'POST'
+  });
+}
+
+export function getAuthenticatedCertificatePdfUrl(certificateId) {
+  return `${API_URL}/certificates/${certificateId}/authenticated-pdf`;
+}
+
+export function getOriginalCertificatePdfUrl(certificateId) {
+  return `${API_URL}/certificates/${certificateId}/original-pdf`;
+}
+
+export async function downloadAuthenticatedCertificatePdf(certificateId, folio = null, authenticationCode = null) {
+  const token = getAccessToken();
+  const headers = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(getAuthenticatedCertificatePdfUrl(certificateId), { headers });
+  if (!response.ok) {
+    let message = 'No se pudo descargar el PDF autenticado';
+    try {
+      const payload = await response.json();
+      message = typeof payload.detail === 'string' ? payload.detail : message;
+    } catch {
+      // Keep default message.
+    }
+    throw new Error(message);
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const filename =
+    getFilenameFromDisposition(disposition) ??
+    `Certificado_${sanitizePdfFilenamePart(folio ?? certificateId)}_${sanitizePdfFilenamePart(authenticationCode ?? 'autenticado')}.pdf`;
+  return { blob: await response.blob(), filename };
+}
+
 export async function bulkUploadCertificatePdfs(serviceOrderId, files) {
   const formData = new FormData();
   Array.from(files).forEach((file) => formData.append('files', file));
   return uploadRequest(`/service-orders/${serviceOrderId}/certificate-pdfs`, formData);
+}
+
+export async function authenticateApprovedCertificates(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/certificates/authenticate-approved`, {
+    method: 'POST'
+  });
+}
+
+export async function releaseAuthenticatedCertificates(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/certificates/release-authenticated`, {
+    method: 'POST'
+  });
 }
 
 export async function deleteCertificate(certificateId) {

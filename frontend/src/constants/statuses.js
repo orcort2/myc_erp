@@ -26,6 +26,7 @@ export const fieldSheetStatusLabels = {
   in_progress: 'En proceso',
   completed: 'Completada',
   under_review: 'En revision',
+  returned_to_technician: 'Devuelta a tecnico',
   approved: 'Aprobada',
   rejected: 'Rechazada',
   cancelled: 'Cancelada'
@@ -42,6 +43,7 @@ export const certificateStatusLabels = {
   quality_review: 'En revision',
   quality_rejected: 'Rechazado calidad',
   correction_requested: 'Correccion solicitada',
+  returned_to_technician: 'Devuelto a tecnico',
   quality_approved: 'Aprobado calidad',
   approved: 'Aprobado',
   pdf_pending: 'PDF pendiente',
@@ -122,6 +124,7 @@ export const certificateActions = [
   { key: 'start-capture', nextStatus: 'capture_in_progress', label: 'Iniciar captura' },
   { key: 'send-to-quality', nextStatus: 'ready_for_quality', label: 'Enviar a calidad' },
   { key: 'quality-reject', nextStatus: 'quality_rejected', label: 'Rechazar calidad' },
+  { key: 'return-to-technician', nextStatus: 'returned_to_technician', label: 'Regresar a tecnico' },
   { key: 'quality-approve', nextStatus: 'quality_approved', label: 'Aprobar calidad' },
   { key: 'release-to-client', nextStatus: 'released_to_client', label: 'Liberar cliente' },
   { key: 'suspend', nextStatus: 'suspended', label: 'Suspender' }
@@ -137,6 +140,7 @@ export const certificateTransitions = {
   generated: new Set(['quality_review', 'quality_rejected', 'suspended']),
   quality_review: new Set(['quality_approved', 'quality_rejected', 'suspended']),
   quality_rejected: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
+  returned_to_technician: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
   correction_requested: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
   quality_approved: new Set(['pdf_pending', 'pdf_uploaded', 'released_to_client', 'suspended']),
   approved: new Set(['pdf_pending', 'pdf_uploaded', 'released_to_client', 'suspended']),

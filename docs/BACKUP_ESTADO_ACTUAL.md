@@ -2112,3 +2112,833 @@ Aplicar permisos gradualmente en endpoints sensibles usando require_permission()
 Evaluar si role_id ya puede retirarse con migración dedicada o si se mantiene como compatibilidad controlada.
 Extender audit_logs a clientes, cotizaciones, ordenes, equipos y hojas de campo con el mismo nivel de detalle.
 Agregar selector mas inteligente de plantilla de hoja de campo antes del alta inicial cuando el flujo operativo lo requiera.
+
+---
+
+## Reestructuracion operativa hacia ETS y autenticacion PDF
+
+Fecha de actualizacion: 2026-06-30 10:41:28 CST
+
+Objetivo aplicado:
+- El flujo operativo visible se reoriento hacia Servicios / ETS como centro del ERP.
+- Los certificados siguen siendo externos y elaborados en Excel; el ERP controla expediente, estado, PDF final, matching, autenticacion y publicacion al cliente.
+- Procedimientos, Incertidumbre, Biblioteca Documental, Equipos, Hojas, Certificados, Captura, Calidad y Flow Test quedan fuera de la navegacion principal visible.
+
+Navegacion visible actual:
+- Dashboard
+- Clientes
+- Ventas / Cotizaciones
+- Catalogo MYC
+- Servicios
+- Patrones
+- Facturacion
+- Configuracion
+
+Dashboard:
+- Convertido a vista ejecutiva.
+- Muestra pendientes operativos:
+  - cotizaciones pendientes
+  - servicios programados
+  - servicios en proceso
+  - captura pendiente
+  - calidad pendiente
+  - certificados por liberar
+  - facturacion pendiente
+- Muestra indicadores:
+  - clientes activos
+  - servicios abiertos
+  - servicios cerrados
+  - certificados pendientes
+  - certificados liberados
+- Los accesos rapidos usan solo los modulos principales visibles.
+
+Servicios / ETS:
+- `frontend/src/pages/ServiceOrdersPage.jsx` se reoriento como Expediente Tecnico del Servicio.
+- El listado ahora muestra:
+  - Folio OS
+  - OT
+  - Cliente
+  - Estado
+  - Responsable
+  - Fecha
+  - Equipos
+  - Hojas
+  - Certificados esperados
+  - PDFs subidos
+  - Captura
+  - Calidad
+  - Avance
+  - Acciones
+- Filtros agregados:
+  - Todos
+  - Programados
+  - En proceso
+  - Captura
+  - Calidad
+  - PDF pendientes
+  - Liberados
+  - Facturacion pendiente
+  - Cerrados
+- Al abrir un ETS ahora se muestran pestañas:
+  - Resumen
+  - Equipos
+  - Hojas de Campo
+  - Captura
+  - Calidad
+  - Certificados
+  - Documentos
+  - Historial
+  - Facturacion
+- Equipos dentro del ETS muestran folio reservado, hoja de campo, certificado esperado y PDF final.
+- Captura dentro del ETS permite iniciar captura, subir PDF individual, subir multiples PDFs, validar match y enviar a calidad.
+- Calidad dentro del ETS permite aprobar, rechazar, aceptar match manual, autenticar y liberar.
+- Certificados dentro del ETS administran certificados externos con PDF original/autenticado, match, visibilidad cliente y codigo de autenticacion.
+
+Motor de Autenticacion de Certificados PDF:
+- Implementado `backend/app/services/certificate_authentication.py`.
+- Dependencias agregadas a `backend/requirements.txt`:
+  - `pypdf==6.4.1`
+  - `qrcode==8.2`
+  - `reportlab==4.4.6`
+- Campos nuevos en `certificates`:
+  - `authentication_code`
+  - `authentication_hash`
+  - `authenticated_pdf_path`
+  - `authenticated_pdf_generated_at`
+  - `authenticated_by_id`
+  - `verification_url`
+- Migracion nueva:
+  - `backend/migrations/versions/f7a8b9c0d1e2_add_certificate_authentication.py`
+- El PDF original se conserva en `final_pdf_path`.
+- El PDF autenticado se genera como archivo separado en `authenticated_pdf_path`.
+- Se calcula SHA-256 del PDF original.
+- Se imprime una capa de autenticacion sobre la ultima pagina con:
+  - codigo unico `MYC-AUTH-YYYY-000000`
+  - QR
+  - folio
+  - fecha de liberacion/autenticacion
+  - leyenda "Documento autenticado por MYC SYSTEM"
+  - hash SHA-256 original
+  - URL publica de verificacion
+- La liberacion al cliente ejecuta la autenticacion antes de marcar `client_visible=true`.
+- Endpoint interno nuevo:
+  - `POST /api/certificates/{certificate_id}/authenticate`
+- Endpoint publico nuevo:
+  - `GET /verify/{authentication_code}`
+- Respuesta publica de verificacion:
+  - valido/no valido
+  - folio
+  - cliente
+  - equipo
+  - serie
+  - estado
+  - fecha de autenticacion
+  - hash documental
+
+Portal cliente:
+- `backend/app/routers/client_portal.py` ahora entrega unicamente el PDF autenticado.
+- Si no existe `authenticated_pdf_path`, el certificado no se publica para descarga.
+- El cliente no recibe hoja de campo, captura, calidad, procedimientos ni incertidumbre.
+
+Configuracion:
+- `public_verify_base_url` agregado a `backend/app/core/config.py`.
+- Valor default:
+  - `https://api-erp.mycmetrology.com.mx`
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `npm run build`
+- `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"`
+- OpenAPI generado con 131 paths y `/verify/{authentication_code}` registrado.
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current`
+  - resultado: `f7a8b9c0d1e2 (head)`
+- Prueba aislada de estampado PDF:
+  - origen: `/tmp/myc-auth-test-original.pdf`
+  - autenticado: `/tmp/myc-auth-test-authenticated.pdf`
+  - resultado: PDF generado correctamente
+- `git diff --check`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+
+Observaciones:
+- Vite conserva advertencia no bloqueante de chunk mayor a 500 kB.
+- No se elimino backend ni migraciones de modulos no operativos.
+- El Motor de Incertidumbre permanece como experimental y fuera del flujo visible.
+- Procedimientos y Biblioteca Documental quedan ocultos de la navegacion principal.
+
+---
+
+## Refinamiento UX del ETS como expediente digital
+
+Fecha de actualizacion: 2026-06-30 11:10:21 CST
+
+Objetivo aplicado:
+- Servicios / ETS se refino para sentirse como expediente digital, no como modal tecnico con pestanas genericas.
+- La navegacion principal permanece limpia y no se reactivaron modulos ocultos.
+- Se mantienen ocultos:
+  - Procedimientos
+  - Incertidumbre
+  - Biblioteca Documental
+  - Equipos
+  - Hojas de Campo
+  - Certificados
+  - Captura
+  - Calidad
+  - Flow Test
+
+Cambios UX principales:
+- Las secciones internas del ETS ahora se presentan como carpetas visuales de expediente:
+  - Resumen
+  - Equipos
+  - Hojas de Campo
+  - Captura
+  - Calidad
+  - Certificados
+  - Documentos
+  - Historial
+  - Facturacion
+- La carpeta activa se destaca como seccion abierta.
+- En movil las carpetas se acomodan como lista vertical.
+- La fila del listado de Servicios mantiene apertura por click completo y se agrego hover/focus visible para indicar que abre el expediente.
+
+Dashboard:
+- Corregido calculo seguro para evitar `NaN`, especialmente en `Servicios abiertos`.
+- Los indicadores usan valores numericos seguros con fallback a `0`.
+- Se mantienen solo accesos principales visibles.
+
+Resumen ejecutivo del ETS:
+- Agregado tablero ejecutivo dentro de la carpeta Resumen.
+- Muestra:
+  - Cliente
+  - Folio OS
+  - Numero OT
+  - Cotizacion origen
+  - Responsable/asesor
+  - Fecha agenda
+  - Fecha servicio
+  - Estado actual
+  - Progreso global del expediente
+- Agregado indicador de avance por etapas:
+  - Cotizacion
+  - Agenda
+  - Equipos
+  - Hojas
+  - Captura
+  - Calidad
+  - PDF autenticado
+  - Facturacion
+  - Cierre
+- Contadores seguros agregados:
+  - Equipos totales
+  - Equipos completados
+  - Hojas creadas
+  - Hojas completadas
+  - Certificados esperados
+  - PDFs subidos
+  - PDFs autenticados
+  - Certificados liberados
+  - Pendientes Captura
+  - Pendientes Calidad
+  - Facturacion pendiente
+
+Captura dentro del ETS:
+- Agregado resumen superior con:
+  - Certificados esperados
+  - PDFs cargados
+  - PDFs pendientes
+  - Matches automaticos
+  - Warnings
+  - Mismatches
+  - Aceptados manualmente
+- Se conservan acciones:
+  - Iniciar captura
+  - Subir PDF individual
+  - Subir PDFs multiples
+  - Validar match
+  - Enviar a calidad
+- Se mantiene mensaje claro cuando no hay certificados esperados:
+  - "Crea certificados esperados desde Equipos para iniciar captura."
+
+Calidad dentro del ETS:
+- Agregado resumen superior con:
+  - Pendientes
+  - En revision
+  - Aprobados
+  - Rechazados
+  - Liberables
+  - Autenticados
+- Se conservan acciones:
+  - Aprobar
+  - Rechazar
+  - Aceptar match manual
+  - Autenticar
+  - Liberar al cliente
+
+Certificados dentro del ETS:
+- La carpeta Certificados ahora muestra:
+  - Folio
+  - Equipo
+  - Serie
+  - Identificacion
+  - Estado
+  - PDF original
+  - PDF autenticado
+  - Codigo de autenticacion
+  - Match
+  - Cliente visible
+  - Fecha autenticacion
+  - Acciones
+- Acciones agregadas:
+  - Ver PDF autenticado
+  - Descargar PDF autenticado
+  - Ver autenticacion
+  - Validar match
+  - Autenticar
+  - Liberar al cliente
+  - Suspender
+- Regla operativa aplicada:
+  - La accion principal de descarga usa unicamente PDF autenticado.
+  - El PDF original queda como insumo interno, no como documento final de descarga.
+
+Descarga de PDF autenticado:
+- Endpoint backend agregado:
+  - `GET /api/certificates/{certificate_id}/authenticated-pdf`
+- Devuelve:
+  - `application/pdf`
+  - archivo autenticado
+  - nombre sugerido `Certificado_{folio}_{codigo}.pdf`
+- Si no existe PDF autenticado responde error claro:
+  - "El certificado aun no tiene PDF autenticado"
+- Funciones frontend agregadas:
+  - `getAuthenticatedCertificatePdfUrl`
+  - `downloadAuthenticatedCertificatePdf`
+
+Ver autenticacion:
+- Accion agregada en la carpeta Certificados.
+- Muestra panel interno con:
+  - Codigo de autenticacion
+  - URL publica de verificacion
+  - Hash SHA-256
+  - Estado
+  - Fecha de autenticacion
+
+Documentos del ETS:
+- La carpeta Documentos se refino como repositorio documental del expediente.
+- Muestra:
+  - Cotizacion PDF como pendiente si no hay endpoint especifico conectado
+  - Orden de Trabajo PDF con ver/descargar/imprimir
+  - Hojas de campo internas
+  - Certificados PDF autenticados con ver/descargar
+  - PDFs pendientes
+  - Factura futura
+- Internamente se pueden ver hojas de campo; el portal cliente sigue sin exponerlas.
+
+Historial / Timeline:
+- La carpeta Historial ahora se presenta como linea de tiempo del expediente.
+- Eventos derivados del ETS:
+  - Cotizacion vinculada
+  - Orden creada
+  - Equipo registrado
+  - Hoja creada
+  - Hoja completada
+  - Certificado esperado
+  - Captura iniciada
+  - PDF subido
+  - Enviado a calidad
+  - Calidad aprobo/rechazo
+  - Certificado autenticado
+  - Liberado al cliente
+- Muestra fecha/hora, accion, entidad y descripcion.
+- Pendiente recomendado:
+  - conectar eventos completos desde `audit_logs` cuando se definan permisos/endpoint especifico de ETS.
+
+Estilo:
+- Agregados estilos de carpeta:
+  - `.ets-folder-tabs`
+  - `.ets-folder-tab`
+- Agregados badges y barras:
+  - `.ets-progress-panel`
+  - `.ets-progress-bar`
+  - `.ets-stage-strip`
+  - `.ets-metric-strip`
+  - `.ets-metric-badge`
+- Agregado panel de autenticacion:
+  - `.ets-auth-panel`
+- Agregado timeline:
+  - `.ets-timeline`
+  - `.ets-timeline-item`
+- Agregado hover/focus claro en filas de expediente.
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `npm run build`
+- `../venv/bin/alembic current`
+  - resultado: `f7a8b9c0d1e2 (head)`
+- `../venv/bin/python -c "from app.main import app; schema=app.openapi(); print(app.title, len(app.routes)); print('/api/certificates/{certificate_id}/authenticated-pdf' in schema['paths']); print('/verify/{authentication_code}' in schema['paths'])"`
+  - resultado: `ERP MYC 30`, endpoint autenticado `True`, verify `True`
+- `git diff --check`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+
+Limitaciones y pendientes:
+- Vite conserva advertencia no bloqueante de chunk mayor a 500 kB.
+- Cotizacion PDF queda como tarjeta documental pendiente de endpoint especifico si se requiere descarga directa desde ETS.
+- Timeline usa datos cargados del expediente; falta integrarlo con `audit_logs` para eventos de usuario completos y descargas del cliente.
+- `storage/certificados/7008/` aparece como directorio no versionado generado por operaciones/pruebas de almacenamiento; no se elimino para evitar perdida documental.
+
+---
+
+## MYC SYSTEM V2 - Alineacion operativa ETS
+
+Fecha de actualizacion: 2026-06-30 16:29:11 CST
+
+Vision aplicada:
+- MYC SYSTEM deja de tratarse como ERP tradicional y se alinea como Sistema Integral de Gestion Metrologica.
+- El objeto central sigue siendo el Expediente Tecnico de Servicio (ETS).
+- El flujo operativo oficial queda orientado a:
+  - Cliente
+  - Cotizacion
+  - Aceptacion
+  - ETS
+  - Agenda
+  - Alta de equipos
+  - Reserva automatica de folios
+  - Hoja de Campo
+  - Captura
+  - Calidad
+  - Autenticacion
+  - Facturacion
+  - Liberacion
+  - Cierre
+
+Certificado esperado automatico:
+- `backend/app/services/equipment.py` se limpio para evitar imports y funciones duplicadas.
+- El alta de equipo conserva la creacion automatica del certificado esperado cuando la partida corresponde a calibracion.
+- La reserva de folio MYCA/MYCT sigue delegada a `create_certificate`.
+- La UI del ETS no expone creacion manual de certificado; el folio reservado se muestra como dato operativo del equipo.
+
+Estado `returned_to_technician`:
+- Agregado a `CertificateStatus`.
+- Agregado a `FieldSheetStatus`.
+- La hoja queda editable nuevamente cuando esta en `returned_to_technician`.
+- `complete_field_sheet` acepta hojas en `returned_to_technician`.
+- Endpoint agregado:
+  - `POST /api/certificates/{certificate_id}/return-to-technician`
+- El motivo es obligatorio.
+- La accion registra auditoria:
+  - `certificate.returned_to_technician`
+- Si el certificado tiene hoja vinculada, la hoja pasa a:
+  - `returned_to_technician`
+- Frontend:
+  - etiqueta `Devuelto a tecnico`
+  - accion en Calidad `Regresar tecnico`
+  - prompt de motivo obligatorio antes de ejecutar la accion
+
+Calidad y autenticacion:
+- Calidad mantiene acciones de aprobar/rechazar/regresar a tecnico/autenticar/liberar.
+- La autenticacion ahora valida explicitamente:
+  - certificado aprobado por calidad
+  - PDF original cargado
+  - estado permitido
+- No se permite autenticar certificados en estados operativos previos.
+
+Sello de autenticacion redisenado:
+- `backend/app/services/certificate_authentication.py` cambio el sello de pie de pagina a banda lateral vertical.
+- Caracteristicas implementadas:
+  - banda lateral derecha
+  - ancho aproximado 12-15 mm
+  - presente en todas las paginas
+  - logo MYC si el asset esta disponible
+  - texto "Documento autenticado por MYC SYSTEM"
+  - codigo de autenticacion
+  - codigo de barras Code128
+  - QR
+  - adaptacion al tamano de pagina
+- Prueba aislada generada:
+  - `/tmp/myc-v2-auth-sideband.pdf`
+
+Orden de Trabajo:
+- Corregida plantilla `backend/app/templates/work_order_pdf.html`.
+- Se elimino HTML invalido que habia dejado `th` dentro de `header` y `td` dentro de `section`.
+- La tabla de equipos ahora incluye columna:
+  - `Folio cert.`
+- `backend/app/services/work_order_pdfs.py` conserva `certificate_folio` por equipo.
+
+Hoja de Campo:
+- `backend/app/services/field_sheet_pdfs.py` ahora resuelve el certificado esperado activo del equipo.
+- Plantillas actualizadas:
+  - `backend/app/templates/field_sheet_general_pdf.html`
+  - `backend/app/templates/field_sheet_electrical_pdf.html`
+- Se muestra:
+  - `Folio certificado`
+
+Frontend ETS:
+- Se mantiene arquitectura basada en ETS y no se reactivaron modulos ocultos.
+- Se conserva navegacion principal limpia.
+- Se agrego accion operativa para regresar a tecnico desde Calidad con motivo.
+- Las hojas devueltas a tecnico pueden volver a completarse desde el modal de hoja.
+
+API preservada:
+- No se eliminaron endpoints existentes.
+- Se agrego endpoint nuevo compatible:
+  - `POST /api/certificates/{certificate_id}/return-to-technician`
+- Se mantiene:
+  - `GET /api/certificates/{certificate_id}/authenticated-pdf`
+  - `GET /verify/{authentication_code}`
+
+Validaciones ejecutadas:
+- `../venv/bin/python -m compileall app`
+- `npm run build`
+- OpenAPI:
+  - `ERP MYC 30`
+  - `/api/certificates/{certificate_id}/return-to-technician`: `True`
+  - `/api/certificates/{certificate_id}/authenticated-pdf`: `True`
+- Prueba aislada de sello lateral:
+  - resultado: PDF generado correctamente
+- `git diff --check`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+- `../venv/bin/alembic current`
+  - resultado: `f7a8b9c0d1e2 (head)`
+
+Limitaciones y pendientes:
+- El Catalogo MYC aun no controla automaticamente todo el flujo por tipo/categoria/subcategoria de servicio.
+- Falta formalizar reglas de catalogo para:
+  - requiere equipos
+  - genera hojas de campo
+  - genera certificados
+  - requiere autenticacion
+  - tipo de folio
+  - documentos requeridos
+  - flujo operativo por servicio
+- Facturacion, encuestas y portal cliente V2 quedan pendientes de una fase dedicada.
+- Vite conserva advertencia no bloqueante de chunk mayor a 500 kB.
+- Directorios `storage/certificados/*` no versionados se conservaron para evitar perdida documental.
+
+---
+
+## Auditoria de flujo ETS y correccion urgente de sello PDF
+
+Fecha de actualizacion: 2026-07-01 10:18:58 CST
+
+Alcance:
+- Se respeto la arquitectura oficial de Fases 1 y 2.
+- No se agregaron modulos nuevos.
+- No se reactivaron modulos ocultos.
+- Se corrigieron bloqueos puntuales del flujo ETS y la autenticacion visual de certificados.
+
+Correccion urgente de PDF autenticado:
+- Archivo ajustado:
+  - `backend/app/services/certificate_authentication.py`
+- Se elimino el uso de sello inferior.
+- No hay referencias a `footer_y` ni `footer_height`.
+- El PDF autenticado ahora agrega una banda lateral derecha en un margen propio de la pagina.
+- La banda se aplica en todas las paginas.
+- Al ampliar el ancho de pagina antes de sellar, el contenido tecnico original no queda invadido.
+- La banda incluye:
+  - logo MYC cuando existe
+  - QR pequeno
+  - texto vertical `CERTIFICADO AUTENTICADO`
+  - `MYC SYSTEM`
+  - codigo `MYC-AUTH`
+  - folio
+  - codigo de barras Code128 vertical
+- El nombre del PDF autenticado ahora usa sufijo `_autenticado_lateral_` para evitar reutilizar archivos visualmente obsoletos.
+
+Flujo ETS corregido:
+- `backend/app/services/field_sheets.py`
+  - `labeled` ya no bloquea crear o editar hoja de campo.
+  - Solo `not_done` y `cancelled` bloquean hoja por equipo terminal.
+  - Al completar hoja se crea certificado esperado si no existe.
+  - Al completar hoja se vincula `field_sheet_id` al certificado esperado.
+  - Al completar hoja el certificado queda en `field_sheet_ready`.
+  - Al enviar hoja a Captura, el certificado queda en `capture_pending`.
+- `backend/app/services/certificates.py`
+  - `pdf_uploaded` puede transicionar a `ready_for_quality`.
+  - `send_to_quality` permite `pdf_uploaded` cuando ya existe PDF.
+  - `send_to_quality` bloquea envio a Calidad si no hay PDF cargado.
+  - Carga masiva de PDFs devuelve error claro si no hay certificados esperados o pendientes.
+
+Frontend ETS:
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+  - Se elimino `window.prompt` para devolver al tecnico.
+  - La devolucion al tecnico usa modal interno con motivo obligatorio.
+  - El ETS abierto se refresca con la version actualizada al recargar datos.
+  - Inputs de carga masiva, carga individual y reemplazo de PDF se limpian al finalizar para permitir reintentar el mismo archivo.
+- Validacion:
+  - `rg -n "window\\.confirm|window\\.alert|window\\.prompt|alert\\(|prompt\\(" frontend/src` no reporta prompts/alerts nativos.
+
+Validacion visual de PDF real:
+- PDF generado:
+  - `/tmp/myc-auth-sideband.pdf`
+- Imagenes renderizadas:
+  - `/tmp/myc-auth-sideband-1.png`
+  - `/tmp/myc-auth-sideband-2.png`
+- Resultado visual:
+  - pagina 1 sin sello inferior
+  - pagina 2 sin sello inferior
+  - banda lateral derecha presente en ambas paginas
+  - firmas, notas y contenido tecnico libres de invasion inferior
+- `pdftoppm` emitio advertencias de Fontconfig por cache no escribible, pero genero las imagenes correctamente.
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current`
+  - resultado: `a8b9c0d1e2f3 (head)`
+- OpenAPI:
+  - `ERP MYC 30`
+  - `/api/certificates/{certificate_id}/authenticated-pdf`: `True`
+  - `/verify/{authentication_code}`: `True`
+- `npm run build`
+  - OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+
+Limitaciones y pendientes:
+- No se hizo reset destructivo de DB ni de storage documental.
+- La prueba visual se realizo con PDF real temporal generado para validar layout del sello.
+- La matriz de permisos backend por rol sigue pendiente de endurecimiento formal; en esta fase se mantuvo control frontend y reglas operativas existentes.
+- Directorios `storage/certificados/*` no versionados se conservaron para evitar perdida documental.
+
+---
+
+## Ajuste funcional ETS - acciones masivas, hojas max 10 y documentos
+
+Fecha de actualizacion: 2026-07-01 10:57:25 CST
+
+Alcance:
+- Se mantuvo todo dentro de Servicios / ETS.
+- No se agregaron modulos nuevos.
+- No se reactivaron rutas de navegacion ocultas.
+- Se corrigieron acciones operativas para Calidad, Documentos, limites de OT y automatizaciones.
+
+Backend:
+- `backend/app/services/equipment.py`
+  - Se agrego limite operativo de 10 equipos activos por Orden de Trabajo.
+  - Al intentar crear el equipo 11 responde 409:
+    - `Esta Orden de Trabajo ya tiene 10 equipos. Crea otra OT para continuar.`
+- `backend/app/services/field_sheets.py`
+  - Al crear/abrir hoja, el equipo en `registered` pasa automaticamente a `realizing`.
+- `backend/app/services/service_orders.py`
+  - Al guardar agenda + fecha de servicio + tecnico, una orden `scheduled` pasa automaticamente a `confirmed`.
+- `backend/app/services/certificates.py`
+  - `send_to_quality` mueve la OT a `quality_review` cuando corresponde.
+  - Nuevo lote `authenticate_certificates_for_service_order`.
+  - Nuevo lote `release_authenticated_certificates_for_service_order`.
+  - Los lotes continuan aunque un certificado falle y devuelven resumen por folio.
+  - Al liberar todos los certificados, la OT avanza a `pending_payment` o `released` segun facturacion.
+- `backend/app/routers/service_orders.py`
+  - Nuevo endpoint:
+    - `POST /api/service-orders/{service_order_id}/certificates/authenticate-approved`
+  - Nuevo endpoint:
+    - `POST /api/service-orders/{service_order_id}/certificates/release-authenticated`
+- `backend/app/routers/certificates.py`
+  - Nuevo endpoint seguro para PDF original:
+    - `GET /api/certificates/{certificate_id}/original-pdf`
+- `backend/app/schemas/certificate.py`
+  - Nuevos schemas de respuesta para acciones masivas:
+    - `CertificateBatchActionItemRead`
+    - `CertificateBatchActionRead`
+
+Frontend ETS:
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+  - Calidad ahora usa fila clickeable para abrir modal de revision.
+  - El modal de Calidad muestra:
+    - certificado
+    - equipo
+    - hoja vinculada
+    - PDF original
+    - match status
+    - match details
+    - estado actual
+    - historial minimo
+  - Acciones jerarquicas dentro del modal:
+    1. Ver PDF original
+    2. Validar match
+    3. Aceptar match manual
+    4. Aprobar / Rechazar
+    5. Regresar a tecnico
+    6. Autenticar
+    7. Liberar
+  - Se agregaron acciones masivas:
+    - `Autenticar aprobados`
+    - `Liberar autenticados`
+  - Las acciones masivas usan confirmacion interna y muestran resumen final.
+  - Equipos muestra:
+    - equipos esperados desde cotizacion
+    - equipos registrados
+    - capacidad OT `registrados / 10`
+    - hojas `X / 10`
+  - El boton `Agregar equipo` se deshabilita al llegar a 10 equipos.
+  - Resumen ETS deja de depender de `total_equipment` como si fuera conteo real y muestra registrados/esperados.
+  - Progreso global ETS ahora usa etapas reales:
+    - cotizacion
+    - agenda
+    - equipos
+    - hojas
+    - captura
+    - calidad
+    - autenticacion
+    - facturacion
+    - cierre
+  - Documentos se reorganizo como subcarpetas internas:
+    - Cotizacion
+    - Orden de trabajo
+    - Hojas de campo
+    - Certificados originales
+    - Certificados autenticados
+    - Evidencias
+    - Facturacion
+    - Cliente / administrativos
+  - Certificados originales y autenticados muestran conteos separados.
+  - Botones de descarga por lote quedan deshabilitados como `Proximamente` cuando no existe backend de ZIP.
+  - Hoja de Campo:
+    - patrones se marcan como opcionales.
+    - acciones de sugerir/validar patrones se despriorizan como opcionales.
+    - se agrego selector rapido de proxima calibracion:
+      - Manual
+      - 6 meses
+      - 12 meses
+      - 24 meses
+- `frontend/src/services/api.js`
+  - Nuevas funciones:
+    - `authenticateApprovedCertificates`
+    - `releaseAuthenticatedCertificates`
+    - `getOriginalCertificatePdfUrl`
+- `frontend/src/styles/global.css`
+  - Estilos para fila clickeable de Calidad, cinta de acciones y panel de match details.
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current`
+  - resultado: `a8b9c0d1e2f3 (head)`
+- OpenAPI:
+  - `ERP MYC 30`
+  - `/api/service-orders/{service_order_id}/certificates/authenticate-approved`: `True`
+  - `/api/service-orders/{service_order_id}/certificates/release-authenticated`: `True`
+  - `/api/certificates/{certificate_id}/original-pdf`: `True`
+- `rg -n "window\\.confirm|window\\.alert|window\\.prompt|alert\\(|prompt\\(" frontend/src`
+  - sin resultados
+- `git diff --check`
+- `npm run build`
+  - OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+
+Limitaciones y pendientes:
+- No se implemento ZIP de descarga masiva de documentos; los botones quedan como `Proximamente`.
+- No se hizo reset destructivo de DB ni se eliminaron archivos de `storage/certificados`.
+- La division automatica en varias OT para mas de 10 equipos queda para una fase posterior; por ahora se bloquea el equipo 11 con mensaje claro.
+
+---
+
+## Refinamiento post Fases 1 y 2 - Dashboard, ETS y trazabilidad
+
+Fecha de actualizacion: 2026-06-30 16:45:53 CST
+
+Alcance:
+- Se mantuvo la arquitectura oficial de Fases 1 y 2.
+- No se crearon modulos nuevos.
+- No se duplicaron funcionalidades.
+- Los cambios consolidan experiencia, trazabilidad y automatizacion dentro de Dashboard y ETS.
+
+Dashboard Ejecutivo:
+- Se separaron visualmente:
+  - centro de control operativo
+  - indicadores ejecutivos
+  - accesos rapidos
+- Agregado avance promedio del ETS como indicador principal.
+- Agregados indicadores operativos:
+  - Devueltos a tecnico
+  - Autenticacion pendiente
+  - Certificados autenticados
+- Los indicadores ya no representan solo conteos de tablas; ahora consideran estados reales del flujo.
+- Se agregaron estilos:
+  - `.dashboard-control-panel`
+  - `.dashboard-section-block`
+  - `.dashboard-progress-summary`
+  - `.dashboard-progress-bar`
+
+Trazabilidad formal de devolucion de hojas:
+- Nueva migracion:
+  - `backend/migrations/versions/a8b9c0d1e2f3_add_field_sheet_return_tracking.py`
+- Campos nuevos en `field_sheets`:
+  - `returned_to_technician_at`
+  - `returned_to_technician_by_id`
+  - `returned_to_technician_reason`
+- `FieldSheetRead` expone estos campos.
+- Al regresar un certificado/hoja al tecnico:
+  - la hoja vuelve a `returned_to_technician`
+  - queda editable
+  - se guarda usuario
+  - se guarda fecha
+  - se guarda motivo obligatorio
+  - se registra auditoria
+
+Automatizacion de flujo:
+- Al completar una hoja:
+  - el equipo pasa a `calibrated`
+  - el certificado esperado vinculado se asocia a la hoja
+  - el certificado pasa a `field_sheet_ready`
+- Al enviar la hoja a Captura:
+  - el certificado esperado vinculado pasa a `capture_pending`
+- Esto reduce decisiones manuales y mantiene el folio reservado dentro del expediente.
+
+Validaciones operativas:
+- Las hojas en `returned_to_technician` pueden guardarse y completarse nuevamente.
+- Se conserva integridad del flujo:
+  - no se permite autenticar sin PDF
+  - no se permite autenticar sin aprobacion de calidad
+  - el motivo de devolucion es obligatorio
+- Se mantuvieron endpoints existentes.
+
+Roles y visibilidad de acciones:
+- `ServiceOrdersPage` recibe el usuario actual.
+- Se agrego visibilidad de acciones por etapa:
+  - Administrador: ve todas las acciones.
+  - Tecnico: acciones tecnicas de equipos y hojas.
+  - Captura: acciones de PDF, matching y envio a calidad.
+  - Calidad: aprobar, rechazar, devolver a tecnico, aceptar match, autenticar y liberar.
+- La informacion del expediente sigue visible para continuidad operativa.
+- Las acciones que no corresponden a la etapa del rol se ocultan en frontend.
+
+UX del ETS:
+- Se ajusto texto de envio de hoja:
+  - `Enviar a Captura`
+- Se mantiene lectura continua del expediente sin sacar al usuario del ETS.
+- Se agrego soporte:
+  - `ESC` para cerrar ETS/modal activo.
+  - `ENTER` para confirmar en `ConfirmDialog`.
+
+Autenticacion dentro del flujo:
+- El estado de autenticacion queda reforzado en Dashboard y ETS mediante:
+  - autenticacion pendiente
+  - certificados autenticados
+  - datos del PDF autenticado
+  - enlace de verificacion existente
+- La autenticacion se mantiene como etapa entre Calidad y Liberacion.
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `npm run build`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current`
+  - resultado: `a8b9c0d1e2f3 (head)`
+- OpenAPI:
+  - `ERP MYC 30`
+  - `/api/certificates/{certificate_id}/return-to-technician`: `True`
+  - `/api/certificates/{certificate_id}/authenticated-pdf`: `True`
+- `git diff --check`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+
+Limitaciones y pendientes:
+- La restriccion por roles esta aplicada en frontend; falta endurecer permisos backend por accion cuando se formalice matriz final.
+- El Catalogo MYC sigue pendiente como cerebro completo de flujo operativo.
+- La facturacion real, encuestas y portal cliente V2 siguen pendientes.
+- Vite conserva advertencia no bloqueante de chunk mayor a 500 kB.
+- Directorios `storage/certificados/*` no versionados se conservaron para evitar perdida documental.

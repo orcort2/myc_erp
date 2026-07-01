@@ -23,6 +23,7 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5174",
     ]
     storage_root: str = "storage"
+    public_verify_base_url: str = "https://api-erp.mycmetrology.com.mx"
 
 
 @lru_cache

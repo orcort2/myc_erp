@@ -9,8 +9,12 @@ from app.schemas.service_order import (
     ServiceOrderStatusChange,
     ServiceOrderUpdate,
 )
-from app.schemas.certificate import CertificateBulkUploadRead
-from app.services.certificates import bulk_upload_certificate_pdfs
+from app.schemas.certificate import CertificateBatchActionRead, CertificateBulkUploadRead
+from app.services.certificates import (
+    authenticate_certificates_for_service_order,
+    bulk_upload_certificate_pdfs,
+    release_authenticated_certificates_for_service_order,
+)
 from app.services.service_orders import (
     change_status,
     close_service_order,
@@ -71,6 +75,22 @@ def upload_service_order_certificate_pdfs(
     db: Session = Depends(get_db),
 ) -> CertificateBulkUploadRead:
     return bulk_upload_certificate_pdfs(db, service_order_id, files)
+
+
+@router.post("/{service_order_id}/certificates/authenticate-approved", response_model=CertificateBatchActionRead)
+def authenticate_service_order_certificates(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+) -> CertificateBatchActionRead:
+    return authenticate_certificates_for_service_order(db, service_order_id)
+
+
+@router.post("/{service_order_id}/certificates/release-authenticated", response_model=CertificateBatchActionRead)
+def release_service_order_certificates(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+) -> CertificateBatchActionRead:
+    return release_authenticated_certificates_for_service_order(db, service_order_id)
 
 
 @router.patch("/{service_order_id}", response_model=ServiceOrderRead)

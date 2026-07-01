@@ -178,7 +178,8 @@
           <th>Descripción</th>
           <th style="width: 16%">Marca</th>
           <th style="width: 16%">Modelo</th>
-          <th style="width: 18%">No. serie</th>
+          <th style="width: 16%">No. serie</th>
+          <th style="width: 16%">Folio cert.</th>
         </tr>
       </thead>
       <tbody>
@@ -190,6 +191,7 @@
           <td>{{ line.brand }}</td>
           <td>{{ line.model }}</td>
           <td>{{ line.serial_number }}</td>
+          <td>{{ line.certificate_folio }}</td>
         </tr>
         {% endfor %}
       </tbody>

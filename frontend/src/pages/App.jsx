@@ -136,7 +136,7 @@ export function App() {
       ) : selectedModule?.key === 'quotations' ? (
         <QuotationsPage />
       ) : selectedModule?.key === 'serviceOrders' ? (
-        <ServiceOrdersPage />
+        <ServiceOrdersPage user={user} />
       ) : selectedModule?.key === 'equipment' ? (
         <EquipmentPage module={selectedModule} timestamp={now} />
       ) : selectedModule?.key === 'fieldSheets' ? (

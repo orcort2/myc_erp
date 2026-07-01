@@ -15,6 +15,7 @@ CertificateStatus = Literal[
     "quality_review",
     "quality_rejected",
     "correction_requested",
+    "returned_to_technician",
     "quality_approved",
     "approved",
     "pdf_pending",
@@ -74,6 +75,23 @@ class CertificateBulkUploadRead(BaseModel):
     results: list[CertificatePdfUploadRead] = Field(default_factory=list)
 
 
+class CertificateBatchActionItemRead(BaseModel):
+    certificate_id: int
+    folio: str | None = None
+    status: str
+    authenticated_pdf_path: str | None = None
+    error: str | None = None
+
+
+class CertificateBatchActionRead(BaseModel):
+    service_order_id: int
+    authenticated: int = 0
+    released: int = 0
+    skipped: int = 0
+    errors: int = 0
+    results: list[CertificateBatchActionItemRead] = Field(default_factory=list)
+
+
 class CertificateRead(CertificateBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -95,6 +113,12 @@ class CertificateRead(CertificateBase):
     quality_rejection_reason: str | None = None
     released_to_client_at: datetime | None = None
     released_to_client_by_id: int | None = None
+    authentication_code: str | None = None
+    authentication_hash: str | None = None
+    authenticated_pdf_path: str | None = None
+    authenticated_pdf_generated_at: datetime | None = None
+    authenticated_by_id: int | None = None
+    verification_url: str | None = None
     external_source: str = "excel"
     match_status: CertificateMatchStatus = "pending"
     match_details: dict | None = None
@@ -102,3 +126,16 @@ class CertificateRead(CertificateBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class CertificateVerificationRead(BaseModel):
+    valid: bool
+    authentication_code: str
+    folio: str | None = None
+    client: str | None = None
+    equipment: str | None = None
+    serial_number: str | None = None
+    status: str | None = None
+    authenticated_at: datetime | None = None
+    authenticated_by: str = "MYC SYSTEM"
+    document_hash: str | None = None

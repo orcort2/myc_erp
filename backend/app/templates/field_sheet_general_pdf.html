@@ -46,6 +46,7 @@
       <article class="card"><span class="label">Equipo</span><strong>{{ equipment.name }}</strong></article>
       <article class="card"><span class="label">Marca / modelo</span><strong>{{ equipment.brand or '-' }} / {{ equipment.model or '-' }}</strong></article>
       <article class="card"><span class="label">Serie</span><strong>{{ equipment.serial_number or '-' }}</strong></article>
+      <article class="card"><span class="label">Folio certificado</span><strong>{{ certificate_folio }}</strong></article>
       <article class="card"><span class="label">Recepción</span><strong>{{ field_sheet.reception_date|date }}</strong></article>
       <article class="card"><span class="label">Calibración</span><strong>{{ field_sheet.calibration_date|date }}</strong></article>
       <article class="card"><span class="label">Próxima calibración</span><strong>{{ field_sheet.next_calibration_date|date }}</strong></article>

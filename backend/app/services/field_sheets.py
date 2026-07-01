@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from app.schemas.certificate import CertificateCreate
+from app.services.certificates import create_certificate
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.certificate import Certificate
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.models.reference_standard import FieldSheetReferenceStandard, ReferenceStandard
@@ -24,7 +27,7 @@ from app.services.equipment import sync_service_order_equipment_counts
 
 
 TERMINAL_STATUSES = {"approved", "cancelled"}
-EDITABLE_STATUSES = {"draft", "in_progress", "rejected"}
+EDITABLE_STATUSES = {"draft", "in_progress", "rejected", "returned_to_technician"}
 FIELD_SHEET_TEMPLATE_ROWS: dict[str, list[tuple[str, int]]] = {
     "general": [("main", 10)],
     "electrica": [
@@ -136,7 +139,7 @@ def _ensure_active_equipment(db: Session, equipment_id: int) -> Equipment:
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Equipo no encontrado",
         )
-    if equipment.status in {"labeled", "not_done", "cancelled"}:
+    if equipment.status in {"not_done", "cancelled"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="No se puede modificar hoja de campo de un equipo terminal",
@@ -440,6 +443,8 @@ def create_field_sheet(
     _apply_reference_standard_updates(field_sheet, payload.reference_standards, resolved_standards)
     db.add(field_sheet)
     db.flush()
+    if equipment.status == "registered":
+        equipment.status = "realizing"
     if field_sheet.calibration_procedure_id is not None:
         write_audit_log(
             db,
@@ -575,17 +580,56 @@ def complete_field_sheet(
 ) -> FieldSheet:
     field_sheet = get_field_sheet(db, field_sheet_id)
     equipment = _ensure_active_equipment(db, field_sheet.equipment_id)
-    if field_sheet.status not in {"draft", "in_progress", "rejected"}:
+
+    if field_sheet.status not in {"draft", "in_progress", "rejected", "returned_to_technician"}:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="La hoja de campo no puede completarse desde este estado",
         )
+
     _validate_ready_to_complete(field_sheet)
+
     previous_status = field_sheet.status
     previous_equipment_status = equipment.status
+
     field_sheet.status = "completed"
     equipment.status = "calibrated"
+
+    certificate = next((item for item in field_sheet.certificates if item.is_active), None)
+
+    if certificate is None:
+        certificate = db.scalar(
+            select(Certificate).where(
+                Certificate.equipment_id == equipment.id,
+                Certificate.is_active.is_(True),
+            )
+        )
+
+    if certificate is None:
+        certificate = create_certificate(
+            db,
+            CertificateCreate(
+                service_order_id=equipment.service_order_id,
+                equipment_id=equipment.id,
+                field_sheet_id=field_sheet.id,
+                certificate_type="trazable",
+            ),
+            user_id=user_id,
+        )
+
+    if certificate.status in {
+        "expected",
+        "field_sheet_ready",
+        "capture_pending",
+        "capture_in_progress",
+        "quality_rejected",
+        "returned_to_technician",
+    }:
+        certificate.field_sheet_id = field_sheet.id
+        certificate.status = "field_sheet_ready"
+
     sync_service_order_equipment_counts(db, equipment.service_order_id)
+
     write_audit_log(
         db,
         action="field_sheet.completed",
@@ -601,9 +645,12 @@ def complete_field_sheet(
             "equipment_status": "calibrated",
             "certificate_ready": True,
             "external_certificate_flow": True,
+            "certificate_id": certificate.id if certificate else None,
+            "certificate_status": certificate.status if certificate else None,
         },
         comment=payload.comment if payload else None,
     )
+
     db.commit()
     return get_field_sheet(db, field_sheet.id)
 
@@ -623,6 +670,17 @@ def review_field_sheet(
             detail="Solo una hoja completada puede pasar a revision",
         )
     field_sheet.status = "under_review"
+    certificate = next((item for item in field_sheet.certificates if item.is_active), None)
+    if certificate is None:
+        certificate = db.scalar(
+            select(Certificate).where(
+                Certificate.equipment_id == field_sheet.equipment_id,
+                Certificate.is_active.is_(True),
+            )
+        )
+    if certificate is not None and certificate.status in {"expected", "field_sheet_ready", "returned_to_technician"}:
+        certificate.field_sheet_id = field_sheet.id
+        certificate.status = "capture_pending"
     write_audit_log(
         db,
         action="field_sheet.reviewed",
@@ -630,7 +688,11 @@ def review_field_sheet(
         entity_id=field_sheet.id,
         user_id=user_id,
         previous_values={"status": "completed"},
-        new_values={"status": "under_review"},
+        new_values={
+            "status": "under_review",
+            "certificate_id": certificate.id if certificate else None,
+            "certificate_status": certificate.status if certificate else None,
+        },
         comment=payload.comment if payload else None,
     )
     db.commit()

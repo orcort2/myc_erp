@@ -27,6 +27,7 @@ from app.routers import (
     technical_profiles,
     uncertainty,
     users,
+    verification,
 )
 
 
@@ -72,6 +73,7 @@ app.include_router(operational_engines.router, prefix="/api")
 app.include_router(pattern_selection.router, prefix="/api")
 app.include_router(uncertainty.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
+app.include_router(verification.router)
 
 
 @app.get("/")

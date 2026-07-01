@@ -20,6 +20,10 @@ function ConfirmDialog({
       if (event.key === 'Escape' && !isLoading) {
         onClose?.();
       }
+      if (event.key === 'Enter' && !isLoading) {
+        event.preventDefault();
+        onConfirm?.();
+      }
     }
 
     window.addEventListener('keydown', handleKeyDown);

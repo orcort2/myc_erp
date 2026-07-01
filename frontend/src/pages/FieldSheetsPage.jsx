@@ -1,17 +1,11 @@
 import { BadgeCheck } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
-import { emptyCertificateForm } from '../constants/forms.js';
 import {
-  certificateReadyEquipmentStatuses,
-  certificateReadyFieldSheetStatuses,
   certificateStatusLabels,
-  certificateTypeLabels,
-  equipmentStatusLabels,
   fieldSheetStatusLabels
 } from '../constants/statuses.js';
 import {
-  createCertificate,
   downloadFieldSheetPdf,
   getFieldSheetPdfUrl,
   listCertificates,
@@ -29,11 +23,7 @@ function FieldSheetsPage() {
   const [clients, setClients] = useState([]);
   const [certificates, setCertificates] = useState([]);
   const [activeTab, setActiveTab] = useState('all');
-  const [certificateForm, setCertificateForm] = useState(emptyCertificateForm);
-  const [selectedSheet, setSelectedSheet] = useState(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
@@ -52,13 +42,17 @@ function FieldSheetsPage() {
     [clients]
   );
 
-  const activeCertificatesByFieldSheetId = useMemo(() => {
+  const activeCertificatesByEquipmentId = useMemo(() => {
     const map = new Map();
+
     certificates
       .filter((certificate) => certificate.is_active !== false)
       .forEach((certificate) => {
-        map.set(certificate.field_sheet_id, certificate);
+        if (!map.has(certificate.equipment_id)) {
+          map.set(certificate.equipment_id, certificate);
+        }
       });
+
     return map;
   }, [certificates]);
 
@@ -66,15 +60,21 @@ function FieldSheetsPage() {
     if (activeTab === 'draft') {
       return fieldSheets.filter((sheet) => sheet.status === 'draft');
     }
+
     if (activeTab === 'progress') {
       return fieldSheets.filter((sheet) => sheet.status === 'in_progress');
     }
+
     if (activeTab === 'review') {
-      return fieldSheets.filter((sheet) => ['completed', 'under_review', 'approved'].includes(sheet.status));
+      return fieldSheets.filter((sheet) =>
+        ['completed', 'under_review', 'approved'].includes(sheet.status)
+      );
     }
+
     if (activeTab === 'cancelled') {
       return fieldSheets.filter((sheet) => sheet.status === 'cancelled');
     }
+
     return fieldSheets;
   }, [activeTab, fieldSheets]);
 
@@ -82,14 +82,22 @@ function FieldSheetsPage() {
     async function loadData() {
       setError('');
       setIsLoading(true);
+
       try {
-        const [fieldSheetsResult, equipmentResult, ordersResult, clientsResult, certificatesResult] = await Promise.all([
+        const [
+          fieldSheetsResult,
+          equipmentResult,
+          ordersResult,
+          clientsResult,
+          certificatesResult
+        ] = await Promise.all([
           listFieldSheets(),
           listEquipment(),
           listServiceOrders(),
           listClients(),
           listCertificates()
         ]);
+
         setFieldSheets(Array.isArray(fieldSheetsResult) ? fieldSheetsResult : []);
         setEquipment(Array.isArray(equipmentResult) ? equipmentResult : []);
         setServiceOrders(Array.isArray(ordersResult) ? ordersResult : []);
@@ -109,12 +117,18 @@ function FieldSheetsPage() {
     const item = equipmentById.get(sheet.equipment_id);
     const order = item ? ordersById.get(item.service_order_id) : null;
     const client = order ? clientsById.get(order.client_id) : null;
-    const certificate = activeCertificatesByFieldSheetId.get(sheet.id);
+    const certificate = item ? activeCertificatesByEquipmentId.get(item.id) : null;
+
     return { item, order, client, certificate };
   }
 
   function openFieldSheetPdf(fieldSheetId, mode = 'view') {
-    const pdfWindow = window.open(getFieldSheetPdfUrl(fieldSheetId), '_blank', 'noopener,noreferrer');
+    const pdfWindow = window.open(
+      getFieldSheetPdfUrl(fieldSheetId),
+      '_blank',
+      'noopener,noreferrer'
+    );
+
     if (mode === 'print' && pdfWindow) {
       pdfWindow.addEventListener('load', () => {
         pdfWindow.focus();
@@ -126,6 +140,7 @@ function FieldSheetsPage() {
   async function handleDownloadPdf(sheet) {
     setError('');
     setNotice('');
+
     try {
       const { item } = getSheetContext(sheet);
       const { blob, filename } = await downloadFieldSheetPdf(
@@ -133,72 +148,22 @@ function FieldSheetsPage() {
         sheet.work_order_number,
         item?.name || `hoja-${sheet.id}`
       );
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
+
       link.href = url;
       link.download = filename;
+
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+
       URL.revokeObjectURL(url);
+
       setNotice(`PDF ${filename} generado correctamente`);
     } catch (requestError) {
       setError(requestError.message);
-    }
-  }
-
-  function canCreateCertificate(sheet) {
-    const { item, certificate } = getSheetContext(sheet);
-    return (
-      !certificate &&
-      certificateReadyFieldSheetStatuses.has(sheet.status) &&
-      certificateReadyEquipmentStatuses.has(item?.status)
-    );
-  }
-
-  function openCreateCertificate(sheet) {
-    if (!canCreateCertificate(sheet)) {
-      setError('La hoja seleccionada no esta lista para certificado o ya tiene uno activo.');
-      return;
-    }
-    setSelectedSheet(sheet);
-    setCertificateForm(emptyCertificateForm);
-    setIsCreateModalOpen(true);
-    setError('');
-  }
-
-  function closeCreateCertificate() {
-    setSelectedSheet(null);
-    setCertificateForm(emptyCertificateForm);
-    setIsCreateModalOpen(false);
-  }
-
-  async function handleCreateCertificate(event) {
-    event.preventDefault();
-    if (!selectedSheet) return;
-    const { item, order } = getSheetContext(selectedSheet);
-    if (!item || !order) {
-      setError('La hoja no tiene contexto suficiente para crear certificado.');
-      return;
-    }
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const created = await createCertificate({
-        service_order_id: order.id,
-        equipment_id: item.id,
-        field_sheet_id: selectedSheet.id,
-        certificate_type: certificateForm.certificateType,
-        notes: certificateForm.notes.trim() || null
-      });
-      setCertificates((current) => [created, ...current]);
-      setNotice(`Certificado ${created.folio} creado`);
-      closeCreateCertificate();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
     }
   }
 
@@ -208,10 +173,13 @@ function FieldSheetsPage() {
         <span className="module-workspace__icon">
           <BadgeCheck size={28} />
         </span>
+
         <div>
           <p>Trazabilidad tecnica</p>
           <h1>Hojas de campo</h1>
-          <span>Consulta de plantillas, estados documentales, PDF tecnico y enlace a certificados.</span>
+          <span>
+            Consulta de hojas, estado documental, PDF tecnico y folio reservado.
+          </span>
         </div>
       </div>
 
@@ -223,13 +191,21 @@ function FieldSheetsPage() {
           <strong>{isLoading ? '-' : fieldSheets.length}</strong>
           <span>Total hojas</span>
         </div>
+
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : fieldSheets.filter((sheet) => ['completed', 'under_review', 'approved'].includes(sheet.status)).length}</strong>
-          <span>Listas para certificado</span>
+          <strong>
+            {isLoading
+              ? '-'
+              : fieldSheets.filter((sheet) =>
+                  ['completed', 'under_review', 'approved'].includes(sheet.status)
+                ).length}
+          </strong>
+          <span>Listas para captura</span>
         </div>
+
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : activeCertificatesByFieldSheetId.size}</strong>
-          <span>Con certificado</span>
+          <strong>{isLoading ? '-' : certificates.length}</strong>
+          <span>Certificados esperados</span>
         </div>
       </section>
 
@@ -260,57 +236,77 @@ function FieldSheetsPage() {
             <h2>{isLoading ? 'Cargando...' : `${displayedFieldSheets.length} hojas`}</h2>
           </div>
         </div>
+
         <div className="clients-table certificates-table" aria-busy={isLoading}>
           <div className="clients-table__head">
             <span>OT</span>
             <span>Orden</span>
             <span>Cliente</span>
             <span>Equipo</span>
+            <span>Folio certificado</span>
             <span>Plantilla</span>
-            <span>Estado</span>
-            <span>Certificado</span>
+            <span>Estado hoja</span>
+            <span>Estado certificado</span>
             <span>Actualizado</span>
             <span>Acciones</span>
           </div>
+
           {isLoading ? (
             <div className="clients-empty">Cargando hojas de campo...</div>
           ) : displayedFieldSheets.length ? (
             displayedFieldSheets.map((sheet) => {
               const { item, order, client, certificate } = getSheetContext(sheet);
+
               return (
                 <div className="clients-table__row" key={sheet.id}>
                   <span>{sheet.work_order_number ? `OT ${sheet.work_order_number}` : '-'}</span>
                   <span>{order?.folio || '-'}</span>
                   <span>{getClientDisplayName(client)}</span>
                   <span>{item?.name || '-'}</span>
+                  <span>{certificate?.expected_folio || certificate?.folio || '-'}</span>
                   <span>{sheet.template_key === 'electrica' ? 'Electrica' : 'General'}</span>
+
                   <span>
                     <mark className={`quotation-status status-${sheet.status}`}>
                       {fieldSheetStatusLabels[sheet.status] ?? sheet.status}
                     </mark>
                   </span>
+
                   <span>
                     {certificate ? (
                       <mark className={`quotation-status status-${certificate.status}`}>
-                        {certificate.folio} · {certificateStatusLabels[certificate.status] ?? certificate.status}
+                        {certificateStatusLabels[certificate.status] ?? certificate.status}
                       </mark>
                     ) : (
                       '-'
                     )}
                   </span>
+
                   <span>{formatDateTime(sheet.updated_at)}</span>
+
                   <span className="clients-table__actions">
-                    <button className="table-button" onClick={() => openFieldSheetPdf(sheet.id, 'view')} type="button">
+                    <button
+                      className="table-button"
+                      onClick={() => openFieldSheetPdf(sheet.id, 'view')}
+                      type="button"
+                    >
                       Ver PDF
                     </button>
-                    <button className="table-button" onClick={() => handleDownloadPdf(sheet)} type="button">
+
+                    <button
+                      className="table-button"
+                      onClick={() => handleDownloadPdf(sheet)}
+                      type="button"
+                    >
                       Descargar
                     </button>
-                    <button className="table-button" onClick={() => openFieldSheetPdf(sheet.id, 'print')} type="button">
+
+                    <button
+                      className="table-button"
+                      onClick={() => openFieldSheetPdf(sheet.id, 'print')}
+                      type="button"
+                    >
                       Imprimir
-                    </button>
-                    <button className="table-button table-button--primary" disabled={!canCreateCertificate(sheet)} onClick={() => openCreateCertificate(sheet)} type="button">
-                      {certificate ? 'Certificado creado' : 'Crear certificado'}
                     </button>
                   </span>
                 </div>
@@ -321,47 +317,6 @@ function FieldSheetsPage() {
           )}
         </div>
       </section>
-
-      {isCreateModalOpen && selectedSheet ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="client-modal certificate-create-modal" aria-modal="true" role="dialog">
-            <div className="section-heading">
-              <div>
-                <p>Nuevo certificado</p>
-                <h2>Crear desde hoja #{selectedSheet.id}</h2>
-              </div>
-            </div>
-            <form className="client-form client-form--modal" onSubmit={handleCreateCertificate}>
-              <label>
-                Tipo de certificado
-                <select
-                  value={certificateForm.certificateType}
-                  onChange={(event) => setCertificateForm((current) => ({ ...current, certificateType: event.target.value }))}
-                >
-                  <option value="acreditado">{certificateTypeLabels.acreditado}</option>
-                  <option value="trazable">{certificateTypeLabels.trazable}</option>
-                </select>
-              </label>
-              <label className="form-field--wide">
-                Notas
-                <textarea
-                  rows={4}
-                  value={certificateForm.notes}
-                  onChange={(event) => setCertificateForm((current) => ({ ...current, notes: event.target.value }))}
-                />
-              </label>
-              <div className="client-form__actions client-form__actions--modal">
-                <button className="icon-text-button" disabled={isSaving} onClick={closeCreateCertificate} type="button">
-                  Cancelar
-                </button>
-                <button className="primary-button" disabled={isSaving} type="submit">
-                  {isSaving ? 'Creando...' : 'Crear certificado'}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
     </section>
   );
 }

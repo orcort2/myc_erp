@@ -840,6 +840,84 @@ button {
   position: relative;
 }
 
+.dashboard-control-panel,
+.dashboard-section-block {
+  backdrop-filter: blur(18px) saturate(145%);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.34), rgba(70, 216, 196, 0.12)),
+    rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  box-shadow: 0 16px 42px rgba(6, 42, 58, 0.08);
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.dashboard-control-panel__header,
+.dashboard-section-heading {
+  align-items: end;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.dashboard-control-panel__header p,
+.dashboard-section-heading p {
+  color: var(--myc-primary);
+  font-size: 12px;
+  font-weight: 850;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.dashboard-control-panel__header h2,
+.dashboard-section-heading h2 {
+  color: var(--myc-navy);
+  font-size: 20px;
+  line-height: 1.12;
+  margin: 0;
+}
+
+.dashboard-progress-summary {
+  align-items: flex-end;
+  display: grid;
+  justify-items: end;
+}
+
+.dashboard-progress-summary strong {
+  color: var(--myc-primary-dark);
+  font-size: 34px;
+  line-height: 1;
+}
+
+.dashboard-progress-summary span {
+  color: var(--myc-soft-text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.dashboard-progress-bar {
+  background: rgba(5, 31, 45, 0.08);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.dashboard-progress-bar span {
+  background: linear-gradient(90deg, var(--myc-primary), #46d8c4);
+  display: block;
+  height: 100%;
+}
+
+.dashboard-executive-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.dashboard-executive-grid--compact {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .operations-band__metric {
   backdrop-filter: blur(18px);
   background: rgba(255, 255, 255, 0.28);
@@ -1214,6 +1292,43 @@ button {
   padding: 10px;
 }
 
+.clients-table__row--clickable {
+  cursor: pointer;
+}
+
+.clients-table__row--clickable:hover,
+.clients-table__row--clickable:focus-visible {
+  background: rgba(232, 250, 247, 0.72);
+  border-color: rgba(8, 117, 111, 0.36);
+  outline: none;
+}
+
+.quality-action-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+
+.match-details-panel {
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid rgba(8, 117, 111, 0.18);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.92);
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.quotation-row-button:hover,
+.quotation-row-button:focus-visible {
+  background: rgba(232, 250, 247, 0.72);
+  border-color: rgba(8, 117, 111, 0.36);
+  box-shadow: 0 14px 30px rgba(5, 31, 45, 0.1);
+  outline: none;
+}
+
 .clients-table__row > span {
   overflow-wrap: anywhere;
 }
@@ -1230,12 +1345,197 @@ button {
 
 .service-orders-table .clients-table__head,
 .service-orders-table .clients-table__row {
-  grid-template-columns: 1.05fr 1.2fr 1fr 1fr .9fr .9fr .75fr .9fr .75fr;
+  grid-template-columns: .9fr .65fr 1.05fr .9fr .85fr .8fr .55fr .55fr .55fr .55fr .6fr .6fr .65fr .75fr;
 }
 
 .equipment-table .clients-table__head,
 .equipment-table .clients-table__row {
-  grid-template-columns: 1.15fr .85fr .85fr .9fr .9fr 1fr .95fr 1.9fr;
+  grid-template-columns: 1fr .75fr .75fr .85fr .85fr .95fr .8fr .75fr .9fr .75fr 1.7fr;
+}
+
+.ets-certificates-table .clients-table__head,
+.ets-certificates-table .clients-table__row {
+  grid-template-columns: .9fr 1fr .8fr .85fr .8fr .75fr 1.9fr;
+}
+
+.ets-certificates-table .clients-table__head:has(span:nth-child(10)),
+.ets-certificates-table .clients-table__row:has(span:nth-child(10)) {
+  grid-template-columns: .85fr .9fr .75fr .8fr .85fr .75fr .7fr .65fr .9fr 1.6fr;
+}
+
+.ets-certificates-table .clients-table__head:has(span:nth-child(12)),
+.ets-certificates-table .clients-table__row:has(span:nth-child(12)) {
+  grid-template-columns: .85fr .85fr .7fr .75fr .8fr .75fr .75fr .85fr .65fr .65fr .9fr 2fr;
+}
+
+.ets-folder-tabs {
+  align-items: end;
+  display: flex;
+  gap: 4px;
+  margin: 0 0 18px;
+  overflow-x: auto;
+  padding: 8px 4px 0;
+}
+
+.ets-folder-tab {
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(201, 255, 247, 0.5);
+  border-bottom-color: rgba(8, 117, 111, 0.18);
+  border-radius: 8px 8px 0 0;
+  color: var(--myc-soft-text);
+  flex: 0 0 auto;
+  font-size: 13px;
+  font-weight: 850;
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.ets-folder-tab.is-active {
+  background: rgba(232, 250, 247, 0.94);
+  border-color: rgba(8, 117, 111, 0.3);
+  border-bottom-color: rgba(232, 250, 247, 0.94);
+  color: var(--myc-primary-dark);
+  min-height: 50px;
+  transform: translateY(1px);
+}
+
+.ets-progress-panel,
+.ets-auth-panel {
+  background: rgba(255, 255, 255, 0.32);
+  border: 1px solid rgba(201, 255, 247, 0.42);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 14px;
+}
+
+.ets-progress-panel__header {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+}
+
+.ets-progress-panel__header strong {
+  color: var(--myc-primary-dark);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.ets-progress-panel__header span,
+.ets-auth-panel span {
+  color: var(--myc-soft-text);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.ets-progress-bar {
+  background: rgba(5, 31, 45, 0.08);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.ets-progress-bar span {
+  background: linear-gradient(90deg, var(--myc-primary), #46d8c4);
+  display: block;
+  height: 100%;
+}
+
+.ets-stage-strip,
+.ets-metric-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ets-stage,
+.ets-metric-badge {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(201, 255, 247, 0.42);
+  border-radius: 999px;
+  color: var(--myc-soft-text);
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 850;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.ets-stage.is-done {
+  background: rgba(70, 216, 196, 0.18);
+  border-color: rgba(8, 117, 111, 0.28);
+  color: var(--myc-primary-dark);
+}
+
+.ets-metric-badge strong {
+  color: var(--myc-primary-dark);
+}
+
+.ets-auth-panel {
+  margin-top: 14px;
+}
+
+.ets-auth-panel p {
+  color: var(--myc-primary);
+  font-size: 12px;
+  font-weight: 850;
+  margin: 0 0 4px;
+  text-transform: uppercase;
+}
+
+.ets-auth-panel strong {
+  color: var(--myc-navy);
+}
+
+.ets-timeline {
+  display: grid;
+  gap: 10px;
+}
+
+.ets-timeline-item {
+  border-left: 3px solid rgba(8, 117, 111, 0.32);
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 180px minmax(0, 1fr);
+  padding: 8px 0 8px 14px;
+}
+
+.ets-timeline-item time {
+  color: var(--myc-soft-text);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.ets-timeline-item strong {
+  color: var(--myc-navy);
+  display: block;
+}
+
+.ets-timeline-item span,
+.ets-timeline-item p {
+  color: var(--myc-soft-text);
+  font-size: 13px;
+  font-weight: 750;
+  margin: 2px 0 0;
+}
+
+.table-button--file {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+  min-height: 34px;
+}
+
+.table-button--file input {
+  display: none;
+}
+
+.ets-filter-tabs {
+  margin-bottom: 14px;
 }
 
 .certificates-table .clients-table__head,
@@ -2602,6 +2902,23 @@ button {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .ets-folder-tabs {
+    align-items: stretch;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .ets-folder-tab,
+  .ets-folder-tab.is-active {
+    border-radius: 8px;
+    min-height: 42px;
+    transform: none;
+  }
+
+  .ets-timeline-item {
+    grid-template-columns: 1fr;
+  }
+
   .client-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2634,6 +2951,8 @@ button {
   .service-orders-table .clients-table__row,
   .equipment-table .clients-table__head,
   .equipment-table .clients-table__row,
+  .ets-certificates-table .clients-table__head,
+  .ets-certificates-table .clients-table__row,
   .certificates-table .clients-table__head,
   .certificates-table .clients-table__row,
   .pending-certificates-table .clients-table__head,

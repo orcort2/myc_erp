@@ -17,14 +17,20 @@ import {
   equipmentActions,
   fieldSheetStatusLabels,
   certificateReadyFieldSheetStatuses,
-  certificateReadyEquipmentStatuses
+  certificateReadyEquipmentStatuses,
+  certificateStatusLabels
 } from '../constants/statuses.js';
 import {
+  authenticateCertificate,
+  authenticateApprovedCertificates,
+  bulkUploadCertificatePdfs,
   changeEquipmentStatus,
+  changeCertificateStatus,
   changeServiceOrderStatus,
   completeFieldSheet,
   createCertificate,
   downloadFieldSheetPdf,
+  downloadAuthenticatedCertificatePdf,
   downloadWorkOrderPdf,
   createEquipment,
   createFieldSheet,
@@ -33,6 +39,8 @@ import {
   deleteServiceOrder,
   getFieldSheet,
   getFieldSheetPdfUrl,
+  getAuthenticatedCertificatePdfUrl,
+  getOriginalCertificatePdfUrl,
   getWorkOrderPdfUrl,
   listCalibrationProcedures,
   listCertificates,
@@ -42,11 +50,15 @@ import {
   listQuotations,
   listReferenceStandards,
   listServiceOrders,
+  manualAcceptCertificateMatch,
   reviewFieldSheet,
   suggestFieldSheetPatterns,
   updateEquipment,
   updateFieldSheet,
   updateServiceOrder,
+  uploadCertificatePdf,
+  validateCertificatePdfMatch,
+  releaseAuthenticatedCertificates,
   validateFieldSheetPatterns
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
@@ -60,7 +72,30 @@ import {
 } from '../utils/fieldSheets.js';
 import { formatDate, getClientDisplayName } from '../utils/formatters.js';
 
-function ServiceOrdersPage() {
+function safeNumber(value) {
+  return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function safeText(value, fallback = '-') {
+  return value === undefined || value === null || value === '' ? fallback : value;
+}
+
+function getRoleNames(user) {
+  return (user?.roles ?? []).map((role) => (role.name || '').toLowerCase());
+}
+
+function hasStageAccess(user, stage) {
+  const roles = getRoleNames(user);
+  if (!roles.length || roles.some((role) => ['admin', 'administrador', 'administrator'].includes(role))) {
+    return true;
+  }
+  if (stage === 'technical') return roles.some((role) => ['tecnico', 'técnico', 'technical'].includes(role));
+  if (stage === 'capture') return roles.some((role) => ['captura', 'capture'].includes(role));
+  if (stage === 'quality') return roles.some((role) => ['calidad', 'quality'].includes(role));
+  return true;
+}
+
+function ServiceOrdersPage({ user = null }) {
   const [serviceOrders, setServiceOrders] = useState([]);
   const [clients, setClients] = useState([]);
   const [quotations, setQuotations] = useState([]);
@@ -77,9 +112,14 @@ function ServiceOrdersPage() {
   const [fieldSheetForm, setFieldSheetForm] = useState(emptyFieldSheetForm);
   const [fieldSheetCertificateType, setFieldSheetCertificateType] = useState('trazable');
   const [fieldSheetPatternSelection, setFieldSheetPatternSelection] = useState(null);
+  const [selectedAuthentication, setSelectedAuthentication] = useState(null);
+  const [selectedQualityCertificate, setSelectedQualityCertificate] = useState(null);
+  const [returnToTechnicianRequest, setReturnToTechnicianRequest] = useState(null);
+  const [returnToTechnicianReason, setReturnToTechnicianReason] = useState('');
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [activeTab, setActiveTab] = useState('info');
   const [fieldSheetTab, setFieldSheetTab] = useState('info');
+  const [orderFilter, setOrderFilter] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
@@ -88,6 +128,9 @@ function ServiceOrdersPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
+  const canUseTechnicalActions = hasStageAccess(user, 'technical');
+  const canUseCaptureActions = hasStageAccess(user, 'capture');
+  const canUseQualityActions = hasStageAccess(user, 'quality');
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -126,6 +169,122 @@ function ServiceOrdersPage() {
     return map;
   }, [certificates]);
 
+  const activeCertificatesByEquipmentId = useMemo(() => {
+    const map = new Map();
+    certificates
+      .filter((certificate) => certificate.is_active !== false)
+      .forEach((certificate) => {
+        if (!map.has(certificate.equipment_id)) {
+          map.set(certificate.equipment_id, certificate);
+        }
+      });
+    return map;
+  }, [certificates]);
+
+  const selectedCertificates = useMemo(
+    () => certificates.filter((certificate) => certificate.service_order_id === selectedOrder?.id && certificate.is_active !== false),
+    [certificates, selectedOrder]
+  );
+
+  const selectedFieldSheets = useMemo(
+    () => fieldSheets.filter((sheet) => selectedEquipment.some((item) => item.id === sheet.equipment_id) && sheet.is_active !== false),
+    [fieldSheets, selectedEquipment]
+  );
+
+  const selectedOrderMetrics = useMemo(
+    () => (selectedOrder ? getOrderMetrics(selectedOrder) : {
+      equipmentCount: 0,
+      expectedEquipment: 0,
+      completedEquipment: 0,
+      fieldSheetsCount: 0,
+      fieldSheetsDone: 0,
+      certificatesExpected: 0,
+      pdfUploaded: 0,
+      capturePending: 0,
+      qualityPending: 0,
+      authenticated: 0,
+      released: 0,
+      billingPending: false,
+      advance: 0
+    }),
+    [selectedOrder, equipment, fieldSheets, certificates]
+  );
+
+  const captureMetrics = useMemo(() => ({
+    expected: selectedCertificates.length,
+    uploaded: selectedCertificates.filter((certificate) => certificate.final_pdf_path).length,
+    pending: selectedCertificates.filter((certificate) => !certificate.final_pdf_path).length,
+    matched: selectedCertificates.filter((certificate) => certificate.match_status === 'matched').length,
+    warnings: selectedCertificates.filter((certificate) => certificate.match_status === 'warning').length,
+    mismatches: selectedCertificates.filter((certificate) => certificate.match_status === 'mismatch').length,
+    manual: selectedCertificates.filter((certificate) => certificate.match_status === 'manual_accepted').length
+  }), [selectedCertificates]);
+
+  const qualityMetrics = useMemo(() => ({
+    pending: selectedCertificates.filter((certificate) => ['ready_for_quality', 'quality_review'].includes(certificate.status)).length,
+    review: selectedCertificates.filter((certificate) => certificate.status === 'quality_review').length,
+    approved: selectedCertificates.filter((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status)).length,
+    rejected: selectedCertificates.filter((certificate) => certificate.status === 'quality_rejected').length,
+    releasable: selectedCertificates.filter((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status) && certificate.final_pdf_path).length,
+    authenticated: selectedCertificates.filter((certificate) => certificate.authenticated_pdf_path).length
+  }), [selectedCertificates]);
+
+  function getOrderMetrics(order) {
+    const orderEquipment = equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false);
+    const orderEquipmentIds = new Set(orderEquipment.map((item) => item.id));
+    const orderSheets = fieldSheets.filter((sheet) => orderEquipmentIds.has(sheet.equipment_id) && sheet.is_active !== false);
+    const orderCertificates = certificates.filter((certificate) => certificate.service_order_id === order.id && certificate.is_active !== false);
+    const pdfUploaded = orderCertificates.filter((certificate) => Boolean(certificate.final_pdf_path)).length;
+    const capturePending = orderCertificates.filter((certificate) => ['expected', 'field_sheet_ready', 'capture_pending', 'capture_in_progress', 'quality_rejected'].includes(certificate.status)).length;
+    const qualityPending = orderCertificates.filter((certificate) => ['ready_for_quality', 'quality_review'].includes(certificate.status)).length;
+    const authenticated = orderCertificates.filter((certificate) => Boolean(certificate.authenticated_pdf_path)).length;
+    const released = orderCertificates.filter((certificate) => certificate.status === 'released_to_client').length;
+    const expectedEquipment = (order.items ?? []).reduce((sum, item) => sum + safeNumber(item.quantity), 0);
+    const fieldSheetsDone = orderSheets.filter((sheet) => ['completed', 'under_review', 'approved'].includes(sheet.status)).length;
+    const stageChecks = [
+      Boolean(order.quotation_id),
+      Boolean(order.agenda_date && order.service_date && order.technician_id),
+      expectedEquipment ? orderEquipment.length >= Math.min(expectedEquipment, 10) : orderEquipment.length > 0,
+      orderSheets.length > 0,
+      orderSheets.length > 0 && fieldSheetsDone === orderSheets.length,
+      orderCertificates.length > 0 && pdfUploaded === orderCertificates.length,
+      orderCertificates.length > 0 && orderCertificates.every((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(certificate.status)),
+      orderCertificates.length > 0 && authenticated === orderCertificates.length,
+      !order.requires_payment || ['released', 'closed'].includes(order.status),
+      order.status === 'closed'
+    ];
+    return {
+      expectedEquipment,
+      equipmentCount: orderEquipment.length,
+      completedEquipment: safeNumber(order.completed_equipment),
+      fieldSheetsCount: orderSheets.length,
+      fieldSheetsDone,
+      certificatesExpected: orderCertificates.length,
+      pdfUploaded,
+      capturePending,
+      qualityPending,
+      authenticated,
+      released,
+      billingPending: order.status === 'pending_payment' || order.requires_payment,
+      advance: Math.round((stageChecks.filter(Boolean).length / stageChecks.length) * 100)
+    };
+  }
+
+  const filteredServiceOrders = useMemo(() => {
+    return serviceOrders.filter((order) => {
+      const metrics = getOrderMetrics(order);
+      if (orderFilter === 'scheduled') return ['scheduled', 'confirmed', 'called'].includes(order.status);
+      if (orderFilter === 'in_progress') return ['in_progress', 'technical_review'].includes(order.status);
+      if (orderFilter === 'capture') return metrics.capturePending > 0 || order.status === 'capture';
+      if (orderFilter === 'quality') return metrics.qualityPending > 0 || order.status === 'quality_review';
+      if (orderFilter === 'pdf_pending') return metrics.certificatesExpected > metrics.pdfUploaded;
+      if (orderFilter === 'released') return metrics.released > 0 || order.status === 'released';
+      if (orderFilter === 'billing') return metrics.billingPending;
+      if (orderFilter === 'closed') return order.status === 'closed';
+      return true;
+    });
+  }, [serviceOrders, equipment, fieldSheets, certificates, orderFilter]);
+
   async function loadServiceOrderData() {
     setError('');
     setIsLoading(true);
@@ -149,7 +308,14 @@ function ServiceOrdersPage() {
         listReferenceStandards(),
         listCalibrationProcedures()
       ]);
-      setServiceOrders(Array.isArray(ordersResult) ? ordersResult : []);
+      const nextOrders = Array.isArray(ordersResult) ? ordersResult : [];
+      setServiceOrders(nextOrders);
+      if (selectedOrder?.id) {
+        const freshOrder = nextOrders.find((order) => order.id === selectedOrder.id);
+        if (freshOrder) {
+          setSelectedOrder(freshOrder);
+        }
+      }
       setClients(Array.isArray(clientsResult) ? clientsResult : []);
       setQuotations(Array.isArray(quotationsResult) ? quotationsResult : []);
       setEquipment(Array.isArray(equipmentResult) ? equipmentResult : []);
@@ -167,6 +333,22 @@ function ServiceOrdersPage() {
   useEffect(() => {
     loadServiceOrderData();
   }, []);
+
+  useEffect(() => {
+    function handleEscape(event) {
+      if (event.key !== 'Escape') return;
+      if (isFieldSheetModalOpen) {
+        closeFieldSheetModal();
+      } else if (isEquipmentModalOpen) {
+        closeEquipmentModal();
+      } else if (isDetailOpen) {
+        closeOrderDetail();
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isDetailOpen, isEquipmentModalOpen, isFieldSheetModalOpen]);
 
   function getOrderEquipmentCount(order) {
     return equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false).length;
@@ -198,6 +380,7 @@ function ServiceOrdersPage() {
     setEditingEquipmentId(null);
     setActiveTab('info');
     setFieldSheetTab('info');
+    setSelectedAuthentication(null);
     setError('');
   }
 
@@ -262,6 +445,10 @@ function ServiceOrdersPage() {
   function openEquipmentModal(item = null) {
     setError('');
     setNotice('');
+    if (!item && selectedEquipment.length >= 10) {
+      setError('Maximo 10 equipos por Orden de Trabajo.');
+      return;
+    }
     if (item) {
       setEditingEquipmentId(item.id);
       setEquipmentForm({
@@ -378,28 +565,60 @@ function ServiceOrdersPage() {
   }
 
   async function openFieldSheetForEquipment(item) {
-    setError('');
-    setNotice('');
-    setSelectedEquipmentForSheet(item);
-    try {
-      const existing = fieldSheetsByEquipmentId.get(item.id);
-      const sheet = existing
-        ? await getFieldSheet(existing.id)
-        : await createFieldSheet({ equipment_id: item.id });
+  setError('');
+  setNotice('');
+  setSelectedEquipmentForSheet(item);
+
+  try {
+    const existing = fieldSheetsByEquipmentId.get(item.id);
+
+    if (existing) {
+      const sheet = await getFieldSheet(existing.id);
       setSelectedFieldSheet(sheet);
       setFieldSheetForm(fieldSheetToForm(sheet));
       setFieldSheetCertificateType('trazable');
       setFieldSheetPatternSelection(null);
       setFieldSheetTab('info');
       setIsFieldSheetModalOpen(true);
-      if (!existing) {
-        setFieldSheets((current) => [sheet, ...current]);
-        setNotice(`Hoja de campo creada para ${item.name}`);
-      }
-    } catch (requestError) {
-      setError(requestError.message);
+      return;
     }
+
+    const freshSheets = await listFieldSheets();
+    const freshExisting = Array.isArray(freshSheets)
+      ? freshSheets.find((sheet) => sheet.equipment_id === item.id && sheet.is_active !== false)
+      : null;
+
+    if (freshExisting) {
+      setFieldSheets(freshSheets);
+      const sheet = await getFieldSheet(freshExisting.id);
+      setSelectedFieldSheet(sheet);
+      setFieldSheetForm(fieldSheetToForm(sheet));
+      setFieldSheetCertificateType('trazable');
+      setFieldSheetPatternSelection(null);
+      setFieldSheetTab('info');
+      setIsFieldSheetModalOpen(true);
+      return;
+    }
+
+    const sheet = await createFieldSheet({ equipment_id: item.id });
+    setSelectedFieldSheet(sheet);
+    setFieldSheetForm(fieldSheetToForm(sheet));
+    setFieldSheetCertificateType('trazable');
+    setFieldSheetPatternSelection(null);
+    setFieldSheetTab('info');
+    setIsFieldSheetModalOpen(true);
+    setFieldSheets((current) => [sheet, ...current]);
+    setNotice(`Hoja de campo creada para ${item.name}`);
+    await loadServiceOrderData();
+  } catch (requestError) {
+    if (requestError.message.includes('ya tiene') || requestError.message.includes('409')) {
+      await loadServiceOrderData();
+      setError('La hoja ya existe. Recarga el ETS y vuelve a abrirla.');
+      return;
+    }
+    setError(requestError.message);
   }
+}
 
   function closeFieldSheetModal() {
     setIsFieldSheetModalOpen(false);
@@ -414,6 +633,17 @@ function ServiceOrdersPage() {
 
   function updateFieldSheetForm(field, value) {
     setFieldSheetForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function applyNextCalibrationInterval(months) {
+    if (months === 'manual') return;
+    if (!fieldSheetForm.calibrationDate) {
+      setError('Define primero la fecha de calibracion.');
+      return;
+    }
+    const nextDate = new Date(`${fieldSheetForm.calibrationDate}T00:00:00`);
+    nextDate.setMonth(nextDate.getMonth() + Number(months));
+    updateFieldSheetForm('nextCalibrationDate', nextDate.toISOString().slice(0, 10));
   }
 
   function addReferenceStandardToFieldSheet() {
@@ -642,7 +872,7 @@ function ServiceOrdersPage() {
     }
   }
 
-  async function createCertificateFromCurrentFieldSheet() {
+  /* async function createCertificateFromCurrentFieldSheet() {
     if (!selectedOrder || !selectedEquipmentForSheet || !selectedFieldSheet) return;
     if (!certificateReadyFieldSheetStatuses.has(selectedFieldSheet.status)) {
       setError('La hoja debe estar completada, en revision o aprobada para crear certificado.');
@@ -677,6 +907,260 @@ function ServiceOrdersPage() {
           });
           setCertificates((current) => [created, ...current]);
           setNotice(`Certificado ${created.folio} creado`);
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
+  }
+    */
+
+  /* async function createExpectedCertificateForEquipment(item) {
+    if (!selectedOrder) return;
+    if (activeCertificatesByEquipmentId.has(item.id)) {
+      setError('Este equipo ya tiene un certificado esperado activo.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const created = await createCertificate({
+        service_order_id: selectedOrder.id,
+        equipment_id: item.id,
+        field_sheet_id: fieldSheetsByEquipmentId.get(item.id)?.id ?? null,
+        certificate_type: 'trazable'
+      });
+      setCertificates((current) => [created, ...current]);
+      setNotice(`Certificado esperado ${created.folio} creado`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+    */
+
+  async function handleCertificateWorkflow(certificate, action, message) {
+    let comment = null;
+    if (action === 'return-to-technician') {
+      setReturnToTechnicianRequest({ certificate, action, message });
+      setReturnToTechnicianReason('');
+      setError('');
+      return;
+    }
+    await executeCertificateWorkflow(certificate, action, message, comment);
+  }
+
+  async function executeCertificateWorkflow(certificate, action, message, comment = null) {
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await changeCertificateStatus(certificate.id, action, comment);
+      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(message);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function confirmReturnToTechnician() {
+    const reason = returnToTechnicianReason.trim();
+    if (!returnToTechnicianRequest) return;
+    if (!reason) {
+      setError('Captura el motivo para regresar al tecnico.');
+      return;
+    }
+    const request = returnToTechnicianRequest;
+    setReturnToTechnicianRequest(null);
+    setReturnToTechnicianReason('');
+    await executeCertificateWorkflow(request.certificate, request.action, request.message, reason);
+  }
+
+  async function handleCertificateAuthentication(certificate) {
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await authenticateCertificate(certificate.id);
+      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(`Certificado ${updated.folio} autenticado`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleCertificateMatchAcceptance(certificate) {
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await manualAcceptCertificateMatch(certificate.id, 'Aceptado manualmente desde ETS');
+      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(`Match aceptado para ${updated.folio}`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleCertificateMatchValidation(certificate) {
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await validateCertificatePdfMatch(certificate.id);
+      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(`Matching ${updated.match_status} para ${updated.folio}`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleCertificatePdfUpload(certificate, files, input = null) {
+    const [file] = Array.from(files ?? []);
+    if (!file) return;
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await uploadCertificatePdf(certificate.id, file);
+      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setNotice(`PDF cargado para ${updated.folio}. Match: ${updated.match_status}`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+      if (input) {
+        input.value = '';
+      }
+    }
+  }
+
+  function openAuthenticatedCertificatePdf(certificate) {
+    if (!certificate.authenticated_pdf_path) {
+      setError('El certificado aun no tiene PDF autenticado.');
+      return;
+    }
+    const pdfWindow = window.open(getAuthenticatedCertificatePdfUrl(certificate.id), '_blank', 'noopener,noreferrer');
+    if (!pdfWindow) {
+      setError('No se pudo abrir el PDF autenticado.');
+    }
+  }
+
+  function openOriginalCertificatePdf(certificate) {
+    if (!certificate.final_pdf_path) {
+      setError('El certificado aun no tiene PDF original cargado.');
+      return;
+    }
+    const pdfWindow = window.open(getOriginalCertificatePdfUrl(certificate.id), '_blank', 'noopener,noreferrer');
+    if (!pdfWindow) {
+      setError('No se pudo abrir el PDF original.');
+    }
+  }
+
+  async function handleDownloadAuthenticatedCertificatePdf(certificate) {
+    setError('');
+    setNotice('');
+    try {
+      const { blob, filename } = await downloadAuthenticatedCertificatePdf(
+        certificate.id,
+        certificate.expected_folio || certificate.folio,
+        certificate.authentication_code
+      );
+      triggerBlobDownload(blob, filename);
+      setNotice(`PDF autenticado ${filename} descargado`);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  function showCertificateAuthentication(certificate) {
+    setSelectedAuthentication({
+      code: certificate.authentication_code || '-',
+      url: certificate.verification_url || (certificate.authentication_code ? `/verify/${certificate.authentication_code}` : '-'),
+      hash: certificate.authentication_hash || '-',
+      status: certificateStatusLabels[certificate.status] ?? certificate.status,
+      authenticatedAt: certificate.authenticated_pdf_generated_at || null
+    });
+  }
+
+  async function handleBulkPdfUpload(files, input = null) {
+    if (!selectedOrder || !files?.length) return;
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const result = await bulkUploadCertificatePdfs(selectedOrder.id, files);
+      setNotice(`Carga masiva: ${result.matched} matched, ${result.warnings} warning, ${result.mismatches} mismatch, ${result.missing} faltantes`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+      if (input) {
+        input.value = '';
+      }
+    }
+  }
+
+  function summarizeBatchResult(result) {
+    const processed = result.results?.filter((item) => ['authenticated', 'released'].includes(item.status)).map((item) => item.folio).filter(Boolean) ?? [];
+    const actionCount = result.authenticated ?? result.released ?? 0;
+    return `${actionCount} procesados, ${result.skipped} omitidos, ${result.errors} errores${processed.length ? `: ${processed.join(', ')}` : ''}`;
+  }
+
+  function handleAuthenticateApprovedBatch() {
+    if (!selectedOrder) return;
+    openConfirm({
+      title: 'Autenticar aprobados',
+      message: 'Se autenticarán los certificados aprobados con PDF y match aceptable. El lote continuará aunque algun certificado falle.',
+      confirmText: 'Autenticar',
+      onConfirm: async () => {
+        setIsSaving(true);
+        setError('');
+        try {
+          const result = await authenticateApprovedCertificates(selectedOrder.id);
+          setNotice(`Autenticacion masiva: ${summarizeBatchResult(result)}`);
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
+  }
+
+  function handleReleaseAuthenticatedBatch() {
+    if (!selectedOrder) return;
+    openConfirm({
+      title: 'Liberar autenticados',
+      message: 'Se liberarán al cliente los certificados autenticados con PDF y match aceptable. El lote continuará aunque algun certificado falle.',
+      confirmText: 'Liberar',
+      onConfirm: async () => {
+        setIsSaving(true);
+        setError('');
+        try {
+          const result = await releaseAuthenticatedCertificates(selectedOrder.id);
+          setNotice(`Liberacion masiva: ${summarizeBatchResult(result)}`);
           await loadServiceOrderData();
         } catch (requestError) {
           setError(requestError.message);
@@ -742,8 +1226,8 @@ function ServiceOrdersPage() {
         </span>
         <div>
           <p>Operacion MYC SYSTEM</p>
-          <h1>Ordenes de Servicio</h1>
-          <span>Seguimiento operativo desde cotizacion aceptada hasta liberacion del servicio.</span>
+          <h1>Servicios / ETS</h1>
+          <span>Expediente Tecnico del Servicio desde cotizacion aceptada hasta certificado autenticado.</span>
         </div>
       </div>
 
@@ -754,49 +1238,83 @@ function ServiceOrdersPage() {
         <div className="section-heading">
           <div>
             <p>Listado operativo</p>
-            <h2>{isLoading ? 'Cargando...' : `${serviceOrders.length} ordenes`}</h2>
+            <h2>{isLoading ? 'Cargando...' : `${filteredServiceOrders.length} expedientes`}</h2>
           </div>
+        </div>
+
+        <div className="client-modal-tabs quotation-detail-tabs ets-filter-tabs" role="tablist" aria-label="Filtros ETS">
+          {[
+            ['all', 'Todos'],
+            ['scheduled', 'Programados'],
+            ['in_progress', 'En proceso'],
+            ['capture', 'Captura'],
+            ['quality', 'Calidad'],
+            ['pdf_pending', 'PDF pendientes'],
+            ['released', 'Liberados'],
+            ['billing', 'Facturacion pendiente'],
+            ['closed', 'Cerrados']
+          ].map(([key, label]) => (
+            <button
+              aria-selected={orderFilter === key}
+              className={orderFilter === key ? 'client-modal-tab is-active' : 'client-modal-tab'}
+              key={key}
+              onClick={() => setOrderFilter(key)}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
         </div>
 
         <div className="clients-table service-orders-table" aria-busy={isLoading}>
           <div className="clients-table__head">
-            <span>Folio</span>
+            <span>Folio OS</span>
+            <span>OT</span>
             <span>Cliente</span>
-            <span>Cotizacion</span>
             <span>Estado</span>
-            <span>Agenda</span>
-            <span>Servicio</span>
+            <span>Responsable</span>
+            <span>Fecha</span>
             <span>Equipos</span>
-            <span>Tecnico</span>
+            <span>Hojas</span>
+            <span>Cert.</span>
+            <span>PDFs</span>
+            <span>Captura</span>
+            <span>Calidad</span>
+            <span>Avance</span>
             <span>Acciones</span>
           </div>
 
           {isLoading ? (
-            <div className="clients-empty">Cargando ordenes de servicio...</div>
-          ) : serviceOrders.length ? (
-            serviceOrders.map((order) => {
+            <div className="clients-empty">Cargando expedientes...</div>
+          ) : filteredServiceOrders.length ? (
+            filteredServiceOrders.map((order) => {
               const client = clientsById.get(order.client_id);
-              const quotation = quotationsById.get(order.quotation_id);
+              const metrics = getOrderMetrics(order);
               return (
                 <button className="clients-table__row quotation-row-button" key={order.id} onClick={() => openOrderDetail(order)} type="button">
                   <span>{order.folio}</span>
+                  <span>OT {order.work_order_number ?? '-'}</span>
                   <span>{getClientDisplayName(client)}</span>
-                  <span>{quotation?.folio || (order.quotation_id ? `#${order.quotation_id}` : '-')}</span>
                   <span>
                     <mark className={`quotation-status status-${order.status}`}>
                       {serviceOrderStatusLabels[order.status] ?? order.status}
                     </mark>
                   </span>
-                  <span>{formatDate(order.agenda_date)}</span>
-                  <span>{formatDate(order.service_date)}</span>
-                  <span>{order.completed_equipment ?? 0}/{order.total_equipment || getOrderEquipmentCount(order)}</span>
                   <span>{order.technician_id ? `#${order.technician_id}` : 'Por asignar'}</span>
-                  <span>Ver ficha</span>
+                  <span>{formatDate(order.service_date || order.agenda_date)}</span>
+                  <span>{metrics.equipmentCount}</span>
+                  <span>{metrics.fieldSheetsDone}/{metrics.fieldSheetsCount}</span>
+                  <span>{metrics.certificatesExpected}</span>
+                  <span>{metrics.pdfUploaded}</span>
+                  <span>{metrics.capturePending}</span>
+                  <span>{metrics.qualityPending}</span>
+                  <span>{metrics.advance}%</span>
+                  <span>Abrir ETS</span>
                 </button>
               );
             })
           ) : (
-            <div className="clients-empty">Todavia no hay ordenes de servicio registradas.</div>
+            <div className="clients-empty">No hay expedientes para este filtro.</div>
           )}
         </div>
       </section>
@@ -806,7 +1324,7 @@ function ServiceOrdersPage() {
           <section className="client-modal quotation-detail-modal service-order-modal" aria-modal="true" role="dialog">
             <div className="quotation-detail-header">
               <div>
-                <p>Orden de servicio</p>
+                <p>Expediente Tecnico del Servicio</p>
                 <h2>{selectedOrder.folio}</h2>
                 <span>{getClientDisplayName(clientsById.get(selectedOrder.client_id))}</span>
               </div>
@@ -818,16 +1336,21 @@ function ServiceOrdersPage() {
               </button>
             </div>
 
-            <div className="client-modal-tabs quotation-detail-tabs" role="tablist" aria-label="Detalle de orden de servicio">
+            <div className="ets-folder-tabs" role="tablist" aria-label="Carpetas del expediente">
               {[
-                ['info', 'Informacion'],
+                ['info', 'Resumen'],
                 ['equipment', 'Equipos'],
-                ['field-sheet', 'Hoja de campo'],
-                ['history', 'Historial']
+                ['field-sheet', 'Hojas de Campo'],
+                ['capture', 'Captura'],
+                ['quality', 'Calidad'],
+                ['certificates', 'Certificados'],
+                ['documents', 'Documentos'],
+                ['history', 'Historial'],
+                ['billing', 'Facturacion']
               ].map(([key, label]) => (
                 <button
                   aria-selected={activeTab === key}
-                  className={activeTab === key ? 'client-modal-tab is-active' : 'client-modal-tab'}
+                  className={activeTab === key ? 'ets-folder-tab is-active' : 'ets-folder-tab'}
                   key={key}
                   onClick={() => setActiveTab(key)}
                   type="button"
@@ -843,9 +1366,37 @@ function ServiceOrdersPage() {
                   <section className="quotation-section">
                     <div className="quotation-section__title">
                       <p>Informacion operativa</p>
-                      <h3>Ficha editable</h3>
+                      <h3>Resumen ejecutivo</h3>
+                    </div>
+                    <div className="ets-progress-panel">
+                      <div className="ets-progress-panel__header">
+                        <strong>{safeNumber(selectedOrderMetrics.advance)}%</strong>
+                        <span>Progreso global del expediente</span>
+                      </div>
+                      <div className="ets-progress-bar" aria-label="Progreso global">
+                        <span style={{ width: `${safeNumber(selectedOrderMetrics.advance)}%` }} />
+                      </div>
+                      <div className="ets-stage-strip">
+                        {[
+                          ['Cotización', Boolean(selectedOrder.quotation_id)],
+                          ['Agenda', Boolean(selectedOrder.agenda_date && selectedOrder.service_date && selectedOrder.technician_id)],
+                          ['Equipos', selectedOrderMetrics.expectedEquipment ? selectedOrderMetrics.equipmentCount >= Math.min(selectedOrderMetrics.expectedEquipment, 10) : selectedOrderMetrics.equipmentCount > 0],
+                          ['Hojas', selectedOrderMetrics.fieldSheetsCount > 0],
+                          ['Captura', selectedOrderMetrics.certificatesExpected > 0 && selectedOrderMetrics.pdfUploaded === selectedOrderMetrics.certificatesExpected],
+                          ['Calidad', selectedOrderMetrics.certificatesExpected > 0 && selectedCertificates.every((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(certificate.status))],
+                          ['PDF autenticado', selectedOrderMetrics.certificatesExpected > 0 && selectedOrderMetrics.authenticated === selectedOrderMetrics.certificatesExpected],
+                          ['Facturación', !selectedOrderMetrics.billingPending],
+                          ['Cierre', selectedOrder.status === 'closed']
+                        ].map(([label, done]) => (
+                          <span className={done ? 'ets-stage is-done' : 'ets-stage'} key={label}>{label}</span>
+                        ))}
+                      </div>
                     </div>
                     <div className="quotation-commercial-grid service-order-info-grid">
+                      <article>
+                        <span>Folio OS</span>
+                        <strong>{selectedOrder.folio}</strong>
+                      </article>
                       <article>
                         <span>Orden de trabajo</span>
                         <strong>OT {selectedOrder.work_order_number ?? '-'}</strong>
@@ -859,8 +1410,20 @@ function ServiceOrdersPage() {
                         <strong>{quotationsById.get(selectedOrder.quotation_id)?.folio || '-'}</strong>
                       </article>
                       <article>
+                        <span>Equipos esperados desde cotizacion</span>
+                        <strong>{safeNumber(selectedOrderMetrics.expectedEquipment)}</strong>
+                      </article>
+                      <article>
+                        <span>Equipos registrados</span>
+                        <strong>{selectedEquipment.length} / 10</strong>
+                      </article>
+                      <article>
                         <span>Asesor</span>
                         <strong>{selectedOrder.advisor_id ? `#${selectedOrder.advisor_id}` : 'Sin asesor'}</strong>
+                      </article>
+                      <article>
+                        <span>Estado actual</span>
+                        <strong>{serviceOrderStatusLabels[selectedOrder.status] ?? selectedOrder.status}</strong>
                       </article>
                       <label>
                         Tecnico
@@ -881,11 +1444,47 @@ function ServiceOrdersPage() {
                       </label>
                       <article>
                         <span>Total de equipos</span>
-                        <strong>{selectedOrder.total_equipment || selectedEquipment.length}</strong>
+                        <strong>{safeNumber(selectedOrder.total_equipment || selectedEquipment.length)}</strong>
                       </article>
                       <article>
                         <span>Equipos completados</span>
-                        <strong>{selectedOrder.completed_equipment ?? 0}</strong>
+                        <strong>{safeNumber(selectedOrderMetrics.completedEquipment)}</strong>
+                      </article>
+                      <article>
+                        <span>Hojas creadas</span>
+                        <strong>{safeNumber(selectedOrderMetrics.fieldSheetsCount)}</strong>
+                      </article>
+                      <article>
+                        <span>Hojas completadas</span>
+                        <strong>{safeNumber(selectedOrderMetrics.fieldSheetsDone)}</strong>
+                      </article>
+                      <article>
+                        <span>Certificados esperados</span>
+                        <strong>{safeNumber(selectedOrderMetrics.certificatesExpected)}</strong>
+                      </article>
+                      <article>
+                        <span>PDFs subidos</span>
+                        <strong>{safeNumber(selectedOrderMetrics.pdfUploaded)}</strong>
+                      </article>
+                      <article>
+                        <span>PDFs autenticados</span>
+                        <strong>{safeNumber(selectedOrderMetrics.authenticated)}</strong>
+                      </article>
+                      <article>
+                        <span>Certificados liberados</span>
+                        <strong>{safeNumber(selectedOrderMetrics.released)}</strong>
+                      </article>
+                      <article>
+                        <span>Pendientes Captura</span>
+                        <strong>{safeNumber(selectedOrderMetrics.capturePending)}</strong>
+                      </article>
+                      <article>
+                        <span>Pendientes Calidad</span>
+                        <strong>{safeNumber(selectedOrderMetrics.qualityPending)}</strong>
+                      </article>
+                      <article>
+                        <span>Facturacion pendiente</span>
+                        <strong>{selectedOrderMetrics.billingPending ? 'Si' : 'No'}</strong>
                       </article>
                       <label className="service-order-checkbox">
                         <input
@@ -919,6 +1518,27 @@ function ServiceOrdersPage() {
                       <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
                         Ver orden PDF
                       </button>
+                      <button className="table-button" onClick={() => openEquipmentModal()} type="button">
+                        Crear equipo
+                      </button>
+                      <button className="table-button" onClick={() => setActiveTab('equipment')} type="button">
+                        Abrir equipos
+                      </button>
+                      <button className="table-button" onClick={() => setActiveTab('capture')} type="button">
+                        Abrir captura
+                      </button>
+                      <button className="table-button" onClick={() => setActiveTab('quality')} type="button">
+                        Abrir calidad
+                      </button>
+                      <label className="table-button table-button--file">
+                        Subir PDFs
+                        <input
+                          accept="application/pdf"
+                          multiple
+                          onChange={(event) => handleBulkPdfUpload(event.target.files, event.target)}
+                          type="file"
+                        />
+                      </label>
                       <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">
                         Descargar PDF
                       </button>
@@ -971,61 +1591,86 @@ function ServiceOrdersPage() {
                 <div className="quotation-section__title">
                   <div>
                     <p>Equipos de la orden</p>
-                    <h3>{selectedEquipment.length} equipos</h3>
+                    <h3>Equipos registrados: {selectedEquipment.length} / 10</h3>
                   </div>
-                  <button className="primary-button" onClick={() => openEquipmentModal()} type="button">
-                    + Agregar equipo
-                  </button>
+                  {canUseTechnicalActions ? (
+                    <button className="primary-button" disabled={selectedEquipment.length >= 10} onClick={() => openEquipmentModal()} type="button">
+                      + Agregar equipo
+                    </button>
+                  ) : null}
                 </div>
+                <div className="ets-metric-strip">
+                  <span className="ets-metric-badge"><strong>{safeNumber(selectedOrderMetrics.expectedEquipment)}</strong>Esperados cotizacion</span>
+                  <span className="ets-metric-badge"><strong>{selectedEquipment.length}</strong>Registrados</span>
+                  <span className="ets-metric-badge"><strong>{selectedEquipment.length} / 10</strong>Capacidad OT</span>
+                  <span className="ets-metric-badge"><strong>{selectedFieldSheets.length} / 10</strong>Hojas</span>
+                </div>
+                {selectedEquipment.length >= 10 ? (
+                  <div className="clients-empty">Maximo 10 equipos por Orden de Trabajo.</div>
+                ) : null}
                 <div className="clients-table equipment-table">
                   <div className="clients-table__head">
-                    <span>Nombre</span>
+                    <span>Instrumento</span>
                     <span>Marca</span>
                     <span>Modelo</span>
                     <span>Serie</span>
-                    <span>ID interno</span>
-                    <span>Rango</span>
+                    <span>Identificacion</span>
+                    <span>Folio reservado</span>
                     <span>Estado</span>
+                    <span>Hoja de Campo</span>
+                    <span>Certificado</span>
+                    <span>PDF final</span>
                     <span>Acciones</span>
                   </div>
                   {selectedEquipment.length ? (
-                    selectedEquipment.map((item) => (
-                      <div className="clients-table__row" key={item.id}>
-                        <span>{item.name}</span>
-                        <span>{item.brand || '-'}</span>
-                        <span>{item.model || '-'}</span>
-                        <span>{item.serial_number || '-'}</span>
-                        <span>{item.internal_id || '-'}</span>
-                        <span>{item.range_or_capacity || '-'}</span>
-                        <span>
-                          <mark className={`quotation-status status-${item.status}`}>
-                            {equipmentStatusLabels[item.status] ?? item.status}
-                          </mark>
-                        </span>
-                        <span className="clients-table__actions">
-                          <button className="table-button" onClick={() => openEquipmentModal(item)} type="button">
-                            Editar
-                          </button>
-                          {equipmentActions.map((action) => (
-                            <button
-                              className="table-button"
-                              disabled={!isEquipmentActionAllowed(item, action)}
-                              key={action.key}
-                              onClick={() => handleEquipmentStatus(item, action)}
-                              type="button"
-                            >
-                              {action.label}
+                    selectedEquipment.map((item) => {
+                      const sheet = fieldSheetsByEquipmentId.get(item.id);
+                      const certificate = activeCertificatesByEquipmentId.get(item.id);
+                      return (
+                        <div className="clients-table__row" key={item.id}>
+                          <span>{item.name}</span>
+                          <span>{item.brand || '-'}</span>
+                          <span>{item.model || '-'}</span>
+                          <span>{item.serial_number || '-'}</span>
+                          <span>{item.internal_id || '-'}</span>
+                          <span>{certificate?.expected_folio || certificate?.folio || '-'}</span>
+                          <span>
+                            <mark className={`quotation-status status-${item.status}`}>
+                              {equipmentStatusLabels[item.status] ?? item.status}
+                            </mark>
+                          </span>
+                          <span>{sheet ? `Hoja ${sheet.id}` : '-'}</span>
+                          <span>{certificate ? certificateStatusLabels[certificate.status] ?? certificate.status : 'Pendiente'}</span>
+                          <span>{certificate?.authenticated_pdf_path ? 'Autenticado' : certificate?.final_pdf_path ? 'Original' : '-'}</span>
+                          <span className="clients-table__actions">
+                            {canUseTechnicalActions ? (
+                              <button className="table-button" onClick={() => openEquipmentModal(item)} type="button">
+                                Editar
+                              </button>
+                            ) : null}
+                            {canUseTechnicalActions ? equipmentActions.map((action) => (
+                              <button
+                                className="table-button"
+                                disabled={!isEquipmentActionAllowed(item, action)}
+                                key={action.key}
+                                onClick={() => handleEquipmentStatus(item, action)}
+                                type="button"
+                              >
+                                {action.label}
+                              </button>
+                            )) : null}
+                            <button className="table-button table-button--primary" onClick={() => openFieldSheetForEquipment(item)} type="button">
+                              Abrir hoja
                             </button>
-                          ))}
-                          <button className="table-button table-button--primary" onClick={() => openFieldSheetForEquipment(item)} type="button">
-                            Abrir hoja
-                          </button>
-                          <button className="table-button" onClick={() => handleDeleteEquipment(item)} type="button">
-                            Eliminar
-                          </button>
-                        </span>
-                      </div>
-                    ))
+                            {canUseTechnicalActions ? (
+                              <button className="table-button" onClick={() => handleDeleteEquipment(item)} type="button">
+                                Eliminar
+                              </button>
+                            ) : null}
+                          </span>
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="clients-empty">Todavia no hay equipos vinculados a esta orden.</div>
                   )}
@@ -1061,28 +1706,435 @@ function ServiceOrdersPage() {
               </section>
             ) : null}
 
+            {activeTab === 'capture' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <div>
+                    <p>Captura</p>
+                    <h3>Certificados externos y PDFs finales</h3>
+                  </div>
+                  {canUseCaptureActions ? (
+                    <label className="table-button table-button--file">
+                      Subir PDFs multiples
+                      <input accept="application/pdf" multiple onChange={(event) => handleBulkPdfUpload(event.target.files, event.target)} type="file" />
+                    </label>
+                  ) : null}
+                </div>
+                <div className="ets-metric-strip">
+                  {[
+                    ['Esperados', captureMetrics.expected],
+                    ['PDFs cargados', captureMetrics.uploaded],
+                    ['PDFs pendientes', captureMetrics.pending],
+                    ['Matches', captureMetrics.matched],
+                    ['Warnings', captureMetrics.warnings],
+                    ['Mismatches', captureMetrics.mismatches],
+                    ['Manual', captureMetrics.manual]
+                  ].map(([label, value]) => (
+                    <span className="ets-metric-badge" key={label}><strong>{safeNumber(value)}</strong>{label}</span>
+                  ))}
+                </div>
+                <div className="clients-table ets-certificates-table">
+                  <div className="clients-table__head">
+                    <span>Folio</span>
+                    <span>Equipo</span>
+                    <span>Serie</span>
+                    <span>Estado</span>
+                    <span>PDF</span>
+                    <span>Match</span>
+                    <span>Acciones</span>
+                  </div>
+                  {selectedCertificates.length ? (
+                    selectedCertificates.map((certificate) => {
+                      const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
+                      return (
+                        <div className="clients-table__row" key={certificate.id}>
+                          <span>{certificate.expected_folio || certificate.folio}</span>
+                          <span>{item?.name || '-'}</span>
+                          <span>{item?.serial_number || '-'}</span>
+                          <span>{certificateStatusLabels[certificate.status] ?? certificate.status}</span>
+                          <span>{certificate.final_pdf_path ? 'Cargado' : 'Pendiente'}</span>
+                          <span>{certificate.match_status}</span>
+                          <span className="clients-table__actions">
+                            {canUseCaptureActions ? (
+                              <>
+                                <button className="table-button" onClick={() => handleCertificateWorkflow(certificate, 'start-capture', `Captura iniciada para ${certificate.folio}`)} type="button">
+                                  Iniciar
+                                </button>
+                                <label className="table-button table-button--file">
+                                  Subir PDF
+                                  <input accept="application/pdf" onChange={(event) => handleCertificatePdfUpload(certificate, event.target.files, event.target)} type="file" />
+                                </label>
+                                <button className="table-button" disabled={!certificate.final_pdf_path} onClick={() => handleCertificateMatchValidation(certificate)} type="button">
+                                  Validar
+                                </button>
+                                <button className="table-button" onClick={() => handleCertificateWorkflow(certificate, 'send-to-quality', `Certificado ${certificate.folio} enviado a calidad`)} type="button">
+                                  Enviar a Calidad
+                                </button>
+                              </>
+                            ) : null}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="clients-empty">Crea certificados esperados desde Equipos para iniciar captura.</div>
+                  )}
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === 'quality' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <div>
+                    <p>Calidad</p>
+                    <h3>Revision, aprobacion y liberacion</h3>
+                  </div>
+                  {canUseQualityActions ? (
+                    <div className="toolbar-actions">
+                      <button className="table-button" disabled={isSaving} onClick={handleAuthenticateApprovedBatch} type="button">
+                        Autenticar aprobados
+                      </button>
+                      <button className="table-button table-button--primary" disabled={isSaving} onClick={handleReleaseAuthenticatedBatch} type="button">
+                        Liberar autenticados
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="ets-metric-strip">
+                  {[
+                    ['Pendientes', qualityMetrics.pending],
+                    ['En revision', qualityMetrics.review],
+                    ['Aprobados', qualityMetrics.approved],
+                    ['Rechazados', qualityMetrics.rejected],
+                    ['Liberables', qualityMetrics.releasable],
+                    ['Autenticados', qualityMetrics.authenticated]
+                  ].map(([label, value]) => (
+                    <span className="ets-metric-badge" key={label}><strong>{safeNumber(value)}</strong>{label}</span>
+                  ))}
+                </div>
+                <div className="clients-table ets-certificates-table">
+                  <div className="clients-table__head">
+                    <span>Folio</span>
+                    <span>Equipo</span>
+                    <span>Hoja</span>
+                    <span>PDF</span>
+                    <span>Match</span>
+                    <span>Estado</span>
+                    <span>Acciones</span>
+                  </div>
+                  {selectedCertificates.length ? (
+                    selectedCertificates.map((certificate) => {
+                      const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
+                      const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
+                      return (
+                        <div
+                          className="clients-table__row clients-table__row--clickable"
+                          key={certificate.id}
+                          onClick={() => setSelectedQualityCertificate(certificate)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') setSelectedQualityCertificate(certificate);
+                          }}
+                          role="button"
+                          tabIndex={0}
+                        >
+                          <span>{certificate.expected_folio || certificate.folio}</span>
+                          <span>{item?.name || '-'}</span>
+                          <span>{sheet ? fieldSheetStatusLabels[sheet.status] ?? sheet.status : '-'}</span>
+                          <span>{certificate.final_pdf_path ? 'Cargado' : 'Pendiente'}</span>
+                          <span>{certificate.match_status}</span>
+                          <span>{certificateStatusLabels[certificate.status] ?? certificate.status}</span>
+                          <span className="clients-table__actions">
+                            {canUseQualityActions ? (
+                              <button className="table-button" onClick={(event) => { event.stopPropagation(); setSelectedQualityCertificate(certificate); }} type="button">
+                                Revisar
+                              </button>
+                            ) : null}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="clients-empty">No hay certificados esperados en este ETS.</div>
+                  )}
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === 'certificates' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Certificados</p>
+                  <h3>Administracion de certificados externos</h3>
+                </div>
+                <div className="clients-table ets-certificates-table">
+                  <div className="clients-table__head">
+                    <span>Folio</span>
+                    <span>Equipo</span>
+                    <span>Serie</span>
+                    <span>Identificacion</span>
+                    <span>Estado</span>
+                    <span>PDF original</span>
+                    <span>PDF autenticado</span>
+                    <span>Codigo</span>
+                    <span>Match</span>
+                    <span>Cliente</span>
+                    <span>Fecha auth</span>
+                    <span>Acciones</span>
+                  </div>
+                  {selectedCertificates.length ? (
+                    selectedCertificates.map((certificate) => {
+                      const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
+                      return (
+                        <div className="clients-table__row" key={certificate.id}>
+                          <span>{certificate.expected_folio || certificate.folio}</span>
+                          <span>{item?.name || '-'}</span>
+                          <span>{item?.serial_number || '-'}</span>
+                          <span>{item?.internal_id || '-'}</span>
+                          <span>{certificateStatusLabels[certificate.status] ?? certificate.status}</span>
+                          <span>{certificate.final_pdf_path ? 'Cargado' : '-'}</span>
+                          <span>{certificate.authenticated_pdf_path ? 'Listo' : '-'}</span>
+                          <span>{certificate.authentication_code || '-'}</span>
+                          <span>{certificate.match_status}</span>
+                          <span>{certificate.client_visible ? 'Visible' : 'Interno'}</span>
+                          <span>{certificate.authenticated_pdf_generated_at ? new Date(certificate.authenticated_pdf_generated_at).toLocaleString('es-MX') : '-'}</span>
+                          <span className="clients-table__actions">
+                            <button className="table-button" disabled={!certificate.authenticated_pdf_path} onClick={() => openAuthenticatedCertificatePdf(certificate)} type="button">
+                              Ver PDF
+                            </button>
+                            <button className="table-button" disabled={!certificate.authenticated_pdf_path} onClick={() => handleDownloadAuthenticatedCertificatePdf(certificate)} type="button">
+                              Descargar
+                            </button>
+                            <button className="table-button" disabled={!certificate.authentication_code} onClick={() => showCertificateAuthentication(certificate)} type="button">
+                              Ver autenticacion
+                            </button>
+                            {canUseCaptureActions ? (
+                              <label className="table-button table-button--file">
+                                Reemplazar PDF
+                                <input accept="application/pdf" onChange={(event) => handleCertificatePdfUpload(certificate, event.target.files, event.target)} type="file" />
+                              </label>
+                            ) : null}
+                            {canUseCaptureActions || canUseQualityActions ? (
+                              <button className="table-button" disabled={!certificate.final_pdf_path} onClick={() => handleCertificateMatchValidation(certificate)} type="button">
+                                Validar match
+                              </button>
+                            ) : null}
+                            {canUseQualityActions ? (
+                              <>
+                                <button className="table-button" disabled={!certificate.final_pdf_path} onClick={() => handleCertificateAuthentication(certificate)} type="button">
+                                  Autenticar
+                                </button>
+                                <button className="table-button table-button--primary" onClick={() => handleCertificateWorkflow(certificate, 'release-to-client', `Certificado ${certificate.folio} liberado al cliente`)} type="button">
+                                  Liberar
+                                </button>
+                                <button className="table-button" onClick={() => handleCertificateWorkflow(certificate, 'suspend', `Certificado ${certificate.folio} suspendido`)} type="button">
+                                  Suspender
+                                </button>
+                              </>
+                            ) : null}
+                          </span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="clients-empty">No hay certificados esperados en este ETS.</div>
+                  )}
+                </div>
+                {selectedAuthentication ? (
+                  <aside className="ets-auth-panel">
+                    <div>
+                      <p>Autenticacion del certificado</p>
+                      <strong>{selectedAuthentication.code}</strong>
+                    </div>
+                    <span>URL: {selectedAuthentication.url}</span>
+                    <span>Hash SHA-256: {selectedAuthentication.hash}</span>
+                    <span>Estado: {selectedAuthentication.status}</span>
+                    <span>Fecha: {selectedAuthentication.authenticatedAt ? new Date(selectedAuthentication.authenticatedAt).toLocaleString('es-MX') : '-'}</span>
+                  </aside>
+                ) : null}
+              </section>
+            ) : null}
+
+            {activeTab === 'documents' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Documentos</p>
+                  <h3>Documentos del expediente</h3>
+                </div>
+                <div className="field-sheet-prep-list">
+                  <article className="glass-card-mini">
+                    <strong>Cotizacion</strong>
+                    <span>{quotationsById.get(selectedOrder.quotation_id)?.folio || 'Sin cotizacion vinculada'}</span>
+                    <button className="table-button" disabled type="button">Pendiente</button>
+                  </article>
+                  <article className="glass-card-mini">
+                    <strong>Orden de trabajo</strong>
+                    <span>Documento operativo del ETS.</span>
+                    <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">Abrir</button>
+                    <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">Descargar</button>
+                    <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">Imprimir</button>
+                  </article>
+                  <article className="glass-card-mini">
+                    <strong>Hojas de campo</strong>
+                    <span>{selectedFieldSheets.length} hojas vinculadas al expediente.</span>
+                    <button className="table-button" onClick={() => setActiveTab('field-sheet')} type="button">Abrir hojas</button>
+                  </article>
+                  <article className="glass-card-mini">
+                    <strong>Certificados originales</strong>
+                    <span>{selectedCertificates.filter((certificate) => certificate.final_pdf_path).length} PDF originales cargados.</span>
+                    <button className="table-button" onClick={() => setActiveTab('certificates')} type="button">Abrir certificados</button>
+                    <button className="table-button" disabled type="button">Lote proximamente</button>
+                  </article>
+                  <article className="glass-card-mini">
+                    <strong>Certificados autenticados</strong>
+                    <span>{selectedCertificates.filter((certificate) => certificate.authenticated_pdf_path).length} finales para cliente.</span>
+                    <button className="table-button" onClick={() => setActiveTab('certificates')} type="button">Abrir autenticados</button>
+                    <button className="table-button" disabled type="button">Lote proximamente</button>
+                  </article>
+                  <article className="glass-card-mini">
+                    <strong>Evidencias</strong>
+                    <span>Repositorio documental del ETS.</span>
+                    <button className="table-button" disabled type="button">Proximamente</button>
+                  </article>
+                  <article className="glass-card-mini">
+                    <strong>Facturacion</strong>
+                    <span>{selectedOrder.status === 'pending_payment' ? 'Facturacion pendiente' : 'Preparado para facturacion'}</span>
+                    <button className="table-button" onClick={() => setActiveTab('billing')} type="button">Abrir facturacion</button>
+                  </article>
+                  <article className="glass-card-mini">
+                    <strong>Cliente / administrativos</strong>
+                    <span>El cliente solo descarga certificados autenticados.</span>
+                    <button className="table-button" disabled type="button">Proximamente</button>
+                  </article>
+                  {selectedCertificates.filter((certificate) => certificate.authenticated_pdf_path).map((certificate) => (
+                    <article className="glass-card-mini" key={`auth-doc-${certificate.id}`}>
+                      <strong>{certificate.expected_folio || certificate.folio}</strong>
+                      <span>{certificate.authentication_code || 'PDF autenticado'}</span>
+                      <button className="table-button" onClick={() => openAuthenticatedCertificatePdf(certificate)} type="button">Ver</button>
+                      <button className="table-button" onClick={() => handleDownloadAuthenticatedCertificatePdf(certificate)} type="button">Descargar</button>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
             {activeTab === 'history' ? (
               <section className="quotation-section">
                 <div className="quotation-section__title">
                   <p>Historial</p>
-                  <h3>Eventos de orden</h3>
+                  <h3>Linea de tiempo del expediente</h3>
                 </div>
-                <div className="quotation-history-list">
+                <div className="ets-timeline">
+                  {[
+                    selectedOrder.quotation_id ? {
+                      date: quotationsById.get(selectedOrder.quotation_id)?.created_at || selectedOrder.created_at,
+                      action: 'Cotizacion vinculada',
+                      entity: quotationsById.get(selectedOrder.quotation_id)?.folio || `#${selectedOrder.quotation_id}`,
+                      description: 'Origen comercial del expediente.'
+                    } : null,
+                    {
+                      date: selectedOrder.created_at,
+                      action: 'Orden creada',
+                      entity: selectedOrder.folio,
+                      description: `OT ${selectedOrder.work_order_number ?? '-'} registrada.`
+                    },
+                    ...selectedEquipment.map((item) => ({
+                      date: item.created_at,
+                      action: 'Equipo registrado',
+                      entity: item.name,
+                      description: [item.brand, item.model, item.serial_number].filter(Boolean).join(' · ') || 'Equipo del expediente.'
+                    })),
+                    ...selectedFieldSheets.map((sheet) => ({
+                      date: sheet.created_at,
+                      action: 'Hoja creada',
+                      entity: `Hoja ${sheet.id}`,
+                      description: fieldSheetStatusLabels[sheet.status] ?? sheet.status
+                    })),
+                    ...selectedFieldSheets.filter((sheet) => ['completed', 'review', 'approved'].includes(sheet.status)).map((sheet) => ({
+                      date: sheet.updated_at,
+                      action: 'Hoja completada',
+                      entity: `Hoja ${sheet.id}`,
+                      description: 'Registro tecnico listo para revision documental.'
+                    })),
+                    ...selectedCertificates.flatMap((certificate) => [
+                      {
+                        date: certificate.created_at,
+                        action: 'Certificado esperado',
+                        entity: certificate.expected_folio || certificate.folio,
+                        description: certificateStatusLabels[certificate.status] ?? certificate.status
+                      },
+                      certificate.capture_started_at ? {
+                        date: certificate.capture_started_at,
+                        action: 'Captura iniciada',
+                        entity: certificate.expected_folio || certificate.folio,
+                        description: 'Captura trabaja el certificado externo.'
+                      } : null,
+                      certificate.final_pdf_uploaded_at ? {
+                        date: certificate.final_pdf_uploaded_at,
+                        action: 'PDF subido',
+                        entity: certificate.final_pdf_original_filename || certificate.folio,
+                        description: `Match: ${certificate.match_status || '-'}`
+                      } : null,
+                      certificate.sent_to_quality_at ? {
+                        date: certificate.sent_to_quality_at,
+                        action: 'Enviado a calidad',
+                        entity: certificate.expected_folio || certificate.folio,
+                        description: 'Listo para revision documental.'
+                      } : null,
+                      certificate.quality_reviewed_at ? {
+                        date: certificate.quality_reviewed_at,
+                        action: certificate.status === 'quality_rejected' ? 'Calidad rechazo' : 'Calidad aprobo',
+                        entity: certificate.expected_folio || certificate.folio,
+                        description: certificate.quality_rejection_reason || 'Revision de calidad registrada.'
+                      } : null,
+                      certificate.authenticated_pdf_generated_at ? {
+                        date: certificate.authenticated_pdf_generated_at,
+                        action: 'Certificado autenticado',
+                        entity: certificate.authentication_code || certificate.folio,
+                        description: 'PDF autenticado generado por MYC SYSTEM.'
+                      } : null,
+                      certificate.released_to_client_at ? {
+                        date: certificate.released_to_client_at,
+                        action: 'Liberado al cliente',
+                        entity: certificate.expected_folio || certificate.folio,
+                        description: 'Certificado visible en portal cliente.'
+                      } : null
+                    ].filter(Boolean))
+                  ]
+                    .filter(Boolean)
+                    .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0))
+                    .map((event, index) => (
+                      <article className="ets-timeline-item" key={`${event.action}-${event.entity}-${index}`}>
+                        <time>{event.date ? new Date(event.date).toLocaleString('es-MX') : '-'}</time>
+                        <div>
+                          <strong>{event.action}</strong>
+                          <span>{event.entity}</span>
+                          <p>{event.description}</p>
+                        </div>
+                      </article>
+                    ))}
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === 'billing' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Facturacion</p>
+                  <h3>Control administrativo del ETS</h3>
+                </div>
+                <div className="quotation-commercial-grid service-order-info-grid">
                   <article>
-                    <strong>Orden creada</strong>
-                    <span>{new Date(selectedOrder.created_at).toLocaleString('es-MX')}</span>
+                    <span>Requiere pago</span>
+                    <strong>{selectedOrder.requires_payment ? 'Si' : 'No'}</strong>
                   </article>
                   <article>
-                    <strong>Ultima actualizacion</strong>
-                    <span>{new Date(selectedOrder.updated_at).toLocaleString('es-MX')}</span>
+                    <span>Estado administrativo</span>
+                    <strong>{selectedOrder.status === 'pending_payment' ? 'Facturacion pendiente' : 'Sin bloqueo administrativo'}</strong>
                   </article>
                   <article>
-                    <strong>Estado actual</strong>
-                    <span>{serviceOrderStatusLabels[selectedOrder.status] ?? selectedOrder.status}</span>
-                  </article>
-                  <article>
-                    <strong>Cotizacion origen</strong>
-                    <span>{quotationsById.get(selectedOrder.quotation_id)?.folio || '-'}</span>
+                    <span>Certificados liberados</span>
+                    <strong>{selectedCertificates.filter((certificate) => certificate.status === 'released_to_client').length}</strong>
                   </article>
                 </div>
               </section>
@@ -1263,7 +2315,7 @@ function ServiceOrdersPage() {
                     <input type="text" value={fieldSheetForm.calibrationPlace} onChange={(event) => updateFieldSheetForm('calibrationPlace', event.target.value)} />
                   </label>
                   <label className="form-field--wide">
-                    Patrones utilizados
+                    Patrones utilizados (opcional)
                     <div className="field-sheet-reference-builder">
                       <select value={fieldSheetForm.newReferenceStandardId || ''} onChange={(event) => updateFieldSheetForm('newReferenceStandardId', event.target.value)}>
                         <option value="">Selecciona patron</option>
@@ -1324,10 +2376,10 @@ function ServiceOrdersPage() {
                     </div>
                     <div className="toolbar-actions">
                       <button className="table-button" type="button" onClick={suggestPatternsForCurrentFieldSheet}>
-                        Sugerir patrones
+                        Sugerir patrones opcional
                       </button>
                       <button className="table-button" type="button" onClick={validatePatternsForCurrentFieldSheet}>
-                        Validar patrones seleccionados
+                        Validar opcional
                       </button>
                     </div>
                     {fieldSheetPatternSelection ? (
@@ -1364,6 +2416,15 @@ function ServiceOrdersPage() {
                   <label>
                     Proxima calibracion
                     <input type="date" value={fieldSheetForm.nextCalibrationDate} onChange={(event) => updateFieldSheetForm('nextCalibrationDate', event.target.value)} />
+                  </label>
+                  <label>
+                    Vigencia rapida
+                    <select defaultValue="manual" onChange={(event) => applyNextCalibrationInterval(event.target.value)}>
+                      <option value="manual">Manual</option>
+                      <option value="6">6 meses</option>
+                      <option value="12">12 meses</option>
+                      <option value="24">24 meses</option>
+                    </select>
                   </label>
                   <label>
                     Cotizacion / pedido
@@ -1506,39 +2567,19 @@ function ServiceOrdersPage() {
                     <button className="table-button" onClick={() => openFieldSheetPdf('print')} type="button">
                       Imprimir
                     </button>
-                    <button className="table-button" disabled={isSaving} onClick={saveFieldSheet} type="button">
-                      Guardar
-                    </button>
-                    <button className="primary-button" disabled={isSaving || !['draft', 'in_progress', 'rejected'].includes(selectedFieldSheet.status)} onClick={completeCurrentFieldSheet} type="button">
-                      Completar
-                    </button>
-                    <button className="table-button" disabled={isSaving || selectedFieldSheet.status !== 'completed'} onClick={reviewCurrentFieldSheet} type="button">
-                      Enviar a revision
-                    </button>
-                    <label className="inline-select-field">
-                      Tipo
-                      <select
-                        disabled={isSaving || activeCertificatesByFieldSheetId.has(selectedFieldSheet.id)}
-                        onChange={(event) => setFieldSheetCertificateType(event.target.value)}
-                        value={fieldSheetCertificateType}
-                      >
-                        <option value="acreditado">Acreditado</option>
-                        <option value="trazable">Trazable</option>
-                      </select>
-                    </label>
-                    <button
-                      className="table-button table-button--primary"
-                      disabled={
-                        isSaving ||
-                        !certificateReadyFieldSheetStatuses.has(selectedFieldSheet.status) ||
-                        !certificateReadyEquipmentStatuses.has(selectedEquipmentForSheet.status) ||
-                        activeCertificatesByFieldSheetId.has(selectedFieldSheet.id)
-                      }
-                      onClick={createCertificateFromCurrentFieldSheet}
-                      type="button"
-                    >
-                      {activeCertificatesByFieldSheetId.has(selectedFieldSheet.id) ? 'Certificado creado' : 'Crear certificado'}
-                    </button>
+                    {canUseTechnicalActions ? (
+                      <>
+                        <button className="table-button" disabled={isSaving} onClick={saveFieldSheet} type="button">
+                          Guardar
+                        </button>
+                        <button className="primary-button" disabled={isSaving || !['draft', 'in_progress', 'rejected', 'returned_to_technician'].includes(selectedFieldSheet.status)} onClick={completeCurrentFieldSheet} type="button">
+                          Completar
+                        </button>
+                        <button className="table-button" disabled={isSaving || selectedFieldSheet.status !== 'completed'} onClick={reviewCurrentFieldSheet} type="button">
+                          Enviar a Captura
+                        </button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1586,6 +2627,103 @@ function ServiceOrdersPage() {
                 </div>
               </section>
             ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {selectedQualityCertificate ? (() => {
+        const certificate = certificates.find((item) => item.id === selectedQualityCertificate.id) || selectedQualityCertificate;
+        const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
+        const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
+        const canApprove = ['ready_for_quality', 'quality_review'].includes(certificate.status);
+        const canAuthenticate = Boolean(certificate.final_pdf_path) && ['quality_approved', 'approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status) && !certificate.authenticated_pdf_path;
+        const canRelease = Boolean(certificate.final_pdf_path && certificate.authenticated_pdf_path) && ['quality_approved', 'approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status) && ['matched', 'warning', 'manual_accepted'].includes(certificate.match_status);
+        return (
+          <div className="modal-backdrop" role="presentation">
+            <section aria-modal="true" className="client-modal field-sheet-modal" role="dialog">
+              <div className="modal-header">
+                <div>
+                  <p>Revision de calidad</p>
+                  <h2>{certificate.expected_folio || certificate.folio}</h2>
+                </div>
+                <button className="icon-button" onClick={() => setSelectedQualityCertificate(null)} type="button">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="quotation-commercial-grid service-order-info-grid">
+                <article><span>Certificado</span><strong>{certificate.expected_folio || certificate.folio}</strong></article>
+                <article><span>Equipo</span><strong>{item?.name || '-'}</strong></article>
+                <article><span>Serie</span><strong>{item?.serial_number || '-'}</strong></article>
+                <article><span>Hoja vinculada</span><strong>{sheet ? `Hoja ${sheet.id} · ${fieldSheetStatusLabels[sheet.status] ?? sheet.status}` : '-'}</strong></article>
+                <article><span>PDF original</span><strong>{certificate.final_pdf_original_filename || (certificate.final_pdf_path ? 'Cargado' : 'Pendiente')}</strong></article>
+                <article><span>Match</span><strong>{certificate.match_status || '-'}</strong></article>
+                <article><span>Estado</span><strong>{certificateStatusLabels[certificate.status] ?? certificate.status}</strong></article>
+                <article><span>Autenticacion</span><strong>{certificate.authentication_code || '-'}</strong></article>
+              </div>
+              <div className="quality-action-ribbon">
+                <button className="table-button" disabled={!certificate.final_pdf_path} onClick={() => openOriginalCertificatePdf(certificate)} type="button">1. Ver PDF original</button>
+                <button className="table-button" disabled={!certificate.final_pdf_path || isSaving} onClick={() => handleCertificateMatchValidation(certificate)} type="button">2. Validar match</button>
+                <button className="table-button" disabled={!certificate.final_pdf_path || isSaving} onClick={() => handleCertificateMatchAcceptance(certificate)} type="button">3. Aceptar match manual</button>
+                <button className="table-button" disabled={!canApprove || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'quality-approve', `Certificado ${certificate.folio} aprobado`)} type="button">4. Aprobar</button>
+                <button className="table-button" disabled={!canApprove || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'quality-reject', `Certificado ${certificate.folio} rechazado`)} type="button">4. Rechazar</button>
+                <button className="table-button" disabled={isSaving} onClick={() => handleCertificateWorkflow(certificate, 'return-to-technician', `Certificado ${certificate.folio} devuelto al tecnico`)} type="button">5. Regresar a tecnico</button>
+                <button className="table-button" disabled={!canAuthenticate || isSaving} onClick={() => handleCertificateAuthentication(certificate)} type="button">6. Autenticar</button>
+                <button className="table-button table-button--primary" disabled={!canRelease || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'release-to-client', `Certificado ${certificate.folio} liberado al cliente`)} type="button">7. Liberar</button>
+              </div>
+              <div className="quotation-history-list">
+                <article><strong>Creado</strong><span>{certificate.created_at ? new Date(certificate.created_at).toLocaleString('es-MX') : '-'}</span></article>
+                <article><strong>PDF subido</strong><span>{certificate.final_pdf_uploaded_at ? new Date(certificate.final_pdf_uploaded_at).toLocaleString('es-MX') : '-'}</span></article>
+                <article><strong>Enviado a calidad</strong><span>{certificate.sent_to_quality_at ? new Date(certificate.sent_to_quality_at).toLocaleString('es-MX') : '-'}</span></article>
+                <article><strong>Revision calidad</strong><span>{certificate.quality_reviewed_at ? new Date(certificate.quality_reviewed_at).toLocaleString('es-MX') : '-'}</span></article>
+                <article><strong>Autenticado</strong><span>{certificate.authenticated_pdf_generated_at ? new Date(certificate.authenticated_pdf_generated_at).toLocaleString('es-MX') : '-'}</span></article>
+              </div>
+              <pre className="match-details-panel">{JSON.stringify(certificate.match_details || {}, null, 2)}</pre>
+            </section>
+          </div>
+        );
+      })() : null}
+
+      {returnToTechnicianRequest ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-modal="true" className="client-modal confirm-dialog" role="dialog">
+            <div className="section-heading confirm-dialog__header">
+              <div>
+                <p>Devolucion tecnica</p>
+                <h2>Motivo obligatorio</h2>
+              </div>
+            </div>
+            <div className="confirm-dialog__body">
+              <p>Registra la causa de devolucion. La hoja volvera a estado editable y quedara evidencia en auditoria.</p>
+              <textarea
+                autoFocus
+                className="form-textarea"
+                onChange={(event) => setReturnToTechnicianReason(event.target.value)}
+                placeholder="Describe el motivo para regresar al tecnico"
+                rows={4}
+                value={returnToTechnicianReason}
+              />
+            </div>
+            <div className="confirm-dialog__actions">
+              <button
+                className="confirm-dialog__cancel"
+                disabled={isSaving}
+                onClick={() => {
+                  setReturnToTechnicianRequest(null);
+                  setReturnToTechnicianReason('');
+                }}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                className="confirm-dialog__confirm"
+                disabled={isSaving}
+                onClick={confirmReturnToTechnician}
+                type="button"
+              >
+                {isSaving ? 'Procesando...' : 'Regresar al tecnico'}
+              </button>
+            </div>
           </section>
         </div>
       ) : null}

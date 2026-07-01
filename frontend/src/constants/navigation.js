@@ -1,18 +1,9 @@
 import {
-  BadgeCheck,
   Banknote,
-  BookOpenCheck,
-  Boxes,
   Building2,
-  ClipboardList,
   FileCheck2,
-  FileUp,
   FileText,
-  FlaskConical,
   Gauge,
-  Calculator,
-  MessageSquareText,
-  Network,
   Ruler,
   Settings,
   ShieldCheck
@@ -21,20 +12,11 @@ import {
 export const navigation = [
   { label: 'Dashboard', icon: Gauge, path: '/dashboard' },
   { label: 'Clientes', icon: Building2, path: '/dashboard#clientes' },
-  { label: 'CRM', icon: MessageSquareText, path: '/dashboard#crm' },
   { label: 'Ventas / Cotizaciones', icon: FileText, path: '/dashboard#cotizaciones' },
+  { label: 'Catálogo MYC', icon: FileCheck2, path: '/dashboard#catalogo' },
   { label: 'Servicios', icon: ShieldCheck, path: '/dashboard#servicios' },
-  { label: 'Ordenes de servicio', icon: ClipboardList, path: '/dashboard#ordenes' },
-  { label: 'Equipos', icon: Boxes, path: '/dashboard#equipos' },
-  { label: 'Hojas de campo', icon: BadgeCheck, path: '/dashboard#hojas' },
-  { label: 'Certificados', icon: FileCheck2, path: '/dashboard#certificados' },
-  { label: 'Captura', icon: FileUp, path: '/dashboard#captura' },
-  { label: 'Calidad', icon: ShieldCheck, path: '/dashboard#calidad' },
-  { label: 'Biblioteca Documental', icon: BookOpenCheck, path: '/dashboard#biblioteca-documental' },
   { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
-  { label: 'Procedimientos', icon: FlaskConical, path: '/dashboard#procedimientos' },
-  { label: 'Prueba de flujo', icon: Network, path: '/dashboard#prueba-flujo' },
-  { label: 'Finanzas', icon: Banknote, path: '/dashboard#finanzas' },
+  { label: 'Facturación', icon: Banknote, path: '/dashboard#facturacion' },
   { label: 'Configuracion', icon: Settings, path: '/dashboard#configuracion' }
 ];
 
@@ -48,14 +30,6 @@ export const modules = [
     status: 'Activo'
   },
   {
-    key: 'crm',
-    name: 'CRM',
-    description: 'Prospectos, oportunidades y conversaciones comerciales.',
-    icon: MessageSquareText,
-    path: '/dashboard#crm',
-    status: 'Pendiente'
-  },
-  {
     key: 'quotations',
     name: 'Ventas / Cotizaciones',
     description: 'Propuestas, condiciones comerciales y origen de servicios.',
@@ -64,67 +38,19 @@ export const modules = [
     status: 'Activo'
   },
   {
-    key: 'services',
-    name: 'Servicios',
-    description: 'Flujo operativo de laboratorio, ruta y programacion tecnica.',
-    icon: ShieldCheck,
-    path: '/dashboard#servicios',
-    status: 'En desarrollo'
+    key: 'catalog',
+    name: 'Catálogo MYC',
+    description: 'Servicios, conceptos comerciales y base para cotizaciones.',
+    icon: FileCheck2,
+    path: '/dashboard#catalogo',
+    status: 'Activo'
   },
   {
     key: 'serviceOrders',
-    name: 'Ordenes de servicio',
-    description: 'Planeacion, avance y cierre de trabajos autorizados.',
-    icon: ClipboardList,
-    path: '/dashboard#ordenes',
-    status: 'Activo'
-  },
-  {
-    key: 'equipment',
-    name: 'Equipos',
-    description: 'Instrumentos individuales vinculados a cada orden de servicio.',
-    icon: Boxes,
-    path: '/dashboard#equipos',
-    status: 'Activo'
-  },
-  {
-    key: 'fieldSheets',
-    name: 'Hojas de campo',
-    description: 'Registro tecnico por equipo, resultados y trazabilidad del trabajo.',
-    icon: BadgeCheck,
-    path: '/dashboard#hojas',
-    status: 'Activo'
-  },
-  {
-    key: 'certificates',
-    name: 'Certificados',
-    description: 'Generacion, revision y liberacion documental para clientes.',
-    icon: FileCheck2,
-    path: '/dashboard#certificados',
-    status: 'Activo'
-  },
-  {
-    key: 'capture',
-    name: 'Captura',
-    description: 'Certificados externos en Excel, PDF final y matching documental.',
-    icon: FileUp,
-    path: '/dashboard#captura',
-    status: 'Activo'
-  },
-  {
-    key: 'quality',
-    name: 'Calidad',
-    description: 'Revision transversal, aprobacion y control final de certificados.',
+    name: 'Servicios',
+    description: 'Expediente Tecnico del Servicio con equipos, hojas, captura, calidad y certificados.',
     icon: ShieldCheck,
-    path: '/dashboard#calidad',
-    status: 'Activo'
-  },
-  {
-    key: 'documentLibrary',
-    name: 'Biblioteca Documental',
-    description: 'Documentos controlados, interpretaciones ejecutables y perfiles tecnicos.',
-    icon: BookOpenCheck,
-    path: '/dashboard#biblioteca-documental',
+    path: '/dashboard#servicios',
     status: 'Activo'
   },
   {
@@ -136,35 +62,11 @@ export const modules = [
     status: 'En desarrollo'
   },
   {
-    key: 'procedures',
-    name: 'Procedimientos',
-    description: 'Base de procedimientos de calibracion, perfiles y reglas de decision.',
-    icon: FlaskConical,
-    path: '/dashboard#procedimientos',
-    status: 'En desarrollo'
-  },
-  {
-    key: 'uncertainty',
-    name: 'Incertidumbre',
-    description: 'Modelos versionables, componentes, formulas y preview tecnico.',
-    icon: Calculator,
-    path: '/dashboard#incertidumbre',
-    status: 'Experimental'
-  },
-  {
-    key: 'flowTest',
-    name: 'Prueba de flujo',
-    description: 'Auditoria visual del flujo Cliente a Preview de Incertidumbre.',
-    icon: Network,
-    path: '/dashboard#prueba-flujo',
-    status: 'Activo'
-  },
-  {
     key: 'finance',
-    name: 'Finanzas',
+    name: 'Facturación',
     description: 'Pagos, facturas y control de liberacion administrativa.',
     icon: Banknote,
-    path: '/dashboard#finanzas',
+    path: '/dashboard#facturacion',
     status: 'Pendiente'
   },
   {
@@ -183,9 +85,20 @@ export const defaultCounts = {
   serviceOrders: 0,
   equipment: 0,
   fieldSheets: 0,
+  servicesScheduled: 0,
+  servicesInProgress: 0,
+  servicesClosed: 0,
+  capturePending: 0,
   quality: 0,
+  qualityPending: 0,
   certificates: 0,
   certificatesReview: 0,
   certificatesApproved: 0,
-  certificatesReleased: 0
+  certificatesReleased: 0,
+  certificatesToRelease: 0,
+  billingPending: 0,
+  authenticationPending: 0,
+  authenticatedCertificates: 0,
+  returnedToTechnician: 0,
+  etsAverageProgress: 0
 };

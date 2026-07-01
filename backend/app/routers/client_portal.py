@@ -38,11 +38,11 @@ def get_client_portal_certificate_pdf(
     db: Session = Depends(get_db),
 ) -> FileResponse:
     certificate = get_certificate(db, certificate_id)
-    if not certificate.client_visible or not certificate.final_pdf_path:
+    if not certificate.client_visible or not certificate.authenticated_pdf_path:
         raise HTTPException(status_code=404, detail="Certificado no disponible")
-    path = Path(certificate.final_pdf_path)
+    path = Path(certificate.authenticated_pdf_path)
     if not path.exists():
-        raise HTTPException(status_code=404, detail="PDF no encontrado")
+        raise HTTPException(status_code=404, detail="PDF autenticado no encontrado")
     write_audit_log(
         db,
         action="client_portal.certificate_downloaded",
@@ -54,5 +54,5 @@ def get_client_portal_certificate_pdf(
     return FileResponse(
         path,
         media_type="application/pdf",
-        filename=certificate.final_pdf_original_filename or f"{certificate.folio}.pdf",
+        filename=f"{certificate.authentication_code or certificate.folio}.pdf",
     )

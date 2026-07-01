@@ -1,6 +1,6 @@
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -41,6 +41,9 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     method: Mapped[str | None] = mapped_column(String(180))
     environmental_conditions: Mapped[str | None] = mapped_column(Text)
     technician_notes: Mapped[str | None] = mapped_column(Text)
+    returned_to_technician_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    returned_to_technician_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    returned_to_technician_reason: Mapped[str | None] = mapped_column(Text)
 
     equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
     calibration_procedure: Mapped["CalibrationProcedure | None"] = relationship(
