@@ -87,8 +87,15 @@ def _json_safe(value):
 def _next_certificate_folio(
     db: Session, *, certificate_type: str, issued_on: date
 ) -> str:
-    service_type = "acreditado" if certificate_type == "acreditado" else "trazable"
-    prefix = "MYCA" if service_type == "acreditado" else "MYCT"
+    if certificate_type == "acreditado":
+        service_type = "acreditado"
+        prefix = "MYCA"
+    elif certificate_type == "vinculado":
+        service_type = "vinculado"
+        prefix = "MYCV"
+    else:
+        service_type = "trazable"
+        prefix = "MYCT"
     prefix = f"{prefix}-{issued_on:%m}-{issued_on:%Y}-"
     last_folio = db.scalar(
         select(Certificate.folio)
@@ -156,6 +163,25 @@ def _ensure_no_active_certificate(db: Session, field_sheet_id: int | None) -> No
         raise HTTPException(status_code=409, detail="La hoja de campo ya tiene un certificado activo")
 
 
+def _ensure_no_active_certificate_for_equipment(
+    db: Session,
+    service_order_id: int,
+    equipment_id: int,
+) -> None:
+    exists = db.scalar(
+        select(Certificate.id).where(
+            Certificate.service_order_id == service_order_id,
+            Certificate.equipment_id == equipment_id,
+            Certificate.is_active.is_(True),
+        )
+    )
+    if exists is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="El equipo ya tiene un certificado activo",
+        )
+
+
 def list_certificates(
     db: Session,
     *,
@@ -190,6 +216,11 @@ def create_certificate(
 ) -> Certificate:
     _validate_certificate_links(db, payload)
     _ensure_no_active_certificate(db, payload.field_sheet_id)
+    _ensure_no_active_certificate_for_equipment(
+        db,
+        payload.service_order_id,
+        payload.equipment_id,
+    )
     issued_on = payload.issued_on or date.today()
     folio = payload.expected_folio or _next_certificate_folio(
         db,

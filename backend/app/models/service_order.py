@@ -44,6 +44,7 @@ class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     quotation_item_id: Mapped[int | None] = mapped_column(ForeignKey("quotation_items.id"))
     service_name: Mapped[str] = mapped_column(String(180))
+    calibration_scope: Mapped[str | None] = mapped_column(String(60))
     quantity: Mapped[int] = mapped_column(default=1)
     status: Mapped[str] = mapped_column(String(60), default="pending")
 

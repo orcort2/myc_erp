@@ -21,7 +21,35 @@ FieldSheetStatus = Literal[
     "cancelled",
 ]
 
-FieldSheetTemplateKey = Literal["general", "electrica"]
+FieldSheetTemplateKey = Literal[
+    "anemometro",
+    "electrica",
+    "bascula",
+    "cronometro",
+    "dimensional",
+    "dinamometro",
+    "durometro",
+    "luxometro",
+    "manometro",
+    "multimetro",
+    "peso_patron",
+    "sonometro",
+    "sonido",
+    "temperatura",
+    "termometro",
+    "termohigrometro",
+    "transductor_presion",
+    "torquimetro",
+    "tacometro",
+    "volumen",
+    "masa",
+    "balanza",
+    "regla",
+    "flexometro",
+    "vernier",
+    "micrometro",
+    "general",
+]
 
 
 class FieldSheetResultBase(BaseModel):
@@ -56,6 +84,11 @@ class FieldSheetBase(BaseModel):
     template_key: FieldSheetTemplateKey = "general"
     calibration_procedure_id: int | None = None
     calibration_place: str | None = None
+    minimum_division: str | None = None
+    location: str | None = None
+    attention: str | None = None
+    company: str | None = None
+    address: str | None = None
     reception_date: date | None = None
     calibration_date: date | None = None
     next_calibration_date: date | None = None
@@ -79,6 +112,11 @@ class FieldSheetBase(BaseModel):
     method: str | None = None
     environmental_conditions: str | None = None
     technician_notes: str | None = None
+    certificate_client_mode: Literal["billing", "different"] = "billing"
+    certificate_client_company: str | None = None
+    certificate_client_attention: str | None = None
+    certificate_client_address: str | None = None
+    apply_certificate_client_to_order: bool = False
     results_rows: list[FieldSheetResultCreate] = Field(default_factory=list)
     reference_standards: list[FieldSheetReferenceStandardCreate] = Field(default_factory=list)
 
@@ -91,6 +129,11 @@ class FieldSheetUpdate(BaseModel):
     template_key: FieldSheetTemplateKey | None = None
     calibration_procedure_id: int | None = None
     calibration_place: str | None = None
+    minimum_division: str | None = None
+    location: str | None = None
+    attention: str | None = None
+    company: str | None = None
+    address: str | None = None
     reception_date: date | None = None
     calibration_date: date | None = None
     next_calibration_date: date | None = None
@@ -114,6 +157,11 @@ class FieldSheetUpdate(BaseModel):
     method: str | None = None
     environmental_conditions: str | None = None
     technician_notes: str | None = None
+    certificate_client_mode: Literal["billing", "different"] | None = None
+    certificate_client_company: str | None = None
+    certificate_client_attention: str | None = None
+    certificate_client_address: str | None = None
+    apply_certificate_client_to_order: bool | None = None
     results_rows: list[FieldSheetResultUpdate] | None = None
     reference_standards: list[FieldSheetReferenceStandardCreate] | None = None
 
@@ -135,6 +183,7 @@ class FieldSheetRead(FieldSheetBase):
     returned_to_technician_at: datetime | None = None
     returned_to_technician_by_id: int | None = None
     returned_to_technician_reason: str | None = None
+    reserved_certificate_folio: str | None = None
     results_rows: list[FieldSheetResultRead] = Field(default_factory=list)
     calibration_procedure: CalibrationProcedureRead | None = None
     reference_standards: list[FieldSheetReferenceStandardRead] = Field(default_factory=list)

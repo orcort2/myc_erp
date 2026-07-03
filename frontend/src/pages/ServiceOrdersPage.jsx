@@ -71,6 +71,7 @@ import {
   updateFieldSheetResultsRowsForTemplate
 } from '../utils/fieldSheets.js';
 import { formatDate, getClientDisplayName } from '../utils/formatters.js';
+import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 
 function safeNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -94,6 +95,30 @@ function hasStageAccess(user, stage) {
   if (stage === 'quality') return roles.some((role) => ['calidad', 'quality'].includes(role));
   return true;
 }
+
+function getFieldSheetTemplateLabel(templateKey) {
+  const labels = {
+    anemometro: 'Hoja de Campo Anemómetro',
+    temperatura: 'Hoja de Campo Temperatura',
+    sonido: 'Hoja de Campo Sonido',
+    dimensional: 'Hoja de Campo Dimensional',
+    electrica: 'Hoja de Campo Eléctrica',
+    general: 'Hoja de Campo General',
+  };
+  return labels[templateKey] ?? 'Hoja de Campo General';
+}
+
+const calibrationScopeLabels = {
+  traceable: 'Trazable',
+  accredited_iso_17025: 'Acreditado ISO/IEC 17025',
+  accredited_linked_lab: 'Vinculado',
+};
+
+const calibrationScopeBadgeLabels = {
+  traceable: 'Trazables',
+  accredited_iso_17025: 'Acreditados',
+  accredited_linked_lab: 'Vinculados',
+};
 
 function ServiceOrdersPage({ user = null }) {
   const [serviceOrders, setServiceOrders] = useState([]);
@@ -124,6 +149,16 @@ function ServiceOrdersPage({ user = null }) {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
   const [isFieldSheetModalOpen, setIsFieldSheetModalOpen] = useState(false);
+  const [isFieldSheetCreateModalOpen, setIsFieldSheetCreateModalOpen] = useState(false);
+  const [pendingFieldSheetEquipment, setPendingFieldSheetEquipment] = useState(null);
+  const [fieldSheetCreateForm, setFieldSheetCreateForm] = useState({
+    templateKey: 'anemometro',
+    certificateClientMode: 'billing',
+    certificateClientCompany: '',
+    certificateClientAttention: '',
+    certificateClientAddress: '',
+    applyCertificateClientToOrder: true,
+  });
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -228,6 +263,68 @@ function ServiceOrdersPage({ user = null }) {
     releasable: selectedCertificates.filter((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status) && certificate.final_pdf_path).length,
     authenticated: selectedCertificates.filter((certificate) => certificate.authenticated_pdf_path).length
   }), [selectedCertificates]);
+
+  const selectedOrderCertificateCapacity = useMemo(() => {
+    if (!selectedOrder) {
+      return {
+        traceable: { quoted: 0, used: 0, available: 0 },
+        accredited_iso_17025: { quoted: 0, used: 0, available: 0 },
+        accredited_linked_lab: { quoted: 0, used: 0, available: 0 },
+        availableScopes: [],
+        singleAvailableScope: null,
+      };
+    }
+
+    const quoted = {
+      traceable: 0,
+      accredited_iso_17025: 0,
+      accredited_linked_lab: 0,
+    };
+    (selectedOrder.items ?? []).forEach((item) => {
+      if (item.calibration_scope && quoted[item.calibration_scope] !== undefined) {
+        quoted[item.calibration_scope] += safeNumber(item.quantity);
+      }
+    });
+
+    const used = {
+      traceable: 0,
+      accredited_iso_17025: 0,
+      accredited_linked_lab: 0,
+    };
+    selectedCertificates.forEach((certificate) => {
+      if (certificate.certificate_type === 'trazable') used.traceable += 1;
+      if (certificate.certificate_type === 'acreditado') used.accredited_iso_17025 += 1;
+      if (certificate.certificate_type === 'vinculado') used.accredited_linked_lab += 1;
+    });
+
+    const capacity = {
+      traceable: {
+        quoted: quoted.traceable,
+        used: used.traceable,
+        available: Math.max(quoted.traceable - used.traceable, 0),
+      },
+      accredited_iso_17025: {
+        quoted: quoted.accredited_iso_17025,
+        used: used.accredited_iso_17025,
+        available: Math.max(quoted.accredited_iso_17025 - used.accredited_iso_17025, 0),
+      },
+      accredited_linked_lab: {
+        quoted: quoted.accredited_linked_lab,
+        used: used.accredited_linked_lab,
+        available: Math.max(quoted.accredited_linked_lab - used.accredited_linked_lab, 0),
+      },
+    };
+
+    const availableScopes = Object.entries(capacity)
+      .filter(([, item]) => item.available > 0)
+      .map(([scope]) => scope);
+
+    return {
+      ...capacity,
+      availableScopes,
+      singleAvailableScope: availableScopes.length === 1 ? availableScopes[0] : null,
+    };
+  }, [selectedCertificates, selectedOrder]);
 
   function getOrderMetrics(order) {
     const orderEquipment = equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false);
@@ -379,7 +476,7 @@ function ServiceOrdersPage({ user = null }) {
     setFieldSheetForm(emptyFieldSheetForm);
     setEditingEquipmentId(null);
     setActiveTab('info');
-    setFieldSheetTab('info');
+    setFieldSheetTab('technical');
     setSelectedAuthentication(null);
     setError('');
   }
@@ -452,6 +549,8 @@ function ServiceOrdersPage({ user = null }) {
     if (item) {
       setEditingEquipmentId(item.id);
       setEquipmentForm({
+        serviceOrderItemId: item.service_order_item_id ? String(item.service_order_item_id) : '',
+        certificateScope: item.calibration_scope ?? selectedOrderCertificateCapacity.singleAvailableScope ?? 'traceable',
         name: item.name ?? '',
         brand: item.brand ?? '',
         model: item.model ?? '',
@@ -463,7 +562,12 @@ function ServiceOrdersPage({ user = null }) {
       });
     } else {
       setEditingEquipmentId(null);
-      setEquipmentForm(emptyEquipmentForm);
+      setEquipmentForm({
+        ...emptyEquipmentForm,
+        certificateScope:
+          selectedOrderCertificateCapacity.singleAvailableScope ??
+          (selectedOrderCertificateCapacity.availableScopes.length > 1 ? '' : emptyEquipmentForm.certificateScope),
+      });
     }
     setIsEquipmentModalOpen(true);
   }
@@ -482,12 +586,17 @@ function ServiceOrdersPage({ user = null }) {
       setError('Captura el nombre del equipo.');
       return;
     }
+    if (!editingEquipmentId && !equipmentForm.certificateScope) {
+      setError('Selecciona el tipo de certificado para este equipo.');
+      return;
+    }
     setIsSaving(true);
     setError('');
     setNotice('');
     try {
       const payload = {
         service_order_id: selectedOrder.id,
+        calibration_scope: equipmentForm.certificateScope || null,
         name: equipmentForm.name.trim(),
         brand: equipmentForm.brand.trim() || null,
         model: equipmentForm.model.trim() || null,
@@ -565,60 +674,112 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   async function openFieldSheetForEquipment(item) {
-  setError('');
-  setNotice('');
-  setSelectedEquipmentForSheet(item);
+    setError('');
+    setNotice('');
+    setSelectedEquipmentForSheet(item);
 
-  try {
-    const existing = fieldSheetsByEquipmentId.get(item.id);
+    try {
+      const existing = fieldSheetsByEquipmentId.get(item.id);
 
-    if (existing) {
-      const sheet = await getFieldSheet(existing.id);
-      setSelectedFieldSheet(sheet);
-      setFieldSheetForm(fieldSheetToForm(sheet));
-      setFieldSheetCertificateType('trazable');
-      setFieldSheetPatternSelection(null);
-      setFieldSheetTab('info');
-      setIsFieldSheetModalOpen(true);
-      return;
+      if (existing) {
+        const sheet = await getFieldSheet(existing.id);
+        setSelectedFieldSheet(sheet);
+        setFieldSheetForm(fieldSheetToForm(sheet));
+        setFieldSheetCertificateType('trazable');
+        setFieldSheetPatternSelection(null);
+        setFieldSheetTab('technical');
+        setIsFieldSheetModalOpen(true);
+        return;
+      }
+
+      const freshSheets = await listFieldSheets();
+      const freshExisting = Array.isArray(freshSheets)
+        ? freshSheets.find((sheet) => sheet.equipment_id === item.id && sheet.is_active !== false)
+        : null;
+
+      if (freshExisting) {
+        setFieldSheets(freshSheets);
+        const sheet = await getFieldSheet(freshExisting.id);
+        setSelectedFieldSheet(sheet);
+        setFieldSheetForm(fieldSheetToForm(sheet));
+        setFieldSheetCertificateType('trazable');
+        setFieldSheetPatternSelection(null);
+        setFieldSheetTab('technical');
+        setIsFieldSheetModalOpen(true);
+        return;
+      }
+
+      const inheritedCertificateClient = selectedFieldSheets
+        .filter((sheet) => sheet.apply_certificate_client_to_order && sheet.certificate_client_mode === 'different')
+        .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))[0];
+
+      setPendingFieldSheetEquipment(item);
+      setFieldSheetCreateForm({
+        templateKey: 'anemometro',
+        certificateClientMode: inheritedCertificateClient?.certificate_client_mode ?? 'billing',
+        certificateClientCompany: inheritedCertificateClient?.certificate_client_company ?? '',
+        certificateClientAttention: inheritedCertificateClient?.certificate_client_attention ?? '',
+        certificateClientAddress: inheritedCertificateClient?.certificate_client_address ?? '',
+        applyCertificateClientToOrder: inheritedCertificateClient?.apply_certificate_client_to_order ?? true,
+      });
+      setIsFieldSheetCreateModalOpen(true);
+    } catch (requestError) {
+      setError(requestError.message);
     }
-
-    const freshSheets = await listFieldSheets();
-    const freshExisting = Array.isArray(freshSheets)
-      ? freshSheets.find((sheet) => sheet.equipment_id === item.id && sheet.is_active !== false)
-      : null;
-
-    if (freshExisting) {
-      setFieldSheets(freshSheets);
-      const sheet = await getFieldSheet(freshExisting.id);
-      setSelectedFieldSheet(sheet);
-      setFieldSheetForm(fieldSheetToForm(sheet));
-      setFieldSheetCertificateType('trazable');
-      setFieldSheetPatternSelection(null);
-      setFieldSheetTab('info');
-      setIsFieldSheetModalOpen(true);
-      return;
-    }
-
-    const sheet = await createFieldSheet({ equipment_id: item.id });
-    setSelectedFieldSheet(sheet);
-    setFieldSheetForm(fieldSheetToForm(sheet));
-    setFieldSheetCertificateType('trazable');
-    setFieldSheetPatternSelection(null);
-    setFieldSheetTab('info');
-    setIsFieldSheetModalOpen(true);
-    setFieldSheets((current) => [sheet, ...current]);
-    setNotice(`Hoja de campo creada para ${item.name}`);
-    await loadServiceOrderData();
-  } catch (requestError) {
-    if (requestError.message.includes('ya tiene') || requestError.message.includes('409')) {
-      await loadServiceOrderData();
-      setError('La hoja ya existe. Recarga el ETS y vuelve a abrirla.');
-      return;
-    }
-    setError(requestError.message);
   }
-}
+
+      async function confirmCreateFieldSheet() {
+    if (!pendingFieldSheetEquipment) return;
+
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+
+    try {
+      const sheet = await createFieldSheet({
+        equipment_id: pendingFieldSheetEquipment.id,
+        template_key: fieldSheetCreateForm.templateKey,
+        certificate_client_mode: fieldSheetCreateForm.certificateClientMode,
+        certificate_client_company: fieldSheetCreateForm.certificateClientCompany || null,
+        certificate_client_attention: fieldSheetCreateForm.certificateClientAttention || null,
+        certificate_client_address: fieldSheetCreateForm.certificateClientAddress || null,
+        apply_certificate_client_to_order: Boolean(fieldSheetCreateForm.applyCertificateClientToOrder),
+      });
+
+      const nextForm = fieldSheetToForm(sheet);
+
+      const equipmentName = pendingFieldSheetEquipment.name;
+
+      setSelectedFieldSheet(sheet);
+      setFieldSheetForm(nextForm);
+      setFieldSheetCertificateType('trazable');
+      setFieldSheetPatternSelection(null);
+      setFieldSheetTab('technical');
+
+      setIsFieldSheetCreateModalOpen(false);
+      setPendingFieldSheetEquipment(null);
+
+      setFieldSheets((current) => [sheet, ...current]);
+      setNotice(`Hoja de campo creada para ${equipmentName}`);
+
+      await loadServiceOrderData();
+
+      setIsFieldSheetModalOpen(true);
+    } catch (requestError) {
+      if (
+        requestError.message.includes('ya tiene') ||
+        requestError.message.includes('409')
+      ) {
+        await loadServiceOrderData();
+        setError('La hoja ya existe. Recarga el ETS y vuelve a abrirla.');
+        return;
+      }
+
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   function closeFieldSheetModal() {
     setIsFieldSheetModalOpen(false);
@@ -633,6 +794,13 @@ function ServiceOrdersPage({ user = null }) {
 
   function updateFieldSheetForm(field, value) {
     setFieldSheetForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateFieldSheetCreateForm(field, value) {
+    setFieldSheetCreateForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
   }
 
   function applyNextCalibrationInterval(months) {
@@ -1604,6 +1772,14 @@ function ServiceOrdersPage({ user = null }) {
                   <span className="ets-metric-badge"><strong>{selectedEquipment.length}</strong>Registrados</span>
                   <span className="ets-metric-badge"><strong>{selectedEquipment.length} / 10</strong>Capacidad OT</span>
                   <span className="ets-metric-badge"><strong>{selectedFieldSheets.length} / 10</strong>Hojas</span>
+                  {['traceable', 'accredited_iso_17025', 'accredited_linked_lab'].map((scope) => (
+                    <span className="ets-metric-badge" key={scope}>
+                      <strong>
+                        {safeNumber(selectedOrderCertificateCapacity[scope]?.used)} / {safeNumber(selectedOrderCertificateCapacity[scope]?.quoted)}
+                      </strong>
+                      {calibrationScopeBadgeLabels[scope]}
+                    </span>
+                  ))}
                 </div>
                 {selectedEquipment.length >= 10 ? (
                   <div className="clients-empty">Maximo 10 equipos por Orden de Trabajo.</div>
@@ -1615,6 +1791,7 @@ function ServiceOrdersPage({ user = null }) {
                     <span>Modelo</span>
                     <span>Serie</span>
                     <span>Identificacion</span>
+                    <span>Tipo cert.</span>
                     <span>Folio reservado</span>
                     <span>Estado</span>
                     <span>Hoja de Campo</span>
@@ -1633,6 +1810,7 @@ function ServiceOrdersPage({ user = null }) {
                           <span>{item.model || '-'}</span>
                           <span>{item.serial_number || '-'}</span>
                           <span>{item.internal_id || '-'}</span>
+                          <span>{calibrationScopeLabels[item.calibration_scope] || '-'}</span>
                           <span>{certificate?.expected_folio || certificate?.folio || '-'}</span>
                           <span>
                             <mark className={`quotation-status status-${item.status}`}>
@@ -2154,6 +2332,55 @@ function ServiceOrdersPage({ user = null }) {
             </div>
             {error ? <div className="form-error dashboard-error">{error}</div> : null}
             <form className="client-form client-form--modal" onSubmit={handleEquipmentSubmit}>
+              {editingEquipmentId ? (
+                <label>
+                  Tipo de certificado
+                  <input
+                    disabled
+                    type="text"
+                    value={calibrationScopeLabels[equipmentForm.certificateScope] || '-'}
+                  />
+                </label>
+              ) : selectedOrderCertificateCapacity.availableScopes.length > 1 ? (
+                <label>
+                  Tipo de certificado
+                  <select
+                    onChange={(event) => updateEquipmentForm('certificateScope', event.target.value)}
+                    required
+                    value={equipmentForm.certificateScope}
+                  >
+                    <option value="">Selecciona un tipo</option>
+                    {selectedOrderCertificateCapacity.availableScopes.map((scope) => (
+                      <option key={scope} value={scope}>
+                        {calibrationScopeLabels[scope]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <label>
+                  Tipo de certificado
+                  <input
+                    disabled
+                    type="text"
+                    value={
+                      calibrationScopeLabels[
+                        selectedOrderCertificateCapacity.singleAvailableScope || equipmentForm.certificateScope
+                      ] || 'Sin cupo disponible'
+                    }
+                  />
+                </label>
+              )}
+              <div className="quotation-commercial-grid service-order-info-grid">
+                {['traceable', 'accredited_iso_17025', 'accredited_linked_lab'].map((scope) => (
+                  <article key={scope}>
+                    <span>{calibrationScopeBadgeLabels[scope]}</span>
+                    <strong>
+                      {safeNumber(selectedOrderCertificateCapacity[scope]?.used)} / {safeNumber(selectedOrderCertificateCapacity[scope]?.quoted)}
+                    </strong>
+                  </article>
+                ))}
+              </div>
               <label>
                 Nombre
                 <input onChange={(event) => updateEquipmentForm('name', event.target.value)} required type="text" value={equipmentForm.name} />
@@ -2198,6 +2425,138 @@ function ServiceOrdersPage({ user = null }) {
           </section>
         </div>
       ) : null}
+              {isFieldSheetCreateModalOpen && selectedOrder && pendingFieldSheetEquipment ? (
+          <div className="modal-backdrop" role="presentation">
+            <section className="client-modal quotation-detail-modal" aria-modal="true" role="dialog">
+              <div className="quotation-detail-header">
+                <div>
+                  <p>Nueva hoja de campo</p>
+                  <h2>{pendingFieldSheetEquipment.name}</h2>
+                  <span>{selectedOrder.folio}</span>
+                </div>
+
+                <button
+                  className="icon-text-button"
+                  onClick={() => {
+                    setIsFieldSheetCreateModalOpen(false);
+                    setIsFieldSheetModalOpen(true);
+                  }}
+                  type="button"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+              <div className="client-form">
+                <h3>Cliente del certificado</h3>
+
+                <label>
+                  <input
+                    checked={fieldSheetCreateForm.certificateClientMode === 'billing'}
+                    onChange={() => updateFieldSheetCreateForm('certificateClientMode', 'billing')}
+                    type="radio"
+                  />
+                  Usar el mismo cliente facturado
+                </label>
+
+                <label>
+                  <input
+                    checked={fieldSheetCreateForm.certificateClientMode === 'different'}
+                    onChange={() => updateFieldSheetCreateForm('certificateClientMode', 'different')}
+                    type="radio"
+                  />
+                  Usar cliente diferente para el certificado
+                </label>
+
+                {fieldSheetCreateForm.certificateClientMode === 'different' ? (
+                  <div className="client-form__grid">
+                    <label>
+                      Empresa
+                      <input
+                        onChange={(event) =>
+                          updateFieldSheetCreateForm('certificateClientCompany', event.target.value)
+                        }
+                        type="text"
+                        value={fieldSheetCreateForm.certificateClientCompany}
+                      />
+                    </label>
+
+                    <label>
+                      Atención
+                      <input
+                        onChange={(event) =>
+                          updateFieldSheetCreateForm('certificateClientAttention', event.target.value)
+                        }
+                        type="text"
+                        value={fieldSheetCreateForm.certificateClientAttention}
+                      />
+                    </label>
+
+                    <label className="form-field--wide">
+                      Dirección
+                      <input
+                        onChange={(event) =>
+                          updateFieldSheetCreateForm('certificateClientAddress', event.target.value)
+                        }
+                        type="text"
+                        value={fieldSheetCreateForm.certificateClientAddress}
+                      />
+                    </label>
+
+                    <label className="form-field--wide">
+                      <input
+                        checked={fieldSheetCreateForm.applyCertificateClientToOrder}
+                        onChange={(event) =>
+                          updateFieldSheetCreateForm('applyCertificateClientToOrder', event.target.checked)
+                        }
+                        type="checkbox"
+                      />
+                      Usar este cliente para las demás hojas de esta orden
+                    </label>
+                  </div>
+                ) : null}
+
+                <h3>Plantilla</h3>
+
+                <label>
+                  Tipo de hoja de campo
+                  <select
+                    onChange={(event) => updateFieldSheetCreateForm('templateKey', event.target.value)}
+                    value={fieldSheetCreateForm.templateKey}
+                  >
+                    <option value="anemometro">Anemómetro</option>
+                    <option value="temperatura">Temperatura</option>
+                    <option value="sonido">Sonido</option>
+                    <option value="dimensional">Dimensional</option>
+                  </select>
+                </label>
+
+                <div className="client-form__actions client-form__actions--modal">
+                  <button
+                    className="icon-text-button"
+                    disabled={isSaving}
+                    onClick={() => {
+                      setIsFieldSheetCreateModalOpen(false);
+                      setIsFieldSheetModalOpen(true);
+                    }}
+                    type="button"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    className="primary-button"
+                    disabled={isSaving}
+                    onClick={confirmCreateFieldSheet}
+                    type="button"
+                  >
+                    {isSaving ? 'Creando...' : 'Crear hoja'}
+                  </button>
+                </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
 
       {isFieldSheetModalOpen && selectedOrder && selectedEquipmentForSheet && selectedFieldSheet ? (
         <div className="modal-backdrop" role="presentation">
@@ -2271,7 +2630,11 @@ function ServiceOrdersPage({ user = null }) {
                   </article>
                   <article>
                     <span>Plantilla</span>
-                    <strong>{fieldSheetForm.templateKey === 'electrica' ? 'Eléctrica' : 'General'}</strong>
+                    <strong>{getFieldSheetTemplateLabel(selectedFieldSheet.template_key)}</strong>
+                  </article>
+                  <article>
+                    <span>Folio reservado</span>
+                    <strong>{selectedFieldSheet.reserved_certificate_folio || '-'}</strong>
                   </article>
                   <article>
                     <span>Estado actual</span>
@@ -2287,274 +2650,112 @@ function ServiceOrdersPage({ user = null }) {
                   <p>Datos tecnicos</p>
                   <h3>Captura de campo</h3>
                 </div>
-                <div className="field-sheet-form-grid">
-                  <label>
-                    Plantilla
-                    <select
-                      disabled={selectedFieldSheet.status !== 'draft' || isSaving}
-                      value={fieldSheetForm.templateKey}
-                      onChange={(event) => updateFieldSheetTemplate(event.target.value)}
-                    >
-                      <option value="general">General</option>
-                      <option value="electrica">Eléctrica</option>
-                    </select>
-                  </label>
-                  <label>
-                    Procedimiento de calibracion
-                    <select value={fieldSheetForm.calibrationProcedureId} onChange={(event) => updateFieldSheetForm('calibrationProcedureId', event.target.value)}>
-                      <option value="">Sin procedimiento</option>
-                      {calibrationProcedures.map((procedure) => (
-                        <option key={procedure.id} value={procedure.id}>
-                          {procedure.code} v{procedure.version} · {procedure.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    Lugar de calibracion
-                    <input type="text" value={fieldSheetForm.calibrationPlace} onChange={(event) => updateFieldSheetForm('calibrationPlace', event.target.value)} />
-                  </label>
-                  <label className="form-field--wide">
-                    Patrones utilizados (opcional)
-                    <div className="field-sheet-reference-builder">
-                      <select value={fieldSheetForm.newReferenceStandardId || ''} onChange={(event) => updateFieldSheetForm('newReferenceStandardId', event.target.value)}>
-                        <option value="">Selecciona patron</option>
-                        {referenceStandards.map((standard) => (
-                          <option key={standard.id} value={standard.id}>
-                            {standard.internal_code} · {standard.name}
-                          </option>
-                        ))}
-                      </select>
-                      <select value={fieldSheetForm.newReferenceStandardUsageRole || 'primary'} onChange={(event) => updateFieldSheetForm('newReferenceStandardUsageRole', event.target.value)}>
-                        <option value="primary">Primario</option>
-                        <option value="secondary">Secundario</option>
-                        <option value="auxiliary">Auxiliar</option>
-                        <option value="environmental">Ambiental</option>
-                        <option value="other">Otro</option>
-                      </select>
-                      <input type="text" placeholder="Seccion de medicion" value={fieldSheetForm.newReferenceStandardMeasurementSection || ''} onChange={(event) => updateFieldSheetForm('newReferenceStandardMeasurementSection', event.target.value)} />
-                      <input type="text" placeholder="Notas de uso" value={fieldSheetForm.newReferenceStandardNotes || ''} onChange={(event) => updateFieldSheetForm('newReferenceStandardNotes', event.target.value)} />
-                      <button className="table-button" type="button" onClick={addReferenceStandardToFieldSheet}>
-                        Agregar patron
-                      </button>
-                    </div>
-                    <div className="field-sheet-reference-list">
-                      {fieldSheetForm.referenceStandards.length ? (
-                        fieldSheetForm.referenceStandards.map((item, index) => {
-                          const standard = item.referenceStandard || referenceStandards.find((row) => String(row.id) === item.referenceStandardId);
-                          return (
-                            <article className="field-sheet-reference-card" key={`${item.referenceStandardId}-${item.usageRole}-${item.measurementSection}-${index}`}>
-                              <div>
-                                <strong>{standard?.internal_code || 'Patron'} · {standard?.name || item.referenceStandardId}</strong>
-                                <span>
-                                  {item.usageRole} · {item.measurementSection || 'sin seccion'} · {standard?.magnitude || '-'}
-                                </span>
-                                <span>
-                                  Estado: {standard?.effective_status || standard?.status || '-'} · Vigencia: {standard?.next_calibration_on || '-'}
-                                </span>
-                                <span>
-                                  Rango: {[standard?.range_min, standard?.range_max, standard?.unit].filter((value) => value !== null && value !== undefined && value !== '').join(' / ') || '-'}
-                                </span>
-                                <span>
-                                  Incertidumbres activas: {Array.isArray(standard?.uncertainties) ? standard.uncertainties.filter((row) => row.is_active !== false).length : 0}
-                                </span>
-                                {standard?.effective_status === 'expired' || standard?.status === 'out_of_service' ? (
-                                  <mark className={`quotation-status status-${standard.effective_status || standard.status}`}>
-                                    Advertencia: patron vencido o fuera de servicio
-                                  </mark>
-                                ) : null}
-                              </div>
-                              <button className="table-button table-button--danger" type="button" onClick={() => removeReferenceStandardFromFieldSheet(index)}>
-                                Quitar
-                              </button>
-                            </article>
-                          );
-                        })
-                      ) : (
-                        <span className="field-sheet-reference-empty">Aun no se asignan patrones a esta hoja.</span>
-                      )}
-                    </div>
-                    <div className="toolbar-actions">
-                      <button className="table-button" type="button" onClick={suggestPatternsForCurrentFieldSheet}>
-                        Sugerir patrones opcional
-                      </button>
-                      <button className="table-button" type="button" onClick={validatePatternsForCurrentFieldSheet}>
-                        Validar opcional
-                      </button>
-                    </div>
-                    {fieldSheetPatternSelection ? (
-                      <div className="pattern-selection-panel">
-                        <strong>{fieldSheetPatternSelection.errors?.length ? 'Error' : fieldSheetPatternSelection.warnings?.length ? 'Advertencia' : 'Valido'}</strong>
-                        <span>{fieldSheetPatternSelection.explanation}</span>
-                        {(fieldSheetPatternSelection.errors ?? []).map((item) => <mark className="quotation-status status-rejected" key={item}>{item}</mark>)}
-                        {(fieldSheetPatternSelection.warnings ?? []).map((item) => <mark className="quotation-status status-draft" key={item}>{item}</mark>)}
-                        <div className="field-sheet-reference-list">
-                          {(fieldSheetPatternSelection.selected_recommendations ?? []).map((candidate) => (
-                            <article className="field-sheet-reference-card" key={candidate.pattern_id}>
-                              <div>
-                                <strong>{candidate.pattern_code} · {candidate.pattern_name}</strong>
-                                <span>Rango: {[candidate.range_min, candidate.range_max, candidate.unit].filter((value) => value !== null && value !== undefined && value !== '').join(' / ') || '-'}</span>
-                                <span>Certificado: {candidate.current_certificate_number || '-'} · Vence: {candidate.current_certificate_expiration_date || '-'}</span>
-                                <span>Incertidumbre: {candidate.applicable_uncertainty ?? '-'} {candidate.uncertainty_unit || ''} · k {candidate.k_factor ?? '-'}</span>
-                                <span>{candidate.validation_messages?.join(' · ') || 'Recomendado por mejor compatibilidad.'}</span>
-                              </div>
-                              <mark className={`quotation-status status-${candidate.validation_status}`}>{candidate.validation_status}</mark>
-                            </article>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </label>
-                  <label>
-                    Fecha recepcion
-                    <input type="date" value={fieldSheetForm.receptionDate} onChange={(event) => updateFieldSheetForm('receptionDate', event.target.value)} />
-                  </label>
-                  <label>
-                    Fecha calibracion
-                    <input type="date" value={fieldSheetForm.calibrationDate} onChange={(event) => updateFieldSheetForm('calibrationDate', event.target.value)} />
-                  </label>
-                  <label>
-                    Proxima calibracion
-                    <input type="date" value={fieldSheetForm.nextCalibrationDate} onChange={(event) => updateFieldSheetForm('nextCalibrationDate', event.target.value)} />
-                  </label>
-                  <label>
-                    Vigencia rapida
-                    <select defaultValue="manual" onChange={(event) => applyNextCalibrationInterval(event.target.value)}>
-                      <option value="manual">Manual</option>
-                      <option value="6">6 meses</option>
-                      <option value="12">12 meses</option>
-                      <option value="24">24 meses</option>
-                    </select>
-                  </label>
-                  <label>
-                    Cotizacion / pedido
-                    <input type="text" value={fieldSheetForm.purchaseOrderOrQuotation} onChange={(event) => updateFieldSheetForm('purchaseOrderOrQuotation', event.target.value)} />
-                  </label>
-                  <label>
-                    Humedad inicial
-                    <input type="text" value={fieldSheetForm.environmentHumidityStart} onChange={(event) => updateFieldSheetForm('environmentHumidityStart', event.target.value)} />
-                  </label>
-                  <label>
-                    Humedad final
-                    <input type="text" value={fieldSheetForm.environmentHumidityEnd} onChange={(event) => updateFieldSheetForm('environmentHumidityEnd', event.target.value)} />
-                  </label>
-                  <label>
-                    Temperatura inicial
-                    <input type="text" value={fieldSheetForm.environmentTemperatureStart} onChange={(event) => updateFieldSheetForm('environmentTemperatureStart', event.target.value)} />
-                  </label>
-                  <label>
-                    Temperatura final
-                    <input type="text" value={fieldSheetForm.environmentTemperatureEnd} onChange={(event) => updateFieldSheetForm('environmentTemperatureEnd', event.target.value)} />
-                  </label>
-                  <label>
-                    Condicion general equipo
-                    <select value={fieldSheetForm.equipmentGeneralCondition} onChange={(event) => updateFieldSheetForm('equipmentGeneralCondition', event.target.value)}>
-                      <option value="">Sin definir</option>
-                      <option value="ok">OK</option>
-                      <option value="not_ok">No OK</option>
-                    </select>
-                  </label>
-                  <label className="service-order-checkbox">
-                    <input
-                      checked={fieldSheetForm.considerEquipmentDeviations}
-                      onChange={(event) => updateFieldSheetForm('considerEquipmentDeviations', event.target.checked)}
-                      type="checkbox"
-                    />
-                    Considerar desviaciones del equipo
-                  </label>
-                  <label>
-                    Unidades
-                    <input type="text" value={fieldSheetForm.units} onChange={(event) => updateFieldSheetForm('units', event.target.value)} />
-                  </label>
-                  <label>
-                    Calibro
-                    <input type="text" value={fieldSheetForm.calibratedBy} onChange={(event) => updateFieldSheetForm('calibratedBy', event.target.value)} />
-                  </label>
-                  <label>
-                    Reviso
-                    <input type="text" value={fieldSheetForm.reviewedBy} onChange={(event) => updateFieldSheetForm('reviewedBy', event.target.value)} />
-                  </label>
-                  <label>
-                    Reporte
-                    <input type="text" value={fieldSheetForm.reportMadeBy} onChange={(event) => updateFieldSheetForm('reportMadeBy', event.target.value)} />
-                  </label>
-                  <label>
-                    Condicion inicial
-                    <textarea rows={3} value={fieldSheetForm.initialCondition} onChange={(event) => updateFieldSheetForm('initialCondition', event.target.value)} />
-                  </label>
-                  <label>
-                    Condicion final
-                    <textarea rows={3} value={fieldSheetForm.finalCondition} onChange={(event) => updateFieldSheetForm('finalCondition', event.target.value)} />
-                  </label>
-                  <label>
-                    Patron usado
-                    <textarea rows={3} value={fieldSheetForm.patternUsed} onChange={(event) => updateFieldSheetForm('patternUsed', event.target.value)} />
-                  </label>
-                  <label>
-                    Resumen de resultados
-                    <textarea rows={3} value={fieldSheetForm.resultsSummary} onChange={(event) => updateFieldSheetForm('resultsSummary', event.target.value)} />
-                  </label>
-                  <label>
-                    Metodo
-                    <textarea rows={3} value={fieldSheetForm.method} onChange={(event) => updateFieldSheetForm('method', event.target.value)} />
-                  </label>
-                  <label>
-                    Condiciones ambientales
-                    <textarea rows={3} value={fieldSheetForm.environmentalConditions} onChange={(event) => updateFieldSheetForm('environmentalConditions', event.target.value)} />
-                  </label>
-                  <label>
-                    Observaciones
-                    <textarea rows={3} value={fieldSheetForm.observations} onChange={(event) => updateFieldSheetForm('observations', event.target.value)} />
-                  </label>
-                  <label>
-                    Evidencia / notas
-                    <textarea rows={3} value={fieldSheetForm.evidenceNotes} onChange={(event) => updateFieldSheetForm('evidenceNotes', event.target.value)} />
-                  </label>
-                  <label className="form-field--wide">
-                    Notas del tecnico
-                    <textarea rows={3} value={fieldSheetForm.technicianNotes} onChange={(event) => updateFieldSheetForm('technicianNotes', event.target.value)} />
-                  </label>
-                </div>
-                <div className="field-sheet-results-stack">
-                  {(fieldSheetTemplateRowConfig[fieldSheetForm.templateKey] ?? fieldSheetTemplateRowConfig.general).map((section) => {
-                    const sectionRows = fieldSheetForm.resultsRows.filter((row) => row.sectionKey === section.key);
-                    return (
-                      <section className="field-sheet-results-panel" key={section.key}>
-                        <div className="quotation-section__title">
-                          <p>Resultados estructurados</p>
-                          <h3>{section.label}</h3>
-                        </div>
-                        <div className="clients-table field-sheet-results-table">
-                          <div className="clients-table__head">
-                            <span>#</span>
-                            <span>Patron</span>
-                            <span>Lectura 1</span>
-                            <span>Lectura 2</span>
-                            <span>Lectura 3</span>
-                            <span>Unidad</span>
-                            <span>Notas</span>
-                          </div>
-                          {sectionRows.map((row) => {
-                            const rowIndex = fieldSheetForm.resultsRows.findIndex(
-                              (item) => item.sectionKey === row.sectionKey && item.rowNumber === row.rowNumber
-                            );
-                            return (
-                              <div className="clients-table__row field-sheet-results-row" key={`${row.sectionKey}-${row.rowNumber}`}>
-                                <span>{row.rowNumber}</span>
-                                <span><input type="text" value={row.patternValue} onChange={(event) => updateFieldSheetResult(rowIndex, 'patternValue', event.target.value)} /></span>
-                                <span><input type="text" value={row.ibcValue1} onChange={(event) => updateFieldSheetResult(rowIndex, 'ibcValue1', event.target.value)} /></span>
-                                <span><input type="text" value={row.ibcValue2} onChange={(event) => updateFieldSheetResult(rowIndex, 'ibcValue2', event.target.value)} /></span>
-                                <span><input type="text" value={row.ibcValue3} onChange={(event) => updateFieldSheetResult(rowIndex, 'ibcValue3', event.target.value)} /></span>
-                                <span><input type="text" value={row.unit} onChange={(event) => updateFieldSheetResult(rowIndex, 'unit', event.target.value)} /></span>
-                                <span><input type="text" value={row.notes} onChange={(event) => updateFieldSheetResult(rowIndex, 'notes', event.target.value)} /></span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    );
-                  })}
-                </div>
+                <FieldSheetLayout
+                  template={{
+                    key: fieldSheetForm.templateKey || 'anemometro',
+                    name: getFieldSheetTemplateLabel(fieldSheetForm.templateKey || 'anemometro'),
+                    code: 'FCA-30',
+                    revision: 'R1',
+                  }}
+                  values={{
+                    work_order_number: selectedOrder?.work_order_number || '',
+                    certificate_number:
+                      selectedFieldSheet?.reserved_certificate_folio ||
+                      fieldSheetForm.reservedCertificateFolio ||
+                      activeCertificatesByEquipmentId.get(selectedEquipmentForSheet?.id)?.expected_folio ||
+                      activeCertificatesByEquipmentId.get(selectedEquipmentForSheet?.id)?.folio ||
+                      '',
+
+                    attention:
+                      fieldSheetForm.certificateClientMode === 'different'
+                        ? fieldSheetForm.certificateClientAttention
+                        : fieldSheetForm.attention || '',
+
+                    company:
+                      fieldSheetForm.certificateClientMode === 'different'
+                        ? fieldSheetForm.certificateClientCompany
+                        : fieldSheetForm.company ||
+                          clientsById.get(selectedOrder?.client_id)?.commercial_name ||
+                          clientsById.get(selectedOrder?.client_id)?.legal_name ||
+                          '',
+
+                    address:
+                      fieldSheetForm.certificateClientMode === 'different'
+                        ? fieldSheetForm.certificateClientAddress
+                        : fieldSheetForm.address || '',
+                    instrument: selectedEquipmentForSheet?.name || '',
+                    scope: selectedEquipmentForSheet?.range_or_capacity || '',
+                    minimum_division: fieldSheetForm.minimumDivision || '',
+                    brand: selectedEquipmentForSheet?.brand || '',
+                    serial_number: selectedEquipmentForSheet?.serial_number || '',
+                    model: selectedEquipmentForSheet?.model || '',
+                    internal_id: selectedEquipmentForSheet?.internal_id || '',
+                    location: fieldSheetForm.location || '',
+                    calibration_place: fieldSheetForm.calibrationPlace || '',
+                    reception_date: fieldSheetForm.receptionDate || '',
+                    calibration_date: fieldSheetForm.calibrationDate || '',
+                    next_calibration_date: fieldSheetForm.nextCalibrationDate || '',
+                    humidity_start: fieldSheetForm.environmentHumidityStart || '',
+                    humidity_end: fieldSheetForm.environmentHumidityEnd || '',
+                    temperature_start: fieldSheetForm.environmentTemperatureStart || '',
+                    temperature_end: fieldSheetForm.environmentTemperatureEnd || '',
+                    equipment_good_condition: fieldSheetForm.equipmentGeneralCondition || false,
+                    consider_deviations: fieldSheetForm.considerEquipmentDeviations || false,
+                    units: fieldSheetForm.units || '',
+                    observations: fieldSheetForm.observations || '',
+                    others: fieldSheetForm.evidenceNotes || '',
+                    calibrated_by: fieldSheetForm.calibratedBy || '',
+                    reviewed_by: fieldSheetForm.reviewedBy || '',
+                    report_made_by: fieldSheetForm.reportMadeBy || '',
+                    purchase_order_or_quotation: fieldSheetForm.purchaseOrderOrQuotation || '',
+                  }}
+                  resultSections={[
+                    {
+                      key: 'calibration_results',
+                      title: 'Resultados de Calibración',
+                      columns: [
+                        { key: 'patternValue', label: 'Patrón' },
+                        { key: 'ibcValue1', label: '1' },
+                        { key: 'ibcValue2', label: '2' },
+                        { key: 'ibcValue3', label: '3' },
+                      ],
+                      rows: fieldSheetForm.resultsRows || [],
+                    },
+                  ]}
+                  onValueChange={(key, value) => {
+                    const map = {
+                      attention: 'attention',
+                      company: 'company',
+                      address: 'address',
+                      minimum_division: 'minimumDivision',
+                      location: 'location',
+                      calibration_place: 'calibrationPlace',
+                      reception_date: 'receptionDate',
+                      calibration_date: 'calibrationDate',
+                      next_calibration_date: 'nextCalibrationDate',
+                      humidity_start: 'environmentHumidityStart',
+                      humidity_end: 'environmentHumidityEnd',
+                      temperature_start: 'environmentTemperatureStart',
+                      temperature_end: 'environmentTemperatureEnd',
+                      equipment_good_condition: 'equipmentGeneralCondition',
+                      consider_deviations: 'considerEquipmentDeviations',
+                      units: 'units',
+                      observations: 'observations',
+                      others: 'evidenceNotes',
+                      calibrated_by: 'calibratedBy',
+                      reviewed_by: 'reviewedBy',
+                      report_made_by: 'reportMadeBy',
+                      purchase_order_or_quotation: 'purchaseOrderOrQuotation',
+                    };
+
+                    if (map[key]) {
+                      updateFieldSheetForm(map[key], value);
+                    }
+                  }}
+                  onResultChange={(sectionKey, rowIndex, columnKey, value) => {
+                    updateFieldSheetResult(rowIndex, columnKey, value);
+                  }}
+                />
                 <div className="quotation-detail-save">
                   <span>Para completar se requieren condición inicial/final, resultados estructurados y observaciones o evidencia.</span>
                   <div className="toolbar-actions">

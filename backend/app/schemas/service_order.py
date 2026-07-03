@@ -22,6 +22,7 @@ ServiceOrderStatus = Literal[
 class ServiceOrderItemBase(BaseModel):
     quotation_item_id: int | None = None
     service_name: str = Field(min_length=1, max_length=180)
+    calibration_scope: str | None = None
     quantity: int = Field(default=1, ge=1)
     status: str = Field(default="pending", max_length=60)
 

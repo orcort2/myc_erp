@@ -13,9 +13,13 @@ from app.schemas.equipment import (
 )
 from app.services.audit_logs import write_audit_log
 from app.models.certificate import Certificate
-from app.models.quotation import QuotationItem
 from app.schemas.certificate import CertificateCreate
 from app.services.certificates import create_certificate
+from app.services.service_order_certificate_capacity import (
+    auto_service_order_item_id_for_scope,
+    certificate_type_from_scope,
+    resolve_equipment_calibration_scope,
+)
 
 
 COMPLETED_STATUSES = {"calibrated", "labeled", "not_done"}
@@ -112,30 +116,6 @@ def get_equipment(db: Session, equipment_id: int) -> Equipment:
         )
     return equipment
 
-def _certificate_type_from_service_order_item(
-    db: Session,
-    service_order_item_id: int | None,
-) -> str | None:
-    if service_order_item_id is None:
-        return None
-
-    service_item = db.get(ServiceOrderItem, service_order_item_id)
-    if service_item is None or service_item.quotation_item_id is None:
-        return None
-
-    quotation_item = db.get(QuotationItem, service_item.quotation_item_id)
-    if quotation_item is None:
-        return None
-
-    if quotation_item.commodity != "calibration":
-        return None
-
-    if quotation_item.calibration_scope == "accredited_iso_17025":
-        return "acreditado"
-
-    return "trazable"
-
-
 def _ensure_expected_certificate_for_equipment(
     db: Session,
     equipment: Equipment,
@@ -151,10 +131,7 @@ def _ensure_expected_certificate_for_equipment(
     if exists is not None:
         return
 
-    certificate_type = _certificate_type_from_service_order_item(
-        db,
-        equipment.service_order_item_id,
-    )
+    certificate_type = certificate_type_from_scope(equipment.calibration_scope)
 
     if certificate_type is None:
         return
@@ -178,9 +155,24 @@ def create_equipment(
     db: Session, payload: EquipmentCreate, *, user_id: int | None = None
 ) -> Equipment:
     _ensure_active_service_order(db, payload.service_order_id)
-    _ensure_service_order_item(
-        db, payload.service_order_id, payload.service_order_item_id
+
+    data = payload.model_dump()
+    resolved_scope = resolve_equipment_calibration_scope(
+        db,
+        payload.service_order_id,
+        data.get("calibration_scope"),
     )
+    data["calibration_scope"] = resolved_scope
+    data["service_order_item_id"] = auto_service_order_item_id_for_scope(
+        db,
+        payload.service_order_id,
+        resolved_scope,
+    )
+
+    _ensure_service_order_item(
+        db, payload.service_order_id, data.get("service_order_item_id")
+    )
+
     active_equipment = db.scalar(
         select(func.count(Equipment.id)).where(
             Equipment.service_order_id == payload.service_order_id,
@@ -192,14 +184,12 @@ def create_equipment(
             status_code=status.HTTP_409_CONFLICT,
             detail="Esta Orden de Trabajo ya tiene 10 equipos. Crea otra OT para continuar.",
         )
-    equipment = Equipment(**payload.model_dump(), status="registered")
+
+    equipment = Equipment(**data, status="registered")
     db.add(equipment)
     db.flush()
 
-    certificate_type = _certificate_type_from_service_order_item(
-        db,
-        equipment.service_order_item_id,
-    )
+    certificate_type = certificate_type_from_scope(equipment.calibration_scope)
 
     if certificate_type:
         create_certificate(
@@ -223,6 +213,8 @@ def create_equipment(
         user_id=user_id,
         new_values={
             "service_order_id": equipment.service_order_id,
+            "calibration_scope": equipment.calibration_scope,
+            "service_order_item_id": equipment.service_order_item_id,
             "name": equipment.name,
             "status": equipment.status,
         },
@@ -247,6 +239,36 @@ def update_equipment(
             detail="No se puede editar equipo en estado terminal",
         )
     updates = payload.model_dump(exclude_unset=True)
+    if "calibration_scope" in updates:
+        requested_scope = updates.get("calibration_scope")
+        if requested_scope == equipment.calibration_scope:
+            resolved_scope = equipment.calibration_scope
+        else:
+            active_certificate_exists = db.scalar(
+                select(Certificate.id).where(
+                    Certificate.equipment_id == equipment.id,
+                    Certificate.is_active.is_(True),
+                )
+            )
+            if active_certificate_exists is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "El equipo ya tiene un certificado activo. No se puede cambiar el tipo de certificado "
+                        "desde edición; da de baja el equipo y regístralo nuevamente si el tipo fue incorrecto."
+                    ),
+                )
+            resolved_scope = resolve_equipment_calibration_scope(
+                db,
+                equipment.service_order_id,
+                requested_scope,
+            )
+        updates["calibration_scope"] = resolved_scope
+        updates["service_order_item_id"] = auto_service_order_item_id_for_scope(
+            db,
+            equipment.service_order_id,
+            resolved_scope,
+        )
     _ensure_service_order_item(
         db, equipment.service_order_id, updates.get("service_order_item_id")
     )

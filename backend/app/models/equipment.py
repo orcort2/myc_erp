@@ -14,6 +14,7 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     service_order_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("service_order_items.id"), index=True
     )
+    calibration_scope: Mapped[str | None] = mapped_column(String(60), index=True)
     status: Mapped[str] = mapped_column(String(60), default="registered", index=True)
     name: Mapped[str] = mapped_column(String(180))
     brand: Mapped[str | None] = mapped_column(String(120))

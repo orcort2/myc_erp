@@ -2,6 +2,10 @@ import { emptyFieldSheetForm } from '../constants/forms.js';
 
 export const fieldSheetTemplateRowConfig = {
   general: [{ key: 'main', label: 'Resultados', rows: 10 }],
+  anemometro: [{ key: 'main', label: 'Resultados', rows: 10 }],
+  temperatura: [{ key: 'main', label: 'Resultados', rows: 10 }],
+  sonido: [{ key: 'main', label: 'Resultados', rows: 10 }],
+  dimensional: [{ key: 'main', label: 'Resultados', rows: 10 }],
   electrica: [
     { key: 'main', label: 'Resultados', rows: 5 },
     { key: 'page2_a', label: 'Resultados complementarios A', rows: 5 },
@@ -51,6 +55,11 @@ export function fieldSheetToForm(fieldSheet) {
     templateKey: fieldSheet?.template_key ?? 'general',
     calibrationProcedureId: fieldSheet?.calibration_procedure_id ? String(fieldSheet.calibration_procedure_id) : '',
     calibrationPlace: fieldSheet?.calibration_place ?? '',
+    minimumDivision: fieldSheet?.minimum_division ?? '',
+    location: fieldSheet?.location ?? '',
+    attention: fieldSheet?.attention ?? '',
+    company: fieldSheet?.company ?? '',
+    address: fieldSheet?.address ?? '',
     receptionDate: fieldSheet?.reception_date ?? '',
     calibrationDate: fieldSheet?.calibration_date ?? '',
     nextCalibrationDate: fieldSheet?.next_calibration_date ?? '',
@@ -79,6 +88,12 @@ export function fieldSheetToForm(fieldSheet) {
     method: fieldSheet?.method ?? '',
     environmentalConditions: fieldSheet?.environmental_conditions ?? '',
     technicianNotes: fieldSheet?.technician_notes ?? '',
+    reservedCertificateFolio: fieldSheet?.reserved_certificate_folio ?? '',
+    certificateClientMode: fieldSheet?.certificate_client_mode ?? 'billing',
+    certificateClientCompany: fieldSheet?.certificate_client_company ?? '',
+    certificateClientAttention: fieldSheet?.certificate_client_attention ?? '',
+    certificateClientAddress: fieldSheet?.certificate_client_address ?? '',
+    applyCertificateClientToOrder: Boolean(fieldSheet?.apply_certificate_client_to_order),
     resultsRows: normalizeResultsRows(fieldSheet?.results_rows, fieldSheet?.template_key ?? 'general'),
     referenceStandards: Array.isArray(fieldSheet?.reference_standards)
       ? fieldSheet.reference_standards.map((item) => ({
@@ -97,6 +112,11 @@ export function buildFieldSheetPayload(form) {
     template_key: form.templateKey || 'general',
     calibration_procedure_id: form.calibrationProcedureId ? Number(form.calibrationProcedureId) : null,
     calibration_place: form.calibrationPlace.trim() || null,
+    minimum_division: form.minimumDivision.trim() || null,
+    location: form.location.trim() || null,
+    attention: form.attention.trim() || null,
+    company: form.company.trim() || null,
+    address: form.address.trim() || null,
     reception_date: form.receptionDate || null,
     calibration_date: form.calibrationDate || null,
     next_calibration_date: form.nextCalibrationDate || null,
@@ -121,12 +141,12 @@ export function buildFieldSheetPayload(form) {
     method: form.method.trim() || null,
     environmental_conditions: form.environmentalConditions.trim() || null,
     technician_notes: form.technicianNotes.trim() || null,
-    reference_standards: (form.referenceStandards ?? []).map((item) => ({
-      reference_standard_id: Number(item.referenceStandardId),
-      usage_role: item.usageRole || 'primary',
-      measurement_section: item.measurementSection.trim() || null,
-      notes: item.notes.trim() || null
-    })),
+    certificate_client_mode: form.certificateClientMode || 'billing',
+    certificate_client_company: form.certificateClientCompany.trim() || null,
+    certificate_client_attention: form.certificateClientAttention.trim() || null,
+    certificate_client_address: form.certificateClientAddress.trim() || null,
+    apply_certificate_client_to_order: Boolean(form.applyCertificateClientToOrder),
+    reference_standards: [],
     results_rows: normalizeResultsRows(form.resultsRows, form.templateKey).map((row) => ({
       id: row.id ?? undefined,
       section_key: row.sectionKey,

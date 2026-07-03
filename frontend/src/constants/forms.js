@@ -77,6 +77,8 @@ export const emptyServiceOrderForm = {
 };
 
 export const emptyEquipmentForm = {
+  serviceOrderItemId: '',
+  certificateScope: 'traceable',
   name: '',
   brand: '',
   model: '',
@@ -91,6 +93,11 @@ export const emptyFieldSheetForm = {
   templateKey: 'general',
   calibrationProcedureId: '',
   calibrationPlace: '',
+  minimumDivision: '',
+  location: '',
+  attention: '',
+  company: '',
+  address: '',
   receptionDate: '',
   calibrationDate: '',
   nextCalibrationDate: '',
@@ -114,12 +121,18 @@ export const emptyFieldSheetForm = {
   method: '',
   environmentalConditions: '',
   technicianNotes: '',
+  reservedCertificateFolio: '',
+  certificateClientMode: 'billing',
+  certificateClientCompany: '',
+  certificateClientAttention: '',
+  certificateClientAddress: '',
+  applyCertificateClientToOrder: false,
   resultsRows: [],
   referenceStandards: [],
   newReferenceStandardId: '',
   newReferenceStandardUsageRole: 'primary',
   newReferenceStandardMeasurementSection: '',
-  newReferenceStandardNotes: ''
+  newReferenceStandardNotes: '',
 };
 
 export const emptyCertificateForm = {

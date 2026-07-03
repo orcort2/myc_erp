@@ -66,17 +66,42 @@ def _render_html(field_sheet: FieldSheet) -> str:
         autoescape=select_autoescape(("html", "xml")),
     )
     env.filters["date"] = _format_date
-    template_name = (
-        "field_sheet_electrical_pdf.html"
-        if field_sheet.template_key == "electrica"
-        else "field_sheet_general_pdf.html"
+    template_map = {
+        "electrica": "field_sheet_electrical_pdf.html",
+        "anemometro": "field_sheet_anemometer_pdf.html",
+    }
+
+    template_name = template_map.get(
+        field_sheet.template_key,
+        "field_sheet_general_pdf.html",
     )
     template = env.get_template(template_name)
+    client_name = (
+        field_sheet.company
+        if field_sheet.company
+        else field_sheet.certificate_client_company
+        if field_sheet.certificate_client_mode == "different" and field_sheet.certificate_client_company
+        else client.commercial_name or client.legal_name
+    )
+    client_attention = (
+        field_sheet.attention
+        if field_sheet.attention
+        else field_sheet.certificate_client_attention
+        if field_sheet.certificate_client_mode == "different"
+        else client.commercial_name or client.legal_name
+    )
+    client_address = (
+        field_sheet.address
+        or (field_sheet.certificate_client_address if field_sheet.certificate_client_mode == "different" else None)
+    )
     return template.render(
         field_sheet=field_sheet,
         equipment=equipment,
         service_order=service_order,
         client=client,
+        client_name=client_name,
+        client_attention=client_attention,
+        client_address=client_address,
         certificate_folio=(certificate.expected_folio or certificate.folio) if certificate else "-",
         sections=_group_sections(field_sheet),
         checkbox=_checkbox,

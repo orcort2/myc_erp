@@ -43,15 +43,19 @@
     </header>
 
     <section class="grid">
-      <article class="card"><span class="label">Cliente</span><strong>{{ client.commercial_name or client.legal_name }}</strong></article>
+      <article class="card"><span class="label">Cliente</span><strong>{{ client_name }}</strong></article>
       <article class="card"><span class="label">Equipo</span><strong>{{ equipment.name }}</strong></article>
       <article class="card"><span class="label">Marca / modelo</span><strong>{{ equipment.brand or '-' }} / {{ equipment.model or '-' }}</strong></article>
       <article class="card"><span class="label">Serie</span><strong>{{ equipment.serial_number or '-' }}</strong></article>
+      <article class="card"><span class="label">Ubicación</span><strong>{{ field_sheet.location or '-' }}</strong></article>
       <article class="card"><span class="label">Folio certificado</span><strong>{{ certificate_folio }}</strong></article>
       <article class="card"><span class="label">Recepción</span><strong>{{ field_sheet.reception_date|date }}</strong></article>
       <article class="card"><span class="label">Calibración</span><strong>{{ field_sheet.calibration_date|date }}</strong></article>
       <article class="card"><span class="label">Humedad</span><strong>{{ field_sheet.environment_humidity_start or '-' }} / {{ field_sheet.environment_humidity_end or '-' }}</strong></article>
       <article class="card"><span class="label">Temperatura</span><strong>{{ field_sheet.environment_temperature_start or '-' }} / {{ field_sheet.environment_temperature_end or '-' }}</strong></article>
+      <article class="card"><span class="label">División mínima</span><strong>{{ field_sheet.minimum_division or '-' }}</strong></article>
+      <article class="card"><span class="label">Atención</span><strong>{{ client_attention or '-' }}</strong></article>
+      <article class="card"><span class="label">Dirección</span><strong>{{ client_address or '-' }}</strong></article>
     </section>
 
     {% set main_section = sections[0] if sections else none %}

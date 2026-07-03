@@ -29,6 +29,7 @@ from app.routers import (
     users,
     verification,
 )
+from app.routers import field_sheet_templates
 
 
 app = FastAPI(
@@ -74,6 +75,7 @@ app.include_router(pattern_selection.router, prefix="/api")
 app.include_router(uncertainty.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(verification.router)
+app.include_router(field_sheet_templates.router)
 
 
 @app.get("/")

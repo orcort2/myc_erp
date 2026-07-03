@@ -2836,6 +2836,192 @@ Limitaciones y pendientes:
 
 ---
 
+## Ajuste de Hojas de Campo - folio reservado, plantillas y cliente de certificado
+
+Fecha de actualizacion: 2026-07-01 15:23:50 CST
+
+Alcance:
+- Se mantuvo el uso de Hojas de Campo como captura documental y descarga PDF.
+- No se reintrodujo generacion de certificados desde la hoja.
+- No se removieron tablas legacy de procedimientos o patrones; solo se sacaron del flujo visual.
+
+Correcciones aplicadas:
+- Folio reservado del certificado
+  - `FieldSheetRead` ahora expone `reserved_certificate_folio`.
+  - `FieldSheet` resuelve el folio activo usando `expected_folio` y, si no existe, `folio`.
+  - `get_field_sheet` y `list_field_sheets` cargan relaciones de:
+    - `equipment`
+    - `equipment.certificates`
+    - `equipment.service_order`
+    - `equipment.service_order.client`
+    - `equipment.service_order.quotation`
+  - La vista previa React de la hoja usa primero `reserved_certificate_folio`.
+  - El PDF de hoja de campo vuelve a imprimir el mismo folio reservado de forma consistente.
+
+- Persistencia de plantilla
+  - Se alinearon claves entre schema y servicio para evitar plantillas validas en frontend que no existian en backend.
+  - `FieldSheetTemplateKey` ahora contempla tambien:
+    - `electrica`
+    - `sonido`
+    - `termometro`
+    - `transductor_presion`
+    - `volumen`
+    - `masa`
+    - `balanza`
+  - `FIELD_SHEET_TEMPLATE_ROWS` ahora incluye al menos:
+    - `anemometro`
+    - `dimensional`
+    - `temperatura`
+    - `sonido`
+    - `electrica`
+  - Se mantuvo `template_key` persistido al crear y actualizar hojas.
+
+- PDF por plantilla
+  - `backend/app/services/field_sheet_pdfs.py` valida:
+    - `anemometro` -> `field_sheet_anemometer_pdf.html`
+    - `electrica` -> `field_sheet_electrical_pdf.html`
+    - cualquier otro caso -> `field_sheet_general_pdf.html`
+
+- Cliente del certificado dentro de la hoja
+  - Nueva migracion:
+    - `backend/migrations/versions/b9c0d1e2f3a4_add_field_sheet_certificate_client.py`
+  - Nuevos campos persistidos en `field_sheets`:
+    - `certificate_client_mode`
+    - `certificate_client_company`
+    - `certificate_client_attention`
+    - `certificate_client_address`
+    - `apply_certificate_client_to_order`
+  - Si la hoja usa cliente facturado, el PDF toma el cliente de la orden.
+  - Si la hoja usa cliente diferente, esos datos quedan guardados solo en la hoja.
+  - Si `apply_certificate_client_to_order` es `true`, futuras hojas de la misma OT heredan ese cliente alterno.
+  - No se escribio ese cliente en la tabla principal `clients`.
+
+- Limpieza visual del modulo
+  - Se retiraron del flujo visual de la hoja:
+    - procedimiento de calibracion
+    - seleccion de patrones
+    - agregar patron
+  - Los campos siguen existiendo en backend/estado interno solo para no romper compatibilidad.
+  - La vista de informacion de hoja ahora muestra:
+    - plantilla real
+    - folio reservado
+  - La vista previa React usa tambien cliente alterno si la hoja lo tiene.
+
+Archivos ajustados en esta fase:
+- `backend/app/models/field_sheet.py`
+- `backend/app/schemas/field_sheet.py`
+- `backend/app/services/field_sheets.py`
+- `backend/app/services/field_sheet_pdfs.py`
+- `backend/app/templates/field_sheet_general_pdf.html`
+- `backend/app/templates/field_sheet_electrical_pdf.html`
+- `frontend/src/constants/forms.js`
+- `frontend/src/utils/fieldSheets.js`
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+- `backend/migrations/versions/b9c0d1e2f3a4_add_field_sheet_certificate_client.py`
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current`
+  - resultado: `b9c0d1e2f3a4 (head)`
+- OpenAPI:
+  - `ERP MYC 31`
+  - `/api/field-sheets`: `True`
+  - `/api/field-sheets/{field_sheet_id}`: `True`
+  - `/api/field-sheets/{field_sheet_id}/pdf`: `True`
+- `npm run build`
+  - OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+
+Limitaciones y pendientes:
+- No se eliminaron componentes auxiliares de patrones/procedimientos; quedaron fuera de UI, no fuera del dominio.
+- Existen archivos y carpetas no versionadas de otras fases en el worktree; no se tocaron para no mezclar cambios ni perder contexto.
+
+---
+
+## Correccion final - folio reservado en Hojas de Campo y campos de captura persistentes
+
+Fecha de actualizacion: 2026-07-01 15:49:29 CST
+
+Alcance:
+- Se corrigio la regla operativa para que la hoja de campo solo consuma el certificado esperado activo del equipo.
+- No se modifico el motor de folios.
+- No se duplicaron certificados.
+- No se creo ningun certificado desde `create_field_sheet` ni desde `complete_field_sheet`.
+
+Folio reservado:
+- `reserved_certificate_folio` en `FieldSheetRead` ahora depende del certificado activo del equipo.
+- La resolucion usa prioridad:
+  - `expected_folio`
+  - `folio`
+- `list_field_sheets` y `get_field_sheet` cargan `equipment.certificates` de forma explicita.
+- Esto deja consistente el folio reservado en:
+  - `GET /api/field-sheets`
+  - `GET /api/field-sheets/{id}`
+  - `GET /api/field-sheets/{id}/pdf`
+
+Regla de no crear certificados desde hojas:
+- `backend/app/services/field_sheets.py`
+  - se elimino la ruta que creaba un certificado esperado durante `complete_field_sheet`.
+  - la hoja ahora solo enlaza y actualiza el certificado activo ya existente del equipo.
+
+Campos de captura persistidos:
+- Nuevos campos funcionales en `field_sheets`:
+  - `minimum_division`
+  - `location`
+  - `attention`
+  - `company`
+  - `address`
+- Estos campos existen y persisten en:
+  - modelo SQLAlchemy
+  - `FieldSheetCreate`
+  - `FieldSheetUpdate`
+  - `FieldSheetRead`
+  - migracion `b9c0d1e2f3a4_add_field_sheet_certificate_client.py`
+  - `fieldSheetToForm`
+  - `buildFieldSheetPayload`
+  - `ServiceOrdersPage`
+  - `FieldSheetLayout`
+
+Vista previa y PDF:
+- La vista previa React usa:
+  - `selectedFieldSheet.reserved_certificate_folio`
+  - `minimumDivision`
+  - `location`
+  - `attention`
+  - `company`
+  - `address`
+- Los PDFs general, anemometro y electrica ahora muestran tambien:
+  - folio reservado
+  - ubicacion
+  - division minima
+  - atencion
+  - direccion
+- Si la hoja tiene cliente alterno, ese dato sigue pudiendo reflejarse; si no, se usa el cliente de la orden.
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current`
+  - resultado: `b9c0d1e2f3a4 (head)`
+- OpenAPI:
+  - `ERP MYC 31`
+  - `/api/field-sheets`: `True`
+  - `/api/field-sheets/{field_sheet_id}`: `True`
+  - `/api/field-sheets/{field_sheet_id}/pdf`: `True`
+- `npm run build`
+  - OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+
+Observacion:
+- Se mantuvieron intactos los archivos y carpetas no versionadas de otras fases para no mezclar alcance ni perder trabajo previo.
+
+---
+
 ## Refinamiento post Fases 1 y 2 - Dashboard, ETS y trazabilidad
 
 Fecha de actualizacion: 2026-06-30 16:45:53 CST
@@ -2942,3 +3128,232 @@ Limitaciones y pendientes:
 - La facturacion real, encuestas y portal cliente V2 siguen pendientes.
 - Vite conserva advertencia no bloqueante de chunk mayor a 500 kB.
 - Directorios `storage/certificados/*` no versionados se conservaron para evitar perdida documental.
+
+---
+
+## Fix urgente - columnas faltantes en field_sheets
+
+Fecha de actualizacion: 2026-07-01 15:52:39 CST
+
+Causa raiz:
+- El modelo `FieldSheet` y los schemas ya referenciaban:
+  - `minimum_division`
+  - `location`
+  - `attention`
+  - `company`
+  - `address`
+- La revision `b9c0d1e2f3a4` ya estaba marcada como aplicada en la base antes de que esas columnas fueran agregadas al archivo de migracion.
+- Resultado:
+  - SQLAlchemy intentaba consultar columnas inexistentes y FastAPI caia con:
+    - `psycopg.errors.UndefinedColumn: column field_sheets.minimum_division does not exist`
+
+Correccion aplicada:
+- Se restauro `backend/migrations/versions/b9c0d1e2f3a4_add_field_sheet_certificate_client.py` para que solo contenga lo que realmente habia aplicado:
+  - `certificate_client_mode`
+  - `certificate_client_company`
+  - `certificate_client_attention`
+  - `certificate_client_address`
+  - `apply_certificate_client_to_order`
+- Se creo una migracion correctiva nueva:
+  - `backend/migrations/versions/c1d2e3f4a5b6_add_missing_field_sheet_capture_columns.py`
+- Esta nueva revision agrega fisicamente:
+  - `minimum_division`
+  - `location`
+  - `attention`
+  - `company`
+  - `address`
+
+Correcciones funcionales asociadas:
+- `complete_field_sheet` ya no crea certificados; solo enlaza el certificado esperado activo si existe.
+- Se agrego guard clause para evitar error si por inconsistencia no existe certificado activo al completar hoja.
+- Los campos de captura nuevos ya persisten y se reflejan en:
+  - modelo
+  - schema
+  - formularios React
+  - vista previa
+  - PDF
+
+Validacion ejecutada:
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current --verbose`
+  - resultado: `c1d2e3f4a5b6 (head)`
+- `../venv/bin/python -m compileall app`
+- `npm run build`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+- `git diff --check`
+
+Resultado:
+- El error ASGI por columna faltante queda resuelto.
+- `list_certificates`, `list_field_sheets`, `get_field_sheet` y la descarga PDF ya no fallan por ese esquema incompleto.
+
+---
+
+## Actualizacion de respaldo - plantillas de hojas y calibration_scope operativo
+
+Fecha de actualizacion: 2026-07-02 09:20:00 CST
+
+Estado detectado:
+- El backup anterior ya incluia la correccion urgente de `field_sheets`, pero todavia no reflejaba cambios posteriores que ya existen en el repositorio y en la base.
+- La base local ya no esta en `c1d2e3f4a5b6`; actualmente se encuentra en:
+  - `2ffda0c6458f (head)`
+
+Cambios adicionales ya presentes en el proyecto:
+- Se agrego el endpoint de catalogo de plantillas de hojas de campo:
+  - `GET /api/field-sheet-templates`
+  - `GET /api/field-sheet-templates/{template_key}`
+- Archivos incorporados para ese flujo:
+  - `backend/app/routers/field_sheet_templates.py`
+  - `backend/app/schemas/field_sheet_template.py`
+  - `backend/app/services/field_sheet_templates.py`
+- `backend/app/main.py` ya registra el router de plantillas para dejar disponible el catalogo desde la API principal.
+
+Plantillas y vista previa:
+- Ya existe la plantilla `anemometro` dentro del catalogo funcional de hojas.
+- Se incorporo la plantilla PDF:
+  - `backend/app/templates/field_sheet_anemometer_pdf.html`
+- Se incorporo el layout visual reutilizable del frontend:
+  - `frontend/src/components/field-sheets/FieldSheetLayout.jsx`
+  - `frontend/src/components/field-sheets/FieldSheetLayout.css`
+- El frontend ya consume `reserved_certificate_folio`, `minimum_division`, `location`, `attention`, `company` y `address` dentro de la captura y vista previa de la hoja.
+
+Ajuste operativo en Ordenes de Servicio / Equipos:
+- `service_order_items` ahora persiste `calibration_scope` directamente.
+- Archivos ajustados:
+  - `backend/app/models/service_order.py`
+  - `backend/app/schemas/service_order.py`
+  - `backend/app/services/service_orders.py`
+  - `backend/app/services/equipment.py`
+- Esto evita depender de `quotation_items` para determinar el tipo de certificado esperado al registrar equipos.
+- La resolucion de tipo de certificado en equipos ahora usa el `calibration_scope` de la partida de orden:
+  - `accredited_iso_17025` -> `acreditado`
+  - `accredited_linked_lab` -> `vinculado`
+  - `traceable` -> `trazable`
+
+Migracion adicional:
+- Nueva revision aplicada:
+  - `backend/migrations/versions/2ffda0c6458f_add_calibration_scope_to_service_order_.py`
+- Esta migracion agrega:
+  - `service_order_items.calibration_scope`
+
+Validacion de estado:
+- `../venv/bin/alembic current --verbose`
+  - resultado: `2ffda0c6458f (head)`
+- `../venv/bin/alembic heads`
+  - resultado: `2ffda0c6458f (head)`
+
+Resultado:
+- El backup queda alineado con el estado actual del repo y de la base local.
+- Ya no hay desfase documental respecto al catalogo de plantillas, la persistencia de `calibration_scope` y la cadena de migraciones vigente.
+
+---
+
+## Ajuste ETS - alta de equipos por cupos de certificado, sin seleccion manual de partida
+
+Fecha de actualizacion: 2026-07-02 09:55:00 CST
+
+Objetivo aplicado:
+- El alta de equipos dentro del ETS deja de depender operativamente de `service_order_item_id`.
+- La Orden de Trabajo ahora se comporta como una bolsa de cupos por tipo de certificado:
+  - `traceable`
+  - `accredited_iso_17025`
+  - `accredited_linked_lab`
+
+Regla implementada:
+- El backend calcula cupos por OT a partir de:
+  - `service_order_items.quantity` agrupado por `calibration_scope`
+  - certificados activos de la OT agrupados por `certificate_type`
+- Mapeo usado:
+  - `traceable` -> `trazable`
+  - `accredited_iso_17025` -> `acreditado`
+  - `accredited_linked_lab` -> `vinculado`
+
+Backend:
+- Nuevo helper central:
+  - `backend/app/services/service_order_certificate_capacity.py`
+- Responsabilidades de ese helper:
+  - calcular cotizados/usados/disponibles por tipo
+  - resolver automaticamente `calibration_scope` para un equipo nuevo
+  - devolver `422` si existen varios tipos disponibles y el usuario no especifica cual requiere
+  - devolver `409` si ya no hay cupo disponible para el tipo solicitado
+  - resolver automaticamente `service_order_item_id` compatible con el scope, solo como dato interno auxiliar
+
+Modelo y schema de equipos:
+- `backend/app/models/equipment.py`
+  - se agrega `equipment.calibration_scope`
+- `backend/app/schemas/equipment.py`
+  - `EquipmentCreate`, `EquipmentUpdate` y `EquipmentRead` ya exponen `calibration_scope`
+
+Migracion nueva:
+- `backend/migrations/versions/7c9e1f2a3b4c_add_calibration_scope_to_equipment.py`
+- Agrega:
+  - `equipment.calibration_scope`
+- Incluye backfill inicial desde `service_order_items.calibration_scope` cuando existe relacion historica
+
+Servicio de equipos:
+- `backend/app/services/equipment.py`
+- Cambios aplicados:
+  - ya no depende de seleccion manual de partida para determinar el tipo de certificado
+  - si el payload trae `calibration_scope`, valida cupo disponible
+  - si no trae `calibration_scope` y solo hay un tipo disponible, lo asigna automaticamente
+  - si hay varios tipos disponibles y el payload no especifica uno, responde `422`
+  - al crear el equipo:
+    - guarda `equipment.calibration_scope`
+    - asigna `service_order_item_id` automaticamente si encuentra una partida compatible
+    - crea el certificado esperado con el `certificate_type` correcto
+  - en edicion:
+    - se bloquea el cambio de tipo si el equipo ya tiene certificado activo, para no desalinear el folio reservado ya emitido
+
+Servicio de certificados:
+- `backend/app/services/certificates.py`
+- Cambios aplicados:
+  - ya acepta `certificate_type = vinculado`
+  - ya evita duplicar certificados activos por equipo
+  - el folio esperado para vinculados usa prefijo `MYCV`
+
+Motor de folios:
+- `backend/app/core/folios.py`
+- El generador ya soporta:
+  - `MYCT` para trazables
+  - `MYCA` para acreditados
+  - `MYCV` para vinculados
+
+Frontend ETS:
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+- Ajustes visibles:
+  - se elimina la dependencia visual de partida en el alta de equipo
+  - se agrega selector de tipo de certificado solo cuando la OT tiene mas de un tipo con cupo disponible
+  - si solo existe un tipo disponible, se asigna automaticamente y el modal lo muestra bloqueado
+  - el ETS muestra consumo por tipo:
+    - trazables usados/cotizados
+    - acreditados usados/cotizados
+    - vinculados usados/cotizados
+  - la tabla de equipos ahora muestra el tipo de certificado asignado al equipo
+
+Compatibilidad:
+- `service_order_items.calibration_scope` se mantiene como fuente comercial y de trazabilidad de la OT.
+- `service_order_item_id` no se elimina del modelo; queda como enlace auxiliar, no como decision manual obligatoria.
+- No se modifico el motor general de certificados fuera del soporte necesario para `vinculado`.
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic current --verbose`
+  - resultado: `7c9e1f2a3b4c (head)`
+- `../venv/bin/alembic heads`
+  - resultado: `7c9e1f2a3b4c (head)`
+- `npm run build`
+- `./scripts/myc build`
+- `git diff --check`
+
+Observacion de validacion:
+- La primera corrida paralela de `alembic upgrade head` y `./scripts/myc build` intento aplicar la misma migracion al mismo tiempo y produjo un `DuplicateColumn` transitorio.
+- Se confirmo despues que:
+  - la columna si quedo creada
+  - Alembic quedo en `7c9e1f2a3b4c (head)`
+  - la corrida final serial de `./scripts/myc build` paso correctamente
+
+Resultado:
+- El alta de equipos en ETS ya opera por cupos reales de certificado y no por seleccion manual de partida.
+- El sistema bloquea sobreconsumo por tipo desde backend.
+- El frontend solo pide al usuario la decision minima necesaria cuando la OT tiene mas de una bolsa activa.

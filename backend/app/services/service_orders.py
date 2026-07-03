@@ -182,6 +182,7 @@ def create_service_order(
             ServiceOrderItem(
                 quotation_item_id=item.id,
                 service_name=item.service_name,
+                calibration_scope=item.calibration_scope,
                 quantity=item.quantity,
                 status="pending",
             )

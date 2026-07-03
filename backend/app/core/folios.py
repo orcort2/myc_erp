@@ -24,8 +24,12 @@ def generate_folio(request: FolioRequest) -> str:
         case "orden_servicio":
             return f"OSMYC-{issued_on:%y}-{issued_on:%m}-{sequence}"
         case "certificado":
-            prefix = "A" if request.service_type == "acreditado" else "T"
+            if request.service_type == "acreditado":
+                prefix = "A"
+            elif request.service_type == "vinculado":
+                prefix = "V"
+            else:
+                prefix = "T"
             return f"MYC{prefix}-{issued_on:%m}-{issued_on:%Y}-{sequence}"
         case _:
             raise ValueError(f"Tipo de folio no soportado: {request.document_type}")
-

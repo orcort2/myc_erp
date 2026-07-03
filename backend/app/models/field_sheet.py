@@ -18,6 +18,11 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     template_key: Mapped[str] = mapped_column(String(40), default="general", index=True)
     work_order_number: Mapped[int | None] = mapped_column(Integer, index=True)
     calibration_place: Mapped[str | None] = mapped_column(String(180))
+    minimum_division: Mapped[str | None] = mapped_column(String(120))
+    location: Mapped[str | None] = mapped_column(String(180))
+    attention: Mapped[str | None] = mapped_column(String(180))
+    company: Mapped[str | None] = mapped_column(String(180))
+    address: Mapped[str | None] = mapped_column(Text)
     reception_date: Mapped[date | None] = mapped_column(Date)
     calibration_date: Mapped[date | None] = mapped_column(Date)
     next_calibration_date: Mapped[date | None] = mapped_column(Date)
@@ -44,6 +49,11 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     returned_to_technician_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     returned_to_technician_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     returned_to_technician_reason: Mapped[str | None] = mapped_column(Text)
+    certificate_client_mode: Mapped[str] = mapped_column(String(30), default="billing", nullable=False)
+    certificate_client_company: Mapped[str | None] = mapped_column(String(180))
+    certificate_client_attention: Mapped[str | None] = mapped_column(String(180))
+    certificate_client_address: Mapped[str | None] = mapped_column(Text)
+    apply_certificate_client_to_order: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
     calibration_procedure: Mapped["CalibrationProcedure | None"] = relationship(
@@ -69,6 +79,19 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     @property
     def reference_standards(self) -> list["FieldSheetReferenceStandard"]:
         return self.reference_standard_links
+
+    @property
+    def reserved_certificate_folio(self) -> str | None:
+        for certificate in self.certificates:
+            if certificate.is_active:
+                return certificate.expected_folio or certificate.folio
+        equipment = self.equipment
+        if equipment is None:
+            return None
+        for certificate in equipment.certificates:
+            if certificate.is_active:
+                return certificate.expected_folio or certificate.folio
+        return None
 
 
 class FieldSheetResult(IntegerPkMixin, TimestampMixin, Base):

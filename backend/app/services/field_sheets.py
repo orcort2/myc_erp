@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from app.schemas.certificate import CertificateCreate
-from app.services.certificates import create_certificate
-
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -26,10 +23,11 @@ from app.services.audit_logs import write_audit_log
 from app.services.equipment import sync_service_order_equipment_counts
 
 
-TERMINAL_STATUSES = {"approved", "cancelled"}
-EDITABLE_STATUSES = {"draft", "in_progress", "rejected", "returned_to_technician"}
 FIELD_SHEET_TEMPLATE_ROWS: dict[str, list[tuple[str, int]]] = {
-    "general": [("main", 10)],
+    "general": [
+        ("main", 10),
+    ],
+
     "electrica": [
         ("main", 5),
         ("page2_a", 5),
@@ -38,8 +36,98 @@ FIELD_SHEET_TEMPLATE_ROWS: dict[str, list[tuple[str, int]]] = {
         ("page2_d", 5),
         ("page2_e", 5),
     ],
-}
 
+    "anemometro": [
+        ("main", 10),
+    ],
+    "dimensional": [
+        ("main", 10),
+    ],
+
+    "temperatura": [
+        ("main", 10),
+    ],
+
+    "sonido": [
+        ("main", 10),
+    ],
+
+    "sonometro": [
+        ("main", 10),
+    ],
+
+    "manometro": [
+        ("main", 10),
+    ],
+
+    "tacometro": [
+        ("main", 10),
+    ],
+
+    "regla": [
+        ("main", 10),
+    ],
+
+    "vernier": [
+        ("main", 10),
+    ],
+
+    "micrometro": [
+        ("main", 10),
+    ],
+
+    "termometro": [
+        ("main", 10),
+    ],
+
+    "termohigrometro": [
+        ("main", 10),
+    ],
+
+    "flexometro": [
+        ("main", 10),
+    ],
+
+    "cronometro": [
+        ("main", 10),
+    ],
+
+    "masa": [
+        ("main", 10),
+    ],
+
+    "balanza": [
+        ("main", 10),
+    ],
+
+    "bascula": [
+        ("main", 10),
+    ],
+
+    "torquimetro": [
+        ("main", 10),
+    ],
+
+    "dinamometro": [
+        ("main", 10),
+    ],
+
+    "durometro": [
+        ("main", 10),
+    ],
+
+    "multimetro": [
+        ("main", 10),
+    ],
+
+    "transductor_presion": [
+        ("main", 10),
+    ],
+
+    "volumen": [
+        ("main", 10),
+    ],
+}
 FIELD_SHEET_REFERENCE_USAGE_ROLES = {
     "primary",
     "secondary",
@@ -92,6 +180,11 @@ def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
         "work_order_number": field_sheet.work_order_number,
         "status": field_sheet.status,
         "calibration_place": field_sheet.calibration_place,
+        "minimum_division": field_sheet.minimum_division,
+        "location": field_sheet.location,
+        "attention": field_sheet.attention,
+        "company": field_sheet.company,
+        "address": field_sheet.address,
         "reception_date": field_sheet.reception_date.isoformat() if field_sheet.reception_date else None,
         "calibration_date": field_sheet.calibration_date.isoformat() if field_sheet.calibration_date else None,
         "next_calibration_date": field_sheet.next_calibration_date.isoformat() if field_sheet.next_calibration_date else None,
@@ -115,6 +208,12 @@ def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
         "method": field_sheet.method,
         "environmental_conditions": field_sheet.environmental_conditions,
         "technician_notes": field_sheet.technician_notes,
+        "certificate_client_mode": field_sheet.certificate_client_mode,
+        "certificate_client_company": field_sheet.certificate_client_company,
+        "certificate_client_attention": field_sheet.certificate_client_attention,
+        "certificate_client_address": field_sheet.certificate_client_address,
+        "apply_certificate_client_to_order": field_sheet.apply_certificate_client_to_order,
+        "reserved_certificate_folio": field_sheet.reserved_certificate_folio,
         "results_rows": _serialize_result_rows(field_sheet.results_rows),
         "reference_standards": [
             {
@@ -145,6 +244,33 @@ def _ensure_active_equipment(db: Session, equipment_id: int) -> Equipment:
             detail="No se puede modificar hoja de campo de un equipo terminal",
         )
     return equipment
+
+
+def _inherit_certificate_client_from_order(
+    db: Session,
+    *,
+    service_order_id: int,
+) -> dict[str, str | bool | None]:
+    previous_sheet = db.scalar(
+        select(FieldSheet)
+        .join(Equipment, Equipment.id == FieldSheet.equipment_id)
+        .where(
+            Equipment.service_order_id == service_order_id,
+            FieldSheet.is_active.is_(True),
+            FieldSheet.apply_certificate_client_to_order.is_(True),
+            FieldSheet.certificate_client_mode == "different",
+        )
+        .order_by(FieldSheet.created_at.desc())
+    )
+    if previous_sheet is None:
+        return {}
+    return {
+        "certificate_client_mode": "different",
+        "certificate_client_company": previous_sheet.certificate_client_company,
+        "certificate_client_attention": previous_sheet.certificate_client_attention,
+        "certificate_client_address": previous_sheet.certificate_client_address,
+        "apply_certificate_client_to_order": True,
+    }
 
 
 def _ensure_no_active_field_sheet(db: Session, equipment_id: int) -> None:
@@ -373,6 +499,9 @@ def list_field_sheets(
         select(FieldSheet)
         .options(
             selectinload(FieldSheet.results_rows),
+            selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
+            selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.client),
+            selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.quotation),
             selectinload(FieldSheet.calibration_procedure),
             selectinload(FieldSheet.reference_standard_links).selectinload(
                 FieldSheetReferenceStandard.reference_standard
@@ -393,6 +522,9 @@ def get_field_sheet(db: Session, field_sheet_id: int) -> FieldSheet:
         .where(FieldSheet.id == field_sheet_id)
         .options(
             selectinload(FieldSheet.results_rows),
+            selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
+            selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.client),
+            selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.quotation),
             selectinload(FieldSheet.calibration_procedure),
             selectinload(FieldSheet.reference_standard_links).selectinload(
                 FieldSheetReferenceStandard.reference_standard
@@ -434,6 +566,13 @@ def create_field_sheet(
         purchase_order_or_quotation=payload.purchase_order_or_quotation
         or (service_order.quotation.folio if service_order.quotation else None),
     )
+    if payload.certificate_client_mode == "billing":
+        inherited = _inherit_certificate_client_from_order(
+            db,
+            service_order_id=service_order.id,
+        )
+        for key, value in inherited.items():
+            setattr(field_sheet, key, value)
     field_sheet.results_rows = (
         [FieldSheetResult(**row.model_dump()) for row in payload.results_rows]
         if payload.results_rows
@@ -595,29 +734,14 @@ def complete_field_sheet(
     field_sheet.status = "completed"
     equipment.status = "calibrated"
 
-    certificate = next((item for item in field_sheet.certificates if item.is_active), None)
-
-    if certificate is None:
-        certificate = db.scalar(
-            select(Certificate).where(
-                Certificate.equipment_id == equipment.id,
-                Certificate.is_active.is_(True),
-            )
+    certificate = db.scalar(
+        select(Certificate).where(
+            Certificate.equipment_id == equipment.id,
+            Certificate.is_active.is_(True),
         )
+    )
 
-    if certificate is None:
-        certificate = create_certificate(
-            db,
-            CertificateCreate(
-                service_order_id=equipment.service_order_id,
-                equipment_id=equipment.id,
-                field_sheet_id=field_sheet.id,
-                certificate_type="trazable",
-            ),
-            user_id=user_id,
-        )
-
-    if certificate.status in {
+    if certificate is not None and certificate.status in {
         "expected",
         "field_sheet_ready",
         "capture_pending",
