@@ -16,6 +16,7 @@ from app.routers import (
     equipment,
     field_sheets,
     health,
+    invoices,
     metrology,
     modules,
     operational_engines,
@@ -68,6 +69,7 @@ app.include_router(technical_profiles.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
 app.include_router(certificates.router, prefix="/api")
+app.include_router(invoices.router, prefix="/api")
 app.include_router(client_portal.router, prefix="/api")
 app.include_router(metrology.router, prefix="/api")
 app.include_router(operational_engines.router, prefix="/api")
@@ -75,7 +77,7 @@ app.include_router(pattern_selection.router, prefix="/api")
 app.include_router(uncertainty.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 app.include_router(verification.router)
-app.include_router(field_sheet_templates.router)
+app.include_router(field_sheet_templates.router, prefix="/api")
 
 
 @app.get("/")

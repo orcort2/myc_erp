@@ -1263,7 +1263,7 @@ function QuotationsPage() {
           onClick={() => setSalesTab('catalog')}
           type="button"
         >
-          Catalogo MYC
+          Catalogo
         </button>
         <button
           aria-selected={salesTab === 'template'}
@@ -1342,7 +1342,7 @@ function QuotationsPage() {
       <section className="clients-list-panel">
         <div className="section-heading">
           <div>
-            <p>Catalogo MYC</p>
+            <p>Catalogo</p>
             <h2>{filteredCatalogItems.length} conceptos visibles</h2>
           </div>
           <div className="toolbar-actions">
@@ -2308,7 +2308,7 @@ function QuotationsPage() {
           <section className="client-modal import-modal" aria-modal="true" role="dialog">
             <div className="section-heading">
               <div>
-                <p>Catalogo MYC</p>
+                <p>Catalogo</p>
                 <h2>Importar conceptos</h2>
               </div>
               <button className="icon-text-button" onClick={closeCatalogImportModal} type="button">

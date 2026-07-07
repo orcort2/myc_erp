@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 
 import AuditSettingsPanel from './settings/AuditSettingsPanel.jsx';
+import FieldSheetTemplatesSettingsPanel from './settings/FieldSheetTemplatesSettingsPanel.jsx';
 import UsersSettingsPanel from './settings/UsersSettingsPanel.jsx';
 
 const SETTINGS_TABS = [
   { id: 'users', label: 'Usuarios' },
-  { id: 'audit', label: 'Auditoria' }
+  { id: 'audit', label: 'Auditoria' },
+  { id: 'fieldSheetTemplates', label: 'Panel maestro' },
 ];
 
-function SettingsPage() {
+function SettingsPage({ user = null }) {
   const [activeTab, setActiveTab] = useState('users');
 
   return (
@@ -16,8 +18,8 @@ function SettingsPage() {
       <div className="module-workspace__hero">
         <div>
           <p>Configuración</p>
-          <h1>Usuarios y auditoría</h1>
-          <span>Administración de acceso y trazabilidad operativa</span>
+          <h1>Operación, trazabilidad y diseño documental</h1>
+          <span>Usuarios, auditoría, plantillas, familias y catálogos operativos</span>
         </div>
       </div>
 
@@ -37,7 +39,13 @@ function SettingsPage() {
           ))}
         </div>
 
-        {activeTab === 'users' ? <UsersSettingsPanel /> : <AuditSettingsPanel />}
+        {activeTab === 'users' ? (
+          <UsersSettingsPanel />
+        ) : activeTab === 'audit' ? (
+          <AuditSettingsPanel />
+        ) : (
+          <FieldSheetTemplatesSettingsPanel user={user} />
+        )}
       </section>
     </section>
   );

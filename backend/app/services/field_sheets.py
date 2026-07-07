@@ -16,118 +16,15 @@ from app.schemas.field_sheet import (
     FieldSheetCreate,
     FieldSheetResultUpdate,
     FieldSheetStatusChange,
-    FieldSheetTemplateKey,
     FieldSheetUpdate,
 )
 from app.services.audit_logs import write_audit_log
 from app.services.equipment import sync_service_order_equipment_counts
-
-
-FIELD_SHEET_TEMPLATE_ROWS: dict[str, list[tuple[str, int]]] = {
-    "general": [
-        ("main", 10),
-    ],
-
-    "electrica": [
-        ("main", 5),
-        ("page2_a", 5),
-        ("page2_b", 5),
-        ("page2_c", 5),
-        ("page2_d", 5),
-        ("page2_e", 5),
-    ],
-
-    "anemometro": [
-        ("main", 10),
-    ],
-    "dimensional": [
-        ("main", 10),
-    ],
-
-    "temperatura": [
-        ("main", 10),
-    ],
-
-    "sonido": [
-        ("main", 10),
-    ],
-
-    "sonometro": [
-        ("main", 10),
-    ],
-
-    "manometro": [
-        ("main", 10),
-    ],
-
-    "tacometro": [
-        ("main", 10),
-    ],
-
-    "regla": [
-        ("main", 10),
-    ],
-
-    "vernier": [
-        ("main", 10),
-    ],
-
-    "micrometro": [
-        ("main", 10),
-    ],
-
-    "termometro": [
-        ("main", 10),
-    ],
-
-    "termohigrometro": [
-        ("main", 10),
-    ],
-
-    "flexometro": [
-        ("main", 10),
-    ],
-
-    "cronometro": [
-        ("main", 10),
-    ],
-
-    "masa": [
-        ("main", 10),
-    ],
-
-    "balanza": [
-        ("main", 10),
-    ],
-
-    "bascula": [
-        ("main", 10),
-    ],
-
-    "torquimetro": [
-        ("main", 10),
-    ],
-
-    "dinamometro": [
-        ("main", 10),
-    ],
-
-    "durometro": [
-        ("main", 10),
-    ],
-
-    "multimetro": [
-        ("main", 10),
-    ],
-
-    "transductor_presion": [
-        ("main", 10),
-    ],
-
-    "volumen": [
-        ("main", 10),
-    ],
-}
+from app.services.field_sheet_templates import (
+    build_default_result_rows,
+    get_field_sheet_template,
+    get_template_snapshot,
+)
 FIELD_SHEET_REFERENCE_USAGE_ROLES = {
     "primary",
     "secondary",
@@ -135,14 +32,6 @@ FIELD_SHEET_REFERENCE_USAGE_ROLES = {
     "environmental",
     "other",
 }
-
-
-def _default_result_rows(template_key: FieldSheetTemplateKey) -> list[FieldSheetResult]:
-    rows: list[FieldSheetResult] = []
-    for section_key, total_rows in FIELD_SHEET_TEMPLATE_ROWS[template_key]:
-        for row_number in range(1, total_rows + 1):
-            rows.append(FieldSheetResult(section_key=section_key, row_number=row_number))
-    return rows
 
 
 def _json_safe(value):
@@ -167,6 +56,7 @@ def _serialize_result_rows(rows: list[FieldSheetResult]) -> list[dict]:
             "ibc_value_3": row.ibc_value_3,
             "unit": row.unit,
             "notes": row.notes,
+            "row_data": row.row_data or {},
         }
         for row in rows
     ]
@@ -208,6 +98,8 @@ def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
         "method": field_sheet.method,
         "environmental_conditions": field_sheet.environmental_conditions,
         "technician_notes": field_sheet.technician_notes,
+        "template_definition": field_sheet.template_definition,
+        "template_definition_version": field_sheet.template_definition_version,
         "certificate_client_mode": field_sheet.certificate_client_mode,
         "certificate_client_company": field_sheet.certificate_client_company,
         "certificate_client_attention": field_sheet.certificate_client_attention,
@@ -359,7 +251,8 @@ def _resolve_reference_standards(
 
 def _validate_results_rows(field_sheet: FieldSheet) -> None:
     has_measurement = any(
-        any(
+        any([str(value).strip() for value in (row.row_data or {}).values() if value not in (None, "")])
+        or any(
             [
                 row.pattern_value and row.pattern_value.strip(),
                 row.ibc_value_1 and row.ibc_value_1.strip(),
@@ -411,6 +304,11 @@ def _apply_results_updates(field_sheet: FieldSheet, results_rows: list[FieldShee
     new_rows: list[FieldSheetResult] = []
     for row_payload in results_rows:
         row_data = row_payload.model_dump(exclude={"id"})
+        raw_data = dict(row_data.get("row_data") or {})
+        for key in ("pattern_value", "ibc_value_1", "ibc_value_2", "ibc_value_3", "unit", "notes"):
+            if row_data.get(key) not in (None, ""):
+                raw_data.setdefault(key, row_data.get(key))
+        row_data["row_data"] = raw_data
         if row_payload.id is not None and row_payload.id in existing_by_id:
             row = existing_by_id[row_payload.id]
             for key, value in row_data.items():
@@ -546,6 +444,7 @@ def create_field_sheet(
     _ensure_no_active_field_sheet(db, payload.equipment_id)
     service_order: ServiceOrder = equipment.service_order
     _ensure_calibration_procedure(db, payload.calibration_procedure_id)
+    template_definition, template_version = get_template_snapshot(db, payload.template_key)
 
     field_sheet = FieldSheet(
         **payload.model_dump(
@@ -559,6 +458,8 @@ def create_field_sheet(
             }
         ),
         template_key=payload.template_key,
+        template_definition_json=template_definition,
+        template_definition_version=template_version,
         status="draft",
         work_order_number=service_order.work_order_number,
         reception_date=payload.reception_date or service_order.agenda_date or service_order.created_at.date(),
@@ -576,7 +477,7 @@ def create_field_sheet(
     field_sheet.results_rows = (
         [FieldSheetResult(**row.model_dump()) for row in payload.results_rows]
         if payload.results_rows
-        else _default_result_rows(payload.template_key)
+        else build_default_result_rows(template_definition)
     )
     resolved_standards = _resolve_reference_standards(db, payload.reference_standards)
     _apply_reference_standard_updates(field_sheet, payload.reference_standards, resolved_standards)
@@ -641,6 +542,7 @@ def update_field_sheet(
     template_changed = False
     new_template = updates.get("template_key")
     if new_template is not None and new_template != field_sheet.template_key:
+        template_definition, template_version = get_template_snapshot(db, new_template)
         if field_sheet.status != "draft":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -652,7 +554,9 @@ def update_field_sheet(
         setattr(field_sheet, key, value)
 
     if template_changed and new_template is not None:
-        field_sheet.results_rows = _default_result_rows(new_template)
+        field_sheet.template_definition_json = template_definition
+        field_sheet.template_definition_version = template_version
+        field_sheet.results_rows = build_default_result_rows(template_definition)
 
     if payload.results_rows is not None:
         _apply_results_updates(field_sheet, payload.results_rows)

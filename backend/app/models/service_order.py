@@ -34,6 +34,7 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     equipment: Mapped[list["Equipment"]] = relationship(back_populates="service_order")
     certificates: Mapped[list["Certificate"]] = relationship(back_populates="service_order")
+    invoices: Mapped[list["Invoice"]] = relationship(back_populates="service_order")
 
 
 class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):

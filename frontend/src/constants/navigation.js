@@ -13,7 +13,7 @@ export const navigation = [
   { label: 'Dashboard', icon: Gauge, path: '/dashboard' },
   { label: 'Clientes', icon: Building2, path: '/dashboard#clientes' },
   { label: 'Ventas / Cotizaciones', icon: FileText, path: '/dashboard#cotizaciones' },
-  { label: 'Catálogo MYC', icon: FileCheck2, path: '/dashboard#catalogo' },
+  /*{ label: 'Catálogo MYC', icon: FileCheck2, path: '/dashboard#catalogo' },*/
   { label: 'Servicios', icon: ShieldCheck, path: '/dashboard#servicios' },
   { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
   { label: 'Facturación', icon: Banknote, path: '/dashboard#facturacion' },
@@ -37,14 +37,14 @@ export const modules = [
     path: '/dashboard#cotizaciones',
     status: 'Activo'
   },
-  {
+  /*{
     key: 'catalog',
     name: 'Catálogo MYC',
     description: 'Servicios, conceptos comerciales y base para cotizaciones.',
     icon: FileCheck2,
     path: '/dashboard#catalogo',
     status: 'Activo'
-  },
+  },*/
   {
     key: 'serviceOrders',
     name: 'Servicios',
@@ -59,15 +59,15 @@ export const modules = [
     description: 'Gestion de equipos patron, vigencias e incertidumbres por rango.',
     icon: Ruler,
     path: '/dashboard#patrones',
-    status: 'En desarrollo'
+    status: 'Renovación'
   },
   {
     key: 'finance',
     name: 'Facturación',
-    description: 'Pagos, facturas y control de liberacion administrativa.',
+    description: 'Facturas, pagos, cuentas por cobrar, notas de credito y configuracion fiscal administrativa.',
     icon: Banknote,
     path: '/dashboard#facturacion',
-    status: 'Pendiente'
+    status: 'Activo'
   },
   {
     key: 'settings',

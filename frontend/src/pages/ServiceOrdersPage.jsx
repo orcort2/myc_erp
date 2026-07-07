@@ -46,6 +46,7 @@ import {
   listCertificates,
   listClients,
   listEquipment,
+  listFieldSheetTemplates,
   listFieldSheets,
   listQuotations,
   listReferenceStandards,
@@ -62,14 +63,19 @@ import {
   validateFieldSheetPatterns
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
+import { navigate } from '../utils/routing.js';
 import {
+  getFieldSheetTemplate,
+  getFieldSheetTemplateLabel,
+  normalizeTemplate,
   fieldSheetToForm,
   buildFieldSheetPayload,
-  fieldSheetTemplateRowConfig,
+  buildFieldSheetResultSections,
   getFieldSheetCompletionErrors,
   updateFieldSheetResultCell,
   updateFieldSheetResultsRowsForTemplate
 } from '../utils/fieldSheets.js';
+import { fieldSheetTemplateOptions } from '../constants/fieldSheetTemplates.js';
 import { formatDate, getClientDisplayName } from '../utils/formatters.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 
@@ -96,18 +102,6 @@ function hasStageAccess(user, stage) {
   return true;
 }
 
-function getFieldSheetTemplateLabel(templateKey) {
-  const labels = {
-    anemometro: 'Hoja de Campo Anemómetro',
-    temperatura: 'Hoja de Campo Temperatura',
-    sonido: 'Hoja de Campo Sonido',
-    dimensional: 'Hoja de Campo Dimensional',
-    electrica: 'Hoja de Campo Eléctrica',
-    general: 'Hoja de Campo General',
-  };
-  return labels[templateKey] ?? 'Hoja de Campo General';
-}
-
 const calibrationScopeLabels = {
   traceable: 'Trazable',
   accredited_iso_17025: 'Acreditado ISO/IEC 17025',
@@ -129,6 +123,7 @@ function ServiceOrdersPage({ user = null }) {
   const [certificates, setCertificates] = useState([]);
   const [referenceStandards, setReferenceStandards] = useState([]);
   const [calibrationProcedures, setCalibrationProcedures] = useState([]);
+  const [fieldSheetTemplates, setFieldSheetTemplates] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedEquipmentForSheet, setSelectedEquipmentForSheet] = useState(null);
   const [selectedFieldSheet, setSelectedFieldSheet] = useState(null);
@@ -175,6 +170,11 @@ function ServiceOrdersPage({ user = null }) {
   const quotationsById = useMemo(
     () => new Map(quotations.map((quotation) => [quotation.id, quotation])),
     [quotations]
+  );
+
+  const fieldSheetTemplatesByKey = useMemo(
+    () => Object.fromEntries((fieldSheetTemplates || []).map((template) => [template.template_key || template.key, template])),
+    [fieldSheetTemplates]
   );
 
   const selectedEquipment = useMemo(
@@ -391,6 +391,7 @@ function ServiceOrdersPage({ user = null }) {
         clientsResult,
         quotationsResult,
         equipmentResult,
+        fieldSheetTemplatesResult,
         fieldSheetResult,
         certificatesResult,
         referenceStandardsResult,
@@ -400,6 +401,7 @@ function ServiceOrdersPage({ user = null }) {
         listClients(),
         listQuotations(),
         listEquipment(),
+        listFieldSheetTemplates(),
         listFieldSheets(),
         listCertificates(),
         listReferenceStandards(),
@@ -416,6 +418,7 @@ function ServiceOrdersPage({ user = null }) {
       setClients(Array.isArray(clientsResult) ? clientsResult : []);
       setQuotations(Array.isArray(quotationsResult) ? quotationsResult : []);
       setEquipment(Array.isArray(equipmentResult) ? equipmentResult : []);
+      setFieldSheetTemplates(Array.isArray(fieldSheetTemplatesResult) ? fieldSheetTemplatesResult : []);
       setFieldSheets(Array.isArray(fieldSheetResult) ? fieldSheetResult : []);
       setCertificates(Array.isArray(certificatesResult) ? certificatesResult : []);
       setReferenceStandards(Array.isArray(referenceStandardsResult) ? referenceStandardsResult : []);
@@ -886,13 +889,21 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   function updateFieldSheetTemplate(templateKey) {
-    setFieldSheetForm((current) => updateFieldSheetResultsRowsForTemplate(current, templateKey));
+    setFieldSheetForm((current) =>
+      updateFieldSheetResultsRowsForTemplate(current, templateKey, fieldSheetTemplatesByKey)
+    );
   }
 
-  function updateFieldSheetResult(rowIndex, field, value) {
+  function updateFieldSheetResult(sectionKey, rowNumber, field, value) {
     setFieldSheetForm((current) => ({
       ...current,
-      resultsRows: updateFieldSheetResultCell(current.resultsRows, rowIndex, field, value)
+      resultsRows: updateFieldSheetResultCell(
+        current.resultsRows,
+        sectionKey,
+        rowNumber,
+        field,
+        value,
+      )
     }));
   }
 
@@ -971,7 +982,7 @@ function ServiceOrdersPage({ user = null }) {
     try {
       const updated = await updateFieldSheet(
         selectedFieldSheet.id,
-        buildFieldSheetPayload(fieldSheetForm)
+        buildFieldSheetPayload(fieldSheetForm, fieldSheetTemplatesByKey)
       );
       setSelectedFieldSheet(updated);
       setFieldSheetForm(fieldSheetToForm(updated));
@@ -989,7 +1000,9 @@ function ServiceOrdersPage({ user = null }) {
 
   async function completeCurrentFieldSheet() {
     if (!selectedFieldSheet) return;
-    const missing = getFieldSheetCompletionErrors(fieldSheetForm);
+    const missing = getFieldSheetCompletionErrors(fieldSheetForm, selectedFieldSheet?.template_definition
+      ? { [fieldSheetForm.templateKey || 'general']: selectedFieldSheet.template_definition }
+      : fieldSheetTemplatesByKey);
     if (missing.length) {
       setError(`No se puede completar. Faltan: ${missing.join(', ')}.`);
       setFieldSheetTab('technical');
@@ -999,7 +1012,10 @@ function ServiceOrdersPage({ user = null }) {
     setError('');
     setNotice('');
     try {
-      const saved = await updateFieldSheet(selectedFieldSheet.id, buildFieldSheetPayload(fieldSheetForm));
+      const saved = await updateFieldSheet(
+        selectedFieldSheet.id,
+        buildFieldSheetPayload(fieldSheetForm, fieldSheetTemplatesByKey),
+      );
       const completed = await completeFieldSheet(saved.id);
       setSelectedFieldSheet(completed);
       setFieldSheetForm(fieldSheetToForm(completed));
@@ -2315,6 +2331,18 @@ function ServiceOrdersPage({ user = null }) {
                     <strong>{selectedCertificates.filter((certificate) => certificate.status === 'released_to_client').length}</strong>
                   </article>
                 </div>
+                <div className="settings-filters__actions">
+                  <button
+                    className="primary-button"
+                    onClick={() => {
+                      window.localStorage.setItem('myc_billing_order_id', String(selectedOrder.id));
+                      navigate('/dashboard#facturacion');
+                    }}
+                    type="button"
+                  >
+                    Crear factura
+                  </button>
+                </div>
               </section>
             ) : null}
           </section>
@@ -2524,10 +2552,11 @@ function ServiceOrdersPage({ user = null }) {
                     onChange={(event) => updateFieldSheetCreateForm('templateKey', event.target.value)}
                     value={fieldSheetCreateForm.templateKey}
                   >
-                    <option value="anemometro">Anemómetro</option>
-                    <option value="temperatura">Temperatura</option>
-                    <option value="sonido">Sonido</option>
-                    <option value="dimensional">Dimensional</option>
+                    {(fieldSheetTemplates.length ? fieldSheetTemplates : fieldSheetTemplateOptions).map((template) => (
+                      <option key={template.value || template.template_key || template.key} value={template.value || template.template_key || template.key}>
+                        {template.label || template.name}
+                      </option>
+                    ))}
                   </select>
                 </label>
 
@@ -2630,7 +2659,7 @@ function ServiceOrdersPage({ user = null }) {
                   </article>
                   <article>
                     <span>Plantilla</span>
-                    <strong>{getFieldSheetTemplateLabel(selectedFieldSheet.template_key)}</strong>
+                    <strong>{getFieldSheetTemplateLabel(selectedFieldSheet.template_key, fieldSheetTemplatesByKey)}</strong>
                   </article>
                   <article>
                     <span>Folio reservado</span>
@@ -2651,12 +2680,11 @@ function ServiceOrdersPage({ user = null }) {
                   <h3>Captura de campo</h3>
                 </div>
                 <FieldSheetLayout
-                  template={{
-                    key: fieldSheetForm.templateKey || 'anemometro',
-                    name: getFieldSheetTemplateLabel(fieldSheetForm.templateKey || 'anemometro'),
-                    code: 'FCA-30',
-                    revision: 'R1',
-                  }}
+                  template={
+                    selectedFieldSheet?.template_definition
+                    || selectedFieldSheet?.template_definition_json
+                    || getFieldSheetTemplate(fieldSheetForm.templateKey || 'general', fieldSheetTemplatesByKey)
+                  }
                   values={{
                     work_order_number: selectedOrder?.work_order_number || '',
                     certificate_number:
@@ -2709,19 +2737,16 @@ function ServiceOrdersPage({ user = null }) {
                     report_made_by: fieldSheetForm.reportMadeBy || '',
                     purchase_order_or_quotation: fieldSheetForm.purchaseOrderOrQuotation || '',
                   }}
-                  resultSections={[
-                    {
-                      key: 'calibration_results',
-                      title: 'Resultados de Calibración',
-                      columns: [
-                        { key: 'patternValue', label: 'Patrón' },
-                        { key: 'ibcValue1', label: '1' },
-                        { key: 'ibcValue2', label: '2' },
-                        { key: 'ibcValue3', label: '3' },
-                      ],
-                      rows: fieldSheetForm.resultsRows || [],
-                    },
-                  ]}
+                  resultSections={buildFieldSheetResultSections(
+                    fieldSheetForm.resultsRows || [],
+                    fieldSheetForm.templateKey || 'general',
+                    selectedFieldSheet?.template_definition || selectedFieldSheet?.template_definition_json
+                      ? {
+                          [fieldSheetForm.templateKey || 'general']:
+                            selectedFieldSheet?.template_definition || selectedFieldSheet?.template_definition_json,
+                        }
+                      : fieldSheetTemplatesByKey,
+                  )}
                   onValueChange={(key, value) => {
                     const map = {
                       attention: 'attention',
@@ -2752,8 +2777,8 @@ function ServiceOrdersPage({ user = null }) {
                       updateFieldSheetForm(map[key], value);
                     }
                   }}
-                  onResultChange={(sectionKey, rowIndex, columnKey, value) => {
-                    updateFieldSheetResult(rowIndex, columnKey, value);
+                  onResultChange={(sectionKey, rowNumber, columnKey, value) => {
+                    updateFieldSheetResult(sectionKey, rowNumber, columnKey, value);
                   }}
                 />
                 <div className="quotation-detail-save">

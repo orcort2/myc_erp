@@ -4,6 +4,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import BrandLockup from '../components/BrandLockup.jsx';
 import { modules } from '../constants/navigation.js';
 import { clearTokens, getAccessToken, getCurrentUser } from '../services/api.js';
+import BillingPage from './BillingPage.jsx';
 import { formatModuleDateTime } from '../utils/formatters.js';
 import { getCurrentPath, navigate } from '../utils/routing.js';
 import CertificatesPage from './CertificatesPage.jsx';
@@ -155,10 +156,12 @@ export function App() {
         <ProceduresPage />
       ) : selectedModule?.key === 'uncertainty' ? (
         <UncertaintyPage />
+      ) : selectedModule?.key === 'finance' ? (
+        <BillingPage />
       ) : selectedModule?.key === 'flowTest' ? (
         <FlowTestPage />
       ) : selectedModule?.key === 'settings' ? (
-        <SettingsPage />  
+        <SettingsPage user={user} />
       ) : selectedModule ? (
         <ModulePage module={selectedModule} timestamp={now} />
       ) : (

@@ -8,6 +8,7 @@ from app.schemas.reference_standard import (
     FieldSheetReferenceStandardCreate,
     FieldSheetReferenceStandardRead,
 )
+from app.schemas.field_sheet_template import FieldSheetTemplateRead
 
 
 FieldSheetStatus = Literal[
@@ -49,6 +50,9 @@ FieldSheetTemplateKey = Literal[
     "vernier",
     "micrometro",
     "general",
+    "luxometro",
+    "peso_patron",
+    "valvula",
 ]
 
 
@@ -61,6 +65,7 @@ class FieldSheetResultBase(BaseModel):
     ibc_value_3: str | None = Field(default=None, max_length=180)
     unit: str | None = Field(default=None, max_length=80)
     notes: str | None = None
+    row_data: dict | None = None
 
 
 class FieldSheetResultCreate(FieldSheetResultBase):
@@ -184,6 +189,8 @@ class FieldSheetRead(FieldSheetBase):
     returned_to_technician_by_id: int | None = None
     returned_to_technician_reason: str | None = None
     reserved_certificate_folio: str | None = None
+    template_definition: FieldSheetTemplateRead | dict | None = None
+    template_definition_version: int | None = None
     results_rows: list[FieldSheetResultRead] = Field(default_factory=list)
     calibration_procedure: CalibrationProcedureRead | None = None
     reference_standards: list[FieldSheetReferenceStandardRead] = Field(default_factory=list)

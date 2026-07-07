@@ -87,6 +87,34 @@ async function uploadRequest(path, formData, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 
+async function downloadRequest(path, options = {}) {
+  const token = getAccessToken();
+  const headers = {
+    ...(options.headers ?? {})
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  const response = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers
+  });
+  if (!response.ok) {
+    let message = 'No se pudo completar la solicitud';
+    try {
+      const payload = await response.json();
+      message = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message ?? payload.message ?? message;
+    } catch {
+      // Keep default message.
+    }
+    throw new Error(message);
+  }
+  return {
+    blob: await response.blob(),
+    filename: response.headers.get('content-disposition')?.match(/filename=\"?([^"]+)\"?/)?.[1] ?? null
+  };
+}
+
 export async function login(email, password) {
   const payload = await request('/auth/login', {
     method: 'POST',
@@ -128,6 +156,139 @@ export async function refreshSession() {
 
 export async function getModules() {
   return request('/modules');
+}
+
+export async function listFieldSheetTemplates({ includeAll = false } = {}) {
+  return request(`/field-sheet-templates${includeAll ? '?include_all=true' : ''}`);
+}
+
+export async function getFieldSheetTemplate(templateKey) {
+  return request(`/field-sheet-templates/${templateKey}`);
+}
+
+export async function getFieldSheetTemplateCatalog() {
+  return request('/field-sheet-templates/catalog');
+}
+
+export async function createFieldSheetTemplate(payload) {
+  return request('/field-sheet-templates', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateFieldSheetTemplateDefinition(templateId, payload) {
+  return request(`/field-sheet-templates/${templateId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function duplicateFieldSheetTemplate(templateId) {
+  return request(`/field-sheet-templates/${templateId}/duplicate`, {
+    method: 'POST',
+  });
+}
+
+export async function activateFieldSheetTemplate(templateId) {
+  return request(`/field-sheet-templates/${templateId}/activate`, {
+    method: 'POST',
+  });
+}
+
+export async function deleteFieldSheetTemplate(templateId) {
+  return request(`/field-sheet-templates/${templateId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getInvoiceDashboard() {
+  return request('/invoices/dashboard');
+}
+
+export async function listInvoices() {
+  return request('/invoices');
+}
+
+export async function getInvoice(invoiceId) {
+  return request(`/invoices/${invoiceId}`);
+}
+
+export async function createInvoice(payload) {
+  return request('/invoices', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateInvoice(invoiceId, payload) {
+  return request(`/invoices/${invoiceId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function changeInvoiceStatus(invoiceId, payload) {
+  return request(`/invoices/${invoiceId}/status`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getInvoicePdfUrl(invoiceId) {
+  return `${API_URL}/invoices/${invoiceId}/pdf`;
+}
+
+export async function listInvoicePayments() {
+  return request('/invoice-payments');
+}
+
+export async function registerInvoicePayment(invoiceId, payload) {
+  return request(`/invoices/${invoiceId}/payments`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getInvoicePaymentReceiptPdfUrl(paymentId) {
+  return `${API_URL}/invoice-payments/${paymentId}/receipt-pdf`;
+}
+
+export async function listAccountsReceivable() {
+  return request('/invoices/accounts-receivable');
+}
+
+export async function listReleasedUninvoiced() {
+  return request('/invoices/released-uninvoiced');
+}
+
+export async function createCreditNote(invoiceId, payload) {
+  return request(`/invoices/${invoiceId}/credit-notes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getInvoiceSettings() {
+  return request('/invoice-settings');
+}
+
+export async function updateInvoiceSettings(payload) {
+  return request('/invoice-settings', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function exportFieldSheetTemplate(templateId) {
+  return request(`/field-sheet-templates/${templateId}/export`);
+}
+
+export async function importFieldSheetTemplate(payload) {
+  return request('/field-sheet-templates/import', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function getDashboardCounts() {
@@ -192,8 +353,19 @@ export async function getDashboardCounts() {
   };
 }
 
-export async function listClients() {
-  return request('/clients');
+export async function listClients(params = {}) {
+  const query = new URLSearchParams();
+  if (typeof params.includeInactive === 'boolean') {
+    query.set('include_inactive', params.includeInactive ? 'true' : 'false');
+  }
+  if (params.search) {
+    query.set('search', params.search);
+  }
+  if (params.status && params.status !== 'all') {
+    query.set('status', params.status);
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request(`/clients${suffix}`);
 }
 
 export async function createClient(payload) {
@@ -214,6 +386,43 @@ export async function deleteClient(clientId) {
   return request(`/clients/${clientId}`, {
     method: 'DELETE'
   });
+}
+
+export async function previewClientImport(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return uploadRequest('/clients/import/preview', formData);
+}
+
+export async function confirmClientImport(rows) {
+  return request('/clients/import/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ rows })
+  });
+}
+
+export async function exportClients(params = {}) {
+  const query = new URLSearchParams();
+  query.set('include_inactive', 'true');
+  if (params.search) {
+    query.set('search', params.search);
+  }
+  if (params.status && params.status !== 'all') {
+    query.set('status', params.status);
+  }
+  return downloadRequest(`/clients/export?${query.toString()}`);
+}
+
+export async function uploadClientTaxConstancy(clientId, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return uploadRequest(`/clients/${clientId}/tax-constancy`, formData);
+}
+
+export async function previewClientTaxConstancy(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return uploadRequest('/clients/tax-constancy/preview', formData);
 }
 
 export async function createQuotation(payload) {

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -54,6 +54,8 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     certificate_client_attention: Mapped[str | None] = mapped_column(String(180))
     certificate_client_address: Mapped[str | None] = mapped_column(Text)
     apply_certificate_client_to_order: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    template_definition_json: Mapped[dict | None] = mapped_column(JSON)
+    template_definition_version: Mapped[int | None] = mapped_column(Integer)
 
     equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
     calibration_procedure: Mapped["CalibrationProcedure | None"] = relationship(
@@ -93,6 +95,10 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
                 return certificate.expected_folio or certificate.folio
         return None
 
+    @property
+    def template_definition(self) -> dict | None:
+        return self.template_definition_json
+
 
 class FieldSheetResult(IntegerPkMixin, TimestampMixin, Base):
     __tablename__ = "field_sheet_results"
@@ -109,5 +115,6 @@ class FieldSheetResult(IntegerPkMixin, TimestampMixin, Base):
     ibc_value_3: Mapped[str | None] = mapped_column(String(180))
     unit: Mapped[str | None] = mapped_column(String(80))
     notes: Mapped[str | None] = mapped_column(Text)
+    row_data: Mapped[dict | None] = mapped_column(JSON)
 
     field_sheet: Mapped["FieldSheet"] = relationship(back_populates="results_rows")

@@ -15,6 +15,7 @@
       .grid { display: grid; gap: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 10px; }
       .card { border: 1px solid #a7b7c7; min-height: 48px; padding: 6px 8px; }
       .label { color: #667085; display: block; font-size: 9px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; }
+      .section-title { color: #0f3d73; font-size: 12px; font-weight: 700; margin: 12px 0 6px; text-transform: uppercase; }
       table { border-collapse: collapse; width: 100%; }
       .results th, .results td { border: 1px solid #a7b7c7; padding: 5px 6px; }
       .results th { background: #eaf1f7; font-size: 9px; text-transform: uppercase; }
@@ -31,7 +32,7 @@
       <div class="brand">
         {% if logo_uri %}<img alt="MYC" src="{{ logo_uri }}" />{% endif %}
         <div class="title">
-          <h1>Hoja de Campo General</h1>
+          <h1>{{ template_definition.name }}</h1>
           <p>Metrología y Servicios MYC</p>
         </div>
       </div>
@@ -43,49 +44,46 @@
 
     <section class="grid">
       <article class="card"><span class="label">Cliente</span><strong>{{ client_name }}</strong></article>
+      <article class="card"><span class="label">Atención</span><strong>{{ client_attention or '-' }}</strong></article>
+      <article class="card"><span class="label">Dirección</span><strong>{{ client_address or '-' }}</strong></article>
+      <article class="card"><span class="label">Folio reservado</span><strong>{{ certificate_folio }}</strong></article>
       <article class="card"><span class="label">Equipo</span><strong>{{ equipment.name }}</strong></article>
       <article class="card"><span class="label">Marca / modelo</span><strong>{{ equipment.brand or '-' }} / {{ equipment.model or '-' }}</strong></article>
       <article class="card"><span class="label">Serie</span><strong>{{ equipment.serial_number or '-' }}</strong></article>
+      <article class="card"><span class="label">Identificación</span><strong>{{ equipment.internal_id or '-' }}</strong></article>
       <article class="card"><span class="label">Ubicación</span><strong>{{ field_sheet.location or '-' }}</strong></article>
-      <article class="card"><span class="label">Folio certificado</span><strong>{{ certificate_folio }}</strong></article>
+      <article class="card"><span class="label">División mínima</span><strong>{{ field_sheet.minimum_division or '-' }}</strong></article>
       <article class="card"><span class="label">Recepción</span><strong>{{ field_sheet.reception_date|date }}</strong></article>
       <article class="card"><span class="label">Calibración</span><strong>{{ field_sheet.calibration_date|date }}</strong></article>
       <article class="card"><span class="label">Próxima calibración</span><strong>{{ field_sheet.next_calibration_date|date }}</strong></article>
-      <article class="card"><span class="label">Cotización / pedido</span><strong>{{ field_sheet.purchase_order_or_quotation or (service_order.quotation.folio if service_order.quotation else '-') }}</strong></article>
+      <article class="card"><span class="label">Lugar de calibración</span><strong>{{ field_sheet.calibration_place or '-' }}</strong></article>
       <article class="card"><span class="label">Humedad</span><strong>{{ field_sheet.environment_humidity_start or '-' }} / {{ field_sheet.environment_humidity_end or '-' }}</strong></article>
       <article class="card"><span class="label">Temperatura</span><strong>{{ field_sheet.environment_temperature_start or '-' }} / {{ field_sheet.environment_temperature_end or '-' }}</strong></article>
-      <article class="card"><span class="label">Condición general</span><strong>{{ 'OK' if field_sheet.equipment_general_condition else 'No OK' if field_sheet.equipment_general_condition is not none else '-' }}</strong></article>
-      <article class="card"><span class="label">Unidades</span><strong>{{ field_sheet.units or '-' }}</strong></article>
-      <article class="card"><span class="label">División mínima</span><strong>{{ field_sheet.minimum_division or '-' }}</strong></article>
-      <article class="card"><span class="label">Atención</span><strong>{{ client_attention or '-' }}</strong></article>
-      <article class="card"><span class="label">Dirección</span><strong>{{ client_address or '-' }}</strong></article>
     </section>
 
-    {% set main_section = sections[0] if sections else none %}
+    {% for section in sections %}
+    <section class="section-title">{{ section.title }}</section>
     <table class="results">
       <thead>
         <tr>
           <th style="width: 8%">#</th>
-          <th>Patrón</th>
-          <th>Indicación 1</th>
-          <th>Indicación 2</th>
-          <th>Indicación 3</th>
-          <th style="width: 12%">Unidad</th>
+          {% for column in section.columns %}
+          <th{% if column.width %} style="width: {{ column.width }}"{% endif %}>{{ column.label }}</th>
+          {% endfor %}
         </tr>
       </thead>
       <tbody>
-        {% for row in main_section.rows if main_section %}
+        {% for row in section.rows %}
         <tr>
           <td>{{ row.row_number }}</td>
-          <td>{{ row.pattern_value or '' }}</td>
-          <td>{{ row.ibc_value_1 or '' }}</td>
-          <td>{{ row.ibc_value_2 or '' }}</td>
-          <td>{{ row.ibc_value_3 or '' }}</td>
-          <td>{{ row.unit or '' }}</td>
+          {% for column in section.columns %}
+          <td>{{ row_value(row, column) }}</td>
+          {% endfor %}
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    {% endfor %}
 
     <section class="row-two">
       <article>
@@ -97,19 +95,19 @@
         <div class="box">{{ field_sheet.final_condition or '-' }}</div>
       </article>
       <article>
-        <span class="label">Patrón utilizado / método</span>
-        <div class="box">{{ field_sheet.pattern_used or '-' }}{% if field_sheet.method %}\n\nMétodo: {{ field_sheet.method }}{% endif %}</div>
+        <span class="label">Método</span>
+        <div class="box">{{ field_sheet.method or '-' }}</div>
       </article>
       <article>
-        <span class="label">Condiciones ambientales</span>
-        <div class="box">{{ field_sheet.environmental_conditions or '-' }}</div>
+        <span class="label">Unidades</span>
+        <div class="box">{{ field_sheet.units or '-' }}</div>
       </article>
       <article>
         <span class="label">Observaciones</span>
         <div class="box">{{ field_sheet.observations or '-' }}</div>
       </article>
       <article>
-        <span class="label">Evidencia / notas técnico</span>
+        <span class="label">Evidencia / notas</span>
         <div class="box">{{ field_sheet.evidence_notes or '-' }}{% if field_sheet.technician_notes %}\n\n{{ field_sheet.technician_notes }}{% endif %}</div>
       </article>
     </section>
@@ -117,9 +115,9 @@
     <section class="signatures">
       <article class="signature"><span class="label">Calibró</span><strong>{{ field_sheet.calibrated_by or '-' }}</strong></article>
       <article class="signature"><span class="label">Revisó</span><strong>{{ field_sheet.reviewed_by or '-' }}</strong></article>
-      <article class="signature"><span class="label">Reporte</span><strong>{{ field_sheet.report_made_by or '-' }}</strong></article>
+      <article class="signature"><span class="label">Elaboró reporte</span><strong>{{ field_sheet.report_made_by or '-' }}</strong></article>
     </section>
 
-    <p class="footer">FCA-30 R1 · Hoja de campo general</p>
+    <p class="footer">{{ template_definition.code }} {{ template_definition.revision }} · {{ template_definition.name }}</p>
   </body>
 </html>

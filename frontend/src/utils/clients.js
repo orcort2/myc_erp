@@ -10,12 +10,23 @@ export function isValidEmail(value) {
 export function validateClientForm(form) {
   const errors = {};
 
-  if (!form.commercialName.trim()) {
-    errors.commercialName = 'El nombre comercial es obligatorio.';
+  if (!form.clientType) {
+    errors.clientType = 'Selecciona el tipo de cliente.';
   }
 
   if (!form.rfc.trim()) {
     errors.rfc = 'El RFC es obligatorio.';
+  }
+
+  if (form.clientType === 'persona_fisica') {
+    if (!form.firstName.trim()) {
+      errors.firstName = 'El nombre es obligatorio.';
+    }
+    if (!form.firstLastName.trim()) {
+      errors.firstLastName = 'El primer apellido es obligatorio.';
+    }
+  } else if (!form.legalName.trim()) {
+    errors.legalName = 'La razon social es obligatoria.';
   }
 
   if (form.email.trim() && !isValidEmail(form.email.trim())) {
@@ -34,7 +45,7 @@ export function validateClientForm(form) {
 }
 
 export function getFirstValidationTab(errors) {
-  if (errors.commercialName || errors.rfc || errors.email) {
+  if (errors.clientType || errors.legalName || errors.firstName || errors.firstLastName || errors.rfc || errors.email) {
     return 'general';
   }
   if (errors.postalCode) {
@@ -47,15 +58,47 @@ export function getFirstValidationTab(errors) {
 }
 
 export function toClientPayload(form) {
-  const legalName = form.fiscalLegalName.trim() || form.commercialName.trim();
+  const legalName =
+    form.clientType === 'persona_fisica'
+      ? [form.firstName.trim(), form.firstLastName.trim(), form.secondLastName.trim()].filter(Boolean).join(' ')
+      : form.legalName.trim() || form.fiscalLegalName.trim() || form.commercialName.trim();
   const rfc = form.fiscalRfc.trim() || form.rfc.trim();
+  const contactName = form.contactName.trim();
   const payload = {
+    client_type: form.clientType,
     legal_name: legalName,
     commercial_name: form.commercialName.trim() || null,
     rfc: rfc || null,
+    curp: form.curp.trim() || null,
+    first_name: form.firstName.trim() || null,
+    first_last_name: form.firstLastName.trim() || null,
+    second_last_name: form.secondLastName.trim() || null,
     phone: form.phone.trim() || null,
     email: form.email.trim() || null,
-    tax_regime: form.taxRegime.trim() || null
+    tax_regime: form.taxRegime.trim() || null,
+    cfdi_use: form.cfdiUse.trim() || null,
+    street_type: form.streetType.trim() || null,
+    street: form.street.trim() || null,
+    exterior_number: form.exteriorNumber.trim() || null,
+    interior_number: form.interiorNumber.trim() || null,
+    neighborhood: form.neighborhood.trim() || null,
+    locality: form.locality.trim() || null,
+    municipality: form.municipality.trim() || form.city.trim() || null,
+    city: form.city.trim() || form.municipality.trim() || null,
+    state: form.addressState.trim() || null,
+    postal_code: form.postalCode.trim() || null,
+    country: form.country.trim() || null,
+    fiscal_postal_code: form.fiscalPostalCode.trim() || null,
+    contacts: contactName
+      ? [
+          {
+            name: contactName,
+            email: form.email.trim() || null,
+            phone: form.phone.trim() || null,
+            position: null
+          }
+        ]
+      : []
   };
 
   return Object.fromEntries(
@@ -64,19 +107,7 @@ export function toClientPayload(form) {
 }
 
 export function toClientCreatePayload(form) {
-  const contactName = form.contactName.trim();
-  return {
-    ...toClientPayload(form),
-    contacts: contactName
-      ? [
-          {
-            name: contactName,
-            email: form.email.trim() || null,
-            phone: form.phone.trim() || null
-          }
-        ]
-      : []
-  };
+  return toClientPayload(form);
 }
 
 export function buildClientImportPreview(rows, existingClients) {
@@ -91,18 +122,23 @@ export function buildClientImportPreview(rows, existingClients) {
   const seenName = new Set();
 
   const reviewedRows = rows.map((row, index) => {
-    const name = row['Nombre comercial'] || row.nombre || row.Cliente || '';
-    const rfc = row.RFC || row.rfc || '';
-    const email = row.Correo || row.Email || row.email || '';
-    const postalCode = row['Codigo postal'] || row['Código postal'] || '';
-    const nameKey = normalizeKey(name);
+    const name = row.nombre_comercial || row['Nombre comercial'] || row.nombre || row.Cliente || '';
+    const legalName = row.razon_social || row['Razón social'] || row['Razon social'] || '';
+    const personName = [row.nombres, row.primer_apellido, row.segundo_apellido].filter(Boolean).join(' ');
+    const rfc = row.rfc || row.RFC || '';
+    const email = row.correo || row.Correo || row.Email || row.email || '';
+    const postalCode = row.codigo_postal || row['Codigo postal'] || row['Código postal'] || '';
+    const nameKey = normalizeKey(name || legalName || personName);
     const rfcKey = normalizeKey(rfc);
     const emailKey = normalizeKey(email);
     const errors = [];
     const duplicates = [];
 
-    if (!name.trim()) {
-      errors.push('Nombre comercial obligatorio');
+    if (!(name || legalName || personName).trim()) {
+      errors.push('Nombre comercial, razon social o nombre completo obligatorios');
+    }
+    if (!rfc.trim()) {
+      errors.push('RFC obligatorio');
     }
     if (email.trim() && !isValidEmail(email.trim())) {
       errors.push('Correo invalido');
@@ -126,7 +162,7 @@ export function buildClientImportPreview(rows, existingClients) {
 
     return {
       id: `${index}-${nameKey || 'cliente'}`,
-      name: name || '-',
+      name: name || legalName || personName || '-',
       rfc: rfc || '-',
       email: email || '-',
       status: errors.length ? 'error' : duplicates.length ? 'duplicate' : 'valid',

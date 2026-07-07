@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Arial, sans-serif; color: #1f2937; font-size: 11px; }
+      .header, .totals, .box { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+      .header td { vertical-align: top; }
+      .title { font-size: 20px; font-weight: 700; }
+      .muted { color: #6b7280; }
+      .box td, .box th, .totals td { border: 1px solid #d1d5db; padding: 6px; }
+      .box th { background: #eef2ff; text-align: left; }
+      .right { text-align: right; }
+      .badge { display: inline-block; padding: 4px 8px; background: #dbeafe; border-radius: 999px; font-weight: 700; }
+      .legend { margin-top: 18px; padding: 10px; border: 1px solid #f59e0b; background: #fffbeb; }
+    </style>
+  </head>
+  <body>
+    <table class="header">
+      <tr>
+        <td>
+          <div class="title">FACTURA / PREFACTURA</div>
+          <div>{{ (settings.emitter_data or {}).get('commercial_name', 'MYC SYSTEM') }}</div>
+          <div class="muted">{{ (settings.emitter_data or {}).get('legal_name', '') }}</div>
+          <div class="muted">RFC: {{ (settings.emitter_data or {}).get('rfc', '') }}</div>
+          <div class="muted">{{ (settings.emitter_data or {}).get('address', '') }}</div>
+        </td>
+        <td class="right">
+          <div><strong>{{ invoice.series }}-{{ invoice.folio }}</strong></div>
+          <div>Fecha: {{ invoice.issued_on or '-' }}</div>
+          <div>Vencimiento: {{ invoice.due_on or '-' }}</div>
+          <div><span class="badge">{{ invoice.status }}</span></div>
+        </td>
+      </tr>
+    </table>
+
+    <table class="box">
+      <tr>
+        <th>Receptor</th>
+        <th>Orden / Referencia</th>
+      </tr>
+      <tr>
+        <td>
+          <div><strong>{{ (invoice.fiscal_client or invoice.client).legal_name }}</strong></div>
+          <div>RFC: {{ (invoice.fiscal_client or invoice.client).rfc or '-' }}</div>
+          <div>Régimen: {{ (invoice.fiscal_client or invoice.client).tax_regime or '-' }}</div>
+          <div>Correo: {{ (invoice.fiscal_client or invoice.client).email or '-' }}</div>
+        </td>
+        <td>
+          <div>OS: {{ invoice.service_order.folio if invoice.service_order else '-' }}</div>
+          <div>OT: {{ invoice.service_order.work_order_number if invoice.service_order else '-' }}</div>
+          <div>Cotización: {{ invoice.quotation.folio if invoice.quotation else '-' }}</div>
+        </td>
+      </tr>
+    </table>
+
+    <table class="box">
+      <tr>
+        <th>Descripción</th>
+        <th>Cant.</th>
+        <th>Unidad</th>
+        <th>P. unit.</th>
+        <th>Descuento</th>
+        <th>IVA</th>
+        <th>Importe</th>
+      </tr>
+      {% for item in invoice.items %}
+      <tr>
+        <td>
+          <strong>{{ item.description }}</strong>
+          <div class="muted">{{ item.notes or '' }}</div>
+        </td>
+        <td class="right">{{ item.quantity }}</td>
+        <td>{{ item.unit or '-' }}</td>
+        <td class="right">{{ item.unit_price }}</td>
+        <td class="right">{{ item.discount_total }}</td>
+        <td class="right">{{ item.tax_total }}</td>
+        <td class="right">{{ item.line_total }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <table class="box">
+      <tr>
+        <th>Certificados incluidos</th>
+      </tr>
+      <tr>
+        <td>
+          {% set certs = invoice.items | selectattr('certificate', 'defined') | list %}
+          {% for item in invoice.items if item.certificate %}
+            <div>{{ item.certificate.expected_folio or item.certificate.folio }} - {{ item.certificate.equipment.name if item.certificate.equipment else '' }}</div>
+          {% else %}
+            <div>-</div>
+          {% endfor %}
+        </td>
+      </tr>
+    </table>
+
+    <table class="totals">
+      <tr><td>Subtotal</td><td class="right">{{ invoice.subtotal }}</td></tr>
+      <tr><td>IVA</td><td class="right">{{ invoice.tax_total }}</td></tr>
+      <tr><td>Descuento</td><td class="right">{{ invoice.discount_total }}</td></tr>
+      <tr><td>Total</td><td class="right"><strong>{{ invoice.total }}</strong></td></tr>
+      <tr><td>Pagado</td><td class="right">{{ invoice.amount_paid }}</td></tr>
+      <tr><td>Saldo</td><td class="right"><strong>{{ invoice.balance_due }}</strong></td></tr>
+    </table>
+
+    <div><strong>Observaciones:</strong> {{ invoice.observations or '-' }}</div>
+    <div><strong>Pagos registrados:</strong></div>
+    {% for payment in invoice.payments %}
+      <div>{{ payment.paid_on }} | {{ payment.amount }} | {{ payment.payment_form or '-' }} | {{ payment.reference or '-' }}</div>
+    {% else %}
+      <div>-</div>
+    {% endfor %}
+
+    <div class="legend">
+      Documento administrativo interno, no CFDI timbrado.
+    </div>
+  </body>
+</html>

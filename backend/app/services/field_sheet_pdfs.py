@@ -10,6 +10,7 @@ from weasyprint import HTML
 
 from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.services.field_sheets import get_field_sheet
+from app.services.field_sheet_templates import get_field_sheet_template
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -20,7 +21,9 @@ LOGO_PATH = PROJECT_ROOT / "frontend" / "src" / "assets" / "myc-logo.png"
 
 @dataclass(frozen=True)
 class ResultTableSection:
+    key: str
     title: str
+    columns: list
     rows: list[FieldSheetResult]
 
 
@@ -40,23 +43,34 @@ def _checkbox(value: bool | None) -> str:
     return "X" if value else ""
 
 
-def _group_sections(field_sheet: FieldSheet) -> list[ResultTableSection]:
+def _row_value(row: FieldSheetResult, column) -> str:
+    source = column["source"] if isinstance(column, dict) else column.source
+    if row.row_data and source in row.row_data:
+        value = row.row_data.get(source)
+        return "" if value is None else str(value)
+    value = getattr(row, source, None)
+    return "" if value is None else str(value)
+
+
+def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[ResultTableSection]:
     sections: list[ResultTableSection] = []
-    labels = {
-        "main": "Resultados",
-        "page2_a": "Resultados complementarios A",
-        "page2_b": "Resultados complementarios B",
-        "page2_c": "Resultados complementarios C",
-        "page2_d": "Resultados complementarios D",
-        "page2_e": "Resultados complementarios E",
+    rows_by_section = {
+        section.key: [row for row in field_sheet.results_rows if row.section_key == section.key]
+        for section in template_definition["result_sections"]
     }
-    for section_key in sorted({row.section_key for row in field_sheet.results_rows}):
-        rows = [row for row in field_sheet.results_rows if row.section_key == section_key]
-        sections.append(ResultTableSection(title=labels.get(section_key, section_key), rows=rows))
+    for section in template_definition["result_sections"]:
+        sections.append(
+            ResultTableSection(
+                key=section["key"],
+                title=section["title"],
+                columns=section["columns"],
+                rows=rows_by_section.get(section["key"], []),
+            )
+        )
     return sections
 
 
-def _render_html(field_sheet: FieldSheet) -> str:
+def _render_html(field_sheet: FieldSheet, template_definition: dict) -> str:
     equipment = field_sheet.equipment
     service_order = equipment.service_order
     client = service_order.client
@@ -103,7 +117,9 @@ def _render_html(field_sheet: FieldSheet) -> str:
         client_attention=client_attention,
         client_address=client_address,
         certificate_folio=(certificate.expected_folio or certificate.folio) if certificate else "-",
-        sections=_group_sections(field_sheet),
+        template_definition=template_definition,
+        sections=_group_sections(field_sheet, template_definition),
+        row_value=_row_value,
         checkbox=_checkbox,
         logo_uri=LOGO_PATH.as_uri() if LOGO_PATH.exists() else None,
     )
@@ -111,7 +127,11 @@ def _render_html(field_sheet: FieldSheet) -> str:
 
 def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
     field_sheet = get_field_sheet(db, field_sheet_id)
-    html = _render_html(field_sheet)
+    template_definition = field_sheet.template_definition_json or get_field_sheet_template(
+        db,
+        field_sheet.template_key,
+    )
+    html = _render_html(field_sheet, template_definition)
     pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
     equipment_name = field_sheet.equipment.name or f"equipo-{field_sheet.equipment_id}"
     return (

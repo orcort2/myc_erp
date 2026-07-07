@@ -15,6 +15,7 @@ import {
   listServiceOrders
 } from '../services/api.js';
 import { formatDateTime, getClientDisplayName } from '../utils/formatters.js';
+import { getFieldSheetTemplateLabel } from '../utils/fieldSheets.js';
 
 function FieldSheetsPage() {
   const [fieldSheets, setFieldSheets] = useState([]);
@@ -264,7 +265,7 @@ function FieldSheetsPage() {
                   <span>{getClientDisplayName(client)}</span>
                   <span>{item?.name || '-'}</span>
                   <span>{certificate?.expected_folio || certificate?.folio || '-'}</span>
-                  <span>{sheet.template_key === 'electrica' ? 'Electrica' : 'General'}</span>
+                  <span>{getFieldSheetTemplateLabel(sheet.template_key)}</span>
 
                   <span>
                     <mark className={`quotation-status status-${sheet.status}`}>

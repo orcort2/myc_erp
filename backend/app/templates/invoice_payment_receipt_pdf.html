@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Arial, sans-serif; color: #1f2937; font-size: 11px; }
+      table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+      td, th { border: 1px solid #d1d5db; padding: 6px; }
+      th { background: #eef2ff; text-align: left; }
+      .title { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="title">RECIBO DE PAGO</div>
+    <table>
+      <tr><th>Factura</th><td>{{ invoice.series }}-{{ invoice.folio }}</td></tr>
+      <tr><th>Cliente</th><td>{{ (invoice.fiscal_client or invoice.client).legal_name }}</td></tr>
+      <tr><th>Monto pagado</th><td>{{ payment.amount }}</td></tr>
+      <tr><th>Fecha</th><td>{{ payment.paid_on }}</td></tr>
+      <tr><th>Forma de pago</th><td>{{ payment.payment_form or '-' }}</td></tr>
+      <tr><th>Método</th><td>{{ payment.payment_method or '-' }}</td></tr>
+      <tr><th>Banco</th><td>{{ payment.bank_name or '-' }}</td></tr>
+      <tr><th>Referencia</th><td>{{ payment.reference or '-' }}</td></tr>
+      <tr><th>Saldo anterior</th><td>{{ invoice.balance_due + payment.amount }}</td></tr>
+      <tr><th>Saldo posterior</th><td>{{ invoice.balance_due }}</td></tr>
+      <tr><th>Usuario</th><td>{{ payment.registered_by_id or '-' }}</td></tr>
+    </table>
+  </body>
+</html>

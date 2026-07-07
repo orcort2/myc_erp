@@ -14,6 +14,8 @@ from app.models.controlled_document import (
 )
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet, FieldSheetResult
+from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
+from app.models.invoice import CreditNote, Invoice, InvoiceItem, InvoicePayment, InvoiceSettings
 from app.models.quotation import Quotation, QuotationItem
 from app.models.reference_standard import (
     FieldSheetReferenceStandard,
@@ -50,6 +52,12 @@ __all__ = [
     "FieldSheet",
     "FieldSheetReferenceStandard",
     "FieldSheetResult",
+    "FieldSheetTemplateDefinition",
+    "Invoice",
+    "InvoiceItem",
+    "InvoicePayment",
+    "CreditNote",
+    "InvoiceSettings",
     "IntegerPkMixin",
     "Quotation",
     "QuotationItem",

@@ -3357,3 +3357,1379 @@ Resultado:
 - El alta de equipos en ETS ya opera por cupos reales de certificado y no por seleccion manual de partida.
 - El sistema bloquea sobreconsumo por tipo desde backend.
 - El frontend solo pide al usuario la decision minima necesaria cuando la OT tiene mas de una bolsa activa.
+
+---
+
+## Fase - motor base de plantillas de hojas de campo
+
+Fecha de actualizacion: 2026-07-03 09:20:00 CST
+
+Objetivo aplicado:
+- Se consolido un motor base de plantillas para Hojas de Campo dentro del flujo actual de Servicios / ETS.
+- La hoja ya no depende de listas fijas repartidas entre backend, frontend y PDF.
+- No se creo un modulo visible nuevo.
+
+Alcance funcional:
+- Se centralizo la definicion estructural de plantillas con soporte para:
+  - `key`
+  - `name`
+  - `type`
+  - `visible_fields`
+  - `result_sections`
+  - `columns`
+  - `rows`
+  - `pdf_template`
+- La hoja sigue usando el certificado esperado activo del equipo.
+- No se reactivaron procedimientos/patrones como requeridos.
+- No se agrego calculo de incertidumbre ni logica avanzada.
+- No se crean certificados desde la hoja.
+
+Backend:
+- Archivo central:
+  - `backend/app/services/field_sheet_templates.py`
+- Ahora concentra el registro de plantillas compatibles:
+  - `general`
+  - `electrica`
+  - `anemometro`
+  - `dimensional`
+  - `temperatura`
+  - `sonido`
+  - `sonometro`
+  - `manometro`
+  - `tacometro`
+  - `regla`
+  - `vernier`
+  - `micrometro`
+  - `termometro`
+  - `termohigrometro`
+  - `flexometro`
+  - `cronometro`
+  - `masa`
+  - `balanza`
+  - `bascula`
+  - `torquimetro`
+  - `dinamometro`
+  - `durometro`
+  - `multimetro`
+  - `transductor_presion`
+  - `volumen`
+- Tambien se mantuvo compatibilidad con claves historicas adicionales del schema:
+  - `luxometro`
+  - `peso_patron`
+
+Helpers base creados/normalizados:
+- `get_field_sheet_template(template_key)`
+- `build_default_result_rows(template_key)`
+
+Servicio de hojas:
+- `backend/app/services/field_sheets.py`
+- Ajustes aplicados:
+  - deja de depender de `FIELD_SHEET_TEMPLATE_ROWS`
+  - valida la existencia de `template_key` desde el registro central
+  - usa `build_default_result_rows(...)` al crear la hoja
+  - conserva `template_key` al actualizar
+  - si la plantilla cambia en borrador, regenera `results_rows` segun la nueva definicion
+  - si la plantilla no existe, devuelve error claro desde backend
+
+Schema de plantillas:
+- `backend/app/schemas/field_sheet_template.py`
+- Ahora expone:
+  - `type`
+  - `visible_fields`
+  - columnas de resultados con `source`, `width`, `unit` y `editable`
+
+PDF:
+- `backend/app/services/field_sheet_pdfs.py`
+- Ajustes aplicados:
+  - el PDF ya toma la definicion central de plantilla
+  - agrupa secciones segun `result_sections`
+  - cada seccion usa columnas dinamicas definidas por plantilla
+  - sigue mostrando folio reservado y datos persistidos del equipo/cliente/hoja
+- Templates actualizados:
+  - `backend/app/templates/field_sheet_general_pdf.html`
+  - `backend/app/templates/field_sheet_electrical_pdf.html`
+  - `backend/app/templates/field_sheet_anemometer_pdf.html`
+- En esta fase el PDF ya es dinamico por estructura, sin intentar aun maquetados especializados por magnitud.
+
+Frontend:
+- Nueva constante central:
+  - `frontend/src/constants/fieldSheetTemplates.js`
+- Ahora concentra:
+  - opciones del selector
+  - nombre visible de plantilla
+  - secciones dinamicas
+  - columnas de resultados
+- `frontend/src/utils/fieldSheets.js`
+  - deja de definir plantillas fijas locales
+  - ahora deriva filas por default desde la constante central
+  - agrega helper para construir secciones de resultados renderizables
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+  - el selector de plantilla ya lee desde la constante central
+  - al cambiar plantilla en borrador regenera `resultsRows`
+  - la vista usa el nombre visible centralizado
+  - la captura tecnica ya renderiza secciones y columnas segun la plantilla activa
+- `frontend/src/components/field-sheets/FieldSheetLayout.jsx`
+  - ahora muestra titulos de seccion dinamicos
+  - la tabla usa columnas dinamicas por plantilla
+  - se corrigio la actualizacion de celdas para plantillas con varias secciones
+
+Compatibilidad preservada:
+- creacion de hoja
+- edicion de hoja
+- completar hoja
+- PDF de hoja
+- folio reservado
+- certificado esperado
+- flujo ETS
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `npm run build`
+- `./scripts/myc build`
+- `git diff --check`
+
+Estado de base:
+- No se requirio nueva migracion para esta fase.
+- La base permanece en:
+  - `7c9e1f2a3b4c (head)`
+
+Resultado:
+- El proyecto ya tiene un motor base de plantillas de Hojas de Campo centralizado y reutilizable.
+- Backend, frontend y PDF quedaron alineados sobre la misma estructura funcional.
+- La siguiente fase puede especializar plantillas por magnitud sin volver a fragmentar la logica.
+
+---
+
+## Fase - motor de familias de tablas y diseñador visual de hojas de campo
+
+Fecha de actualizacion: 2026-07-03 10:35:00 CST
+
+Objetivo aplicado:
+- Se evoluciono el motor base de plantillas hacia un esquema por bloques reutilizables y familias de tablas.
+- Se agrego un editor interno de plantillas dentro de Configuracion, sin crear un modulo operativo separado del ETS.
+- Las hojas nuevas y las existentes con snapshot ya no dependen de una estructura fija de columnas por codigo.
+
+Arquitectura aplicada:
+- Bloques soportados:
+  - `GeneralDataBlock`
+  - `EquipmentDataBlock`
+  - `EnvironmentalBlock`
+  - `SimpleComparisonTableBlock`
+  - `MultiPointTableBlock`
+  - `SectionedTableBlock`
+  - `RepeatabilityTableBlock`
+  - `DimensionalTableBlock`
+  - `PressureTableBlock`
+  - `MassBalanceTableBlock`
+  - `ElectricalTableBlock`
+  - `ObservationsBlock`
+  - `SignaturesBlock`
+- Cada bloque ya puede definir:
+  - titulo visible
+  - campos visibles
+  - columnas
+  - secciones
+  - filas
+  - min/max
+  - si permite agregar filas
+  - si es obligatorio
+  - orden de captura
+  - orden de impresion
+
+Persistencia nueva:
+- Nueva tabla:
+  - `field_sheet_template_definitions`
+- Campos implementados:
+  - `id`
+  - `template_key`
+  - `name`
+  - `description`
+  - `status`
+  - `version`
+  - `definition_json`
+  - `is_active`
+  - `created_at`
+  - `updated_at`
+- Regla aplicada:
+  - se conserva una version activa por `template_key`
+  - el borrado es logico mediante `is_active/status`
+
+Snapshots en hojas:
+- `field_sheets` ahora guarda:
+  - `template_definition_json`
+  - `template_definition_version`
+- Esto congela la definicion usada por cada hoja y evita que cambios posteriores en la plantilla activa alteren retroactivamente hojas ya creadas.
+
+Resultados dinamicos:
+- `field_sheet_results` ahora incorpora:
+  - `row_data` JSON
+- Se conserva compatibilidad con columnas antiguas:
+  - `pattern_value`
+  - `ibc_value_1`
+  - `ibc_value_2`
+  - `ibc_value_3`
+  - `unit`
+  - `notes`
+- `row_data` permite ya soportar familias con columnas nuevas como:
+  - `nominal_point`
+  - `instrument_reading`
+  - `error_value`
+  - `result_value`
+  - `ascending_pattern`
+  - `eccentricity_value`
+  - `repeatability_value`
+  - etc.
+
+Backend:
+- Archivo central de logica:
+  - `backend/app/services/field_sheet_templates.py`
+- Capacidades agregadas:
+  - definiciones fallback hardcodeadas por bloque
+  - asignacion exacta inicial de plantillas a bloques
+  - normalizacion de `definition_json`
+  - derivacion automatica de:
+    - `visible_fields`
+    - `result_sections`
+  - resolucion de plantilla activa desde DB con fallback hardcodeado
+  - snapshot de plantilla al crear hoja
+- CRUD basico implementado:
+  - listar plantillas
+  - crear plantilla
+  - editar plantilla
+  - duplicar version
+  - activar version
+  - archivar plantilla
+
+Endpoints disponibles:
+- `GET /api/field-sheet-templates`
+- `GET /api/field-sheet-templates/{template_key}`
+- `POST /api/field-sheet-templates`
+- `PATCH /api/field-sheet-templates/{template_id}`
+- `POST /api/field-sheet-templates/{template_id}/duplicate`
+- `POST /api/field-sheet-templates/{template_id}/activate`
+- `DELETE /api/field-sheet-templates/{template_id}`
+
+Asignacion inicial de plantillas:
+- Quedaron cubiertas las familias solicitadas para:
+  - `general`
+  - `temperatura`
+  - `termometro`
+  - `termohigrometro`
+  - `cronometro`
+  - `tacometro`
+  - `anemometro`
+  - `manometro`
+  - `transductor_presion`
+  - `valvula`
+  - `dimensional`
+  - `regla`
+  - `vernier`
+  - `micrometro`
+  - `flexometro`
+  - `masa`
+  - `balanza`
+  - `bascula`
+  - `peso_patron`
+  - `electrica`
+  - `multimetro`
+  - `luxometro`
+  - `sonido`
+  - `sonometro`
+  - `torquimetro`
+  - `dinamometro`
+  - `durometro`
+  - `volumen`
+
+Frontend:
+- `frontend/src/constants/fieldSheetTemplates.js`
+  - ahora incluye familias de bloques, nombres de plantilla, asignaciones fallback y normalizacion de definiciones
+- `frontend/src/utils/fieldSheets.js`
+  - ahora genera filas por `result_sections`
+  - normaliza `row_data`
+  - construye payload dinamico para `results_rows`
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+  - carga plantillas activas desde API
+  - el tecnico ya usa la definicion activa al crear hoja
+  - la vista tecnica usa snapshot de plantilla si la hoja ya existe
+- `frontend/src/pages/SettingsPage.jsx`
+  - se agrega la pestana interna `Plantillas de hojas`
+- Nuevo panel:
+  - `frontend/src/pages/settings/FieldSheetTemplatesSettingsPanel.jsx`
+  - permite:
+    - listar plantillas
+    - editar metadata
+    - agregar/quitar bloques
+    - ordenar bloques
+    - configurar filas y obligatoriedad
+    - duplicar version
+    - activar version
+    - archivar
+    - previsualizar la plantilla
+- Restriccion de acceso:
+  - solo roles administrativos / calidad / desarrollador deben administrarlo
+  - el tecnico no ve esta herramienta en su flujo normal
+
+PDF:
+- `backend/app/services/field_sheet_pdfs.py`
+  - ahora usa preferentemente `field_sheet.template_definition_json`
+  - si no existe snapshot, cae al motor activo/fallback
+  - el render ya toma valores de `row_data` por columna dinamica
+- Los templates HTML existentes siguen reutilizados como base:
+  - `field_sheet_general_pdf.html`
+  - `field_sheet_electrical_pdf.html`
+  - `field_sheet_anemometer_pdf.html`
+
+Migracion nueva:
+- `backend/migrations/versions/9a8b7c6d5e4f_add_field_sheet_template_definitions_.py`
+- Acciones de migracion:
+  - crea `field_sheet_template_definitions`
+  - agrega snapshot de plantilla a `field_sheets`
+  - agrega `row_data` a `field_sheet_results`
+  - siembra 28 plantillas activas iniciales en DB
+  - backfill de snapshots para hojas existentes
+  - backfill de `row_data` para resultados existentes
+
+Estado confirmado despues de migrar:
+- `field_sheet_template_definitions` activos:
+  - `28`
+- `field_sheets` con snapshot de plantilla:
+  - `12`
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic heads`
+  - resultado: `9a8b7c6d5e4f (head)`
+- `npm run build`
+- `./scripts/myc build`
+- `git diff --check`
+
+Observacion operativa:
+- En una corrida paralela inicial, `alembic upgrade head` y `./scripts/myc build` se pisaron durante la misma revision y generaron un error transitorio al reintentar crear objetos ya creados.
+- La validacion final serial confirma que:
+  - la revision quedo aplicada
+  - el build completo pasa
+
+Estado de base:
+- Revision actual:
+  - `9a8b7c6d5e4f (head)`
+
+Resultado:
+- MYC SYSTEM ya tiene familias de tablas reutilizables y un diseñador visual base de hojas de campo.
+- Las plantillas activas viven en DB con versionado y fallback hardcodeado.
+- El ETS sigue operativo sin tocar certificados, autenticacion, folios, cupos, facturacion ni portal cliente.
+
+## ACTUALIZACION - CIERRE DE INFRAESTRUCTURA DE HOJAS DE CAMPO, CONSTRUCTOR VISUAL Y CONFIGURACION MAESTRA
+
+Fecha de actualizacion:
+- `2026-07-03`
+
+Objetivo cerrado en esta etapa:
+- endurecer el versionado de plantillas
+- exponer importacion/exportacion
+- consolidar catalogo de bloques y familias
+- mover el render de captura/preview hacia un layout mas universal
+- preparar Configuracion como panel maestro operativo sin romper ETS
+
+Backend:
+- `backend/app/schemas/field_sheet_template.py`
+  - la definicion de plantilla ahora soporta:
+    - `document_code`
+    - `document_revision`
+    - `table_family`
+    - `validations`
+    - `print_config`
+    - `pdf_config`
+    - `permissions_config`
+    - `metadata`
+  - los bloques ahora soportan:
+    - `block_key`
+    - `order`
+    - `visible`
+    - `fields`
+    - `table_config`
+    - `print_visible`
+    - `capture_visible`
+    - `pdf_visible`
+    - `allow_remove_rows`
+- `backend/app/services/field_sheet_templates.py`
+  - se agregaron catalogos internos para:
+    - tipos de bloque
+    - familias de tabla
+    - aliases historicos de plantilla
+  - se consolidaron familias:
+    - `direct_comparison`
+    - `multipoint`
+    - `pressure`
+    - `dimensional`
+    - `mass`
+    - `electrical`
+    - `repeatability`
+    - `custom`
+  - la normalizacion ya incorpora:
+    - `table_family`
+    - `document_code`
+    - `document_revision`
+    - metadatos y validaciones
+  - al editar una plantilla `active` ya no se modifica en sitio:
+    - ahora crea una nueva version
+    - las hojas historicas conservan su snapshot
+  - se agregaron servicios para:
+    - exportar JSON de plantilla
+    - importar plantilla como nueva version
+    - exponer catalogo de bloques/familias
+- `backend/app/routers/field_sheet_templates.py`
+  - endpoints ahora protegidos por permisos
+  - endpoints nuevos:
+    - `GET /api/field-sheet-templates/catalog`
+    - `GET /api/field-sheet-templates?include_all=true`
+    - `POST /api/field-sheet-templates/import`
+    - `GET /api/field-sheet-templates/{template_id}/export`
+- `backend/app/core/permissions.py`
+  - permisos agregados:
+    - `field_sheet_templates.read`
+    - `field_sheet_templates.create`
+    - `field_sheet_templates.update`
+    - `field_sheet_templates.approve`
+    - `field_sheet_templates.archive`
+    - `field_sheet_templates.export`
+    - `field_sheet_templates.import`
+    - `settings.system_parameters.read`
+    - `settings.system_parameters.update`
+    - `settings.master_catalogs.manage`
+  - asignados a roles:
+    - `Calidad`
+    - `Desarrollador`
+    - `Administrador` ya queda cubierto por `*`
+
+Frontend:
+- `frontend/src/constants/fieldSheetTemplates.js`
+  - reestructurado para exponer:
+    - catalogo de campos
+    - familias de tabla
+    - familias de bloque
+    - fallback templates compatibles con oficiales
+- `frontend/src/components/field-sheets/FieldSheetLayout.jsx`
+  - deja de depender de una sola maqueta fija
+  - ahora renderiza por bloques definidos en la plantilla
+  - soporta preview universal de bloques y tablas dinamicas
+- `frontend/src/pages/settings/FieldSheetTemplatesSettingsPanel.jsx`
+  - el panel ya permite:
+    - listar versiones
+    - crear borradores desde plantilla base
+    - editar metadata documental
+    - elegir familia de tabla
+    - agregar/quitar/reordenar bloques
+    - publicar
+    - duplicar
+    - archivar
+    - exportar JSON
+    - importar JSON
+    - previsualizar
+  - agrega vistas auxiliares de:
+    - familias de tablas
+    - catalogo de bloques
+    - panel maestro de configuracion
+- `frontend/src/services/api.js`
+  - helpers nuevos:
+    - `getFieldSheetTemplateCatalog`
+    - `exportFieldSheetTemplate`
+    - `importFieldSheetTemplate`
+  - `listFieldSheetTemplates` ahora soporta `includeAll`
+- `frontend/src/pages/SettingsPage.jsx`
+  - la vista ya se presenta como panel maestro operativo
+
+Compatibilidad confirmada:
+- se mantiene `row_data`
+- se mantiene `template_definition_json`
+- se mantiene `template_definition_version`
+- se mantiene compatibilidad con `field_sheet_results` legacy
+- no se tocaron:
+  - motor de incertidumbre
+  - certificados desde hojas
+  - flujo ETS estructural
+  - autenticacion PDF de certificados
+
+Limitaciones reales que siguen intencionalmente fuera de esta etapa:
+- no se implementaron calculos automaticos
+- no se implemento incertidumbre automatica
+- no se agrego drag and drop
+- familias, parametros generales, folios y estados quedaron preparados visualmente dentro de Configuracion, pero no se llevo aun toda su persistencia dedicada a tablas nuevas
+- el selector de plantillas del flujo tecnico sigue mostrando plantillas activas oficiales; las plantillas nuevas/custom creadas en Configuracion ya pueden versionarse/importarse/exportarse, pero su adopcion operativa total en todos los catalogos puede requerir una etapa adicional si se desea exponerlas como catalogo tecnico abierto
+
+Validaciones ejecutadas en esta etapa:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic upgrade head`
+- `../venv/bin/alembic heads`
+  - `9a8b7c6d5e4f (head)`
+- `../venv/bin/alembic current --verbose`
+  - revision actual confirmada: `9a8b7c6d5e4f`
+- `npm run build`
+- `./scripts/myc build`
+- `./scripts/myc doctor`
+- `git diff --check`
+
+Resultado operativo:
+- el sistema queda mas cerca de un motor universal de hojas de campo
+- Calidad ya puede administrar versiones, publicar, importar y exportar sin tocar backend
+- las hojas existentes no se alteran retroactivamente porque el snapshot/versionado ya quedo endurecido
+
+## ACTUALIZACION - NORMALIZACION COMPLETA DEL MOTOR DE PLANTILLAS EN FRONTEND
+
+Fecha de actualizacion:
+- `2026-07-03`
+
+Motivo:
+- se detecto fragilidad real en frontend por consumo inconsistente de:
+  - `resultSections`
+  - `result_sections`
+  - `definition`
+  - `definition_json`
+  - `template_definition`
+  - `template_definition_json`
+- esto podia provocar pantalla blanca o errores por `map`, `flatMap` o `filter` sobre valores no normalizados
+
+Correccion estructural aplicada:
+- se creo `normalizeTemplate(template)` en:
+  - `frontend/src/utils/fieldSheets.js`
+- desde ahi se centraliza la forma canonica de plantilla para todo el frontend
+
+Forma canonica garantizada por `normalizeTemplate`:
+- `template_key`
+- `key`
+- `name`
+- `status`
+- `version`
+- `blocks`
+- `result_sections`
+- alias sincronizado `resultSections`
+- `visible_fields`
+- `document_code`
+- `document_revision`
+- `table_family`
+- `validations`
+- `print_config`
+- `pdf_config`
+- `permissions_config`
+- `metadata`
+- `definition`
+- `definition_json`
+
+Blindajes agregados:
+- `safeArray`
+- `safeObject`
+- `normalizeColumn`
+- `normalizeSection`
+- `normalizeField`
+- `normalizeBlock`
+- construccion de secciones desde bloques cuando la plantilla no trae `result_sections`
+- resolucion consistente de snapshots, definiciones anidadas y fallbacks
+
+Funciones reforzadas en `frontend/src/utils/fieldSheets.js`:
+- `buildDefaultResultsRows()`
+- `buildFieldSheetResultSections()`
+- `normalizeResultsRows()`
+- `fieldSheetToForm()`
+- `buildFieldSheetPayload()`
+- `updateFieldSheetResultsRowsForTemplate()`
+- `hasStructuredFieldSheetResults()`
+- `getFieldSheetCompletionErrors()`
+- helpers exportados:
+  - `getFieldSheetTemplate()`
+  - `getFieldSheetTemplateLabel()`
+
+Consumidores migrados al normalizador unico:
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+  - ya consume `getFieldSheetTemplate`, `getFieldSheetTemplateLabel` y `normalizeTemplate` desde `utils`
+  - ya considera `template_definition_json` ademas de `template_definition`
+- `frontend/src/pages/FieldSheetsPage.jsx`
+  - ya toma etiqueta de plantilla desde `utils`
+- `frontend/src/pages/settings/FieldSheetTemplatesSettingsPanel.jsx`
+  - ya clona/carga/preview con `normalizeTemplate`
+- `frontend/src/components/field-sheets/FieldSheetLayout.jsx`
+  - ya normaliza internamente la plantilla recibida
+  - ya protege acceso a bloques, secciones y filas
+
+Validacion ejecutada:
+- `npm run build`
+- `../venv/bin/python -m compileall app`
+- `git diff --check`
+- `./scripts/myc build`
+- prueba directa en Node sobre `normalizeTemplate`, `buildDefaultResultsRows` y `buildFieldSheetResultSections` con entradas:
+  - `undefined`
+  - plantilla minima
+  - plantilla con `resultSections`
+  - plantilla con `definition_json.result_sections`
+  - bloque electrico con secciones
+  - plantilla incompleta sin `blocks`
+- verificacion de endpoint real:
+  - `GET /api/field-sheet-templates?include_all=true`
+  - confirmadas `28` plantillas devueltas por backend local
+
+Observacion de validacion UI:
+- el navegador interno quedo limitado para inyectar sesion administrativa por politica del runtime, asi que la verificacion principal de esta correccion se hizo por:
+  - build real del frontend
+  - resolucion real de datos del endpoint
+  - ejecucion del normalizador y constructores con estructuras mixtas
+- con esto se elimina la causa estructural de la pantalla blanca derivada de plantillas heterogeneas
+
+## VERIFICACION DE RESPALDO AL DIA
+
+Fecha de verificacion:
+- `2026-07-06`
+
+Estado:
+- el backup queda actualizado y alineado con el estado actual del arbol de trabajo
+- ya incluye:
+  - infraestructura de plantillas versionadas
+  - snapshots en hojas de campo
+  - familias de tablas
+  - panel maestro de plantillas
+  - importacion/exportacion de plantillas
+  - normalizacion estructural del frontend con `normalizeTemplate`
+
+Observaciones operativas:
+- en el arbol local existen archivos temporales/no canonicos detectados durante trabajo y validacion, por ejemplo:
+  - `.tmp_field_sheet_templates.json`
+  - `frontend/src/utils/fieldSheets (1).js`
+- esos archivos no forman parte de la arquitectura oficial documentada y no se consideran parte del respaldo funcional del sistema
+
+Validacion final del respaldo:
+- el documento `docs/BACKUP_ESTADO_ACTUAL.md` refleja el estado funcional vigente de esta linea de trabajo al `2026-07-06`
+
+## RESPALDO FASE NUEVA - MODULO DE FACTURACION MYC SYSTEM
+
+Fecha de actualizacion:
+- `2026-07-06`
+
+Alcance implementado:
+- se incorporo la base completa del modulo de facturacion sin crear un sistema CFDI externo ni dependencia con PAC
+- la implementacion queda integrada al flujo actual de `Servicios / ETS / Certificados / Liberacion`
+- el modulo financiero ya es visible desde navegacion con la seccion `Facturacion`
+
+Backend incorporado:
+- nuevo modelo `backend/app/models/invoice.py` con:
+  - `Invoice`
+  - `InvoiceItem`
+  - `InvoicePayment`
+  - `CreditNote`
+  - `InvoiceSettings`
+- relacion de facturas enlazada a `ServiceOrder`
+- nuevo router `backend/app/routers/invoices.py`
+- nuevos schemas `backend/app/schemas/invoice.py`
+- nuevos servicios:
+  - `backend/app/services/invoices.py`
+  - `backend/app/services/invoice_pdfs.py`
+- nuevas plantillas PDF:
+  - `backend/app/templates/invoice_pdf.html`
+  - `backend/app/templates/invoice_payment_receipt_pdf.html`
+- router registrado en `backend/app/main.py`
+
+Capacidades backend activas:
+- listado y detalle de facturas
+- creacion de factura desde orden de servicio
+- conceptos ligados a orden, cotizacion y certificados liberados
+- validacion para evitar doble facturacion de certificados activos sin autorizacion operativa
+- cambio de estatus:
+  - `draft`
+  - `pending`
+  - `issued`
+  - `partially_paid`
+  - `paid`
+  - `overdue`
+  - `cancelled`
+- registro de pagos parciales y recalculo de saldo
+- notas de credito internas
+- cuentas por cobrar
+- dashboard financiero
+- servicios liberados sin factura
+- configuracion de series, folios, impuestos, moneda, bancos y textos legales
+- PDF de factura interna
+- PDF de comprobante de pago
+
+Endpoints incorporados:
+- `GET /api/invoices/dashboard`
+- `GET /api/invoices/accounts-receivable`
+- `GET /api/invoices/released-uninvoiced`
+- `GET /api/invoices`
+- `GET /api/invoices/{invoice_id}`
+- `POST /api/invoices`
+- `PATCH /api/invoices/{invoice_id}`
+- `POST /api/invoices/{invoice_id}/status`
+- `POST /api/invoices/{invoice_id}/payments`
+- `POST /api/invoices/{invoice_id}/credit-notes`
+- `GET /api/invoices/{invoice_id}/pdf`
+- `GET /api/invoice-payments`
+- `GET /api/invoice-payments/{payment_id}`
+- `GET /api/invoice-payments/{payment_id}/receipt-pdf`
+- `GET /api/invoice-settings`
+- `PATCH /api/invoice-settings`
+
+Frontend incorporado:
+- nueva pagina `frontend/src/pages/BillingPage.jsx`
+- nueva integracion en `frontend/src/pages/App.jsx`
+- modulo `finance` activado en `frontend/src/constants/navigation.js`
+- integracion desde `frontend/src/pages/ServiceOrdersPage.jsx` para crear factura desde ETS
+- nuevas funciones API en `frontend/src/services/api.js`
+
+Capacidades frontend activas:
+- tablero financiero operativo
+- lista de facturas
+- formulario de alta de factura
+- registro de pagos
+- creacion de notas de credito
+- vista de cuentas por cobrar
+- configuracion de facturacion
+- accion directa desde ETS para abrir facturacion contextual con la orden seleccionada
+
+Permisos y roles:
+- el rol `Finanzas` ya cuenta con:
+  - `payments.read`
+  - `payments.manage`
+  - `invoices.read`
+  - `invoices.manage`
+  - `release.manage`
+- los endpoints financieros quedaron protegidos por permisos operativos y no expuestos como rutas abiertas
+
+Correccion estructural relevante:
+- se corrigio conflicto real de migraciones Alembic
+- la migracion de facturacion quedo registrada como:
+  - `backend/migrations/versions/0f1e2d3c4b5a_create_invoicing_module.py`
+- se elimino el choque con una revision previa que ya usaba `a1b2c3d4e5f6`
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app`
+- `../venv/bin/alembic heads`
+- `../venv/bin/alembic upgrade head`
+- `npm run build`
+- `./scripts/myc build`
+- `git diff --check`
+
+Limitaciones conscientes de esta fase:
+- no se genero CFDI timbrado
+- no se integro PAC
+- no se genero XML fiscal SAT
+- la facturacion implementada es interna/operativa y deja preparado el terreno para integracion fiscal posterior
+
+Estado del respaldo:
+- el backup queda actualizado al `2026-07-06` incluyendo la fase de facturacion ya integrada a la base oficial del proyecto
+
+## AJUSTE DE RESPALDO - PREFABRICACION COMPLETA DE FACTURACION
+
+Fecha de ajuste:
+- `2026-07-06`
+
+Fuente de referencia:
+- instruccion `FASE NUEVA - PREFABRICACION COMPLETA DEL MODULO DE FACTURACION MYC SYSTEM`
+
+Criterio de este ajuste:
+- se alinea el backup al estado real del codigo
+- se separa claramente:
+  - lo ya implementado
+  - lo parcialmente resuelto
+  - lo aun no fabricado como pieza independiente
+
+Estado real actual del modulo frente a la prefabricacion solicitada:
+
+Ya implementado:
+- modulo visible `Facturacion` en ruta `/dashboard#facturacion`
+- integracion con navegacion principal
+- pagina `frontend/src/pages/BillingPage.jsx`
+- integracion desde ETS para crear factura contextual
+- modelos activos:
+  - `Invoice`
+  - `InvoiceItem`
+  - `InvoicePayment`
+  - `CreditNote`
+  - `InvoiceSettings`
+- endpoints operativos para:
+  - facturas
+  - pagos
+  - notas de credito dentro de factura
+  - cuentas por cobrar
+  - dashboard financiero
+  - servicios liberados sin factura
+  - configuracion de facturacion
+- PDF interno de factura
+- PDF de recibo de pago
+- validacion para evitar doble facturacion de certificados activos
+- folio interno configurable para facturas
+- permisos operativos para rol `Finanzas`
+
+Parcialmente resuelto:
+- configuracion de facturacion:
+  - hoy existe centralizada en `InvoiceSettings`
+  - aun no esta separada en entidades dedicadas tipo:
+    - `BillingSeries`
+    - `BillingBankAccount`
+    - `BillingPaymentMethod`
+- servicios no facturados:
+  - existe `GET /api/invoices/released-uninvoiced`
+  - cubre el objetivo funcional de servicios/certificados liberados sin factura
+  - aun no usa la ruta propuesta `GET /api/billing/unbilled-services`
+- dashboard financiero:
+  - existe `GET /api/invoices/dashboard`
+  - entrega metricas base financieras
+  - aun no esta expuesto bajo ruta separada `GET /api/billing/dashboard`
+- cuentas por cobrar:
+  - existe `GET /api/invoices/accounts-receivable`
+  - cubre el listado funcional
+  - aun no esta publicado como `GET /api/accounts-receivable`
+- notas de credito:
+  - hoy se crean dentro del contexto de una factura
+  - aun no tienen router independiente completo con:
+    - listado global
+    - detalle
+    - apply
+    - cancel
+- ETS / Facturacion:
+  - ETS ya puede abrir facturacion y crear factura
+  - falta una vista mas completa dentro de la carpeta ETS con:
+    - facturas relacionadas
+    - pagos
+    - saldo
+    - vencimiento
+    - acciones administrativas completas
+
+Pendiente como infraestructura separada:
+- `CreditNoteItem`
+- `BillingSettings` con nombre de dominio separado de `InvoiceSettings`
+- `BillingSeries`
+- `BillingBankAccount`
+- `BillingPaymentMethod`
+- routers separados:
+  - `invoice_payments.py`
+  - `credit_notes.py`
+  - `billing.py`
+- endpoints DELETE/PATCH dedicados para pagos y notas de credito
+- endpoints semanticos separados:
+  - `mark-pending`
+  - `issue`
+  - `cancel`
+- motor documental administrativo de facturacion incrustado en `Configuracion / Panel Maestro`
+- indicadores financieros integrados al Dashboard principal ejecutivo
+
+Ajuste de redaccion importante:
+- donde el backup anterior decia "base completa del modulo de facturacion", debe entenderse como:
+  - base operativa funcional ya integrada
+  - no como cierre al 100 por ciento de toda la prefabricacion administrativa solicitada en la nueva fase
+
+Estado final del respaldo tras este ajuste:
+- el backup queda al dia respecto de la nueva instruccion
+- el modulo de facturacion existe y funciona
+- la prefabricacion total solicitada sigue parcialmente abierta en los puntos listados arriba
+
+## CORTE DE VERDAD ACTUAL - MODULOS Y CAPACIDADES NO DISPONIBLES EN EL SISTEMA VISIBLE
+
+Fecha de corte:
+- `2026-07-06`
+
+Regla de lectura obligatoria para este backup:
+- este documento contiene historial de fases y por eso hay entradas antiguas donde algunos modulos o motores aparecen como activos, visibles o en construccion
+- a partir de esta seccion, cualquier referencia historica previa que contradiga el estado actual debe leerse como antecedente historico, no como disponibilidad vigente
+- si una capacidad existe en codigo pero no esta visible, no forma parte del sistema disponible para operacion diaria
+
+### 1. Comentado u oculto en navegacion principal
+
+Estos elementos existen en codigo o fueron trabajados en fases previas, pero hoy no estan disponibles como modulos visibles del sistema:
+
+- `Catalogo MYC` como modulo independiente:
+  - en `frontend/src/constants/navigation.js` esta comentado
+  - no existe como modulo visible en la navegacion principal
+  - su infraestructura de conceptos/catalogo sigue viva en codigo y se usa de forma parcial desde cotizaciones/facturacion
+
+- `Biblioteca Documental` como modulo independiente:
+  - existe `frontend/src/pages/DocumentLibraryPage.jsx`
+  - `frontend/src/pages/App.jsx` lo importa
+  - hoy no tiene entrada activa en `modules`/`navigation`
+  - por lo tanto no esta disponible como modulo visible para usuario final
+
+- `Procedimientos` como modulo independiente:
+  - existe `frontend/src/pages/ProceduresPage.jsx`
+  - `frontend/src/pages/App.jsx` lo importa
+  - hoy no tiene entrada activa en `modules`/`navigation`
+  - no esta disponible como modulo visible del sistema
+
+- `Incertidumbre` como modulo independiente:
+  - existe `frontend/src/pages/UncertaintyPage.jsx`
+  - `frontend/src/pages/App.jsx` lo importa
+  - hoy no tiene entrada activa en `modules`/`navigation`
+  - no esta disponible como modulo visible del sistema
+
+- `FlowTest`:
+  - existe `frontend/src/pages/FlowTestPage.jsx`
+  - `frontend/src/pages/App.jsx` lo importa
+  - hoy no tiene entrada activa en `modules`/`navigation`
+  - no esta disponible para operacion normal
+
+### 2. Disponible en backend o en archivos, pero no expuesto como experiencia vigente del sistema
+
+Los siguientes componentes siguen presentes en codigo y/o API, pero no deben considerarse disponibles como parte del sistema visible actual:
+
+- `client_portal`:
+  - router registrado en `backend/app/main.py`
+  - no existe experiencia visible integrada en la UI principal actual
+  - el portal cliente avanzado debe considerarse no disponible como producto vigente
+
+- `documents` / `document_templates` / `document_interpretations`:
+  - routers activos en backend
+  - existen servicios y modelos
+  - no estan expuestos hoy como modulo principal visible para operacion general
+  - deben considerarse infraestructura residual/oculta, no modulo vivo del sistema
+
+- `technical_profiles`:
+  - router activo en backend
+  - sin modulo principal visible en la UI actual
+  - debe considerarse fuera del sistema visible
+
+- `uncertainty`:
+  - router activo en backend
+  - pagina frontend existente pero no visible en navegacion actual
+  - debe considerarse motor/infraestructura en codigo, no modulo operativo disponible
+
+- `metrology`:
+  - router activo en backend
+  - sin modulo visible actual
+  - debe considerarse soporte tecnico en codigo, no capacidad visible del sistema
+
+- `pattern_selection`:
+  - router activo en backend
+  - sin experiencia visible independiente actual
+  - no debe asumirse como flujo disponible al usuario final
+
+- `operational_engines`:
+  - router activo en backend
+  - corresponde a infraestructura de apoyo
+  - no es modulo visible disponible para operacion diaria
+
+### 3. Infraestructura interna que sigue existiendo pero no debe leerse como flujo vigente
+
+Estos elementos no se eliminaron del codigo, pero tampoco deben entenderse como flujo activo o requisito visual del sistema actual:
+
+- motores documentales heredados
+- perfiles tecnicos auxiliares
+- calculos/metodos de metrologia no visibles en la UX actual
+- piezas heredadas de incertidumbre
+- componentes auxiliares de procedimientos no visibles como modulo principal
+- pruebas de flujo tipo `FlowTest`
+
+### 4. Estado actual que si debe prevalecer
+
+Lo disponible y visible hoy en el sistema principal es:
+- `Dashboard`
+- `Clientes`
+- `Ventas / Cotizaciones`
+- `Servicios`
+- `Patrones`
+- `Facturacion`
+- `Configuracion`
+
+Adicionalmente:
+- varias capacidades tecnicas siguen existiendo en backend y archivos fuente
+- mientras no tengan entrada activa en navegacion o flujo visible oficial, deben tratarse como:
+  - comentadas
+  - ocultas
+  - residuales
+  - solo en codigo
+
+### 5. Instruccion de mantenimiento para futuras actualizaciones del backup
+
+En este documento:
+- toda funcionalidad que permanezca en codigo pero ya no este disponible en el sistema visible debe anotarse como:
+  - `comentada`
+  - `oculta`
+  - `solo en codigo`
+  - `infraestructura no expuesta`
+- no debe volver a listarse como modulo activo salvo que reaparezca realmente en la navegacion o en el flujo oficial del sistema
+
+## ACTUALIZACION 2026-07-06 - CLIENTES CHEQUEOS #039 #040 #041
+
+Estado actualizado del modulo `Clientes`:
+- se corrigio el flujo de `Constancia de Situacion Fiscal`
+- se simplifico visualmente el modal de importacion
+- la importacion de clientes ya persiste realmente en backend
+
+### Constancia de Situacion Fiscal
+
+Implementado:
+- nuevo preview real de constancia fiscal antes de guardar:
+  - `POST /api/clients/tax-constancy/preview`
+- lectura basica de PDF usando `pypdf`
+- intento de extraccion controlada de:
+  - razon social
+  - RFC fiscal
+  - codigo postal fiscal
+  - regimen fiscal
+- si el archivo no es PDF:
+  - el sistema responde mensaje honesto indicando que la extraccion automatica aun no esta disponible para ese tipo de archivo
+- si el PDF no permite extraer datos:
+  - el sistema responde mensaje honesto indicando que no se pudieron extraer datos fiscales automaticamente
+- el formulario sigue permitiendo captura manual directa
+- el archivo pendiente puede:
+  - mantenerse para guardar despues
+  - descartarse antes de guardar
+
+Disponible en backend:
+- `POST /api/clients/{client_id}/tax-constancy`
+  - guarda la constancia en almacenamiento local del sistema
+
+### Importacion de clientes
+
+Implementado:
+- plantilla oficial ajustada a encabezados `snake_case`:
+  - `nombre_comercial`
+  - `razon_social`
+  - `rfc`
+  - `contacto`
+  - `telefono`
+  - `correo`
+  - `pais`
+  - `calle`
+  - `numero_exterior`
+  - `numero_interior`
+  - `colonia`
+  - `municipio_ciudad`
+  - `estado`
+  - `codigo_postal`
+  - `regimen_fiscal`
+  - `uso_cfdi`
+  - `estado_cliente`
+- compatibilidad mantenida con encabezados historicos anteriores para no romper archivos previos
+- endpoint real de preview:
+  - `POST /api/clients/import/preview`
+- endpoint real de confirmacion:
+  - `POST /api/clients/import/confirm`
+- la importacion persiste clientes en base de datos
+- valida:
+  - `nombre_comercial` obligatorio
+  - `RFC` obligatorio
+  - correo valido si existe
+  - codigo postal numerico si existe
+  - duplicado por RFC
+- si un registro falla:
+  - no rompe toda la importacion
+  - se omite y el proceso continua
+
+### Modal de importacion
+
+Ajuste UX aplicado:
+- se removio la presentacion extensa y saturada
+- se dejo flujo visual mas limpio con:
+  - titulo
+  - selector de archivo
+  - texto minimo de formato esperado
+  - boton `Descargar plantilla`
+  - boton `Importar`
+  - resultado final simple
+
+No queda como experiencia vigente:
+- chips grandes de columnas detectadas
+- paneles amplios de previsualizacion
+- bloques de estadisticas visuales innecesarias
+- textos redundantes tipo tutorial largo
+
+### Validacion ejecutada
+
+Validacion tecnica:
+- `npm run build`
+- `../venv/bin/python -m compileall app`
+- `./scripts/myc build`
+
+Validacion funcional real:
+- se genero plantilla CSV de prueba con 2 clientes
+- `POST /api/clients/import/preview` devolvio `2` registros validos
+- `POST /api/clients/import/confirm` importo `2` clientes reales
+- una segunda carga del mismo archivo detecto duplicados por RFC
+- `POST /api/clients/tax-constancy/preview` extrajo datos fiscales desde PDF de prueba
+- `GET /api/clients?include_inactive=true` confirmo presencia de clientes importados en la tabla de datos
+
+Actualizacion 2026-07-07 11:40:15 CST - Mejora estructural definitiva del modulo Clientes:
+
+Decision aplicada:
+- el modulo Clientes deja de operar como formulario fiscal generico unico
+- ahora se soporta estructura formal por tipo de contribuyente dentro de la misma arquitectura existente
+- no se duplicaron componentes ni se creo un modulo nuevo
+
+### Modelo de datos
+
+Nuevos campos persistidos en `clients`:
+- `client_type`
+- `curp`
+- `first_name`
+- `first_last_name`
+- `second_last_name`
+- `street_type`
+- `locality`
+- `municipality`
+
+Campos existentes que se conservan por compatibilidad:
+- `legal_name`
+- `commercial_name`
+- `rfc`
+- `tax_regime`
+- `cfdi_use`
+- `street`
+- `exterior_number`
+- `interior_number`
+- `neighborhood`
+- `city`
+- `state`
+- `postal_code`
+- `country`
+- `fiscal_postal_code`
+
+Regla operativa vigente:
+- `legal_name` sigue siendo el identificador legal canonico en backend
+- para `persona_fisica` se compone desde `first_name + first_last_name + second_last_name`
+- para `persona_moral` se usa razon social
+- `city` se mantiene por compatibilidad con flujo legado, pero el dato operativo nuevo es `municipality`
+
+Migracion aplicada:
+- `backend/migrations/versions/2b3c4d5e6f7a_add_client_type_and_constancy_fields.py`
+- `../venv/bin/alembic upgrade head` -> OK
+
+### Formulario dinamico
+
+Implementado en `frontend/src/pages/ClientsPage.jsx`:
+- selector obligatorio `Tipo de cliente`
+- formulario dinamico en el mismo modal
+- `Persona Fisica` muestra:
+  - RFC
+  - CURP
+  - Nombre(s)
+  - Primer apellido
+  - Segundo apellido
+  - Nombre comercial
+- `Persona Moral` muestra:
+  - RFC
+  - Razon social
+  - Nombre comercial
+- ambos tipos mantienen:
+  - contacto
+  - telefono
+  - correo
+  - domicilio
+  - regimen fiscal
+  - uso CFDI
+  - constancia fiscal
+
+### Lectura de constancia fiscal
+
+Se amplio el lector backend en `backend/app/services/clients.py`.
+
+Ahora intenta extraer:
+- tipo de cliente
+- razon social
+- nombre comercial
+- RFC
+- CURP
+- nombres
+- apellidos
+- codigo postal
+- tipo de vialidad
+- calle
+- numero exterior
+- numero interior
+- colonia
+- localidad
+- municipio
+- estado
+- regimen fiscal
+
+Reglas activas:
+- si detecta `CURP` + `Nombre(s)` + `Primer Apellido`, clasifica `persona_fisica`
+- si detecta `Denominacion/Razon Social` + `Regimen de Capital`, clasifica `persona_moral`
+- si detecta un solo regimen fiscal, se asigna automaticamente
+- si detecta varios regimenes, frontend obliga a elegir uno mediante selector visible
+- si el PDF no permite extraer datos, se mantiene el mensaje honesto y no se simula exito
+
+Endpoint involucrado:
+- `POST /api/clients/tax-constancy/preview`
+
+### Importacion y exportacion
+
+La plantilla oficial ahora acepta tambien:
+- `tipo_cliente`
+- `curp`
+- `nombres`
+- `primer_apellido`
+- `segundo_apellido`
+- `tipo_vialidad`
+- `localidad`
+- `municipio`
+
+Sigue vigente:
+- `POST /api/clients/import/preview`
+- `POST /api/clients/import/confirm`
+- `GET /api/clients/export`
+
+Nueva regla de importacion:
+- el sistema acepta cliente mientras exista identidad suficiente
+- no exige que todos los datos opcionales existan
+- sigue bloqueando errores reales:
+  - RFC faltante
+  - correo invalido
+  - codigo postal no numerico
+  - duplicados por RFC/correo/nombre
+
+### Listado y acciones
+
+Cambios visibles en listado:
+- la fila sigue siendo completamente cliqueable
+- se muestra tipo de cliente por fila
+- se agrega indicador `Informacion pendiente` con tooltip
+- el tooltip reporta faltantes criticos:
+  - RFC
+  - nombre comercial
+  - codigo postal
+  - regimen fiscal
+  - constancia fiscal
+  - CURP / nombre completo cuando aplica
+
+Cambios de lenguaje:
+- se elimina el texto `Dar de baja` dentro del modulo Clientes
+- la accion visible ahora es `Eliminar`
+- se agrego eliminacion masiva visible sobre seleccion
+
+### Verificacion real ejecutada
+
+Validacion tecnica:
+- `../venv/bin/python -m compileall app` -> OK
+- `npm run build` -> OK
+- `../venv/bin/alembic upgrade head` -> OK
+- `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"` -> `ERP MYC 32`
+
+Validacion funcional real sobre FastAPI/TestClient:
+- `POST /api/clients` -> `201`
+- `GET /api/clients?include_inactive=true` -> `200`
+- `PATCH /api/clients/{id}` -> `200`
+- `POST /api/clients/tax-constancy/preview` con PDF real de prueba -> `200`
+- `DELETE /api/clients/{id}` -> `204`
+
+Resultado confirmado:
+- el backend responde con los nuevos campos
+- el flujo de creacion/edicion no quedo desconectado
+- la deteccion de `persona_fisica` desde constancia respondio correctamente en prueba real
+
+### Codigo existente pero ya no expuesto visualmente
+
+Debe mantenerse en contexto para futuras fases:
+- el campo legacy `city` sigue en modelo, schemas y flujos de exportacion por compatibilidad; visualmente ya no es el dato principal frente a `municipality`
+- `legal_name` sigue siendo obligatorio en backend aunque en `persona_fisica` ya no se captura como campo visible principal, porque se resuelve desde nombres/apellidos
+- el archivo de constancia sigue guardandose con:
+  - `tax_constancy_filename`
+  - `tax_constancy_path`
+  - `tax_constancy_uploaded_at`
+- la desactivacion backend sigue usando auditoria `client.deactivated`; visualmente el modulo ya habla de `Eliminar`, pero la semantica fisica de borrado no cambio
+- se conserva compatibilidad con encabezados historicos de importacion aunque la plantilla oficial ya evoluciono
+
+Estado final de esta actualizacion:
+- el backup queda alineado al estado actual del modulo Clientes y a la migracion ya aplicada en base local
+
+Actualizacion 2026-07-07 11:52:00 CST - Correccion determinista del parser de Constancia de Situacion Fiscal:
+
+Problema corregido:
+- el lector del PDF ya estaba funcionando
+- el error real estaba en el parser de etiquetas dentro de `backend/app/services/clients.py`
+- la funcion anterior `_extract_label_value()` reutilizaba un `stop_labels` global y eso permitia que varios campos absorbieran texto del siguiente bloque
+
+Cambio aplicado:
+- se elimino el uso del `stop_labels` general para estas extracciones
+- `_extract_label_value()` ahora recibe:
+  - etiqueta de inicio
+  - etiqueta de cierre especifica para ese campo
+- cada lectura de constancia define sus propios limites inmediatos
+
+Campos ajustados de forma explicita:
+- razon social:
+  - inicio: `Denominacion/Razon Social`
+  - cierre: `Regimen Capital`
+- nombre comercial:
+  - inicio: `Nombre Comercial`
+  - cierre: `Fecha inicio de operaciones`
+- municipio:
+  - inicio: `Nombre del Municipio o Demarcacion Territorial`
+  - cierre: `Nombre de la Entidad Federativa`
+- estado:
+  - inicio: `Nombre de la Entidad Federativa`
+  - cierre: `Entre Calle`
+
+Resultado validado:
+- `METROLOGIA Y SERVICIOS MYC` ya no arrastra `Regimen Capital`
+- `METROLOGIA Y SERVICIOS MYC` ya no arrastra `Fecha inicio de operaciones`
+- `SAN PEDRO TLAQUEPAQUE` ya no arrastra `Nombre de la Entidad Federativa`
+- `JALISCO` ya no arrastra `Entre Calle`
+
+Validacion ejecutada:
+- prueba dirigida sobre `_extract_label_value()` con texto realista de constancia -> OK
+- `../venv/bin/python -m compileall app` -> OK
+
+Nota de mantenimiento:
+- esta correccion fue intencionalmente puntual y determinista
+- no se agregaron nuevas listas globales de corte para `Fecha inicio`, `Obligaciones`, `Estatus`, `Actividades Economicas` u otras etiquetas lejanas
+
+Verificacion adicional posterior:
+- se valido el parser completo con caso representativo de `persona_moral`
+- se valido el parser completo con caso representativo de `persona_fisica`
+- se corrigieron dos colisiones adicionales detectadas en esa prueba:
+  - `CP` podia engancharse dentro de `CURP`
+  - `street` podia arrancar desde el valor `Calle` de `Tipo de Vialidad`
+
+Estado verificado final:
+- `persona_moral` extrae correctamente:
+  - razon social
+  - nombre comercial
+  - codigo postal
+  - tipo de vialidad
+  - calle
+  - municipio
+  - estado
+  - regimen fiscal
+- `persona_fisica` extrae correctamente:
+  - RFC
+  - CURP
+  - nombres
+  - apellidos
+  - nombre comercial
+  - codigo postal
+  - tipo de vialidad
+  - calle
+  - municipio
+  - estado
+  - regimen fiscal
+
+Validacion adicional con constancias reales del usuario:
+- constancia moral real:
+  - `Csf_MSM180712686.pdf`
+  - resultado correcto para:
+    - `client_type = persona_moral`
+    - razon social
+    - nombre comercial
+    - domicilio
+    - municipio
+    - estado
+    - regimen fiscal
+- constancia fisica real:
+  - `constancia orcort.pdf`
+  - obligo ajuste adicional porque venia como:
+    - `Nombre (s)` con espacio antes del parentesis
+    - `Nombre Comercial` seguido por `Datos del domicilio registrado` en lugar de cerrar con `Fecha inicio de operaciones`
+  - despues del ajuste:
+    - `client_type = persona_fisica`
+    - RFC
+    - CURP
+    - nombres
+    - apellidos
+    - nombre comercial
+    - domicilio
+    - municipio
+    - estado
+    - regimenes fiscales
+
+Nota tecnica:
+- en la fase de extraccion pura de constancia fisica, `legal_name` puede venir `None`
+- eso no rompe el flujo actual porque el backend compone `legal_name` despues desde:
+  - `first_name`
+  - `first_last_name`
+  - `second_last_name`
