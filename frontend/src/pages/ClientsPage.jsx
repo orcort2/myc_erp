@@ -71,6 +71,7 @@ function ClientsPage() {
   const [selectedClientIds, setSelectedClientIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
+  const [currentPage, setCurrentPage] = useState(1);
   const [form, setForm] = useState(emptyClientForm);
   const [editingClientId, setEditingClientId] = useState(null);
   const [pendingTaxConstancyFile, setPendingTaxConstancyFile] = useState(null);
@@ -139,20 +140,65 @@ function ClientsPage() {
     });
   }, [clients, searchTerm, statusFilter]);
 
-  const visibleClientIds = useMemo(() => visibleClients.map((client) => client.id), [visibleClients]);
+  const clientsPerPage = 50;
+  const totalClientPages = Math.max(1, Math.ceil(visibleClients.length / clientsPerPage));
+  const normalizedCurrentPage = Math.min(currentPage, totalClientPages);
+  const pageStartIndex = (normalizedCurrentPage - 1) * clientsPerPage;
+  const pageEndIndex = pageStartIndex + clientsPerPage;
+
+  const paginatedClients = useMemo(
+    () => visibleClients.slice(pageStartIndex, pageEndIndex),
+    [visibleClients, pageStartIndex, pageEndIndex]
+  );
+
+  const visibleClientIds = useMemo(() => paginatedClients.map((client) => client.id), [paginatedClients]);
   const selectedClients = useMemo(
-    () => visibleClients.filter((client) => selectedClientIds.includes(client.id)),
-    [visibleClients, selectedClientIds]
+    () => clients.filter((client) => selectedClientIds.includes(client.id)),
+    [clients, selectedClientIds]
   );
   const selectedClient = selectedClients.length === 1 ? selectedClients[0] : null;
   const allVisibleSelected = visibleClientIds.length > 0 && visibleClientIds.every((id) => selectedClientIds.includes(id));
   const someVisibleSelected = visibleClientIds.some((id) => selectedClientIds.includes(id));
+
+  const paginationStart = visibleClients.length ? pageStartIndex + 1 : 0;
+  const paginationEnd = Math.min(pageEndIndex, visibleClients.length);
+  const paginationLabel = visibleClients.length
+    ? `Mostrando ${paginationStart}-${paginationEnd} de ${visibleClients.length} clientes`
+    : 'Sin clientes para mostrar';
+
+  const pageNumbers = useMemo(() => {
+    const pages = [];
+    const start = Math.max(1, normalizedCurrentPage - 2);
+    const end = Math.min(totalClientPages, normalizedCurrentPage + 2);
+
+    for (let page = start; page <= end; page += 1) {
+      pages.push(page);
+    }
+
+    return pages;
+  }, [normalizedCurrentPage, totalClientPages]);
 
   useEffect(() => {
     if (selectAllRef.current) {
       selectAllRef.current.indeterminate = !allVisibleSelected && someVisibleSelected;
     }
   }, [allVisibleSelected, someVisibleSelected]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+    setSelectedClientIds([]);
+  }, [searchTerm, statusFilter]);
+
+  useEffect(() => {
+    if (currentPage > totalClientPages) {
+      setCurrentPage(totalClientPages);
+    }
+  }, [currentPage, totalClientPages]);
+
+  function goToClientPage(page) {
+    const nextPage = Math.min(Math.max(page, 1), totalClientPages);
+    setCurrentPage(nextPage);
+  }
 
   function updateForm(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -201,18 +247,24 @@ function ClientsPage() {
     setIsClientModalOpen(true);
   }
 
-  function startEdit(client) {
+  function loadClientIntoForm(client, { keepTab = true } = {}) {
     const contact = getClientContact(client);
+
     setEditingClientId(client.id);
     setNotice('');
     setError('');
     setValidationErrors({});
-    setClientModalTab('general');
+
+    if (!keepTab) {
+      setClientModalTab('general');
+    }
+
     setPendingTaxConstancyFile(null);
     setStoredTaxConstancyName(client.tax_constancy_filename || '');
     setTaxConstancyMessage('');
     setTaxRegimeOptions([]);
     setIsClientModalOpen(true);
+
     setForm({
       clientType: client.client_type ?? 'persona_moral',
       legalName: client.legal_name ?? '',
@@ -245,38 +297,93 @@ function ClientsPage() {
     });
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  function startEdit(client) {
+    loadClientIntoForm(client, { keepTab: false });
+  }
+
+  async function saveCurrentClient() {
     setError('');
     setNotice('');
 
     const nextValidationErrors = validateClientForm(form);
+
     if (Object.keys(nextValidationErrors).length) {
       setValidationErrors(nextValidationErrors);
       setClientModalTab(getFirstValidationTab(nextValidationErrors));
-      return;
+      return null;
     }
 
     setIsSaving(true);
 
     try {
       const payload = editingClientId ? toClientPayload(form) : toClientCreatePayload(form);
-      const savedClient = editingClientId
+
+      let savedClient = editingClientId
         ? await updateClient(editingClientId, payload)
         : await createClient(payload);
 
       if (pendingTaxConstancyFile) {
-        await uploadClientTaxConstancy(savedClient.id, pendingTaxConstancyFile);
+        savedClient = await uploadClientTaxConstancy(savedClient.id, pendingTaxConstancyFile);
       }
 
-      setNotice(editingClientId ? 'Cliente actualizado' : 'Cliente creado');
-      resetForm();
-      await loadClients();
+      setClients((current) => {
+        const exists = current.some((client) => client.id === savedClient.id);
+
+        if (!exists) {
+          return [savedClient, ...current];
+        }
+
+        return current.map((client) => (client.id === savedClient.id ? savedClient : client));
+      });
+
+      setEditingClientId(savedClient.id);
+      setPendingTaxConstancyFile(null);
+      setStoredTaxConstancyName(savedClient.tax_constancy_filename || storedTaxConstancyName || '');
+      setTaxConstancyMessage('');
+      setNotice('Guardado automáticamente');
+
+      return savedClient;
     } catch (requestError) {
       setError(requestError.message);
+      return null;
     } finally {
       setIsSaving(false);
     }
+  }
+
+  async function navigateClient(direction) {
+    if (!editingClientId || !visibleClients.length || isSaving) return;
+
+    const currentIndex = visibleClients.findIndex((client) => client.id === editingClientId);
+
+    if (currentIndex === -1) return;
+
+    const savedClient = await saveCurrentClient();
+
+    if (!savedClient) return;
+
+    const nextIndex =
+      direction === 'next'
+        ? (currentIndex + 1) % visibleClients.length
+        : (currentIndex - 1 + visibleClients.length) % visibleClients.length;
+
+    const nextClient = visibleClients[nextIndex];
+
+    if (nextClient) {
+      loadClientIntoForm(nextClient, { keepTab: true });
+    }
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    const savedClient = await saveCurrentClient();
+
+    if (!savedClient) return;
+
+    setNotice(editingClientId ? 'Cliente actualizado' : 'Cliente creado');
+    resetForm();
+    await loadClients();
   }
 
   async function handleCreateQuotation(client) {
@@ -589,6 +696,15 @@ function ClientsPage() {
 
   const modalTitle = editingClientId ? 'Editar cliente' : 'Nuevo cliente';
 
+  const currentClientIndex = editingClientId
+    ? visibleClients.findIndex((client) => client.id === editingClientId)
+    : -1;
+
+  const modalNavigatorLabel =
+    editingClientId && currentClientIndex >= 0
+      ? `${currentClientIndex + 1} de ${visibleClients.length}`
+      : '';
+
   return (
     <section className="module-workspace clients-workspace">
       <div className="module-workspace__hero clients-hero">
@@ -609,7 +725,7 @@ function ClientsPage() {
         <div className="section-heading">
           <div>
             <p>Listado de clientes</p>
-            <h2>{isLoading ? 'Cargando...' : `${visibleClients.length} clientes visibles`}</h2>
+            <h2>{isLoading ? 'Cargando...' : paginationLabel}</h2>
           </div>
           <div className="toolbar-actions">
             <button className="table-button" onClick={() => setIsClientImportOpen(true)} type="button">
@@ -692,8 +808,8 @@ function ClientsPage() {
 
           {isLoading ? (
             <div className="clients-empty">Cargando clientes...</div>
-          ) : visibleClients.length ? (
-            visibleClients.map((client) => {
+          ) : paginatedClients.length ? (
+            paginatedClients.map((client) => {
               const contact = getClientContact(client);
               const isSelected = selectedClientIds.includes(client.id);
               const missingFields = getMissingClientFields(client);
@@ -748,15 +864,98 @@ function ClientsPage() {
             <div className="clients-empty">No hay clientes para los filtros aplicados.</div>
           )}
         </div>
+
+        {visibleClients.length > clientsPerPage ? (
+          <div className="clients-pagination" aria-label="Paginación de clientes">
+            <span>{paginationLabel}</span>
+            <div className="clients-pagination__controls">
+              <button
+                className="table-button"
+                disabled={normalizedCurrentPage === 1}
+                onClick={() => goToClientPage(1)}
+                type="button"
+              >
+                «
+              </button>
+              <button
+                className="table-button"
+                disabled={normalizedCurrentPage === 1}
+                onClick={() => goToClientPage(normalizedCurrentPage - 1)}
+                type="button"
+              >
+                ‹
+              </button>
+              {pageNumbers[0] > 1 ? <small>...</small> : null}
+              {pageNumbers.map((page) => (
+                <button
+                  className={page === normalizedCurrentPage ? 'table-button table-button--primary' : 'table-button'}
+                  key={page}
+                  onClick={() => goToClientPage(page)}
+                  type="button"
+                >
+                  {page}
+                </button>
+              ))}
+              {pageNumbers[pageNumbers.length - 1] < totalClientPages ? <small>...</small> : null}
+              <button
+                className="table-button"
+                disabled={normalizedCurrentPage === totalClientPages}
+                onClick={() => goToClientPage(normalizedCurrentPage + 1)}
+                type="button"
+              >
+                ›
+              </button>
+              <button
+                className="table-button"
+                disabled={normalizedCurrentPage === totalClientPages}
+                onClick={() => goToClientPage(totalClientPages)}
+                type="button"
+              >
+                »
+              </button>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {isClientModalOpen ? (
         <div className="modal-backdrop" role="presentation">
           <section className="client-modal" aria-modal="true" role="dialog">
-            <div className="section-heading">
+            <div className="client-modal-header">
               <div>
                 <p>Clientes</p>
                 <h2>{modalTitle}</h2>
+                {notice && isClientModalOpen ? <span>{notice}</span> : null}
+              </div>
+
+              <div className="client-modal-navigator">
+                {editingClientId ? (
+                  <>
+                    <button
+                      aria-label="Cliente anterior"
+                      disabled={isSaving || visibleClients.length <= 1}
+                      onClick={() => navigateClient('previous')}
+                      type="button"
+                    >
+                      ◀
+                    </button>
+
+                    <strong>{modalNavigatorLabel}</strong>
+
+                    <button
+                      aria-label="Cliente siguiente"
+                      disabled={isSaving || visibleClients.length <= 1}
+                      onClick={() => navigateClient('next')}
+                      type="button"
+                    >
+                      ▶
+                    </button>
+                  </>
+                ) : null}
+
+                <button aria-label="Cerrar modal" disabled={isSaving} onClick={resetForm} type="button">
+                  ✕
+                </button>
               </div>
             </div>
 
@@ -982,7 +1181,7 @@ function ClientsPage() {
                   <label>
                     Régimen fiscal
                     {taxRegimeOptions.length > 1 ? (
-                      <select onChange={(event) => updateForm('taxRegime', event.target.value)} value={form.taxRegime}>
+                      <select className="client-tax-regime-select" onChange={(event) => updateForm('taxRegime', event.target.value)} value={form.taxRegime}>
                         <option value="">Selecciona el régimen a usar</option>
                         {taxRegimeOptions.map((option) => (
                           <option key={option} value={option}>

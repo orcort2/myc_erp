@@ -571,39 +571,47 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
         for client in existing_clients
         if client.commercial_name or client.legal_name
     }
+
     seen_rfc: set[str] = set()
     seen_email: set[str] = set()
     seen_name: set[str] = set()
 
     preview_rows: list[ClientImportRowRead] = []
+
     for index, row in enumerate(rows):
         name = _get_row_value(row, ["nombre_comercial", "Nombre comercial", "nombre", "Cliente"])
         legal_name = _get_row_value(row, ["razon_social", "Razon social", "Razón social"])
         first_name = _get_row_value(row, ["nombres", "Nombre(s)", "Nombre"])
         first_last_name = _get_row_value(row, ["primer_apellido", "Primer apellido"])
         second_last_name = _get_row_value(row, ["segundo_apellido", "Segundo apellido"])
+        contact_name = _get_row_value(row, ["contacto", "Contacto principal", "Contacto"])
         rfc = _get_row_value(row, ["rfc", "RFC"])
         email = _get_row_value(row, ["correo", "Correo", "Email"])
-        postal_code = _get_row_value(row, ["codigo_postal", "Codigo postal", "Código postal"])
-        client_type = _normalize_client_type(_get_row_value(row, ["tipo_cliente", "Tipo de cliente"]))
-        person_name = " ".join(part for part in [first_name.strip(), first_last_name.strip(), second_last_name.strip()] if part.strip())
 
-        name_key = _normalize_key(name or legal_name or person_name)
+        person_name = " ".join(
+            part for part in [first_name.strip(), first_last_name.strip(), second_last_name.strip()] if part.strip()
+        )
+
+        display_name = (
+            name.strip()
+            or legal_name.strip()
+            or person_name.strip()
+            or contact_name.strip()
+            or f"Cliente importado {index + 1}"
+        )
+
+        name_key = _normalize_key(display_name)
         rfc_key = _normalize_key(rfc)
         email_key = _normalize_key(email)
+
         errors: list[str] = []
         duplicates: list[str] = []
 
-        if not any([name.strip(), legal_name.strip(), person_name.strip()]):
-            errors.append("Nombre comercial, razon social o nombre completo obligatorios")
-        if not rfc.strip():
-            errors.append("RFC obligatorio")
-        if client_type == "persona_fisica" and not first_name.strip():
-            errors.append("Nombre(s) obligatorios para persona fisica")
-        if email.strip() and not re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", email.strip()):
-            errors.append("Correo invalido")
-        if postal_code and not postal_code.isdigit():
-            errors.append("Codigo postal no numerico")
+        # Importación flexible:
+        # No rechazar clientes por información incompleta.
+        # Los faltantes se mostrarán después como "Información pendiente" en la UI.
+        # Solo se omiten duplicados para evitar registros repetidos.
+
         if rfc_key and (rfc_key in existing_rfc or rfc_key in seen_rfc):
             duplicates.append("RFC")
         if email_key and (email_key in existing_email or email_key in seen_email):
@@ -618,17 +626,12 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
         if name_key:
             seen_name.add(name_key)
 
-        if errors:
-            row_status = "error"
-        elif duplicates:
-            row_status = "duplicate"
-        else:
-            row_status = "valid"
+        row_status = "duplicate" if duplicates else "valid"
 
         preview_rows.append(
             ClientImportRowRead(
                 id=f"{index}-{name_key or 'cliente'}",
-                name=name or legal_name or person_name or "-",
+                name=display_name,
                 rfc=rfc or "-",
                 email=email or "-",
                 status=row_status,
@@ -643,9 +646,8 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
         rows=preview_rows,
         valid_count=len([row for row in preview_rows if row.status == "valid"]),
         duplicate_count=len([row for row in preview_rows if row.status == "duplicate"]),
-        error_count=len([row for row in preview_rows if row.status == "error"]),
+        error_count=0,
     )
-
 
 def preview_client_import(db: Session, upload: UploadFile) -> ClientImportPreviewRead:
     columns, rows = _read_tabular_file(upload)
@@ -655,6 +657,15 @@ def preview_client_import(db: Session, upload: UploadFile) -> ClientImportPrevie
     preview.columns = columns
     return preview
 
+def _clean_import_email(value: str | None) -> str:
+    email = (value or "").strip().strip("<>").strip()
+    email = email.replace("mailto:", "").strip()
+    email = email.rstrip(";,>").strip()
+
+    if re.fullmatch(r"^[^\s@<>;,]+@[^\s@<>;,]+\.[^\s@<>;,]+$", email):
+        return email
+
+    return ""
 
 def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
     name = _get_row_value(row, ["nombre_comercial", "Nombre comercial", "nombre", "Cliente"]).strip()
@@ -666,16 +677,30 @@ def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
     email = _get_row_value(row, ["correo", "Correo", "Email"]).strip()
     phone = _get_row_value(row, ["telefono", "Telefono", "Teléfono"]).strip()
     contact_name = _get_row_value(row, ["contacto", "Contacto principal", "Contacto"]).strip()
+
+    fallback_name = (
+        name
+        or legal_name
+        or " ".join(part for part in [first_name, first_last_name, second_last_name] if part).strip()
+        or contact_name
+        or "Cliente importado"
+    )
+
+    valid_email = _clean_import_email(email)
+
+    postal_code = _get_row_value(row, ["codigo_postal", "Codigo postal", "Código postal"]).strip()
+    valid_postal_code = postal_code if postal_code.isdigit() else ""
+
     return ClientCreate(
         client_type=client_type,
-        commercial_name=name or None,
-        legal_name=legal_name or " ".join(part for part in [first_name, first_last_name, second_last_name] if part).strip() or name,
+        commercial_name=name or fallback_name,
+        legal_name=legal_name or fallback_name,
         rfc=_get_row_value(row, ["rfc", "RFC"]).strip().upper() or None,
         curp=_get_row_value(row, ["curp", "CURP"]).strip().upper() or None,
         first_name=first_name or None,
         first_last_name=first_last_name or None,
         second_last_name=second_last_name or None,
-        email=email or None,
+        email=valid_email or None,
         phone=phone or None,
         tax_regime=_get_row_value(row, ["regimen_fiscal", "Regimen fiscal", "Régimen fiscal"]).strip() or None,
         cfdi_use=_get_row_value(row, ["uso_cfdi", "Uso CFDI"]).strip() or None,
@@ -688,13 +713,13 @@ def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
         municipality=_get_row_value(row, ["municipio", "Municipio", "municipio_ciudad", "Municipio / Ciudad", "Ciudad"]).strip() or None,
         city=_get_row_value(row, ["municipio_ciudad", "Municipio / Ciudad", "Ciudad", "municipio", "Municipio"]).strip() or None,
         state=_get_row_value(row, ["estado", "Estado"]).strip() or None,
-        postal_code=_get_row_value(row, ["codigo_postal", "Codigo postal", "Código postal"]).strip() or None,
-        fiscal_postal_code=_get_row_value(row, ["fiscal_postal_code", "codigo_postal_fiscal", "Codigo postal fiscal", "Código postal fiscal"]).strip() or _get_row_value(row, ["codigo_postal", "Codigo postal", "Código postal"]).strip() or None,
+        postal_code=valid_postal_code or None,
+        fiscal_postal_code=valid_postal_code or None,
         country=_get_row_value(row, ["pais", "Pais", "País"]).strip() or "Mexico",
         contacts=[
             {
                 "name": contact_name,
-                "email": email or None,
+                "email": valid_email or None,
                 "phone": phone or None,
                 "position": None,
             }
