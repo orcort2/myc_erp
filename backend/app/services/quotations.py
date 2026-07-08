@@ -2,12 +2,12 @@ from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.client import Client
 from app.models.catalog_item import CatalogItem
-from app.models.quotation import Quotation, QuotationItem
+from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
 from app.schemas.quotation import (
     QuotationCreate,
     QuotationItemCreate,
@@ -137,6 +137,70 @@ def _next_quotation_folio(db: Session, issued_on: date) -> str:
     return f"{prefix}{sequence:04d}"
 
 
+def _quotation_snapshot_data(quotation: Quotation) -> dict:
+    return _json_safe(
+        {
+            "client_id": quotation.client_id,
+            "advisor_id": quotation.advisor_id,
+            "issued_on": quotation.issued_on,
+            "valid_until": quotation.valid_until,
+            "payment_terms": quotation.payment_terms,
+            "notes": quotation.notes,
+            "subtotal": quotation.subtotal,
+            "tax_total": quotation.tax_total,
+            "total": quotation.total,
+            "items": [
+                {
+                    "id": item.id,
+                    "catalog_item_id": item.catalog_item_id,
+                    "service_name": item.service_name,
+                    "description": item.description,
+                    "quantity": item.quantity,
+                    "unit": item.unit,
+                    "unit_price": item.unit_price,
+                    "discount_percent": item.discount_percent,
+                    "tax_total": item.tax_total,
+                    "total": item.total,
+                    "is_active": item.is_active,
+                }
+                for item in quotation.items
+            ],
+        }
+    )
+
+
+def _write_snapshot(
+    db: Session,
+    quotation: Quotation,
+    *,
+    reason: str,
+    user_id: int | None = None,
+) -> None:
+    current_number = db.scalar(
+        select(func.max(QuotationSnapshot.snapshot_number)).where(
+            QuotationSnapshot.quotation_id == quotation.id
+        )
+    )
+    snapshot = QuotationSnapshot(
+        quotation_id=quotation.id,
+        snapshot_number=(current_number or 0) + 1,
+        reason=reason,
+        created_by_id=user_id,
+        snapshot_data=_quotation_snapshot_data(quotation),
+    )
+    db.add(snapshot)
+
+
+def _date_from_snapshot(value: object) -> date | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        return date.fromisoformat(value)
+    return None
+
+
 def _recalculate_totals(quotation: Quotation) -> None:
     active_items = [item for item in quotation.items if item.is_active is not False]
     subtotal = Decimal("0.00")
@@ -156,7 +220,7 @@ def _recalculate_totals(quotation: Quotation) -> None:
 def list_quotations(db: Session, *, include_inactive: bool = False) -> list[Quotation]:
     query = (
         select(Quotation)
-        .options(selectinload(Quotation.items))
+        .options(selectinload(Quotation.items), selectinload(Quotation.advisor))
         .order_by(Quotation.created_at.desc())
     )
     if not include_inactive:
@@ -168,7 +232,7 @@ def get_quotation(db: Session, quotation_id: int) -> Quotation:
     quotation = db.scalar(
         select(Quotation)
         .where(Quotation.id == quotation_id)
-        .options(selectinload(Quotation.items))
+        .options(selectinload(Quotation.items), selectinload(Quotation.advisor))
     )
     if quotation is None or not quotation.is_active:
         raise HTTPException(
@@ -186,9 +250,10 @@ def create_quotation(
     quotation = Quotation(
         folio=_next_quotation_folio(db, issued_on),
         client_id=payload.client_id,
-        advisor_id=payload.advisor_id,
+        advisor_id=user_id or payload.advisor_id,
         issued_on=issued_on,
         valid_until=payload.valid_until,
+        payment_terms=payload.payment_terms,
         notes=payload.notes,
         status="draft",
     )
@@ -199,6 +264,7 @@ def create_quotation(
     _recalculate_totals(quotation)
     db.add(quotation)
     db.flush()
+    _write_snapshot(db, quotation, reason="created", user_id=user_id)
     write_audit_log(
         db,
         action="quotation.created",
@@ -209,6 +275,7 @@ def create_quotation(
             {
                 "folio": quotation.folio,
                 "client_id": quotation.client_id,
+                "advisor_id": quotation.advisor_id,
                 "total": quotation.total,
             }
         ),
@@ -231,9 +298,14 @@ def update_quotation(
             detail="No se puede editar una cotizacion en estado terminal",
         )
     updates = payload.model_dump(exclude_unset=True)
+    if "client_id" in updates:
+        _ensure_client_exists(db, updates["client_id"])
     previous_values = {key: getattr(quotation, key) for key in updates}
     for key, value in updates.items():
         setattr(quotation, key, value)
+    db.flush()
+    if updates:
+        _write_snapshot(db, quotation, reason="updated", user_id=user_id)
     write_audit_log(
         db,
         action="quotation.updated",
@@ -242,6 +314,65 @@ def update_quotation(
         user_id=user_id,
         previous_values=_json_safe(previous_values),
         new_values=_json_safe(updates),
+    )
+    db.commit()
+    return get_quotation(db, quotation.id)
+
+
+def list_quotation_snapshots(db: Session, quotation_id: int) -> list[QuotationSnapshot]:
+    get_quotation(db, quotation_id)
+    return list(
+        db.scalars(
+            select(QuotationSnapshot)
+            .where(QuotationSnapshot.quotation_id == quotation_id)
+            .order_by(QuotationSnapshot.snapshot_number.desc())
+        ).all()
+    )
+
+
+def restore_quotation_snapshot(
+    db: Session,
+    quotation_id: int,
+    snapshot_id: int,
+    *,
+    user_id: int | None = None,
+) -> Quotation:
+    quotation = get_quotation(db, quotation_id)
+    if quotation.status in TERMINAL_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No se puede restaurar una cotizacion en estado terminal",
+        )
+    snapshot = db.scalar(
+        select(QuotationSnapshot).where(
+            QuotationSnapshot.id == snapshot_id,
+            QuotationSnapshot.quotation_id == quotation_id,
+        )
+    )
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Version de cotizacion no encontrada",
+        )
+    data = snapshot.snapshot_data or {}
+    previous_values = _quotation_snapshot_data(quotation)
+    if data.get("client_id") is not None:
+        _ensure_client_exists(db, int(data["client_id"]))
+        quotation.client_id = int(data["client_id"])
+    quotation.issued_on = _date_from_snapshot(data.get("issued_on"))
+    quotation.valid_until = _date_from_snapshot(data.get("valid_until"))
+    quotation.payment_terms = data.get("payment_terms")
+    quotation.notes = data.get("notes")
+    db.flush()
+    _write_snapshot(db, quotation, reason=f"restored:{snapshot.snapshot_number}", user_id=user_id)
+    write_audit_log(
+        db,
+        action="quotation.snapshot_restored",
+        entity="quotations",
+        entity_id=quotation.id,
+        user_id=user_id,
+        previous_values=previous_values,
+        new_values=_quotation_snapshot_data(quotation),
     )
     db.commit()
     return get_quotation(db, quotation.id)
@@ -264,6 +395,7 @@ def add_quotation_item(
     quotation.items.append(item)
     _recalculate_totals(quotation)
     db.flush()
+    _write_snapshot(db, quotation, reason="item_added", user_id=user_id)
     write_audit_log(
         db,
         action="quotation.item_added",
@@ -303,6 +435,8 @@ def update_quotation_item(
     for key, value in updates.items():
         setattr(item, key, value)
     _recalculate_totals(quotation)
+    db.flush()
+    _write_snapshot(db, quotation, reason="item_updated", user_id=user_id)
     write_audit_log(
         db,
         action="quotation.item_updated",
@@ -345,6 +479,8 @@ def deactivate_quotation_item(
     item.deleted_at = datetime.now(timezone.utc)
     item.deleted_by = user_id
     _recalculate_totals(quotation)
+    db.flush()
+    _write_snapshot(db, quotation, reason="item_deactivated", user_id=user_id)
     write_audit_log(
         db,
         action="quotation.item_deactivated",

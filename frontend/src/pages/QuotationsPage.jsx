@@ -1,15 +1,15 @@
 import { Download, FileText, Upload } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import {
-  catalogCommodityOptions,
-  calibrationScopeOptions,
   internalUnitOptions,
   taxObjectOptions,
   serviceCategories,
   productCategories,
+  scopeOptionsByCategory,
+  catalogKindByCategory,
   validCatalogCurrencies,
   catalogTypeToApi,
   catalogTypeFromApi
@@ -29,9 +29,11 @@ import {
   getQuotation,
   getQuotationPdfUrl,
   getQuotationTemplate,
+  listQuotationSnapshots,
   listCatalogItems,
   listClients,
   listQuotations,
+  restoreQuotationSnapshot,
   restoreQuotationTemplateDefaults,
   updateCatalogItem,
   updateQuotation,
@@ -74,15 +76,14 @@ const defaultQuotationTemplate = {
 
 const catalogTemplateColumns = [
   'Tipo',
-  'Commodity',
   'Categoria',
   'Clave interna',
   'Nombre',
-  'Descripcion',
   'Clave SAT',
   'Unidad SAT',
   'Unidad interna',
   'Unidad interna personalizada',
+  'Alcance',
   'Precio origen',
   'Moneda origen',
   'Tipo de cambio',
@@ -100,6 +101,16 @@ function calculateFinalPriceMxn({ basePrice, exchangeRate, margin }) {
   const marginFactor = 1 + Number(margin || 0) / 100;
   return price * rate * marginFactor;
 }
+
+function inferBackendCatalogKind(type, category) {
+  if (type === 'Producto') return 'sale';
+  return catalogKindByCategory[category] ?? 'general_service';
+}
+
+function getCategoryScopeOptions(category) {
+  return scopeOptionsByCategory[category] ?? [];
+}
+
 function mapCatalogItemFromApi(item) {
   return {
     id: item.id,
@@ -129,13 +140,15 @@ function mapCatalogItemFromApi(item) {
   };
 }
 function mapCatalogPayloadFromForm(form) {
-  const commodity = form.commodity || 'general_service';
+  const commodity = inferBackendCatalogKind(form.type, form.category);
+  const scopeOptions = getCategoryScopeOptions(form.category);
+  const calibrationScope = scopeOptions.length ? form.calibrationScope || scopeOptions[0].value : null;
   return {
     item_type: catalogTypeToApi[form.type] ?? form.type,
     commodity,
     category: form.category.trim(),
     name: form.name.trim(),
-    description: form.description.trim() || null,
+    description: null,
     sat_key: form.satKey.trim() || null,
     sat_unit: form.satUnit.trim() || null,
     internal_unit: form.internalUnit || 'service',
@@ -146,8 +159,8 @@ function mapCatalogPayloadFromForm(form) {
     margin_percent: Number(form.margin || 0),
     internal_cost: form.internalCost === '' ? null : Number(form.internalCost),
     cost_currency: form.internalCost === '' ? null : form.costCurrency,
-    calibration_scope: commodity === 'calibration' ? form.calibrationScope : null,
-    quotation_legend: commodity === 'general_service' ? form.quotationLegend.trim() : form.quotationLegend.trim() || null,
+    calibration_scope: calibrationScope,
+    quotation_legend: null,
     tax_object: form.taxObject || 'iva_16'
   };
 }
@@ -344,7 +357,6 @@ function QuotationsPage() {
   const [quotationDetailTab, setQuotationDetailTab] = useState('info');
   const [quotations, setQuotations] = useState([]);
   const [clients, setClients] = useState([]);
-  const [quotationForm, setQuotationForm] = useState(emptyQuotationForm);
   const [detailForm, setDetailForm] = useState(emptyQuotationForm);
   const [draftItems, setDraftItems] = useState([]);
   const [selectedQuotation, setSelectedQuotation] = useState(null);
@@ -364,24 +376,52 @@ function QuotationsPage() {
   const [catalogImportPreview, setCatalogImportPreview] = useState(null);
   const [catalogImportMessage, setCatalogImportMessage] = useState('');
   const [editingItemForms, setEditingItemForms] = useState({});
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isClientPickerOpen, setIsClientPickerOpen] = useState(false);
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isCatalogImportOpen, setIsCatalogImportOpen] = useState(false);
+  const [clientPickerSearch, setClientPickerSearch] = useState('');
+  const [quotationSnapshots, setQuotationSnapshots] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDetailSaving, setIsDetailSaving] = useState(false);
+  const [isDetailAutosaving, setIsDetailAutosaving] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState('');
   const [isTemplateSaving, setIsTemplateSaving] = useState(false);
   const [savingDraftIds, setSavingDraftIds] = useState(new Set());
   const [savingItemIds, setSavingItemIds] = useState(new Set());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
+  const skipNextAutosaveRef = useRef(false);
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
     [clients]
   );
+
+  const filteredClientPickerClients = useMemo(() => {
+    const search = normalizeKey(clientPickerSearch);
+    return clients
+      .filter((client) => client.is_active !== false)
+      .filter((client) => {
+        const contacts = Array.isArray(client.contacts) ? client.contacts : [];
+        const contactText = contacts
+          .map((contact) => `${contact.name ?? ''} ${contact.email ?? ''}`)
+          .join(' ');
+        const haystack = normalizeKey(
+          [
+            client.commercial_name,
+            client.legal_name,
+            client.rfc,
+            client.email,
+            contactText
+          ].join(' ')
+        );
+        return !search || haystack.includes(search);
+      })
+      .slice(0, 15);
+  }, [clientPickerSearch, clients]);
 
   const filteredCatalogItems = useMemo(
     () =>
@@ -391,7 +431,7 @@ function QuotationsPage() {
           !catalogFilters.category || normalizeKey(item.category).includes(normalizeKey(catalogFilters.category));
         const matchesCurrency = catalogFilters.currency === 'Todas' || item.sourceCurrency === catalogFilters.currency;
         const matchesStatus = catalogFilters.status === 'Todos' || item.status === catalogFilters.status;
-        const searchKey = normalizeKey(`${item.name} ${item.internalKey} ${item.category}`);
+        const searchKey = normalizeKey(`${item.name} ${item.internalKey} ${item.category} ${item.satKey} ${item.satUnit}`);
         const matchesSearch = !catalogFilters.search || searchKey.includes(normalizeKey(catalogFilters.search));
         return matchesType && matchesCategory && matchesCurrency && matchesStatus && matchesSearch;
       }),
@@ -442,16 +482,40 @@ function QuotationsPage() {
     loadQuotationData();
   }, []);
 
-  function updateQuotationForm(field, value) {
-    setQuotationForm((current) => ({ ...current, [field]: value }));
-  }
+  useEffect(() => {
+    if (!isDetailOpen || !selectedQuotation || isQuotationTerminal(selectedQuotation)) {
+      return undefined;
+    }
+    if (skipNextAutosaveRef.current) {
+      skipNextAutosaveRef.current = false;
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => {
+      persistDetailChanges({ autosave: true });
+    }, 800);
+    return () => window.clearTimeout(timeoutId);
+  }, [detailForm, isDetailOpen, selectedQuotation?.id, selectedQuotation?.status]);
 
   function updateDetailForm(field, value) {
     setDetailForm((current) => ({ ...current, [field]: value }));
   }
 
   function updateProductForm(field, value) {
-    setProductForm((current) => ({ ...current, [field]: value }));
+    setProductForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === 'category') {
+        const options = getCategoryScopeOptions(value);
+        next.calibrationScope = options[0]?.value ?? '';
+      }
+      if (field === 'type') {
+        const categories = value === 'Producto' ? productCategories : serviceCategories;
+        const category = categories.includes(next.category) ? next.category : '';
+        const options = getCategoryScopeOptions(category);
+        next.category = category;
+        next.calibrationScope = options[0]?.value ?? '';
+      }
+      return next;
+    });
   }
 
   function updateTemplateForm(field, value) {
@@ -505,34 +569,25 @@ function QuotationsPage() {
     window.open(getQuotationPdfUrl(sampleQuotation.id), '_blank', 'noopener,noreferrer');
   }
 
-  function closeQuotationModal() {
-    setQuotationForm(emptyQuotationForm);
-    setIsCreateModalOpen(false);
-    setError('');
-  }
-
-  async function handleCreateQuotationSubmit(event) {
-    event.preventDefault();
+  async function createDraftQuotationAndOpen(clientId = '') {
     setError('');
     setNotice('');
-
-    if (!quotationForm.clientId) {
-      setError('Selecciona un cliente para crear la cotizacion.');
-      return;
-    }
-
     setIsSaving(true);
     try {
+      const fallbackClientId = clientId || clients[0]?.id;
+      if (!fallbackClientId) {
+        setError('Registra o carga un cliente antes de crear una cotizacion.');
+        return;
+      }
       const quotation = await createQuotation({
-        client_id: Number(quotationForm.clientId),
-        valid_until: quotationForm.validUntil || null,
-        notes: quotationForm.notes.trim() || null,
+        client_id: Number(fallbackClientId),
+        valid_until: null,
+        notes: null,
         items: []
       });
-      setNotice(`Cotizacion ${quotation.folio} creada correctamente`);
-      setQuotationForm(emptyQuotationForm);
-      setIsCreateModalOpen(false);
       await loadQuotationData();
+      await openQuotationDetail(quotation);
+      setNotice(`Cotizacion ${quotation.folio} creada como borrador`);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -545,11 +600,15 @@ function QuotationsPage() {
     try {
       const detail = await getQuotation(quotation.id);
       setSelectedQuotation(detail);
+      skipNextAutosaveRef.current = true;
       setDetailForm({
         clientId: String(detail.client_id ?? ''),
         validUntil: detail.valid_until ?? '',
+        paymentTerms: detail.payment_terms ?? '',
         notes: detail.notes ?? ''
       });
+      const snapshots = await listQuotationSnapshots(detail.id);
+      setQuotationSnapshots(snapshots);
       setQuotationDetailTab('info');
       setIsDetailOpen(true);
     } catch (requestError) {
@@ -561,39 +620,133 @@ function QuotationsPage() {
     setIsDetailOpen(false);
     setSelectedQuotation(null);
     setDetailForm(emptyQuotationForm);
+    setQuotationSnapshots([]);
+    setClientPickerSearch('');
+    setIsClientPickerOpen(false);
+    setAutosaveStatus('');
     setDraftItems([]);
     setEditingItemForms({});
     setQuotationDetailTab('info');
     setError('');
   }
 
-  async function handleDetailSubmit(event) {
-    event.preventDefault();
+  async function refreshQuotationSnapshots(quotationId) {
+    try {
+      const snapshots = await listQuotationSnapshots(quotationId);
+      setQuotationSnapshots(snapshots);
+    } catch {
+      setQuotationSnapshots([]);
+    }
+  }
+
+  async function persistDetailChanges({ autosave = false } = {}) {
     if (!selectedQuotation) {
       return;
     }
 
     setError('');
-    setNotice('');
-    setIsDetailSaving(true);
+    if (!autosave) {
+      setNotice('');
+      setIsDetailSaving(true);
+    } else {
+      setIsDetailAutosaving(true);
+      setAutosaveStatus('Guardando cambios...');
+    }
     try {
       const updated = await updateQuotation(selectedQuotation.id, {
+        client_id: detailForm.clientId ? Number(detailForm.clientId) : selectedQuotation.client_id,
         valid_until: detailForm.validUntil || null,
+        payment_terms: detailForm.paymentTerms.trim() || null,
         notes: detailForm.notes.trim() || null
       });
       setSelectedQuotation(updated);
-      setDetailForm({
-        clientId: String(updated.client_id ?? ''),
-        validUntil: updated.valid_until ?? '',
-        notes: updated.notes ?? ''
-      });
-      setNotice(`Cotizacion ${updated.folio} actualizada`);
+      await refreshQuotationSnapshots(updated.id);
+      if (autosave) {
+        setAutosaveStatus('Cambios guardados');
+      } else {
+        setNotice(`Cotizacion ${updated.folio} actualizada`);
+      }
       await loadQuotationData();
     } catch (requestError) {
       setError(requestError.message);
+      if (autosave) {
+        setAutosaveStatus('No se pudo guardar automaticamente');
+      }
     } finally {
       setIsDetailSaving(false);
+      setIsDetailAutosaving(false);
     }
+  }
+
+  async function handleDetailSubmit(event) {
+    event.preventDefault();
+    await persistDetailChanges({ autosave: false });
+  }
+
+  async function handleClientSelected(client) {
+    if (!selectedQuotation) {
+      return;
+    }
+    setError('');
+    setIsClientPickerOpen(false);
+    setIsDetailAutosaving(true);
+    setAutosaveStatus('Guardando cliente...');
+    try {
+      const updated = await updateQuotation(selectedQuotation.id, {
+        client_id: Number(client.id),
+        valid_until: detailForm.validUntil || null,
+        payment_terms: detailForm.paymentTerms.trim() || null,
+        notes: detailForm.notes.trim() || null
+      });
+      setSelectedQuotation(updated);
+      skipNextAutosaveRef.current = true;
+      setDetailForm({
+        clientId: String(updated.client_id ?? ''),
+        validUntil: updated.valid_until ?? '',
+        paymentTerms: updated.payment_terms ?? '',
+        notes: updated.notes ?? ''
+      });
+      await refreshQuotationSnapshots(updated.id);
+      await loadQuotationData();
+      setAutosaveStatus('Cliente actualizado');
+    } catch (requestError) {
+      setError(requestError.message);
+      setAutosaveStatus('No se pudo actualizar el cliente');
+    } finally {
+      setIsDetailAutosaving(false);
+    }
+  }
+
+  async function handleRestoreQuotationSnapshot(snapshot) {
+    if (!selectedQuotation) {
+      return;
+    }
+    openConfirm({
+      title: 'Restaurar version',
+      message: `La cotizacion volvera a los datos guardados en la version ${snapshot.snapshot_number}.`,
+      confirmText: 'Restaurar version',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        try {
+          const restored = await restoreQuotationSnapshot(selectedQuotation.id, snapshot.id);
+          setSelectedQuotation(restored);
+          skipNextAutosaveRef.current = true;
+          setDetailForm({
+            clientId: String(restored.client_id ?? ''),
+            validUntil: restored.valid_until ?? '',
+            paymentTerms: restored.payment_terms ?? '',
+            notes: restored.notes ?? ''
+          });
+          await refreshQuotationSnapshots(restored.id);
+          await loadQuotationData();
+          setNotice(`Cotizacion ${restored.folio} restaurada`);
+        } catch (requestError) {
+          setError(requestError.message);
+        }
+      }
+    });
   }
 
   async function handleQuotationStatus(quotation, action) {
@@ -610,9 +763,11 @@ function QuotationsPage() {
           const updated = await changeQuotationStatus(quotation.id, action.key);
           setNotice(`Cotizacion ${updated.folio} actualizada a ${quotationStatusLabels[updated.status]}`);
           setSelectedQuotation(updated);
+          skipNextAutosaveRef.current = true;
           setDetailForm({
             clientId: String(updated.client_id ?? ''),
             validUntil: updated.valid_until ?? '',
+            paymentTerms: updated.payment_terms ?? '',
             notes: updated.notes ?? ''
           });
           await loadQuotationData();
@@ -703,9 +858,7 @@ function QuotationsPage() {
         category: item.category,
         internalKey: item.internalKey,
         name: item.name,
-        description: item.description,
         type: item.type,
-        commodity: item.commodity,
         calibrationScope: item.calibrationScope || 'traceable',
         quotationLegend: item.quotationLegend,
         satKey: item.satKey,
@@ -756,12 +909,8 @@ function QuotationsPage() {
       setError('Selecciona una moneda origen valida.');
       return;
     }
-    if (productForm.commodity === 'calibration' && !productForm.calibrationScope) {
-      setError('Selecciona el alcance de calibracion.');
-      return;
-    }
-    if (productForm.commodity === 'general_service' && !productForm.quotationLegend.trim()) {
-      setError('Captura la leyenda para cotizacion del servicio general.');
+    if (getCategoryScopeOptions(productForm.category).length && !productForm.calibrationScope) {
+      setError('Selecciona el alcance.');
       return;
     }
     if (productForm.internalUnit === 'other' && !productForm.customInternalUnit.trim()) {
@@ -792,9 +941,9 @@ function QuotationsPage() {
 
   async function handleDeleteCatalogItem(item) {
     openConfirm({
-      title: 'Desactivar concepto del catálogo',
-      message: `Esta acción dará de baja ${item.name} del Catálogo MYC.\nNo se eliminará físicamente.`,
-      confirmText: 'Desactivar concepto',
+      title: 'Eliminar concepto del catálogo',
+      message: `Esta acción eliminará ${item.name} de la vista activa del Catálogo MYC. El backend conserva baja lógica.`,
+      confirmText: 'Eliminar',
       variant: 'danger',
       onConfirm: async () => {
         setError('');
@@ -802,7 +951,8 @@ function QuotationsPage() {
         try {
           await deleteCatalogItem(item.id);
           setCatalogItems((current) => current.filter((catalogItem) => catalogItem.id !== item.id));
-          setNotice('Producto/servicio desactivado del catalogo');
+          closeProductModal();
+          setNotice('Producto/servicio eliminado del catalogo activo');
         } catch (requestError) {
           setError(requestError.message);
         }
@@ -864,16 +1014,14 @@ function QuotationsPage() {
       for (const row of validRows) {
         const raw = row.raw;
         const type = getRowValue(raw, ['Tipo']);
-        const commodity = getRowValue(raw, ['Commodity']);
         const category = getRowValue(raw, ['Categoria', 'Categoría']);
         const name = getRowValue(raw, ['Nombre']);
+        const typeValue = type || 'Servicio';
         const form = {
           ...emptyProductForm,
-          type: type || 'Servicio',
-          commodity: commodity || (type === 'Producto' ? 'sale' : 'general_service'),
+          type: typeValue,
           category,
           name,
-          description: getRowValue(raw, ['Descripcion', 'Descripción']),
           satKey: getRowValue(raw, ['Clave SAT']),
           satUnit: getRowValue(raw, ['Unidad SAT']),
           internalUnit: getRowValue(raw, ['Unidad interna']) || 'service',
@@ -885,8 +1033,11 @@ function QuotationsPage() {
           costCurrency: (getRowValue(raw, ['Moneda de costo']) || 'MXN').toUpperCase(),
           margin: getRowValue(raw, ['Margen %']) || '0',
           taxObject: getRowValue(raw, ['Objeto impuesto']) || 'iva_16',
-          quotationLegend: getRowValue(raw, ['Leyenda cotizacion', 'Leyenda cotización']),
-          calibrationScope: getRowValue(raw, ['Alcance calibracion', 'Alcance calibración']) || 'traceable'
+          quotationLegend: null,
+          calibrationScope:
+            getRowValue(raw, ['Alcance', 'Alcance calibracion', 'Alcance calibración']) ||
+            getCategoryScopeOptions(category)[0]?.value ||
+            ''
         };
         try {
           const saved = await createCatalogItem(mapCatalogPayloadFromForm(form));
@@ -944,6 +1095,7 @@ function QuotationsPage() {
               catalogItemId: item.id,
               catalogSearch: item.name,
               description: item.description || item.name,
+              observations: '',
               unit: item.customInternalUnit || item.internalUnit || item.satUnit || 'Servicio',
               unitPrice: String(item.finalPriceMxn ?? calculateFinalPriceMxn(item)),
               currency: 'MXN',
@@ -968,7 +1120,7 @@ function QuotationsPage() {
   async function saveDraftItem(draft) {
     if (!selectedQuotation) return;
     if (!draft.description.trim()) {
-      setError('Captura la descripcion de la partida.');
+      setError('Captura el nombre de la partida.');
       return;
     }
 
@@ -1023,7 +1175,7 @@ function QuotationsPage() {
     if (!selectedQuotation) return;
     const form = editingItemForms[itemId];
     if (!form?.description?.trim()) {
-      setError('Captura la descripcion de la partida.');
+      setError('Captura el nombre de la partida.');
       return;
     }
     setSavingItemIds((current) => new Set(current).add(itemId));
@@ -1114,6 +1266,7 @@ function QuotationsPage() {
         catalogSearch: item.name,
         catalogItemId: item.id,
         description: item.description || item.name,
+        observations: '',
         unit: item.customInternalUnit || item.internalUnit || item.satUnit || 'Servicio',
         unitPrice: String(item.finalPriceMxn ?? calculateFinalPriceMxn(item)),
         currency: 'MXN',
@@ -1148,6 +1301,7 @@ function QuotationsPage() {
           const serviceOrder = await createServiceOrder({
             client_id: selectedQuotation.client_id,
             quotation_id: selectedQuotation.id,
+            advisor_id: selectedQuotation.advisor_id || null,
             notes: selectedQuotation.notes || `Generada desde cotizacion ${selectedQuotation.folio}`
           });
           setNotice(`Orden de servicio ${serviceOrder.folio} creada correctamente. Puedes verla en el módulo de Órdenes de Servicio.`);
@@ -1161,9 +1315,9 @@ function QuotationsPage() {
   async function handleDeleteQuotationRecord() {
     if (!selectedQuotation) return;
     openConfirm({
-      title: 'Dar de baja cotización',
-      message: `Esta acción dará de baja la cotización ${selectedQuotation.folio}.\nNo se eliminará físicamente y dejará de aparecer en el listado activo.`,
-      confirmText: 'Dar de baja cotización',
+      title: 'Eliminar cotización',
+      message: `Esta acción eliminará la cotización ${selectedQuotation.folio} de la vista activa. El backend conserva baja lógica.`,
+      confirmText: 'Eliminar cotización',
       variant: 'danger',
       onConfirm: async () => {
         setError('');
@@ -1185,15 +1339,14 @@ function QuotationsPage() {
     downloadCsv('plantilla_catalogo_myc.csv', catalogTemplateColumns, [
       {
         Tipo: 'Servicio',
-        Commodity: 'calibration',
         Categoria: 'Calibracion',
         'Clave interna': 'Generada por sistema',
         Nombre: 'Calibracion de manometro',
-        Descripcion: 'Servicio de calibracion por alcance definido',
         'Clave SAT': '81141504',
         'Unidad SAT': 'E48',
         'Unidad interna': 'service',
         'Unidad interna personalizada': '',
+        Alcance: 'traceable',
         'Precio origen': '1000',
         'Moneda origen': 'MXN',
         'Tipo de cambio': '1',
@@ -1210,15 +1363,14 @@ function QuotationsPage() {
   function exportCatalog() {
     const rows = catalogItems.map((item) => ({
       Tipo: item.type,
-      Commodity: item.commodity,
       Categoria: item.category,
       'Clave interna': item.internalKey,
       Nombre: item.name,
-      Descripcion: item.description,
       'Clave SAT': item.satKey,
       'Unidad SAT': item.satUnit,
       'Unidad interna': item.internalUnit,
       'Unidad interna personalizada': item.customInternalUnit,
+      Alcance: item.calibrationScope,
       'Precio origen': item.basePrice,
       'Moneda origen': item.sourceCurrency,
       'Tipo de cambio': item.exchangeRate,
@@ -1245,7 +1397,7 @@ function QuotationsPage() {
         </div>
       </div>
 
-      {error && !isCreateModalOpen ? <div className="form-error dashboard-error">{error}</div> : null}
+      {error ? <div className="form-error dashboard-error">{error}</div> : null}
       {notice ? <div className="form-notice dashboard-error">{notice}</div> : null}
 
       <div className="module-tabs" role="tablist" aria-label="Navegacion interna de ventas">
@@ -1285,14 +1437,12 @@ function QuotationsPage() {
           <button
             className="primary-button"
             onClick={() => {
-              setError('');
-              setNotice('');
-              setQuotationForm(emptyQuotationForm);
-              setIsCreateModalOpen(true);
+              createDraftQuotationAndOpen();
             }}
+            disabled={isSaving}
             type="button"
           >
-            Nueva cotizacion
+            {isSaving ? 'Creando...' : 'Nueva cotizacion'}
           </button>
         </div>
 
@@ -1321,7 +1471,7 @@ function QuotationsPage() {
                 >
                   <span>{quotation.folio}</span>
                   <span>{getClientDisplayName(client)}</span>
-                  <span>{quotation.advisor_id ? `#${quotation.advisor_id}` : '-'}</span>
+                  <span>{quotation.advisor_name || (quotation.advisor_id ? `#${quotation.advisor_id}` : '-')}</span>
                   <span>{formatDate(quotation.issued_on)}</span>
                   <span>{formatDate(quotation.valid_until)}</span>
                   <span>
@@ -1368,37 +1518,16 @@ function QuotationsPage() {
           </div>
         </div>
 
-        <div className="client-fiscal-note catalog-note">
-          Cada servicio MYC debe existir como concepto independiente por magnitud, alcance y precio. Esta seccion ya guarda contra el Catalogo MYC del backend.
-        </div>
-
-        <div className="import-chip-list catalog-rules">
-          <span>Duplicados: nombre normalizado</span>
-          <span>Duplicados: clave interna</span>
-          <span>Duplicados: categoria + nombre</span>
-          <span>Conversion V1: tipo de cambio manual</span>
-        </div>
-
-        <div className="catalog-category-map">
-          <section>
-            <h3>Servicios</h3>
-            <div className="import-chip-list">
-              {serviceCategories.map((category) => (
-                <span key={category}>{category}</span>
-              ))}
-            </div>
-          </section>
-          <section>
-            <h3>Productos</h3>
-            <div className="import-chip-list">
-              {productCategories.map((category) => (
-                <span key={category}>{category}</span>
-              ))}
-            </div>
-          </section>
-        </div>
-
         <div className="catalog-filters">
+          <label className="catalog-search-field">
+            Busqueda
+            <input
+              onChange={(event) => updateCatalogFilter('search', event.target.value)}
+              placeholder="Nombre, clave, categoria o SAT"
+              type="text"
+              value={catalogFilters.search}
+            />
+          </label>
           <label>
             Tipo
             <select onChange={(event) => updateCatalogFilter('type', event.target.value)} value={catalogFilters.type}>
@@ -1414,15 +1543,6 @@ function QuotationsPage() {
               placeholder="Filtrar categoria"
               type="text"
               value={catalogFilters.category}
-            />
-          </label>
-          <label>
-            Busqueda
-            <input
-              onChange={(event) => updateCatalogFilter('search', event.target.value)}
-              placeholder="Nombre o clave"
-              type="text"
-              value={catalogFilters.search}
             />
           </label>
           <label>
@@ -1457,12 +1577,24 @@ function QuotationsPage() {
             <span>Precio origen</span>
             <span>Precio final MXN</span>
             <span>Estado</span>
-            <span>Acciones</span>
+            <span></span>
           </div>
 
           {filteredCatalogItems.length ? (
             filteredCatalogItems.map((item) => (
-              <div className="clients-table__row" key={item.id}>
+              <div
+                className="clients-table__row clients-table__row--clickable"
+                key={item.id}
+                onClick={() => openProductModal(item)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    openProductModal(item);
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+              >
                 <span>{item.type}</span>
                 <span>{item.category || '-'}</span>
                 <span>{item.internalKey || '-'}</span>
@@ -1476,14 +1608,15 @@ function QuotationsPage() {
                   </mark>
                 </span>
                 <span className="clients-table__actions">
-                  <button className="table-button table-button--primary" onClick={() => addCatalogItemToQuotation(item)} type="button">
+                  <button
+                    className="table-button table-button--primary"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      addCatalogItemToQuotation(item);
+                    }}
+                    type="button"
+                  >
                     Agregar a cotizacion
-                  </button>
-                  <button className="table-button" onClick={() => openProductModal(item)} type="button">
-                    Editar
-                  </button>
-                  <button className="table-button" onClick={() => handleDeleteCatalogItem(item)} type="button">
-                    Desactivar
                   </button>
                 </span>
               </div>
@@ -1705,7 +1838,7 @@ function QuotationsPage() {
             <section className="quotation-lines-preview">
               <h3>Partidas</h3>
               <div className="quotation-lines-preview__head">
-                <span>Descripcion</span>
+                <span>Concepto</span>
                 <span>Cantidad</span>
                 <span>Unidad</span>
                 <span>Precio unitario</span>
@@ -1744,64 +1877,6 @@ function QuotationsPage() {
         </div>
       </section>
       )}
-
-      {isCreateModalOpen ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="client-modal quotation-modal" aria-modal="true" role="dialog">
-            <div className="section-heading">
-              <div>
-                <p>Cotizaciones</p>
-                <h2>Nueva cotizacion</h2>
-              </div>
-            </div>
-
-            {error ? <div className="form-error dashboard-error">{error}</div> : null}
-
-            <form className="client-form client-form--modal" noValidate onSubmit={handleCreateQuotationSubmit}>
-              <label>
-                Cliente
-                <select
-                  onChange={(event) => updateQuotationForm('clientId', event.target.value)}
-                  required
-                  value={quotationForm.clientId}
-                >
-                  <option value="">Seleccionar cliente</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.id}>
-                      {getClientDisplayName(client)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Fecha vigencia
-                <input
-                  onChange={(event) => updateQuotationForm('validUntil', event.target.value)}
-                  type="date"
-                  value={quotationForm.validUntil}
-                />
-              </label>
-              <label className="form-field--wide">
-                Notas
-                <textarea
-                  onChange={(event) => updateQuotationForm('notes', event.target.value)}
-                  rows={4}
-                  value={quotationForm.notes}
-                />
-              </label>
-
-              <div className="client-form__actions client-form__actions--modal">
-                <button className="icon-text-button" disabled={isSaving} onClick={closeQuotationModal} type="button">
-                  Cancelar
-                </button>
-                <button className="primary-button" disabled={isSaving} type="submit">
-                  {isSaving ? 'Guardando...' : 'Crear cotizacion'}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
-      ) : null}
 
       {isDetailOpen && selectedQuotation ? (
         <div className="modal-backdrop" role="presentation">
@@ -1883,9 +1958,20 @@ function QuotationsPage() {
                       <h3>Ficha editable</h3>
                     </div>
                     <div className="quotation-commercial-grid">
-                      <article>
+                      <article className="quotation-client-card">
                         <span>Cliente</span>
-                        <strong>{getClientDisplayName(clientsById.get(selectedQuotation.client_id))}</strong>
+                        <strong>{getClientDisplayName(clientsById.get(Number(detailForm.clientId)) ?? clientsById.get(selectedQuotation.client_id))}</strong>
+                        <button
+                          className="table-button"
+                          disabled={isQuotationTerminal(selectedQuotation)}
+                          onClick={() => {
+                            setClientPickerSearch('');
+                            setIsClientPickerOpen(true);
+                          }}
+                          type="button"
+                        >
+                          Elegir cliente
+                        </button>
                       </article>
                       <article>
                         <span>Emision</span>
@@ -1894,6 +1980,7 @@ function QuotationsPage() {
                       <label>
                         Vigencia
                         <input
+                          disabled={isQuotationTerminal(selectedQuotation)}
                           onChange={(event) => updateDetailForm('validUntil', event.target.value)}
                           type="date"
                           value={detailForm.validUntil}
@@ -1901,8 +1988,17 @@ function QuotationsPage() {
                       </label>
                       <article>
                         <span>Asesor</span>
-                        <strong>{selectedQuotation.advisor_id ? `#${selectedQuotation.advisor_id}` : 'Sin asesor asignado'}</strong>
+                        <strong>{selectedQuotation.advisor_name || (selectedQuotation.advisor_id ? `#${selectedQuotation.advisor_id}` : 'Sin asesor asignado')}</strong>
                       </article>
+                      <label>
+                        Condiciones de pago
+                        <input
+                          disabled={isQuotationTerminal(selectedQuotation)}
+                          onChange={(event) => updateDetailForm('paymentTerms', event.target.value)}
+                          placeholder="Por definir"
+                          value={detailForm.paymentTerms}
+                        />
+                      </label>
                     </div>
                   </section>
 
@@ -1913,6 +2009,7 @@ function QuotationsPage() {
                     </div>
                     <label className="quotation-notes-field">
                       <textarea
+                        disabled={isQuotationTerminal(selectedQuotation)}
                         onChange={(event) => updateDetailForm('notes', event.target.value)}
                         placeholder="Sin notas registradas."
                         rows={4}
@@ -1922,9 +2019,9 @@ function QuotationsPage() {
                   </section>
 
                   <div className="quotation-detail-save">
-                    <span>Se mantiene PATCH actual para vigencia y notas.</span>
-                    <button className="primary-button" disabled={isDetailSaving} type="submit">
-                      {isDetailSaving ? 'Guardando...' : 'Guardar cambios'}
+                    <span>{isDetailAutosaving ? 'Guardando automaticamente...' : autosaveStatus || 'Guardado automatico activo.'}</span>
+                    <button className="primary-button" disabled={isDetailSaving || isQuotationTerminal(selectedQuotation)} type="submit">
+                      {isDetailSaving ? 'Guardando...' : 'Guardar ahora'}
                     </button>
                   </div>
                 </form>
@@ -1935,10 +2032,9 @@ function QuotationsPage() {
                     <h3>Flujo comercial</h3>
                   </div>
                   <div className="quotation-actions">
-                    {quotationActions.map((action) => (
+                    {quotationActions.filter((action) => isActionAllowed(selectedQuotation, action)).map((action) => (
                       <button
                         className="table-button"
-                        disabled={!isActionAllowed(selectedQuotation, action)}
                         key={action.key}
                         onClick={() => handleQuotationStatus(selectedQuotation, action)}
                         type="button"
@@ -1948,7 +2044,7 @@ function QuotationsPage() {
                     ))}
                     <button
                       className="primary-button"
-                      disabled={selectedQuotation.status !== 'accepted'}
+                      disabled={selectedQuotation.status !== 'accepted' || selectedQuotation.service_orders?.length > 0}
                       onClick={handleGenerateServiceOrder}
                       type="button"
                     >
@@ -1957,17 +2053,19 @@ function QuotationsPage() {
                   </div>
                 </section>
 
+                {!['rejected', 'expired', 'cancelled'].includes(selectedQuotation.status) ? (
                 <section className="danger-zone">
                   <div className="danger-zone__copy">
-                    <p>Zona de baja</p>
-                    <span>Esta acción dará de baja la cotización. No se eliminará físicamente y el backend conservará sus validaciones de estado.</span>
+                    <p>Eliminar</p>
+                    <span>Esta acción retira la cotización de la vista activa y el backend conserva sus validaciones de estado.</span>
                   </div>
                   <div className="toolbar-actions">
                     <button className="table-button table-button--danger" onClick={handleDeleteQuotationRecord} type="button">
-                      Dar de baja cotización
+                      Eliminar cotización
                     </button>
                   </div>
                 </section>
+                ) : null}
               </>
             ) : null}
 
@@ -1995,7 +2093,7 @@ function QuotationsPage() {
 
                 <div className="quotation-items-table">
                   <div className="quotation-items-table__head">
-                    <span>Descripcion</span>
+                    <span>Concepto / descripcion comercial</span>
                     <span>Cantidad</span>
                     <span>Unidad</span>
                     <span>Precio unitario</span>
@@ -2022,10 +2120,10 @@ function QuotationsPage() {
                                     value={form.description}
                                   />
                                   <input
-                                    onChange={(event) => updateEditingItem(item.id, 'quotationLegend', event.target.value)}
-                                    placeholder="Leyenda de cotizacion"
+                                    onChange={(event) => updateEditingItem(item.id, 'observations', event.target.value)}
+                                    placeholder="Descripcion comercial del servicio"
                                     type="text"
-                                    value={form.quotationLegend || ''}
+                                    value={form.observations || ''}
                                   />
                                   <select
                                     onChange={(event) => {
@@ -2044,6 +2142,7 @@ function QuotationsPage() {
                               ) : (
                                 <>
                                   <strong>{item.service_name}</strong>
+                                  {item.description ? <small>{item.description}</small> : null}
                                   {item.quotation_legend ? <small>{item.quotation_legend}</small> : null}
                                   <small>Impuesto: {Number(item.tax_rate ?? 0)}%</small>
                                 </>
@@ -2167,7 +2266,7 @@ function QuotationsPage() {
                                   updateDraftItem(draft.id, 'description', event.target.value);
                                 }
                               }}
-                              placeholder="Buscar concepto / descripcion"
+                              placeholder="Buscar concepto o capturar nombre"
                               type="text"
                               value={draft.catalogSearch || draft.description}
                             />
@@ -2177,10 +2276,10 @@ function QuotationsPage() {
                               ))}
                             </datalist>
                             <input
-                              onChange={(event) => updateDraftItem(draft.id, 'quotationLegend', event.target.value)}
-                              placeholder="Leyenda de cotizacion"
+                              onChange={(event) => updateDraftItem(draft.id, 'observations', event.target.value)}
+                              placeholder="Descripcion comercial del servicio"
                               type="text"
-                              value={draft.quotationLegend || ''}
+                              value={draft.observations || ''}
                             />
                             <select
                               onChange={(event) => {
@@ -2297,8 +2396,82 @@ function QuotationsPage() {
                     <span>{quotationStatusLabels[selectedQuotation.status] ?? selectedQuotation.status}</span>
                   </article>
                 </div>
+                <div className="quotation-history-list quotation-snapshot-list">
+                  {quotationSnapshots.length ? (
+                    quotationSnapshots.map((snapshot) => (
+                      <article key={snapshot.id}>
+                        <div>
+                          <strong>Version {snapshot.snapshot_number}</strong>
+                          <span>{snapshot.reason || 'snapshot'}</span>
+                        </div>
+                        <span>{new Date(snapshot.created_at).toLocaleString('es-MX')}</span>
+                        <button
+                          className="table-button"
+                          disabled={isQuotationTerminal(selectedQuotation)}
+                          onClick={() => handleRestoreQuotationSnapshot(snapshot)}
+                          type="button"
+                        >
+                          Restaurar
+                        </button>
+                      </article>
+                    ))
+                  ) : (
+                    <article>
+                      <strong>Sin versiones guardadas</strong>
+                      <span>El autosave generara snapshots al editar datos comerciales.</span>
+                    </article>
+                  )}
+                </div>
               </section>
             ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {isClientPickerOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="client-modal quotation-client-picker" aria-modal="true" role="dialog">
+            <div className="section-heading">
+              <div>
+                <p>Cotizacion</p>
+                <h2>Elegir cliente</h2>
+              </div>
+              <button className="icon-text-button" onClick={() => setIsClientPickerOpen(false)} type="button">
+                Cerrar
+              </button>
+            </div>
+            <label className="quotation-client-search">
+              Buscar cliente
+              <input
+                autoFocus
+                onChange={(event) => setClientPickerSearch(event.target.value)}
+                placeholder="Nombre comercial, razon social, RFC, contacto o correo"
+                value={clientPickerSearch}
+              />
+            </label>
+            <div className="quotation-client-results">
+              {filteredClientPickerClients.length ? (
+                filteredClientPickerClients.map((client) => {
+                  const contact = Array.isArray(client.contacts)
+                    ? client.contacts.find((item) => item.is_active !== false)
+                    : null;
+                  return (
+                    <button
+                      className="quotation-client-result"
+                      key={client.id}
+                      onClick={() => handleClientSelected(client)}
+                      type="button"
+                    >
+                      <strong>{getClientDisplayName(client)}</strong>
+                      <span>{client.rfc || 'RFC sin capturar'}</span>
+                      <small>{contact?.name || client.email || contact?.email || 'Sin contacto principal'}</small>
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="empty-state">No hay clientes activos que coincidan con la busqueda.</p>
+              )}
+            </div>
           </section>
         </div>
       ) : null}
@@ -2413,41 +2586,37 @@ function QuotationsPage() {
                 <p>Catalogo</p>
                 <h2>{editingProductId ? 'Editar producto/servicio' : 'Nuevo producto/servicio'}</h2>
               </div>
+              <div className="toolbar-actions">
+                <button className="primary-button" disabled={isSaving} form="catalog-item-form" type="submit">
+                  {isSaving ? 'Guardando...' : 'Guardar'}
+                </button>
+                {editingProductId ? (
+                  <button
+                    className="table-button table-button--danger"
+                    disabled={isSaving}
+                    onClick={() => handleDeleteCatalogItem({ id: editingProductId, name: productForm.name })}
+                    type="button"
+                  >
+                    Eliminar
+                  </button>
+                ) : null}
+                <button className="icon-text-button" onClick={closeProductModal} type="button">
+                  Cerrar
+                </button>
+              </div>
             </div>
 
             {error ? <div className="form-error dashboard-error">{error}</div> : null}
 
-            <form className="client-form client-form--modal" noValidate onSubmit={handleProductSubmit}>
+            <form id="catalog-item-form" className="client-form client-form--modal" noValidate onSubmit={handleProductSubmit}>
               <label>
                 Tipo
                 <select
-                  onChange={(event) => {
-                    const nextType = event.target.value;
-                    updateProductForm('type', nextType);
-                    updateProductForm('category', '');
-                    updateProductForm('commodity', nextType === 'Producto' ? 'sale' : 'calibration');
-                  }}
+                  onChange={(event) => updateProductForm('type', event.target.value)}
                   value={productForm.type}
                 >
                   <option>Producto</option>
                   <option>Servicio</option>
-                </select>
-              </label>
-              <label>
-                Commodity
-                <select
-                  onChange={(event) => updateProductForm('commodity', event.target.value)}
-                  value={productForm.commodity}
-                >
-                  {catalogCommodityOptions
-                    .filter((option) =>
-                      productForm.type === 'Producto'
-                        ? option.value === 'sale'
-                        : option.value !== 'sale'
-                    )
-                    .map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
                 </select>
               </label>
               <label>
@@ -2478,14 +2647,6 @@ function QuotationsPage() {
                   required
                   type="text"
                   value={productForm.name}
-                />
-              </label>
-              <label className="form-field--wide">
-                Descripcion
-                <textarea
-                  onChange={(event) => updateProductForm('description', event.target.value)}
-                  rows={3}
-                  value={productForm.description}
                 />
               </label>
               <label>
@@ -2525,27 +2686,17 @@ function QuotationsPage() {
                   />
                 </label>
               ) : null}
-              {productForm.commodity === 'calibration' ? (
+              {getCategoryScopeOptions(productForm.category).length ? (
                 <label>
-                  Alcance de calibracion
+                  Alcance
                   <select
                     onChange={(event) => updateProductForm('calibrationScope', event.target.value)}
                     value={productForm.calibrationScope}
                   >
-                    {calibrationScopeOptions.map((option) => (
+                    {getCategoryScopeOptions(productForm.category).map((option) => (
                       <option key={option.value} value={option.value}>{option.label}</option>
                     ))}
                   </select>
-                </label>
-              ) : null}
-              {productForm.commodity === 'general_service' ? (
-                <label className="form-field--wide">
-                  Leyenda para cotizacion
-                  <textarea
-                    onChange={(event) => updateProductForm('quotationLegend', event.target.value)}
-                    rows={2}
-                    value={productForm.quotationLegend}
-                  />
                 </label>
               ) : null}
               <label>
@@ -2624,7 +2775,14 @@ function QuotationsPage() {
               <div className="price-preview-card">
                 <span>Precio final MXN</span>
                 <strong>{formatMoney(calculateFinalPriceMxn(productForm))}</strong>
-                <small>Manual: precio_origen x tipo_cambio x (1 + margen / 100)</small>
+                <small>Base: {formatMoney(productForm.basePrice || 0)} {productForm.sourceCurrency}</small>
+                <small>Tipo de cambio: {Number(productForm.exchangeRate || 1).toFixed(4)}</small>
+                <small>Margen: {Number(productForm.margin || 0).toFixed(2)}%</small>
+                <small>
+                  {productForm.taxObject === 'iva_16'
+                    ? `IVA no incluido. Total con IVA: ${formatMoney(calculateFinalPriceMxn(productForm) * 1.16)}`
+                    : 'Sin IVA 16% agregado en el precio final.'}
+                </small>
               </div>
               <label>
                 Estado
@@ -2633,19 +2791,6 @@ function QuotationsPage() {
                   <option>Inactivo</option>
                 </select>
               </label>
-
-              <div className="client-fiscal-note form-field--wide">
-                La conversion automatica se conectara posteriormente a un proveedor de tipo de cambio.
-              </div>
-
-              <div className="client-form__actions client-form__actions--modal">
-                <button className="icon-text-button" disabled={isSaving} onClick={closeProductModal} type="button">
-                  Cancelar
-                </button>
-                <button className="primary-button" disabled={isSaving} type="submit">
-                  {isSaving ? 'Guardando...' : editingProductId ? 'Guardar cambios' : 'Agregar al catalogo'}
-                </button>
-              </div>
             </form>
           </section>
         </div>

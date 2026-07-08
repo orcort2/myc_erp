@@ -1,5 +1,7 @@
 # ERP MYC
 
+Version actual: ERP MYC v0.2.0 - Clientes Finalizado
+
 Base del sistema ERP MYC para controlar el flujo completo:
 
 ```text
@@ -40,4 +42,3 @@ cd frontend
 npm install
 npm run dev
 ```
-

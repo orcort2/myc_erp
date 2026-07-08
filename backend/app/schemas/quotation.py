@@ -74,6 +74,7 @@ class QuotationBase(BaseModel):
     advisor_id: int | None = None
     issued_on: date | None = None
     valid_until: date | None = None
+    payment_terms: str | None = None
     notes: str | None = None
 
 
@@ -82,9 +83,11 @@ class QuotationCreate(QuotationBase):
 
 
 class QuotationUpdate(BaseModel):
+    client_id: int | None = None
     advisor_id: int | None = None
     issued_on: date | None = None
     valid_until: date | None = None
+    payment_terms: str | None = None
     notes: str | None = None
 
 
@@ -92,11 +95,29 @@ class QuotationStatusChange(BaseModel):
     comment: str | None = None
 
 
+class QuotationSnapshotRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    quotation_id: int
+    snapshot_number: int
+    reason: str | None = None
+    created_by_id: int | None = None
+    snapshot_data: dict
+    created_at: datetime
+    updated_at: datetime
+
+
+class QuotationRestoreSnapshot(BaseModel):
+    snapshot_id: int
+
+
 class QuotationRead(QuotationBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     folio: str
+    advisor_name: str | None = None
     status: str
     subtotal: Decimal
     tax_total: Decimal

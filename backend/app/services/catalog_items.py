@@ -9,7 +9,8 @@ from app.models.catalog_item import CatalogItem
 from app.schemas.catalog_item import (
     CatalogItemCreate,
     CatalogItemUpdate,
-    LEGENDS_BY_COMMODITY,
+    CATEGORY_LEGENDS,
+    CATEGORY_TO_COMMODITY,
     LEGENDS_BY_SCOPE,
     TAX_RATE_BY_OBJECT,
     calculate_final_price_mxn,
@@ -36,7 +37,23 @@ KEY_PREFIX_BY_ITEM_TYPE = {
     "service": "SER",
 }
 
-KEY_PREFIX_BY_COMMODITY = {
+KEY_PREFIX_BY_CATEGORY = {
+    "Calibracion": "CAL",
+    "Mantenimiento": "MAN",
+    "Reparacion": "REP",
+    "Venta": "VEN",
+    "Servicio general": "GEN",
+    "Calificacion": "CALF",
+    "Validacion": "VAL",
+    "Capacitacion": "CAP",
+    "Consultoria": "CON",
+    "Patrones": "PAT",
+    "Equipos": "EQU",
+    "Accesorios": "ACC",
+    "Consumibles": "CON",
+}
+
+LEGACY_KEY_PREFIX_BY_COMMODITY = {
     "calibration": "CAL",
     "maintenance": "MAN",
     "repair": "REP",
@@ -45,8 +62,22 @@ KEY_PREFIX_BY_COMMODITY = {
 }
 
 
-def _generate_internal_key(db: Session, item_type: str, commodity: str) -> str:
-    prefix = f"{KEY_PREFIX_BY_ITEM_TYPE[item_type]}-{KEY_PREFIX_BY_COMMODITY[commodity]}-"
+def _normalize_category_key(category: str | None) -> str:
+    return (category or "").strip().lower()
+
+
+def _commodity_from_category(item_type: str | None, category: str | None, fallback: str | None = None) -> str:
+    if item_type == "product":
+        return "sale"
+    return CATEGORY_TO_COMMODITY.get(_normalize_category_key(category), fallback or "general_service")
+
+
+def _category_prefix(category: str | None, commodity: str | None) -> str:
+    return KEY_PREFIX_BY_CATEGORY.get(category or "") or LEGACY_KEY_PREFIX_BY_COMMODITY.get(commodity or "", "GEN")
+
+
+def _generate_internal_key(db: Session, item_type: str, category: str, commodity: str) -> str:
+    prefix = f"{KEY_PREFIX_BY_ITEM_TYPE[item_type]}-{_category_prefix(category, commodity)}-"
     last_key = db.scalar(
         select(CatalogItem.internal_key)
         .where(CatalogItem.internal_key.like(f"{prefix}%"))
@@ -61,11 +92,11 @@ def _generate_internal_key(db: Session, item_type: str, commodity: str) -> str:
 
 
 def _quotation_legend(payload: dict) -> str | None:
-    commodity = payload.get("commodity")
-    if commodity == "calibration":
+    if payload.get("calibration_scope"):
         return LEGENDS_BY_SCOPE.get(payload.get("calibration_scope"))
-    if commodity in LEGENDS_BY_COMMODITY:
-        return LEGENDS_BY_COMMODITY[commodity]
+    category = payload.get("category")
+    if category in CATEGORY_LEGENDS:
+        return CATEGORY_LEGENDS[category]
     return payload.get("quotation_legend")
 
 
@@ -73,14 +104,14 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
     values = dict(values)
     values["origin_currency"] = _normalize_currency(values.get("origin_currency"))
     values["cost_currency"] = _normalize_currency(values.get("cost_currency"))
+    values["commodity"] = _commodity_from_category(
+        values.get("item_type"), values.get("category"), values.get("commodity")
+    )
     values["tax_object"] = values.get("tax_object") or "iva_16"
     values["tax_rate"] = TAX_RATE_BY_OBJECT[values["tax_object"]]
 
-    if values.get("commodity") == "general_service":
-        values["quotation_legend"] = values.get("quotation_legend")
-    else:
-        values["quotation_legend"] = _quotation_legend(values)
-    if values.get("commodity") != "calibration":
+    values["quotation_legend"] = _quotation_legend(values)
+    if values.get("item_type") == "product":
         values["calibration_scope"] = None
     if values.get("internal_unit") != "other":
         values["custom_internal_unit"] = None
@@ -150,7 +181,9 @@ def create_catalog_item(
     user_id: int | None = None,
 ) -> CatalogItem:
     values = _prepare_values(payload.model_dump())
-    values["internal_key"] = _generate_internal_key(db, values["item_type"], values["commodity"])
+    values["internal_key"] = _generate_internal_key(
+        db, values["item_type"], values["category"], values["commodity"]
+    )
     item = CatalogItem(**values)
     db.add(item)
     db.flush()
@@ -202,9 +235,9 @@ def update_catalog_item(
     should_recalculate = bool({"origin_price", "exchange_rate", "margin_percent"} & set(updates))
     prepared = _prepare_values(merged, recalculate_price=should_recalculate)
     CatalogItemCreate(**prepared)
-    if {"item_type", "commodity"} & set(updates):
+    if {"item_type", "category"} & set(updates):
         prepared["internal_key"] = _generate_internal_key(
-            db, prepared["item_type"], prepared["commodity"]
+            db, prepared["item_type"], prepared["category"], prepared["commodity"]
         )
     else:
         prepared["internal_key"] = item.internal_key

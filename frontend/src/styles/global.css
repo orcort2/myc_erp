@@ -1371,7 +1371,16 @@ button {
 
 .products-table .clients-table__head,
 .products-table .clients-table__row {
-  grid-template-columns: 0.72fr 0.9fr 0.8fr 1.35fr 0.82fr 1fr 1fr 0.72fr 0.75fr;
+  grid-template-columns: 0.62fr 0.9fr 0.8fr 1.45fr 0.82fr 1fr 1fr 0.7fr 0.88fr;
+}
+
+.clients-table__row--clickable {
+  cursor: pointer;
+}
+
+.clients-table__row--clickable:hover {
+  border-color: rgba(8, 117, 111, 0.28);
+  transform: translateY(-1px);
 }
 
 .service-orders-table .clients-table__head,
@@ -2241,6 +2250,55 @@ button {
   font-weight: 780;
 }
 
+.quotation-client-card {
+  align-items: flex-start;
+}
+
+.quotation-client-card .table-button {
+  margin-top: 10px;
+}
+
+.quotation-client-picker {
+  max-width: 760px;
+}
+
+.quotation-client-results {
+  display: grid;
+  gap: 10px;
+  max-height: min(56vh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.quotation-client-result {
+  background: rgba(255, 255, 255, 0.32);
+  border: 1px solid rgba(201, 255, 247, 0.42);
+  border-radius: 8px;
+  color: var(--myc-text);
+  cursor: pointer;
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  text-align: left;
+}
+
+.quotation-client-result:hover,
+.quotation-client-result:focus-visible {
+  border-color: rgba(22, 148, 140, 0.5);
+  box-shadow: 0 12px 24px rgba(9, 44, 54, 0.12);
+  outline: none;
+}
+
+.quotation-client-result strong {
+  color: var(--myc-navy);
+}
+
+.quotation-client-result span,
+.quotation-client-result small {
+  color: var(--myc-soft-text);
+  font-weight: 760;
+}
+
 .quotation-future-area {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(70, 216, 196, 0.08)),
@@ -2502,10 +2560,14 @@ button {
   border: 1px solid rgba(201, 255, 247, 0.32);
   border-radius: 8px;
   display: grid;
-  gap: 12px;
-  grid-template-columns: 0.75fr 1fr 1fr 0.75fr 0.75fr;
+  gap: 10px;
+  grid-template-columns: minmax(220px, 1.5fr) 0.68fr 0.9fr 0.62fr 0.62fr;
   margin-bottom: 14px;
-  padding: 13px;
+  padding: 10px;
+}
+
+.catalog-search-field {
+  min-width: 0;
 }
 
 .quotation-detail-tabs {
@@ -2590,6 +2652,10 @@ button {
 .quotation-history-list {
   display: grid;
   gap: 9px;
+}
+
+.quotation-snapshot-list {
+  margin-top: 14px;
 }
 
 .quotation-history-list article {
@@ -3023,7 +3089,6 @@ button {
   }
 
   .catalog-filters,
-  .catalog-category-map,
   .import-template-grid,
   .quotation-commercial-grid,
   .service-order-info-grid,
@@ -3091,7 +3156,6 @@ button {
   .module-tabs,
   .catalog-filters,
   .clients-filters,
-  .catalog-category-map,
   .import-template-grid,
   .import-upload-zone,
   .import-upload-zone--clients,
@@ -4111,4 +4175,83 @@ button {
   .clients-pagination__controls {
     justify-content: flex-start;
   }
+}
+
+/* ===========================
+   Selector de cliente (Cotizaciones)
+   =========================== */
+
+.quotation-client-picker {
+  max-width: 720px;
+}
+
+.quotation-client-search{
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 1rem 0;
+  font-weight: 700;
+  color: #08353d;
+}
+
+.quotation-client-search input {
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid rgba(12, 171, 164, 0.25);
+  background: rgba(255, 255, 255, 0.82);
+  color: #08353d;
+  font-size: 0.95rem;
+  transition: all .2s ease;
+}
+
+.quotation-client-search input input:focus {
+  outline: none;
+  border-color: rgba(12,171,164,.8);
+  box-shadow: 0 0 0 3px rgba(12,171,164,.18);
+}
+
+.quotation-client-results {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: .35rem;
+}
+
+.quotation-client-result {
+  width: 100%;
+  text-align: left;
+  border: 1px solid rgba(12,171,164,.18);
+  border-radius: 16px;
+  padding: 1rem;
+  background: rgba(255,255,255,.55);
+  cursor: pointer;
+  transition: all .18s ease;
+}
+
+.quotation-client-result:hover {
+  border-color: rgba(12,171,164,.55);
+  background: rgba(12,171,164,.10);
+  transform: translateY(-1px);
+}
+
+.quotation-client-result strong {
+  display: block;
+  font-size: 1rem;
+  color: #08353d;
+}
+
+.quotation-client-result span {
+  display: block;
+  margin-top: .25rem;
+  font-size: .9rem;
+  color: #4d5d63;
+}
+
+.quotation-client-result small {
+  display: block;
+  margin-top: .45rem;
+  color: #6d7b82;
 }

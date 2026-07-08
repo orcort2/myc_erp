@@ -1,16 +1,44 @@
-export const catalogCommodityOptions = [
-  { value: 'calibration', label: 'Calibracion' },
-  { value: 'maintenance', label: 'Mantenimiento' },
-  { value: 'repair', label: 'Reparacion' },
-  { value: 'sale', label: 'Venta' },
-  { value: 'general_service', label: 'Servicio general' }
+export const calibrationScopeOptions = [
+  { value: 'accredited_iso_17025', label: 'Acreditado ISO/IEC 17025' },
+  { value: 'traceable', label: 'Trazable' },
+  { value: 'accredited_linked_lab', label: 'Laboratorio vinculado' }
 ];
 
-export const calibrationScopeOptions = [
-  { value: 'accredited_iso_17025', label: 'Acreditado ISO/IEC 17025:2017' },
-  { value: 'traceable', label: 'Trazable' },
-  { value: 'accredited_linked_lab', label: 'Acreditado laboratorio vinculado' }
-];
+export const scopeOptionsByCategory = {
+  Calibracion: calibrationScopeOptions,
+  Mantenimiento: [
+    { value: 'preventive', label: 'Preventivo' },
+    { value: 'corrective', label: 'Correctivo' }
+  ],
+  Capacitacion: [
+    { value: 'onsite', label: 'Presencial' },
+    { value: 'online', label: 'En linea' },
+    { value: 'hybrid', label: 'Mixta' }
+  ],
+  Validacion: [
+    { value: 'documentary', label: 'Documental' },
+    { value: 'onsite', label: 'En sitio' },
+    { value: 'protocol', label: 'Protocolo' }
+  ],
+  Calificacion: [
+    { value: 'installation', label: 'Instalacion' },
+    { value: 'operation', label: 'Operacion' },
+    { value: 'performance', label: 'Desempeno' }
+  ],
+  Consultoria: [
+    { value: 'technical', label: 'Tecnica' },
+    { value: 'regulatory', label: 'Normativa' },
+    { value: 'implementation', label: 'Implementacion' }
+  ]
+};
+
+export const catalogKindByCategory = {
+  Calibracion: 'calibration',
+  Mantenimiento: 'maintenance',
+  Reparacion: 'repair',
+  Venta: 'sale',
+  'Servicio general': 'general_service'
+};
 
 export const internalUnitOptions = [
   { value: 'service', label: 'Servicio' },
@@ -36,13 +64,16 @@ export const taxObjectOptions = [
 export const serviceCategories = [
   'Calibracion',
   'Mantenimiento',
+  'Reparacion',
   'Calificacion',
   'Validacion',
   'Capacitacion',
-  'Consultoria'
+  'Consultoria',
+  'Servicio general'
 ];
 
 export const productCategories = [
+  'Venta',
   'Patrones',
   'Equipos',
   'Accesorios',

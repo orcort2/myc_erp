@@ -1,57 +1,112 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-06-29 15:59:18 CST
+Ultima actualizacion: 2026-07-07 17:30:07 CST
+Version actual: ERP MYC v0.2.0
+Nombre de version: Clientes Finalizado
+Version anterior: v0.1.0 (MVP funcional)
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 Ruta actual del proyecto
 /Users/saulcortes/Desktop/myc_erp
 La carpeta padre antes se llamaba ERP MYC, pero fue renombrada a myc_erp. No hay problema con el cambio. De ahora en adelante todas las rutas deben apuntar a myc_erp.
 Git ya esta inicializado.
 Ultimo commit conocido:
-0223813 se agrego la configuración de adutoria, colocando el front
+b04e21d se finalizo la contrucción del modulo de clientes
 Commits recientes:
+b04e21d se finalizo la contrucción del modulo de clientes
+ff72e7c se declara version 3, revisar backup para más info
+d584ab8 se mejoro la ux del sistema
+3bffe15 se construyo la orden de trbaajo, esta lista para producción
+d76489b se establecieron algunos parametros para mejorar la interfaz y la conectividad del sistema, los motores de incertidumbre ya no existen en formato documental
 0223813 se agrego la configuración de adutoria, colocando el front
 98f971d se agregaron archivos de ayuda, se mejoran botones, se pule css de algunas pestañas
 f444882 Complete users management module
 d64d834 se instala un pequeño modulo de configuración para la gestion de usuarios
 de884e0 se separaon archivos del app principal, cada pestaña vive independiente
 Estado Git verificado:
+## main...origin/main
+M README.md
 M backend/app/core/permissions.py
-M backend/app/main.py
-M backend/app/models/__init__.py
-M backend/app/models/calibration_procedure.py
-M backend/app/models/certificate.py
-M backend/app/models/field_sheet.py
-M backend/app/routers/certificates.py
-M backend/app/routers/service_orders.py
-M backend/app/schemas/calibration_procedure.py
-M backend/app/schemas/certificate.py
-M backend/app/services/calibration_procedures.py
-M backend/app/services/certificates.py
-M backend/app/services/field_sheets.py
+M backend/app/schemas/catalog_item.py
+M backend/app/schemas/quotation.py
+M backend/app/services/catalog_items.py
+M backend/app/services/quotation_pdfs.py
+M backend/app/services/quotations.py
+M backend/app/templates/quotation_pdf.html
 M docs/BACKUP_ESTADO_ACTUAL.md
+M frontend/package-lock.json
+M frontend/package.json
+M frontend/src/constants/catalog.js
 M frontend/src/constants/forms.js
-M frontend/src/constants/navigation.js
 M frontend/src/constants/statuses.js
-M frontend/src/pages/App.jsx
-M frontend/src/pages/ProceduresPage.jsx
-M frontend/src/pages/QualityPage.jsx
-M frontend/src/services/api.js
+M frontend/src/pages/QuotationsPage.jsx
 M frontend/src/styles/global.css
-?? backend/app/models/uncertainty.py
-?? backend/app/routers/client_portal.py
-?? backend/app/routers/uncertainty.py
-?? backend/app/schemas/uncertainty.py
-?? backend/app/services/certificate_matching_engine.py
-?? backend/app/services/uncertainty_engine.py
-?? backend/migrations/versions/b3c4d5e6f7a8_add_uncertainty_engine.py
-?? backend/migrations/versions/c4d5e6f7a8b9_version_uncertainty_models.py
-?? backend/migrations/versions/d5e6f7a8b9c0_external_certificate_pdf_flow.py
-?? backend/migrations/versions/e6f7a8b9c0d1_allow_certificate_without_field_sheet.py
-?? frontend/src/pages/CapturePage.jsx
-?? frontend/src/pages/FlowTestPage.jsx
-?? frontend/src/pages/UncertaintyPage.jsx
-?? scripts/myc
+?? backups/erp_myc_2026_07_07_1645.sql
+?? backups/erp_myc_2026_07_07_1656.sql
+?? storage/clientes/cliente_1/constancia_fiscal_5e0f2c597a334762a7786187765d3477.pdf
+?? storage/clientes/cliente_373/
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-07-07 16:58:10 CST - Catalogo dependiente de categoria:
+- Se agregaron categorias que antes existian solo como commodity: Reparacion, Venta y Servicio general.
+- Frontend: el formulario de catalogo ya no mantiene commodity como estado editable; deriva el valor legacy desde Categoria.
+- Backend: reglas de alcance, leyendas e internal_key del catalogo dependen de Categoria.
+- Backend: commodity queda como campo legacy de compatibilidad con base de datos/API y se deriva desde Categoria en el servicio.
+- Validacion ejecutada: `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- Validacion ejecutada: `../venv/bin/python -m compileall app` -> OK.
+- Validacion ejecutada: `git diff --check` -> OK.
+- Validacion ejecutada: busqueda de textos/confirmaciones prohibidas en frontend -> sin resultados.
+Backup:
+- Dump SQL generado con scripts/backup-db.sh:
+  backups/erp_myc_2026_07_07_1658.sql
+- Tamano verificado: 671K, 6907 lineas.
+
+Actualizacion 2026-07-07 16:56:15 CST - Refinamiento Ventas / Cotizaciones sobre ERP MYC v0.2.0:
+Objetivo:
+- Resolver chequeos tester pendientes de Catalogo dentro de Ventas y Cotizaciones sin crear modulos nuevos, sin reactivar modulos ocultos y sin tocar Clientes, Hojas de Campo, ETS, Certificados ni Facturacion.
+Cambios principales:
+- Catalogo: se removieron bloques tutoriales, chips informativos y textos operativos innecesarios.
+- Catalogo: se compacto la barra de busqueda/filtros y la busqueda cubre nombre, clave, categoria y SAT.
+- Catalogo: se oculto el concepto visual de commodity; el valor requerido por backend se deriva internamente desde tipo/categoria.
+- Catalogo: el campo Alcance cambia por categoria y se oculta cuando no aplica.
+- Catalogo: se retiro Descripcion del alta/edicion de conceptos.
+- Catalogo: se mejoro el desglose visual de precio final, tipo de cambio, margen e IVA.
+- Catalogo: filas completas abren el modal de edicion; las acciones Guardar, Eliminar y Cerrar quedan en encabezado del modal.
+- Cotizaciones: Nueva cotizacion crea borrador y abre directamente la ficha completa.
+- Cotizaciones: el cliente se puede ajustar dentro de la ficha en estados editables.
+- Cotizaciones: el estado queda visible en el encabezado de la ficha.
+- Cotizaciones: las acciones comerciales se muestran solo cuando aplican al estado actual.
+- Cotizaciones: se agrego descripcion comercial editable por partida, independiente del catalogo, e imprimible debajo del servicio en PDF.
+- Backend: se amplio compatibilidad de alcance en catalogo usando la columna existente `calibration_scope`, sin migracion.
+- Backend: `QuotationUpdate` permite ajustar `client_id` en cotizaciones no terminales.
+- Backend: `create_quotation` asigna `advisor_id` desde `user_id` si el router se conecta posteriormente a usuario autenticado.
+- Permisos: se preparo `quotations.act_as_advisor` para Comercial y Desarrollador.
+Validacion ejecutada:
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `../venv/bin/python -m compileall app` -> OK.
+- `rg -n "window\\.confirm|window\\.alert|prompt\\(" frontend/src -g '*.js' -g '*.jsx'` -> sin resultados.
+- `rg -n "Commodity|Cada servicio MYC|Duplicados:|Conversion V1|Dar de baja cotización|Leyenda de cotizacion" frontend/src/pages/QuotationsPage.jsx` -> sin resultados.
+- `git diff --check` -> OK.
+Pendiente tecnico:
+- El router de cotizaciones aun no inyecta usuario autenticado; por eso la asignacion automatica real del asesor queda preparada en servicio y permisos, pero requiere conectar `require_permission`/usuario actual en una pasada posterior.
+Backup:
+- Dump SQL generado con scripts/backup-db.sh:
+  backups/erp_myc_2026_07_07_1656.sql
+- Tamano verificado: 670K, 6903 lineas.
+
+Actualizacion 2026-07-07 16:45:25 CST - ERP MYC v0.2.0 Clientes Finalizado:
+Se declara la version estable ERP MYC v0.2.0 con nombre "Clientes Finalizado".
+Version anterior:
+- v0.1.0 (MVP funcional).
+Estado de version:
+- Modulo de clientes considerado finalizado para esta entrega.
+- README actualizado para mostrar la version actual.
+- frontend/package.json y frontend/package-lock.json pasan de 0.1.0 a 0.2.0.
+- La rama local esta en main sincronizada con origin/main.
+- Existe un archivo PDF nuevo sin trackear en storage/clientes/cliente_1/ que se conserva como parte del estado local actual y no se elimina.
+Backup:
+- Dump SQL generado con scripts/backup-db.sh:
+  backups/erp_myc_2026_07_07_1645.sql
+- Tamano verificado: 669K, 6898 lineas.
 
 Actualizacion 2026-06-29 15:59:18 CST - Reorientacion operativa a certificados externos PDF:
 Decision operativa:
@@ -4733,3 +4788,177 @@ Nota tecnica:
   - `first_name`
   - `first_last_name`
   - `second_last_name`
+
+## Actualizacion 2026-07-07 17:23:14 CST - Refinamiento Ventas / Cotizaciones chequeos #032-#038
+
+Alcance aplicado:
+- Se atendieron chequeos tester del modulo `Ventas / Cotizaciones`.
+- No se tocaron Clientes como modulo funcional.
+- No se tocaron ETS/Servicios, Hojas de Campo, Certificados ni Facturacion.
+- Se mantuvo estilo Liquid Glass.
+- No se usaron `window.confirm`, `window.alert` ni `prompt`.
+
+Chequeos resueltos:
+- `#032 Selector de cliente en cotizacion`:
+  - Se elimino el select largo de cliente dentro de la ficha.
+  - Se agrego boton `Elegir cliente`.
+  - El boton abre modal de busqueda de clientes activos.
+  - La busqueda cubre nombre comercial, razon social, RFC, contacto y correo.
+  - Al seleccionar cliente, se actualiza la cotizacion y se cierra el modal.
+  - El cliente actual permanece visible dentro de la ficha.
+- `#033 Asesor no se asigna`:
+  - El router de cotizaciones conecta usuario autenticado opcional.
+  - Al crear cotizacion, si hay sesion, `advisor_id` se asigna desde el usuario autenticado.
+  - Si no hay token, se conserva compatibilidad de desarrollo sin romper llamadas antiguas.
+  - `QuotationRead` expone `advisor_name`.
+  - Frontend muestra nombre de asesor cuando existe.
+  - No se pide asesor manualmente.
+- `#034 TOTAL ilegible en PDF`:
+  - En el PDF, el texto `Total` dentro del recuadro azul oscuro ahora se imprime en blanco.
+  - No se modifico importe ni fondo.
+- `#035 Autosave y recuperacion de versiones en cotizacion`:
+  - La ficha de cotizacion ahora autosalva cambios con debounce.
+  - Autosave aplica a:
+    - cliente
+    - vigencia
+    - notas
+    - condiciones de pago
+  - Se agrego tabla `quotation_snapshots`.
+  - Se escriben snapshots al crear, editar y modificar partidas.
+  - Endpoints nuevos:
+    - `GET /api/quotations/{quotation_id}/snapshots`
+    - `POST /api/quotations/{quotation_id}/snapshots/restore`
+  - UI minima de historial permite ver versiones y restaurar datos comerciales.
+  - Pendiente tecnico controlado:
+    - los snapshots guardan tambien datos de partidas, pero la restauracion actual se limita a campos comerciales de ficha; queda preparada la estructura para ampliar restauracion completa de partidas.
+- `#036 Codigo postal fiscal no imprime correctamente en PDF`:
+  - PDF usa `client.fiscal_postal_code`.
+  - Si no existe, usa `client.postal_code`.
+  - Ya no imprime `-` cuando existe alguno de esos datos.
+- `#037 Quitar Uso CFDI del PDF de cotizacion`:
+  - Se retiro `Uso CFDI` solamente del PDF de cotizacion.
+  - No se elimino el dato del cliente ni de facturacion.
+- `#038 Condiciones de pago no editables`:
+  - Se agrego `payment_terms` a cotizaciones.
+  - Se agrego campo editable `Condiciones de pago` en ficha.
+  - Se imprime en PDF.
+  - Si no hay valor, imprime `Por definir`.
+
+Backend:
+- `backend/app/models/quotation.py`
+  - agrega `payment_terms`
+  - agrega relacion `advisor`
+  - agrega propiedad `advisor_name`
+  - agrega modelo `QuotationSnapshot`
+- `backend/app/schemas/quotation.py`
+  - expone `payment_terms`
+  - expone `advisor_name`
+  - agrega schemas para snapshots/restauracion
+- `backend/app/services/quotations.py`
+  - crea cotizacion con `advisor_id = user_id` cuando hay usuario autenticado
+  - escribe snapshots en crear/editar/partidas
+  - lista snapshots
+  - restaura snapshot comercial
+- `backend/app/routers/quotations.py`
+  - conecta `get_optional_current_user`
+  - pasa `user_id` a crear, editar, partidas, cambios de estado y baja logica
+  - agrega endpoints de snapshots
+- `backend/app/services/auth.py`
+  - agrega dependencia `get_optional_current_user`
+- `backend/app/models/__init__.py`
+  - registra `QuotationSnapshot`
+- `backend/app/templates/quotation_pdf.html`
+  - corrige color de `Total`
+  - corrige CP fiscal
+  - elimina Uso CFDI
+  - imprime condiciones de pago desde cotizacion
+
+Migracion:
+- Nueva revision:
+  - `backend/migrations/versions/3c4d5e6f7a8b_add_quotation_payment_terms_and_snapshots.py`
+- Agrega:
+  - `quotations.payment_terms`
+  - tabla `quotation_snapshots`
+- Base actual:
+  - `3c4d5e6f7a8b (head)`
+
+Frontend:
+- `frontend/src/pages/QuotationsPage.jsx`
+  - reemplaza select de cliente por modal `Elegir cliente`
+  - agrega buscador de clientes activos
+  - agrega autosave de ficha
+  - muestra `advisor_name`
+  - agrega `Condiciones de pago`
+  - muestra historial de snapshots y accion de restauracion
+- `frontend/src/services/api.js`
+  - agrega:
+    - `listQuotationSnapshots`
+    - `restoreQuotationSnapshot`
+- `frontend/src/constants/forms.js`
+  - agrega `paymentTerms` al formulario de cotizacion
+- `frontend/src/styles/global.css`
+  - agrega estilos Liquid Glass para selector de cliente e historial de snapshots
+
+Validacion ejecutada:
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `../venv/bin/python -m compileall app` -> OK.
+- `../venv/bin/alembic upgrade head` -> OK.
+- `../venv/bin/alembic current` -> `3c4d5e6f7a8b (head)`.
+- OpenAPI:
+  - `ERP MYC 32`
+  - `/api/quotations/{quotation_id}/snapshots` -> registrado
+  - `/api/quotations/{quotation_id}/snapshots/restore` -> registrado
+- `git diff --check` -> OK.
+- `rg -n "window\\.confirm|window\\.alert|prompt\\(" frontend/src` -> sin resultados.
+
+Backup:
+- Dump SQL generado con `scripts/backup-db.sh`:
+  - `backups/erp_myc_2026_07_07_1723.sql`
+- Tamano verificado:
+  - `679K`
+- Lineas verificadas:
+  - `7025`
+
+## Actualizacion 2026-07-07 17:30:07 CST - Verificacion de impresion real PDF de cotizacion
+
+Objetivo:
+- Confirmar que los datos obligatorios de la cotizacion no solo esten en frontend/backend, sino que lleguen realmente al HTML renderizado y al PDF final generado por WeasyPrint.
+
+Validacion ejecutada:
+- Se creo una cotizacion temporal dentro de una transaccion con rollback.
+- Se genero el HTML real mediante `backend/app/services/quotation_pdfs.py`.
+- Se genero un PDF real mediante `generate_quotation_pdf`.
+- Se extrajo texto del PDF generado con `pypdf` para confirmar impresion final.
+- El archivo temporal generado para la prueba fue:
+  - `/tmp/myc_quotation_print_check.pdf`
+
+Campos confirmados en HTML y PDF final:
+- Folio de cotizacion.
+- Vendedor / asesor autenticado.
+- Cliente, razon social, RFC, contacto, telefono y correo.
+- Regimen fiscal.
+- Codigo postal fiscal usando `client.fiscal_postal_code` y fallback a `client.postal_code`.
+- Condiciones de pago desde `quotation.payment_terms`.
+- Servicio / concepto de partida.
+- Descripcion comercial de partida.
+- Leyenda de cotizacion de partida.
+- Clave SAT y unidad SAT.
+- Subtotal, IVA/impuestos y total.
+- Total con letra.
+- Condiciones comerciales.
+- Notas de cotizacion.
+
+Campo confirmado como removido del PDF:
+- `Uso CFDI` no aparece en el HTML ni en el texto extraido del PDF.
+
+Resultado de prueba:
+- `PDF_RENDER_CHECK_OK 45123 Cotizacion_MYC-PDF-TEST-PRINT_Cliente-PDF.pdf`
+- `PDF_TEXT_CHECK_OK 45123 2 Cotizacion_MYC-PDF-TEST-PRINT_Cliente-PDF.pdf /tmp/myc_quotation_print_check.pdf`
+
+Backup:
+- Dump SQL generado con `scripts/backup-db.sh`:
+  - `backups/erp_myc_2026_07_07_1730.sql`
+- Tamano verificado:
+  - `679K`
+- Lineas verificadas:
+  - `7025`

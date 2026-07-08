@@ -447,6 +447,17 @@ export async function updateQuotation(quotationId, payload) {
   });
 }
 
+export async function listQuotationSnapshots(quotationId) {
+  return request(`/quotations/${quotationId}/snapshots`);
+}
+
+export async function restoreQuotationSnapshot(quotationId, snapshotId) {
+  return request(`/quotations/${quotationId}/snapshots/restore`, {
+    method: 'POST',
+    body: JSON.stringify({ snapshot_id: snapshotId })
+  });
+}
+
 export async function createQuotationItem(quotationId, payload) {
   return request(`/quotations/${quotationId}/items`, {
     method: 'POST',

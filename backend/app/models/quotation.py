@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, Numeric, String, Text
+from sqlalchemy import Date, ForeignKey, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -20,13 +20,24 @@ class Quotation(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     tax_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    payment_terms: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
 
     client: Mapped["Client"] = relationship(back_populates="quotations")
+    advisor: Mapped["User | None"] = relationship(foreign_keys=[advisor_id])
     items: Mapped[list["QuotationItem"]] = relationship(
         back_populates="quotation", cascade="all, delete-orphan"
     )
+    snapshots: Mapped[list["QuotationSnapshot"]] = relationship(
+        back_populates="quotation", cascade="all, delete-orphan"
+    )
     service_orders: Mapped[list["ServiceOrder"]] = relationship(back_populates="quotation")
+
+    @property
+    def advisor_name(self) -> str | None:
+        if self.advisor is None or not self.advisor.is_active:
+            return None
+        return self.advisor.full_name or self.advisor.email
 
 
 class QuotationItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -53,3 +64,16 @@ class QuotationItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
 
     quotation: Mapped[Quotation] = relationship(back_populates="items")
+
+
+class QuotationSnapshot(IntegerPkMixin, TimestampMixin, Base):
+    __tablename__ = "quotation_snapshots"
+
+    quotation_id: Mapped[int] = mapped_column(ForeignKey("quotations.id"), index=True)
+    snapshot_number: Mapped[int] = mapped_column(default=1)
+    reason: Mapped[str | None] = mapped_column(String(80))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    snapshot_data: Mapped[dict] = mapped_column(JSON)
+
+    quotation: Mapped[Quotation] = relationship(back_populates="snapshots")
+    created_by: Mapped["User | None"] = relationship(foreign_keys=[created_by_id])

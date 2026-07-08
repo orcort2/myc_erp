@@ -24,6 +24,7 @@ LOGO_PATH = PROJECT_ROOT / "frontend" / "src" / "assets" / "myc-logo.png"
 @dataclass(frozen=True)
 class PdfLine:
     description: str
+    commercial_description: str | None
     legend: str | None
     quantity: int
     unit: str
@@ -156,6 +157,7 @@ def _line_from_item(item: QuotationItem) -> PdfLine:
     tax_total = _money(item.tax_total)
     return PdfLine(
         description=item.service_name or item.description or "Partida sin descripcion",
+        commercial_description=item.description,
         legend=item.quotation_legend,
         quantity=quantity,
         unit=item.unit or item.internal_unit or item.sat_unit or "Servicio",

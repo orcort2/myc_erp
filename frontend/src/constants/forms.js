@@ -32,6 +32,7 @@ export const emptyClientForm = {
 export const emptyQuotationForm = {
   clientId: '',
   validUntil: '',
+  paymentTerms: '',
   notes: ''
 };
 
@@ -58,9 +59,7 @@ export const emptyProductForm = {
   category: '',
   internalKey: '',
   name: '',
-  description: '',
   type: 'Servicio',
-  commodity: 'calibration',
   calibrationScope: 'traceable',
   quotationLegend: '',
   satKey: '',
