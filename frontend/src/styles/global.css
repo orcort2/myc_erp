@@ -1385,12 +1385,52 @@ button {
 
 .service-orders-table .clients-table__head,
 .service-orders-table .clients-table__row {
-  grid-template-columns: .9fr .65fr 1.05fr .9fr .85fr .8fr .55fr .55fr .55fr .55fr .6fr .6fr .65fr .75fr;
+  grid-template-columns: .9fr .65fr 1.05fr .9fr 1fr .8fr .55fr .55fr .55fr .55fr .6fr .6fr .65fr;
 }
 
 .equipment-table .clients-table__head,
 .equipment-table .clients-table__row {
-  grid-template-columns: 1fr .75fr .75fr .85fr .85fr .95fr .8fr .75fr .9fr .75fr 1.7fr;
+  grid-template-columns: 1fr .75fr .75fr .85fr .85fr .85fr .95fr .8fr .75fr .9fr .75fr 1.7fr;
+}
+
+.ets-expedient-search {
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(201, 255, 247, 0.44);
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+}
+
+.ets-expedient-search span {
+  color: var(--myc-soft-text);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.ets-expedient-search input {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(8, 117, 111, 0.18);
+  border-radius: 8px;
+  color: var(--myc-text);
+  font-size: 14px;
+  font-weight: 780;
+  min-height: 40px;
+  padding: 0 12px;
+}
+
+.ets-modal-action-ribbon {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(201, 255, 247, 0.44);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -6px 0 16px;
+  padding: 10px;
 }
 
 .ets-certificates-table .clients-table__head,
@@ -1418,16 +1458,21 @@ button {
 }
 
 .ets-folder-tab {
+  align-items: flex-start;
   background: rgba(255, 255, 255, 0.34);
   border: 1px solid rgba(201, 255, 247, 0.5);
   border-bottom-color: rgba(8, 117, 111, 0.18);
   border-radius: 8px 8px 0 0;
   color: var(--myc-soft-text);
+  display: inline-flex;
+  flex-direction: column;
   flex: 0 0 auto;
   font-size: 13px;
   font-weight: 850;
+  gap: 4px;
   min-height: 42px;
-  padding: 0 14px;
+  justify-content: center;
+  padding: 7px 14px;
 }
 
 .ets-folder-tab.is-active {
@@ -1437,6 +1482,53 @@ button {
   color: var(--myc-primary-dark);
   min-height: 50px;
   transform: translateY(1px);
+}
+
+.ets-stage-badge,
+.ets-inline-stage {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  padding: 5px 7px;
+  text-transform: uppercase;
+}
+
+.ets-stage-badge.is-done,
+.ets-inline-stage.is-done,
+.ets-stage.is-done {
+  background: rgba(70, 216, 196, 0.18);
+  border-color: rgba(8, 117, 111, 0.28);
+  color: var(--myc-primary-dark);
+}
+
+.ets-stage-badge.is-active,
+.ets-inline-stage.is-active,
+.ets-stage.is-active {
+  background: rgba(219, 234, 254, 0.86);
+  color: #1d4ed8;
+}
+
+.ets-stage-badge.is-pending,
+.ets-inline-stage.is-pending,
+.ets-stage.is-pending {
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--myc-soft-text);
+}
+
+.ets-stage-badge.is-blocked,
+.ets-inline-stage.is-blocked,
+.ets-stage.is-blocked {
+  background: rgba(254, 242, 242, 0.82);
+  color: #991b1b;
+}
+
+.ets-stage-badge.is-reopened,
+.ets-inline-stage.is-reopened,
+.ets-stage.is-reopened {
+  background: rgba(254, 249, 195, 0.9);
+  color: #92400e;
 }
 
 .ets-progress-panel,
@@ -1505,14 +1597,95 @@ button {
   padding: 0 10px;
 }
 
-.ets-stage.is-done {
-  background: rgba(70, 216, 196, 0.18);
-  border-color: rgba(8, 117, 111, 0.28);
+.ets-metric-badge strong {
   color: var(--myc-primary-dark);
 }
 
-.ets-metric-badge strong {
-  color: var(--myc-primary-dark);
+.ets-summary-card,
+.ets-summary-link {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.ets-summary-card {
+  align-items: flex-start;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(201, 255, 247, 0.42);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 78px;
+  padding: 14px;
+}
+
+.ets-summary-card:hover,
+.ets-summary-card:focus-visible,
+.ets-summary-link:hover,
+.ets-summary-link:focus-visible,
+.ets-equipment-card:hover,
+.ets-equipment-card:focus-visible {
+  border-color: rgba(22, 148, 140, 0.5);
+  box-shadow: 0 12px 24px rgba(9, 44, 54, 0.12);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.ets-summary-card span,
+.ets-summary-link span,
+.ets-summary-link small {
+  color: var(--myc-soft-text);
+  font-size: 12px;
+  font-weight: 820;
+}
+
+.ets-summary-card strong,
+.ets-summary-link strong {
+  color: var(--myc-navy);
+}
+
+.ets-summary-card--clickable,
+.ets-technician-card,
+.ets-summary-work-orders {
+  align-items: flex-start;
+}
+
+.ets-summary-card--clickable .table-button,
+.ets-technician-card .table-button {
+  margin-top: 8px;
+}
+
+.ets-summary-work-orders > div {
+  display: grid;
+  gap: 7px;
+  margin-top: 6px;
+}
+
+.ets-summary-link {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.44);
+  border: 1px solid rgba(201, 255, 247, 0.38);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 8px 10px;
+}
+
+.ets-stage-note {
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(201, 255, 247, 0.42);
+  border-radius: 8px;
+  color: var(--myc-soft-text);
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0 0 12px;
+  padding: 10px 12px;
 }
 
 .ets-auth-panel {
@@ -1611,6 +1784,118 @@ button {
 
 .service-order-info-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ets-equipment-card-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.ets-equipment-card {
+  background: rgba(255, 255, 255, 0.36);
+  border: 1px solid rgba(201, 255, 247, 0.42);
+  border-radius: 8px;
+  color: var(--myc-text);
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  text-align: left;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.ets-equipment-card__eyebrow {
+  color: var(--myc-primary-dark);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ets-equipment-card > strong {
+  color: var(--myc-navy);
+  font-size: 16px;
+}
+
+.ets-equipment-card dl,
+.ets-equipment-notes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.ets-equipment-card dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ets-equipment-card div,
+.ets-equipment-notes article {
+  background: rgba(255, 255, 255, 0.38);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.ets-equipment-card dt,
+.ets-equipment-notes span {
+  color: var(--myc-soft-text);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.ets-equipment-card dd,
+.ets-equipment-notes p {
+  color: var(--myc-navy);
+  font-size: 13px;
+  font-weight: 800;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.ets-certificate-capacity-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ets-certificate-capacity-list article {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(201, 255, 247, 0.42);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 10px 12px;
+}
+
+.ets-certificate-capacity-list span {
+  color: var(--myc-soft-text);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.ets-certificate-capacity-list strong {
+  color: var(--myc-primary-dark);
+  font-size: 18px;
+}
+
+.ets-condition-presets,
+.ets-picker-pagination {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.ets-picker-pagination {
+  justify-content: space-between;
+}
+
+.ets-picker-pagination span {
+  color: var(--myc-soft-text);
+  font-size: 13px;
+  font-weight: 850;
 }
 
 .service-order-checkbox {
@@ -2008,6 +2293,20 @@ button {
   width: min(1080px, 100%);
 }
 
+.quotation-modal {
+  max-width: 960px;
+  width: min(960px, 100%);
+}
+
+.quotations-workspace {
+  gap: 22px;
+}
+
+.quotation-detail-form {
+  display: grid;
+  gap: 14px;
+}
+
 .quotation-detail-header {
   align-items: center;
   background:
@@ -2299,6 +2598,15 @@ button {
   font-weight: 760;
 }
 
+.empty-state {
+  color: var(--myc-soft-text);
+  font-size: 14px;
+  font-weight: 760;
+  margin: 0;
+  padding: 14px;
+  text-align: center;
+}
+
 .quotation-future-area {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.28), rgba(70, 216, 196, 0.08)),
@@ -2549,6 +2857,10 @@ button {
 
 .import-row--duplicate {
   border-left-color: #0b5d67;
+}
+
+.import-row--valid {
+  border-left-color: var(--myc-primary);
 }
 
 .import-row--error {

@@ -483,6 +483,17 @@ function QuotationsPage() {
   }, []);
 
   useEffect(() => {
+    if (!quotations.length || isDetailOpen) return;
+    const pendingQuotationId = window.sessionStorage.getItem('myc:openQuotationId');
+    if (!pendingQuotationId) return;
+    const quotation = quotations.find((item) => String(item.id) === String(pendingQuotationId));
+    if (!quotation) return;
+    window.sessionStorage.removeItem('myc:openQuotationId');
+    setSalesTab('quotations');
+    openQuotationDetail(quotation);
+  }, [quotations, isDetailOpen]);
+
+  useEffect(() => {
     if (!isDetailOpen || !selectedQuotation || isQuotationTerminal(selectedQuotation)) {
       return undefined;
     }
@@ -2057,7 +2068,7 @@ function QuotationsPage() {
                 <section className="danger-zone">
                   <div className="danger-zone__copy">
                     <p>Eliminar</p>
-                    <span>Esta acción retira la cotización de la vista activa y el backend conserva sus validaciones de estado.</span>
+                    <span>Esta acción retira la cotización de la vista activa; si existe trazabilidad, permanece en la base de datos.</span>
                   </div>
                   <div className="toolbar-actions">
                     <button className="table-button table-button--danger" onClick={handleDeleteQuotationRecord} type="button">

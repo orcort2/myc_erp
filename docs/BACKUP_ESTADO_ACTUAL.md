@@ -1,49 +1,49 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-07-07 17:30:07 CST
-Version actual: ERP MYC v0.2.0
-Nombre de version: Clientes Finalizado
-Version anterior: v0.1.0 (MVP funcional)
+Ultima actualizacion: 2026-07-08 11:51:30 CST
+Version actual: ERP MYC v0.3.0
+Nombre de version: Ventas Finalizado
+Version anterior: v0.2.0 (Clientes Finalizado)
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 Ruta actual del proyecto
 /Users/saulcortes/Desktop/myc_erp
 La carpeta padre antes se llamaba ERP MYC, pero fue renombrada a myc_erp. No hay problema con el cambio. De ahora en adelante todas las rutas deben apuntar a myc_erp.
 Git ya esta inicializado.
 Ultimo commit conocido:
-b04e21d se finalizo la contrucción del modulo de clientes
+6b4954c Merge branch 'main' of https://github.com/orcort2/myc_erp
 Commits recientes:
+6b4954c Merge branch 'main' of https://github.com/orcort2/myc_erp
+0ab66da revision
+87c57cf se corrigio tema de tunel
+c95c207 se esta termino de rediseñar el modulo de vetnas
 b04e21d se finalizo la contrucción del modulo de clientes
 ff72e7c se declara version 3, revisar backup para más info
 d584ab8 se mejoro la ux del sistema
 3bffe15 se construyo la orden de trbaajo, esta lista para producción
 d76489b se establecieron algunos parametros para mejorar la interfaz y la conectividad del sistema, los motores de incertidumbre ya no existen en formato documental
-0223813 se agrego la configuración de adutoria, colocando el front
-98f971d se agregaron archivos de ayuda, se mejoran botones, se pule css de algunas pestañas
-f444882 Complete users management module
-d64d834 se instala un pequeño modulo de configuración para la gestion de usuarios
-de884e0 se separaon archivos del app principal, cada pestaña vive independiente
+9c368de se puso como experimental el motor de incertiudmbre
 Estado Git verificado:
 ## main...origin/main
 M README.md
-M backend/app/core/permissions.py
-M backend/app/schemas/catalog_item.py
-M backend/app/schemas/quotation.py
-M backend/app/services/catalog_items.py
-M backend/app/services/quotation_pdfs.py
-M backend/app/services/quotations.py
-M backend/app/templates/quotation_pdf.html
+M backend/app/models/service_order.py
+M backend/app/routers/certificates.py
+M backend/app/routers/client_portal.py
+M backend/app/schemas/service_order.py
+M backend/app/services/certificate_authentication.py
+M backend/app/services/certificates.py
+M backend/app/services/clients.py
+M backend/app/services/service_orders.py
 M docs/BACKUP_ESTADO_ACTUAL.md
+M frontend/.env.local
 M frontend/package-lock.json
 M frontend/package.json
-M frontend/src/constants/catalog.js
-M frontend/src/constants/forms.js
-M frontend/src/constants/statuses.js
 M frontend/src/pages/QuotationsPage.jsx
+M frontend/src/pages/ServiceOrdersPage.jsx
 M frontend/src/styles/global.css
-?? backups/erp_myc_2026_07_07_1645.sql
-?? backups/erp_myc_2026_07_07_1656.sql
-?? storage/clientes/cliente_1/constancia_fiscal_5e0f2c597a334762a7786187765d3477.pdf
-?? storage/clientes/cliente_373/
+?? backend/app/services/storage_service.py
+?? backups/erp_myc_2026_07_08_1024.sql
+?? backups/erp_myc_2026_07_08_1041.sql
+?? backups/erp_myc_2026_07_08_1112.sql
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
 
 Actualizacion 2026-07-07 16:58:10 CST - Catalogo dependiente de categoria:
@@ -4962,3 +4962,523 @@ Backup:
   - `679K`
 - Lineas verificadas:
   - `7025`
+
+## Actualizacion 2026-07-08 10:24:00 CST - Cobertura CSS en Cotizaciones
+
+Objetivo:
+- Revisar que las clases usadas en Ventas / Cotizaciones y en el PDF de cotizacion tengan cobertura CSS real.
+
+Revision ejecutada:
+- Se cruzaron clases estaticas de `frontend/src/pages/QuotationsPage.jsx` contra `frontend/src/styles/global.css`.
+- Se cruzaron clases del template `backend/app/templates/quotation_pdf.html` contra sus estilos embebidos.
+- El template PDF quedo confirmado con clases cubiertas.
+- En frontend solo quedaron prefijos dinamicos esperados:
+  - `status-`
+  - `import-row--`
+- Las variantes reales de esos prefijos ya tienen reglas de estilo.
+
+Ajustes CSS aplicados:
+- `frontend/src/styles/global.css`
+  - Se agrego cobertura para `quotation-modal`.
+  - Se agrego cobertura para `quotations-workspace`.
+  - Se agrego cobertura para `quotation-detail-form`.
+  - Se agrego cobertura para `empty-state`.
+  - Se agrego cobertura para `import-row--valid`.
+
+Validacion ejecutada:
+- Cruce automatico de clases de `QuotationsPage.jsx` contra `global.css` -> sin clases estaticas faltantes.
+- Cruce automatico de clases de `quotation_pdf.html` contra estilos embebidos -> OK.
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+
+Backup:
+- Dump SQL generado con `scripts/backup-db.sh`:
+  - `backups/erp_myc_2026_07_08_1024.sql`
+- Tamano verificado:
+  - `603K`
+- Lineas verificadas:
+  - `6629`
+
+## Actualizacion 2026-07-08 10:41:55 CST - Politica central de almacenamiento y cierre Ventas Finalizado
+
+Decision de version:
+- Se declara `ERP MYC v0.3.0`.
+- Nombre de version: `Ventas Finalizado`.
+- Version anterior: `v0.2.0 (Clientes Finalizado)`.
+- El modulo `Ventas / Cotizaciones` queda cerrado y sellado como modulo finalizado para esta entrega.
+
+Objetivo aplicado:
+- Ningun archivo fisico debe permanecer en `storage/` si ya no existe una referencia activa dentro del sistema.
+- La regla queda preparada para Clientes, Cotizaciones, Ordenes de servicio, Equipos, Hojas de campo, Certificados, Facturacion, Evidencias y modulos futuros.
+- No se corrio una purga historica masiva automatica sobre archivos existentes; se dejo preparada la herramienta central para ejecucion controlada.
+
+Servicio central nuevo:
+- `backend/app/services/storage_service.py`
+
+Responsabilidades implementadas:
+- Guardar archivos con nombre seguro.
+- Resolver rutas relativas contra `storage/`.
+- Verificar existencia dentro del almacenamiento permitido.
+- Contar referencias activas en modelos SQLAlchemy registrados.
+- Eliminar archivo fisico solo cuando no tenga referencias activas.
+- Registrar auditoria por eliminacion fisica.
+- Exponer barrido controlado de archivos huerfanos mediante `delete_orphaned_files()`.
+
+Regla de referencias:
+- El conteo revisa columnas de texto/ruta registradas en modelos ORM, incluyendo:
+  - `file_path`
+  - `certificate_file_path`
+  - `tax_constancy_path`
+  - `final_pdf_path`
+  - `authenticated_pdf_path`
+  - columnas terminadas en `_path`
+- Si el modelo tiene `is_active`, solo cuenta registros activos.
+- Si el modelo tiene `deleted_at`, ignora registros eliminados logicamente.
+- Nunca elimina un archivo que todavia tenga al menos una referencia activa.
+
+Integraciones realizadas:
+- Clientes:
+  - La constancia fiscal se guarda mediante el servicio central.
+  - Al reemplazar constancia, la anterior se elimina fisicamente si queda sin referencias.
+  - Al dar de baja cliente, se limpian referencias de constancia y se elimina el archivo si queda huerfano.
+- Certificados:
+  - El PDF final se guarda mediante el servicio central.
+  - Al reemplazar PDF final, se limpian autenticaciones obsoletas asociadas al PDF anterior.
+  - Al reemplazar PDF final, el PDF anterior y su PDF autenticado anterior se eliminan si quedan sin referencias.
+  - Al dar de baja certificado no liberado, se limpian referencias documentales y se eliminan archivos sin referencias.
+  - Al regenerar PDF autenticado, la version autenticada anterior se elimina si queda sin referencias.
+- Descargas:
+  - Los endpoints de PDF original, PDF autenticado y portal cliente resuelven rutas con el servicio central.
+
+Auditoria:
+- Toda eliminacion fisica controlada registra `storage.file_deleted`.
+- Se guarda:
+  - usuario
+  - modulo
+  - entidad
+  - id de registro
+  - nombre de archivo
+  - ruta
+  - motivo
+- Motivo base aplicado:
+  - `Archivo eliminado automaticamente por quedar sin referencias.`
+
+Validacion ejecutada:
+- `../venv/bin/python -m compileall app` -> OK.
+- Prueba funcional con base local:
+  - archivo temporal creado en `storage/temporales`
+  - referencia activa creada en cliente temporal
+  - eliminacion bloqueada mientras existia referencia activa
+  - referencia limpiada
+  - archivo eliminado al quedar sin referencias
+  - resultado: `STORAGE_POLICY_CHECK_OK 1 0 True`
+- Prueba de rutas de almacenamiento sin base:
+  - resultado: `STORAGE_PATH_CHECK_OK temporales/storage_path_check.txt`
+- `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"` -> `ERP MYC 32`.
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `./scripts/myc build` -> OK durante la fase.
+- `git diff --check` -> OK.
+
+Observacion de validacion:
+- Despues del ajuste final de preparacion de rutas, se intento repetir la prueba funcional con base local, pero la aprobacion automatica del runtime fue rechazada por limite de creditos del workspace.
+- No se intento evadir esa restriccion.
+- La validacion final se completo con compile, import de app, build frontend, prueba de rutas y diff-check.
+
+Backup:
+- Dump SQL generado con `scripts/backup-db.sh`:
+  - `backups/erp_myc_2026_07_08_1041.sql`
+- Tamano verificado:
+  - `609K`
+- Lineas verificadas:
+  - `6649`
+
+## Actualizacion 2026-07-08 11:02:14 CST - Corte real de backup posterior a Ventas Finalizado
+
+Objetivo de esta actualizacion:
+- Alinear el backup con el estado real del arbol de trabajo al momento del corte.
+- No declarar como implementada ninguna fase que no exista todavia en codigo.
+- Registrar expresamente que la instruccion adjunta sobre `Servicios / ETS` queda pendiente de ejecucion tecnica.
+
+Estado real de version:
+- Version actual del sistema:
+  - `ERP MYC v0.3.0`
+- Nombre de version:
+  - `Ventas Finalizado`
+- `frontend/package.json` confirma:
+  - `"version": "0.3.0"`
+- Base local Alembic verificada:
+  - `3c4d5e6f7a8b (head)`
+- Aplicacion importada:
+  - `ERP MYC 32`
+
+Estado Git real verificado:
+```text
+## main...origin/main
+ M README.md
+ M backend/app/routers/certificates.py
+ M backend/app/routers/client_portal.py
+ M backend/app/services/certificate_authentication.py
+ M backend/app/services/certificates.py
+ M backend/app/services/clients.py
+ M docs/BACKUP_ESTADO_ACTUAL.md
+ M frontend/.env.local
+ M frontend/package-lock.json
+ M frontend/package.json
+ M frontend/src/pages/QuotationsPage.jsx
+ M frontend/src/styles/global.css
+?? backend/app/services/storage_service.py
+?? backups/erp_myc_2026_07_08_1024.sql
+?? backups/erp_myc_2026_07_08_1041.sql
+```
+
+Cambios reales presentes en el arbol:
+- `README.md`
+  - actualizado para reflejar la version vigente.
+- `frontend/package.json` y `frontend/package-lock.json`
+  - version actualizada a `0.3.0`.
+- `backend/app/services/storage_service.py`
+  - servicio central nuevo de politica de almacenamiento.
+- `backend/app/services/clients.py`
+  - integra almacenamiento central para constancia fiscal y limpieza controlada al reemplazar/eliminar.
+- `backend/app/services/certificates.py`
+  - integra almacenamiento central para PDF original, PDF autenticado y limpieza de referencias documentales.
+- `backend/app/services/certificate_authentication.py`
+  - ajusta resolucion/limpieza del PDF autenticado con la politica central de almacenamiento.
+- `backend/app/routers/certificates.py`
+  - descarga de PDF original/autenticado resuelta con servicio central.
+- `backend/app/routers/client_portal.py`
+  - descarga de certificado publicado resuelta con servicio central.
+- `frontend/src/pages/QuotationsPage.jsx`
+  - ajuste menor pendiente dentro del modulo Ventas / Cotizaciones.
+- `frontend/src/styles/global.css`
+  - cobertura CSS agregada para Cotizaciones.
+- `frontend/.env.local`
+  - archivo local modificado; no debe asumirse como cambio funcional versionable sin revision manual.
+
+Backups SQL presentes al corte:
+- `backups/erp_myc_2026_07_08_1024.sql`
+  - tamano observado: `603K`
+  - corresponde a cobertura CSS de Cotizaciones.
+- `backups/erp_myc_2026_07_08_1041.sql`
+  - tamano observado: `609K`
+  - corresponde a politica central de almacenamiento y cierre `Ventas Finalizado`.
+
+Validacion ejecutada en este corte:
+- `../venv/bin/alembic current` -> `3c4d5e6f7a8b (head)`
+- `../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))"` -> `ERP MYC 32`
+- `rg -n "window\\.confirm|window\\.alert|window\\.prompt|alert\\(|prompt\\(" frontend/src` -> sin resultados
+
+Validaciones heredadas de la fase inmediata anterior:
+- `../venv/bin/python -m compileall app` -> OK.
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `./scripts/myc build` -> OK durante la fase.
+- `git diff --check` -> OK.
+
+Estado de la instruccion adjunta sobre `Servicios / ETS`:
+- La instruccion recibida pide trabajar unicamente sobre `Servicios / ETS` y refinar el expediente guiado por etapas.
+- Al revisar el arbol real de cambios, no existen modificaciones actuales en:
+  - `frontend/src/pages/ServiceOrdersPage.jsx`
+  - `backend/app/services/service_orders.py`
+  - `backend/app/routers/service_orders.py`
+  - `backend/app/schemas/service_order.py`
+  - `backend/app/models/service_order.py`
+- Por lo tanto, esa fase no debe documentarse como implementada.
+- Queda pendiente ejecutar tecnicamente los puntos de ETS:
+  - eliminar columna `Acciones` y boton `Abrir ETS`
+  - mostrar asesor/tecnico por nombre, no por ID
+  - selector de tecnico por usuario
+  - cinta superior de acciones del modal
+  - reemplazar textos `Dar de baja` por `Eliminar`
+  - retirar botonera global de estados
+  - avance visual por pestaña/etapa
+  - completar/reabrir etapas con auditoria cuando aplique
+  - permitir Captura y Calidad en paralelo sin esperar el 100% de hojas
+
+Regla de mantenimiento:
+- Este backup queda alineado al estado real del repositorio al `2026-07-08 11:02:14 CST`.
+- Este fue un corte previo a la implementacion tecnica de `Servicios / ETS`.
+- La actualizacion posterior de `2026-07-08 11:12:28 CST` deja registrado el refinamiento ETS ya aplicado.
+
+## Actualizacion 2026-07-08 11:12:28 CST - Refinamiento operativo Servicios / ETS guiado por etapas
+
+Alcance aplicado:
+- Se trabajo unicamente sobre el modulo visible `Servicios / ETS`.
+- No se crearon modulos nuevos.
+- No se reactivaron modulos ocultos.
+- No se modifico Facturacion ni Clientes.
+- Hojas de Campo solo recibio ajustes de texto/flujo visual dentro del ETS para no romper enlaces existentes.
+- No se agrego migracion; se mantuvo compatibilidad con `service_orders.status` actual.
+- Se mantuvo estilo Liquid Glass.
+- No se usaron `window.confirm`, `window.alert` ni `prompt`.
+
+Backend:
+- `backend/app/models/service_order.py`
+  - Se agregaron propiedades calculadas:
+    - `advisor_name`
+    - `technician_name`
+  - Ambas devuelven nombre completo o correo del usuario relacionado.
+- `backend/app/schemas/service_order.py`
+  - `ServiceOrderRead` ahora expone:
+    - `advisor_name`
+    - `technician_name`
+- `backend/app/services/service_orders.py`
+  - `list_service_orders` y `get_service_order` cargan relaciones:
+    - `advisor`
+    - `technician`
+  - Esto evita mostrar IDs internos en frontend y mantiene compatibilidad con `advisor_id` / `technician_id`.
+
+Frontend ETS:
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+  - Se elimino la columna `Acciones` del listado de Servicios / ETS.
+  - Se elimino el texto/boton `Abrir ETS`.
+  - La fila completa sigue abriendo el ETS con click y conserva accesibilidad por teclado al ser boton.
+  - El listado ya muestra responsable por nombre:
+    - `technician_name`
+    - fallback a usuario cargado
+    - fallback final `Sin asignar`
+  - Dentro del modal ETS, `Asesor` ya muestra nombre y no `#id`.
+  - El tecnico ya no se captura con input numerico.
+  - El tecnico se selecciona desde lista de usuarios activos cuando el rol del usuario actual permite leer usuarios.
+  - Si la lista de usuarios no esta disponible por permisos, el sistema conserva el tecnico actual y muestra nombre/fallback sin romper PATCH.
+  - Se agrego cinta superior de acciones del modal:
+    - Ver orden PDF
+    - Descargar PDF
+    - Imprimir
+    - Guardar cambios
+    - Cerrar
+  - Se retiro la botonera global `Acciones de estado`.
+  - Se retiraron botones globales de cambio de estado:
+    - Confirmar
+    - Llamar
+    - Iniciar
+    - Captura
+    - Calidad
+    - Pendiente pago
+    - Liberar
+    - Cerrar
+  - El flujo visual ahora se guia por pestañas/etapas del expediente.
+  - Las pestañas muestran badge de etapa:
+    - Lista
+    - En proceso
+    - Disponible
+    - Pendiente
+    - Bloqueada
+    - Reabierta
+  - Se agrego `Marcar resumen listo`.
+    - Se habilita solo con:
+      - fecha de agenda
+      - fecha de servicio
+      - tecnico asignado
+    - Reutiliza el PATCH actual de la orden.
+    - Si la orden esta `scheduled`, el servicio backend ya la confirma automaticamente al guardar esos campos.
+  - Se agrego `Siguiente: Equipos` cuando Resumen esta listo.
+  - Se agrego `Marcar equipos listos` cuando existen equipos registrados y no se excede el limite de 10 por OT.
+  - Se agrego accion visual administrativa para:
+    - reabrir Resumen
+    - reabrir Equipos
+  - La reapertura queda como preparacion visual; auditoria formal requiere endpoint dedicado si se quiere persistir.
+  - Se reemplazo lenguaje visual `Dar de baja` por `Eliminar` en el ETS:
+    - orden
+    - equipo
+    - hoja de campo
+  - Los mensajes aclaran que la eliminacion es operativa/visual y conserva trazabilidad; el backend mantiene baja logica.
+  - En Hojas de Campo dentro del ETS se agrego nota de flujo paralelo:
+    - Captura puede avanzar con hojas utilizables o certificados esperados disponibles.
+    - El tecnico puede seguir completando hojas mientras Captura trabaja.
+  - En Captura se agrego nota operativa:
+    - la carga de PDFs no espera el cierre total de hojas.
+    - cada certificado puede avanzar conforme este listo.
+  - Se mantuvieron acciones internas por pestaña:
+    - Equipos: editar/estado/abrir hoja/eliminar.
+    - Captura: iniciar, subir PDF, validar, enviar a calidad.
+    - Calidad: revisar, autenticar aprobados, liberar autenticados.
+  - Esto evita depender de una botonera global sin romper flujos existentes.
+
+CSS:
+- `frontend/src/styles/global.css`
+  - Se ajusto grid del listado `service-orders-table` a 13 columnas reales.
+  - Se corrigio grid de `equipment-table` para la columna `Acciones`.
+  - Se agregaron estilos:
+    - `.ets-modal-action-ribbon`
+    - `.ets-stage-badge`
+    - `.ets-inline-stage`
+    - `.ets-stage-note`
+  - Las etapas usan colores/badges claros:
+    - verde para listo
+    - azul para en proceso
+    - rojo claro para bloqueada
+    - amarillo para reabierta
+
+Puntos resueltos:
+- #1 Listado sin columna `Acciones` ni boton `Abrir ETS`.
+- #2 Asesor y tecnico visibles por nombre cuando existe dato disponible.
+- #3 Selector visual de tecnico por usuario, compatible con `technician_id`.
+- #4 Cinta superior del ETS con acciones principales.
+- #5 Lenguaje `Eliminar` en lugar de `Dar de baja` dentro del ETS.
+- #6 Retiro de seccion `Acciones de estado` y botonera global de transiciones.
+- #7 Modelo visual inicial de avance por etapa en pestañas.
+- #8 Boton `Marcar resumen listo` con requisitos minimos.
+- #9 Equipos como etapa con boton `Marcar equipos listos` y limite 10 visible.
+- #10 Flujo paralelo Hojas / Captura documentado visualmente.
+- #11 Captura / PDFs / Calidad preparados para avanzar por certificado disponible.
+
+Puntos parcialmente preparados:
+- #9 Firma de Orden de Trabajo:
+  - Se dejo mensaje visual `Orden de trabajo pendiente de firma`.
+  - No se agrego campo persistente porque la fase pidio no romper backend y no habia campo existente.
+- #12 Reabrir etapas:
+  - Se agrego accion visual para Administrador/Desarrollador.
+  - No se persiste ni audita todavia; queda pendiente un endpoint/campo formal si se requiere trazabilidad completa.
+- Selector de usuarios:
+  - Usa `GET /api/users` cuando el usuario tiene permiso.
+  - Si un rol operativo no puede leer usuarios, se conserva compatibilidad visual con el nombre ya expuesto por `ServiceOrderRead` o `Sin asignar`.
+
+Validacion ejecutada:
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `../venv/bin/python -m compileall app` -> OK.
+- `../venv/bin/alembic current` -> `3c4d5e6f7a8b (head)`.
+- No hubo migracion nueva; no se ejecuto `alembic upgrade head`.
+- OpenAPI:
+  - `ERP MYC 32`
+  - `ServiceOrderRead.advisor_name` -> `True`
+  - `ServiceOrderRead.technician_name` -> `True`
+- `git diff --check` -> OK.
+- `rg -n "window\\.confirm|window\\.alert|window\\.prompt|alert\\(|prompt\\(" frontend/src` -> sin resultados.
+- Busqueda especifica en ETS:
+  - `Dar de baja`
+  - `Acciones de estado`
+  - `Abrir ETS`
+  - `ID de usuario tecnico`
+  - sin resultados en `frontend/src/pages/ServiceOrdersPage.jsx`.
+
+Backup:
+- Dump SQL generado con `scripts/backup-db.sh`:
+  - `backups/erp_myc_2026_07_08_1112.sql`
+- Tamano verificado:
+  - `610K`
+- Lineas verificadas:
+  - `6654`
+
+## Actualizacion 2026-07-08 11:51:30 CST - Segunda pasada ETS como tablero operativo
+
+Alcance aplicado:
+- Se continuo trabajando exclusivamente sobre `Servicios / ETS`, salvo una integracion minima en `Ventas / Cotizaciones` para abrir la cotizacion origen desde el ETS.
+- No se modifico el modulo independiente de Hojas de Campo.
+- No se agregaron migraciones ni endpoints nuevos.
+- Se mantuvo compatibilidad con backend existente.
+- No se usaron `window.confirm`, `window.alert` ni `prompt`.
+
+Cambios principales en Servicios / ETS:
+- Selector de tecnico:
+  - Se elimino el `<select>` HTML tradicional del resumen ETS.
+  - Se agrego selector visual tipo buscador, equivalente al selector de cliente usado en cotizaciones.
+  - Muestra tarjetas de usuarios operativos por nombre, correo y rol.
+  - Permite dejar `Sin asignar`.
+  - Si hay mas de 15 usuarios, pagina en bloques de 5 manteniendo busqueda.
+  - El payload sigue enviando `technician_id` al PATCH existente.
+- Buscador interno del ETS:
+  - Se agrego buscador dentro del expediente abierto.
+  - Filtra por OT, equipo, marca, modelo, serie, identificacion interna, hoja, certificado, PDF, codigo de autenticacion y folios.
+  - Aplica a tarjetas de equipos y listados de certificados/captura/calidad.
+- Resumen clickeable:
+  - `Cotizacion origen` abre el modulo de cotizaciones y carga la cotizacion vinculada.
+  - `Equipos registrados` abre la pestaña Equipos.
+  - `Hojas creadas` abre Hojas de Campo.
+  - `Certificados esperados` abre Certificados.
+  - `PDFs subidos` abre Documentos.
+  - `Ordenes de trabajo` ahora se presenta como lista clickeable de OT.
+- Soporte visual para varias OT:
+  - El resumen agrupa ordenes relacionadas por cotizacion cuando existen.
+  - Cada OT muestra numero de trabajo y conteo de equipos.
+  - Al hacer clic en una OT, abre Hojas de Campo filtrando por esa OT.
+  - Limitacion: el modelo backend vigente sigue representando cada OT como `service_order`; no se agrego una entidad padre nueva de Orden de Servicio con varias OT.
+- Equipos:
+  - Se reemplazo la tabla tradicional por tarjetas clickeables.
+  - Cada tarjeta muestra instrumento, marca, modelo, serie, ID interno, tipo de certificado, estado, folio reservado, hoja, certificado y PDF.
+  - Se retiro la botonera visible del listado:
+    - Editar
+    - Realizando
+    - Calibrado
+    - Etiquetado
+    - No realizado
+    - Abrir hoja
+    - Eliminar
+  - Las acciones ahora viven dentro del detalle del equipo.
+- Detalle de equipo:
+  - Nueva ficha/modal interna con datos operativos.
+  - Concentra acciones de editar, cambiar estado, abrir/crear hoja y eliminar.
+  - Mantiene la logica existente sin eliminar funciones.
+- Agregar equipo:
+  - Los cupos de certificado se redisenaron en filas independientes:
+    - Trazables
+    - Acreditados
+    - Vinculados
+  - Se agregaron botones rapidos en Condicion inicial:
+    - `Buen estado general` -> `Equipo recibido en buen estado general.`
+    - `Mal estado` -> `Equipo recibido con anomalías visibles.`
+  - Las observaciones particulares siguen en `Notas`.
+- Flujo paralelo:
+  - Captura sigue disponible cuando existe una hoja utilizable o certificado esperado.
+  - No se exige cerrar todas las hojas para permitir Captura.
+  - Calidad y Certificados siguen trabajando por certificado disponible.
+
+Integracion minima con Cotizaciones:
+- `frontend/src/pages/QuotationsPage.jsx`
+  - Lee `sessionStorage.myc:openQuotationId` al abrir el modulo.
+  - Si encuentra la cotizacion, abre la ficha correspondiente.
+  - Esto permite que `Cotizacion origen` en ETS lleve al usuario al documento editable cuando el estado lo permita.
+
+Archivos modificados en esta pasada:
+- `frontend/src/pages/ServiceOrdersPage.jsx`
+- `frontend/src/pages/QuotationsPage.jsx`
+- `frontend/src/styles/global.css`
+- `docs/BACKUP_ESTADO_ACTUAL.md`
+
+Puntos resueltos:
+- #1 Selector de tecnico visual con buscador, tarjetas y paginacion.
+- #2 Buscador interno dentro del ETS.
+- #3 Tarjetas principales del resumen clickeables.
+- #5 Hojas de Campo filtrables al abrir desde una OT.
+- #6 Listado de equipos redisenado como tarjetas.
+- #7 Botonera visible de equipos retirada del listado y movida al detalle.
+- #8 CSS de folios/cupos disponibles redisenado en filas.
+- #9 Botones rapidos de condicion inicial.
+- #11 Flujo paralelo Hojas / Captura / Certificados preservado.
+- #12 Cotizacion origen abre la cotizacion vinculada.
+
+Puntos parcialmente implementados:
+- #4 Soporte para varias Ordenes de Trabajo:
+  - Resuelto visualmente usando ordenes relacionadas por cotizacion.
+  - Requiere decision funcional si se desea una entidad padre explicita `Orden de Servicio -> varias OT` en backend.
+- #10 Finalizacion real de cada etapa:
+  - Se conservan los controles existentes `Marcar resumen listo`, `Marcar equipos listos` y `Reabrir`.
+  - Resumen persiste mediante PATCH actual.
+  - Equipos/Reabrir siguen siendo control visual porque no existe endpoint/campo formal de etapa.
+- #12 Edicion completa de cotizacion desde ETS:
+  - Se abre la cotizacion real en su modulo.
+  - No se duplico el editor completo dentro del modal ETS para evitar bifurcar logica de Ventas.
+
+Decisiones funcionales pendientes:
+- Definir si el sistema debe crear una entidad persistente para agrupar varias OT bajo una misma Orden de Servicio.
+- Definir campos/endpoints formales para cierre y reapertura auditada por etapa.
+- Definir si la edicion de partidas de cotizacion debe incrustarse dentro del ETS o seguir centralizada en `Ventas / Cotizaciones`.
+
+Validacion ejecutada:
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `../venv/bin/python -m compileall app` -> OK.
+- `../venv/bin/alembic current` -> `3c4d5e6f7a8b (head)`.
+- No hubo migracion nueva; no se ejecuto `alembic upgrade head`.
+- `git diff --check` -> OK.
+- `rg -n "window\\.confirm|window\\.alert|window\\.prompt|alert\\(|prompt\\(" frontend/src` -> sin resultados.
+- Revision especifica de ETS:
+  - No queda `<select>` para tecnico.
+  - No queda botonera de equipos en el listado principal.
+  - Las acciones de equipo viven en el detalle.
+
+Backup:
+- Dump SQL generado con `scripts/backup-db.sh`:
+  - `backups/erp_myc_2026_07_08_1151.sql`
+- Tamano verificado:
+  - `610K`
+- Lineas verificadas:
+  - `6654`

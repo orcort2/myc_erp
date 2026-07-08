@@ -10,8 +10,6 @@ import {
 } from '../constants/forms.js';
 import {
   serviceOrderStatusLabels,
-  serviceOrderTransitions,
-  serviceOrderActions,
   equipmentStatusLabels,
   equipmentTransitions,
   equipmentActions,
@@ -26,7 +24,6 @@ import {
   bulkUploadCertificatePdfs,
   changeEquipmentStatus,
   changeCertificateStatus,
-  changeServiceOrderStatus,
   completeFieldSheet,
   createCertificate,
   downloadFieldSheetPdf,
@@ -51,6 +48,7 @@ import {
   listQuotations,
   listReferenceStandards,
   listServiceOrders,
+  listUsers,
   manualAcceptCertificateMatch,
   reviewFieldSheet,
   suggestFieldSheetPatterns,
@@ -91,15 +89,29 @@ function getRoleNames(user) {
   return (user?.roles ?? []).map((role) => (role.name || '').toLowerCase());
 }
 
+function getUserRoleNames(user) {
+  return (user?.roles ?? []).map((role) => role.name || '');
+}
+
+function isPrivilegedUser(user) {
+  const roles = getRoleNames(user);
+  return !roles.length || roles.some((role) => ['admin', 'administrador', 'administrator', 'desarrollador', 'developer'].includes(role));
+}
+
 function hasStageAccess(user, stage) {
   const roles = getRoleNames(user);
-  if (!roles.length || roles.some((role) => ['admin', 'administrador', 'administrator'].includes(role))) {
+  if (isPrivilegedUser(user)) {
     return true;
   }
   if (stage === 'technical') return roles.some((role) => ['tecnico', 'técnico', 'technical'].includes(role));
   if (stage === 'capture') return roles.some((role) => ['captura', 'capture'].includes(role));
   if (stage === 'quality') return roles.some((role) => ['calidad', 'quality'].includes(role));
   return true;
+}
+
+function canManageServices(user) {
+  const roles = getRoleNames(user);
+  return isPrivilegedUser(user) || roles.some((role) => ['tecnico', 'técnico', 'technical', 'calidad', 'quality', 'comercial'].includes(role));
 }
 
 const calibrationScopeLabels = {
@@ -118,6 +130,7 @@ function ServiceOrdersPage({ user = null }) {
   const [serviceOrders, setServiceOrders] = useState([]);
   const [clients, setClients] = useState([]);
   const [quotations, setQuotations] = useState([]);
+  const [users, setUsers] = useState([]);
   const [equipment, setEquipment] = useState([]);
   const [fieldSheets, setFieldSheets] = useState([]);
   const [certificates, setCertificates] = useState([]);
@@ -126,6 +139,7 @@ function ServiceOrdersPage({ user = null }) {
   const [fieldSheetTemplates, setFieldSheetTemplates] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedEquipmentForSheet, setSelectedEquipmentForSheet] = useState(null);
+  const [selectedEquipmentDetail, setSelectedEquipmentDetail] = useState(null);
   const [selectedFieldSheet, setSelectedFieldSheet] = useState(null);
   const [orderForm, setOrderForm] = useState(emptyServiceOrderForm);
   const [equipmentForm, setEquipmentForm] = useState(emptyEquipmentForm);
@@ -140,6 +154,12 @@ function ServiceOrdersPage({ user = null }) {
   const [activeTab, setActiveTab] = useState('info');
   const [fieldSheetTab, setFieldSheetTab] = useState('info');
   const [orderFilter, setOrderFilter] = useState('all');
+  const [etsSearch, setEtsSearch] = useState('');
+  const [fieldSheetWorkOrderFilter, setFieldSheetWorkOrderFilter] = useState('');
+  const [isTechnicianPickerOpen, setIsTechnicianPickerOpen] = useState(false);
+  const [technicianSearch, setTechnicianSearch] = useState('');
+  const [technicianPage, setTechnicianPage] = useState(1);
+  const [reopenedStages, setReopenedStages] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
@@ -165,6 +185,16 @@ function ServiceOrdersPage({ user = null }) {
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
     [clients]
+  );
+
+  const usersById = useMemo(
+    () => new Map(users.map((systemUser) => [systemUser.id, systemUser])),
+    [users]
+  );
+
+  const technicianOptions = useMemo(
+    () => users.filter((systemUser) => systemUser.is_active !== false && canManageServices(systemUser)),
+    [users]
   );
 
   const quotationsById = useMemo(
@@ -225,6 +255,86 @@ function ServiceOrdersPage({ user = null }) {
     () => fieldSheets.filter((sheet) => selectedEquipment.some((item) => item.id === sheet.equipment_id) && sheet.is_active !== false),
     [fieldSheets, selectedEquipment]
   );
+
+  const relatedWorkOrders = useMemo(() => {
+    if (!selectedOrder) return [];
+    const sameQuotation = selectedOrder.quotation_id
+      ? serviceOrders.filter((order) => order.quotation_id === selectedOrder.quotation_id && order.is_active !== false)
+      : [];
+    const base = sameQuotation.length ? sameQuotation : [selectedOrder];
+    return base
+      .filter((order, index, list) => list.findIndex((candidate) => candidate.id === order.id) === index)
+      .sort((left, right) => String(left.work_order_number || '').localeCompare(String(right.work_order_number || '')));
+  }, [selectedOrder, serviceOrders]);
+
+  const normalizedEtsSearch = etsSearch.trim().toLowerCase();
+
+  const filteredSelectedEquipment = useMemo(() => {
+    if (!normalizedEtsSearch) return selectedEquipment;
+    return selectedEquipment.filter((item) => {
+      const sheet = fieldSheetsByEquipmentId.get(item.id);
+      const certificate = activeCertificatesByEquipmentId.get(item.id);
+      return [
+        selectedOrder?.work_order_number,
+        item.name,
+        item.brand,
+        item.model,
+        item.serial_number,
+        item.internal_id,
+        item.range_or_capacity,
+        sheet?.id ? `hoja ${sheet.id}` : '',
+        sheet?.work_order_number,
+        certificate?.folio,
+        certificate?.expected_folio,
+        certificate?.final_pdf_original_filename,
+        certificate?.authentication_code
+      ].some((value) => String(value || '').toLowerCase().includes(normalizedEtsSearch));
+    });
+  }, [activeCertificatesByEquipmentId, fieldSheetsByEquipmentId, normalizedEtsSearch, selectedEquipment, selectedOrder]);
+
+  const filteredSelectedCertificates = useMemo(() => {
+    if (!normalizedEtsSearch) return selectedCertificates;
+    return selectedCertificates.filter((certificate) => {
+      const item = equipment.find((candidate) => candidate.id === certificate.equipment_id);
+      const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
+      return [
+        certificate.folio,
+        certificate.expected_folio,
+        certificate.authentication_code,
+        certificate.final_pdf_original_filename,
+        certificate.final_pdf_path,
+        certificate.authenticated_pdf_path,
+        item?.name,
+        item?.serial_number,
+        item?.internal_id,
+        sheet?.id,
+        sheet?.work_order_number
+      ].some((value) => String(value || '').toLowerCase().includes(normalizedEtsSearch));
+    });
+  }, [equipment, fieldSheets, normalizedEtsSearch, selectedCertificates]);
+
+  const filteredTechnicianOptions = useMemo(() => {
+    const query = technicianSearch.trim().toLowerCase();
+    const list = technicianOptions.filter((systemUser) => {
+      if (!query) return true;
+      return [
+        systemUser.full_name,
+        systemUser.email,
+        ...getUserRoleNames(systemUser)
+      ].some((value) => String(value || '').toLowerCase().includes(query));
+    });
+    return list;
+  }, [technicianOptions, technicianSearch]);
+
+  const paginatedTechnicianOptions = useMemo(() => {
+    if (filteredTechnicianOptions.length <= 15) return filteredTechnicianOptions;
+    const start = (technicianPage - 1) * 5;
+    return filteredTechnicianOptions.slice(start, start + 5);
+  }, [filteredTechnicianOptions, technicianPage]);
+
+  const technicianPageCount = filteredTechnicianOptions.length > 15
+    ? Math.max(Math.ceil(filteredTechnicianOptions.length / 5), 1)
+    : 1;
 
   const selectedOrderMetrics = useMemo(
     () => (selectedOrder ? getOrderMetrics(selectedOrder) : {
@@ -326,6 +436,72 @@ function ServiceOrdersPage({ user = null }) {
     };
   }, [selectedCertificates, selectedOrder]);
 
+  const selectedStageState = useMemo(() => {
+    if (!selectedOrder) return {};
+    const reopened = reopenedStages[selectedOrder.id] ?? {};
+    const summaryReady = Boolean(selectedOrder.agenda_date && selectedOrder.service_date && selectedOrder.technician_id);
+    const equipmentReady = selectedEquipment.length > 0 && selectedEquipment.length <= 10;
+    const sheetsStarted = selectedFieldSheets.length > 0;
+    const usableSheets = selectedFieldSheets.filter((sheet) => ['completed', 'under_review', 'approved', 'returned_to_technician'].includes(sheet.status)).length;
+    const captureReady = usableSheets > 0 || selectedCertificates.length > 0;
+    const captureComplete = selectedCertificates.length > 0 && selectedCertificates.some((certificate) => certificate.final_pdf_path);
+    const qualityReady = selectedCertificates.some((certificate) => ['ready_for_quality', 'quality_review', 'quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(certificate.status));
+    const qualityComplete = selectedCertificates.length > 0 && selectedCertificates.every((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(certificate.status));
+    const certificateReady = selectedCertificates.length > 0;
+    const certificateComplete = selectedCertificates.length > 0 && selectedCertificates.every((certificate) => certificate.authenticated_pdf_path || certificate.status === 'released_to_client');
+    const documentsReady = certificateComplete || selectedFieldSheets.length > 0 || Boolean(selectedOrder.quotation_id);
+    const billingReady = selectedCertificates.some((certificate) => certificate.status === 'released_to_client') || ['pending_payment', 'released', 'closed'].includes(selectedOrder.status);
+    const billingComplete = !selectedOrder.requires_payment || ['released', 'closed'].includes(selectedOrder.status);
+    const states = {
+      info: {
+        label: reopened.info ? 'Reabierta' : summaryReady ? 'Lista' : 'En proceso',
+        status: reopened.info ? 'reopened' : summaryReady ? 'done' : 'active',
+        ready: summaryReady,
+      },
+      equipment: {
+        label: reopened.equipment ? 'Reabierta' : equipmentReady ? 'Lista' : summaryReady ? 'En proceso' : 'Pendiente',
+        status: reopened.equipment ? 'reopened' : equipmentReady ? 'done' : summaryReady ? 'active' : 'blocked',
+        ready: equipmentReady,
+      },
+      'field-sheet': {
+        label: sheetsStarted ? (usableSheets ? 'En proceso' : 'Iniciada') : equipmentReady ? 'Pendiente' : 'Bloqueada',
+        status: sheetsStarted ? (usableSheets ? 'active' : 'reopened') : equipmentReady ? 'pending' : 'blocked',
+        ready: sheetsStarted,
+      },
+      capture: {
+        label: captureComplete ? 'En proceso' : captureReady ? 'Disponible' : 'Bloqueada',
+        status: captureComplete ? 'active' : captureReady ? 'pending' : 'blocked',
+        ready: captureReady,
+      },
+      quality: {
+        label: qualityComplete ? 'Lista' : qualityReady ? 'En proceso' : 'Pendiente',
+        status: qualityComplete ? 'done' : qualityReady ? 'active' : 'pending',
+        ready: qualityReady,
+      },
+      certificates: {
+        label: certificateComplete ? 'Lista' : certificateReady ? 'En proceso' : 'Pendiente',
+        status: certificateComplete ? 'done' : certificateReady ? 'active' : 'pending',
+        ready: certificateReady,
+      },
+      documents: {
+        label: documentsReady ? 'Disponible' : 'Pendiente',
+        status: documentsReady ? 'active' : 'pending',
+        ready: documentsReady,
+      },
+      history: {
+        label: 'Disponible',
+        status: 'active',
+        ready: true,
+      },
+      billing: {
+        label: billingComplete ? 'Lista' : billingReady ? 'En proceso' : 'Pendiente',
+        status: billingComplete ? 'done' : billingReady ? 'active' : 'pending',
+        ready: billingReady,
+      },
+    };
+    return states;
+  }, [selectedOrder, selectedEquipment, selectedFieldSheets, selectedCertificates, reopenedStages]);
+
   function getOrderMetrics(order) {
     const orderEquipment = equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false);
     const orderEquipmentIds = new Set(orderEquipment.map((item) => item.id));
@@ -367,6 +543,98 @@ function ServiceOrdersPage({ user = null }) {
     };
   }
 
+  function getUserDisplayNameById(userId, fallback = 'Sin asignar') {
+    if (!userId) return fallback;
+    const systemUser = usersById.get(userId);
+    return systemUser?.full_name || systemUser?.email || fallback;
+  }
+
+  function getOrderAdvisorName(order) {
+    return order.advisor_name || getUserDisplayNameById(order.advisor_id, 'Sin asesor');
+  }
+
+  function getOrderTechnicianName(order) {
+    return order.technician_name || getUserDisplayNameById(order.technician_id, 'Sin asignar');
+  }
+
+  function markStageVisual(stage, message) {
+    if (!selectedOrder) return;
+    setReopenedStages((current) => ({
+      ...current,
+      [selectedOrder.id]: {
+        ...(current[selectedOrder.id] ?? {}),
+        [stage]: false,
+      },
+    }));
+    setNotice(message);
+  }
+
+  function reopenStageVisual(stage, label) {
+    if (!selectedOrder) return;
+    setReopenedStages((current) => ({
+      ...current,
+      [selectedOrder.id]: {
+        ...(current[selectedOrder.id] ?? {}),
+        [stage]: true,
+      },
+    }));
+    setNotice(`${label} reabierta visualmente. La auditoria formal queda pendiente de endpoint especifico.`);
+  }
+
+  function openTechnicianPicker() {
+    setTechnicianSearch('');
+    setTechnicianPage(1);
+    setIsTechnicianPickerOpen(true);
+  }
+
+  function selectTechnician(systemUser) {
+    updateOrderForm('technicianId', systemUser ? String(systemUser.id) : '');
+    setIsTechnicianPickerOpen(false);
+    setTechnicianSearch('');
+    setTechnicianPage(1);
+  }
+
+  function openQuotationFromEts() {
+    if (!selectedOrder?.quotation_id) {
+      setError('Este ETS no tiene cotizacion vinculada.');
+      return;
+    }
+    window.sessionStorage.setItem('myc:openQuotationId', String(selectedOrder.quotation_id));
+    navigate('/dashboard#cotizaciones');
+  }
+
+  function openTabFromSummary(tab, options = {}) {
+    if (options.workOrderNumber) {
+      setFieldSheetWorkOrderFilter(String(options.workOrderNumber));
+    } else if (tab !== 'field-sheet') {
+      setFieldSheetWorkOrderFilter('');
+    }
+    setActiveTab(tab);
+  }
+
+  function openEquipmentDetail(item) {
+    setSelectedEquipmentDetail(item);
+    setError('');
+    setNotice('');
+  }
+
+  function closeEquipmentDetail() {
+    setSelectedEquipmentDetail(null);
+  }
+
+  function editEquipmentFromDetail(item) {
+    closeEquipmentDetail();
+    openEquipmentModal(item);
+  }
+
+  function setEquipmentConditionPreset(kind) {
+    if (kind === 'good') {
+      updateEquipmentForm('initialCondition', 'Equipo recibido en buen estado general.');
+      return;
+    }
+    updateEquipmentForm('initialCondition', 'Equipo recibido con anomalías visibles.');
+  }
+
   const filteredServiceOrders = useMemo(() => {
     return serviceOrders.filter((order) => {
       const metrics = getOrderMetrics(order);
@@ -395,7 +663,8 @@ function ServiceOrdersPage({ user = null }) {
         fieldSheetResult,
         certificatesResult,
         referenceStandardsResult,
-        proceduresResult
+        proceduresResult,
+        usersResult
       ] = await Promise.all([
         listServiceOrders(),
         listClients(),
@@ -405,7 +674,8 @@ function ServiceOrdersPage({ user = null }) {
         listFieldSheets(),
         listCertificates(),
         listReferenceStandards(),
-        listCalibrationProcedures()
+        listCalibrationProcedures(),
+        listUsers().catch(() => [])
       ]);
       const nextOrders = Array.isArray(ordersResult) ? ordersResult : [];
       setServiceOrders(nextOrders);
@@ -423,6 +693,7 @@ function ServiceOrdersPage({ user = null }) {
       setCertificates(Array.isArray(certificatesResult) ? certificatesResult : []);
       setReferenceStandards(Array.isArray(referenceStandardsResult) ? referenceStandardsResult : []);
       setCalibrationProcedures(Array.isArray(proceduresResult) ? proceduresResult : []);
+      setUsers(Array.isArray(usersResult) ? usersResult : []);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -435,9 +706,17 @@ function ServiceOrdersPage({ user = null }) {
   }, []);
 
   useEffect(() => {
+    setTechnicianPage(1);
+  }, [technicianSearch]);
+
+  useEffect(() => {
     function handleEscape(event) {
       if (event.key !== 'Escape') return;
-      if (isFieldSheetModalOpen) {
+      if (isTechnicianPickerOpen) {
+        setIsTechnicianPickerOpen(false);
+      } else if (selectedEquipmentDetail) {
+        closeEquipmentDetail();
+      } else if (isFieldSheetModalOpen) {
         closeFieldSheetModal();
       } else if (isEquipmentModalOpen) {
         closeEquipmentModal();
@@ -448,7 +727,7 @@ function ServiceOrdersPage({ user = null }) {
 
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
-  }, [isDetailOpen, isEquipmentModalOpen, isFieldSheetModalOpen]);
+  }, [isDetailOpen, isEquipmentModalOpen, isFieldSheetModalOpen, isTechnicianPickerOpen, selectedEquipmentDetail]);
 
   function getOrderEquipmentCount(order) {
     return equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false).length;
@@ -464,6 +743,8 @@ function ServiceOrdersPage({ user = null }) {
       notes: order.notes ?? ''
     });
     setActiveTab('info');
+    setEtsSearch('');
+    setFieldSheetWorkOrderFilter('');
     setIsDetailOpen(true);
     setError('');
     setNotice('');
@@ -473,12 +754,16 @@ function ServiceOrdersPage({ user = null }) {
     setIsDetailOpen(false);
     setSelectedOrder(null);
     setSelectedEquipmentForSheet(null);
+    setSelectedEquipmentDetail(null);
     setSelectedFieldSheet(null);
     setOrderForm(emptyServiceOrderForm);
     setEquipmentForm(emptyEquipmentForm);
     setFieldSheetForm(emptyFieldSheetForm);
     setEditingEquipmentId(null);
     setActiveTab('info');
+    setEtsSearch('');
+    setFieldSheetWorkOrderFilter('');
+    setIsTechnicianPickerOpen(false);
     setFieldSheetTab('technical');
     setSelectedAuthentication(null);
     setError('');
@@ -514,32 +799,6 @@ function ServiceOrdersPage({ user = null }) {
     } finally {
       setIsSaving(false);
     }
-  }
-
-  function isServiceOrderActionAllowed(order, action) {
-    return serviceOrderTransitions[order.status]?.has(action.nextStatus) ?? false;
-  }
-
-  async function handleServiceOrderStatus(order, action) {
-    const nextLabel = serviceOrderStatusLabels[action.nextStatus] ?? action.nextStatus;
-    openConfirm({
-      title: 'Confirmar cambio de estado',
-      message: `La orden ${order.folio} cambiará a ${nextLabel}.`,
-      confirmText: `Cambiar a ${nextLabel}`,
-      variant: 'danger',
-      onConfirm: async () => {
-        setError('');
-        setNotice('');
-        try {
-          const updated = await changeServiceOrderStatus(order.id, action.key);
-          setSelectedOrder(updated);
-          setNotice(`Orden ${updated.folio} actualizada a ${serviceOrderStatusLabels[updated.status]}`);
-          await loadServiceOrderData();
-        } catch (requestError) {
-          setError(requestError.message);
-        }
-      }
-    });
   }
 
   function openEquipmentModal(item = null) {
@@ -629,9 +888,9 @@ function ServiceOrdersPage({ user = null }) {
 
   async function handleDeleteEquipment(item) {
     openConfirm({
-      title: 'Dar de baja equipo',
-      message: `Esta acción dará de baja el equipo ${item.name}.\nNo se eliminará físicamente y se recalcularán los contadores de la orden.`,
-      confirmText: 'Dar de baja equipo',
+      title: 'Eliminar equipo',
+      message: `El equipo ${item.name} se eliminará de la operación visible.\nNo se eliminará físicamente y se recalcularán los contadores de la orden.`,
+      confirmText: 'Eliminar equipo',
       variant: 'danger',
       onConfirm: async () => {
         setError('');
@@ -639,7 +898,7 @@ function ServiceOrdersPage({ user = null }) {
         try {
           await deleteEquipment(item.id);
           setEquipment((current) => current.filter((equipmentItem) => equipmentItem.id !== item.id));
-          setNotice('Equipo dado de baja');
+          setNotice('Equipo eliminado de la operación visible');
           await loadServiceOrderData();
         } catch (requestError) {
           setError(requestError.message);
@@ -1358,9 +1617,9 @@ function ServiceOrdersPage({ user = null }) {
   async function handleDeleteServiceOrder() {
     if (!selectedOrder) return;
     openConfirm({
-      title: 'Dar de baja orden de servicio',
-      message: `Esta acción dará de baja la orden ${selectedOrder.folio}.\nNo se eliminará físicamente y puede afectar equipos, hojas y certificados relacionados.`,
-      confirmText: 'Dar de baja orden',
+      title: 'Eliminar orden de servicio',
+      message: `La orden ${selectedOrder.folio} se eliminará de la operación visible.\nNo se eliminará físicamente: se conservará trazabilidad y el backend validará equipos, hojas y certificados relacionados.`,
+      confirmText: 'Eliminar',
       variant: 'danger',
       onConfirm: async () => {
         setError('');
@@ -1368,7 +1627,7 @@ function ServiceOrdersPage({ user = null }) {
         try {
           await deleteServiceOrder(selectedOrder.id);
           closeOrderDetail();
-          setNotice('Orden de servicio dada de baja');
+          setNotice('Orden de servicio eliminada de la operación visible');
           await loadServiceOrderData();
         } catch (requestError) {
           setError(requestError.message);
@@ -1380,9 +1639,9 @@ function ServiceOrdersPage({ user = null }) {
   async function handleDeleteFieldSheet() {
     if (!selectedFieldSheet) return;
     openConfirm({
-      title: 'Dar de baja hoja de campo',
-      message: `Esta acción dará de baja la hoja de campo #${selectedFieldSheet.id}.\nNo se eliminará físicamente y puede afectar certificados relacionados.`,
-      confirmText: 'Dar de baja hoja',
+      title: 'Eliminar hoja de campo',
+      message: `La hoja de campo #${selectedFieldSheet.id} se eliminará de la operación visible.\nNo se eliminará físicamente y puede afectar certificados relacionados.`,
+      confirmText: 'Eliminar hoja',
       variant: 'danger',
       onConfirm: async () => {
         setError('');
@@ -1391,7 +1650,7 @@ function ServiceOrdersPage({ user = null }) {
         try {
           await deleteFieldSheet(selectedFieldSheet.id);
           closeFieldSheetModal();
-          setNotice('Hoja de campo dada de baja');
+          setNotice('Hoja de campo eliminada de la operación visible');
           await loadServiceOrderData();
         } catch (requestError) {
           setError(requestError.message);
@@ -1465,7 +1724,6 @@ function ServiceOrdersPage({ user = null }) {
             <span>Captura</span>
             <span>Calidad</span>
             <span>Avance</span>
-            <span>Acciones</span>
           </div>
 
           {isLoading ? (
@@ -1484,7 +1742,7 @@ function ServiceOrdersPage({ user = null }) {
                       {serviceOrderStatusLabels[order.status] ?? order.status}
                     </mark>
                   </span>
-                  <span>{order.technician_id ? `#${order.technician_id}` : 'Por asignar'}</span>
+                  <span>{getOrderTechnicianName(order)}</span>
                   <span>{formatDate(order.service_date || order.agenda_date)}</span>
                   <span>{metrics.equipmentCount}</span>
                   <span>{metrics.fieldSheetsDone}/{metrics.fieldSheetsCount}</span>
@@ -1493,7 +1751,6 @@ function ServiceOrdersPage({ user = null }) {
                   <span>{metrics.capturePending}</span>
                   <span>{metrics.qualityPending}</span>
                   <span>{metrics.advance}%</span>
-                  <span>Abrir ETS</span>
                 </button>
               );
             })
@@ -1520,6 +1777,34 @@ function ServiceOrdersPage({ user = null }) {
               </button>
             </div>
 
+            <div className="ets-modal-action-ribbon" aria-label="Acciones principales del ETS">
+              <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
+                Ver orden PDF
+              </button>
+              <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">
+                Descargar PDF
+              </button>
+              <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">
+                Imprimir
+              </button>
+              <button className="primary-button" disabled={isSaving || activeTab !== 'info'} form="service-order-summary-form" type="submit">
+                {isSaving ? 'Guardando...' : 'Guardar cambios'}
+              </button>
+              <button className="icon-text-button" onClick={closeOrderDetail} type="button">
+                Cerrar
+              </button>
+            </div>
+
+            <label className="ets-expedient-search">
+              <span>Buscar dentro del ETS</span>
+              <input
+                onChange={(event) => setEtsSearch(event.target.value)}
+                placeholder="OT, equipo, serie, ID interno, hoja, certificado, PDF o folio"
+                type="search"
+                value={etsSearch}
+              />
+            </label>
+
             <div className="ets-folder-tabs" role="tablist" aria-label="Carpetas del expediente">
               {[
                 ['info', 'Resumen'],
@@ -1536,17 +1821,20 @@ function ServiceOrdersPage({ user = null }) {
                   aria-selected={activeTab === key}
                   className={activeTab === key ? 'ets-folder-tab is-active' : 'ets-folder-tab'}
                   key={key}
-                  onClick={() => setActiveTab(key)}
+                  onClick={() => openTabFromSummary(key)}
                   type="button"
                 >
-                  {label}
+                  <span>{label}</span>
+                  <small className={`ets-stage-badge is-${selectedStageState[key]?.status ?? 'pending'}`}>
+                    {selectedStageState[key]?.label ?? 'Pendiente'}
+                  </small>
                 </button>
               ))}
             </div>
 
             {activeTab === 'info' ? (
               <>
-                <form className="quotation-detail-form" onSubmit={handleOrderSubmit}>
+                <form className="quotation-detail-form" id="service-order-summary-form" onSubmit={handleOrderSubmit}>
                   <section className="quotation-section">
                     <div className="quotation-section__title">
                       <p>Informacion operativa</p>
@@ -1562,17 +1850,17 @@ function ServiceOrdersPage({ user = null }) {
                       </div>
                       <div className="ets-stage-strip">
                         {[
-                          ['Cotización', Boolean(selectedOrder.quotation_id)],
-                          ['Agenda', Boolean(selectedOrder.agenda_date && selectedOrder.service_date && selectedOrder.technician_id)],
-                          ['Equipos', selectedOrderMetrics.expectedEquipment ? selectedOrderMetrics.equipmentCount >= Math.min(selectedOrderMetrics.expectedEquipment, 10) : selectedOrderMetrics.equipmentCount > 0],
-                          ['Hojas', selectedOrderMetrics.fieldSheetsCount > 0],
-                          ['Captura', selectedOrderMetrics.certificatesExpected > 0 && selectedOrderMetrics.pdfUploaded === selectedOrderMetrics.certificatesExpected],
-                          ['Calidad', selectedOrderMetrics.certificatesExpected > 0 && selectedCertificates.every((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(certificate.status))],
-                          ['PDF autenticado', selectedOrderMetrics.certificatesExpected > 0 && selectedOrderMetrics.authenticated === selectedOrderMetrics.certificatesExpected],
-                          ['Facturación', !selectedOrderMetrics.billingPending],
+                          ['Cotización', Boolean(selectedOrder.quotation_id), 'done'],
+                          ['Resumen', selectedStageState.info?.ready, selectedStageState.info?.status],
+                          ['Equipos', selectedStageState.equipment?.ready, selectedStageState.equipment?.status],
+                          ['Hojas', selectedStageState['field-sheet']?.ready, selectedStageState['field-sheet']?.status],
+                          ['Captura', selectedStageState.capture?.ready, selectedStageState.capture?.status],
+                          ['Calidad', selectedStageState.quality?.ready, selectedStageState.quality?.status],
+                          ['PDF autenticado', selectedOrderMetrics.certificatesExpected > 0 && selectedOrderMetrics.authenticated === selectedOrderMetrics.certificatesExpected, selectedOrderMetrics.authenticated ? 'done' : 'pending'],
+                          ['Facturación', !selectedOrderMetrics.billingPending, selectedStageState.billing?.status],
                           ['Cierre', selectedOrder.status === 'closed']
-                        ].map(([label, done]) => (
-                          <span className={done ? 'ets-stage is-done' : 'ets-stage'} key={label}>{label}</span>
+                        ].map(([label, done, state]) => (
+                          <span className={`ets-stage ${done ? 'is-done' : ''} is-${state ?? 'pending'}`} key={label}>{label}</span>
                         ))}
                       </div>
                     </div>
@@ -1581,43 +1869,56 @@ function ServiceOrdersPage({ user = null }) {
                         <span>Folio OS</span>
                         <strong>{selectedOrder.folio}</strong>
                       </article>
-                      <article>
-                        <span>Orden de trabajo</span>
-                        <strong>OT {selectedOrder.work_order_number ?? '-'}</strong>
+                      <article className="ets-summary-work-orders">
+                        <span>Ordenes de trabajo</span>
+                        <div>
+                          {relatedWorkOrders.map((order) => (
+                            <button
+                              className="ets-summary-link"
+                              key={order.id}
+                              onClick={() => openTabFromSummary('field-sheet', { workOrderNumber: order.work_order_number })}
+                              type="button"
+                            >
+                              <strong>OT {order.work_order_number ?? '-'}</strong>
+                              <small>{getOrderEquipmentCount(order)} equipos</small>
+                            </button>
+                          ))}
+                        </div>
                       </article>
                       <article>
                         <span>Cliente</span>
                         <strong>{getClientDisplayName(clientsById.get(selectedOrder.client_id))}</strong>
                       </article>
-                      <article>
+                      <article className="ets-summary-card--clickable">
                         <span>Cotizacion origen</span>
                         <strong>{quotationsById.get(selectedOrder.quotation_id)?.folio || '-'}</strong>
+                        <button className="table-button" disabled={!selectedOrder.quotation_id} onClick={openQuotationFromEts} type="button">
+                          Abrir cotizacion
+                        </button>
                       </article>
                       <article>
                         <span>Equipos esperados desde cotizacion</span>
                         <strong>{safeNumber(selectedOrderMetrics.expectedEquipment)}</strong>
                       </article>
-                      <article>
+                      <button className="ets-summary-card" onClick={() => openTabFromSummary('equipment')} type="button">
                         <span>Equipos registrados</span>
                         <strong>{selectedEquipment.length} / 10</strong>
-                      </article>
+                      </button>
                       <article>
                         <span>Asesor</span>
-                        <strong>{selectedOrder.advisor_id ? `#${selectedOrder.advisor_id}` : 'Sin asesor'}</strong>
+                        <strong>{getOrderAdvisorName(selectedOrder)}</strong>
                       </article>
                       <article>
                         <span>Estado actual</span>
                         <strong>{serviceOrderStatusLabels[selectedOrder.status] ?? selectedOrder.status}</strong>
                       </article>
-                      <label>
-                        Tecnico
-                        <input
-                          onChange={(event) => updateOrderForm('technicianId', event.target.value)}
-                          placeholder="ID de usuario tecnico"
-                          type="number"
-                          value={orderForm.technicianId}
-                        />
-                      </label>
+                      <article className="ets-technician-card">
+                        <span>Tecnico</span>
+                        <strong>{orderForm.technicianId ? getUserDisplayNameById(Number(orderForm.technicianId)) : 'Sin asignar'}</strong>
+                        <button className="table-button" onClick={openTechnicianPicker} type="button">
+                          Elegir tecnico
+                        </button>
+                      </article>
                       <label>
                         Fecha agenda
                         <input onChange={(event) => updateOrderForm('agendaDate', event.target.value)} type="date" value={orderForm.agendaDate} />
@@ -1634,22 +1935,22 @@ function ServiceOrdersPage({ user = null }) {
                         <span>Equipos completados</span>
                         <strong>{safeNumber(selectedOrderMetrics.completedEquipment)}</strong>
                       </article>
-                      <article>
+                      <button className="ets-summary-card" onClick={() => openTabFromSummary('field-sheet')} type="button">
                         <span>Hojas creadas</span>
                         <strong>{safeNumber(selectedOrderMetrics.fieldSheetsCount)}</strong>
-                      </article>
+                      </button>
                       <article>
                         <span>Hojas completadas</span>
                         <strong>{safeNumber(selectedOrderMetrics.fieldSheetsDone)}</strong>
                       </article>
-                      <article>
+                      <button className="ets-summary-card" onClick={() => openTabFromSummary('certificates')} type="button">
                         <span>Certificados esperados</span>
                         <strong>{safeNumber(selectedOrderMetrics.certificatesExpected)}</strong>
-                      </article>
-                      <article>
+                      </button>
+                      <button className="ets-summary-card" onClick={() => openTabFromSummary('documents')} type="button">
                         <span>PDFs subidos</span>
                         <strong>{safeNumber(selectedOrderMetrics.pdfUploaded)}</strong>
-                      </article>
+                      </button>
                       <article>
                         <span>PDFs autenticados</span>
                         <strong>{safeNumber(selectedOrderMetrics.authenticated)}</strong>
@@ -1697,73 +1998,37 @@ function ServiceOrdersPage({ user = null }) {
                   </section>
 
                   <div className="quotation-detail-save">
-                    <span>Guarda agenda, servicio, tecnico, pago y notas.</span>
+                    <span>La etapa queda lista cuando exista fecha de agenda, fecha de servicio y tecnico asignado.</span>
                     <div className="toolbar-actions">
-                      <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
-                        Ver orden PDF
+                      <button
+                        className="primary-button"
+                        disabled={!orderForm.agendaDate || !orderForm.serviceDate || !orderForm.technicianId || isSaving}
+                        type="submit"
+                      >
+                        {selectedStageState.info?.ready ? 'Resumen listo' : 'Marcar resumen listo'}
                       </button>
-                      <button className="table-button" onClick={() => openEquipmentModal()} type="button">
-                        Crear equipo
-                      </button>
-                      <button className="table-button" onClick={() => setActiveTab('equipment')} type="button">
-                        Abrir equipos
-                      </button>
-                      <button className="table-button" onClick={() => setActiveTab('capture')} type="button">
-                        Abrir captura
-                      </button>
-                      <button className="table-button" onClick={() => setActiveTab('quality')} type="button">
-                        Abrir calidad
-                      </button>
-                      <label className="table-button table-button--file">
-                        Subir PDFs
-                        <input
-                          accept="application/pdf"
-                          multiple
-                          onChange={(event) => handleBulkPdfUpload(event.target.files, event.target)}
-                          type="file"
-                        />
-                      </label>
-                      <button className="table-button" onClick={handleDownloadWorkOrderPdf} type="button">
-                        Descargar PDF
-                      </button>
-                      <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">
-                        Imprimir
-                      </button>
-                      <button className="primary-button" disabled={isSaving} type="submit">
-                        {isSaving ? 'Guardando...' : 'Guardar cambios'}
-                      </button>
+                      {selectedStageState.info?.ready ? (
+                        <button className="table-button" onClick={() => setActiveTab('equipment')} type="button">
+                          Siguiente: Equipos
+                        </button>
+                      ) : null}
+                      {isPrivilegedUser(user) && selectedStageState.info?.ready ? (
+                        <button className="table-button" onClick={() => reopenStageVisual('info', 'Resumen')} type="button">
+                          Reabrir resumen
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </form>
 
-                <section className="quotation-section">
-                  <div className="quotation-section__title">
-                    <p>Acciones de estado</p>
-                    <h3>Flujo operativo</h3>
-                  </div>
-                  <div className="quotation-actions">
-                    {serviceOrderActions.map((action) => (
-                      <button
-                        className="table-button"
-                        disabled={!isServiceOrderActionAllowed(selectedOrder, action)}
-                        key={action.key}
-                        onClick={() => handleServiceOrderStatus(selectedOrder, action)}
-                        type="button"
-                      >
-                        {action.label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
                 <section className="danger-zone">
                   <div className="danger-zone__copy">
-                    <p>Zona de baja</p>
-                    <span>Esta acción dará de baja la orden de servicio. No se eliminará físicamente y el backend validará dependencias activas.</span>
+                    <p>Zona de eliminacion operativa</p>
+                    <span>La orden se elimina de la operación visible, pero se conserva trazabilidad y el backend valida dependencias activas.</span>
                   </div>
                   <div className="toolbar-actions">
                     <button className="table-button table-button--danger" onClick={handleDeleteServiceOrder} type="button">
-                      Dar de baja orden
+                      Eliminar
                     </button>
                   </div>
                 </section>
@@ -1776,12 +2041,27 @@ function ServiceOrdersPage({ user = null }) {
                   <div>
                     <p>Equipos de la orden</p>
                     <h3>Equipos registrados: {selectedEquipment.length} / 10</h3>
+                    <span className={`ets-inline-stage is-${selectedStageState.equipment?.status ?? 'pending'}`}>
+                      {selectedStageState.equipment?.label ?? 'Pendiente'}
+                    </span>
                   </div>
-                  {canUseTechnicalActions ? (
-                    <button className="primary-button" disabled={selectedEquipment.length >= 10} onClick={() => openEquipmentModal()} type="button">
-                      + Agregar equipo
-                    </button>
-                  ) : null}
+                  <div className="toolbar-actions">
+                    {selectedEquipment.length > 0 && selectedEquipment.length <= 10 ? (
+                      <button className="table-button table-button--primary" onClick={() => markStageVisual('equipment', 'Etapa Equipos marcada como lista. Hojas de Campo queda destacada como siguiente etapa.')} type="button">
+                        Marcar equipos listos
+                      </button>
+                    ) : null}
+                    {isPrivilegedUser(user) && selectedStageState.equipment?.ready ? (
+                      <button className="table-button" onClick={() => reopenStageVisual('equipment', 'Equipos')} type="button">
+                        Reabrir equipos
+                      </button>
+                    ) : null}
+                    {canUseTechnicalActions ? (
+                      <button className="primary-button" disabled={selectedEquipment.length >= 10} onClick={() => openEquipmentModal()} type="button">
+                        + Agregar equipo
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="ets-metric-strip">
                   <span className="ets-metric-badge"><strong>{safeNumber(selectedOrderMetrics.expectedEquipment)}</strong>Esperados cotizacion</span>
@@ -1800,71 +2080,60 @@ function ServiceOrdersPage({ user = null }) {
                 {selectedEquipment.length >= 10 ? (
                   <div className="clients-empty">Maximo 10 equipos por Orden de Trabajo.</div>
                 ) : null}
-                <div className="clients-table equipment-table">
-                  <div className="clients-table__head">
-                    <span>Instrumento</span>
-                    <span>Marca</span>
-                    <span>Modelo</span>
-                    <span>Serie</span>
-                    <span>Identificacion</span>
-                    <span>Tipo cert.</span>
-                    <span>Folio reservado</span>
-                    <span>Estado</span>
-                    <span>Hoja de Campo</span>
-                    <span>Certificado</span>
-                    <span>PDF final</span>
-                    <span>Acciones</span>
-                  </div>
-                  {selectedEquipment.length ? (
-                    selectedEquipment.map((item) => {
+                <div className="ets-stage-note">
+                  Orden de trabajo pendiente de firma: este control queda preparado como estado visual hasta definir el campo documental formal.
+                </div>
+                <div className="ets-equipment-card-grid">
+                  {filteredSelectedEquipment.length ? (
+                    filteredSelectedEquipment.map((item) => {
                       const sheet = fieldSheetsByEquipmentId.get(item.id);
                       const certificate = activeCertificatesByEquipmentId.get(item.id);
                       return (
-                        <div className="clients-table__row" key={item.id}>
-                          <span>{item.name}</span>
-                          <span>{item.brand || '-'}</span>
-                          <span>{item.model || '-'}</span>
-                          <span>{item.serial_number || '-'}</span>
-                          <span>{item.internal_id || '-'}</span>
-                          <span>{calibrationScopeLabels[item.calibration_scope] || '-'}</span>
-                          <span>{certificate?.expected_folio || certificate?.folio || '-'}</span>
-                          <span>
-                            <mark className={`quotation-status status-${item.status}`}>
-                              {equipmentStatusLabels[item.status] ?? item.status}
-                            </mark>
-                          </span>
-                          <span>{sheet ? `Hoja ${sheet.id}` : '-'}</span>
-                          <span>{certificate ? certificateStatusLabels[certificate.status] ?? certificate.status : 'Pendiente'}</span>
-                          <span>{certificate?.authenticated_pdf_path ? 'Autenticado' : certificate?.final_pdf_path ? 'Original' : '-'}</span>
-                          <span className="clients-table__actions">
-                            {canUseTechnicalActions ? (
-                              <button className="table-button" onClick={() => openEquipmentModal(item)} type="button">
-                                Editar
-                              </button>
-                            ) : null}
-                            {canUseTechnicalActions ? equipmentActions.map((action) => (
-                              <button
-                                className="table-button"
-                                disabled={!isEquipmentActionAllowed(item, action)}
-                                key={action.key}
-                                onClick={() => handleEquipmentStatus(item, action)}
-                                type="button"
-                              >
-                                {action.label}
-                              </button>
-                            )) : null}
-                            <button className="table-button table-button--primary" onClick={() => openFieldSheetForEquipment(item)} type="button">
-                              Abrir hoja
-                            </button>
-                            {canUseTechnicalActions ? (
-                              <button className="table-button" onClick={() => handleDeleteEquipment(item)} type="button">
-                                Eliminar
-                              </button>
-                            ) : null}
-                          </span>
-                        </div>
+                        <button className="ets-equipment-card" key={item.id} onClick={() => openEquipmentDetail(item)} type="button">
+                          <span className="ets-equipment-card__eyebrow">{calibrationScopeLabels[item.calibration_scope] || 'Sin tipo'}</span>
+                          <strong>{item.name}</strong>
+                          <mark className={`quotation-status status-${item.status}`}>
+                            {equipmentStatusLabels[item.status] ?? item.status}
+                          </mark>
+                          <dl>
+                            <div>
+                              <dt>Marca</dt>
+                              <dd>{item.brand || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt>Modelo</dt>
+                              <dd>{item.model || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt>Serie</dt>
+                              <dd>{item.serial_number || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt>ID interno</dt>
+                              <dd>{item.internal_id || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt>Folio reservado</dt>
+                              <dd>{certificate?.expected_folio || certificate?.folio || '-'}</dd>
+                            </div>
+                            <div>
+                              <dt>Hoja</dt>
+                              <dd>{sheet ? `Hoja ${sheet.id}` : 'Pendiente'}</dd>
+                            </div>
+                            <div>
+                              <dt>Certificado</dt>
+                              <dd>{certificate ? certificateStatusLabels[certificate.status] ?? certificate.status : 'Pendiente'}</dd>
+                            </div>
+                            <div>
+                              <dt>PDF</dt>
+                              <dd>{certificate?.authenticated_pdf_path ? 'Autenticado' : certificate?.final_pdf_path ? 'Original' : 'Pendiente'}</dd>
+                            </div>
+                          </dl>
+                        </button>
                       );
                     })
+                  ) : selectedEquipment.length && etsSearch ? (
+                    <div className="clients-empty">No hay equipos que coincidan con la busqueda dentro de este ETS.</div>
                   ) : (
                     <div className="clients-empty">Todavia no hay equipos vinculados a esta orden.</div>
                   )}
@@ -1878,21 +2147,36 @@ function ServiceOrdersPage({ user = null }) {
                   <p>Hoja de campo</p>
                   <h3>Preparacion tecnica</h3>
                 </div>
+                <div className="ets-stage-note">
+                  Captura puede avanzar con hojas utilizables o certificados esperados disponibles; el tecnico puede seguir completando hojas en paralelo.
+                </div>
+                {fieldSheetWorkOrderFilter ? (
+                  <div className="ets-stage-note">
+                    Mostrando hojas de la OT {fieldSheetWorkOrderFilter}.
+                    <button className="table-button" onClick={() => setFieldSheetWorkOrderFilter('')} type="button">Ver todas</button>
+                  </div>
+                ) : null}
                 {selectedEquipment.length ? (
                   <div className="field-sheet-prep-list">
-                    {selectedEquipment.map((item) => (
-                      <article className="glass-card-mini" key={item.id}>
-                        <strong>{item.name}</strong>
-                        <span>
-                          {fieldSheetsByEquipmentId.has(item.id)
-                            ? `Hoja ${fieldSheetsByEquipmentId.get(item.id).id} · ${fieldSheetStatusLabels[fieldSheetsByEquipmentId.get(item.id).status] ?? fieldSheetsByEquipmentId.get(item.id).status}`
-                            : `${item.brand || '-'} · ${item.model || '-'} · ${item.serial_number || 'Sin serie'}`}
-                        </span>
-                        <button className="table-button" onClick={() => openFieldSheetForEquipment(item)} type="button">
-                          {fieldSheetsByEquipmentId.has(item.id) ? 'Abrir hoja de campo' : 'Crear hoja de campo'}
-                        </button>
-                      </article>
-                    ))}
+                    {filteredSelectedEquipment
+                      .filter((item) => {
+                        if (!fieldSheetWorkOrderFilter) return true;
+                        const sheet = fieldSheetsByEquipmentId.get(item.id);
+                        return String(sheet?.work_order_number || selectedOrder.work_order_number || '') === String(fieldSheetWorkOrderFilter);
+                      })
+                      .map((item) => (
+                        <article className="glass-card-mini" key={item.id}>
+                          <strong>{item.name}</strong>
+                          <span>
+                            {fieldSheetsByEquipmentId.has(item.id)
+                              ? `Hoja ${fieldSheetsByEquipmentId.get(item.id).id} · ${fieldSheetStatusLabels[fieldSheetsByEquipmentId.get(item.id).status] ?? fieldSheetsByEquipmentId.get(item.id).status}`
+                              : `${item.brand || '-'} · ${item.model || '-'} · ${item.serial_number || 'Sin serie'}`}
+                          </span>
+                          <button className="table-button" onClick={() => openFieldSheetForEquipment(item)} type="button">
+                            {fieldSheetsByEquipmentId.has(item.id) ? 'Abrir hoja de campo' : 'Crear hoja de campo'}
+                          </button>
+                        </article>
+                      ))}
                   </div>
                 ) : (
                   <div className="clients-empty">Agrega equipos para preparar hojas de campo.</div>
@@ -1927,6 +2211,9 @@ function ServiceOrdersPage({ user = null }) {
                     <span className="ets-metric-badge" key={label}><strong>{safeNumber(value)}</strong>{label}</span>
                   ))}
                 </div>
+                <div className="ets-stage-note">
+                  La carga de PDFs no espera el cierre total de hojas. Cada certificado puede iniciar captura, cargar PDF y pasar a calidad conforme este listo.
+                </div>
                 <div className="clients-table ets-certificates-table">
                   <div className="clients-table__head">
                     <span>Folio</span>
@@ -1937,8 +2224,8 @@ function ServiceOrdersPage({ user = null }) {
                     <span>Match</span>
                     <span>Acciones</span>
                   </div>
-                  {selectedCertificates.length ? (
-                    selectedCertificates.map((certificate) => {
+                  {filteredSelectedCertificates.length ? (
+                    filteredSelectedCertificates.map((certificate) => {
                       const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
                       return (
                         <div className="clients-table__row" key={certificate.id}>
@@ -2017,8 +2304,8 @@ function ServiceOrdersPage({ user = null }) {
                     <span>Estado</span>
                     <span>Acciones</span>
                   </div>
-                  {selectedCertificates.length ? (
-                    selectedCertificates.map((certificate) => {
+                  {filteredSelectedCertificates.length ? (
+                    filteredSelectedCertificates.map((certificate) => {
                       const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
                       const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
                       return (
@@ -2076,8 +2363,8 @@ function ServiceOrdersPage({ user = null }) {
                     <span>Fecha auth</span>
                     <span>Acciones</span>
                   </div>
-                  {selectedCertificates.length ? (
-                    selectedCertificates.map((certificate) => {
+                  {filteredSelectedCertificates.length ? (
+                    filteredSelectedCertificates.map((certificate) => {
                       const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
                       return (
                         <div className="clients-table__row" key={certificate.id}>
@@ -2349,6 +2636,177 @@ function ServiceOrdersPage({ user = null }) {
         </div>
       ) : null}
 
+      {isTechnicianPickerOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="client-modal quotation-client-picker" aria-modal="true" role="dialog">
+            <div className="quotation-detail-header">
+              <div>
+                <p>Servicios / ETS</p>
+                <h2>Elegir tecnico</h2>
+                <span>Usuarios con permiso operativo para atender servicios</span>
+              </div>
+              <button className="icon-text-button" onClick={() => setIsTechnicianPickerOpen(false)} type="button">
+                Cerrar
+              </button>
+            </div>
+            <label className="quotation-client-search">
+              <span>Buscar usuario</span>
+              <input
+                autoFocus
+                onChange={(event) => setTechnicianSearch(event.target.value)}
+                placeholder="Nombre, correo o rol"
+                type="search"
+                value={technicianSearch}
+              />
+            </label>
+            <div className="quotation-client-results">
+              <button className="quotation-client-result" onClick={() => selectTechnician(null)} type="button">
+                <strong>Sin asignar</strong>
+                <span>Deja el tecnico pendiente.</span>
+              </button>
+              {paginatedTechnicianOptions.length ? (
+                paginatedTechnicianOptions.map((systemUser) => (
+                  <button
+                    className="quotation-client-result"
+                    key={systemUser.id}
+                    onClick={() => selectTechnician(systemUser)}
+                    type="button"
+                  >
+                    <strong>{systemUser.full_name || systemUser.email}</strong>
+                    <span>{systemUser.email}</span>
+                    <small>{getUserRoleNames(systemUser).join(', ') || 'Sin rol'}</small>
+                  </button>
+                ))
+              ) : (
+                <div className="clients-empty">No hay usuarios operativos que coincidan con la busqueda.</div>
+              )}
+            </div>
+            {filteredTechnicianOptions.length > 15 ? (
+              <div className="ets-picker-pagination">
+                <button className="table-button" disabled={technicianPage <= 1} onClick={() => setTechnicianPage((page) => Math.max(page - 1, 1))} type="button">
+                  Anterior
+                </button>
+                <span>Pagina {technicianPage} de {technicianPageCount}</span>
+                <button className="table-button" disabled={technicianPage >= technicianPageCount} onClick={() => setTechnicianPage((page) => Math.min(page + 1, technicianPageCount))} type="button">
+                  Siguiente
+                </button>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {selectedEquipmentDetail ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="client-modal quotation-detail-modal" aria-modal="true" role="dialog">
+            <div className="quotation-detail-header">
+              <div>
+                <p>Detalle de equipo</p>
+                <h2>{selectedEquipmentDetail.name}</h2>
+                <span>{selectedOrder?.folio} · OT {selectedOrder?.work_order_number ?? '-'}</span>
+              </div>
+              <mark className={`quotation-status quotation-status--large status-${selectedEquipmentDetail.status}`}>
+                {equipmentStatusLabels[selectedEquipmentDetail.status] ?? selectedEquipmentDetail.status}
+              </mark>
+              <button className="icon-text-button" onClick={closeEquipmentDetail} type="button">
+                Cerrar
+              </button>
+            </div>
+            {(() => {
+              const sheet = fieldSheetsByEquipmentId.get(selectedEquipmentDetail.id);
+              const certificate = activeCertificatesByEquipmentId.get(selectedEquipmentDetail.id);
+              return (
+                <>
+                  <div className="quotation-commercial-grid service-order-info-grid">
+                    <article>
+                      <span>Instrumento</span>
+                      <strong>{selectedEquipmentDetail.name}</strong>
+                    </article>
+                    <article>
+                      <span>Marca / modelo</span>
+                      <strong>{selectedEquipmentDetail.brand || '-'} · {selectedEquipmentDetail.model || '-'}</strong>
+                    </article>
+                    <article>
+                      <span>Serie</span>
+                      <strong>{selectedEquipmentDetail.serial_number || '-'}</strong>
+                    </article>
+                    <article>
+                      <span>ID interno</span>
+                      <strong>{selectedEquipmentDetail.internal_id || '-'}</strong>
+                    </article>
+                    <article>
+                      <span>Tipo certificado</span>
+                      <strong>{calibrationScopeLabels[selectedEquipmentDetail.calibration_scope] || '-'}</strong>
+                    </article>
+                    <article>
+                      <span>Folio reservado</span>
+                      <strong>{certificate?.expected_folio || certificate?.folio || '-'}</strong>
+                    </article>
+                    <article>
+                      <span>Hoja</span>
+                      <strong>{sheet ? `Hoja ${sheet.id}` : 'Pendiente'}</strong>
+                    </article>
+                    <article>
+                      <span>Certificado</span>
+                      <strong>{certificate ? certificateStatusLabels[certificate.status] ?? certificate.status : 'Pendiente'}</strong>
+                    </article>
+                    <article>
+                      <span>PDF</span>
+                      <strong>{certificate?.authenticated_pdf_path ? 'Autenticado' : certificate?.final_pdf_path ? 'Original cargado' : 'Pendiente'}</strong>
+                    </article>
+                  </div>
+                  <section className="quotation-section">
+                    <div className="quotation-section__title">
+                      <p>Condicion y notas</p>
+                      <h3>Recepcion tecnica</h3>
+                    </div>
+                    <div className="ets-equipment-notes">
+                      <article>
+                        <span>Condicion inicial</span>
+                        <p>{selectedEquipmentDetail.initial_condition || 'Sin condicion inicial registrada.'}</p>
+                      </article>
+                      <article>
+                        <span>Notas</span>
+                        <p>{selectedEquipmentDetail.notes || 'Sin notas particulares.'}</p>
+                      </article>
+                    </div>
+                  </section>
+                  <div className="quotation-detail-save">
+                    <span>Las acciones del equipo se concentran aqui para mantener limpio el listado operativo.</span>
+                    <div className="toolbar-actions">
+                      {canUseTechnicalActions ? (
+                        <button className="table-button" onClick={() => editEquipmentFromDetail(selectedEquipmentDetail)} type="button">
+                          Editar
+                        </button>
+                      ) : null}
+                      {canUseTechnicalActions ? equipmentActions.map((action) => (
+                        <button
+                          className="table-button"
+                          disabled={!isEquipmentActionAllowed(selectedEquipmentDetail, action)}
+                          key={action.key}
+                          onClick={() => handleEquipmentStatus(selectedEquipmentDetail, action)}
+                          type="button"
+                        >
+                          {action.label}
+                        </button>
+                      )) : null}
+                      <button className="table-button table-button--primary" onClick={() => openFieldSheetForEquipment(selectedEquipmentDetail)} type="button">
+                        {sheet ? 'Abrir hoja' : 'Crear hoja'}
+                      </button>
+                      {canUseTechnicalActions ? (
+                        <button className="table-button table-button--danger" onClick={() => handleDeleteEquipment(selectedEquipmentDetail)} type="button">
+                          Eliminar
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </section>
+        </div>
+      ) : null}
+
       {isEquipmentModalOpen && selectedOrder ? (
         <div className="modal-backdrop" role="presentation">
           <section className="client-modal" aria-modal="true" role="dialog">
@@ -2399,7 +2857,7 @@ function ServiceOrdersPage({ user = null }) {
                   />
                 </label>
               )}
-              <div className="quotation-commercial-grid service-order-info-grid">
+              <div className="ets-certificate-capacity-list">
                 {['traceable', 'accredited_iso_17025', 'accredited_linked_lab'].map((scope) => (
                   <article key={scope}>
                     <span>{calibrationScopeBadgeLabels[scope]}</span>
@@ -2435,6 +2893,14 @@ function ServiceOrdersPage({ user = null }) {
               </label>
               <label className="form-field--wide">
                 Condicion inicial
+                <div className="ets-condition-presets">
+                  <button className="table-button" onClick={() => setEquipmentConditionPreset('good')} type="button">
+                    Buen estado general
+                  </button>
+                  <button className="table-button" onClick={() => setEquipmentConditionPreset('bad')} type="button">
+                    Mal estado
+                  </button>
+                </div>
                 <textarea onChange={(event) => updateEquipmentForm('initialCondition', event.target.value)} rows={3} value={equipmentForm.initialCondition} />
               </label>
               <label className="form-field--wide">
@@ -2811,12 +3277,12 @@ function ServiceOrdersPage({ user = null }) {
 
                 <section className="danger-zone">
                   <div className="danger-zone__copy">
-                    <p>Zona de baja</p>
-                    <span>Esta acción dará de baja la hoja de campo. No se eliminará físicamente y puede impactar certificados relacionados.</span>
+                    <p>Zona de eliminacion operativa</p>
+                    <span>La hoja de campo se elimina de la operación visible. No se eliminará físicamente y puede impactar certificados relacionados.</span>
                   </div>
                   <div className="toolbar-actions">
                     <button className="table-button table-button--danger" disabled={isSaving} onClick={handleDeleteFieldSheet} type="button">
-                      Dar de baja hoja de campo
+                      Eliminar hoja de campo
                     </button>
                   </div>
                 </section>

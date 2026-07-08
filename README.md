@@ -1,6 +1,6 @@
 # ERP MYC
 
-Version actual: ERP MYC v0.2.0 - Clientes Finalizado
+Version actual: ERP MYC v0.3.0 - Ventas Finalizado
 
 Base del sistema ERP MYC para controlar el flujo completo:
 
