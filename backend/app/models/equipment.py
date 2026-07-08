@@ -9,24 +9,65 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "equipment"
 
     service_order_id: Mapped[int] = mapped_column(
-        ForeignKey("service_orders.id"), index=True
+        ForeignKey("service_orders.id"),
+        index=True,
     )
+
+    work_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_work_orders.id"),
+        index=True,
+    )
+
     service_order_item_id: Mapped[int | None] = mapped_column(
-        ForeignKey("service_order_items.id"), index=True
+        ForeignKey("service_order_items.id"),
+        index=True,
     )
-    calibration_scope: Mapped[str | None] = mapped_column(String(60), index=True)
-    status: Mapped[str] = mapped_column(String(60), default="registered", index=True)
+
+    calibration_scope: Mapped[str | None] = mapped_column(
+        String(60),
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(60),
+        default="registered",
+        index=True,
+    )
+
     name: Mapped[str] = mapped_column(String(180))
     brand: Mapped[str | None] = mapped_column(String(120))
     model: Mapped[str | None] = mapped_column(String(120))
-    serial_number: Mapped[str | None] = mapped_column(String(120), index=True)
-    internal_id: Mapped[str | None] = mapped_column(String(120), index=True)
+    serial_number: Mapped[str | None] = mapped_column(
+        String(120),
+        index=True,
+    )
+    internal_id: Mapped[str | None] = mapped_column(
+        String(120),
+        index=True,
+    )
     range_or_capacity: Mapped[str | None] = mapped_column(String(180))
     initial_condition: Mapped[str | None] = mapped_column(Text)
     notes: Mapped[str | None] = mapped_column(Text)
 
-    service_order: Mapped["ServiceOrder"] = relationship(back_populates="equipment")
-    field_sheets: Mapped[list["FieldSheet"]] = relationship(
-        back_populates="equipment", cascade="all, delete-orphan"
+    service_order: Mapped["ServiceOrder"] = relationship(
+        back_populates="equipment"
     )
-    certificates: Mapped[list["Certificate"]] = relationship(back_populates="equipment")
+
+    work_order: Mapped["ServiceWorkOrder | None"] = relationship(
+        back_populates="equipment"
+    )
+
+    field_sheets: Mapped[list["FieldSheet"]] = relationship(
+        back_populates="equipment",
+        cascade="all, delete-orphan",
+    )
+
+    certificates: Mapped[list["Certificate"]] = relationship(
+        back_populates="equipment"
+    )
+
+    @property
+    def work_order_number(self) -> int | None:
+        if self.work_order is None:
+            return None
+        return self.work_order.work_order_number

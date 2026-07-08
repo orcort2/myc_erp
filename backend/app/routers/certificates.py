@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -30,6 +28,7 @@ from app.services.certificates import (
     upload_certificate_pdf,
     validate_pdf_match,
 )
+from app.services.storage_service import resolve_storage_path
 from app.services.certificate_authentication import authenticate_certificate_pdf
 
 
@@ -185,8 +184,8 @@ def get_authenticated_certificate_pdf(
     certificate = get_certificate(db, certificate_id)
     if not certificate.authenticated_pdf_path:
         raise HTTPException(status_code=404, detail="El certificado aun no tiene PDF autenticado")
-    path = Path(certificate.authenticated_pdf_path)
-    if not path.exists():
+    path = resolve_storage_path(certificate.authenticated_pdf_path)
+    if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="PDF autenticado no encontrado")
     folio = certificate.expected_folio or certificate.folio
     code = certificate.authentication_code or "sin-codigo"
@@ -202,8 +201,8 @@ def get_original_certificate_pdf(
     certificate = get_certificate(db, certificate_id)
     if not certificate.final_pdf_path:
         raise HTTPException(status_code=404, detail="El certificado aun no tiene PDF original")
-    path = Path(certificate.final_pdf_path)
-    if not path.exists():
+    path = resolve_storage_path(certificate.final_pdf_path)
+    if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="PDF original no encontrado")
     filename = certificate.final_pdf_original_filename or f"Certificado_{certificate.expected_folio or certificate.folio}.pdf"
     return FileResponse(path, media_type="application/pdf", filename=filename)

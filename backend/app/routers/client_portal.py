@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
@@ -12,6 +10,7 @@ from app.services.audit_logs import write_audit_log
 from app.services.certificates import get_certificate, list_certificates
 from app.services.quotations import list_quotations
 from app.services.service_orders import list_service_orders
+from app.services.storage_service import resolve_storage_path
 
 
 router = APIRouter(prefix="/client-portal", tags=["client-portal"])
@@ -40,8 +39,8 @@ def get_client_portal_certificate_pdf(
     certificate = get_certificate(db, certificate_id)
     if not certificate.client_visible or not certificate.authenticated_pdf_path:
         raise HTTPException(status_code=404, detail="Certificado no disponible")
-    path = Path(certificate.authenticated_pdf_path)
-    if not path.exists():
+    path = resolve_storage_path(certificate.authenticated_pdf_path)
+    if path is None or not path.exists():
         raise HTTPException(status_code=404, detail="PDF autenticado no encontrado")
     write_audit_log(
         db,

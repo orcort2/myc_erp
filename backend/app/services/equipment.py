@@ -2,18 +2,18 @@ from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
+from app.models.certificate import Certificate
 from app.models.equipment import Equipment
-from app.models.service_order import ServiceOrder, ServiceOrderItem
+from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
+from app.schemas.certificate import CertificateCreate
 from app.schemas.equipment import (
     EquipmentCreate,
     EquipmentStatusChange,
     EquipmentUpdate,
 )
 from app.services.audit_logs import write_audit_log
-from app.models.certificate import Certificate
-from app.schemas.certificate import CertificateCreate
 from app.services.certificates import create_certificate
 from app.services.service_order_certificate_capacity import (
     auto_service_order_item_id_for_scope,
@@ -24,7 +24,8 @@ from app.services.service_order_certificate_capacity import (
 
 COMPLETED_STATUSES = {"calibrated", "labeled", "not_done"}
 TERMINAL_STATUSES = {"labeled", "not_done", "cancelled"}
-MAX_EQUIPMENT_PER_SERVICE_ORDER = 10
+MAX_EQUIPMENT_PER_WORK_ORDER = 10
+
 ALLOWED_TRANSITIONS = {
     "registered": {"realizing", "not_done", "cancelled"},
     "realizing": {"calibrated", "not_done", "cancelled"},
@@ -37,10 +38,12 @@ ALLOWED_TRANSITIONS = {
 
 def _ensure_active_service_order(db: Session, service_order_id: int) -> ServiceOrder:
     service_order = db.scalar(
-        select(ServiceOrder).where(
+        select(ServiceOrder)
+        .where(
             ServiceOrder.id == service_order_id,
             ServiceOrder.is_active.is_(True),
         )
+        .options(selectinload(ServiceOrder.work_orders))
     )
     if service_order is None:
         raise HTTPException(
@@ -60,6 +63,7 @@ def _ensure_service_order_item(
 ) -> None:
     if service_order_item_id is None:
         return
+
     exists = db.scalar(
         select(ServiceOrderItem.id).where(
             ServiceOrderItem.id == service_order_item_id,
@@ -72,6 +76,74 @@ def _ensure_service_order_item(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Partida de orden de servicio no encontrada",
         )
+
+
+def _work_order_equipment_count(db: Session, work_order_id: int) -> int:
+    total = db.scalar(
+        select(func.count(Equipment.id)).where(
+            Equipment.work_order_id == work_order_id,
+            Equipment.is_active.is_(True),
+        )
+    )
+    return int(total or 0)
+
+
+def _ensure_work_order_belongs_to_service_order(
+    db: Session,
+    *,
+    service_order_id: int,
+    work_order_id: int | None,
+) -> ServiceWorkOrder | None:
+    if work_order_id is None:
+        return None
+
+    work_order = db.scalar(
+        select(ServiceWorkOrder).where(
+            ServiceWorkOrder.id == work_order_id,
+            ServiceWorkOrder.service_order_id == service_order_id,
+            ServiceWorkOrder.is_active.is_(True),
+        )
+    )
+    if work_order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Orden de trabajo no encontrada para este servicio",
+        )
+
+    return work_order
+
+
+def _first_available_work_order(
+    db: Session,
+    service_order: ServiceOrder,
+) -> ServiceWorkOrder:
+    active_work_orders = [
+        item
+        for item in service_order.work_orders
+        if item.is_active
+    ]
+
+    if not active_work_orders:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El servicio no tiene órdenes de trabajo activas",
+        )
+
+    ordered_work_orders = sorted(active_work_orders, key=lambda item: item.sequence)
+
+    for work_order in ordered_work_orders:
+        equipment_limit = work_order.equipment_limit or MAX_EQUIPMENT_PER_WORK_ORDER
+        if _work_order_equipment_count(db, work_order.id) < equipment_limit:
+            return work_order
+
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            "Todas las órdenes de trabajo están llenas. "
+            "Se requiere crear una nueva OT mediante una excepción administrativa."
+        ),
+    )
+
 
 def sync_service_order_equipment_counts(db: Session, service_order_id: int) -> None:
     total_equipment = db.scalar(
@@ -87,6 +159,7 @@ def sync_service_order_equipment_counts(db: Session, service_order_id: int) -> N
             Equipment.status.in_(COMPLETED_STATUSES),
         )
     )
+
     service_order = db.get(ServiceOrder, service_order_id)
     if service_order is not None:
         service_order.total_equipment = int(total_equipment or 0)
@@ -97,24 +170,40 @@ def list_equipment(
     db: Session,
     *,
     service_order_id: int | None = None,
+    work_order_id: int | None = None,
     include_inactive: bool = False,
 ) -> list[Equipment]:
-    query = select(Equipment).order_by(Equipment.created_at.desc())
+    query = (
+        select(Equipment)
+        .options(selectinload(Equipment.work_order))
+        .order_by(Equipment.created_at.desc())
+    )
+
     if service_order_id is not None:
         query = query.where(Equipment.service_order_id == service_order_id)
+
+    if work_order_id is not None:
+        query = query.where(Equipment.work_order_id == work_order_id)
+
     if not include_inactive:
         query = query.where(Equipment.is_active.is_(True))
+
     return list(db.scalars(query).all())
 
 
 def get_equipment(db: Session, equipment_id: int) -> Equipment:
-    equipment = db.scalar(select(Equipment).where(Equipment.id == equipment_id))
+    equipment = db.scalar(
+        select(Equipment)
+        .where(Equipment.id == equipment_id)
+        .options(selectinload(Equipment.work_order))
+    )
     if equipment is None or not equipment.is_active:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Equipo no encontrado",
         )
     return equipment
+
 
 def _ensure_expected_certificate_for_equipment(
     db: Session,
@@ -132,7 +221,6 @@ def _ensure_expected_certificate_for_equipment(
         return
 
     certificate_type = certificate_type_from_scope(equipment.calibration_scope)
-
     if certificate_type is None:
         return
 
@@ -154,15 +242,33 @@ def _ensure_expected_certificate_for_equipment(
 def create_equipment(
     db: Session, payload: EquipmentCreate, *, user_id: int | None = None
 ) -> Equipment:
-    _ensure_active_service_order(db, payload.service_order_id)
+    service_order = _ensure_active_service_order(db, payload.service_order_id)
 
     data = payload.model_dump()
+
+    selected_work_order = _ensure_work_order_belongs_to_service_order(
+        db,
+        service_order_id=payload.service_order_id,
+        work_order_id=data.get("work_order_id"),
+    )
+
+    if selected_work_order is None:
+        selected_work_order = _first_available_work_order(db, service_order)
+
+    equipment_limit = selected_work_order.equipment_limit or MAX_EQUIPMENT_PER_WORK_ORDER
+    if _work_order_equipment_count(db, selected_work_order.id) >= equipment_limit:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esta Orden de Trabajo ya tiene 10 equipos. Selecciona otra OT.",
+        )
+
     resolved_scope = resolve_equipment_calibration_scope(
         db,
         payload.service_order_id,
         data.get("calibration_scope"),
     )
     data["calibration_scope"] = resolved_scope
+    data["work_order_id"] = selected_work_order.id
     data["service_order_item_id"] = auto_service_order_item_id_for_scope(
         db,
         payload.service_order_id,
@@ -170,27 +276,16 @@ def create_equipment(
     )
 
     _ensure_service_order_item(
-        db, payload.service_order_id, data.get("service_order_item_id")
+        db,
+        payload.service_order_id,
+        data.get("service_order_item_id"),
     )
-
-    active_equipment = db.scalar(
-        select(func.count(Equipment.id)).where(
-            Equipment.service_order_id == payload.service_order_id,
-            Equipment.is_active.is_(True),
-        )
-    )
-    if int(active_equipment or 0) >= MAX_EQUIPMENT_PER_SERVICE_ORDER:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Esta Orden de Trabajo ya tiene 10 equipos. Crea otra OT para continuar.",
-        )
 
     equipment = Equipment(**data, status="registered")
     db.add(equipment)
     db.flush()
 
     certificate_type = certificate_type_from_scope(equipment.calibration_scope)
-
     if certificate_type:
         create_certificate(
             db,
@@ -205,6 +300,7 @@ def create_equipment(
         )
 
     sync_service_order_equipment_counts(db, equipment.service_order_id)
+
     write_audit_log(
         db,
         action="equipment.created",
@@ -213,14 +309,16 @@ def create_equipment(
         user_id=user_id,
         new_values={
             "service_order_id": equipment.service_order_id,
+            "work_order_id": equipment.work_order_id,
+            "work_order_number": selected_work_order.work_order_number,
             "calibration_scope": equipment.calibration_scope,
             "service_order_item_id": equipment.service_order_item_id,
             "name": equipment.name,
             "status": equipment.status,
         },
     )
+
     db.commit()
-    db.refresh(equipment)
     return get_equipment(db, equipment.id)
 
 
@@ -233,12 +331,29 @@ def update_equipment(
 ) -> Equipment:
     equipment = get_equipment(db, equipment_id)
     _ensure_active_service_order(db, equipment.service_order_id)
+
     if equipment.status in TERMINAL_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="No se puede editar equipo en estado terminal",
         )
+
     updates = payload.model_dump(exclude_unset=True)
+
+    if "work_order_id" in updates:
+        requested_work_order = _ensure_work_order_belongs_to_service_order(
+            db,
+            service_order_id=equipment.service_order_id,
+            work_order_id=updates.get("work_order_id"),
+        )
+        if requested_work_order is not None and requested_work_order.id != equipment.work_order_id:
+            equipment_limit = requested_work_order.equipment_limit or MAX_EQUIPMENT_PER_WORK_ORDER
+            if _work_order_equipment_count(db, requested_work_order.id) >= equipment_limit:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="La Orden de Trabajo destino ya tiene 10 equipos.",
+                )
+
     if "calibration_scope" in updates:
         requested_scope = updates.get("calibration_scope")
         if requested_scope == equipment.calibration_scope:
@@ -263,18 +378,25 @@ def update_equipment(
                 equipment.service_order_id,
                 requested_scope,
             )
+
         updates["calibration_scope"] = resolved_scope
         updates["service_order_item_id"] = auto_service_order_item_id_for_scope(
             db,
             equipment.service_order_id,
             resolved_scope,
         )
+
     _ensure_service_order_item(
-        db, equipment.service_order_id, updates.get("service_order_item_id")
+        db,
+        equipment.service_order_id,
+        updates.get("service_order_item_id"),
     )
+
     previous_values = {key: getattr(equipment, key) for key in updates}
+
     for key, value in updates.items():
         setattr(equipment, key, value)
+
     write_audit_log(
         db,
         action="equipment.updated",
@@ -284,6 +406,7 @@ def update_equipment(
         previous_values=previous_values,
         new_values=updates,
     )
+
     db.commit()
     return get_equipment(db, equipment.id)
 
@@ -298,15 +421,19 @@ def change_status(
 ) -> Equipment:
     equipment = get_equipment(db, equipment_id)
     _ensure_active_service_order(db, equipment.service_order_id)
+
     allowed = ALLOWED_TRANSITIONS.get(equipment.status, set())
     if new_status not in allowed:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Transicion no permitida: {equipment.status} -> {new_status}",
         )
+
     previous_status = equipment.status
     equipment.status = new_status
+
     sync_service_order_equipment_counts(db, equipment.service_order_id)
+
     write_audit_log(
         db,
         action=f"equipment.{new_status}",
@@ -317,6 +444,7 @@ def change_status(
         new_values={"status": new_status},
         comment=payload.comment if payload else None,
     )
+
     db.commit()
     return get_equipment(db, equipment.id)
 
@@ -326,11 +454,14 @@ def deactivate_equipment(
 ) -> Equipment:
     equipment = get_equipment(db, equipment_id)
     _ensure_active_service_order(db, equipment.service_order_id)
+
     equipment.is_active = False
     equipment.status = "cancelled"
     equipment.deleted_at = datetime.now(timezone.utc)
     equipment.deleted_by = user_id
+
     sync_service_order_equipment_counts(db, equipment.service_order_id)
+
     write_audit_log(
         db,
         action="equipment.deactivated",
@@ -338,7 +469,12 @@ def deactivate_equipment(
         entity_id=equipment.id,
         user_id=user_id,
         previous_values={"is_active": True},
-        new_values={"is_active": False, "status": "cancelled"},
+        new_values={
+            "is_active": False,
+            "status": "cancelled",
+            "work_order_id": equipment.work_order_id,
+        },
     )
+
     db.commit()
     return equipment

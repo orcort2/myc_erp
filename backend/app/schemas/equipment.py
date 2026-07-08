@@ -16,6 +16,7 @@ EquipmentStatus = Literal[
 
 class EquipmentBase(BaseModel):
     service_order_id: int
+    work_order_id: int | None = None
     service_order_item_id: int | None = None
     calibration_scope: str | None = Field(default=None, max_length=60)
     name: str = Field(min_length=1, max_length=180)
@@ -33,6 +34,7 @@ class EquipmentCreate(EquipmentBase):
 
 
 class EquipmentUpdate(BaseModel):
+    work_order_id: int | None = None
     service_order_item_id: int | None = None
     calibration_scope: str | None = Field(default=None, max_length=60)
     name: str | None = Field(default=None, min_length=1, max_length=180)
@@ -53,6 +55,7 @@ class EquipmentRead(EquipmentBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    work_order_number: int | None = None
     status: EquipmentStatus
     is_active: bool
     created_at: datetime

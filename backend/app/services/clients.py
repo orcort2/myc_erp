@@ -5,7 +5,6 @@ import re
 from datetime import datetime, timezone
 from io import BytesIO, StringIO
 from pathlib import Path
-from shutil import copyfileobj
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
@@ -14,7 +13,6 @@ from pypdf import PdfReader
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.config import settings
 from app.models.client import Client, ClientContact
 from app.schemas.client import (
     ClientCreate,
@@ -26,6 +24,7 @@ from app.schemas.client import (
     ClientUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.storage_service import delete_if_unreferenced, save_upload
 
 
 CLIENT_IMPORT_COLUMNS = [
@@ -249,9 +248,14 @@ def update_client(db: Session, client_id: int, payload: ClientUpdate, *, user_id
 
 def deactivate_client(db: Session, client_id: int, *, user_id: int | None = None) -> Client:
     client = get_client(db, client_id, include_inactive=True)
+    previous_tax_constancy = client.tax_constancy_path
+    previous_tax_constancy_filename = client.tax_constancy_filename
     client.is_active = False
     client.deleted_at = datetime.now(timezone.utc)
     client.deleted_by = user_id
+    client.tax_constancy_filename = None
+    client.tax_constancy_path = None
+    client.tax_constancy_uploaded_at = None
     write_audit_log(
         db,
         action="client.deactivated",
@@ -261,22 +265,18 @@ def deactivate_client(db: Session, client_id: int, *, user_id: int | None = None
         previous_values={"is_active": True},
         new_values={"is_active": False},
     )
+    delete_if_unreferenced(
+        db,
+        previous_tax_constancy,
+        user_id=user_id,
+        module="Clientes",
+        entity="clients",
+        entity_id=client.id,
+        filename=previous_tax_constancy_filename,
+    )
     db.commit()
     db.refresh(client)
     return client
-
-
-def _storage_root() -> Path:
-    storage_root = Path(settings.storage_root)
-    if not storage_root.is_absolute():
-        storage_root = Path(__file__).resolve().parents[3] / storage_root
-    return storage_root
-
-
-def _client_storage_dir(client: Client) -> Path:
-    folder = _storage_root() / "clientes" / f"cliente_{client.id}"
-    folder.mkdir(parents=True, exist_ok=True)
-    return folder
 
 
 def _extract_label_value(compact: str, start_label: str, end_label: str | None = None) -> str | None:
@@ -488,16 +488,18 @@ def upload_tax_constancy(
     if extension not in {".pdf", ".png", ".jpg", ".jpeg"}:
         raise HTTPException(status_code=400, detail="La constancia fiscal debe ser PDF o imagen")
     filename = f"constancia_fiscal_{uuid4().hex}{extension}"
-    target = _client_storage_dir(client) / filename
-    data = upload.file.read()
-    with target.open("wb") as buffer:
-        buffer.write(data)
+    stored_file = save_upload(
+        upload,
+        directory=Path("clientes") / f"cliente_{client.id}",
+        filename=filename,
+        allowed_extensions={".pdf", ".png", ".jpg", ".jpeg"},
+    )
     previous = {
         "tax_constancy_filename": client.tax_constancy_filename,
         "tax_constancy_path": client.tax_constancy_path,
     }
     client.tax_constancy_filename = original_name
-    client.tax_constancy_path = str(target.relative_to(_storage_root()))
+    client.tax_constancy_path = stored_file.relative_path
     client.tax_constancy_uploaded_at = datetime.now(timezone.utc)
     write_audit_log(
         db,
@@ -510,6 +512,15 @@ def upload_tax_constancy(
             "tax_constancy_filename": client.tax_constancy_filename,
             "tax_constancy_path": client.tax_constancy_path,
         },
+    )
+    delete_if_unreferenced(
+        db,
+        previous["tax_constancy_path"],
+        user_id=user_id,
+        module="Clientes",
+        entity="clients",
+        entity_id=client.id,
+        filename=previous["tax_constancy_filename"],
     )
     db.commit()
     db.refresh(client)

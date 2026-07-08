@@ -2,14 +2,11 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from pathlib import Path
-from shutil import copyfileobj
-from tempfile import SpooledTemporaryFile
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.config import settings
 from app.core.folios import FolioRequest, generate_folio
 from app.models.certificate import Certificate
 from app.models.equipment import Equipment
@@ -27,6 +24,7 @@ from app.schemas.certificate import (
 from app.services.audit_logs import write_audit_log
 from app.services.certificate_authentication import authenticate_certificate_pdf
 from app.services.certificate_matching_engine import validate_certificate_pdf_match
+from app.services.storage_service import delete_if_unreferenced, safe_filename, save_upload
 
 
 TERMINAL_STATUSES = {"released_to_client", "released", "cancelled"}
@@ -489,29 +487,23 @@ def return_to_technician(
     )
 
 
-def _safe_filename(name: str) -> str:
-    return "".join(char if char.isalnum() or char in ".-_" else "_" for char in name).strip("._") or "certificado.pdf"
-
-
 def _storage_dir(certificate: Certificate) -> Path:
     key = str(certificate.service_order.work_order_number if certificate.service_order else certificate.service_order_id)
-    storage_root = Path(settings.storage_root)
-    if not storage_root.is_absolute():
-        storage_root = Path(__file__).resolve().parents[3] / storage_root
-    path = storage_root / "certificados" / key
-    path.mkdir(parents=True, exist_ok=True)
-    return path
+    return Path("certificados") / key
 
 
 def _save_upload(certificate: Certificate, upload: UploadFile) -> tuple[str, str]:
     original = upload.filename or "certificado.pdf"
     if not original.lower().endswith(".pdf"):
         raise HTTPException(status_code=422, detail="Solo se permiten archivos PDF")
-    filename = f"{certificate.expected_folio or certificate.folio}_{_safe_filename(original)}"
-    target = _storage_dir(certificate) / filename
-    with target.open("wb") as buffer:
-        copyfileobj(upload.file, buffer)
-    return str(target), original
+    filename = f"{certificate.expected_folio or certificate.folio}_{safe_filename(original, fallback='certificado.pdf')}"
+    stored_file = save_upload(
+        upload,
+        directory=_storage_dir(certificate),
+        filename=filename,
+        allowed_extensions={".pdf"},
+    )
+    return str(stored_file.absolute_path), original
 
 
 def upload_certificate_pdf(
@@ -522,12 +514,21 @@ def upload_certificate_pdf(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
+    previous_final_pdf_path = certificate.final_pdf_path
+    previous_final_pdf_filename = certificate.final_pdf_original_filename
+    previous_authenticated_pdf_path = certificate.authenticated_pdf_path
     path, original = _save_upload(certificate, upload)
     now = datetime.now(timezone.utc)
     certificate.final_pdf_path = path
     certificate.final_pdf_original_filename = original
     certificate.final_pdf_uploaded_at = now
     certificate.final_pdf_uploaded_by_id = user_id
+    certificate.authentication_code = None
+    certificate.authentication_hash = None
+    certificate.authenticated_pdf_path = None
+    certificate.authenticated_pdf_generated_at = None
+    certificate.authenticated_by_id = None
+    certificate.verification_url = None
     if certificate.status in {
         "expected",
         "field_sheet_ready",
@@ -552,6 +553,7 @@ def upload_certificate_pdf(
             "filename": original,
             "match_status": certificate.match_status,
             "status": certificate.status,
+            "authenticated_pdf_path": None,
         },
     )
     write_audit_log(
@@ -561,6 +563,25 @@ def upload_certificate_pdf(
         entity_id=certificate.id,
         user_id=user_id,
         new_values={"match_status": certificate.match_status, "score": result["score"]},
+    )
+    delete_if_unreferenced(
+        db,
+        previous_final_pdf_path,
+        user_id=user_id,
+        module="Certificados",
+        entity="certificates",
+        entity_id=certificate.id,
+        filename=previous_final_pdf_filename,
+    )
+    delete_if_unreferenced(
+        db,
+        previous_authenticated_pdf_path,
+        user_id=user_id,
+        module="Certificados",
+        entity="certificates",
+        entity_id=certificate.id,
+        filename=Path(previous_authenticated_pdf_path).name if previous_authenticated_pdf_path else None,
+        reason="Archivo autenticado eliminado automaticamente al reemplazar el PDF original.",
     )
     db.commit()
     return get_certificate(db, certificate.id)
@@ -905,11 +926,24 @@ def deactivate_certificate(
     certificate = get_certificate(db, certificate_id)
     if certificate.status in {"released_to_client", "released"}:
         raise HTTPException(status_code=409, detail="No se puede cancelar un certificado liberado")
+    previous_final_pdf_path = certificate.final_pdf_path
+    previous_final_pdf_filename = certificate.final_pdf_original_filename
+    previous_authenticated_pdf_path = certificate.authenticated_pdf_path
     certificate.is_active = False
     certificate.status = "cancelled"
     certificate.client_visible = False
     certificate.deleted_at = datetime.now(timezone.utc)
     certificate.deleted_by = user_id
+    certificate.final_pdf_path = None
+    certificate.final_pdf_original_filename = None
+    certificate.final_pdf_uploaded_at = None
+    certificate.final_pdf_uploaded_by_id = None
+    certificate.authentication_code = None
+    certificate.authentication_hash = None
+    certificate.authenticated_pdf_path = None
+    certificate.authenticated_pdf_generated_at = None
+    certificate.authenticated_by_id = None
+    certificate.verification_url = None
     write_audit_log(
         db,
         action="certificate.deactivated",
@@ -917,7 +951,25 @@ def deactivate_certificate(
         entity_id=certificate.id,
         user_id=user_id,
         previous_values={"is_active": True},
-        new_values={"is_active": False, "status": "cancelled"},
+        new_values={"is_active": False, "status": "cancelled", "files_cleared": True},
+    )
+    delete_if_unreferenced(
+        db,
+        previous_final_pdf_path,
+        user_id=user_id,
+        module="Certificados",
+        entity="certificates",
+        entity_id=certificate.id,
+        filename=previous_final_pdf_filename,
+    )
+    delete_if_unreferenced(
+        db,
+        previous_authenticated_pdf_path,
+        user_id=user_id,
+        module="Certificados",
+        entity="certificates",
+        entity_id=certificate.id,
+        filename=Path(previous_authenticated_pdf_path).name if previous_authenticated_pdf_path else None,
     )
     db.commit()
     return certificate

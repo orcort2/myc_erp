@@ -17,6 +17,7 @@ from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder
 from app.schemas.certificate import CertificateVerificationRead
 from app.services.audit_logs import write_audit_log
+from app.services.storage_service import build_storage_path, delete_if_unreferenced, relative_storage_path, resolve_storage_path
 
 
 def _verification_url(code: str) -> str:
@@ -37,9 +38,9 @@ def _sha256_file(path: Path) -> str:
 
 def _authenticated_target(certificate: Certificate, code: str) -> Path:
     source = Path(certificate.final_pdf_path or "")
-    directory = source.parent if source.parent.exists() else source.resolve().parent
+    directory = Path(relative_storage_path(source)).parent
     filename = f"{source.stem}_autenticado_lateral_{code}.pdf"
-    return directory / filename
+    return build_storage_path(directory=directory, filename=filename)
 
 
 def _auth_band_width(page_width: float) -> float:
@@ -226,11 +227,12 @@ def authenticate_certificate_pdf(
         )
     if not certificate.final_pdf_path:
         raise HTTPException(status_code=409, detail="No se puede autenticar sin PDF original")
-    source = Path(certificate.final_pdf_path)
-    if not source.exists():
+    source = resolve_storage_path(certificate.final_pdf_path)
+    if source is None or not source.exists():
         raise HTTPException(status_code=404, detail="PDF original no encontrado")
 
     now = datetime.now(timezone.utc)
+    previous_authenticated_pdf_path = certificate.authenticated_pdf_path
     code = _authentication_code(certificate, now)
     url = _verification_url(code)
     document_hash = _sha256_file(source)
@@ -263,6 +265,17 @@ def authenticate_certificate_pdf(
             "authenticated_pdf_path": str(target),
         },
     )
+    if previous_authenticated_pdf_path and previous_authenticated_pdf_path != str(target):
+        delete_if_unreferenced(
+            db,
+            previous_authenticated_pdf_path,
+            user_id=user_id,
+            module="Certificados",
+            entity="certificates",
+            entity_id=certificate.id,
+            filename=Path(previous_authenticated_pdf_path).name,
+            reason="Archivo autenticado eliminado automaticamente al regenerar autenticacion.",
+        )
     return certificate
 
 

@@ -19,6 +19,31 @@ ServiceOrderStatus = Literal[
 ]
 
 
+# ============================================================
+# WORK ORDERS
+# ============================================================
+
+class ServiceWorkOrderBase(BaseModel):
+    sequence: int = Field(default=1, ge=1)
+    work_order_number: int
+    status: str = Field(default="pending", max_length=60)
+    equipment_limit: int = Field(default=10, ge=1)
+    notes: str | None = None
+
+
+class ServiceWorkOrderRead(ServiceWorkOrderBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    service_order_id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+# ============================================================
+# SERVICE ORDER ITEMS
+# ============================================================
+
 class ServiceOrderItemBase(BaseModel):
     quotation_item_id: int | None = None
     service_name: str = Field(min_length=1, max_length=180)
@@ -39,6 +64,10 @@ class ServiceOrderItemRead(ServiceOrderItemBase):
     created_at: datetime
     updated_at: datetime
 
+
+# ============================================================
+# SERVICE ORDER
+# ============================================================
 
 class ServiceOrderBase(BaseModel):
     client_id: int
@@ -77,10 +106,22 @@ class ServiceOrderRead(ServiceOrderBase):
 
     id: int
     folio: str
+
+    # Compatibilidad temporal
     work_order_number: int
+
+    advisor_name: str | None = None
+    technician_name: str | None = None
+
     status: ServiceOrderStatus
+
     closed_at: date | None = None
+
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
     items: list[ServiceOrderItemRead] = Field(default_factory=list)
+
+    # Nuevo
+    work_orders: list[ServiceWorkOrderRead] = Field(default_factory=list)
