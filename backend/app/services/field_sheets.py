@@ -65,6 +65,7 @@ def _serialize_result_rows(rows: list[FieldSheetResult]) -> list[dict]:
 def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
     return {
         "equipment_id": field_sheet.equipment_id,
+        "work_order_id": field_sheet.work_order_id,
         "calibration_procedure_id": field_sheet.calibration_procedure_id,
         "template_key": field_sheet.template_key,
         "work_order_number": field_sheet.work_order_number,
@@ -123,7 +124,11 @@ def _ensure_active_equipment(db: Session, equipment_id: int) -> Equipment:
     equipment = db.scalar(
         select(Equipment)
         .where(Equipment.id == equipment_id, Equipment.is_active.is_(True))
-        .options(selectinload(Equipment.service_order))
+        .options(
+            selectinload(Equipment.service_order),
+            selectinload(Equipment.work_order),
+            )
+            
     )
     if equipment is None:
         raise HTTPException(
@@ -391,6 +396,7 @@ def list_field_sheets(
     db: Session,
     *,
     equipment_id: int | None = None,
+    work_order_id: int | None = None,
     include_inactive: bool = False,
 ) -> list[FieldSheet]:
     query = (
@@ -409,6 +415,9 @@ def list_field_sheets(
     )
     if equipment_id is not None:
         query = query.where(FieldSheet.equipment_id == equipment_id)
+    if work_order_id is not None:
+        query = query.where(FieldSheet.work_order_id == work_order_id)
+        
     if not include_inactive:
         query = query.where(FieldSheet.is_active.is_(True))
     return list(db.scalars(query).all())
@@ -461,7 +470,14 @@ def create_field_sheet(
         template_definition_json=template_definition,
         template_definition_version=template_version,
         status="draft",
-        work_order_number=service_order.work_order_number,
+        work_order_id=payload.work_order_id or equipment.work_order_id,
+        work_order_number=(
+            equipment.work_order.work_order_number
+            if equipment.work_order is not None
+            else service_order.work_order_number
+        ),    
+
+
         reception_date=payload.reception_date or service_order.agenda_date or service_order.created_at.date(),
         calibration_date=payload.calibration_date or service_order.service_date,
         purchase_order_or_quotation=payload.purchase_order_or_quotation
@@ -595,8 +611,15 @@ def update_field_sheet(
             new_values={"calibration_procedure_id": field_sheet.calibration_procedure_id},
         )
 
+    if field_sheet.work_order_id is None:
+        field_sheet.work_order_id = equipment.work_order_id
+
     if field_sheet.work_order_number is None:
-        field_sheet.work_order_number = equipment.service_order.work_order_number
+        field_sheet.work_order_number = (
+            equipment.work_order.work_order_number
+            if equipment.work_order is not None
+            else equipment.service_order.work_order_number
+        )
 
     if field_sheet.status == "draft" and (updates or payload.results_rows is not None):
         field_sheet.status = "in_progress"

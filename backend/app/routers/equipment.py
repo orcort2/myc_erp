@@ -24,12 +24,14 @@ router = APIRouter(prefix="/equipment", tags=["equipment"])
 @router.get("", response_model=list[EquipmentRead])
 def get_equipment_list(
     service_order_id: int | None = Query(default=None),
+    work_order_id: int | None = Query(default=None),
     include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> list[EquipmentRead]:
     return list_equipment(
         db,
         service_order_id=service_order_id,
+        work_order_id=work_order_id,
         include_inactive=include_inactive,
     )
 
@@ -43,7 +45,10 @@ def post_equipment(
 
 
 @router.get("/{equipment_id}", response_model=EquipmentRead)
-def get_equipment_by_id(equipment_id: int, db: Session = Depends(get_db)) -> EquipmentRead:
+def get_equipment_by_id(
+    equipment_id: int,
+    db: Session = Depends(get_db),
+) -> EquipmentRead:
     return get_equipment(db, equipment_id)
 
 
@@ -93,6 +98,9 @@ def mark_equipment_not_done(
 
 
 @router.delete("/{equipment_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_equipment(equipment_id: int, db: Session = Depends(get_db)) -> Response:
+def delete_equipment(
+    equipment_id: int,
+    db: Session = Depends(get_db),
+) -> Response:
     deactivate_equipment(db, equipment_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

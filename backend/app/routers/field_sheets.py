@@ -29,12 +29,14 @@ router = APIRouter(prefix="/field-sheets", tags=["field-sheets"])
 @router.get("", response_model=list[FieldSheetRead])
 def get_field_sheets(
     equipment_id: int | None = Query(default=None),
+    work_order_id: int | None = Query(default=None),
     include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
 ) -> list[FieldSheetRead]:
     return list_field_sheets(
         db,
         equipment_id=equipment_id,
+        work_order_id=work_order_id,
         include_inactive=include_inactive,
     )
 
@@ -49,7 +51,8 @@ def post_field_sheet(
 
 @router.get("/{field_sheet_id}", response_model=FieldSheetRead)
 def get_field_sheet_by_id(
-    field_sheet_id: int, db: Session = Depends(get_db)
+    field_sheet_id: int,
+    db: Session = Depends(get_db),
 ) -> FieldSheetRead:
     return get_field_sheet(db, field_sheet_id)
 
@@ -96,7 +99,8 @@ def review_field_sheet_route(
 
 @router.delete("/{field_sheet_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_field_sheet(
-    field_sheet_id: int, db: Session = Depends(get_db)
+    field_sheet_id: int,
+    db: Session = Depends(get_db),
 ) -> Response:
     deactivate_field_sheet(db, field_sheet_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

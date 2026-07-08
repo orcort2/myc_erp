@@ -86,6 +86,7 @@ class FieldSheetResultRead(FieldSheetResultBase):
 
 class FieldSheetBase(BaseModel):
     equipment_id: int
+    work_order_id: int | None = None
     template_key: FieldSheetTemplateKey = "general"
     calibration_procedure_id: int | None = None
     calibration_place: str | None = None
@@ -131,6 +132,7 @@ class FieldSheetCreate(FieldSheetBase):
 
 
 class FieldSheetUpdate(BaseModel):
+    work_order_id: int | None = None
     template_key: FieldSheetTemplateKey | None = None
     calibration_procedure_id: int | None = None
     calibration_place: str | None = None
@@ -179,6 +181,7 @@ class FieldSheetRead(FieldSheetBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    work_order_id: int | None = None
     work_order_number: int | None = None
     calibration_procedure_id: int | None = None
     status: FieldSheetStatus

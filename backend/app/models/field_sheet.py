@@ -11,12 +11,23 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "field_sheets"
 
     equipment_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"), index=True)
-    calibration_procedure_id: Mapped[int | None] = mapped_column(
-        ForeignKey("calibration_procedures.id"), index=True
+
+    work_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_work_orders.id"),
+        index=True,
     )
+
+    calibration_procedure_id: Mapped[int | None] = mapped_column(
+        ForeignKey("calibration_procedures.id"),
+        index=True,
+    )
+
     status: Mapped[str] = mapped_column(String(60), default="draft", index=True)
     template_key: Mapped[str] = mapped_column(String(40), default="general", index=True)
+
+    # Compatibilidad / dato congelado para impresión histórica
     work_order_number: Mapped[int | None] = mapped_column(Integer, index=True)
+
     calibration_place: Mapped[str | None] = mapped_column(String(180))
     minimum_division: Mapped[str | None] = mapped_column(String(120))
     location: Mapped[str | None] = mapped_column(String(180))
@@ -31,7 +42,11 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     environment_temperature_start: Mapped[str | None] = mapped_column(String(40))
     environment_temperature_end: Mapped[str | None] = mapped_column(String(40))
     equipment_general_condition: Mapped[bool | None] = mapped_column(Boolean)
-    consider_equipment_deviations: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    consider_equipment_deviations: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+    )
     units: Mapped[str | None] = mapped_column(String(80))
     calibrated_by: Mapped[str | None] = mapped_column(String(180))
     reviewed_by: Mapped[str | None] = mapped_column(String(180))
@@ -58,20 +73,27 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     template_definition_version: Mapped[int | None] = mapped_column(Integer)
 
     equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
+
+    work_order: Mapped["ServiceWorkOrder | None"] = relationship()
+
     calibration_procedure: Mapped["CalibrationProcedure | None"] = relationship(
         back_populates="field_sheets"
     )
+
     certificates: Mapped[list["Certificate"]] = relationship(back_populates="field_sheet")
+
     reference_standard_links: Mapped[list["FieldSheetReferenceStandard"]] = relationship(
         back_populates="field_sheet",
         cascade="all, delete-orphan",
         order_by="FieldSheetReferenceStandard.id.asc()",
     )
+
     results_rows: Mapped[list["FieldSheetResult"]] = relationship(
         back_populates="field_sheet",
         cascade="all, delete-orphan",
         order_by="FieldSheetResult.section_key, FieldSheetResult.row_number",
     )
+
     uncertainty_calculations: Mapped[list["UncertaintyCalculation"]] = relationship(
         back_populates="field_sheet",
         cascade="all, delete-orphan",
@@ -87,12 +109,15 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         for certificate in self.certificates:
             if certificate.is_active:
                 return certificate.expected_folio or certificate.folio
+
         equipment = self.equipment
         if equipment is None:
             return None
+
         for certificate in equipment.certificates:
             if certificate.is_active:
                 return certificate.expected_folio or certificate.folio
+
         return None
 
     @property
@@ -103,7 +128,12 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
 class FieldSheetResult(IntegerPkMixin, TimestampMixin, Base):
     __tablename__ = "field_sheet_results"
     __table_args__ = (
-        UniqueConstraint("field_sheet_id", "section_key", "row_number", name="uq_field_sheet_results_row"),
+        UniqueConstraint(
+            "field_sheet_id",
+            "section_key",
+            "row_number",
+            name="uq_field_sheet_results_row",
+        ),
     )
 
     field_sheet_id: Mapped[int] = mapped_column(ForeignKey("field_sheets.id"), index=True)
