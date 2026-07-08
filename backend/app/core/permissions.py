@@ -20,6 +20,7 @@ ROLE_PERMISSIONS = {
         "quotations.read",
         "quotations.create",
         "quotations.update",
+        "quotations.act_as_advisor",
         "service_orders.read",
     },
     "Tecnico": {
@@ -134,6 +135,7 @@ ROLE_PERMISSIONS = {
         "procedures.create",
         "procedures.update",
         "procedures.delete",
+        "quotations.act_as_advisor",
         "metrology.execute",
         "documents.read",
         "documents.create",

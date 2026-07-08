@@ -7,7 +7,24 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CatalogItemType = Literal["product", "service"]
 CatalogCommodity = Literal["calibration", "maintenance", "repair", "sale", "general_service"]
-CalibrationScope = Literal["accredited_iso_17025", "traceable", "accredited_linked_lab"]
+CalibrationScope = Literal[
+    "accredited_iso_17025",
+    "traceable",
+    "accredited_linked_lab",
+    "preventive",
+    "corrective",
+    "onsite",
+    "online",
+    "hybrid",
+    "documentary",
+    "protocol",
+    "installation",
+    "operation",
+    "performance",
+    "technical",
+    "regulatory",
+    "implementation",
+]
 InternalUnit = Literal[
     "service",
     "piece",
@@ -31,16 +48,47 @@ TAX_RATE_BY_OBJECT = {
 }
 
 
-LEGENDS_BY_COMMODITY = {
-    "maintenance": "Mantenimiento",
-    "repair": "Reparacion",
-    "sale": "Venta",
-}
-
 LEGENDS_BY_SCOPE = {
     "accredited_iso_17025": "Servicio acreditado ISO/IEC 17025:2017",
     "traceable": "Servicio trazable",
     "accredited_linked_lab": "Servicio acreditado ISO/IEC 17025:2017, laboratorio vinculado",
+    "preventive": "Mantenimiento preventivo",
+    "corrective": "Mantenimiento correctivo",
+    "onsite": "Servicio presencial",
+    "online": "Servicio en linea",
+    "hybrid": "Servicio mixto",
+    "documentary": "Validacion documental",
+    "protocol": "Validacion de protocolo",
+    "installation": "Calificacion de instalacion",
+    "operation": "Calificacion de operacion",
+    "performance": "Calificacion de desempeno",
+    "technical": "Consultoria tecnica",
+    "regulatory": "Consultoria normativa",
+    "implementation": "Consultoria de implementacion",
+}
+
+CATEGORY_TO_COMMODITY = {
+    "calibracion": "calibration",
+    "mantenimiento": "maintenance",
+    "reparacion": "repair",
+    "venta": "sale",
+    "servicio general": "general_service",
+}
+
+CATEGORY_LEGENDS = {
+    "Mantenimiento": "Mantenimiento",
+    "Reparacion": "Reparacion",
+    "Venta": "Venta",
+    "Servicio general": "Servicio general",
+}
+
+CATEGORIES_REQUIRING_SCOPE = {
+    "Calibracion",
+    "Mantenimiento",
+    "Capacitacion",
+    "Validacion",
+    "Calificacion",
+    "Consultoria",
 }
 
 
@@ -77,18 +125,14 @@ class CatalogItemBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_business_rules(self):
-        if self.item_type == "product" and self.commodity != "sale":
-            raise ValueError("Los productos deben usar commodity sale")
-        if self.item_type == "service" and self.commodity == "sale":
-            raise ValueError("Los servicios no deben usar commodity sale")
-        if self.commodity == "calibration" and self.calibration_scope is None:
-            raise ValueError("calibration_scope es obligatorio para commodity calibration")
-        if self.commodity != "calibration" and self.calibration_scope is not None:
-            raise ValueError("calibration_scope debe ser null si commodity no es calibration")
+        if self.item_type == "service" and self.category == "Venta":
+            raise ValueError("La categoria Venta debe capturarse como producto")
+        if self.category in CATEGORIES_REQUIRING_SCOPE and self.calibration_scope is None:
+            raise ValueError("calibration_scope es obligatorio para categorias con alcance")
+        if self.item_type == "product" and self.calibration_scope is not None:
+            raise ValueError("calibration_scope debe ser null para productos")
         if self.internal_unit == "other" and not self.custom_internal_unit:
             raise ValueError("custom_internal_unit es obligatorio si internal_unit es other")
-        if self.commodity == "general_service" and not self.quotation_legend:
-            raise ValueError("quotation_legend es obligatorio para commodity general_service")
         return self
 
 

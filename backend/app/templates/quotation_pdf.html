@@ -179,6 +179,13 @@
       margin-top: 3px;
     }
 
+    .commercial-description {
+      color: #375763;
+      display: block;
+      font-size: 9.4px;
+      margin-top: 3px;
+    }
+
     .empty {
       color: #6f858b;
       padding: 18px;
@@ -223,6 +230,10 @@
       color: #fff;
       font-size: 14px;
       font-weight: 700;
+    }
+
+    .totals .grand span {
+      color: #fff;
     }
 
     .notes {
@@ -377,9 +388,8 @@
       <strong>{{ client.legal_name }}</strong>
       <p>RFC fiscal: {{ client.rfc or "-" }}</p>
       <p>R&eacute;gimen fiscal: {{ client.tax_regime or "-" }}</p>
-      <p>C&oacute;digo postal fiscal: -</p>
-      <p>Uso CFDI: -</p>
-      <p>Condiciones de pago: {{ client.payment_terms or "Por definir" }}</p>
+      <p>C&oacute;digo postal fiscal: {{ client.fiscal_postal_code or client.postal_code or "-" }}</p>
+      <p>Condiciones de pago: {{ quotation.payment_terms or "Por definir" }}</p>
     </article>
   </section>
 
@@ -402,6 +412,7 @@
           <tr>
             <td class="description">
               {{ line.description }}
+              {% if line.commercial_description %}<span class="commercial-description">{{ line.commercial_description }}</span>{% endif %}
               {% if line.legend %}<span class="legend">{{ line.legend }}</span>{% endif %}
             </td>
             <td>{{ line.quantity }}</td>

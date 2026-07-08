@@ -55,13 +55,13 @@ export const certificateStatusLabels = {
 };
 
 export const quotationStatusLabels = {
-  draft: 'Draft',
-  sent: 'Sent',
-  waiting: 'Waiting',
-  accepted: 'Accepted',
-  rejected: 'Rejected',
-  expired: 'Expired',
-  cancelled: 'Cancelled'
+  draft: 'Borrador',
+  sent: 'Enviada',
+  waiting: 'En espera',
+  accepted: 'Aceptada',
+  rejected: 'Rechazada',
+  expired: 'Expirada',
+  cancelled: 'Cancelada'
 };
 
 export const serviceOrderTransitions = {
@@ -181,7 +181,7 @@ export const calibrationProcedureStatusLabels = {
 
 export const quotationActions = [
   { key: 'send', label: 'Enviar', nextStatus: 'sent' },
-  { key: 'waiting', label: 'Esperando respuesta', nextStatus: 'waiting' },
+  { key: 'waiting', label: 'Marcar en espera', nextStatus: 'waiting' },
   { key: 'accept', label: 'Aceptar', nextStatus: 'accepted' },
   { key: 'reject', label: 'Rechazar', nextStatus: 'rejected' },
   { key: 'expire', label: 'Expirar', nextStatus: 'expired' },
