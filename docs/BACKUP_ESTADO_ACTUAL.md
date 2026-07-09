@@ -1,6 +1,6 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-07-09 10:58:54 CST
+Ultima actualizacion: 2026-07-09 11:18:23 CST
 Version actual: ERP MYC v0.3.0
 Nombre de version: Ventas Finalizado
 Version anterior: v0.2.0 (Clientes Finalizado)
@@ -10,8 +10,10 @@ Ruta actual del proyecto
 La carpeta padre antes se llamaba ERP MYC, pero fue renombrada a myc_erp. No hay problema con el cambio. De ahora en adelante todas las rutas deben apuntar a myc_erp.
 Git ya esta inicializado.
 Ultimo commit conocido:
-185de10 Corrige indentacion de firmas en ordenes
+b680644 Corrige flujo integral ETS
 Commits recientes:
+b680644 Corrige flujo integral ETS
+35b7fa6 Actualiza backup de estado actual
 185de10 Corrige indentacion de firmas en ordenes
 0a50bae se agregaron firmas a la orden de trabajo, el frontend esta pendiente
 ad1aef0 se declara ordenes de trabajo por ETS
@@ -20,12 +22,46 @@ ad1aef0 se declara ordenes de trabajo por ETS
 6b4954c Merge branch 'main' of https://github.com/orcort2/myc_erp
 0ab66da revision
 87c57cf se corrigio tema de tunel
-c95c207 se esta termino de rediseñar el modulo de vetnas
-b04e21d se finalizo la contrucción del modulo de clientes
 Estado Git verificado:
-## main...origin/main
+## main...origin/main [ahead 1]
 ?? backups/erp_myc_2026_07_09_1058.sql
+?? backups/erp_myc_2026_07_09_1118.sql
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-07-09 11:18:23 CST - Correcciones integrales ETS:
+Objetivo:
+- Aplicar correcciones integrales al modulo Servicios / ETS respetando la arquitectura existente.
+Cambios principales:
+- Frontend ETS: la pestaña Equipos ahora abre primero una vista de carpetas por Orden de Trabajo.
+- Frontend ETS: al abrir una OT se conserva contexto por `work_order_id` para equipos, hojas, certificados, PDF y alta de equipo.
+- Frontend ETS: los botones Ver PDF, Descargar e Imprimir trabajan sobre todas las OT cuando no hay OT activa, y sobre una sola OT cuando existe contexto activo.
+- Backend: nuevo endpoint `GET /api/service-orders/{service_order_id}/work-orders-pdf` para PDF global del ETS, sin romper el endpoint individual existente.
+- Backend PDF: el PDF global reutiliza el renderer actual y fusiona una pagina por OT activa.
+- PDF OT: se corrigio `work_order_pdf.html` removiendo un bloque `accept-block` duplicado y manteniendo firmas del ETS en cada OT.
+- Frontend ETS: se implemento captura de Firma Tecnico, Firma Cliente Recibio y Firma Cliente Aceptacion con nombre, canvas, limpiar, guardar y fecha.
+- Firmas: se guardan por PATCH al ETS y se imprimen automaticamente en todas las OT del expediente.
+- Frontend ETS: se eliminaron controles manuales de etapa como Resumen listo, Marcar equipos listos y Reabrir.
+- Frontend ETS: las etapas se muestran por reglas automaticas de datos existentes.
+- Backend: nuevo endpoint `POST /api/service-orders/{service_order_id}/exceptions` para registrar excepciones operativas con etapa origen, etapa destino, motivo, usuario y fecha en auditoria.
+- Frontend ETS: excepciones visibles para perfiles administrativos/calidad/supervisor/desarrollador/admin, ocultas para Tecnico y Cliente.
+- Frontend ETS: se elimino la Zona de eliminacion operativa del resumen; acciones destructivas pasan a menu contextual de acciones administrativas.
+- Frontend ETS: Observaciones Operativas se movio a la pestaña Notas.
+- Frontend ETS: acciones destructivas de equipos/hojas se ocultan para Tecnico.
+- Frontend ETS: se reforzo la animacion reutilizable de salida de tarjetas con fade, reduccion de altura y reacomodo suave.
+Validacion ejecutada:
+- `./venv/bin/python3 -m compileall backend/app` -> OK.
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+- `./scripts/myc build` -> OK.
+- `scripts/toolkit/db/current.sh` mostro current `27dad4c7a6c8 (head)` y heads `27dad4c7a6c8 (head)`; el script salio con codigo 1 aunque la salida indica Alembic en HEAD.
+- Busqueda de textos manuales eliminados en ETS -> sin resultados para "Resumen listo", "Marcar resumen listo", "Reabrir resumen", "Marcar equipos listos", "Reabrir equipos" y "Zona de eliminacion".
+Backup:
+- Dump SQL generado con scripts/backup-db.sh:
+  backups/erp_myc_2026_07_09_1118.sql
+- Tamano verificado: 684K, 7067 lineas.
+Estado pendiente / nota:
+- Dumps SQL locales sin trackear: `backups/erp_myc_2026_07_09_1058.sql` y `backups/erp_myc_2026_07_09_1118.sql`.
+- Commit funcional documentado: b680644 Corrige flujo integral ETS.
 
 Actualizacion 2026-07-09 10:58:54 CST - Respaldo de estado actual:
 Estado de codigo:
