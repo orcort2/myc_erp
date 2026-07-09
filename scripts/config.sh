@@ -8,5 +8,13 @@ export FRONTEND_DIR="$PROJECT_ROOT/frontend"
 export VENV_DIR="$PROJECT_ROOT/venv"
 
 export PYTHON="$VENV_DIR/bin/python"
+export PIP="$VENV_DIR/bin/pip"
 export ALEMBIC="$VENV_DIR/bin/alembic"
 export UVICORN="$VENV_DIR/bin/uvicorn"
+
+export BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
+export BACKEND_PORT="${BACKEND_PORT:-8000}"
+export FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
+export FRONTEND_PORT="${FRONTEND_PORT:-5174}"
+export API_URL="${API_URL:-http://$BACKEND_HOST:$BACKEND_PORT/api}"
+export BACKUP_DIR="$PROJECT_ROOT/backups"

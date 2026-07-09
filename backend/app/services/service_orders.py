@@ -265,6 +265,28 @@ def update_service_order(
         )
 
     updates = payload.model_dump(exclude_unset=True)
+    signature_fields = [
+        (
+            "technician_signature_data_url",
+            "technician_signed_at",
+        ),
+        (
+            "client_received_signature_data_url",
+            "client_received_signed_at",
+        ),
+        (
+            "client_acceptance_signature_data_url",
+            "client_acceptance_signed_at",
+        ),
+    ]
+
+    for signature_field, signed_at_field in signature_fields:
+         if signature_field in updates:
+             updates[signed_at_field] = (
+                 datetime.now(timezone.utc)
+                 if updates[signature_field]
+                 else None
+             )       
     _ensure_active_user(db, updates.get("advisor_id"), "Asesor")
     _ensure_active_user(db, updates.get("technician_id"), "Tecnico")
 

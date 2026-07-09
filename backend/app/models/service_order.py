@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -29,6 +29,18 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     completed_equipment: Mapped[int] = mapped_column(default=0)
     requires_payment: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+
+    technician_signature_data_url: Mapped[str | None] = mapped_column(Text)
+    client_received_signature_data_url: Mapped[str | None] = mapped_column(Text)
+    client_acceptance_signature_data_url: Mapped[str | None] = mapped_column(Text)
+
+    technician_signed_name: Mapped[str | None] = mapped_column(String(180))
+    client_received_signed_name: Mapped[str | None] = mapped_column(String(180))
+    client_acceptance_signed_name: Mapped[str | None] = mapped_column(String(180))
+
+    technician_signed_at: Mapped[date | None] = mapped_column(DateTime(timezone=True))
+    client_received_signed_at: Mapped[date | None] = mapped_column(DateTime(timezone=True))
+    client_acceptance_signed_at: Mapped[date | None] = mapped_column(DateTime(timezone=True))
 
     client: Mapped["Client"] = relationship(back_populates="service_orders")
     quotation: Mapped["Quotation | None"] = relationship(back_populates="service_orders")

@@ -1,12 +1,7 @@
 #!/bin/bash
+set -e
 
-source "/Users/saulcortes/Desktop/myc_erp/scripts/config.sh"
-
-clear
-echo "===================================="
-echo "      ESTADO DE ALEMBIC"
-echo "===================================="
-echo
+source "$(cd "$(dirname "$0")/../.." && pwd)/config.sh"
 
 cd "$BACKEND_DIR" || exit 1
 
@@ -18,4 +13,4 @@ echo "Heads:"
 "$ALEMBIC" heads
 
 echo
-read -p "Presiona Enter para continuar..."
+read -p "Enter para continuar..."

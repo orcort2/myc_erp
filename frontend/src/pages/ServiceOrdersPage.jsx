@@ -39,6 +39,7 @@ import {
   getAuthenticatedCertificatePdfUrl,
   getOriginalCertificatePdfUrl,
   getWorkOrderPdfUrl,
+  getServiceWorkOrderPdfUrl,
   listCalibrationProcedures,
   listCertificates,
   listClients,
@@ -155,7 +156,10 @@ function ServiceOrdersPage({ user = null }) {
   const [fieldSheetTab, setFieldSheetTab] = useState('info');
   const [orderFilter, setOrderFilter] = useState('all');
   const [etsSearch, setEtsSearch] = useState('');
-  const [fieldSheetWorkOrderFilter, setFieldSheetWorkOrderFilter] = useState('');
+  const [selectedWorkOrderContext, setSelectedWorkOrderContext] = useState(null);
+  const [isWorkOrdersModalOpen, setIsWorkOrdersModalOpen] = useState(false);
+  const [workOrderSearch, setWorkOrderSearch] = useState('');
+  const [exitingEquipmentIds, setExitingEquipmentIds] = useState([]);
   const [isTechnicianPickerOpen, setIsTechnicianPickerOpen] = useState(false);
   const [technicianSearch, setTechnicianSearch] = useState('');
   const [technicianPage, setTechnicianPage] = useState(1);
@@ -258,20 +262,90 @@ function ServiceOrdersPage({ user = null }) {
 
   const relatedWorkOrders = useMemo(() => {
     if (!selectedOrder) return [];
-    const sameQuotation = selectedOrder.quotation_id
-      ? serviceOrders.filter((order) => order.quotation_id === selectedOrder.quotation_id && order.is_active !== false)
-      : [];
-    const base = sameQuotation.length ? sameQuotation : [selectedOrder];
-    return base
-      .filter((order, index, list) => list.findIndex((candidate) => candidate.id === order.id) === index)
-      .sort((left, right) => String(left.work_order_number || '').localeCompare(String(right.work_order_number || '')));
-  }, [selectedOrder, serviceOrders]);
+
+    if (Array.isArray(selectedOrder.work_orders) && selectedOrder.work_orders.length) {
+      return [...selectedOrder.work_orders]
+      .filter((workOrder) => workOrder.is_active !== false)
+      .sort((left, right) => Number(left.sequence || 0) - Number(right.sequence || 0));
+    }
+    
+    return [
+      {
+        id: `legacy-${selectedOrder.id}`,
+        service_order_id: selectedOrder.id,
+        work_order_number: selectedOrder.work_order_number,
+        sequence: 1,
+        equipment_limit: 10,
+        status: selectedOrder.status,
+      },
+    ];
+  },[selectedOrder]);    
 
   const normalizedEtsSearch = etsSearch.trim().toLowerCase();
 
+  function isLegacyWorkOrder(workOrder) {
+    return String(workOrder?.id || '').startsWith('legacy-');
+  }
+
+  function workOrderContextFromWorkOrder(workOrder) {
+    if (!workOrder) return null;
+    return {
+      id: isLegacyWorkOrder(workOrder) ? null : workOrder.id,
+      number: workOrder.work_order_number ?? null,
+      label: `OT-${workOrder.work_order_number ?? '-'}`,
+    };
+  }
+
+  function itemMatchesWorkOrderContext(item, context = selectedWorkOrderContext) {
+    if (!context) return true;
+    if (context.id && Number(item.work_order_id) === Number(context.id)) return true;
+    return String(item.work_order_number || '') === String(context.number || '');
+  }
+
+  function sheetMatchesWorkOrderContext(sheet, context = selectedWorkOrderContext) {
+    if (!context) return true;
+    if (context.id && Number(sheet?.work_order_id) === Number(context.id)) return true;
+    return String(sheet?.work_order_number || '') === String(context.number || '');
+  }
+
+  function getWorkOrderEquipment(workOrder, source = selectedEquipment) {
+    return source.filter((item) => {
+      if (!isLegacyWorkOrder(workOrder) && workOrder.id) {
+        return Number(item.work_order_id) === Number(workOrder.id);
+      }
+      return String(item.work_order_number || '') === String(workOrder.work_order_number || selectedOrder?.work_order_number || '');
+    });
+  }
+
+  function getWorkOrderEquipmentCount(workOrder) {
+    return getWorkOrderEquipment(workOrder).length;
+  }
+
+  const workOrderCapacitySummary = useMemo(() => {
+    const groups = relatedWorkOrders.map((workOrder) => {
+      const registered = getWorkOrderEquipment(workOrder).length;
+      const limit = safeNumber(workOrder.equipment_limit || 10);
+      return {
+        ...workOrder,
+        registered,
+        limit,
+        available: Math.max(limit - registered, 0),
+      };
+    });
+    return {
+      groups,
+      totalRegistered: groups.reduce((sum, workOrder) => sum + workOrder.registered, 0),
+      totalLimit: groups.reduce((sum, workOrder) => sum + workOrder.limit, 0),
+      totalAvailable: groups.reduce((sum, workOrder) => sum + workOrder.available, 0),
+    };
+  }, [relatedWorkOrders, selectedEquipment, selectedOrder]);
+
+  const hasAvailableWorkOrderCapacity = workOrderCapacitySummary.totalAvailable > 0;
+
   const filteredSelectedEquipment = useMemo(() => {
-    if (!normalizedEtsSearch) return selectedEquipment;
     return selectedEquipment.filter((item) => {
+      if (!itemMatchesWorkOrderContext(item)) return false;
+      if (!normalizedEtsSearch) return true;
       const sheet = fieldSheetsByEquipmentId.get(item.id);
       const certificate = activeCertificatesByEquipmentId.get(item.id);
       return [
@@ -290,13 +364,14 @@ function ServiceOrdersPage({ user = null }) {
         certificate?.authentication_code
       ].some((value) => String(value || '').toLowerCase().includes(normalizedEtsSearch));
     });
-  }, [activeCertificatesByEquipmentId, fieldSheetsByEquipmentId, normalizedEtsSearch, selectedEquipment, selectedOrder]);
+  }, [activeCertificatesByEquipmentId, fieldSheetsByEquipmentId, normalizedEtsSearch, selectedEquipment, selectedOrder, selectedWorkOrderContext]);
 
   const filteredSelectedCertificates = useMemo(() => {
-    if (!normalizedEtsSearch) return selectedCertificates;
     return selectedCertificates.filter((certificate) => {
       const item = equipment.find((candidate) => candidate.id === certificate.equipment_id);
       const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
+      if (!itemMatchesWorkOrderContext(item) && !sheetMatchesWorkOrderContext(sheet)) return false;
+      if (!normalizedEtsSearch) return true;
       return [
         certificate.folio,
         certificate.expected_folio,
@@ -311,7 +386,7 @@ function ServiceOrdersPage({ user = null }) {
         sheet?.work_order_number
       ].some((value) => String(value || '').toLowerCase().includes(normalizedEtsSearch));
     });
-  }, [equipment, fieldSheets, normalizedEtsSearch, selectedCertificates]);
+  }, [equipment, fieldSheets, normalizedEtsSearch, selectedCertificates, selectedWorkOrderContext]);
 
   const filteredTechnicianOptions = useMemo(() => {
     const query = technicianSearch.trim().toLowerCase();
@@ -356,23 +431,23 @@ function ServiceOrdersPage({ user = null }) {
   );
 
   const captureMetrics = useMemo(() => ({
-    expected: selectedCertificates.length,
-    uploaded: selectedCertificates.filter((certificate) => certificate.final_pdf_path).length,
-    pending: selectedCertificates.filter((certificate) => !certificate.final_pdf_path).length,
-    matched: selectedCertificates.filter((certificate) => certificate.match_status === 'matched').length,
-    warnings: selectedCertificates.filter((certificate) => certificate.match_status === 'warning').length,
-    mismatches: selectedCertificates.filter((certificate) => certificate.match_status === 'mismatch').length,
-    manual: selectedCertificates.filter((certificate) => certificate.match_status === 'manual_accepted').length
-  }), [selectedCertificates]);
+    expected: filteredSelectedCertificates.length,
+    uploaded: filteredSelectedCertificates.filter((certificate) => certificate.final_pdf_path).length,
+    pending: filteredSelectedCertificates.filter((certificate) => !certificate.final_pdf_path).length,
+    matched: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'matched').length,
+    warnings: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'warning').length,
+    mismatches: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'mismatch').length,
+    manual: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'manual_accepted').length
+  }), [filteredSelectedCertificates]);
 
   const qualityMetrics = useMemo(() => ({
-    pending: selectedCertificates.filter((certificate) => ['ready_for_quality', 'quality_review'].includes(certificate.status)).length,
-    review: selectedCertificates.filter((certificate) => certificate.status === 'quality_review').length,
-    approved: selectedCertificates.filter((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status)).length,
-    rejected: selectedCertificates.filter((certificate) => certificate.status === 'quality_rejected').length,
-    releasable: selectedCertificates.filter((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status) && certificate.final_pdf_path).length,
-    authenticated: selectedCertificates.filter((certificate) => certificate.authenticated_pdf_path).length
-  }), [selectedCertificates]);
+    pending: filteredSelectedCertificates.filter((certificate) => ['ready_for_quality', 'quality_review'].includes(certificate.status)).length,
+    review: filteredSelectedCertificates.filter((certificate) => certificate.status === 'quality_review').length,
+    approved: filteredSelectedCertificates.filter((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status)).length,
+    rejected: filteredSelectedCertificates.filter((certificate) => certificate.status === 'quality_rejected').length,
+    releasable: filteredSelectedCertificates.filter((certificate) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(certificate.status) && certificate.final_pdf_path).length,
+    authenticated: filteredSelectedCertificates.filter((certificate) => certificate.authenticated_pdf_path).length
+  }), [filteredSelectedCertificates]);
 
   const selectedOrderCertificateCapacity = useMemo(() => {
     if (!selectedOrder) {
@@ -440,7 +515,7 @@ function ServiceOrdersPage({ user = null }) {
     if (!selectedOrder) return {};
     const reopened = reopenedStages[selectedOrder.id] ?? {};
     const summaryReady = Boolean(selectedOrder.agenda_date && selectedOrder.service_date && selectedOrder.technician_id);
-    const equipmentReady = selectedEquipment.length > 0 && selectedEquipment.length <= 10;
+    const equipmentReady = selectedEquipment.length > 0 && workOrderCapacitySummary.totalAvailable >= 0;
     const sheetsStarted = selectedFieldSheets.length > 0;
     const usableSheets = selectedFieldSheets.filter((sheet) => ['completed', 'under_review', 'approved', 'returned_to_technician'].includes(sheet.status)).length;
     const captureReady = usableSheets > 0 || selectedCertificates.length > 0;
@@ -500,7 +575,7 @@ function ServiceOrdersPage({ user = null }) {
       },
     };
     return states;
-  }, [selectedOrder, selectedEquipment, selectedFieldSheets, selectedCertificates, reopenedStages]);
+  }, [selectedOrder, selectedEquipment, selectedFieldSheets, selectedCertificates, reopenedStages, workOrderCapacitySummary]);
 
   function getOrderMetrics(order) {
     const orderEquipment = equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false);
@@ -517,7 +592,7 @@ function ServiceOrdersPage({ user = null }) {
     const stageChecks = [
       Boolean(order.quotation_id),
       Boolean(order.agenda_date && order.service_date && order.technician_id),
-      expectedEquipment ? orderEquipment.length >= Math.min(expectedEquipment, 10) : orderEquipment.length > 0,
+      expectedEquipment ? orderEquipment.length >= expectedEquipment : orderEquipment.length > 0,
       orderSheets.length > 0,
       orderSheets.length > 0 && fieldSheetsDone === orderSheets.length,
       orderCertificates.length > 0 && pdfUploaded === orderCertificates.length,
@@ -604,12 +679,20 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   function openTabFromSummary(tab, options = {}) {
-    if (options.workOrderNumber) {
-      setFieldSheetWorkOrderFilter(String(options.workOrderNumber));
-    } else if (tab !== 'field-sheet') {
-      setFieldSheetWorkOrderFilter('');
+    if (options.workOrder) {
+      setSelectedWorkOrderContext(workOrderContextFromWorkOrder(options.workOrder));
+    } else if (options.workOrderId || options.workOrderNumber) {
+      setSelectedWorkOrderContext({
+        id: options.workOrderId && !String(options.workOrderId).startsWith('legacy-') ? options.workOrderId : null,
+        number: options.workOrderNumber ?? null,
+        label: `OT-${options.workOrderNumber ?? '-'}`,
+      });
     }
     setActiveTab(tab);
+  }
+
+  function clearWorkOrderContext() {
+    setSelectedWorkOrderContext(null);
   }
 
   function openEquipmentDetail(item) {
@@ -729,10 +812,6 @@ function ServiceOrdersPage({ user = null }) {
     return () => window.removeEventListener('keydown', handleEscape);
   }, [isDetailOpen, isEquipmentModalOpen, isFieldSheetModalOpen, isTechnicianPickerOpen, selectedEquipmentDetail]);
 
-  function getOrderEquipmentCount(order) {
-    return equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false).length;
-  }
-
   function openOrderDetail(order) {
     setSelectedOrder(order);
     setOrderForm({
@@ -744,7 +823,8 @@ function ServiceOrdersPage({ user = null }) {
     });
     setActiveTab('info');
     setEtsSearch('');
-    setFieldSheetWorkOrderFilter('');
+    setSelectedWorkOrderContext(null);
+    setExitingEquipmentIds([]);
     setIsDetailOpen(true);
     setError('');
     setNotice('');
@@ -762,7 +842,8 @@ function ServiceOrdersPage({ user = null }) {
     setEditingEquipmentId(null);
     setActiveTab('info');
     setEtsSearch('');
-    setFieldSheetWorkOrderFilter('');
+    setSelectedWorkOrderContext(null);
+    setExitingEquipmentIds([]);
     setIsTechnicianPickerOpen(false);
     setFieldSheetTab('technical');
     setSelectedAuthentication(null);
@@ -804,13 +885,23 @@ function ServiceOrdersPage({ user = null }) {
   function openEquipmentModal(item = null) {
     setError('');
     setNotice('');
-    if (!item && selectedEquipment.length >= 10) {
-      setError('Maximo 10 equipos por Orden de Trabajo.');
+    if (!item && !hasAvailableWorkOrderCapacity) {
+      setError('No hay Orden de Trabajo con capacidad disponible.');
       return;
     }
+    const contextualWorkOrder = selectedWorkOrderContext?.id
+      ? relatedWorkOrders.find((workOrder) => Number(workOrder.id) === Number(selectedWorkOrderContext.id))
+      : null;
+    const contextualCapacity = contextualWorkOrder
+      ? workOrderCapacitySummary.groups.find((workOrder) => Number(workOrder.id) === Number(contextualWorkOrder.id))
+      : null;
+    const preferredWorkOrder = contextualCapacity?.available > 0
+      ? contextualWorkOrder
+      : workOrderCapacitySummary.groups.find((workOrder) => workOrder.available > 0) || relatedWorkOrders[0];
     if (item) {
       setEditingEquipmentId(item.id);
       setEquipmentForm({
+        workOrderId: item.work_order_id ? String(item.work_order_id) : '',
         serviceOrderItemId: item.service_order_item_id ? String(item.service_order_item_id) : '',
         certificateScope: item.calibration_scope ?? selectedOrderCertificateCapacity.singleAvailableScope ?? 'traceable',
         name: item.name ?? '',
@@ -826,6 +917,7 @@ function ServiceOrdersPage({ user = null }) {
       setEditingEquipmentId(null);
       setEquipmentForm({
         ...emptyEquipmentForm,
+        workOrderId: preferredWorkOrder && !isLegacyWorkOrder(preferredWorkOrder) ? String(preferredWorkOrder.id) : '',
         certificateScope:
           selectedOrderCertificateCapacity.singleAvailableScope ??
           (selectedOrderCertificateCapacity.availableScopes.length > 1 ? '' : emptyEquipmentForm.certificateScope),
@@ -858,6 +950,7 @@ function ServiceOrdersPage({ user = null }) {
     try {
       const payload = {
         service_order_id: selectedOrder.id,
+        work_order_id: equipmentForm.workOrderId ? Number(equipmentForm.workOrderId) : null,
         calibration_scope: equipmentForm.certificateScope || null,
         name: equipmentForm.name.trim(),
         brand: equipmentForm.brand.trim() || null,
@@ -897,8 +990,13 @@ function ServiceOrdersPage({ user = null }) {
         setNotice('');
         try {
           await deleteEquipment(item.id);
-          setEquipment((current) => current.filter((equipmentItem) => equipmentItem.id !== item.id));
+          setExitingEquipmentIds((current) => [...new Set([...current, item.id])]);
+          window.setTimeout(() => {
+            setEquipment((current) => current.filter((equipmentItem) => equipmentItem.id !== item.id));
+            setExitingEquipmentIds((current) => current.filter((equipmentId) => equipmentId !== item.id));
+          }, 220);
           setNotice('Equipo eliminado de la operación visible');
+          await new Promise((resolve) => window.setTimeout(resolve, 230));
           await loadServiceOrderData();
         } catch (requestError) {
           setError(requestError.message);
@@ -1179,7 +1277,14 @@ function ServiceOrdersPage({ user = null }) {
 
   function openWorkOrderPdf(mode = 'view') {
     if (!selectedOrder) return;
-    const pdfWindow = window.open(getWorkOrderPdfUrl(selectedOrder.id), '_blank', 'noopener,noreferrer');
+
+    const workOrderId = selectedWorkOrderContext?.id;
+    const url = workOrderId
+      ? getServiceWorkOrderPdfUrl(workOrderId)
+      : getWorkOrderPdfUrl(selectedOrder.id);
+
+    const pdfWindow = window.open(url, '_blank', 'noopener,noreferrer');
+
     if (mode === 'print' && pdfWindow) {
       pdfWindow.addEventListener('load', () => {
         pdfWindow.focus();
@@ -1195,8 +1300,9 @@ function ServiceOrdersPage({ user = null }) {
     try {
       const { blob, filename } = await downloadWorkOrderPdf(
         selectedOrder.id,
-        selectedOrder.work_order_number,
-        getClientDisplayName(clientsById.get(selectedOrder.client_id))
+        selectedWorkOrderContext?.number ?? selectedOrder.work_order_number,
+        getClientDisplayName(clientsById.get(selectedOrder.client_id)),
+        selectedWorkOrderContext?.id ?? null
       );
       triggerBlobDownload(blob, filename);
       setNotice(`PDF ${filename} generado correctamente`);
@@ -1804,6 +1910,14 @@ function ServiceOrdersPage({ user = null }) {
                 value={etsSearch}
               />
             </label>
+            {selectedWorkOrderContext ? (
+              <div className="ets-active-context">
+                <span>Contexto activo: {selectedWorkOrderContext.label}</span>
+                <button className="table-button" onClick={clearWorkOrderContext} type="button">
+                  Ver todo el ETS
+                </button>
+              </div>
+            ) : null}
 
             <div className="ets-folder-tabs" role="tablist" aria-label="Carpetas del expediente">
               {[
@@ -1869,22 +1983,17 @@ function ServiceOrdersPage({ user = null }) {
                         <span>Folio OS</span>
                         <strong>{selectedOrder.folio}</strong>
                       </article>
-                      <article className="ets-summary-work-orders">
-                        <span>Ordenes de trabajo</span>
-                        <div>
-                          {relatedWorkOrders.map((order) => (
-                            <button
-                              className="ets-summary-link"
-                              key={order.id}
-                              onClick={() => openTabFromSummary('field-sheet', { workOrderNumber: order.work_order_number })}
-                              type="button"
-                            >
-                              <strong>OT {order.work_order_number ?? '-'}</strong>
-                              <small>{getOrderEquipmentCount(order)} equipos</small>
-                            </button>
-                          ))}
-                        </div>
-                      </article>
+                      <button
+                        className="ets-summary-work-orders ets-summary-card"
+                        onClick={() => setIsWorkOrdersModalOpen(true)}
+                        type="button"
+                        >
+                          <span>Órdenes de trabajo</span>
+                          <strong>{relatedWorkOrders.length} orden(es)</strong>
+                          <small>
+                            {relatedWorkOrders.reduce((sum, order) => sum + getWorkOrderEquipmentCount(order), 0)} equipo(s)
+                          </small>
+                      </button>
                       <article>
                         <span>Cliente</span>
                         <strong>{getClientDisplayName(clientsById.get(selectedOrder.client_id))}</strong>
@@ -1902,7 +2011,8 @@ function ServiceOrdersPage({ user = null }) {
                       </article>
                       <button className="ets-summary-card" onClick={() => openTabFromSummary('equipment')} type="button">
                         <span>Equipos registrados</span>
-                        <strong>{selectedEquipment.length} / 10</strong>
+                        <strong>{workOrderCapacitySummary.totalRegistered} / {workOrderCapacitySummary.totalLimit}</strong>
+                        <small>{workOrderCapacitySummary.groups.length} OT</small>
                       </button>
                       <article>
                         <span>Asesor</span>
@@ -2040,13 +2150,13 @@ function ServiceOrdersPage({ user = null }) {
                 <div className="quotation-section__title">
                   <div>
                     <p>Equipos de la orden</p>
-                    <h3>Equipos registrados: {selectedEquipment.length} / 10</h3>
+                    <h3>Equipos registrados: {workOrderCapacitySummary.totalRegistered} / {workOrderCapacitySummary.totalLimit}</h3>
                     <span className={`ets-inline-stage is-${selectedStageState.equipment?.status ?? 'pending'}`}>
                       {selectedStageState.equipment?.label ?? 'Pendiente'}
                     </span>
                   </div>
                   <div className="toolbar-actions">
-                    {selectedEquipment.length > 0 && selectedEquipment.length <= 10 ? (
+                    {selectedEquipment.length > 0 ? (
                       <button className="table-button table-button--primary" onClick={() => markStageVisual('equipment', 'Etapa Equipos marcada como lista. Hojas de Campo queda destacada como siguiente etapa.')} type="button">
                         Marcar equipos listos
                       </button>
@@ -2057,7 +2167,7 @@ function ServiceOrdersPage({ user = null }) {
                       </button>
                     ) : null}
                     {canUseTechnicalActions ? (
-                      <button className="primary-button" disabled={selectedEquipment.length >= 10} onClick={() => openEquipmentModal()} type="button">
+                      <button className="primary-button" disabled={!hasAvailableWorkOrderCapacity} onClick={() => openEquipmentModal()} type="button">
                         + Agregar equipo
                       </button>
                     ) : null}
@@ -2066,8 +2176,8 @@ function ServiceOrdersPage({ user = null }) {
                 <div className="ets-metric-strip">
                   <span className="ets-metric-badge"><strong>{safeNumber(selectedOrderMetrics.expectedEquipment)}</strong>Esperados cotizacion</span>
                   <span className="ets-metric-badge"><strong>{selectedEquipment.length}</strong>Registrados</span>
-                  <span className="ets-metric-badge"><strong>{selectedEquipment.length} / 10</strong>Capacidad OT</span>
-                  <span className="ets-metric-badge"><strong>{selectedFieldSheets.length} / 10</strong>Hojas</span>
+                  <span className="ets-metric-badge"><strong>{workOrderCapacitySummary.totalRegistered} / {workOrderCapacitySummary.totalLimit}</strong>Capacidad total OT</span>
+                  <span className="ets-metric-badge"><strong>{selectedFieldSheets.length} / {workOrderCapacitySummary.totalLimit}</strong>Hojas</span>
                   {['traceable', 'accredited_iso_17025', 'accredited_linked_lab'].map((scope) => (
                     <span className="ets-metric-badge" key={scope}>
                       <strong>
@@ -2077,66 +2187,98 @@ function ServiceOrdersPage({ user = null }) {
                     </span>
                   ))}
                 </div>
-                {selectedEquipment.length >= 10 ? (
-                  <div className="clients-empty">Maximo 10 equipos por Orden de Trabajo.</div>
+                {!hasAvailableWorkOrderCapacity ? (
+                  <div className="clients-empty">Todas las Ordenes de Trabajo llegaron a su capacidad.</div>
                 ) : null}
                 <div className="ets-stage-note">
                   Orden de trabajo pendiente de firma: este control queda preparado como estado visual hasta definir el campo documental formal.
                 </div>
-                <div className="ets-equipment-card-grid">
-                  {filteredSelectedEquipment.length ? (
-                    filteredSelectedEquipment.map((item) => {
-                      const sheet = fieldSheetsByEquipmentId.get(item.id);
-                      const certificate = activeCertificatesByEquipmentId.get(item.id);
-                      return (
-                        <button className="ets-equipment-card" key={item.id} onClick={() => openEquipmentDetail(item)} type="button">
-                          <span className="ets-equipment-card__eyebrow">{calibrationScopeLabels[item.calibration_scope] || 'Sin tipo'}</span>
-                          <strong>{item.name}</strong>
-                          <mark className={`quotation-status status-${item.status}`}>
-                            {equipmentStatusLabels[item.status] ?? item.status}
+                <div className="ets-work-order-equipment-groups">
+                  {workOrderCapacitySummary.groups.map((workOrder) => {
+                    const groupEquipment = filteredSelectedEquipment.filter((item) => getWorkOrderEquipment(workOrder, [item]).length > 0);
+                    if (selectedWorkOrderContext && groupEquipment.length === 0) return null;
+                    return (
+                      <section className="ets-work-order-equipment-group" key={workOrder.id}>
+                        <div className="ets-work-order-equipment-group__header">
+                          <div>
+                            <p>Orden de Trabajo</p>
+                            <h4>OT-{workOrder.work_order_number ?? '-'}</h4>
+                          </div>
+                          <mark className={`quotation-status status-${workOrder.status}`}>
+                            {serviceOrderStatusLabels[workOrder.status] ?? workOrder.status ?? 'Pendiente'}
                           </mark>
-                          <dl>
-                            <div>
-                              <dt>Marca</dt>
-                              <dd>{item.brand || '-'}</dd>
-                            </div>
-                            <div>
-                              <dt>Modelo</dt>
-                              <dd>{item.model || '-'}</dd>
-                            </div>
-                            <div>
-                              <dt>Serie</dt>
-                              <dd>{item.serial_number || '-'}</dd>
-                            </div>
-                            <div>
-                              <dt>ID interno</dt>
-                              <dd>{item.internal_id || '-'}</dd>
-                            </div>
-                            <div>
-                              <dt>Folio reservado</dt>
-                              <dd>{certificate?.expected_folio || certificate?.folio || '-'}</dd>
-                            </div>
-                            <div>
-                              <dt>Hoja</dt>
-                              <dd>{sheet ? `Hoja ${sheet.id}` : 'Pendiente'}</dd>
-                            </div>
-                            <div>
-                              <dt>Certificado</dt>
-                              <dd>{certificate ? certificateStatusLabels[certificate.status] ?? certificate.status : 'Pendiente'}</dd>
-                            </div>
-                            <div>
-                              <dt>PDF</dt>
-                              <dd>{certificate?.authenticated_pdf_path ? 'Autenticado' : certificate?.final_pdf_path ? 'Original' : 'Pendiente'}</dd>
-                            </div>
-                          </dl>
-                        </button>
-                      );
-                    })
-                  ) : selectedEquipment.length && etsSearch ? (
-                    <div className="clients-empty">No hay equipos que coincidan con la busqueda dentro de este ETS.</div>
-                  ) : (
+                          <span className="ets-metric-badge">
+                            <strong>{workOrder.registered} / {workOrder.limit}</strong>
+                            Capacidad usada
+                          </span>
+                        </div>
+                        <div className="ets-equipment-card-grid ets-animated-list">
+                          {groupEquipment.length ? (
+                            groupEquipment.map((item) => {
+                              const sheet = fieldSheetsByEquipmentId.get(item.id);
+                              const certificate = activeCertificatesByEquipmentId.get(item.id);
+                              return (
+                                <button
+                                  className={`ets-equipment-card ets-list-item${exitingEquipmentIds.includes(item.id) ? ' is-exiting' : ''}`}
+                                  key={item.id}
+                                  onClick={() => openEquipmentDetail(item)}
+                                  type="button"
+                                >
+                                  <span className="ets-equipment-card__eyebrow">{calibrationScopeLabels[item.calibration_scope] || 'Sin tipo'}</span>
+                                  <strong>{item.name}</strong>
+                                  <mark className={`quotation-status status-${item.status}`}>
+                                    {equipmentStatusLabels[item.status] ?? item.status}
+                                  </mark>
+                                  <dl>
+                                    <div>
+                                      <dt>Marca</dt>
+                                      <dd>{item.brand || '-'}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Modelo</dt>
+                                      <dd>{item.model || '-'}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Serie</dt>
+                                      <dd>{item.serial_number || '-'}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>ID interno</dt>
+                                      <dd>{item.internal_id || '-'}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Folio reservado</dt>
+                                      <dd>{certificate?.expected_folio || certificate?.folio || '-'}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Hoja</dt>
+                                      <dd>{sheet ? `Hoja ${sheet.id}` : 'Pendiente'}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Certificado</dt>
+                                      <dd>{certificate ? certificateStatusLabels[certificate.status] ?? certificate.status : 'Pendiente'}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>PDF</dt>
+                                      <dd>{certificate?.authenticated_pdf_path ? 'Autenticado' : certificate?.final_pdf_path ? 'Original' : 'Pendiente'}</dd>
+                                    </div>
+                                  </dl>
+                                </button>
+                              );
+                            })
+                          ) : (
+                            <div className="clients-empty">Sin equipos para esta Orden de Trabajo.</div>
+                          )}
+                        </div>
+                      </section>
+                    );
+                  })}
+                  {!filteredSelectedEquipment.length && (selectedEquipment.length || etsSearch || selectedWorkOrderContext) ? (
+                    <div className="clients-empty">No hay equipos que coincidan con el filtro activo.</div>
+                  ) : null}
+                  {!selectedEquipment.length ? (
                     <div className="clients-empty">Todavia no hay equipos vinculados a esta orden.</div>
-                  )}
+                  ) : null}
                 </div>
               </section>
             ) : null}
@@ -2150,22 +2292,17 @@ function ServiceOrdersPage({ user = null }) {
                 <div className="ets-stage-note">
                   Captura puede avanzar con hojas utilizables o certificados esperados disponibles; el tecnico puede seguir completando hojas en paralelo.
                 </div>
-                {fieldSheetWorkOrderFilter ? (
+                {selectedWorkOrderContext ? (
                   <div className="ets-stage-note">
-                    Mostrando hojas de la OT {fieldSheetWorkOrderFilter}.
-                    <button className="table-button" onClick={() => setFieldSheetWorkOrderFilter('')} type="button">Ver todas</button>
+                    Mostrando flujo de la {selectedWorkOrderContext.label}.
+                    <button className="table-button" onClick={clearWorkOrderContext} type="button">Ver todas</button>
                   </div>
                 ) : null}
                 {selectedEquipment.length ? (
                   <div className="field-sheet-prep-list">
                     {filteredSelectedEquipment
-                      .filter((item) => {
-                        if (!fieldSheetWorkOrderFilter) return true;
-                        const sheet = fieldSheetsByEquipmentId.get(item.id);
-                        return String(sheet?.work_order_number || selectedOrder.work_order_number || '') === String(fieldSheetWorkOrderFilter);
-                      })
                       .map((item) => (
-                        <article className="glass-card-mini" key={item.id}>
+                        <article className="glass-card-mini ets-list-item" key={item.id}>
                           <strong>{item.name}</strong>
                           <span>
                             {fieldSheetsByEquipmentId.has(item.id)
@@ -2818,6 +2955,31 @@ function ServiceOrdersPage({ user = null }) {
             </div>
             {error ? <div className="form-error dashboard-error">{error}</div> : null}
             <form className="client-form client-form--modal" onSubmit={handleEquipmentSubmit}>
+              <label>
+                Orden de Trabajo
+                <select
+                  disabled={relatedWorkOrders.length <= 1}
+                  onChange={(event) => updateEquipmentForm('workOrderId', event.target.value)}
+                  required={relatedWorkOrders.some((workOrder) => !isLegacyWorkOrder(workOrder))}
+                  value={equipmentForm.workOrderId}
+                >
+                  {relatedWorkOrders.some((workOrder) => isLegacyWorkOrder(workOrder)) ? (
+                    <option value="">OT {selectedOrder.work_order_number ?? '-'} legacy</option>
+                  ) : null}
+                  {workOrderCapacitySummary.groups.map((workOrder) => {
+                    const isCurrentWorkOrder = editingEquipmentId && String(equipmentForm.workOrderId) === String(workOrder.id);
+                    return (
+                      <option
+                        disabled={!isCurrentWorkOrder && workOrder.available <= 0}
+                        key={workOrder.id}
+                        value={workOrder.id}
+                      >
+                        OT-{workOrder.work_order_number} · {workOrder.registered}/{workOrder.limit}
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
               {editingEquipmentId ? (
                 <label>
                   Tipo de certificado
@@ -3152,7 +3314,7 @@ function ServiceOrdersPage({ user = null }) {
                     || getFieldSheetTemplate(fieldSheetForm.templateKey || 'general', fieldSheetTemplatesByKey)
                   }
                   values={{
-                    work_order_number: selectedOrder?.work_order_number || '',
+                    work_order_number: selectedFieldSheet?.work_order_number || selectedOrder?.work_order_number || '',
                     certificate_number:
                       selectedFieldSheet?.reserved_certificate_folio ||
                       fieldSheetForm.reservedCertificateFolio ||
@@ -3322,6 +3484,106 @@ function ServiceOrdersPage({ user = null }) {
           </section>
         </div>
       ) : null}
+
+      {isWorkOrdersModalOpen && selectedOrder && (
+        <div className="modal-backdrop">
+          <div className="modal-card ets-work-orders-modal">
+            <div className="modal-header">
+              <div className="modal-header-content">
+                <p className="eyebrow">Expediente tecnico</p>
+                <h2>Órdenes de trabajo</h2>
+                <p className="muted">
+                  {selectedOrder.folio} · {relatedWorkOrders.length} orden(es)
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setIsWorkOrdersModalOpen(false);
+                  setWorkOrderSearch('');
+                }}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="form-field">
+              <label>Buscar orden</label>
+              <input
+                type="search"
+                value={workOrderSearch}
+                onChange={(event) => setWorkOrderSearch(event.target.value)}
+                placeholder="Buscar por folio, número de OT o estado..."
+              />
+            </div>
+
+            <div className="ets-work-orders-list">
+              {relatedWorkOrders
+                .filter((workOrder) => {
+                  const query = workOrderSearch.trim().toLowerCase();
+                  if (!query) return true;
+
+                  return [
+                    workOrder.work_order_number,
+                    workOrder.sequence,
+                    workOrder.status,
+                  ]
+                    .filter(Boolean)
+                    .some((value) => String(value).toLowerCase().includes(query));
+                })
+                .map((workOrder) => {
+                  const equipmentCount = getWorkOrderEquipmentCount(workOrder);
+                  const capacityLimit = safeNumber(workOrder.equipment_limit || 10);
+
+                  return (
+                    <article
+                      key={workOrder.id}
+                      className="ets-work-order-row"
+                    >
+                      <div>
+                        <strong>OT-{workOrder.work_order_number}</strong>
+                        <span>
+                          Secuencia {workOrder.sequence || 1} · {equipmentCount}/{capacityLimit} equipo(s)
+                        </span>
+                      </div>
+                      <span className="status-pill">
+                        {workOrder.status || 'Pendiente'}
+                      </span>
+                      <div className="ets-work-order-row__actions">
+                        {[
+                          ['equipment', 'Equipos'],
+                          ['field-sheet', 'Hojas'],
+                          ['certificates', 'Certificados'],
+                        ].map(([tab, label]) => (
+                          <button
+                            className="table-button"
+                            key={tab}
+                            onClick={() => {
+                              setIsWorkOrdersModalOpen(false);
+                              setWorkOrderSearch('');
+                              openTabFromSummary(tab, { workOrder });
+                            }}
+                            type="button"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </article>
+                  );
+                })}
+
+              {!relatedWorkOrders.length && (
+                <div className="empty-state">
+                  No hay órdenes de trabajo registradas para este expediente.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedQualityCertificate ? (() => {
         const certificate = certificates.find((item) => item.id === selectedQualityCertificate.id) || selectedQualityCertificate;

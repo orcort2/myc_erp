@@ -1,24 +1,18 @@
 #!/bin/bash
+set -e
 
-ROOT="/Users/saulcortes/Desktop/myc_erp"
+source "$(cd "$(dirname "$0")/../.." && pwd)/config.sh"
 
-clear
-echo "===================================="
-echo "      NUEVA MIGRACIÓN"
-echo "===================================="
-echo
-
-read -p "Nombre de la migración: " NAME
+NAME="$*"
 
 if [ -z "$NAME" ]; then
-    echo
-    echo "No se especificó un nombre."
+    echo "Uso: scripts/toolkit/db/revision.sh \"nombre de migracion\""
     exit 1
 fi
 
-cd "$ROOT/backend" || exit 1
+cd "$BACKEND_DIR" || exit 1
 
-../venv/bin/alembic revision -m "$NAME"
+"$ALEMBIC" revision -m "$NAME"
 
 echo
-read -p "Presiona Enter para continuar..."
+read -p "Enter para continuar..."

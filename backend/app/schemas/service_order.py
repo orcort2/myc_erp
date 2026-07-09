@@ -29,6 +29,7 @@ class ServiceWorkOrderBase(BaseModel):
     status: str = Field(default="pending", max_length=60)
     equipment_limit: int = Field(default=10, ge=1)
     notes: str | None = None
+    
 
 
 class ServiceWorkOrderRead(ServiceWorkOrderBase):
@@ -95,6 +96,12 @@ class ServiceOrderUpdate(BaseModel):
     completed_equipment: int | None = Field(default=None, ge=0)
     requires_payment: bool | None = None
     notes: str | None = None
+    technician_signature_data_url: str | None = None
+    client_received_signature_data_url: str | None = None
+    client_acceptance_signature_data_url: str | None = None
+    technician_signed_name: str | None = None
+    client_received_signed_name: str | None = None
+    client_acceptance_signed_name: str | None = None
 
 
 class ServiceOrderStatusChange(BaseModel):
@@ -120,6 +127,17 @@ class ServiceOrderRead(ServiceOrderBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+    technician_signature_data_url: str | None = None
+    client_received_signature_data_url: str | None = None
+    client_acceptance_signature_data_url: str | None = None
+    technician_signed_name: str | None = None
+    client_received_signed_name: str | None = None
+    client_acceptance_signed_name: str | None = None
+
+    technician_signed_at: datetime | None = None
+    client_received_signed_at: datetime | None = None
+    client_acceptance_signed_at: datetime | None = None
 
     items: list[ServiceOrderItemRead] = Field(default_factory=list)
 

@@ -590,13 +590,21 @@ export function getWorkOrderPdfUrl(serviceOrderId) {
   return `${API_URL}/service-orders/${serviceOrderId}/work-order-pdf`;
 }
 
-export async function downloadWorkOrderPdf(serviceOrderId, workOrderNumber = null, clientName = '') {
+export function getServiceWorkOrderPdfUrl(workOrderId) {
+  return `${API_URL}/service-orders/work-orders/${workOrderId}/pdf`;
+}
+
+
+export async function downloadWorkOrderPdf(serviceOrderId, workOrderNumber = null, clientName = '', workOrderId = null) {
   const token = getAccessToken();
   const headers = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const response = await fetch(getWorkOrderPdfUrl(serviceOrderId), { headers });
+  const response = await fetch(
+    workOrderId ? getServiceWorkOrderPdfUrl(workOrderId) : getWorkOrderPdfUrl(serviceOrderId),
+    { headers }
+  );
   if (!response.ok) {
     throw new Error('No se pudo generar el PDF de la orden de trabajo');
   }

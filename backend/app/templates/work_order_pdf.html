@@ -236,11 +236,36 @@
         vertical-align: bottom;
       }
 
-      .signature-line {
-        border-bottom: 1px solid #0070c0;
-        height: 22px;
-        margin: 0 auto 2px;
+      .signature-wrapper {
+        position: relative;
         width: 72%;
+        height: 42px;
+        margin: 0 auto 2px;
+      }
+
+      .signature-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-bottom: 1px solid #0070c0;
+        height: 1px;
+      }
+
+      .signature-image {
+        position: absolute;
+        left: 50%;
+        bottom: 2px;
+        transform: translateX(-50%);
+        max-width: 95%;
+        max-height: 38px;
+        object-fit: contain;
+      }
+
+      .signature-name {
+        margin-top: 3px;
+        font-size: 5.4px;
+        font-weight: 700;
       }
 
       .received-line {
@@ -304,10 +329,13 @@
         width: 175px;
       }
 
-      .accept-line {
-        border-bottom: 1px solid #0070c0;
-        height: 19px;
-        margin-bottom: 2px;
+      .accept-block .signature-wrapper {
+        width: 100%;
+        height: 34px;
+      }
+
+      .accept-block .signature-image {
+        max-height: 30px;
       }
 
       .footer {
@@ -359,7 +387,9 @@
           </td>
           <td style="width: 32%">
             <span class="label">FOLIO:</span>
-            <span class="field-line field-medium folio-value">{{ service_order.work_order_number }}</span>
+            <span class="field-line field-medium folio-value">
+              {{ work_order.work_order_number if work_order else service_order.work_order_number }}
+            </span>
           </td>
         </tr>
 
@@ -436,13 +466,47 @@
       <table class="signature-table">
         <tr>
           <td style="width: 33%">
-            <div class="signature-line"></div>
-            <span class="bold">RECIBIO:</span>
+            <div class="signature-wrapper">
+              {% if service_order.technician_signature_data_url %}
+              <img
+                class="signature-image"
+                src="{{ service_order.technician_signature_data_url }}"
+                alt="Firma del técnico"
+              />
+              {% endif %}
+              <div class="signature-line"></div>
+            </div>
+
+            {% if service_order.technician_signed_name %}
+            <div class="signature-name">
+              {{ service_order.technician_signed_name }}
+            </div>
+            {% endif %}
+
+            <span class="bold">RECIBIÓ:</span>
           </td>
+
           <td style="width: 34%">
-            <div class="signature-line"></div>
+            <div class="signature-wrapper">
+              {% if service_order.client_received_signature_data_url %}
+              <img
+                class="signature-image"
+                src="{{ service_order.client_received_signature_data_url }}"
+                alt="Firma de recepción del cliente"
+              />
+              {% endif %}
+              <div class="signature-line"></div>
+            </div>
+
+            {% if service_order.client_received_signed_name %}
+            <div class="signature-name">
+              {{ service_order.client_received_signed_name }}
+            </div>
+            {% endif %}
+
             <span class="bold">NOMBRE Y FIRMA DEL CLIENTE:</span>
           </td>
+
           <td style="width: 33%">
             <span class="bold">ORDEN DE COMPRA /COTIZACIÓN</span>
             <span class="received-line">
@@ -531,8 +595,25 @@
       </table>
 
       <div class="accept-block">
+        <div class="accept-block">
+        <div class="signature-wrapper">
+          {% if service_order.client_acceptance_signature_data_url %}
+          <img
+            class="signature-image"
+            src="{{ service_order.client_acceptance_signature_data_url }}"
+            alt="Firma de aceptación del cliente"
+          />
+          {% endif %}
+          <div class="signature-line"></div>
+        </div>
+
+        {% if service_order.client_acceptance_signed_name %}
+        <div class="signature-name">
+          {{ service_order.client_acceptance_signed_name }}
+        </div>
+        {% endif %}
+
         <div>ACEPTO NOMBRE Y FIRMA</div>
-        <div class="accept-line"></div>
       </div>
     </main>
   </body>

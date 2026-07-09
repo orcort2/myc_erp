@@ -24,7 +24,10 @@ from app.services.service_orders import (
     list_service_orders,
     update_service_order,
 )
-from app.services.work_order_pdfs import generate_work_order_pdf
+from app.services.work_order_pdfs import (
+    generate_service_work_order_pdf,
+    generate_work_order_pdf,
+)
 
 from io import BytesIO
 
@@ -61,6 +64,17 @@ def get_service_order_work_order_pdf(
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     pdf_bytes, filename = generate_work_order_pdf(db, service_order_id)
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+@router.get("/work-orders/{work_order_id}/pdf")
+def get_service_work_order_pdf(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    pdf_bytes, filename = generate_service_work_order_pdf(db, work_order_id)
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
