@@ -78,6 +78,7 @@ import {
 import { fieldSheetTemplateOptions } from '../constants/fieldSheetTemplates.js';
 import { formatDate, getClientDisplayName } from '../utils/formatters.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
+import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 
 function safeNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -753,6 +754,26 @@ function ServiceOrdersPage({ user = null }) {
 
   function updateSignatureForm(field, value) {
     setSignatureForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function renderSignatureLauncher() {
+    if (!selectedOrder) return null;
+
+    return (
+      <aside className="ets-signature-launcher" aria-label="Firmas del ETS">
+        <div className="ets-signature-launcher__copy">
+          <span>Firmas</span>
+          <strong>Firmar órdenes de trabajo</strong>
+        </div>
+        <ServiceOrderSignatureMorph
+          serviceOrder={selectedOrder}
+          signatureForm={signatureForm}
+          onSignatureChange={updateSignatureForm}
+          onSave={saveSignatures}
+          isSaving={isSaving}
+        />
+      </aside>
+    );
   }
 
   async function saveSignatures() {
@@ -2339,6 +2360,7 @@ function ServiceOrdersPage({ user = null }) {
                     </span>
                   ))}
                 </div>
+                {renderSignatureLauncher()}
                 {!hasAvailableWorkOrderCapacity ? (
                   <div className="clients-empty">Todas las Ordenes de Trabajo llegaron a su capacidad.</div>
                 ) : null}
@@ -2778,38 +2800,7 @@ function ServiceOrdersPage({ user = null }) {
                   <p>Documentos</p>
                   <h3>Documentos del expediente</h3>
                 </div>
-                <div className="ets-signature-grid">
-                  <SignaturePad
-                    dataUrl={signatureForm.technicianSignature}
-                    label="Firma Tecnico"
-                    name={signatureForm.technicianName}
-                    onNameChange={(value) => updateSignatureForm('technicianName', value)}
-                    onSignatureChange={(value) => updateSignatureForm('technicianSignature', value)}
-                    signedAt={selectedOrder.technician_signed_at}
-                  />
-                  <SignaturePad
-                    dataUrl={signatureForm.clientReceivedSignature}
-                    label="Firma Cliente (Recibio)"
-                    name={signatureForm.clientReceivedName}
-                    onNameChange={(value) => updateSignatureForm('clientReceivedName', value)}
-                    onSignatureChange={(value) => updateSignatureForm('clientReceivedSignature', value)}
-                    signedAt={selectedOrder.client_received_signed_at}
-                  />
-                  <SignaturePad
-                    dataUrl={signatureForm.clientAcceptanceSignature}
-                    label="Firma Cliente (Aceptacion)"
-                    name={signatureForm.clientAcceptanceName}
-                    onNameChange={(value) => updateSignatureForm('clientAcceptanceName', value)}
-                    onSignatureChange={(value) => updateSignatureForm('clientAcceptanceSignature', value)}
-                    signedAt={selectedOrder.client_acceptance_signed_at}
-                  />
-                </div>
-                <div className="quotation-detail-save">
-                  <span>Las firmas pertenecen al ETS y se imprimen en todas las Ordenes de Trabajo del expediente.</span>
-                  <button className="primary-button" disabled={isSaving} onClick={saveSignatures} type="button">
-                    {isSaving ? 'Guardando...' : 'Guardar firmas'}
-                  </button>
-                </div>
+                {renderSignatureLauncher()}
                 <div className="field-sheet-prep-list">
                   <article className="glass-card-mini">
                     <strong>Cotizacion</strong>
@@ -3977,6 +3968,7 @@ function ServiceOrdersPage({ user = null }) {
           </section>
         </div>
       ) : null}
+
 
       <ConfirmDialog
         cancelText={confirmDialog?.cancelText}

@@ -24,6 +24,7 @@ import ServiceOrdersPage from './ServiceOrdersPage.jsx';
 import SettingsPage from './SettingsPage.jsx';
 import StandardsPage from './StandardsPage.jsx';
 import UncertaintyPage from './UncertaintyPage.jsx';
+import SignatureLabPage from './SignatureLabPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -119,6 +120,10 @@ export function App() {
   if (!user) {
     navigate('/login');
     return null;
+  }
+
+  if (path === '/signature-lab') {
+    return <SignatureLabPage />;
   }
 
   const selectedModule = modules.find((module) => path === module.path);

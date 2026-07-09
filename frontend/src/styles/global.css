@@ -1976,6 +1976,93 @@ button {
   justify-content: space-between;
 }
 
+.ets-signature-launcher {
+  align-items: center;
+  background:
+    radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.62), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.48), rgba(235, 255, 253, 0.22));
+  border: 1px solid rgba(201, 255, 247, 0.64);
+  border-radius: 14px;
+  box-shadow:
+    0 18px 42px rgba(8, 35, 48, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 12px 0 16px;
+  overflow: hidden;
+  padding: 14px 16px;
+  position: relative;
+}
+
+.ets-signature-launcher::before {
+  background: linear-gradient(90deg, rgba(12, 171, 164, 0.44), rgba(53, 242, 230, 0.08));
+  content: "";
+  inset: 0 auto 0 0;
+  position: absolute;
+  width: 3px;
+}
+
+.ets-signature-launcher__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ets-signature-launcher__copy span {
+  color: var(--myc-primary-dark);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ets-signature-launcher__copy strong {
+  color: var(--myc-navy);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.ets-signature-flow-modal {
+  max-width: 980px;
+}
+
+.ets-signature-flow {
+  display: grid;
+  gap: 16px;
+}
+
+.ets-signature-flow__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.ets-signature-flow__header p,
+.ets-signature-flow__header h3 {
+  margin: 0;
+}
+
+.ets-signature-flow__header p {
+  color: var(--myc-primary-dark);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ets-signature-flow__header h3 {
+  color: var(--myc-navy);
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.ets-signature-flow__header span {
+  color: var(--myc-soft-text);
+  display: block;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
 .ets-signature-card__header strong {
   color: var(--myc-text);
   display: block;
@@ -4912,6 +4999,20 @@ button {
     align-items: flex-start;
     flex-direction: column;
     gap: 8px;
+  }
+
+  .ets-signature-launcher,
+  .ets-signature-flow__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ets-signature-launcher {
+    padding: 14px;
+  }
+
+  .ets-signature-launcher .signature-morph-button {
+    align-self: flex-start;
   }
 }
 
