@@ -108,6 +108,12 @@ class ServiceOrderStatusChange(BaseModel):
     comment: str | None = None
 
 
+class ServiceOrderExceptionCreate(BaseModel):
+    source_stage: str = Field(min_length=1, max_length=80)
+    target_stage: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=3, max_length=1000)
+
+
 class ServiceOrderRead(ServiceOrderBase):
     model_config = ConfigDict(from_attributes=True)
 

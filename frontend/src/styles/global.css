@@ -1433,6 +1433,51 @@ button {
   padding: 10px;
 }
 
+.ets-admin-actions {
+  position: relative;
+}
+
+.ets-admin-actions__menu {
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.16);
+  display: grid;
+  gap: 2px;
+  min-width: 180px;
+  padding: 6px;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+}
+
+.ets-admin-actions__menu button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--myc-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.ets-admin-actions__menu button:hover:not(:disabled) {
+  background: rgba(8, 117, 111, 0.08);
+}
+
+.ets-admin-actions__menu button:disabled {
+  color: var(--myc-soft-text);
+  cursor: not-allowed;
+}
+
+.ets-admin-actions__menu .is-danger {
+  color: #b42318;
+}
+
 .ets-certificates-table .clients-table__head,
 .ets-certificates-table .clients-table__row {
   grid-template-columns: .9fr 1fr .8fr .85fr .8fr .75fr 1.9fr;
@@ -1738,17 +1783,26 @@ button {
 }
 
 .ets-list-item {
+  max-height: 420px;
   opacity: 1;
+  overflow: hidden;
   transform: translateY(0) scale(1);
   transition:
+    max-height .24s ease,
+    margin .24s ease,
     opacity .22s ease,
+    padding .22s ease,
     transform .22s ease,
     border-color .18s ease,
     box-shadow .18s ease;
 }
 
 .ets-list-item.is-exiting {
+  max-height: 0;
+  margin: 0;
   opacity: 0;
+  padding-bottom: 0;
+  padding-top: 0;
   pointer-events: none;
   transform: translateY(8px) scale(.98);
 }
@@ -1860,6 +1914,90 @@ button {
 .ets-work-order-equipment-groups {
   display: grid;
   gap: 16px;
+}
+
+.ets-work-order-folder-grid,
+.ets-signature-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.ets-work-order-folder,
+.ets-signature-card {
+  background: rgba(255, 255, 255, 0.42);
+  border: 1px solid rgba(201, 255, 247, 0.46);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.ets-work-order-folder span,
+.ets-signature-card span {
+  color: var(--myc-soft-text);
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.ets-work-order-folder strong {
+  color: var(--myc-navy);
+  display: block;
+  font-size: 20px;
+  font-weight: 900;
+  margin-top: 3px;
+}
+
+.ets-work-order-folder dl {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.ets-work-order-folder dt {
+  color: var(--myc-soft-text);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.ets-work-order-folder dd {
+  color: var(--myc-text);
+  font-size: 16px;
+  font-weight: 900;
+  margin: 0;
+}
+
+.ets-signature-card__header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.ets-signature-card__header strong {
+  color: var(--myc-text);
+  display: block;
+  font-size: 13px;
+  margin-top: 3px;
+}
+
+.ets-signature-canvas {
+  background: #fff;
+  border: 1px dashed rgba(15, 23, 42, 0.28);
+  border-radius: 8px;
+  height: 120px;
+  touch-action: none;
+  width: 100%;
+}
+
+.ets-signature-preview {
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  max-height: 54px;
+  object-fit: contain;
+  width: 100%;
 }
 
 .ets-work-order-equipment-group {

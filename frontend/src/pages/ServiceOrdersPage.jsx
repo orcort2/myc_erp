@@ -1,5 +1,5 @@
 import { ClipboardList, X } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
@@ -25,6 +25,7 @@ import {
   changeEquipmentStatus,
   changeCertificateStatus,
   completeFieldSheet,
+  createServiceOrderException,
   createCertificate,
   downloadFieldSheetPdf,
   downloadAuthenticatedCertificatePdf,
@@ -38,7 +39,7 @@ import {
   getFieldSheetPdfUrl,
   getAuthenticatedCertificatePdfUrl,
   getOriginalCertificatePdfUrl,
-  getWorkOrderPdfUrl,
+  getServiceOrderWorkOrdersPdfUrl,
   getServiceWorkOrderPdfUrl,
   listCalibrationProcedures,
   listCertificates,
@@ -115,6 +116,96 @@ function canManageServices(user) {
   return isPrivilegedUser(user) || roles.some((role) => ['tecnico', 'técnico', 'technical', 'calidad', 'quality', 'comercial'].includes(role));
 }
 
+function canUseAdministrativeActions(user) {
+  const roles = getRoleNames(user);
+  return isPrivilegedUser(user) || roles.some((role) => ['calidad', 'quality', 'supervisor'].includes(role));
+}
+
+function SignaturePad({ label, name, dataUrl, signedAt, onNameChange, onSignatureChange }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+
+  function getPoint(event) {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const source = event.touches?.[0] ?? event;
+    return {
+      x: (source.clientX - rect.left) * (canvas.width / rect.width),
+      y: (source.clientY - rect.top) * (canvas.height / rect.height),
+    };
+  }
+
+  function beginDrawing(event) {
+    event.preventDefault();
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+    const point = getPoint(event);
+    drawingRef.current = true;
+    context.strokeStyle = '#111827';
+    context.lineWidth = 2;
+    context.lineCap = 'round';
+    context.beginPath();
+    context.moveTo(point.x, point.y);
+  }
+
+  function draw(event) {
+    if (!drawingRef.current) return;
+    event.preventDefault();
+    const context = canvasRef.current.getContext('2d');
+    const point = getPoint(event);
+    context.lineTo(point.x, point.y);
+    context.stroke();
+  }
+
+  function endDrawing() {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    onSignatureChange(canvasRef.current.toDataURL('image/png'));
+  }
+
+  function clearSignature() {
+    const canvas = canvasRef.current;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    onSignatureChange('');
+  }
+
+  return (
+    <article className="ets-signature-card">
+      <div className="ets-signature-card__header">
+        <div>
+          <span>{label}</span>
+          <strong>{signedAt ? new Date(signedAt).toLocaleString('es-MX') : 'Pendiente'}</strong>
+        </div>
+        <button className="table-button" onClick={clearSignature} type="button">
+          Limpiar
+        </button>
+      </div>
+      <label>
+        Nombre
+        <input onChange={(event) => onNameChange(event.target.value)} type="text" value={name} />
+      </label>
+      <canvas
+        aria-label={label}
+        className="ets-signature-canvas"
+        height="120"
+        onMouseDown={beginDrawing}
+        onMouseLeave={endDrawing}
+        onMouseMove={draw}
+        onMouseUp={endDrawing}
+        onTouchCancel={endDrawing}
+        onTouchEnd={endDrawing}
+        onTouchMove={draw}
+        onTouchStart={beginDrawing}
+        ref={canvasRef}
+        width="520"
+      />
+      {dataUrl ? (
+        <img alt={label} className="ets-signature-preview" src={dataUrl} />
+      ) : null}
+    </article>
+  );
+}
+
 const calibrationScopeLabels = {
   traceable: 'Trazable',
   accredited_iso_17025: 'Acreditado ISO/IEC 17025',
@@ -151,6 +242,8 @@ function ServiceOrdersPage({ user = null }) {
   const [selectedQualityCertificate, setSelectedQualityCertificate] = useState(null);
   const [returnToTechnicianRequest, setReturnToTechnicianRequest] = useState(null);
   const [returnToTechnicianReason, setReturnToTechnicianReason] = useState('');
+  const [exceptionRequest, setExceptionRequest] = useState(null);
+  const [exceptionReason, setExceptionReason] = useState('');
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [activeTab, setActiveTab] = useState('info');
   const [fieldSheetTab, setFieldSheetTab] = useState('info');
@@ -160,10 +253,18 @@ function ServiceOrdersPage({ user = null }) {
   const [isWorkOrdersModalOpen, setIsWorkOrdersModalOpen] = useState(false);
   const [workOrderSearch, setWorkOrderSearch] = useState('');
   const [exitingEquipmentIds, setExitingEquipmentIds] = useState([]);
+  const [isAdminActionsOpen, setIsAdminActionsOpen] = useState(false);
+  const [signatureForm, setSignatureForm] = useState({
+    technicianName: '',
+    technicianSignature: '',
+    clientReceivedName: '',
+    clientReceivedSignature: '',
+    clientAcceptanceName: '',
+    clientAcceptanceSignature: '',
+  });
   const [isTechnicianPickerOpen, setIsTechnicianPickerOpen] = useState(false);
   const [technicianSearch, setTechnicianSearch] = useState('');
   const [technicianPage, setTechnicianPage] = useState(1);
-  const [reopenedStages, setReopenedStages] = useState({});
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
@@ -185,6 +286,7 @@ function ServiceOrdersPage({ user = null }) {
   const canUseTechnicalActions = hasStageAccess(user, 'technical');
   const canUseCaptureActions = hasStageAccess(user, 'capture');
   const canUseQualityActions = hasStageAccess(user, 'quality');
+  const canUseAdminActions = canUseAdministrativeActions(user);
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -319,6 +421,19 @@ function ServiceOrdersPage({ user = null }) {
 
   function getWorkOrderEquipmentCount(workOrder) {
     return getWorkOrderEquipment(workOrder).length;
+  }
+
+  function getWorkOrderFieldSheets(workOrder) {
+    return selectedFieldSheets.filter((sheet) => sheetMatchesWorkOrderContext(sheet, workOrderContextFromWorkOrder(workOrder)));
+  }
+
+  function getWorkOrderCertificates(workOrder) {
+    const context = workOrderContextFromWorkOrder(workOrder);
+    return selectedCertificates.filter((certificate) => {
+      const item = equipment.find((candidate) => candidate.id === certificate.equipment_id);
+      const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
+      return itemMatchesWorkOrderContext(item, context) || sheetMatchesWorkOrderContext(sheet, context);
+    });
   }
 
   const workOrderCapacitySummary = useMemo(() => {
@@ -513,7 +628,6 @@ function ServiceOrdersPage({ user = null }) {
 
   const selectedStageState = useMemo(() => {
     if (!selectedOrder) return {};
-    const reopened = reopenedStages[selectedOrder.id] ?? {};
     const summaryReady = Boolean(selectedOrder.agenda_date && selectedOrder.service_date && selectedOrder.technician_id);
     const equipmentReady = selectedEquipment.length > 0 && workOrderCapacitySummary.totalAvailable >= 0;
     const sheetsStarted = selectedFieldSheets.length > 0;
@@ -529,13 +643,13 @@ function ServiceOrdersPage({ user = null }) {
     const billingComplete = !selectedOrder.requires_payment || ['released', 'closed'].includes(selectedOrder.status);
     const states = {
       info: {
-        label: reopened.info ? 'Reabierta' : summaryReady ? 'Lista' : 'En proceso',
-        status: reopened.info ? 'reopened' : summaryReady ? 'done' : 'active',
+        label: summaryReady ? 'Lista' : 'En proceso',
+        status: summaryReady ? 'done' : 'active',
         ready: summaryReady,
       },
       equipment: {
-        label: reopened.equipment ? 'Reabierta' : equipmentReady ? 'Lista' : summaryReady ? 'En proceso' : 'Pendiente',
-        status: reopened.equipment ? 'reopened' : equipmentReady ? 'done' : summaryReady ? 'active' : 'blocked',
+        label: equipmentReady ? 'Lista' : summaryReady ? 'En proceso' : 'Pendiente',
+        status: equipmentReady ? 'done' : summaryReady ? 'active' : 'blocked',
         ready: equipmentReady,
       },
       'field-sheet': {
@@ -563,6 +677,11 @@ function ServiceOrdersPage({ user = null }) {
         status: documentsReady ? 'active' : 'pending',
         ready: documentsReady,
       },
+      notes: {
+        label: selectedOrder.notes ? 'Con notas' : 'Disponible',
+        status: selectedOrder.notes ? 'active' : 'pending',
+        ready: true,
+      },
       history: {
         label: 'Disponible',
         status: 'active',
@@ -575,7 +694,7 @@ function ServiceOrdersPage({ user = null }) {
       },
     };
     return states;
-  }, [selectedOrder, selectedEquipment, selectedFieldSheets, selectedCertificates, reopenedStages, workOrderCapacitySummary]);
+  }, [selectedOrder, selectedEquipment, selectedFieldSheets, selectedCertificates, workOrderCapacitySummary]);
 
   function getOrderMetrics(order) {
     const orderEquipment = equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false);
@@ -632,28 +751,66 @@ function ServiceOrdersPage({ user = null }) {
     return order.technician_name || getUserDisplayNameById(order.technician_id, 'Sin asignar');
   }
 
-  function markStageVisual(stage, message) {
-    if (!selectedOrder) return;
-    setReopenedStages((current) => ({
-      ...current,
-      [selectedOrder.id]: {
-        ...(current[selectedOrder.id] ?? {}),
-        [stage]: false,
-      },
-    }));
-    setNotice(message);
+  function updateSignatureForm(field, value) {
+    setSignatureForm((current) => ({ ...current, [field]: value }));
   }
 
-  function reopenStageVisual(stage, label) {
+  async function saveSignatures() {
     if (!selectedOrder) return;
-    setReopenedStages((current) => ({
-      ...current,
-      [selectedOrder.id]: {
-        ...(current[selectedOrder.id] ?? {}),
-        [stage]: true,
-      },
-    }));
-    setNotice(`${label} reabierta visualmente. La auditoria formal queda pendiente de endpoint especifico.`);
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await updateServiceOrder(selectedOrder.id, {
+        technician_signed_name: signatureForm.technicianName.trim() || null,
+        technician_signature_data_url: signatureForm.technicianSignature || null,
+        client_received_signed_name: signatureForm.clientReceivedName.trim() || null,
+        client_received_signature_data_url: signatureForm.clientReceivedSignature || null,
+        client_acceptance_signed_name: signatureForm.clientAcceptanceName.trim() || null,
+        client_acceptance_signature_data_url: signatureForm.clientAcceptanceSignature || null,
+      });
+      setSelectedOrder(updated);
+      setNotice('Firmas del ETS guardadas. Se imprimirán en todas las OT del expediente.');
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function openExceptionRequest(sourceStage, targetStage) {
+    setExceptionRequest({ sourceStage, targetStage });
+    setExceptionReason('');
+    setError('');
+  }
+
+  async function submitExceptionRequest() {
+    if (!selectedOrder || !exceptionRequest) return;
+    const reason = exceptionReason.trim();
+    if (!reason) {
+      setError('Captura el motivo de la excepcion.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await createServiceOrderException(selectedOrder.id, {
+        source_stage: exceptionRequest.sourceStage,
+        target_stage: exceptionRequest.targetStage,
+        reason,
+      });
+      setSelectedOrder(updated);
+      setExceptionRequest(null);
+      setExceptionReason('');
+      setNotice(`Excepcion registrada: ${exceptionRequest.sourceStage} -> ${exceptionRequest.targetStage}`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function openTechnicianPicker() {
@@ -821,9 +978,18 @@ function ServiceOrdersPage({ user = null }) {
       requiresPayment: order.requires_payment !== false,
       notes: order.notes ?? ''
     });
+    setSignatureForm({
+      technicianName: order.technician_signed_name ?? order.technician_name ?? '',
+      technicianSignature: order.technician_signature_data_url ?? '',
+      clientReceivedName: order.client_received_signed_name ?? '',
+      clientReceivedSignature: order.client_received_signature_data_url ?? '',
+      clientAcceptanceName: order.client_acceptance_signed_name ?? '',
+      clientAcceptanceSignature: order.client_acceptance_signature_data_url ?? '',
+    });
     setActiveTab('info');
     setEtsSearch('');
     setSelectedWorkOrderContext(null);
+    setIsAdminActionsOpen(false);
     setExitingEquipmentIds([]);
     setIsDetailOpen(true);
     setError('');
@@ -847,6 +1013,16 @@ function ServiceOrdersPage({ user = null }) {
     setIsTechnicianPickerOpen(false);
     setFieldSheetTab('technical');
     setSelectedAuthentication(null);
+    setSignatureForm({
+      technicianName: '',
+      technicianSignature: '',
+      clientReceivedName: '',
+      clientReceivedSignature: '',
+      clientAcceptanceName: '',
+      clientAcceptanceSignature: '',
+    });
+    setExceptionRequest(null);
+    setExceptionReason('');
     setError('');
   }
 
@@ -1281,7 +1457,7 @@ function ServiceOrdersPage({ user = null }) {
     const workOrderId = selectedWorkOrderContext?.id;
     const url = workOrderId
       ? getServiceWorkOrderPdfUrl(workOrderId)
-      : getWorkOrderPdfUrl(selectedOrder.id);
+      : getServiceOrderWorkOrdersPdfUrl(selectedOrder.id);
 
     const pdfWindow = window.open(url, '_blank', 'noopener,noreferrer');
 
@@ -1302,7 +1478,8 @@ function ServiceOrdersPage({ user = null }) {
         selectedOrder.id,
         selectedWorkOrderContext?.number ?? selectedOrder.work_order_number,
         getClientDisplayName(clientsById.get(selectedOrder.client_id)),
-        selectedWorkOrderContext?.id ?? null
+        selectedWorkOrderContext?.id ?? null,
+        !selectedWorkOrderContext?.id
       );
       triggerBlobDownload(blob, filename);
       setNotice(`PDF ${filename} generado correctamente`);
@@ -1896,6 +2073,22 @@ function ServiceOrdersPage({ user = null }) {
               <button className="primary-button" disabled={isSaving || activeTab !== 'info'} form="service-order-summary-form" type="submit">
                 {isSaving ? 'Guardando...' : 'Guardar cambios'}
               </button>
+              {canUseAdminActions ? (
+                <div className="ets-admin-actions">
+                  <button className="table-button" onClick={() => setIsAdminActionsOpen((open) => !open)} type="button">
+                    ⋮ Acciones
+                  </button>
+                  {isAdminActionsOpen ? (
+                    <div className="ets-admin-actions__menu">
+                      <button onClick={() => setActiveTab('info')} type="button">Editar ETS</button>
+                      <button onClick={() => setActiveTab('documents')} type="button">Exportar</button>
+                      <button disabled type="button">Duplicar</button>
+                      <button disabled type="button">Archivar</button>
+                      <button className="is-danger" onClick={handleDeleteServiceOrder} type="button">Eliminar</button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               <button className="icon-text-button" onClick={closeOrderDetail} type="button">
                 Cerrar
               </button>
@@ -1928,6 +2121,7 @@ function ServiceOrdersPage({ user = null }) {
                 ['quality', 'Calidad'],
                 ['certificates', 'Certificados'],
                 ['documents', 'Documentos'],
+                ['notes', 'Notas'],
                 ['history', 'Historial'],
                 ['billing', 'Facturacion']
               ].map(([key, label]) => (
@@ -2092,56 +2286,19 @@ function ServiceOrdersPage({ user = null }) {
                     </div>
                   </section>
 
-                  <section className="quotation-section">
-                    <div className="quotation-section__title">
-                      <p>Notas</p>
-                      <h3>Observaciones operativas</h3>
-                    </div>
-                    <label className="quotation-notes-field">
-                      <textarea
-                        onChange={(event) => updateOrderForm('notes', event.target.value)}
-                        placeholder="Sin notas registradas."
-                        rows={4}
-                        value={orderForm.notes}
-                      />
-                    </label>
-                  </section>
-
                   <div className="quotation-detail-save">
-                    <span>La etapa queda lista cuando exista fecha de agenda, fecha de servicio y tecnico asignado.</span>
+                    <span>Resumen queda listo automaticamente cuando exista fecha de agenda, fecha de servicio y tecnico asignado.</span>
                     <div className="toolbar-actions">
                       <button
                         className="primary-button"
-                        disabled={!orderForm.agendaDate || !orderForm.serviceDate || !orderForm.technicianId || isSaving}
+                        disabled={isSaving}
                         type="submit"
                       >
-                        {selectedStageState.info?.ready ? 'Resumen listo' : 'Marcar resumen listo'}
+                        {isSaving ? 'Guardando...' : 'Guardar'}
                       </button>
-                      {selectedStageState.info?.ready ? (
-                        <button className="table-button" onClick={() => setActiveTab('equipment')} type="button">
-                          Siguiente: Equipos
-                        </button>
-                      ) : null}
-                      {isPrivilegedUser(user) && selectedStageState.info?.ready ? (
-                        <button className="table-button" onClick={() => reopenStageVisual('info', 'Resumen')} type="button">
-                          Reabrir resumen
-                        </button>
-                      ) : null}
                     </div>
                   </div>
                 </form>
-
-                <section className="danger-zone">
-                  <div className="danger-zone__copy">
-                    <p>Zona de eliminacion operativa</p>
-                    <span>La orden se elimina de la operación visible, pero se conserva trazabilidad y el backend valida dependencias activas.</span>
-                  </div>
-                  <div className="toolbar-actions">
-                    <button className="table-button table-button--danger" onClick={handleDeleteServiceOrder} type="button">
-                      Eliminar
-                    </button>
-                  </div>
-                </section>
               </>
             ) : null}
 
@@ -2156,14 +2313,9 @@ function ServiceOrdersPage({ user = null }) {
                     </span>
                   </div>
                   <div className="toolbar-actions">
-                    {selectedEquipment.length > 0 ? (
-                      <button className="table-button table-button--primary" onClick={() => markStageVisual('equipment', 'Etapa Equipos marcada como lista. Hojas de Campo queda destacada como siguiente etapa.')} type="button">
-                        Marcar equipos listos
-                      </button>
-                    ) : null}
-                    {isPrivilegedUser(user) && selectedStageState.equipment?.ready ? (
-                      <button className="table-button" onClick={() => reopenStageVisual('equipment', 'Equipos')} type="button">
-                        Reabrir equipos
+                    {selectedWorkOrderContext ? (
+                      <button className="table-button" onClick={clearWorkOrderContext} type="button">
+                        Volver a Ordenes de Trabajo
                       </button>
                     ) : null}
                     {canUseTechnicalActions ? (
@@ -2191,8 +2343,44 @@ function ServiceOrdersPage({ user = null }) {
                   <div className="clients-empty">Todas las Ordenes de Trabajo llegaron a su capacidad.</div>
                 ) : null}
                 <div className="ets-stage-note">
-                  Orden de trabajo pendiente de firma: este control queda preparado como estado visual hasta definir el campo documental formal.
+                  Equipos queda lista automaticamente cuando hay equipos vinculados a las Ordenes de Trabajo del ETS.
                 </div>
+                {!selectedWorkOrderContext ? (
+                  <div className="ets-work-order-folder-grid">
+                    {workOrderCapacitySummary.groups.map((workOrder) => {
+                      const sheets = getWorkOrderFieldSheets(workOrder);
+                      const certs = getWorkOrderCertificates(workOrder);
+                      return (
+                        <article className="ets-work-order-folder" key={workOrder.id}>
+                          <div>
+                            <span>Orden de Trabajo</span>
+                            <strong>OT-{workOrder.work_order_number ?? '-'}</strong>
+                          </div>
+                          <mark className={`quotation-status status-${workOrder.status}`}>
+                            {serviceOrderStatusLabels[workOrder.status] ?? workOrder.status ?? 'Pendiente'}
+                          </mark>
+                          <dl>
+                            <div><dt>Equipos</dt><dd>{workOrder.registered} / {workOrder.limit}</dd></div>
+                            <div><dt>Hojas</dt><dd>{sheets.length} / {workOrder.registered}</dd></div>
+                            <div><dt>Certificados</dt><dd>{certs.filter((item) => item.authenticated_pdf_path || item.status === 'released_to_client').length} / {certs.length}</dd></div>
+                          </dl>
+                          <div className="toolbar-actions">
+                            <button className="table-button table-button--primary" onClick={() => openTabFromSummary('equipment', { workOrder })} type="button">
+                              Abrir
+                            </button>
+                            <button className="table-button" onClick={() => openTabFromSummary('field-sheet', { workOrder })} type="button">
+                              Hojas
+                            </button>
+                            <button className="table-button" onClick={() => openTabFromSummary('certificates', { workOrder })} type="button">
+                              Certificados
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {selectedWorkOrderContext ? (
                 <div className="ets-work-order-equipment-groups">
                   {workOrderCapacitySummary.groups.map((workOrder) => {
                     const groupEquipment = filteredSelectedEquipment.filter((item) => getWorkOrderEquipment(workOrder, [item]).length > 0);
@@ -2280,6 +2468,7 @@ function ServiceOrdersPage({ user = null }) {
                     <div className="clients-empty">Todavia no hay equipos vinculados a esta orden.</div>
                   ) : null}
                 </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -2333,6 +2522,11 @@ function ServiceOrdersPage({ user = null }) {
                       Subir PDFs multiples
                       <input accept="application/pdf" multiple onChange={(event) => handleBulkPdfUpload(event.target.files, event.target)} type="file" />
                     </label>
+                  ) : null}
+                  {canUseAdminActions ? (
+                    <button className="table-button" onClick={() => openExceptionRequest('Captura', 'Hojas')} type="button">
+                      Solicitar excepcion
+                    </button>
                   ) : null}
                 </div>
                 <div className="ets-metric-strip">
@@ -2410,6 +2604,11 @@ function ServiceOrdersPage({ user = null }) {
                   </div>
                   {canUseQualityActions ? (
                     <div className="toolbar-actions">
+                      {canUseAdminActions ? (
+                        <button className="table-button" onClick={() => openExceptionRequest('Calidad', 'Captura')} type="button">
+                          Solicitar excepcion
+                        </button>
+                      ) : null}
                       <button className="table-button" disabled={isSaving} onClick={handleAuthenticateApprovedBatch} type="button">
                         Autenticar aprobados
                       </button>
@@ -2579,6 +2778,38 @@ function ServiceOrdersPage({ user = null }) {
                   <p>Documentos</p>
                   <h3>Documentos del expediente</h3>
                 </div>
+                <div className="ets-signature-grid">
+                  <SignaturePad
+                    dataUrl={signatureForm.technicianSignature}
+                    label="Firma Tecnico"
+                    name={signatureForm.technicianName}
+                    onNameChange={(value) => updateSignatureForm('technicianName', value)}
+                    onSignatureChange={(value) => updateSignatureForm('technicianSignature', value)}
+                    signedAt={selectedOrder.technician_signed_at}
+                  />
+                  <SignaturePad
+                    dataUrl={signatureForm.clientReceivedSignature}
+                    label="Firma Cliente (Recibio)"
+                    name={signatureForm.clientReceivedName}
+                    onNameChange={(value) => updateSignatureForm('clientReceivedName', value)}
+                    onSignatureChange={(value) => updateSignatureForm('clientReceivedSignature', value)}
+                    signedAt={selectedOrder.client_received_signed_at}
+                  />
+                  <SignaturePad
+                    dataUrl={signatureForm.clientAcceptanceSignature}
+                    label="Firma Cliente (Aceptacion)"
+                    name={signatureForm.clientAcceptanceName}
+                    onNameChange={(value) => updateSignatureForm('clientAcceptanceName', value)}
+                    onSignatureChange={(value) => updateSignatureForm('clientAcceptanceSignature', value)}
+                    signedAt={selectedOrder.client_acceptance_signed_at}
+                  />
+                </div>
+                <div className="quotation-detail-save">
+                  <span>Las firmas pertenecen al ETS y se imprimen en todas las Ordenes de Trabajo del expediente.</span>
+                  <button className="primary-button" disabled={isSaving} onClick={saveSignatures} type="button">
+                    {isSaving ? 'Guardando...' : 'Guardar firmas'}
+                  </button>
+                </div>
                 <div className="field-sheet-prep-list">
                   <article className="glass-card-mini">
                     <strong>Cotizacion</strong>
@@ -2632,6 +2863,29 @@ function ServiceOrdersPage({ user = null }) {
                       <button className="table-button" onClick={() => handleDownloadAuthenticatedCertificatePdf(certificate)} type="button">Descargar</button>
                     </article>
                   ))}
+                </div>
+              </section>
+            ) : null}
+
+            {activeTab === 'notes' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Notas</p>
+                  <h3>Observaciones operativas</h3>
+                </div>
+                <label className="quotation-notes-field">
+                  <textarea
+                    onChange={(event) => updateOrderForm('notes', event.target.value)}
+                    placeholder="Sin notas registradas."
+                    rows={6}
+                    value={orderForm.notes}
+                  />
+                </label>
+                <div className="quotation-detail-save">
+                  <span>Las observaciones quedan fuera del resumen para mantener la vista principal enfocada en avance e indicadores.</span>
+                  <button className="primary-button" disabled={isSaving} onClick={handleOrderSubmit} type="button">
+                    {isSaving ? 'Guardando...' : 'Guardar notas'}
+                  </button>
                 </div>
               </section>
             ) : null}
@@ -2930,7 +3184,7 @@ function ServiceOrdersPage({ user = null }) {
                       <button className="table-button table-button--primary" onClick={() => openFieldSheetForEquipment(selectedEquipmentDetail)} type="button">
                         {sheet ? 'Abrir hoja' : 'Crear hoja'}
                       </button>
-                      {canUseTechnicalActions ? (
+                      {canUseAdminActions ? (
                         <button className="table-button table-button--danger" onClick={() => handleDeleteEquipment(selectedEquipmentDetail)} type="button">
                           Eliminar
                         </button>
@@ -3437,17 +3691,14 @@ function ServiceOrdersPage({ user = null }) {
                   </div>
                 </div>
 
-                <section className="danger-zone">
-                  <div className="danger-zone__copy">
-                    <p>Zona de eliminacion operativa</p>
-                    <span>La hoja de campo se elimina de la operación visible. No se eliminará físicamente y puede impactar certificados relacionados.</span>
-                  </div>
-                  <div className="toolbar-actions">
+                {canUseAdminActions ? (
+                  <div className="quotation-detail-save">
+                    <span>Acciones administrativas de hoja de campo.</span>
                     <button className="table-button table-button--danger" disabled={isSaving} onClick={handleDeleteFieldSheet} type="button">
                       Eliminar hoja de campo
                     </button>
                   </div>
-                </section>
+                ) : null}
               </section>
             ) : null}
 
@@ -3676,6 +3927,51 @@ function ServiceOrdersPage({ user = null }) {
                 type="button"
               >
                 {isSaving ? 'Procesando...' : 'Regresar al tecnico'}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {exceptionRequest ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-modal="true" className="client-modal confirm-dialog" role="dialog">
+            <div className="section-heading confirm-dialog__header">
+              <div>
+                <p>Excepcion operativa</p>
+                <h2>{exceptionRequest.sourceStage} - {exceptionRequest.targetStage}</h2>
+              </div>
+            </div>
+            <div className="confirm-dialog__body">
+              <p>Registra el motivo. El backend conserva etapa origen, etapa destino, usuario, fecha y comentario en auditoria.</p>
+              <textarea
+                autoFocus
+                className="form-textarea"
+                onChange={(event) => setExceptionReason(event.target.value)}
+                placeholder="Motivo de la excepcion"
+                rows={4}
+                value={exceptionReason}
+              />
+            </div>
+            <div className="confirm-dialog__actions">
+              <button
+                className="confirm-dialog__cancel"
+                disabled={isSaving}
+                onClick={() => {
+                  setExceptionRequest(null);
+                  setExceptionReason('');
+                }}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                className="confirm-dialog__confirm"
+                disabled={isSaving}
+                onClick={submitExceptionRequest}
+                type="button"
+              >
+                {isSaving ? 'Registrando...' : 'Registrar excepcion'}
               </button>
             </div>
           </section>

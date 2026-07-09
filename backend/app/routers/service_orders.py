@@ -5,10 +5,13 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.schemas.service_order import (
     ServiceOrderCreate,
+    ServiceOrderExceptionCreate,
     ServiceOrderRead,
     ServiceOrderStatusChange,
     ServiceOrderUpdate,
 )
+from app.models.user import User
+from app.services.auth import get_optional_current_user
 from app.schemas.certificate import CertificateBatchActionRead, CertificateBulkUploadRead
 from app.services.certificates import (
     authenticate_certificates_for_service_order,
@@ -22,10 +25,12 @@ from app.services.service_orders import (
     deactivate_service_order,
     get_service_order,
     list_service_orders,
+    register_service_order_exception,
     update_service_order,
 )
 from app.services.work_order_pdfs import (
     generate_service_work_order_pdf,
+    generate_service_order_work_orders_pdf,
     generate_work_order_pdf,
 )
 
@@ -69,6 +74,21 @@ def get_service_order_work_order_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+@router.get("/{service_order_id}/work-orders-pdf")
+def get_service_order_work_orders_pdf(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    pdf_bytes, filename = generate_service_order_work_orders_pdf(db, service_order_id)
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
 @router.get("/work-orders/{work_order_id}/pdf")
 def get_service_work_order_pdf(
     work_order_id: int,
@@ -159,6 +179,21 @@ def quality_service_order(
     db: Session = Depends(get_db),
 ) -> ServiceOrderRead:
     return change_status(db, service_order_id, "quality_review", payload)
+
+
+@router.post("/{service_order_id}/exceptions", response_model=ServiceOrderRead)
+def create_service_order_exception(
+    service_order_id: int,
+    payload: ServiceOrderExceptionCreate,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> ServiceOrderRead:
+    return register_service_order_exception(
+        db,
+        service_order_id,
+        payload,
+        user_id=current_user.id if current_user else None,
+    )
 
 
 @router.post("/{service_order_id}/pending-payment", response_model=ServiceOrderRead)

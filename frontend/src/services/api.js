@@ -513,6 +513,13 @@ export async function changeServiceOrderStatus(serviceOrderId, action, comment =
   });
 }
 
+export async function createServiceOrderException(serviceOrderId, payload) {
+  return request(`/service-orders/${serviceOrderId}/exceptions`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function listEquipment(params = {}) {
   return request(`/equipment${buildQuery(params)}`);
 }
@@ -590,19 +597,27 @@ export function getWorkOrderPdfUrl(serviceOrderId) {
   return `${API_URL}/service-orders/${serviceOrderId}/work-order-pdf`;
 }
 
+export function getServiceOrderWorkOrdersPdfUrl(serviceOrderId) {
+  return `${API_URL}/service-orders/${serviceOrderId}/work-orders-pdf`;
+}
+
 export function getServiceWorkOrderPdfUrl(workOrderId) {
   return `${API_URL}/service-orders/work-orders/${workOrderId}/pdf`;
 }
 
 
-export async function downloadWorkOrderPdf(serviceOrderId, workOrderNumber = null, clientName = '', workOrderId = null) {
+export async function downloadWorkOrderPdf(serviceOrderId, workOrderNumber = null, clientName = '', workOrderId = null, allWorkOrders = false) {
   const token = getAccessToken();
   const headers = {};
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
   const response = await fetch(
-    workOrderId ? getServiceWorkOrderPdfUrl(workOrderId) : getWorkOrderPdfUrl(serviceOrderId),
+    workOrderId
+      ? getServiceWorkOrderPdfUrl(workOrderId)
+      : allWorkOrders
+        ? getServiceOrderWorkOrdersPdfUrl(serviceOrderId)
+        : getWorkOrderPdfUrl(serviceOrderId),
     { headers }
   );
   if (!response.ok) {

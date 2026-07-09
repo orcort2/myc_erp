@@ -12,6 +12,7 @@ from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWork
 from app.models.user import User
 from app.schemas.service_order import (
     ServiceOrderCreate,
+    ServiceOrderExceptionCreate,
     ServiceOrderStatusChange,
     ServiceOrderUpdate,
 )
@@ -33,6 +34,25 @@ ALLOWED_TRANSITIONS = {
     "released": {"closed"},
     "closed": set(),
     "cancelled": set(),
+}
+
+STAGE_STATUS_MAP = {
+    "info": "confirmed",
+    "resumen": "confirmed",
+    "equipment": "technical_review",
+    "equipos": "technical_review",
+    "field-sheet": "technical_review",
+    "hojas": "technical_review",
+    "capture": "capture",
+    "captura": "capture",
+    "quality": "quality_review",
+    "calidad": "quality_review",
+    "certificates": "quality_review",
+    "certificados": "quality_review",
+    "documents": "released",
+    "documentos": "released",
+    "billing": "pending_payment",
+    "facturacion": "pending_payment",
 }
 
 
@@ -362,6 +382,43 @@ def close_service_order(
     user_id: int | None = None,
 ) -> ServiceOrder:
     return change_status(db, service_order_id, "closed", payload, user_id=user_id)
+
+
+def register_service_order_exception(
+    db: Session,
+    service_order_id: int,
+    payload: ServiceOrderExceptionCreate,
+    *,
+    user_id: int | None = None,
+) -> ServiceOrder:
+    service_order = get_service_order(db, service_order_id)
+    source_stage = payload.source_stage.strip()
+    target_stage = payload.target_stage.strip()
+    target_status = STAGE_STATUS_MAP.get(target_stage.lower())
+    previous_status = service_order.status
+
+    if target_status and previous_status not in TERMINAL_STATUSES:
+        service_order.status = target_status
+
+    write_audit_log(
+        db,
+        action="service_order.exception_requested",
+        entity="service_orders",
+        entity_id=service_order.id,
+        user_id=user_id,
+        previous_values={
+            "status": previous_status,
+            "source_stage": source_stage,
+        },
+        new_values={
+            "status": service_order.status,
+            "target_stage": target_stage,
+            "target_status": target_status,
+        },
+        comment=payload.reason,
+    )
+    db.commit()
+    return get_service_order(db, service_order.id)
 
 
 def deactivate_service_order(

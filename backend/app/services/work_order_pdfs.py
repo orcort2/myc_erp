@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from re import sub
 from unicodedata import normalize
@@ -10,6 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from weasyprint import HTML
+from pypdf import PdfReader, PdfWriter
 
 from app.models.client import Client
 from app.models.equipment import Equipment
@@ -237,4 +239,51 @@ def generate_service_work_order_pdf(db, work_order_id: int) -> tuple[bytes, str]
     return (
         pdf,
         f"Orden_Trabajo_{work_order.work_order_number}_{_filename(client_name)}.pdf",
+    )
+
+
+def generate_service_order_work_orders_pdf(db, service_order_id: int) -> tuple[bytes, str]:
+    """
+    Genera un PDF global del ETS con todas sus Ordenes de Trabajo activas.
+    El endpoint individual se conserva para no romper integraciones existentes.
+    """
+    service_order = get_service_order(db, service_order_id)
+    active_work_orders = sorted(
+        [item for item in service_order.work_orders if item.is_active],
+        key=lambda item: item.sequence,
+    )
+
+    if not active_work_orders:
+        pdf, _filename_legacy = generate_work_order_pdf(db, service_order_id)
+        client_name = (
+            service_order.client.commercial_name
+            or service_order.client.legal_name
+            or service_order.client.rfc
+        )
+        return pdf, f"Ordenes_Trabajo_ETS_{service_order.folio}_{_filename(client_name)}.pdf"
+
+    writer = PdfWriter()
+    for work_order in active_work_orders:
+        html = _render_html(
+            service_order,
+            work_order=work_order,
+            equipment_list=_active_equipment_for_work_order(work_order),
+        )
+        pdf_bytes = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
+        reader = PdfReader(BytesIO(pdf_bytes))
+        for page in reader.pages:
+            writer.add_page(page)
+
+    output = BytesIO()
+    writer.write(output)
+
+    client_name = (
+        service_order.client.commercial_name
+        or service_order.client.legal_name
+        or service_order.client.rfc
+    )
+
+    return (
+        output.getvalue(),
+        f"Ordenes_Trabajo_ETS_{service_order.folio}_{_filename(client_name)}.pdf",
     )
