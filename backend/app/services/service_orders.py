@@ -281,12 +281,12 @@ def update_service_order(
     ]
 
     for signature_field, signed_at_field in signature_fields:
-         if signature_field in updates:
-             updates[signed_at_field] = (
-                 datetime.now(timezone.utc)
-                 if updates[signature_field]
-                 else None
-             )       
+        if signature_field in updates:
+            updates[signed_at_field] = (
+                datetime.now(timezone.utc)
+                if updates[signature_field]
+                else None
+            )
     _ensure_active_user(db, updates.get("advisor_id"), "Asesor")
     _ensure_active_user(db, updates.get("technician_id"), "Tecnico")
 
