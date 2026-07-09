@@ -23,7 +23,7 @@ ad1aef0 se declara ordenes de trabajo por ETS
 0ab66da revision
 87c57cf se corrigio tema de tunel
 Estado Git verificado:
-## main...origin/main [ahead 1]
+## main...origin/main
 ?? backups/erp_myc_2026_07_09_1058.sql
 ?? backups/erp_myc_2026_07_09_1118.sql
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
