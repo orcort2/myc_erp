@@ -1,5 +1,5 @@
 import { ClipboardList, X } from 'lucide-react';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
@@ -122,90 +122,6 @@ function canUseAdministrativeActions(user) {
   return isPrivilegedUser(user) || roles.some((role) => ['calidad', 'quality', 'supervisor'].includes(role));
 }
 
-function SignaturePad({ label, name, dataUrl, signedAt, onNameChange, onSignatureChange }) {
-  const canvasRef = useRef(null);
-  const drawingRef = useRef(false);
-
-  function getPoint(event) {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const source = event.touches?.[0] ?? event;
-    return {
-      x: (source.clientX - rect.left) * (canvas.width / rect.width),
-      y: (source.clientY - rect.top) * (canvas.height / rect.height),
-    };
-  }
-
-  function beginDrawing(event) {
-    event.preventDefault();
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    const point = getPoint(event);
-    drawingRef.current = true;
-    context.strokeStyle = '#111827';
-    context.lineWidth = 2;
-    context.lineCap = 'round';
-    context.beginPath();
-    context.moveTo(point.x, point.y);
-  }
-
-  function draw(event) {
-    if (!drawingRef.current) return;
-    event.preventDefault();
-    const context = canvasRef.current.getContext('2d');
-    const point = getPoint(event);
-    context.lineTo(point.x, point.y);
-    context.stroke();
-  }
-
-  function endDrawing() {
-    if (!drawingRef.current) return;
-    drawingRef.current = false;
-    onSignatureChange(canvasRef.current.toDataURL('image/png'));
-  }
-
-  function clearSignature() {
-    const canvas = canvasRef.current;
-    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-    onSignatureChange('');
-  }
-
-  return (
-    <article className="ets-signature-card">
-      <div className="ets-signature-card__header">
-        <div>
-          <span>{label}</span>
-          <strong>{signedAt ? new Date(signedAt).toLocaleString('es-MX') : 'Pendiente'}</strong>
-        </div>
-        <button className="table-button" onClick={clearSignature} type="button">
-          Limpiar
-        </button>
-      </div>
-      <label>
-        Nombre
-        <input onChange={(event) => onNameChange(event.target.value)} type="text" value={name} />
-      </label>
-      <canvas
-        aria-label={label}
-        className="ets-signature-canvas"
-        height="120"
-        onMouseDown={beginDrawing}
-        onMouseLeave={endDrawing}
-        onMouseMove={draw}
-        onMouseUp={endDrawing}
-        onTouchCancel={endDrawing}
-        onTouchEnd={endDrawing}
-        onTouchMove={draw}
-        onTouchStart={beginDrawing}
-        ref={canvasRef}
-        width="520"
-      />
-      {dataUrl ? (
-        <img alt={label} className="ets-signature-preview" src={dataUrl} />
-      ) : null}
-    </article>
-  );
-}
 
 const calibrationScopeLabels = {
   traceable: 'Trazable',
@@ -768,8 +684,8 @@ function ServiceOrdersPage({ user = null }) {
         <ServiceOrderSignatureMorph
           serviceOrder={selectedOrder}
           signatureForm={signatureForm}
-          onSignatureChange={updateSignatureForm}
-          onSave={saveSignatures}
+          updateSignatureForm={updateSignatureForm}
+          saveSignatures={saveSignatures}
           isSaving={isSaving}
         />
       </aside>

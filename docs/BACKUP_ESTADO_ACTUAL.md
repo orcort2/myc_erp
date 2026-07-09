@@ -1,6 +1,6 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-07-09 11:18:23 CST
+Ultima actualizacion: 2026-07-09 16:21:35 CST
 Version actual: ERP MYC v0.3.0
 Nombre de version: Ventas Finalizado
 Version anterior: v0.2.0 (Clientes Finalizado)
@@ -27,6 +27,44 @@ Estado Git verificado:
 ?? backups/erp_myc_2026_07_09_1058.sql
 ?? backups/erp_myc_2026_07_09_1118.sql
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-07-09 16:21:35 CST - Remocion de fondo del launcher de firma:
+Objetivo:
+- Evitar que se vea el recuadro blanco/transparente del contenedor de firmas cuando el modal de firma esta abierto.
+Cambios principales:
+- `frontend/src/components/signatures/signature.css`: `.ets-signature-launcher` queda transparente, sin borde, sin sombra, sin padding y sin barra lateral mientras contiene `.signature-morph-shell.is-open`.
+- El estado abierto ahora deja visible solo la tarjeta oscura de firma y el canvas.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+
+Actualizacion 2026-07-09 16:20:02 CST - Correccion visual del morph de firmas ETS:
+Objetivo:
+- Corregir el layout abierto de firmas despues de detectar que el morph agrandado invadia el launcher del ETS y dejaba una columna blanca lateral.
+Cambios principales:
+- `frontend/src/components/signatures/signature.css`: el morph abierto vuelve a un tamano compacto de `620x420` dentro del launcher.
+- `frontend/src/components/signatures/signature.css`: cuando `.ets-signature-launcher` contiene un morph abierto, se oculta el texto lateral y se centra el modal de firma.
+- `frontend/src/components/signatures/signature.css`: se compactaron padding, radios, header y acciones para dar mas espacio util al canvas sin crecer fuera del expediente.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- Se mantiene eliminado el preview inferior `ets-signature-preview` dentro de `SignaturePad.jsx`.
+- No se modifico la logica de `ServiceOrderSignatureMorph.jsx`.
+
+Actualizacion 2026-07-09 16:14:47 CST - Layout SignaturePad ETS:
+Objetivo:
+- Rehacer el layout visual del `SignaturePad` usado por el modal de firmas ETS sin modificar la logica del footer del modal.
+Cambios principales:
+- `frontend/src/components/signatures/SignaturePad.jsx`: se reorganizo el JSX exportado para dejar header con etiqueta/estado y boton Limpiar, campo Nombre conectado a `onNameChange`, y canvas real como area principal.
+- `frontend/src/components/signatures/SignaturePad.jsx`: se elimino por completo la preview inferior `ets-signature-preview`.
+- `frontend/src/components/signatures/signature.css`: se ajusto el layout flexible del modal, tarjeta, canvas y acciones inferiores para que los botones no invadan el area de dibujo.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- No se modifico la logica de `ServiceOrderSignatureMorph.jsx`.
+- El arbol ya contenia cambios locales en `ServiceOrderSignatureMorph.jsx` y `ServiceOrdersPage.jsx`; se conservaron sin revertir.
 
 Actualizacion 2026-07-09 11:18:23 CST - Correcciones integrales ETS:
 Objetivo:

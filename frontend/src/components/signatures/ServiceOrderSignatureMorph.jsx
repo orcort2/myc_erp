@@ -1,31 +1,38 @@
 import { useState } from 'react';
 import SignatureMorphButton from './SignatureMorphButton';
 import SignatureSaveAnimation from './SignatureSaveAnimation';
-import { updateServiceOrder } from '../../services/api';
+import SignaturePad from './SignaturePad';
 import './signature.css';
 
-export default function ServiceOrderSignatureMorph({ serviceOrder, onSigned }) {
+export default function ServiceOrderSignatureMorph({
+  serviceOrder,
+  signatureForm,
+  updateSignatureForm,
+  saveSignatures,
+  isSaving: isSavingExternal = false,
+}) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState('client');
   const [savingStep, setSavingStep] = useState(null);
   const [isClosing, setIsClosing] = useState(false);
   const [isReturning, setIsReturning] = useState(false);
 
-  const [clientName, setClientName] = useState(
-    serviceOrder?.client_received_signed_name ?? ''
-  );
-  const [technicianName, setTechnicianName] = useState(
-    serviceOrder?.technician_signed_name ?? serviceOrder?.technician_name ?? ''
-  );
+  const clientName =
+    signatureForm?.clientReceivedName ??
+    serviceOrder?.client_received_signed_name ??
+    '';
 
-  // Temporal: luego esto se reemplaza por el canvas real.
-  const [clientSignatureDataUrl] = useState('data:image/svg+xml;base64,');
-  const [technicianSignatureDataUrl] = useState('data:image/svg+xml;base64,');
+  const technicianName =
+    signatureForm?.technicianName ??
+    serviceOrder?.technician_signed_name ??
+    serviceOrder?.technician_name ??
+    '';
 
-  const isSaving = Boolean(savingStep);
+  const isSaving = isSavingExternal || Boolean(savingStep);
 
   function handleOpen() {
     setIsReturning(false);
+    setIsClosing(false);
     setOpen(true);
   }
 
@@ -42,8 +49,28 @@ export default function ServiceOrderSignatureMorph({ serviceOrder, onSigned }) {
   }
 
   function closeModal() {
+    if (isSaving) return;
+
     setIsClosing(true);
     window.setTimeout(resetState, 900);
+  }
+
+  function updateClientName(value) {
+    updateSignatureForm('clientReceivedName', value);
+    updateSignatureForm('clientAcceptanceName', value);
+  }
+
+  function updateClientSignature(value) {
+    updateSignatureForm('clientReceivedSignature', value);
+    updateSignatureForm('clientAcceptanceSignature', value);
+  }
+
+  function updateTechnicianName(value) {
+    updateSignatureForm('technicianName', value);
+  }
+
+  function updateTechnicianSignature(value) {
+    updateSignatureForm('technicianSignature', value);
   }
 
   function handleSaveClient() {
@@ -52,42 +79,53 @@ export default function ServiceOrderSignatureMorph({ serviceOrder, onSigned }) {
     window.setTimeout(() => {
       setSavingStep(null);
       setStep('technician');
-    }, 900);
+    }, 850);
   }
 
   async function handleSaveTechnician() {
     setSavingStep('technician');
 
-    const payload = {
-      client_received_signature_data_url: clientSignatureDataUrl,
-      client_received_signed_name: clientName || 'Cliente',
-
-      client_acceptance_signature_data_url: clientSignatureDataUrl,
-      client_acceptance_signed_name: clientName || 'Cliente',
-
-      technician_signature_data_url: technicianSignatureDataUrl,
-      technician_signed_name: technicianName || serviceOrder?.technician_name || 'Técnico',
-    };
-
     try {
-      const updatedOrder = await updateServiceOrder(serviceOrder.id, payload);
+      await saveSignatures();
 
       window.setTimeout(() => {
         setSavingStep(null);
         closeModal();
-        onSigned?.(updatedOrder);
-      }, 900);
+      }, 850);
     } catch (error) {
       setSavingStep(null);
-      window.alert(error.message || 'No se pudieron guardar las firmas');
+      window.alert(error?.message || 'No se pudieron guardar las firmas');
     }
   }
 
+  const currentSignaturePad =
+    step === 'client'
+      ? {
+          label: 'Firma Cliente',
+          name: clientName,
+          dataUrl: signatureForm?.clientReceivedSignature ?? '',
+          signedAt: serviceOrder?.client_received_signed_at,
+          onNameChange: updateClientName,
+          onSignatureChange: updateClientSignature,
+        }
+      : {
+          label: 'Firma Técnico',
+          name: technicianName,
+          dataUrl: signatureForm?.technicianSignature ?? '',
+          signedAt: serviceOrder?.technician_signed_at,
+          onNameChange: updateTechnicianName,
+          onSignatureChange: updateTechnicianSignature,
+        };
+
   return (
-    <div className={`signature-morph-shell ${open ? 'is-open' : ''} ${isClosing ? 'is-closing' : ''}`}>
+    <div
+      className={`signature-morph-shell ${open ? 'is-open' : ''} ${
+        isClosing ? 'is-closing' : ''
+      }`}
+    >
       {!open && (
         <div className={isReturning ? 'signature-button-returning' : ''}>
-          <SignatureMorphButton onOpen={handleOpen} />
+          <SignatureMorphButton disabled={isSaving} onOpen={handleOpen} />
         </div>
       )}
 
@@ -101,6 +139,7 @@ export default function ServiceOrderSignatureMorph({ serviceOrder, onSigned }) {
                   className="signature-modal-close"
                   onClick={closeModal}
                   disabled={isSaving}
+                  aria-label="Cerrar firmas"
                 >
                   ×
                 </button>
@@ -109,7 +148,7 @@ export default function ServiceOrderSignatureMorph({ serviceOrder, onSigned }) {
                   <SignatureSaveAnimation
                     label={
                       savingStep === 'client'
-                        ? 'Guardando firma del cliente...'
+                        ? 'Preparando firma del técnico...'
                         : 'Guardando firmas...'
                     }
                   />
@@ -124,37 +163,32 @@ export default function ServiceOrderSignatureMorph({ serviceOrder, onSigned }) {
                       </h2>
                       <span>
                         {step === 'client'
-                          ? 'Esta firma se usará para recepción y aceptación.'
-                          : 'Firma interna del técnico responsable.'}
+                          ? 'Esta firma se usará para recepción y aceptación del servicio.'
+                          : 'Firma interna del técnico responsable del ETS.'}
                       </span>
                     </div>
 
-                    <label className="form-field">
-                      <span>Nombre del firmante</span>
-                      <input
-                        type="text"
-                        value={step === 'client' ? clientName : technicianName}
-                        onChange={(event) => {
-                          if (step === 'client') {
-                            setClientName(event.target.value);
-                          } else {
-                            setTechnicianName(event.target.value);
-                          }
-                        }}
-                        placeholder={step === 'client' ? 'Nombre del cliente' : 'Nombre del técnico'}
+                    <div className="signature-modal-pad-area">
+                      <SignaturePad
+                        label={currentSignaturePad.label}
+                        name={currentSignaturePad.name}
+                        dataUrl={currentSignaturePad.dataUrl}
+                        signedAt={currentSignaturePad.signedAt}
+                        onNameChange={currentSignaturePad.onNameChange}
+                        onSignatureChange={currentSignaturePad.onSignatureChange}
                       />
-                    </label>
-
-                    <div className="signature-modal-canvas-placeholder">
-                      {step === 'client'
-                        ? 'Aquí irá el canvas real de firma cliente'
-                        : 'Aquí irá el canvas real de firma técnico'}
                     </div>
 
                     <div className="signature-modal-actions">
-                      <button type="button">
-                        Limpiar
-                      </button>
+                      {step === 'technician' ? (
+                        <button
+                          type="button"
+                          onClick={() => setStep('client')}
+                          disabled={isSaving}
+                        >
+                          Volver a cliente
+                        </button>
+                      ) : null}
 
                       <button
                         type="button"
@@ -163,10 +197,11 @@ export default function ServiceOrderSignatureMorph({ serviceOrder, onSigned }) {
                             ? handleSaveClient
                             : handleSaveTechnician
                         }
+                        disabled={isSaving}
                       >
                         {step === 'client'
-                          ? 'Guardar firma cliente'
-                          : 'Guardar firma técnico'}
+                          ? 'Continuar a técnico'
+                          : 'Guardar firmas'}
                       </button>
                     </div>
                   </>
