@@ -1,6 +1,6 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-07-08 11:51:30 CST
+Ultima actualizacion: 2026-07-09 10:58:54 CST
 Version actual: ERP MYC v0.3.0
 Nombre de version: Ventas Finalizado
 Version anterior: v0.2.0 (Clientes Finalizado)
@@ -10,41 +10,39 @@ Ruta actual del proyecto
 La carpeta padre antes se llamaba ERP MYC, pero fue renombrada a myc_erp. No hay problema con el cambio. De ahora en adelante todas las rutas deben apuntar a myc_erp.
 Git ya esta inicializado.
 Ultimo commit conocido:
-6b4954c Merge branch 'main' of https://github.com/orcort2/myc_erp
+185de10 Corrige indentacion de firmas en ordenes
 Commits recientes:
+185de10 Corrige indentacion de firmas en ordenes
+0a50bae se agregaron firmas a la orden de trabajo, el frontend esta pendiente
+ad1aef0 se declara ordenes de trabajo por ETS
+3fac039 se mejoror la version anterioir
+67ccd05 se mejoro el tema de que la ETS pueda recibir varias ordenes de trbaajo en una sola
 6b4954c Merge branch 'main' of https://github.com/orcort2/myc_erp
 0ab66da revision
 87c57cf se corrigio tema de tunel
 c95c207 se esta termino de rediseñar el modulo de vetnas
 b04e21d se finalizo la contrucción del modulo de clientes
-ff72e7c se declara version 3, revisar backup para más info
-d584ab8 se mejoro la ux del sistema
-3bffe15 se construyo la orden de trbaajo, esta lista para producción
-d76489b se establecieron algunos parametros para mejorar la interfaz y la conectividad del sistema, los motores de incertidumbre ya no existen en formato documental
-9c368de se puso como experimental el motor de incertiudmbre
 Estado Git verificado:
 ## main...origin/main
-M README.md
-M backend/app/models/service_order.py
-M backend/app/routers/certificates.py
-M backend/app/routers/client_portal.py
-M backend/app/schemas/service_order.py
-M backend/app/services/certificate_authentication.py
-M backend/app/services/certificates.py
-M backend/app/services/clients.py
-M backend/app/services/service_orders.py
-M docs/BACKUP_ESTADO_ACTUAL.md
-M frontend/.env.local
-M frontend/package-lock.json
-M frontend/package.json
-M frontend/src/pages/QuotationsPage.jsx
-M frontend/src/pages/ServiceOrdersPage.jsx
-M frontend/src/styles/global.css
-?? backend/app/services/storage_service.py
-?? backups/erp_myc_2026_07_08_1024.sql
-?? backups/erp_myc_2026_07_08_1041.sql
-?? backups/erp_myc_2026_07_08_1112.sql
+?? backups/erp_myc_2026_07_09_1058.sql
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-07-09 10:58:54 CST - Respaldo de estado actual:
+Estado de codigo:
+- Rama actual: main.
+- Rama sincronizada con origin/main.
+- Ultimo commit respaldado en GitHub: 185de10 Corrige indentacion de firmas en ordenes.
+- Cambio registrado: correccion de indentacion en `backend/app/services/service_orders.py` dentro del bloque que actualiza fechas de firmas en ordenes de servicio.
+- Se normalizo el final de archivo en `backend/app/services/service_orders.py`.
+Validacion ejecutada:
+- `./venv/bin/python3 -m py_compile backend/app/services/service_orders.py` -> OK.
+- `git diff --check` -> OK antes del commit.
+Backup:
+- Dump SQL generado con scripts/backup-db.sh:
+  backups/erp_myc_2026_07_09_1058.sql
+- Tamano verificado: 683K, 7064 lineas.
+Estado pendiente / nota:
+- El dump SQL nuevo queda como archivo local sin trackear por Git, igual que los backups SQL generados en `backups/`.
 
 Actualizacion 2026-07-07 16:58:10 CST - Catalogo dependiente de categoria:
 - Se agregaron categorias que antes existian solo como commodity: Reparacion, Venta y Servicio general.
