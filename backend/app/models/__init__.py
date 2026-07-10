@@ -26,7 +26,11 @@ from app.models.reference_standard_certificate import (
     ReferenceStandardCertificate,
     ReferenceStandardCertificateUncertainty,
 )
-from app.models.service_order import ServiceOrder, ServiceOrderItem
+from app.models.service_order import (
+    ServiceOrder,
+    ServiceOrderItem,
+    ServiceOrderSignatureCycle,
+)
 from app.models.uncertainty import (
     UncertaintyCalculation,
     UncertaintyComponent,
@@ -69,6 +73,7 @@ __all__ = [
     "Role",
     "ServiceOrder",
     "ServiceOrderItem",
+    "ServiceOrderSignatureCycle",
     "SoftDeleteMixin",
     "TimestampMixin",
     "TechnicalProfile",

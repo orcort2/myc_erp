@@ -57,6 +57,7 @@ import {
   updateEquipment,
   updateFieldSheet,
   updateServiceOrder,
+  confirmServiceOrderSignatures,
   uploadCertificatePdf,
   validateCertificatePdfMatch,
   releaseAuthenticatedCertificates,
@@ -185,6 +186,7 @@ function ServiceOrdersPage({ user = null }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isEquipmentModalOpen, setIsEquipmentModalOpen] = useState(false);
+  const [isEquipmentLimitNoticeOpen, setIsEquipmentLimitNoticeOpen] = useState(false);
   const [isFieldSheetModalOpen, setIsFieldSheetModalOpen] = useState(false);
   const [isFieldSheetCreateModalOpen, setIsFieldSheetCreateModalOpen] = useState(false);
   const [pendingFieldSheetEquipment, setPendingFieldSheetEquipment] = useState(null);
@@ -673,7 +675,12 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   function renderSignatureLauncher() {
-    if (!selectedOrder) return null;
+    if (
+      !selectedOrder ||
+      !selectedOrder.has_pending_signature_work_orders
+    ) {
+      return null;
+    }
 
     return (
       <aside className="ets-signature-launcher" aria-label="Firmas del ETS">
@@ -681,6 +688,7 @@ function ServiceOrdersPage({ user = null }) {
           <span>Firmas</span>
           <strong>Firmar órdenes de trabajo</strong>
         </div>
+
         <ServiceOrderSignatureMorph
           serviceOrder={selectedOrder}
           signatureForm={signatureForm}
@@ -706,6 +714,7 @@ function ServiceOrdersPage({ user = null }) {
         client_acceptance_signed_name: signatureForm.clientAcceptanceName.trim() || null,
         client_acceptance_signature_data_url: signatureForm.clientAcceptanceSignature || null,
       });
+      await confirmServiceOrderSignatures(selectedOrder.id);
       setSelectedOrder(updated);
       setNotice('Firmas del ETS guardadas. Se imprimirán en todas las OT del expediente.');
       await loadServiceOrderData();
@@ -998,15 +1007,31 @@ function ServiceOrdersPage({ user = null }) {
   function openEquipmentModal(item = null) {
     setError('');
     setNotice('');
+
+    const expectedEquipment = safeNumber(
+      selectedOrderMetrics.expectedEquipment
+    );
+    const registeredEquipment = selectedEquipment.length;
+
+    if (
+      !item &&
+      expectedEquipment > 0 &&
+      registeredEquipment >= expectedEquipment
+    ) {
+      setIsEquipmentLimitNoticeOpen(true);
+      return;
+    }
+
     if (!item && !hasAvailableWorkOrderCapacity) {
       setError('No hay Orden de Trabajo con capacidad disponible.');
       return;
     }
+
     const contextualWorkOrder = selectedWorkOrderContext?.id
-      ? relatedWorkOrders.find((workOrder) => Number(workOrder.id) === Number(selectedWorkOrderContext.id))
-      : null;
-    const contextualCapacity = contextualWorkOrder
-      ? workOrderCapacitySummary.groups.find((workOrder) => Number(workOrder.id) === Number(contextualWorkOrder.id))
+      ? relatedWorkOrders.find(
+          (workOrder) =>
+            Number(workOrder.id) === Number(selectedWorkOrderContext.id)
+        )
       : null;
     const preferredWorkOrder = contextualCapacity?.available > 0
       ? contextualWorkOrder
@@ -3107,7 +3132,11 @@ function ServiceOrdersPage({ user = null }) {
 
       {isEquipmentModalOpen && selectedOrder ? (
         <div className="modal-backdrop" role="presentation">
-          <section className="client-modal" aria-modal="true" role="dialog">
+          <section 
+            className="client-modal ets-equipment-form-modal"
+            aria-modal="true"
+            role="dialog"
+          >
             <div className="section-heading">
               <div>
                 <p>Equipos</p>
@@ -3885,6 +3914,50 @@ function ServiceOrdersPage({ user = null }) {
         </div>
       ) : null}
 
+      {isEquipmentLimitNoticeOpen ? (
+      <div className="modal-backdrop" role="presentation">
+        <section
+          aria-modal="true"
+          className="client-modal confirm-dialog"
+          role="dialog"
+        >
+          <div className="section-heading confirm-dialog__header">
+            <div>
+              <p>Equipos del ETS</p>
+              <h2>Límite alcanzado</h2>
+            </div>
+          </div>
+
+          <div className="confirm-dialog__body">
+            <p>
+              Ya se registraron todos los equipos esperados para este ETS.
+              Para agregar otro equipo se requiere una excepción.
+            </p>
+          </div>
+
+          <div className="confirm-dialog__actions">
+            <button
+              className="confirm-dialog__cancel"
+              onClick={() => setIsEquipmentLimitNoticeOpen(false)}
+              type="button"
+            >
+              Cerrar
+            </button>
+
+            <button
+              className="confirm-dialog__confirm"
+              onClick={() => {
+                setIsEquipmentLimitNoticeOpen(false);
+                openExceptionRequest('Equipos', 'Equipo adicional');
+              }}
+              type="button"
+            >
+              Solicitar excepción
+            </button>
+          </div>
+        </section>
+      </div>
+    ) : null}
 
       <ConfirmDialog
         cancelText={confirmDialog?.cancelText}

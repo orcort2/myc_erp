@@ -175,6 +175,15 @@
 =========================================== */
 
 .signature-morph-shell {
+  --signature-close-duration: 780ms;
+  --signature-icon-fade-duration: 140ms;
+  --signature-close-width: 100%;
+  --signature-close-height: 100%;
+  --signature-close-x: 0px;
+  --signature-close-y: 0px;
+  --signature-close-scale-x: 1;
+  --signature-close-scale-y: 1;
+
   position: relative;
   width: 72px;
   height: 72px;
@@ -186,6 +195,14 @@
     border-radius 0.42s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.signature-morph-shell.is-measuring-close-target {
+  transition: none !important;
+}
+
+.signature-morph-shell.is-resetting-close {
+  transition: none !important;
+}
+
 .signature-morph-shell.is-open {
   width: min(620px, 100%);
   height: 420px;
@@ -194,22 +211,107 @@
 
 .signature-morph-shell.is-closing {
   width: 72px;
-  height: 72px;
+  height: 100px;
   border-radius: 20px;
-  overflow: hidden;
-  opacity: 0.92;
-  transform: scale(0.985);
+  overflow: visible;
+  opacity: 1;
+  transform: none;
   transition:
-    width 0.58s cubic-bezier(0.2, 0.9, 0.2, 1) 0.14s,
-    height 0.58s cubic-bezier(0.2, 0.9, 0.2, 1) 0.14s,
-    border-radius 0.58s cubic-bezier(0.2, 0.9, 0.2, 1) 0.14s,
-    opacity 0.28s ease,
-    transform 0.28s ease,
-    box-shadow 0.58s ease 0.14s,
-    backdrop-filter 0.58s ease 0.14s;
+    width var(--signature-close-duration) cubic-bezier(.2, .72, .16, 1),
+    height var(--signature-close-duration) cubic-bezier(.2, .72, .16, 1),
+    border-radius var(--signature-close-duration) cubic-bezier(.2, .72, .16, 1);
+}
+
+.signature-final-button {
+  grid-area: 1 / 1;
+  place-self: center;
+  width: 72px;
+  height: 72px;
+  opacity: 1;
+  visibility: visible;
+  transform: translate(0, 0);
+  filter: blur(0);
+  pointer-events: auto;
+  z-index: 3;
+}
+
+.signature-final-button.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.signature-final-button.is-entering {
+  visibility: visible;
+  pointer-events: none;
+
+  animation:
+    signatureFinalButtonEnter
+    360ms
+    cubic-bezier(.16, 1, .3, 1)
+    calc(var(--signature-close-duration) - 180ms)
+    both;
+}
+
+@keyframes signatureFinalButtonEnter {
+  0% {
+    opacity: 0;
+    transform:
+      translate(
+        calc(var(--signature-close-x) + 28px),
+        var(--signature-close-y)
+      )
+      scale(.94);
+    filter: blur(2.5px);
+  }
+
+  30% {
+    opacity: .22;
+    transform:
+      translate(
+        calc(var(--signature-close-x) + 18px),
+        var(--signature-close-y)
+      )
+      scale(.96);
+    filter: blur(1.6px);
+  }
+
+  62% {
+    opacity: .62;
+    transform:
+      translate(
+        calc(var(--signature-close-x) + 8px),
+        var(--signature-close-y)
+      )
+      scale(.985);
+    filter: blur(.6px);
+  }
+
+  82% {
+    opacity: .88;
+    transform:
+      translate(
+        calc(var(--signature-close-x) + 2px),
+        var(--signature-close-y)
+      )
+      scale(.995);
+    filter: blur(.15px);
+  }
+
+  100% {
+    opacity: 1;
+    transform:
+      translate(
+        var(--signature-close-x),
+        var(--signature-close-y)
+      )
+      scale(1);
+    filter: blur(0);
+  }
 }
 
 .signature-morph-modal {
+  grid-area: 1 / 1;
   width: 100%;
   height: 100%;
   position: relative;
@@ -233,10 +335,18 @@
 }
 
 .signature-morph-modal.closing {
+  place-self: center;
+  width: var(--signature-close-width);
+  height: var(--signature-close-height);
   opacity: 1;
-  transform: none;
   border-radius: 20px;
-  padding: 0;
+  pointer-events: none;
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  will-change: transform, opacity;
+  animation: none;
 }
 
 .ets-signature-launcher:has(.signature-morph-shell.is-open) {
@@ -259,6 +369,82 @@
 
 .ets-signature-launcher:has(.signature-morph-shell.is-open) .signature-morph-shell {
   margin: 0 auto;
+}
+
+.ets-signature-launcher:has(.signature-morph-shell.is-closing) {
+  background-color: rgba(235, 255, 253, 0.22);
+  border-color: rgba(201, 255, 247, 0.64);
+  box-shadow:
+    0 18px 42px rgba(8, 35, 48, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  transition:
+    background-color 0.4s ease 0.1s,
+    border-color 0.4s ease 0.1s,
+    box-shadow 0.4s ease 0.1s;
+}
+
+.signature-closing-target {
+  grid-area: 1 / 1;
+  place-self: center;
+  width: 72px;
+  height: 72px;
+  visibility: visible;
+  opacity: 1;
+  transform: translate(
+    var(--signature-close-x),
+    var(--signature-close-y)
+  );
+  pointer-events: none;
+  z-index: 3;
+}
+
+.signature-closing-target .signature-morph-button {
+  opacity: 0;
+  transform: translateX(8px) scale(.96);
+  filter: blur(1px);
+
+  animation:
+    signatureClosingButtonSlide
+    var(--signature-icon-fade-duration)
+    cubic-bezier(.16, 1, .3, 1)
+    calc(
+      var(--signature-close-duration)
+      - var(--signature-icon-fade-duration)
+      - 420ms
+      - 80ms
+    )
+    both;
+}
+
+
+@keyframes signatureClosingButtonSlide {
+  0% {
+    opacity: 0;
+    transform: translateX(42px) scale(.9);
+    filter: blur(4px);
+  }
+
+  30% {
+    opacity: .35;
+    transform: translateX(28px) scale(.94);
+    filter: blur(2.5px);
+  }
+
+  65% {
+    opacity: .78;
+    transform: translateX(10px) scale(.985);
+    filter: blur(.8px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.signature-closing-target .signature-morph-button:disabled {
+  cursor: default;
 }
 
 @keyframes signatureModalReveal {
@@ -384,8 +570,12 @@
 .signature-draw-path {
   stroke-width: 3.2;
   stroke-dasharray: 92;
-  stroke-dashoffset: 92;
-  transition: stroke-dashoffset 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  stroke-dashoffset: 0;
+  opacity: 0.92;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    filter 0.18s ease;
 }
 
 .signature-draw-underline {
@@ -604,29 +794,12 @@
     filter .24s ease;
 }
 
-.signature-modal-content.closing {
-  opacity: 0;
-  transform: translateY(12px) scale(.965);
-  filter: blur(8px);
+.signature-morph-modal.closing .signature-modal-content {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  transition: none;
   pointer-events: none;
-}
-
-.signature-button-returning {
-  animation: signatureButtonReturn 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-@keyframes signatureButtonReturn {
-  from {
-    opacity: 0;
-    transform: scale(0.82);
-    filter: blur(6px);
-  }
-
-  to {
-    opacity: 1;
-    transform: scale(1);
-    filter: blur(0);
-  }
 }
 
 .signature-save-animation {

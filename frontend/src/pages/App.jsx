@@ -25,6 +25,7 @@ import SettingsPage from './SettingsPage.jsx';
 import StandardsPage from './StandardsPage.jsx';
 import UncertaintyPage from './UncertaintyPage.jsx';
 import SignatureLabPage from './SignatureLabPage.jsx';
+import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -126,7 +127,13 @@ export function App() {
     return <SignatureLabPage />;
   }
 
-  const selectedModule = modules.find((module) => path === module.path);
+  if (path === '/document-designer-lab') {
+  return <DocumentDesignerLabPage />;
+  }
+
+  const selectedModule = modules.find(
+    (module) => path === module.path || module.legacyPaths?.includes(path)
+  );
   const showModuleNavigation = Boolean(selectedModule);
   const layoutSubtitle = selectedModule ? formatModuleDateTime(now) : 'Sistema principal';
 
@@ -153,8 +160,8 @@ export function App() {
         <CapturePage />
       ) : selectedModule?.key === 'quality' ? (
         <QualityPage />
-      ) : selectedModule?.key === 'documentLibrary' ? (
-        <DocumentLibraryPage />
+      ) : selectedModule?.key === 'documentControl' ? (
+        <DocumentLibraryPage user={user} />
       ) : selectedModule?.key === 'standards' ? (
         <StandardsPage />
       ) : selectedModule?.key === 'procedures' ? (

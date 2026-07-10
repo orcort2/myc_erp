@@ -8,7 +8,13 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.folios import FolioRequest, generate_folio
 from app.models.client import Client
 from app.models.quotation import Quotation
-from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
+from app.models.service_order import (
+    ServiceOrder,
+    ServiceOrderItem,
+    ServiceWorkOrder,
+    ServiceOrderSignatureCycle,
+    ServiceOrderSignatureCycleWorkOrder,
+)
 from app.models.user import User
 from app.schemas.service_order import (
     ServiceOrderCreate,
@@ -17,6 +23,7 @@ from app.schemas.service_order import (
     ServiceOrderUpdate,
 )
 from app.services.audit_logs import write_audit_log
+
 
 
 TERMINAL_STATUSES = {"closed", "cancelled"}
@@ -54,6 +61,7 @@ STAGE_STATUS_MAP = {
     "billing": "pending_payment",
     "facturacion": "pending_payment",
 }
+
 
 
 def _json_safe(value):
@@ -153,7 +161,9 @@ def list_service_orders(
         select(ServiceOrder)
         .options(
             selectinload(ServiceOrder.items),
-            selectinload(ServiceOrder.work_orders),
+            selectinload(ServiceOrder.work_orders).selectinload(
+                ServiceWorkOrder.signature_cycle_links
+            ),
             selectinload(ServiceOrder.equipment),
             selectinload(ServiceOrder.client).selectinload(Client.contacts),
             selectinload(ServiceOrder.quotation),
@@ -174,7 +184,9 @@ def get_service_order(db: Session, service_order_id: int) -> ServiceOrder:
         .where(ServiceOrder.id == service_order_id)
         .options(
             selectinload(ServiceOrder.items),
-            selectinload(ServiceOrder.work_orders),
+            selectinload(ServiceOrder.work_orders).selectinload(
+                ServiceWorkOrder.signature_cycle_links
+            ),
             selectinload(ServiceOrder.equipment),
             selectinload(ServiceOrder.client).selectinload(Client.contacts),
             selectinload(ServiceOrder.quotation),
@@ -335,6 +347,203 @@ def update_service_order(
         new_values=_json_safe(updates),
     )
     db.commit()
+    return get_service_order(db, service_order.id)
+
+def confirm_signature_cycle(
+    db: Session,
+    service_order_id: int,
+    *,
+    user_id: int | None = None,
+) -> ServiceOrder:
+    service_order = get_service_order(db, service_order_id)
+
+    required_signature_fields = {
+        "technician_signature_data_url": service_order.technician_signature_data_url,
+        "client_received_signature_data_url": (
+            service_order.client_received_signature_data_url
+        ),
+        "client_acceptance_signature_data_url": (
+            service_order.client_acceptance_signature_data_url
+        ),
+        "technician_signed_name": service_order.technician_signed_name,
+        "client_received_signed_name": service_order.client_received_signed_name,
+        "client_acceptance_signed_name": (
+            service_order.client_acceptance_signed_name
+        ),
+        "technician_signed_at": service_order.technician_signed_at,
+        "client_received_signed_at": service_order.client_received_signed_at,
+        "client_acceptance_signed_at": (
+            service_order.client_acceptance_signed_at
+        ),
+    }
+
+    missing_fields = [
+        field_name
+        for field_name, field_value in required_signature_fields.items()
+        if not field_value
+    ]
+
+    if missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "No se pueden confirmar las firmas porque faltan datos: "
+                + ", ".join(missing_fields)
+            ),
+        )
+
+    active_work_orders = list(
+        db.scalars(
+            select(ServiceWorkOrder)
+            .where(
+                ServiceWorkOrder.service_order_id == service_order.id,
+                ServiceWorkOrder.is_active.is_(True),
+                ServiceWorkOrder.status != "cancelled",
+            )
+            .order_by(ServiceWorkOrder.sequence.asc())
+        ).all()
+    )
+
+    if not active_work_orders:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La orden de servicio no tiene órdenes de trabajo activas",
+        )
+
+    active_work_order_ids = [work_order.id for work_order in active_work_orders]
+
+    already_signed_work_order_ids = set(
+        db.scalars(
+            select(ServiceOrderSignatureCycleWorkOrder.work_order_id).where(
+                ServiceOrderSignatureCycleWorkOrder.work_order_id.in_(
+                    active_work_order_ids
+                ),
+                ServiceOrderSignatureCycleWorkOrder.is_current.is_(True),
+            )
+        ).all()
+    )
+
+    pending_work_orders = [
+        work_order
+        for work_order in active_work_orders
+        if work_order.id not in already_signed_work_order_ids
+    ]
+
+    if not pending_work_orders:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Todas las órdenes de trabajo activas ya tienen una firma vigente"
+            ),
+        )
+
+    last_cycle_number = db.scalar(
+        select(func.max(ServiceOrderSignatureCycle.cycle_number)).where(
+            ServiceOrderSignatureCycle.service_order_id == service_order.id
+        )
+    )
+
+    next_cycle_number = int(last_cycle_number or 0) + 1
+    confirmed_at = datetime.now(timezone.utc)
+
+    trigger = "initial" if next_cycle_number == 1 else "additional_work_order"
+
+    signature_cycle = ServiceOrderSignatureCycle(
+        service_order_id=service_order.id,
+        cycle_number=next_cycle_number,
+        trigger=trigger,
+        comment=None,
+        status="confirmed",
+        technician_signature_data_url=(
+            service_order.technician_signature_data_url
+        ),
+        client_received_signature_data_url=(
+            service_order.client_received_signature_data_url
+        ),
+        client_acceptance_signature_data_url=(
+            service_order.client_acceptance_signature_data_url
+        ),
+        technician_signed_name=service_order.technician_signed_name,
+        client_received_signed_name=(
+            service_order.client_received_signed_name
+        ),
+        client_acceptance_signed_name=(
+            service_order.client_acceptance_signed_name
+        ),
+        technician_signed_at=service_order.technician_signed_at,
+        client_received_signed_at=service_order.client_received_signed_at,
+        client_acceptance_signed_at=(
+            service_order.client_acceptance_signed_at
+        ),
+        authorized_by_id=(
+            user_id if trigger != "initial" else None
+        ),
+        authorization_comment=None,
+        confirmed_at=confirmed_at,
+    )
+
+    db.add(signature_cycle)
+    db.flush()
+
+    assignment_type = (
+        "initial"
+        if next_cycle_number == 1
+        else "additional_work_order"
+    )
+
+    signature_links = [
+        ServiceOrderSignatureCycleWorkOrder(
+            signature_cycle_id=signature_cycle.id,
+            work_order_id=work_order.id,
+            assignment_type=assignment_type,
+            is_current=True,
+            applied_at=confirmed_at,
+        )
+        for work_order in pending_work_orders
+    ]
+
+    db.add_all(signature_links)
+
+    previous_signature_status = service_order.signature_status
+    previous_cycle_number = service_order.signature_cycle_number
+
+    service_order.signature_status = "confirmed"
+    service_order.signature_cycle_number = next_cycle_number
+    service_order.signatures_confirmed_at = confirmed_at
+    service_order.signature_reopen_available = False
+    service_order.signature_reopened_by_id = None
+    service_order.signature_reopened_at = None
+    service_order.signature_reopen_source = None
+
+    write_audit_log(
+        db,
+        action="service_order.signatures_confirmed",
+        entity="service_orders",
+        entity_id=service_order.id,
+        user_id=user_id,
+        previous_values={
+            "signature_status": previous_signature_status,
+            "signature_cycle_number": previous_cycle_number,
+        },
+        new_values={
+            "signature_status": "confirmed",
+            "signature_cycle_number": next_cycle_number,
+            "signature_cycle_id": signature_cycle.id,
+            "trigger": trigger,
+            "work_orders": [
+                {
+                    "id": work_order.id,
+                    "work_order_number": work_order.work_order_number,
+                    "sequence": work_order.sequence,
+                }
+                for work_order in pending_work_orders
+            ],
+            "confirmed_at": confirmed_at.isoformat(),
+        },
+    )
+
+    db.commit()
+
     return get_service_order(db, service_order.id)
 
 

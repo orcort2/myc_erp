@@ -1,6 +1,15 @@
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -38,14 +47,62 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     client_received_signed_name: Mapped[str | None] = mapped_column(String(180))
     client_acceptance_signed_name: Mapped[str | None] = mapped_column(String(180))
 
-    technician_signed_at: Mapped[date | None] = mapped_column(DateTime(timezone=True))
-    client_received_signed_at: Mapped[date | None] = mapped_column(DateTime(timezone=True))
-    client_acceptance_signed_at: Mapped[date | None] = mapped_column(DateTime(timezone=True))
+    technician_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    client_received_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    client_acceptance_signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    signature_status: Mapped[str] = mapped_column(
+        String(30),
+        default="pending",
+        server_default="pending",
+        nullable=False,
+        index=True,
+    )
+
+    signature_cycle_number: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        server_default="1",
+        nullable=False,
+    )
+
+    signatures_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    signature_reopen_available: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
+    )
+
+    signature_reopened_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        index=True,
+    )
+
+    signature_reopened_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+    signature_reopen_source: Mapped[str | None] = mapped_column(
+        String(50)
+    )
 
     client: Mapped["Client"] = relationship(back_populates="service_orders")
     quotation: Mapped["Quotation | None"] = relationship(back_populates="service_orders")
     advisor: Mapped["User | None"] = relationship(foreign_keys=[advisor_id])
     technician: Mapped["User | None"] = relationship(foreign_keys=[technician_id])
+    signature_reopened_by: Mapped["User | None"] = relationship(
+        foreign_keys=[signature_reopened_by_id]
+    )
 
     items: Mapped[list["ServiceOrderItem"]] = relationship(
         back_populates="service_order",
@@ -56,6 +113,12 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         back_populates="service_order",
         cascade="all, delete-orphan",
         order_by="ServiceWorkOrder.sequence.asc()",
+    )
+
+    signature_cycles: Mapped[list["ServiceOrderSignatureCycle"]] = relationship(
+        back_populates="service_order",
+        cascade="all, delete-orphan",
+        order_by="ServiceOrderSignatureCycle.cycle_number.asc()",
     )
 
     equipment: Mapped[list["Equipment"]] = relationship(back_populates="service_order")
@@ -73,6 +136,124 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         if self.technician is None:
             return None
         return self.technician.full_name or self.technician.email
+
+
+    @property
+    def has_pending_signature_work_orders(self) -> bool:
+        active_work_orders = [
+            work_order
+            for work_order in self.work_orders
+            if work_order.is_active and work_order.status != "cancelled"
+        ]
+
+        return any(
+            not any(link.is_current for link in work_order.signature_cycle_links)
+            for work_order in active_work_orders
+        )
+    
+    
+class ServiceOrderSignatureCycle(
+    IntegerPkMixin,
+    TimestampMixin,
+    Base,
+):
+    __tablename__ = "service_order_signature_cycles"
+
+    service_order_id: Mapped[int] = mapped_column(
+        ForeignKey("service_orders.id"),
+        index=True,
+        nullable=False,
+    )
+
+    cycle_number: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+    )
+
+    trigger: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="initial",
+        server_default="initial",
+    )
+
+    comment: Mapped[str | None] = mapped_column(Text)
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="confirmed",
+        server_default="confirmed",
+        index=True,
+    )
+
+    technician_signature_data_url: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    client_received_signature_data_url: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    client_acceptance_signature_data_url: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    technician_signed_name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+    client_received_signed_name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+    client_acceptance_signed_name: Mapped[str] = mapped_column(
+        String(180),
+        nullable=False,
+    )
+
+    technician_signed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    client_received_signed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    client_acceptance_signed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    authorized_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        index=True,
+    )
+
+    work_order_links: Mapped[
+        list["ServiceOrderSignatureCycleWorkOrder"]
+    ] = relationship(
+        back_populates="signature_cycle",
+        cascade="all, delete-orphan",
+        order_by="ServiceOrderSignatureCycleWorkOrder.id.asc()",
+    )
+
+    authorization_comment: Mapped[str | None] = mapped_column(Text)
+
+    confirmed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    service_order: Mapped["ServiceOrder"] = relationship(
+        back_populates="signature_cycles"
+    )
+
+    authorized_by: Mapped["User | None"] = relationship(
+        foreign_keys=[authorized_by_id]
+    )
 
 
 class ServiceWorkOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -95,6 +276,16 @@ class ServiceWorkOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         order_by="Equipment.id.asc()",
     )
 
+    signature_cycle_links: Mapped[
+        list["ServiceOrderSignatureCycleWorkOrder"]
+    ] = relationship(
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="ServiceOrderSignatureCycleWorkOrder.id.asc()",
+    )
+
+
+
     @property
     def active_equipment_count(self) -> int:
         return len([item for item in self.equipment if item.is_active])
@@ -102,6 +293,62 @@ class ServiceWorkOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     @property
     def available_equipment_slots(self) -> int:
         return max(self.equipment_limit - self.active_equipment_count, 0)
+
+class ServiceOrderSignatureCycleWorkOrder(
+    IntegerPkMixin,
+    TimestampMixin,
+    Base,
+):
+    __tablename__ = "service_order_signature_cycle_work_orders"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "signature_cycle_id",
+            "work_order_id",
+            name="uq_signature_cycle_work_order",
+        ),
+    )
+
+    signature_cycle_id: Mapped[int] = mapped_column(
+        ForeignKey("service_order_signature_cycles.id"),
+        index=True,
+        nullable=False,
+    )
+
+    work_order_id: Mapped[int] = mapped_column(
+        ForeignKey("service_work_orders.id"),
+        index=True,
+        nullable=False,
+    )
+
+    assignment_type: Mapped[str] = mapped_column(
+        String(50),
+        default="initial",
+        server_default="initial",
+        nullable=False,
+        index=True,
+    )
+
+    is_current: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        server_default="true",
+        nullable=False,
+        index=True,
+    )
+
+    applied_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+
+    signature_cycle: Mapped["ServiceOrderSignatureCycle"] = relationship(
+        back_populates="work_order_links"
+    )
+
+    work_order: Mapped["ServiceWorkOrder"] = relationship(
+        back_populates="signature_cycle_links"
+    )
 
 
 class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):

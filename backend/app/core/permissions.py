@@ -40,6 +40,7 @@ ROLE_PERMISSIONS = {
         "uncertainty.execute",
         "service_orders.read",
         "service_orders.update",
+        "service_orders.sign",
     },
     "Captura": {
         "clients.read",
@@ -69,6 +70,7 @@ ROLE_PERMISSIONS = {
         "certificates.match_override",
         "field_sheets.read",
         "service_orders.read",
+        "service_orders.signatures.reopen",
         "standards.read",
         "procedures.read",
         "metrology.execute",
@@ -179,6 +181,8 @@ ROLE_PERMISSIONS = {
         "settings.system_parameters.read",
         "settings.system_parameters.update",
         "settings.master_catalogs.manage",
+        "service_orders.sign",
+        "service_orders.signatures.reopen",
     },
 }
 
@@ -242,4 +246,6 @@ PERMISSIONS = {
     "SETTINGS_SYSTEM_PARAMETERS_READ": "settings.system_parameters.read",
     "SETTINGS_SYSTEM_PARAMETERS_UPDATE": "settings.system_parameters.update",
     "SETTINGS_MASTER_CATALOGS_MANAGE": "settings.master_catalogs.manage",
+    "SERVICE_ORDERS_SIGN": "service_orders.sign",
+    "SERVICE_ORDERS_SIGNATURES_REOPEN": "service_orders.signatures.reopen",
 }

@@ -2,6 +2,7 @@ import {
   Banknote,
   Building2,
   FileCheck2,
+  Files,
   FileText,
   Gauge,
   Ruler,
@@ -15,6 +16,7 @@ export const navigation = [
   { label: 'Ventas / Cotizaciones', icon: FileText, path: '/dashboard#cotizaciones' },
   /*{ label: 'Catálogo MYC', icon: FileCheck2, path: '/dashboard#catalogo' },*/
   { label: 'Servicios', icon: ShieldCheck, path: '/dashboard#servicios' },
+  { label: 'Control Documental', icon: Files, path: '/dashboard#control-documental' },
   { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
   { label: 'Facturación', icon: Banknote, path: '/dashboard#facturacion' },
   { label: 'Configuracion', icon: Settings, path: '/dashboard#configuracion' }
@@ -51,6 +53,15 @@ export const modules = [
     description: 'Expediente Tecnico del Servicio con equipos, hojas, captura, calidad y certificados.',
     icon: ShieldCheck,
     path: '/dashboard#servicios',
+    status: 'Activo'
+  },
+  {
+    key: 'documentControl',
+    name: 'Control Documental',
+    description: 'Catalogo central de documentos controlados, revisiones, versiones y vigencias.',
+    icon: Files,
+    path: '/dashboard#control-documental',
+    legacyPaths: ['/dashboard#biblioteca-documental'],
     status: 'Activo'
   },
   {

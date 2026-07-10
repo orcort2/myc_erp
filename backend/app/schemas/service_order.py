@@ -145,6 +145,8 @@ class ServiceOrderRead(ServiceOrderBase):
     client_received_signed_at: datetime | None = None
     client_acceptance_signed_at: datetime | None = None
 
+    has_pending_signature_work_orders: bool = False
+
     items: list[ServiceOrderItemRead] = Field(default_factory=list)
 
     # Nuevo

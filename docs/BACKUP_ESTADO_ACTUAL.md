@@ -1,6 +1,6 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-07-09 16:21:35 CST
+Ultima actualizacion: 2026-07-10 15:41:07 CST
 Version actual: ERP MYC v0.3.0
 Nombre de version: Ventas Finalizado
 Version anterior: v0.2.0 (Clientes Finalizado)
@@ -10,23 +10,170 @@ Ruta actual del proyecto
 La carpeta padre antes se llamaba ERP MYC, pero fue renombrada a myc_erp. No hay problema con el cambio. De ahora en adelante todas las rutas deben apuntar a myc_erp.
 Git ya esta inicializado.
 Ultimo commit conocido:
-b680644 Corrige flujo integral ETS
+b10f094 se intento mejorar el canvas para firma de ordenes de trabajo
 Commits recientes:
+b10f094 se intento mejorar el canvas para firma de ordenes de trabajo
+fb25d13 se agrego un modal de firmas especial
+a74fb37 Sincroniza estado final del backup
+f0fc0a0 Actualiza backup tras correcciones ETS
 b680644 Corrige flujo integral ETS
 35b7fa6 Actualiza backup de estado actual
 185de10 Corrige indentacion de firmas en ordenes
 0a50bae se agregaron firmas a la orden de trabajo, el frontend esta pendiente
 ad1aef0 se declara ordenes de trabajo por ETS
 3fac039 se mejoror la version anterioir
-67ccd05 se mejoro el tema de que la ETS pueda recibir varias ordenes de trbaajo en una sola
-6b4954c Merge branch 'main' of https://github.com/orcort2/myc_erp
-0ab66da revision
-87c57cf se corrigio tema de tunel
 Estado Git verificado:
 ## main...origin/main
-?? backups/erp_myc_2026_07_09_1058.sql
-?? backups/erp_myc_2026_07_09_1118.sql
+ M docs/BACKUP_ESTADO_ACTUAL.md
+ M frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx
+ M frontend/src/components/signatures/SignaturePad.jsx
+ M frontend/src/components/signatures/signature.css
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-07-10 10:47:17 CST - Curva interpolatingSpring para el cierre Genie de firmas:
+Objetivo:
+- Sustituir el avance segmentado del barrido por una curva fisica continua inspirada en `interpolatingSpring`, conservando la trayectoria, el destino real y el cierre existente.
+- Dar a la traslacion y a la contraccion una desaceleracion natural sin agregar rebote, pausa final o un segundo escalado del boton.
+Cambios principales:
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: se implemento una respuesta de resorte criticamente amortiguada y normalizada, con frecuencia `9.5`, para que el progreso termine exactamente en `1`.
+- La curva se muestrea en `56` keyframes y se ejecuta mediante Web Animations API sobre unicamente `.signature-morph-modal`; `easing: linear` es intencional porque la fisica ya esta incorporada en cada muestra.
+- La traslacion completa usa el progreso del resorte; la contraccion horizontal usa exponente `1.25` y la vertical `1.65`, creando una absorcion asimetrica continua sin deformar capas internas por separado.
+- Opacidad se conserva durante la mayor parte del recorrido y se desvanece con `smoothstep` solo en el ultimo `14%`; el radio cambia progresivamente de `28px` a `20px`.
+- Se agregaron referencias separadas para el modal, las metricas medidas y la animacion activa, incluyendo cancelacion segura al reabrir, desmontar o cambiar el estado de cierre.
+- `frontend/src/components/signatures/signature.css`: se elimino el keyframe manual `signatureGenieClose`; el estado `.signature-morph-modal.closing` desactiva la animacion CSS de apertura para que no compita con el resorte.
+- Se conservan los `780ms` de cierre, el destino exacto medido, el target fijo de `72x72`, el handoff al finalizar, el fade exclusivo del icono durante `140ms` y la proteccion de dos frames contra el rebote del launcher.
+Restricciones conservadas:
+- No se modificaron logica de firmas, `SignaturePad`, canvas, `saveSignatures()`, `updateSignatureForm()`, flujo Cliente -> Tecnico, apertura, endpoints o payloads.
+- No se agregaron librerias ni se usaron canvas, WebGL o SVG para deformar la ventana completa.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- Los cambios permanecen locales y sin commit.
+- La comprobacion visual definitiva debe realizarse en la sesion autenticada del ERP; los parametros de frecuencia y exponentes quedaron centralizados para permitir un ajuste fino posterior sin cambiar la arquitectura.
+
+Actualizacion 2026-07-10 10:41:12 CST - Refinamiento visual del Genie con evidencia fotografica:
+Objetivo:
+- Mejorar la fluidez del barrido a partir de las secuencias `IMG_2357.jpg` a `IMG_2360.jpg`.
+- Eliminar la pastilla oscura prematura en el destino y el rebote residual del espacio del launcher.
+- Acercar la contraccion al comportamiento continuo del efecto Genie sin canvas, WebGL, SVG de ventana completa o librerias nuevas.
+Diagnostico:
+- Las fotos mostraron el target oscuro visible mientras el modal aun estaba lejos del destino.
+- El panel grande mantenia `backdrop-filter` y blur animado durante transforms, provocando recomposicion costosa y sensacion entrecortada.
+- La clase `is-resetting-close` se agregaba manualmente al DOM; React podia eliminarla al reconciliar `className` antes del primer frame cerrado, permitiendo que reapareciera la transicion de `100px` a `72px`.
+Cambios principales:
+- `frontend/src/components/signatures/signature.css`: el target usa `visibility: hidden` durante todo el barrido y se muestra mediante un handoff discreto exactamente al terminar los `780ms`; ya no aparece como una pastilla separada durante la trayectoria.
+- El target sigue fijo en `72x72`, sin width, height o scale animados; despues del handoff solo se desvanece el icono durante `140ms`.
+- `frontend/src/components/signatures/signature.css`: el modal de cierre desactiva `backdrop-filter`, elimina blur animado, usa `backface-visibility: hidden` y limita `will-change` a transform y opacity.
+- `signatureGenieClose` usa `translate3d` y `scale3d` con puntos progresivos en `0%`, `32%`, `58%`, `80%` y `100%`, manteniendo destino y duracion total.
+- La contraccion horizontal avanza de `1` a `.93`, `.68`, `.3` y finalmente al ancho exacto medido; la vertical avanza de `1` a `.97`, `.84`, `.52` y al alto final real.
+- Shell y modal comparten la curva `cubic-bezier(.2, .72, .16, 1)` durante los mismos `780ms`.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: se agregaron puntos medidos al `18%`, `52%` y `82%` del trayecto para una absorcion mas gradual.
+- `is-resetting-close` ahora es estado React real y permanece activo durante dos `requestAnimationFrame`; React ya no puede eliminar la supresion de transiciones antes de pintar el estado final.
+- Al finalizar, el launcher cambia directamente de su altura equivalente abierta de cierre al boton real sin crecer y volver a encogerse.
+Restricciones conservadas:
+- No se modificaron logica de firmas, canvas, `SignaturePad`, `saveSignatures()`, `updateSignatureForm()`, flujo Cliente -> Tecnico, endpoints o payloads.
+- No se agregaron librerias ni se reemplazo la arquitectura existente.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- Los cambios permanecen locales y sin commit.
+- La comprobacion visual definitiva debe realizarse en la sesion autenticada del ERP, repitiendo cierre por X, cierre tras guardar y reapertura.
+
+Actualizacion 2026-07-10 10:07:05 CST - Eliminacion del segundo escalado tras el morph de firmas:
+Objetivo:
+- Conservar sin cambios el barrido Genie aprobado y eliminar cualquier crecimiento, encogimiento o reentrada visual posterior.
+- Hacer que el barrido termine directamente en un contenedor de `72x72` y que despues solo aparezca el icono.
+Cambios principales:
+- `frontend/src/components/signatures/signature.css`: `.signature-closing-target` deja de animar opacidad, escala y blur; permanece fijo en `72x72` y en la coordenada final medida.
+- Se elimino por completo `signatureClosingTargetReveal`, que escalaba el boton destino de `.92` a `1`.
+- `frontend/src/components/signatures/signature.css`: unicamente `.signature-track-svg` y `.signature-draw-icon` del boton destino ejecutan `signatureClosingIconFade` durante `140ms`.
+- El fade del icono comienza exactamente al terminar los `780ms` del barrido y finaliza antes del intercambio por el boton normal.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: el reset se retrasa hasta completar `780ms + 140ms`, sin modificar duracion, trayectoria o keyframes de `signatureGenieClose`.
+- Se retiro el reset por `transitionend`, que desmontaba el target antes de completar el fade del icono.
+- Antes del reset se agrega temporalmente `is-resetting-close`, desactivando transiciones del shell mientras React cambia de `100px` internos a `72px` y el launcher recupera su padding.
+- La geometria exterior del launcher permanece estable y no se reproduce una segunda transicion de width, height o scale.
+- La busqueda confirmo que no existen `signature-anchor`, `signature-return-target`, `signature-button-returning`, `signature-button-enter`, `signature-anchor-enter` ni `signatureClosingTargetReveal` activos.
+Restricciones conservadas:
+- No se modificaron barrido, trayectoria, velocidad, keyframes o efecto Genie.
+- No se modificaron `SignaturePad`, canvas, logica de firmas, apertura, `saveSignatures()`, `updateSignatureForm()`, flujo Cliente -> Tecnico, endpoints o payloads.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- Los cambios permanecen locales y sin commit.
+
+Actualizacion 2026-07-10 09:59:58 CST - Prueba de cierre coordinado propuesta externamente:
+Objetivo:
+- Probar la propuesta recibida para eliminar capas internas, pausas y diferencias de tiempo durante el cierre del morph de firmas.
+Cambios principales:
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: se definio una sola constante `SIGNATURE_CLOSE_DURATION = 780` y se usa tanto para el reset de React como para publicar `--signature-close-duration` al CSS.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: el destino ya no se deriva de padding o coordenadas fijas; se mide sincronamente con `getBoundingClientRect()` usando el layout cerrado real del mismo shell antes de activar `isClosing`.
+- La medicion obtiene posicion horizontal, posicion vertical y tamano final reales, incluyendo variaciones responsive, zoom y ancho disponible.
+- El estado de medicion se restaura dentro del mismo ciclo sin quedar visible y sin modificar la apertura normal.
+- `frontend/src/components/signatures/signature.css`: se agregaron `--signature-close-x` y `--signature-close-y`, junto con puntos intermedios precomputados para evitar multiplicacion CSS no compatible.
+- `frontend/src/components/signatures/signature.css`: la deformacion usa cuatro puntos continuos (`0%`, `45%`, `72%`, `100%`) con translate, scaleX, scaleY, border-radius, opacity y blur; no usa `clip-path`, polygon ni skew.
+- `frontend/src/components/signatures/signature.css`: el boton destino inicia de forma sutil con `scale(.92)` y `blur(2px)`, comienza a aparecer a los `420ms` y queda completo a los `740ms`, antes del desmontaje a los `780ms`.
+- `frontend/src/components/signatures/signature.css`: `.signature-morph-modal.closing .signature-modal-content` fuerza contenido estable sin transicion, opacidad, transform o blur independiente.
+- No existe una segunda animacion `signature-button-returning`; el boton destino y el boton normal se sustituyen en el mismo punto visual.
+Restricciones conservadas:
+- No se modificaron `SignaturePad`, canvas, logica de firmas, `saveSignatures()`, `updateSignatureForm()`, flujo Cliente -> Tecnico, apertura, endpoints o payloads.
+- No se agregaron librerias ni se modificaron estilos generales del ETS.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- La prueba visual autenticada sigue requiriendo una sesion local iniciada; no se altero autenticacion para forzarla.
+- Los cambios permanecen locales y sin commit.
+
+Actualizacion 2026-07-10 09:56:37 CST - Suavizado final del cierre del morph de firmas:
+Objetivo:
+- Eliminar la percepcion de barrido por secciones o capas.
+- Suavizar la contraccion completa del modal hacia el boton de firma.
+- Quitar la pausa previa a la aparicion del boton final.
+Cambios principales:
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: antes de cerrar se conservan en variables CSS el ancho y alto reales del modal abierto.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: las escalas finales se calculan dinamicamente con relacion al boton de `72x72`, incluyendo escalas intermedias para evitar cambios bruscos.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: se ajustaron los puntos intermedios del desplazamiento para que la trayectoria avance de forma continua hasta el centro real del boton derecho.
+- `frontend/src/components/signatures/signature.css`: durante el cierre `.signature-morph-modal` conserva sus dimensiones originales y recibe por si solo el desplazamiento, escalado, inclinacion, opacidad y desenfoque.
+- `frontend/src/components/signatures/signature.css`: `.signature-modal-content.closing` ya no aplica opacidad, escala, traslacion o blur independientes; el contenido completo se rasteriza visualmente como parte de una sola superficie exterior.
+- `frontend/src/components/signatures/signature.css`: la curva de cierre se ajusto a `0.68s cubic-bezier(0.4, 0, 0.2, 1)` con escalas intermedias derivadas del tamano real.
+- `frontend/src/components/signatures/signature.css`: el boton destino empieza a revelarse desde el primer instante, sin delay, y completa su aparicion en `0.64s`, antes de finalizar el cierre del modal.
+- El shell sigue usando el grid existente exclusivamente para acomodar el espacio del launcher; la deformacion visual queda concentrada en `.signature-morph-modal`.
+Restricciones conservadas:
+- No se modificaron `SignaturePad`, la logica de firmas, `saveSignatures()`, `updateSignatureForm()`, el flujo Cliente -> Tecnico, la apertura, endpoints o payloads.
+- No se modificaron estilos generales del ETS ni se agregaron librerias.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- Se mantienen los cambios locales sin commit ya documentados en `ServiceOrderSignatureMorph.jsx`, `SignaturePad.jsx`, `signature.css` y este backup.
+
+Actualizacion 2026-07-10 09:50:14 CST - Correccion visual y cierre tipo absorcion del modal de firmas ETS:
+Objetivo:
+- Eliminar la capa gris translucida que afectaba visualmente los controles del pad de firma real.
+- Mejorar exclusivamente el cierre del modal para que termine en la posicion real del boton de firma derecho, con una contraccion progresiva inspirada en el efecto "genie" de macOS.
+Cambios principales:
+- `frontend/src/components/signatures/SignaturePad.jsx`: se retiro la clase global `ets-signature-card` del contenedor real del pad para evitar la mezcla con el fondo translucido de las tarjetas generales del ETS.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: el contenido permanece montado durante el cierre y el desmontaje se sincroniza con `transitionend`, conservando un temporizador de respaldo y limpieza de temporizadores al desmontar.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: antes del cierre se mide el centro real del boton final dentro del launcher y se publica el desplazamiento mediante variables CSS.
+- `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`: durante `isClosing` se mantienen simultaneamente el modal en contraccion y una instancia no interactiva del boton final.
+- `frontend/src/components/signatures/signature.css`: modal y boton destino se superponen en el mismo grid, sin agregar `position: absolute` al boton y sin sacar el launcher de su flujo normal.
+- `frontend/src/components/signatures/signature.css`: se agrego la animacion `signatureGenieClose`, con desplazamiento progresivo, escalado asimetrico, inclinacion y desenfoque hacia el boton derecho.
+- `frontend/src/components/signatures/signature.css`: el boton destino inicia con `opacity: 0`, `scale(.72)` y `blur(6px)`, y queda completamente visible antes de que React sustituya el modal por el boton definitivo.
+- `frontend/src/components/signatures/signature.css`: el shell termina en `100px` de alto, equivalente al alto exterior del launcher cerrado con boton y padding, evitando el rebote vertical al finalizar.
+- El shell usa `overflow: visible` durante el cierre para evitar que la trayectoria o el boton destino queden recortados.
+Restricciones conservadas:
+- No se modificaron endpoints, payloads, `saveSignatures()`, `updateSignatureForm()`, el canvas ni el flujo Cliente -> Tecnico.
+- No se agregaron librerias, canvas, WebGL o SVG para deformar la ventana completa.
+- La animacion de apertura existente se conserva.
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Estado pendiente / nota:
+- La validacion automatizada del modal autenticado no pudo completarse porque el navegador local abrio en la pantalla de acceso; no se crearon usuarios ni se altero la autenticacion para omitirla.
+- Cambios locales actuales sin commit: `docs/BACKUP_ESTADO_ACTUAL.md`, `ServiceOrderSignatureMorph.jsx`, `SignaturePad.jsx` y `signature.css`.
 
 Actualizacion 2026-07-09 16:21:35 CST - Remocion de fondo del launcher de firma:
 Objetivo:
@@ -5554,3 +5701,400 @@ Backup:
   - `610K`
 - Lineas verificadas:
   - `6654`
+
+---
+
+## ACTUALIZACION - CIERRE DEL MOTOR ETS, FIRMAS POR CICLO Y SELLADO DEL MODULO DE EQUIPOS
+
+Fecha de actualizacion:
+- `2026-07-10 14:06:15 CST`
+
+Objetivo de esta etapa:
+- cerrar la primera version funcional del motor ETS
+- conservar una sola firma global para todas las Ordenes de Trabajo pendientes al momento de firmar
+- permitir que una Orden de Trabajo nueva creada posteriormente sea la unica que vuelva a requerir firma
+- evitar confirmaciones duplicadas
+- ocultar el espacio de firma cuando ya no existan OT pendientes
+- cerrar y sellar la version actual de la pestaña Equipos antes de continuar con Hojas de Campo
+
+### Motor de firmas por ciclos
+
+Backend:
+- se incorporo historial de ciclos de firma mediante:
+  - `ServiceOrderSignatureCycle`
+  - relacion de ciclos con Ordenes de Trabajo
+- el ciclo confirmado conserva:
+  - firma de tecnico
+  - firma de cliente que recibe
+  - firma de cliente de aceptacion
+  - nombres firmantes
+  - fechas y horas
+  - numero de ciclo
+  - trigger
+  - estado
+  - usuario autorizador cuando aplique
+  - comentario de autorizacion
+- las Ordenes de Trabajo activas pendientes quedan vinculadas al ciclo confirmado
+- las OT ya cubiertas por una firma vigente no se vuelven a incluir
+- se conserva el historial sin sobrescribir ciclos anteriores
+
+Endpoint validado:
+- `POST /api/service-orders/{service_order_id}/confirm-signatures`
+
+Pruebas realizadas:
+- primera confirmacion:
+  - respuesta `200`
+- segunda confirmacion sobre las mismas OT:
+  - respuesta `409 Conflict`
+- resultado:
+  - no se duplican ciclos
+  - no se vuelven a procesar OT ya firmadas
+
+Regla de negocio confirmada:
+- una sola captura de firmas cubre todas las OT activas pendientes existentes en ese momento
+- el cliente no firma una vez por cada OT
+- si posteriormente se crea una OT nueva, solo esa OT queda pendiente de un nuevo ciclo
+- las OT anteriores conservan su firma vigente
+- la refirma queda reservada para excepciones futuras
+
+### Integracion con frontend y Morph de firmas
+
+Frontend:
+- `ServiceOrdersPage.jsx` sigue siendo el orquestador de la logica de negocio
+- `ServiceOrderSignatureMorph` permanece como componente visual y de captura
+- `SignatureLabPage` se conserva solo como laboratorio/prototipo
+- despues de guardar las firmas por `PATCH`, el frontend llama:
+  - `POST /api/service-orders/{id}/confirm-signatures`
+- el flujo percibido por el usuario sigue siendo una sola accion:
+  - capturar firmas
+  - guardar
+  - confirmar ciclo
+  - ejecutar animacion
+  - cerrar modal
+  - refrescar ETS
+
+API frontend agregada:
+- `confirmServiceOrderSignatures(serviceOrderId)`
+
+### Ocultamiento del espacio de firma
+
+Backend:
+- se agrego el indicador:
+  - `has_pending_signature_work_orders`
+- el valor se calcula desde las OT activas y sus relaciones de ciclo vigente
+- el backend carga de forma explicita los enlaces de firma de las OT para resolver correctamente el indicador
+
+Frontend:
+- `renderSignatureLauncher()` devuelve `null` cuando:
+  - no existe `selectedOrder`
+  - `selectedOrder.has_pending_signature_work_orders` es falso
+- el espacio de firma desaparece por completo cuando ya no hay nada pendiente
+- el Morph reaparece automaticamente cuando se crea una OT nueva sin firma vigente
+- esto evita que el usuario vuelva a abrir el modal y genere un `409` innecesario
+
+### Migracion ETS de ciclos de firma
+
+Migracion aplicada:
+- revision:
+  - `e9e489637dc8`
+- revisa:
+  - `28eed747a29b`
+- descripcion:
+  - `ets signature cycle work order`
+
+Validaciones realizadas:
+- `python -m compileall app` -> OK
+- `alembic upgrade head` -> OK
+- Swagger:
+  - confirmacion inicial `200`
+  - repeticion controlada `409`
+
+### Ajuste visual del modal de Equipos
+
+Frontend:
+- el modal de alta de equipo recibio una clase aislada:
+  - `ets-equipment-form-modal`
+- el ajuste se aplico sin modificar los demas modales globales
+- se compacto:
+  - alto maximo
+  - padding
+  - separacion vertical
+  - inputs
+  - selects
+  - textareas
+  - contadores de capacidad
+  - presets de condicion
+- se corrigio el estiramiento provocado por el grid
+- inputs y textareas conservan altura fija aunque la columna contraria tenga bloques mas altos
+- no se modifico la logica del alta de equipos
+
+Resultado visual:
+- el formulario recupero una proporcion regular
+- los bloques de folios y capacidades permanecen visibles
+- el modal deja de crecer junto con otros formularios globales
+
+### Bloqueo de equipos adicionales y solicitud de excepcion
+
+Regla nueva en frontend:
+- al pulsar `Agregar equipo`, el sistema compara:
+  - equipos esperados por el ETS
+  - equipos registrados
+- cuando los registrados ya alcanzan los esperados:
+  - no se abre el formulario de alta
+  - se muestra un aviso interno
+  - se ofrecen dos acciones:
+    - `Cerrar`
+    - `Solicitar excepcion`
+
+Comportamiento:
+- la validacion solo aplica al alta de un equipo nuevo
+- la edicion de equipos existentes sigue permitida
+- el bloqueo por capacidad fisica de OT sigue siendo una validacion separada
+- la solicitud de excepcion reutiliza el flujo operativo existente
+- mas adelante esta solicitud debera generar un ticket dentro del futuro modulo de comunicacion interna
+
+### Pendientes formales de excepciones
+
+Queda registrado para una etapa posterior:
+- refirma individual de una OT especifica
+- refirma general de varias OT
+- selector de OT disponibles para refirmar
+- motivo obligatorio
+- usuario autorizador
+- fecha y hora
+- auditoria completa
+- nuevo ciclo de firma
+- actualizacion exclusiva de las OT seleccionadas
+- preservacion de las OT que ya tengan firma valida
+- solicitud de excepcion para equipos adicionales
+- conversion futura de solicitudes en tickets
+- modulo futuro de comunicacion interna / conversaciones
+- posible escalacion posterior para permitir contacto de clientes
+
+### Permisos
+
+Decision vigente:
+- no se cerrara todavia la matriz definitiva de permisos
+- no se avanzara por ahora con endurecimiento completo de roles para estas excepciones
+- primero se terminaran los modulos y vistas pendientes
+- despues se definira:
+  - que acciones existen realmente
+  - que roles las ejecutan
+  - que excepciones requieren autorizacion
+  - como se gestionan permisos de lectura, escritura, aprobacion y escalacion
+
+### Estado de cierre
+
+Estado funcional:
+- Ordenes de Servicio / ETS:
+  - primera version del motor de firmas cerrada
+- Firmas:
+  - ciclos, historial y control anti duplicado operativos
+- Morph:
+  - integrado al flujo real
+- Equipos:
+  - version actual cerrada y sellada
+- Excepciones:
+  - preparadas como pendiente formal
+- Permisos:
+  - diferidos hasta completar modulos
+- Siguiente modulo:
+  - Hojas de Campo
+
+Criterio de sellado:
+- no continuar agregando logica estructural a Equipos durante la siguiente etapa
+- cualquier cambio futuro en Equipos debera tratarse como:
+  - correccion critica
+  - excepcion operativa
+  - mejora versionada posterior
+
+## Actualizacion 2026-07-10 15:19:10 CST - Fase 1 Control Documental
+
+Objetivo:
+- Recuperar y hacer visible el modulo existente de documentos controlados bajo su nombre oficial `Control Documental`.
+- Reorganizar `DocumentLibraryPage.jsx` como catalogo central de identidad documental, revisiones, versiones, vigencias y publicacion, sin conectarlo todavia con renderizadores ni modulos operativos.
+
+Navegacion:
+- Se agrego `Control Documental` a la navegacion principal y a los accesos del dashboard.
+- Ruta visible preferida: `/dashboard#control-documental`.
+- Se agrego compatibilidad de entrada con `/dashboard#biblioteca-documental` sin mantener el nombre anterior en la interfaz.
+- Icono utilizado: `Files` de `lucide-react`; no se agregaron dependencias.
+
+Catalogo documental:
+- `frontend/src/pages/DocumentLibraryPage.jsx` ahora lista los documentos controlados existentes con codigo, nombre, revision vigente, estado, tipo, entrada en vigor y numero de versiones.
+- Se agregaron busqueda local por codigo, nombre, tipo, revision y estado, mas filtros por estado y tipo documental.
+- Los valores ausentes se presentan como `Sin revision publicada`, `Sin versiones`, `No definida` o equivalentes claros; no se muestran `null` o `undefined`.
+- Los estados existentes se traducen visualmente a etiquetas amigables en espanol sin cambiar sus valores ni transiciones backend.
+
+Ficha documental:
+- Cada fila abre una ficha Liquid Glass responsive con pestañas:
+  - Informacion
+  - Versiones
+  - Historial
+  - Publicacion
+  - Diseñador
+- Informacion muestra exclusivamente campos ya entregados por `ControlledDocument` y permite editar mediante el endpoint existente a perfiles administrativos autorizados.
+- Versiones lista revision, estado, referencia de archivo, MIME, checksum, resumen, fechas, revisor y aprobador cuando existen.
+- El registro de version conserva el comportamiento actual de referencia documental manual; no se implemento carga o descarga fisica.
+- La activacion de versiones y el archivo logico usan el `ConfirmDialog` interno del ERP; no se agregaron confirmaciones nativas.
+- Historial se deriva solo de fechas y versiones trazables entregadas por el backend; no se creo ni modifico un sistema de auditoria.
+- Publicacion muestra estado actual, revision, version activa, vigencia y disponibilidad futura, reutilizando la activacion existente.
+- Diseñador queda como espacio preparado, deshabilitado y con identificacion del editor especializado futuro segun tipo documental.
+
+Permisos:
+- Consulta sigue protegida por `documents.read` en backend.
+- Alta, edicion, activacion y archivo conservan los permisos existentes del backend.
+- En frontend las acciones administrativas se muestran solamente a Administrador, Calidad y Desarrollador.
+- `DocumentInterpretation` y perfiles tecnicos permanecen en codigo y backend, pero se retiraron de la interfaz principal de esta fase conforme al nuevo alcance.
+
+Archivos modificados por esta fase:
+- `frontend/src/constants/navigation.js`
+- `frontend/src/pages/App.jsx`
+- `frontend/src/pages/DocumentLibraryPage.jsx`
+- `frontend/src/styles/global.css`
+- `docs/BACKUP_ESTADO_ACTUAL.md`
+
+Restricciones conservadas:
+- No se modificaron modelos, schemas, servicios ni routers backend.
+- No se crearon migraciones ni se editaron registros de base de datos.
+- No se modificaron Cotizaciones, ETS, Ordenes de Trabajo, Hojas de Campo, Certificados, Facturacion, Patrones, snapshots o renderizadores PDF.
+- No se construyo diseñador visual, catalogo tecnico de bloques, upload, descarga, checksum automatico, firma digital o comparador de versiones.
+- No se conecto Control Documental con plantillas o layouts operativos.
+
+Validacion ejecutada:
+- `npm run build` en frontend -> OK; Vite transformo 1627 modulos y genero el build con la advertencia no bloqueante existente de chunk mayor a 500 kB.
+- `../venv/bin/python -m compileall app` desde backend -> OK.
+- Busqueda de `window.alert`, `window.confirm` y `prompt(` en los archivos de Control Documental -> sin coincidencias; la busqueda global detecto un `window.alert` preexistente en `frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx`, fuera del alcance de esta fase y no introducido por estos cambios.
+- `git diff --check` focalizado en los cuatro archivos frontend de esta fase -> OK.
+- `git diff --check` global sigue reportando espacios finales preexistentes en cambios locales ajenos de `service_order.py`, `ServiceOrderSignatureMorph.jsx` y `ServiceOrdersPage.jsx`; no se tocaron para respetar el alcance y preservar trabajo local del usuario.
+
+Resultado:
+- La Fase 1 de Control Documental queda funcional, visible, compilable y preparada para una futura fase de editores especializados, sin alterar el comportamiento operativo del ERP.
+
+## Actualizacion 2026-07-10 15:29:42 CST - Control Documental Fase 1.1
+
+Objetivo:
+- Refinar exclusivamente la interfaz y experiencia del modulo Control Documental construido en la Fase 1.
+- Mejorar utilidad operativa, densidad visual y jerarquia de la ficha sin agregar backend, migraciones, integraciones o funciones nuevas.
+
+Catalogo documental:
+- Las metricas superiores ahora muestran informacion util para Calidad:
+  - Documentos registrados
+  - Documentos vigentes
+  - Documentos en borrador
+  - Documentos obsoletos
+- La seccion principal se identifica como `Lista Maestra de Documentos` y muestra el total de documentos registrados o coincidentes con los filtros.
+- La tabla redujo altura de filas, padding y tamaño de textos secundarios para facilitar lectura de catalogos mayores.
+- La revision no publicada se muestra como `—`, la falta de vigencia como `—` y las versiones como conteo numerico, incluido `0`.
+- Los tipos documentales largos se presentan con etiquetas compactas como `Hoja de Campo`, `Cotizacion`, `Orden de Trabajo`, `Certificado` e `Incertidumbre`, sin modificar los valores internos del backend.
+- Se agregaron indicadores cromaticos discretos por familia documental, manteniendo la paleta MYC.
+- La accion de fila cambia de `Abrir ficha` a `Ver ficha`.
+- El boton principal cambia de `Nuevo documento` a `Registrar documento`.
+
+Formulario de registro:
+- El alta inicial se redujo a:
+  - Codigo documental
+  - Nombre
+  - Tipo documental
+  - Area responsable informativa
+  - Nivel de calidad
+  - Descripcion
+- Estado, revision vigente, fechas, retencion y ubicacion digital dejan de solicitarse durante el alta y conservan sus valores iniciales del modelo actual.
+- La edicion de un documento existente mantiene disponibles los campos de ciclo documental ya soportados por backend.
+- `ControlledDocument` no tiene actualmente un campo persistente para area responsable; para no inventar datos ni modificar backend, el formulario lo muestra deshabilitado como no disponible en el modelo actual.
+
+Ficha documental:
+- El encabezado se convirtio en tarjeta de identidad documental con codigo, nombre, estado, revision vigente, cantidad de versiones y area responsable disponible.
+- Las acciones `Editar`, `Marcar obsoleto` y `Cerrar` se concentraron en el encabezado superior.
+- Informacion se reorganizo en dos grupos visuales:
+  - Identidad documental / clasificacion y control
+  - Ciclo documental / revision y vigencia
+- La descripcion permanece como bloque independiente y legible.
+- Versiones conserva su funcionamiento y refuerza visualmente la revision activa.
+- Historial conserva datos derivados existentes y mejora su lectura como linea de tiempo.
+- Publicacion conserva el flujo actual y prioriza estado, version activa y revision vigente.
+- Diseñador sigue siendo un placeholder sin funcion, pero ahora explica objetivo, editor esperado, estado futuro y muestra `Proximamente`.
+
+Consistencia y responsive:
+- Se reutilizaron Liquid Glass, badges, botones, tipografia y variables actuales del ERP.
+- La ficha adapta encabezado y acciones a tablet y movil.
+- Metricas y grupos de informacion pasan progresivamente de cuatro columnas a dos y una segun el ancho disponible.
+- No se instalaron librerias ni se agregaron componentes de drag and drop.
+
+Archivos modificados por la Fase 1.1:
+- `frontend/src/pages/DocumentLibraryPage.jsx`
+- `frontend/src/styles/global.css`
+- `docs/BACKUP_ESTADO_ACTUAL.md`
+
+Restricciones conservadas:
+- No se modifico backend, modelos, schemas, endpoints, permisos, base de datos o migraciones.
+- No se modificaron Cotizaciones, Ordenes de Trabajo, ETS, Hojas de Campo, Certificados, Facturacion, Patrones, snapshots o renderizadores.
+- No se conecto Control Documental con ningun modulo operativo.
+- No se construyo el Diseñador Documental.
+
+Validacion ejecutada:
+- `npm run build` en frontend -> OK; 1627 modulos transformados.
+- Vite mantiene la advertencia no bloqueante conocida de chunk mayor a 500 kB.
+- `git diff --check` focalizado en `DocumentLibraryPage.jsx` y los estilos de esta fase -> OK.
+- `git diff --check` global sigue reportando espacios finales preexistentes en `backend/app/models/service_order.py`, `ServiceOrderSignatureMorph.jsx` y `ServiceOrdersPage.jsx`; se conservaron sin modificar por estar fuera del alcance.
+- Busqueda de confirmaciones nativas en `DocumentLibraryPage.jsx` -> sin `window.alert`, `window.confirm` o `prompt(`.
+
+Pendiente para Fase 2:
+- Persistencia formal de area responsable, si se aprueba ampliar el modelo documental.
+- Diseñadores especializados por familia documental.
+- Componentes documentales reutilizables, bindings, vista previa y publicacion de layouts.
+- Integracion futura con renderizadores y modulos operativos, expresamente no realizada en esta fase.
+
+Resultado:
+- Control Documental conserva toda la funcionalidad de la Fase 1 con un catalogo mas compacto, un alta mas simple y una ficha documental con mayor jerarquia visual.
+
+## Actualizacion 2026-07-10 15:41:07 CST - Control Documental Fase 1.2 / Sellado de Version 1
+
+Objetivo:
+- Cerrar definitivamente la primera version de Control Documental mediante ajustes exclusivamente visuales y de experiencia.
+- Alinear la Lista Maestra y la ficha documental con los patrones ya utilizados por Clientes, Equipos, ETS, Cotizaciones y Usuarios.
+
+Lista Maestra:
+- La lista adopta la estructura visual reutilizada del ERP mediante `clients-table`, `clients-table__head`, `clients-table__row` y `clients-table__row--clickable`.
+- Se elimino completamente la columna `Acciones` y el boton `Ver ficha`.
+- Toda la fila abre la ficha documental con un solo clic y conserva acceso por teclado con Enter o barra espaciadora.
+- Se reforzaron hover, foco y seleccion de la fila completa sin agregar iconos, dobles clics o controles redundantes.
+- Se conservaron Liquid Glass, tipografia, espaciado, altura, alineaciones, bordes y colores del sistema existente.
+
+Ventana documental:
+- La ficha funciona como ventana de trabajo con aproximadamente `90vw` de ancho y `85vh` de alto en escritorio.
+- El contenido interno administra su propio scroll para conservar encabezado, acciones y navegacion visibles.
+- En tablet se adapta a `94vw` por `90vh`; en movil ocupa el viewport disponible para evitar recortes y dobles margenes.
+- Las pestañas conservan su comportamiento y reciben una identidad visual MYC mas clara mediante estado activo, linea de acento y mejor respuesta responsive.
+
+Versiones, historial y publicacion:
+- Versiones mantiene su logica y estado vacio; su contenedor queda preparado visualmente para futuras tarjetas documentales responsivas.
+- Historial aprovecha mejor el ancho disponible mediante una distribucion adaptable de eventos, sin cambiar datos ni origen.
+- Publicacion incorpora un indicador compacto con el estado documental y su disponibilidad operativa.
+- No se alteraron transiciones, activacion de versiones ni reglas documentales existentes.
+
+Diseñador y registro:
+- La referencia interna `Futura Fase 2` se sustituyo por `Proximamente`.
+- El Diseñador conserva explicacion, objetivo y boton deshabilitado, sin agregar funcionalidad.
+- El alta deja de mostrar el campo no persistente de area responsable y elimina mensajes tecnicos sobre modelo, backend o persistencia.
+- Cuando el area no tiene informacion disponible en vistas de lectura se presenta como `Pendiente de asignacion`.
+
+Archivos modificados por la Fase 1.2:
+- `frontend/src/pages/DocumentLibraryPage.jsx`
+- `frontend/src/styles/global.css`
+- `docs/BACKUP_ESTADO_ACTUAL.md`
+
+Restricciones conservadas:
+- No se modifico backend, modelos, schemas, servicios, routers, permisos, migraciones o base de datos.
+- No se conectaron Hojas de Campo, Cotizaciones, ETS, Certificados u otros modulos.
+- No se construyeron Diseñador, Elementos Documentales, renderizadores o snapshots.
+- No se instalaron librerias.
+
+Validacion ejecutada:
+- `npm run build` en frontend -> OK con la advertencia no bloqueante conocida de chunk mayor a 500 kB.
+- `git diff --check` focalizado en los archivos de esta fase -> OK.
+- `git diff --check` global conserva reportes de espacios finales preexistentes en cambios locales ajenos a Control Documental; no se modificaron para respetar el alcance.
+- La revision automatizada en navegador local no pudo ejecutarse porque la politica del navegador bloquea el servidor `127.0.0.1:5174`; no se intento omitir autenticacion ni alterar datos.
+
+Declaracion de cierre:
+- Control Documental V1 queda sellado y estable, listo para convertirse en la base documental del ERP MYC.

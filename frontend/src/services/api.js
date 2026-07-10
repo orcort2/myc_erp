@@ -500,6 +500,12 @@ export async function updateServiceOrder(serviceOrderId, payload) {
   });
 }
 
+export async function confirmServiceOrderSignatures(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/confirm-signatures`, {
+    method: 'POST'
+  });
+}
+
 export async function deleteServiceOrder(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}`, {
     method: 'DELETE'

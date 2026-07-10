@@ -64,7 +64,7 @@ export default function SignaturePad({
   }
 
   return (
-    <article className="ets-signature-card signature-pad-card">
+    <article className="signature-pad-card">
       <div className="ets-signature-card__header">
         <div className="signature-pad-card__status">
           <span>{label}</span>
