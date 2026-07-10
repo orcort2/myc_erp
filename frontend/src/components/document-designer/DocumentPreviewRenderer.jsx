@@ -3,6 +3,7 @@ import mycLogo from '../../assets/myc-logo.png';
 import {
   mmToPx,
   normalizeDocumentDefinition,
+  pxToMm,
   validateDocumentDefinition,
 } from './documentDesignerModel.js';
 
@@ -85,18 +86,107 @@ function buildTextStyle(element) {
   };
 }
 
-function getInteractiveProps(element, isSelected, onSelectElement) {
+function SelectionHandles({ visible }) {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <>
+      <span className="mde-selection-handle is-top-left" aria-hidden="true" />
+      <span className="mde-selection-handle is-top-right" aria-hidden="true" />
+      <span className="mde-selection-handle is-bottom-left" aria-hidden="true" />
+      <span className="mde-selection-handle is-bottom-right" aria-hidden="true" />
+    </>
+  );
+}
+
+function createDragHandler({
+  element,
+  page,
+  zoom,
+  onSelectElement,
+  onMoveElement,
+}) {
+  return (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.stopPropagation();
+    onSelectElement?.(element.id);
+
+    if (element.locked || !onMoveElement) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const startClientX = event.clientX;
+    const startClientY = event.clientY;
+    const startX = Number(element.x) || 0;
+    const startY = Number(element.y) || 0;
+    const safeZoom = Math.max(0.01, Number(zoom) || 1);
+
+    const maxX = Math.max(0, Number(page.width) - Number(element.width || 0));
+    const maxY = Math.max(0, Number(page.height) - Number(element.height || 0));
+
+    function handlePointerMove(pointerEvent) {
+      const deltaXmm = pxToMm((pointerEvent.clientX - startClientX) / safeZoom);
+      const deltaYmm = pxToMm((pointerEvent.clientY - startClientY) / safeZoom);
+
+      const nextX = Math.min(maxX, Math.max(0, startX + deltaXmm));
+      const nextY = Math.min(maxY, Math.max(0, startY + deltaYmm));
+
+      onMoveElement(element.id, {
+        x: Number(nextX.toFixed(2)),
+        y: Number(nextY.toFixed(2)),
+      });
+    }
+
+    function handlePointerUp() {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      document.body.classList.remove('is-mde-dragging');
+    }
+
+    document.body.classList.add('is-mde-dragging');
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  };
+}
+
+function getInteractiveProps({
+  element,
+  page,
+  zoom,
+  isSelected,
+  onSelectElement,
+  onMoveElement,
+}) {
   return {
-    className: `mde-preview-object${isSelected ? ' is-selected' : ''}`,
+    className: `mde-preview-object${isSelected ? ' is-selected' : ''}${
+      element.locked ? ' is-locked' : ''
+    }`,
     'data-object-id': element.id,
     'data-object-type': element.type,
     role: 'button',
-    tabIndex: element.locked ? -1 : 0,
+    tabIndex: 0,
     'aria-pressed': isSelected,
+    'aria-label': `${element.type}: ${element.id}`,
     onClick: (event) => {
       event.stopPropagation();
       onSelectElement?.(element.id);
     },
+    onPointerDown: createDragHandler({
+      element,
+      page,
+      zoom,
+      onSelectElement,
+      onMoveElement,
+    }),
     onKeyDown: (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
@@ -107,12 +197,9 @@ function getInteractiveProps(element, isSelected, onSelectElement) {
   };
 }
 
-function TextObject({ element, content, isSelected, onSelectElement }) {
-  const interactiveProps = getInteractiveProps(
-    element,
-    isSelected,
-    onSelectElement,
-  );
+function TextObject(props) {
+  const { element, content, isSelected } = props;
+  const interactiveProps = getInteractiveProps(props);
 
   return (
     <div
@@ -121,11 +208,13 @@ function TextObject({ element, content, isSelected, onSelectElement }) {
       style={buildTextStyle(element)}
     >
       {String(content ?? '')}
+      <SelectionHandles visible={isSelected} />
     </div>
   );
 }
 
-function ImageObject({ element, isSelected, onSelectElement }) {
+function ImageObject(props) {
+  const { element, isSelected } = props;
   const source =
     element.source_type === 'asset'
       ? ASSET_REGISTRY[element.source]
@@ -139,14 +228,10 @@ function ImageObject({ element, isSelected, onSelectElement }) {
     opacity: Number.isFinite(Number(element.opacity))
       ? Number(element.opacity)
       : 1,
-    overflow: 'hidden',
+    overflow: 'visible',
   };
 
-  const interactiveProps = getInteractiveProps(
-    element,
-    isSelected,
-    onSelectElement,
-  );
+  const interactiveProps = getInteractiveProps(props);
 
   if (!source) {
     return (
@@ -156,6 +241,7 @@ function ImageObject({ element, isSelected, onSelectElement }) {
         style={style}
       >
         Imagen no disponible
+        <SelectionHandles visible={isSelected} />
       </div>
     );
   }
@@ -178,22 +264,20 @@ function ImageObject({ element, isSelected, onSelectElement }) {
           pointerEvents: 'none',
         }}
       />
+      <SelectionHandles visible={isSelected} />
     </div>
   );
 }
 
-function LineObject({ element, isSelected, onSelectElement }) {
+function LineObject(props) {
+  const { element, isSelected } = props;
   const isVertical = element.direction === 'vertical';
   const strokeWidth = Math.max(
     1,
     mmToPx(Number(element.stroke_width) || 0.3),
   );
 
-  const interactiveProps = getInteractiveProps(
-    element,
-    isSelected,
-    onSelectElement,
-  );
+  const interactiveProps = getInteractiveProps(props);
 
   return (
     <div
@@ -202,6 +286,7 @@ function LineObject({ element, isSelected, onSelectElement }) {
       style={{
         ...buildCommonElementStyle(element),
         display: element.visible === false ? 'none' : 'block',
+        overflow: 'visible',
       }}
     >
       <div
@@ -219,17 +304,15 @@ function LineObject({ element, isSelected, onSelectElement }) {
               }
         }
       />
+      <SelectionHandles visible={isSelected} />
     </div>
   );
 }
 
-function RectangleObject({ element, isSelected, onSelectElement }) {
+function RectangleObject(props) {
+  const { element, isSelected } = props;
   const style = element.style || {};
-  const interactiveProps = getInteractiveProps(
-    element,
-    isSelected,
-    onSelectElement,
-  );
+  const interactiveProps = getInteractiveProps(props);
 
   return (
     <div
@@ -243,19 +326,19 @@ function RectangleObject({ element, isSelected, onSelectElement }) {
           mmToPx(Number(style.stroke_width) || 0.3),
         )}px ${style.stroke_style || 'solid'} ${style.stroke_color || '#111827'}`,
         borderRadius: `${mmToPx(Number(style.border_radius) || 0)}px`,
+        overflow: 'visible',
       }}
-    />
+    >
+      <SelectionHandles visible={isSelected} />
+    </div>
   );
 }
 
-function SignatureLineObject({ element, isSelected, onSelectElement }) {
+function SignatureLineObject(props) {
+  const { element, isSelected } = props;
   const style = element.style || {};
   const label = element.label || 'Firma';
-  const interactiveProps = getInteractiveProps(
-    element,
-    isSelected,
-    onSelectElement,
-  );
+  const interactiveProps = getInteractiveProps(props);
 
   return (
     <div
@@ -271,6 +354,7 @@ function SignatureLineObject({ element, isSelected, onSelectElement }) {
         fontSize: toCssFontSize(style.font_size || 9),
         color: style.color || '#111827',
         textAlign: style.text_align || 'center',
+        overflow: 'visible',
       }}
     >
       <div className="mde-preview-signature-space" style={{ flex: 1, minHeight: 0 }} />
@@ -300,39 +384,48 @@ function SignatureLineObject({ element, isSelected, onSelectElement }) {
       {element.show_date ? (
         <span className="mde-preview-signature-meta">Fecha</span>
       ) : null}
+
+      <SelectionHandles visible={isSelected} />
     </div>
   );
 }
 
-function UnsupportedObject({ element, isSelected, onSelectElement }) {
-  const interactiveProps = getInteractiveProps(
-    element,
-    isSelected,
-    onSelectElement,
-  );
+function UnsupportedObject(props) {
+  const { element, isSelected } = props;
+  const interactiveProps = getInteractiveProps(props);
 
   return (
     <div
       {...interactiveProps}
       className={`${interactiveProps.className} mde-preview-object--missing`}
-      style={buildCommonElementStyle(element)}
+      style={{
+        ...buildCommonElementStyle(element),
+        overflow: 'visible',
+      }}
     >
       Tipo no renderizado: {element.type}
+      <SelectionHandles visible={isSelected} />
     </div>
   );
 }
 
 function PreviewObject({
   element,
+  page,
   definition,
   data,
+  zoom,
   selectedElementId,
   onSelectElement,
+  onMoveElement,
 }) {
   const commonProps = {
     element,
+    page,
+    zoom,
     isSelected: selectedElementId === element.id,
     onSelectElement,
+    onMoveElement,
   };
 
   switch (element.type) {
@@ -372,6 +465,7 @@ function DocumentPage({
   zoom,
   selectedElementId,
   onSelectElement,
+  onMoveElement,
   onClearSelection,
 }) {
   const widthPx = mmToPx(page.width);
@@ -430,10 +524,13 @@ function DocumentPage({
             <PreviewObject
               key={element.id}
               element={element}
+              page={page}
               definition={definition}
               data={data}
+              zoom={zoom}
               selectedElementId={selectedElementId}
               onSelectElement={onSelectElement}
+              onMoveElement={onMoveElement}
             />
           ))}
       </article>
@@ -448,6 +545,7 @@ export default function DocumentPreviewRenderer({
   showValidation = true,
   selectedElementId = null,
   onSelectElement,
+  onMoveElement,
   onClearSelection,
 }) {
   const normalizedDefinition = normalizeDocumentDefinition(definition);
@@ -497,6 +595,7 @@ export default function DocumentPreviewRenderer({
             zoom={safeZoom}
             selectedElementId={selectedElementId}
             onSelectElement={onSelectElement}
+            onMoveElement={onMoveElement}
             onClearSelection={onClearSelection}
           />
         ))}

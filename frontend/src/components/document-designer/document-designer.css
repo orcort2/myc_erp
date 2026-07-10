@@ -519,3 +519,82 @@
     padding: 24px;
   }
 }
+
+/* MDD Sprint 3.1: manipulación directa */
+.mde-preview-object {
+  touch-action: none;
+}
+
+.mde-preview-object:not(.is-locked) {
+  cursor: grab;
+}
+
+.mde-preview-object:not(.is-locked):active,
+body.is-mde-dragging .mde-preview-object.is-selected {
+  cursor: grabbing;
+}
+
+.mde-preview-object.is-locked {
+  cursor: not-allowed;
+}
+
+body.is-mde-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.mde-preview-object.is-selected {
+  overflow: visible !important;
+}
+
+.mde-selection-handle {
+  background: #ffffff;
+  border: 1.5px solid #0f6fae;
+  border-radius: 2px;
+  box-sizing: border-box;
+  height: 8px;
+  pointer-events: none;
+  position: absolute;
+  width: 8px;
+  z-index: 10001;
+}
+
+.mde-selection-handle.is-top-left {
+  left: -5px;
+  top: -5px;
+}
+
+.mde-selection-handle.is-top-right {
+  right: -5px;
+  top: -5px;
+}
+
+.mde-selection-handle.is-bottom-left {
+  bottom: -5px;
+  left: -5px;
+}
+
+.mde-selection-handle.is-bottom-right {
+  bottom: -5px;
+  right: -5px;
+}
+
+.mde-preview-object.is-locked.is-selected {
+  border-style: dashed;
+}
+
+.mde-preview-object.is-locked.is-selected::before {
+  background: rgba(15, 111, 174, 0.9);
+  border-radius: 999px;
+  color: #ffffff;
+  content: 'Bloqueado';
+  font-size: 8px;
+  font-weight: 700;
+  left: 0;
+  padding: 2px 5px;
+  position: absolute;
+  top: -18px;
+  white-space: nowrap;
+  z-index: 10002;
+}
+

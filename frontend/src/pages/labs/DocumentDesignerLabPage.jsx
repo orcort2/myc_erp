@@ -110,6 +110,22 @@ export default function DocumentDesignerLabPage() {
     );
   }
 
+  function handleMoveElement(elementId, position) {
+    setDocumentDefinition((current) =>
+      updateElementById(current, elementId, (element) => {
+        if (element.locked) {
+          return element;
+        }
+
+        return {
+          ...element,
+          x: position.x,
+          y: position.y,
+        };
+      }),
+    );
+  }
+
   function handleFitDocument() {
     const canvasWidth = canvasAreaRef.current?.clientWidth || 0;
     const page = documentDefinition.pages?.[0];
@@ -224,6 +240,7 @@ export default function DocumentDesignerLabPage() {
               zoom={zoom}
               selectedElementId={selectedElementId}
               onSelectElement={setSelectedElementId}
+              onMoveElement={handleMoveElement}
               onClearSelection={() => setSelectedElementId(null)}
             />
           </div>
