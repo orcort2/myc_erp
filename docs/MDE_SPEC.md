@@ -716,3 +716,11 @@ snapshots;
 compatibilidad histórica;
 validación de bindings;
 generación reproducible.
+
+31. Especialización oficial para Hojas de Campo
+
+La estructura madre `field-sheet-base`, el contrato del Catálogo Maestro de Campos, el inventario canónico v1, los roles iniciales de medición, los alias legacy y las brechas verificadas del sistema actual se definen en:
+
+`docs/FIELD_SHEET_FIELD_REGISTRY.md`
+
+Esta definición es arquitectónica. No sustituye todavía los contratos operativos, snapshots, payloads, plantillas activas ni renderizadores PDF de Hojas de Campo.

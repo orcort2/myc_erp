@@ -124,6 +124,9 @@ class FieldSheetTemplateCreate(BaseModel):
     pdf_config: dict[str, Any] = Field(default_factory=dict)
     permissions_config: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    signature_layout: dict[str, Any] = Field(default_factory=dict)
+    pagination: dict[str, Any] = Field(default_factory=dict)
+    automation: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
@@ -147,6 +150,9 @@ class FieldSheetTemplateUpdate(BaseModel):
     pdf_config: dict[str, Any] | None = None
     permissions_config: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
+    signature_layout: dict[str, Any] | None = None
+    pagination: dict[str, Any] | None = None
+    automation: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -190,5 +196,8 @@ class FieldSheetTemplateRead(BaseModel):
     pdf_config: dict[str, Any] = Field(default_factory=dict)
     permissions_config: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    signature_layout: dict[str, Any] = Field(default_factory=dict)
+    pagination: dict[str, Any] = Field(default_factory=dict)
+    automation: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.certificate import Certificate
 from app.models.equipment import Equipment
-from app.models.field_sheet import FieldSheet, FieldSheetResult
+from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSignature
 from app.models.reference_standard import FieldSheetReferenceStandard, ReferenceStandard
 from app.models.reference_standard_certificate import ReferenceStandardCertificate
 from app.models.service_order import ServiceOrder
@@ -15,6 +16,7 @@ from app.models.calibration_procedure import CalibrationProcedure
 from app.schemas.field_sheet import (
     FieldSheetCreate,
     FieldSheetResultUpdate,
+    FieldSheetSignatureUpdate,
     FieldSheetStatusChange,
     FieldSheetUpdate,
 )
@@ -24,6 +26,10 @@ from app.services.field_sheet_templates import (
     build_default_result_rows,
     get_field_sheet_template,
     get_template_snapshot,
+)
+from app.services.institutional_configurations import (
+    get_or_create_institutional_configuration,
+    institutional_snapshot,
 )
 FIELD_SHEET_REFERENCE_USAGE_ROLES = {
     "primary",
@@ -101,6 +107,7 @@ def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
         "technician_notes": field_sheet.technician_notes,
         "template_definition": field_sheet.template_definition,
         "template_definition_version": field_sheet.template_definition_version,
+        "institutional_snapshot": field_sheet.institutional_snapshot_json,
         "certificate_client_mode": field_sheet.certificate_client_mode,
         "certificate_client_company": field_sheet.certificate_client_company,
         "certificate_client_attention": field_sheet.certificate_client_attention,
@@ -108,6 +115,19 @@ def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
         "apply_certificate_client_to_order": field_sheet.apply_certificate_client_to_order,
         "reserved_certificate_folio": field_sheet.reserved_certificate_folio,
         "results_rows": _serialize_result_rows(field_sheet.results_rows),
+        "signatures": [
+            {
+                "id": signature.id,
+                "role": signature.role,
+                "display_label": signature.display_label,
+                "name": signature.name,
+                "signature_data": signature.signature_data,
+                "signed_at": signature.signed_at.isoformat() if signature.signed_at else None,
+                "user_id": signature.user_id,
+                "position": signature.position,
+            }
+            for signature in field_sheet.signatures
+        ],
         "reference_standards": [
             {
                 "reference_standard_id": link.reference_standard_id,
@@ -125,9 +145,10 @@ def _ensure_active_equipment(db: Session, equipment_id: int) -> Equipment:
         select(Equipment)
         .where(Equipment.id == equipment_id, Equipment.is_active.is_(True))
         .options(
-            selectinload(Equipment.service_order),
+            selectinload(Equipment.service_order).selectinload(ServiceOrder.client),
+            selectinload(Equipment.service_order).selectinload(ServiceOrder.quotation),
             selectinload(Equipment.work_order),
-            )
+        )
             
     )
     if equipment is None:
@@ -168,6 +189,23 @@ def _inherit_certificate_client_from_order(
         "certificate_client_address": previous_sheet.certificate_client_address,
         "apply_certificate_client_to_order": True,
     }
+
+
+def _client_address(client) -> str | None:
+    parts = [
+        client.street,
+        client.exterior_number,
+        client.interior_number,
+        client.neighborhood,
+        client.locality,
+        client.municipality,
+        client.city,
+        client.state,
+        client.postal_code,
+        client.country,
+    ]
+    value = ", ".join(str(part).strip() for part in parts if part and str(part).strip())
+    return value or None
 
 
 def _ensure_no_active_field_sheet(db: Session, equipment_id: int) -> None:
@@ -324,6 +362,54 @@ def _apply_results_updates(field_sheet: FieldSheet, results_rows: list[FieldShee
     field_sheet.results_rows = new_rows
 
 
+def _default_signature_slots(template_definition: dict, field_sheet: FieldSheet) -> list[FieldSheetSignature]:
+    slots = template_definition.get("signature_layout", {}).get("slots") or [
+        {"role": "calibrated_by", "display_label": "Calibró"},
+        {"role": "reviewed_by", "display_label": "Revisó"},
+        {"role": "report_made_by", "display_label": "Elaboró informe"},
+    ]
+    legacy_names = {
+        "calibrated_by": field_sheet.calibrated_by,
+        "reviewed_by": field_sheet.reviewed_by,
+        "report_made_by": field_sheet.report_made_by,
+    }
+    return [
+        FieldSheetSignature(
+            role=slot["role"],
+            display_label=slot.get("display_label") or slot["role"],
+            name=legacy_names.get(slot["role"]),
+            position=index,
+        )
+        for index, slot in enumerate(slots)
+    ]
+
+
+def _apply_signature_updates(
+    field_sheet: FieldSheet,
+    signatures: list[FieldSheetSignatureUpdate],
+) -> None:
+    existing_by_id = {signature.id: signature for signature in field_sheet.signatures}
+    existing_by_role = {signature.role: signature for signature in field_sheet.signatures}
+    next_signatures: list[FieldSheetSignature] = []
+    for index, payload in enumerate(signatures):
+        signature = existing_by_id.get(payload.id) if payload.id is not None else None
+        signature = signature or existing_by_role.get(payload.role)
+        values = payload.model_dump(exclude={"id"})
+        values["position"] = values.get("position", index)
+        if signature is None:
+            signature = FieldSheetSignature(**values)
+        else:
+            for key, value in values.items():
+                setattr(signature, key, value)
+        next_signatures.append(signature)
+    field_sheet.signatures = next_signatures
+
+    names_by_role = {signature.role: signature.name for signature in next_signatures}
+    field_sheet.calibrated_by = names_by_role.get("calibrated_by", field_sheet.calibrated_by)
+    field_sheet.reviewed_by = names_by_role.get("reviewed_by", field_sheet.reviewed_by)
+    field_sheet.report_made_by = names_by_role.get("report_made_by", field_sheet.report_made_by)
+
+
 def _first_current_certificate(standard: ReferenceStandard) -> ReferenceStandardCertificate | None:
     current = [
         certificate
@@ -403,6 +489,7 @@ def list_field_sheets(
         select(FieldSheet)
         .options(
             selectinload(FieldSheet.results_rows),
+            selectinload(FieldSheet.signatures),
             selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.client),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.quotation),
@@ -429,6 +516,7 @@ def get_field_sheet(db: Session, field_sheet_id: int) -> FieldSheet:
         .where(FieldSheet.id == field_sheet_id)
         .options(
             selectinload(FieldSheet.results_rows),
+            selectinload(FieldSheet.signatures),
             selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.client),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.quotation),
@@ -453,14 +541,31 @@ def create_field_sheet(
     _ensure_no_active_field_sheet(db, payload.equipment_id)
     service_order: ServiceOrder = equipment.service_order
     _ensure_calibration_procedure(db, payload.calibration_procedure_id)
-    template_definition, template_version = get_template_snapshot(db, payload.template_key)
+    if payload.template_snapshot is not None:
+        template_definition = deepcopy(payload.template_snapshot)
+        snapshot_key = template_definition.get("template_key") or template_definition.get("key")
+        if snapshot_key != payload.template_key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="La clave de la plantilla no coincide con su snapshot",
+            )
+        template_version = int(payload.template_version or template_definition.get("version") or 1)
+        template_definition["template_key"] = payload.template_key
+        template_definition["version"] = template_version
+    else:
+        template_definition, template_version = get_template_snapshot(db, payload.template_key)
+    institution = get_or_create_institutional_configuration(db)
 
     field_sheet = FieldSheet(
         **payload.model_dump(
             exclude={
                 "results_rows",
                 "reference_standards",
+                "signatures",
                 "template_key",
+                "template_version",
+                "template_snapshot",
+                "work_order_id",
                 "reception_date",
                 "calibration_date",
                 "purchase_order_or_quotation",
@@ -469,6 +574,7 @@ def create_field_sheet(
         template_key=payload.template_key,
         template_definition_json=template_definition,
         template_definition_version=template_version,
+        institutional_snapshot_json=institutional_snapshot(institution),
         status="draft",
         work_order_id=payload.work_order_id or equipment.work_order_id,
         work_order_number=(
@@ -484,16 +590,27 @@ def create_field_sheet(
         or (service_order.quotation.folio if service_order.quotation else None),
     )
     if payload.certificate_client_mode == "billing":
-        inherited = _inherit_certificate_client_from_order(
-            db,
-            service_order_id=service_order.id,
-        )
-        for key, value in inherited.items():
-            setattr(field_sheet, key, value)
+        client = service_order.client
+        if field_sheet.company is None:
+            field_sheet.company = client.commercial_name or client.legal_name
+        if field_sheet.address is None:
+            field_sheet.address = _client_address(client)
+    else:
+        if field_sheet.company is None:
+            field_sheet.company = payload.certificate_client_company
+        if field_sheet.address is None:
+            field_sheet.address = payload.certificate_client_address
+    if field_sheet.initial_condition is None:
+        field_sheet.initial_condition = equipment.initial_condition
     field_sheet.results_rows = (
         [FieldSheetResult(**row.model_dump()) for row in payload.results_rows]
         if payload.results_rows
         else build_default_result_rows(template_definition)
+    )
+    field_sheet.signatures = (
+        [FieldSheetSignature(**signature.model_dump()) for signature in payload.signatures]
+        if payload.signatures
+        else _default_signature_slots(template_definition, field_sheet)
     )
     resolved_standards = _resolve_reference_standards(db, payload.reference_standards)
     _apply_reference_standard_updates(field_sheet, payload.reference_standards, resolved_standards)
@@ -552,7 +669,10 @@ def update_field_sheet(
         )
 
     previous_values = _serialize_field_sheet(field_sheet)
-    updates = payload.model_dump(exclude_unset=True, exclude={"results_rows", "reference_standards"})
+    updates = payload.model_dump(
+        exclude_unset=True,
+        exclude={"results_rows", "reference_standards", "signatures"},
+    )
     if "calibration_procedure_id" in updates:
         _ensure_calibration_procedure(db, updates["calibration_procedure_id"])
     template_changed = False
@@ -576,6 +696,8 @@ def update_field_sheet(
 
     if payload.results_rows is not None:
         _apply_results_updates(field_sheet, payload.results_rows)
+    if payload.signatures is not None:
+        _apply_signature_updates(field_sheet, payload.signatures)
     if payload.reference_standards is not None:
         previous_links = _serialize_field_sheet(field_sheet)["reference_standards"]
         resolved_standards = _resolve_reference_standards(db, payload.reference_standards)

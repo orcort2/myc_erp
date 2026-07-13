@@ -23,37 +23,43 @@ FieldSheetStatus = Literal[
 ]
 
 FieldSheetTemplateKey = Literal[
-    "anemometro",
-    "electrica",
-    "bascula",
-    "cronometro",
-    "dimensional",
-    "dinamometro",
-    "durometro",
-    "luxometro",
-    "manometro",
-    "multimetro",
-    "peso_patron",
-    "sonometro",
-    "sonido",
-    "temperatura",
-    "termometro",
-    "termohigrometro",
-    "transductor_presion",
-    "torquimetro",
-    "tacometro",
-    "volumen",
-    "masa",
-    "balanza",
-    "regla",
-    "flexometro",
-    "vernier",
-    "micrometro",
-    "general",
-    "luxometro",
-    "peso_patron",
-    "valvula",
+    "anemometro", "angulimetro", "bascula", "calibradores", "cronometro",
+    "detector_gases", "dimensional", "electrica", "flujo", "general",
+    "maestro_altura", "par_torsional", "pesas", "presion", "reglas",
+    "sonido", "tacometro", "temperatura", "tld_6_canales", "tld",
+    "valvula_seguridad", "verificacion_equipos", "copa",
+    # Claves históricas conservadas para lectura y compatibilidad.
+    "dinamometro", "durometro", "luxometro", "manometro", "multimetro",
+    "peso_patron", "sonometro", "termometro", "termohigrometro",
+    "transductor_presion", "torquimetro", "volumen", "masa", "balanza",
+    "regla", "flexometro", "vernier", "micrometro", "valvula",
 ]
+
+
+class FieldSheetSignatureBase(BaseModel):
+    role: str = Field(min_length=1, max_length=80)
+    display_label: str = Field(min_length=1, max_length=180)
+    name: str | None = Field(default=None, max_length=180)
+    signature_data: str | None = None
+    signed_at: datetime | None = None
+    user_id: int | None = None
+    position: int = Field(default=0, ge=0)
+
+
+class FieldSheetSignatureCreate(FieldSheetSignatureBase):
+    pass
+
+
+class FieldSheetSignatureUpdate(FieldSheetSignatureBase):
+    id: int | None = None
+
+
+class FieldSheetSignatureRead(FieldSheetSignatureBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    updated_at: datetime
 
 
 class FieldSheetResultBase(BaseModel):
@@ -125,10 +131,12 @@ class FieldSheetBase(BaseModel):
     apply_certificate_client_to_order: bool = False
     results_rows: list[FieldSheetResultCreate] = Field(default_factory=list)
     reference_standards: list[FieldSheetReferenceStandardCreate] = Field(default_factory=list)
+    signatures: list[FieldSheetSignatureCreate] = Field(default_factory=list)
 
 
 class FieldSheetCreate(FieldSheetBase):
-    pass
+    template_version: int | None = Field(default=None, ge=1)
+    template_snapshot: dict | None = None
 
 
 class FieldSheetUpdate(BaseModel):
@@ -171,6 +179,7 @@ class FieldSheetUpdate(BaseModel):
     apply_certificate_client_to_order: bool | None = None
     results_rows: list[FieldSheetResultUpdate] | None = None
     reference_standards: list[FieldSheetReferenceStandardCreate] | None = None
+    signatures: list[FieldSheetSignatureUpdate] | None = None
 
 
 class FieldSheetStatusChange(BaseModel):
@@ -194,6 +203,8 @@ class FieldSheetRead(FieldSheetBase):
     reserved_certificate_folio: str | None = None
     template_definition: FieldSheetTemplateRead | dict | None = None
     template_definition_version: int | None = None
+    institutional_snapshot: dict | None = None
     results_rows: list[FieldSheetResultRead] = Field(default_factory=list)
     calibration_procedure: CalibrationProcedureRead | None = None
     reference_standards: list[FieldSheetReferenceStandardRead] = Field(default_factory=list)
+    signatures: list[FieldSheetSignatureRead] = Field(default_factory=list)

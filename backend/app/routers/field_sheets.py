@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.models.user import User
 from app.schemas.field_sheet import (
     FieldSheetCreate,
     FieldSheetRead,
@@ -21,6 +22,7 @@ from app.services.field_sheets import (
     update_field_sheet,
 )
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
+from app.services.auth import require_permission
 
 
 router = APIRouter(prefix="/field-sheets", tags=["field-sheets"])
@@ -32,6 +34,7 @@ def get_field_sheets(
     work_order_id: int | None = Query(default=None),
     include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.read")),
 ) -> list[FieldSheetRead]:
     return list_field_sheets(
         db,
@@ -45,14 +48,16 @@ def get_field_sheets(
 def post_field_sheet(
     payload: FieldSheetCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.create")),
 ) -> FieldSheetRead:
-    return create_field_sheet(db, payload)
+    return create_field_sheet(db, payload, user_id=current_user.id)
 
 
 @router.get("/{field_sheet_id}", response_model=FieldSheetRead)
 def get_field_sheet_by_id(
     field_sheet_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.read")),
 ) -> FieldSheetRead:
     return get_field_sheet(db, field_sheet_id)
 
@@ -61,6 +66,7 @@ def get_field_sheet_by_id(
 def get_field_sheet_pdf(
     field_sheet_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.read")),
 ) -> StreamingResponse:
     pdf_bytes, filename = generate_field_sheet_pdf(db, field_sheet_id)
     return StreamingResponse(
@@ -75,8 +81,9 @@ def patch_field_sheet(
     field_sheet_id: int,
     payload: FieldSheetUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.update")),
 ) -> FieldSheetRead:
-    return update_field_sheet(db, field_sheet_id, payload)
+    return update_field_sheet(db, field_sheet_id, payload, user_id=current_user.id)
 
 
 @router.post("/{field_sheet_id}/complete", response_model=FieldSheetRead)
@@ -84,8 +91,9 @@ def complete_field_sheet_route(
     field_sheet_id: int,
     payload: FieldSheetStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.update")),
 ) -> FieldSheetRead:
-    return complete_field_sheet(db, field_sheet_id, payload)
+    return complete_field_sheet(db, field_sheet_id, payload, user_id=current_user.id)
 
 
 @router.post("/{field_sheet_id}/review", response_model=FieldSheetRead)
@@ -93,14 +101,16 @@ def review_field_sheet_route(
     field_sheet_id: int,
     payload: FieldSheetStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.review")),
 ) -> FieldSheetRead:
-    return review_field_sheet(db, field_sheet_id, payload)
+    return review_field_sheet(db, field_sheet_id, payload, user_id=current_user.id)
 
 
 @router.delete("/{field_sheet_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_field_sheet(
     field_sheet_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.update")),
 ) -> Response:
-    deactivate_field_sheet(db, field_sheet_id)
+    deactivate_field_sheet(db, field_sheet_id, user_id=current_user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -17,6 +17,7 @@ from app.routers import (
     field_sheets,
     health,
     invoices,
+    institutional_configurations,
     metrology,
     modules,
     operational_engines,
@@ -70,6 +71,7 @@ app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
 app.include_router(certificates.router, prefix="/api")
 app.include_router(invoices.router, prefix="/api")
+app.include_router(institutional_configurations.router, prefix="/api")
 app.include_router(client_portal.router, prefix="/api")
 app.include_router(metrology.router, prefix="/api")
 app.include_router(operational_engines.router, prefix="/api")

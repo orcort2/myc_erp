@@ -13,8 +13,10 @@ from pypdf import PdfReader
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.client import Client, ClientContact
+from app.models.client import Client, ClientCertificateProfile, ClientContact
 from app.schemas.client import (
+    ClientCertificateProfileCreate,
+    ClientCertificateProfileUpdate,
     ClientCreate,
     ClientImportConfirm,
     ClientImportPreviewRead,
@@ -72,7 +74,121 @@ def _json_safe(value):
 
 
 def _client_query():
-    return select(Client).options(selectinload(Client.contacts)).order_by(Client.legal_name)
+    return (
+        select(Client)
+        .options(selectinload(Client.contacts), selectinload(Client.certificate_profiles))
+        .order_by(Client.legal_name)
+    )
+
+
+def _certificate_profile_query(client_id: int):
+    return (
+        select(ClientCertificateProfile)
+        .where(ClientCertificateProfile.client_id == client_id)
+        .order_by(ClientCertificateProfile.is_default.desc(), ClientCertificateProfile.label)
+    )
+
+
+def list_client_certificate_profiles(
+    db: Session, client_id: int, *, include_inactive: bool = False
+) -> list[ClientCertificateProfile]:
+    get_client(db, client_id, include_inactive=True)
+    query = _certificate_profile_query(client_id)
+    if not include_inactive:
+        query = query.where(ClientCertificateProfile.is_active.is_(True))
+    return list(db.scalars(query).all())
+
+
+def _clear_default_certificate_profiles(db: Session, client_id: int, except_id: int | None = None) -> None:
+    profiles = db.scalars(_certificate_profile_query(client_id)).all()
+    for profile in profiles:
+        if profile.is_active and profile.id != except_id:
+            profile.is_default = False
+
+
+def create_client_certificate_profile(
+    db: Session,
+    client_id: int,
+    payload: ClientCertificateProfileCreate,
+    *,
+    user_id: int | None = None,
+) -> ClientCertificateProfile:
+    get_client(db, client_id)
+    data = payload.model_dump()
+    if data["is_default"]:
+        _clear_default_certificate_profiles(db, client_id)
+    profile = ClientCertificateProfile(client_id=client_id, **data)
+    db.add(profile)
+    db.flush()
+    write_audit_log(
+        db,
+        action="client.certificate_profile.created",
+        entity="client_certificate_profiles",
+        entity_id=profile.id,
+        user_id=user_id,
+        new_values=_json_safe(data | {"client_id": client_id}),
+    )
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+def update_client_certificate_profile(
+    db: Session,
+    client_id: int,
+    profile_id: int,
+    payload: ClientCertificateProfileUpdate,
+    *,
+    user_id: int | None = None,
+) -> ClientCertificateProfile:
+    get_client(db, client_id, include_inactive=True)
+    profile = db.scalar(
+        _certificate_profile_query(client_id).where(ClientCertificateProfile.id == profile_id)
+    )
+    if profile is None or not profile.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dato para certificado no encontrado")
+    updates = payload.model_dump(exclude_unset=True)
+    previous = {key: getattr(profile, key) for key in updates}
+    if updates.get("is_default"):
+        _clear_default_certificate_profiles(db, client_id, except_id=profile.id)
+    for key, value in updates.items():
+        setattr(profile, key, value)
+    write_audit_log(
+        db,
+        action="client.certificate_profile.updated",
+        entity="client_certificate_profiles",
+        entity_id=profile.id,
+        user_id=user_id,
+        previous_values=_json_safe(previous),
+        new_values=_json_safe(updates),
+    )
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+def deactivate_client_certificate_profile(
+    db: Session, client_id: int, profile_id: int, *, user_id: int | None = None
+) -> None:
+    profile = db.scalar(
+        _certificate_profile_query(client_id).where(ClientCertificateProfile.id == profile_id)
+    )
+    if profile is None or not profile.is_active:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dato para certificado no encontrado")
+    profile.is_active = False
+    profile.is_default = False
+    profile.deleted_at = datetime.now(timezone.utc)
+    profile.deleted_by = user_id
+    write_audit_log(
+        db,
+        action="client.certificate_profile.deactivated",
+        entity="client_certificate_profiles",
+        entity_id=profile.id,
+        user_id=user_id,
+        previous_values={"is_active": True},
+        new_values={"is_active": False},
+    )
+    db.commit()
 
 
 def _clean_text(value: str | None) -> str | None:

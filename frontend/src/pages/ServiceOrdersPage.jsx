@@ -1,5 +1,5 @@
 import { ClipboardList, X } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
@@ -27,6 +27,7 @@ import {
   completeFieldSheet,
   createServiceOrderException,
   createCertificate,
+  createClientCertificateProfile,
   downloadFieldSheetPdf,
   downloadAuthenticatedCertificatePdf,
   downloadWorkOrderPdf,
@@ -76,8 +77,12 @@ import {
   updateFieldSheetResultCell,
   updateFieldSheetResultsRowsForTemplate
 } from '../utils/fieldSheets.js';
-import { fieldSheetTemplateOptions } from '../constants/fieldSheetTemplates.js';
-import { formatDate, getClientDisplayName } from '../utils/formatters.js';
+import {
+  officialFieldSheetTemplateOptions,
+  officialFieldSheetTemplates,
+} from '../constants/officialFieldSheetTemplates.js';
+import { suggestOfficialFieldSheetTemplate } from '../utils/fieldSheetTemplateResolver.js';
+import { formatDate, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 
@@ -180,6 +185,7 @@ function ServiceOrdersPage({ user = null }) {
     clientAcceptanceName: '',
     clientAcceptanceSignature: '',
   });
+  const [signatureLauncherActiveOrderId, setSignatureLauncherActiveOrderId] = useState(null);
   const [isTechnicianPickerOpen, setIsTechnicianPickerOpen] = useState(false);
   const [technicianSearch, setTechnicianSearch] = useState('');
   const [technicianPage, setTechnicianPage] = useState(1);
@@ -189,19 +195,46 @@ function ServiceOrdersPage({ user = null }) {
   const [isEquipmentLimitNoticeOpen, setIsEquipmentLimitNoticeOpen] = useState(false);
   const [isFieldSheetModalOpen, setIsFieldSheetModalOpen] = useState(false);
   const [isFieldSheetCreateModalOpen, setIsFieldSheetCreateModalOpen] = useState(false);
+  const [isCertificateClientModalOpen, setIsCertificateClientModalOpen] = useState(false);
+  const [fieldSheetWorkspaceView, setFieldSheetWorkspaceView] = useState('capture');
+  const [expandedFieldSheetWorkOrders, setExpandedFieldSheetWorkOrders] = useState(() => new Set());
   const [pendingFieldSheetEquipment, setPendingFieldSheetEquipment] = useState(null);
   const [fieldSheetCreateForm, setFieldSheetCreateForm] = useState({
-    templateKey: 'anemometro',
+    templateKey: '',
+    templateSuggestion: '',
+    attention: '',
     certificateClientMode: 'billing',
     certificateClientCompany: '',
-    certificateClientAttention: '',
     certificateClientAddress: '',
     applyCertificateClientToOrder: true,
   });
+  const [certificateClientDraft, setCertificateClientDraft] = useState({
+    profileId: '',
+    label: '',
+    company: '',
+    address: '',
+    attention: '',
+    saveToClient: true,
+    isDefault: false,
+  });
   const [isSaving, setIsSaving] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState('idle');
+  const [autosaveError, setAutosaveError] = useState('');
+  const [lastAutosaveAt, setLastAutosaveAt] = useState(null);
+
+  const autosaveRequestIdRef = useRef(0);
+  const autosaveTimerRef = useRef(null);
+
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
+
+  const {
+    confirmDialog,
+    openConfirm,
+    closeConfirm,
+    handleConfirm,
+  } = useConfirmDialog();
+
   const canUseTechnicalActions = hasStageAccess(user, 'technical');
   const canUseCaptureActions = hasStageAccess(user, 'capture');
   const canUseQualityActions = hasStageAccess(user, 'quality');
@@ -228,7 +261,10 @@ function ServiceOrdersPage({ user = null }) {
   );
 
   const fieldSheetTemplatesByKey = useMemo(
-    () => Object.fromEntries((fieldSheetTemplates || []).map((template) => [template.template_key || template.key, template])),
+    () => ({
+      ...Object.fromEntries((fieldSheetTemplates || []).map((template) => [template.template_key || template.key, template])),
+      ...officialFieldSheetTemplates,
+    }),
     [fieldSheetTemplates]
   );
 
@@ -346,6 +382,35 @@ function ServiceOrdersPage({ user = null }) {
     return selectedFieldSheets.filter((sheet) => sheetMatchesWorkOrderContext(sheet, workOrderContextFromWorkOrder(workOrder)));
   }
 
+  function getFieldSheetWorkOrderMetrics(workOrder) {
+    const items = getWorkOrderEquipment(workOrder);
+    const rows = items.map((item) => ({ item, sheet: fieldSheetsByEquipmentId.get(item.id) ?? null }));
+    const created = rows.filter((row) => row.sheet).length;
+    const approved = rows.filter((row) => row.sheet?.status === 'approved').length;
+    const capture = rows.filter((row) => ['draft', 'in_progress', 'returned_to_technician', 'rejected'].includes(row.sheet?.status)).length;
+    const review = rows.filter((row) => ['completed', 'under_review'].includes(row.sheet?.status)).length;
+    const pending = Math.max(items.length - created, 0);
+    return {
+      rows,
+      equipmentCount: items.length,
+      created,
+      approved,
+      capture,
+      review,
+      pending,
+      progress: items.length ? Math.round((created / items.length) * 100) : 0,
+    };
+  }
+
+  function toggleFieldSheetWorkOrder(workOrderId) {
+    setExpandedFieldSheetWorkOrders((current) => {
+      const next = new Set(current);
+      if (next.has(workOrderId)) next.delete(workOrderId);
+      else next.add(workOrderId);
+      return next;
+    });
+  }
+
   function getWorkOrderCertificates(workOrder) {
     const context = workOrderContextFromWorkOrder(workOrder);
     return selectedCertificates.filter((certificate) => {
@@ -375,6 +440,11 @@ function ServiceOrdersPage({ user = null }) {
   }, [relatedWorkOrders, selectedEquipment, selectedOrder]);
 
   const hasAvailableWorkOrderCapacity = workOrderCapacitySummary.totalAvailable > 0;
+  const shouldShowSignatureLauncher = Boolean(
+    selectedOrder &&
+      (selectedOrder.has_pending_signature_work_orders ||
+        signatureLauncherActiveOrderId === selectedOrder.id)
+  );
 
   const filteredSelectedEquipment = useMemo(() => {
     return selectedEquipment.filter((item) => {
@@ -675,13 +745,6 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   function renderSignatureLauncher() {
-    if (
-      !selectedOrder ||
-      !selectedOrder.has_pending_signature_work_orders
-    ) {
-      return null;
-    }
-
     return (
       <aside className="ets-signature-launcher" aria-label="Firmas del ETS">
         <div className="ets-signature-launcher__copy">
@@ -695,6 +758,11 @@ function ServiceOrdersPage({ user = null }) {
           updateSignatureForm={updateSignatureForm}
           saveSignatures={saveSignatures}
           isSaving={isSaving}
+          onLifecycleChange={(isActive) => {
+            setSignatureLauncherActiveOrderId(
+              isActive ? selectedOrder.id : null,
+            );
+          }}
         />
       </aside>
     );
@@ -790,6 +858,9 @@ function ServiceOrdersPage({ user = null }) {
         number: options.workOrderNumber ?? null,
         label: `OT-${options.workOrderNumber ?? '-'}`,
       });
+    }
+    if (tab === 'field-sheet') {
+      setFieldSheetWorkspaceView(options.fieldSheetView || 'capture');
     }
     setActiveTab(tab);
   }
@@ -895,6 +966,49 @@ function ServiceOrdersPage({ user = null }) {
     setTechnicianPage(1);
   }, [technicianSearch]);
 
+    useEffect(() => {
+    if (!isDetailOpen || !selectedOrder) {
+      return undefined;
+    }
+
+    const nextPayload = buildOrderUpdatePayload(orderForm);
+    const persistedPayload = buildSelectedOrderPayload(selectedOrder);
+
+    if (orderPayloadsAreEqual(nextPayload, persistedPayload)) {
+      if (autosaveStatus === 'pending') {
+        setAutosaveStatus('saved');
+      }
+
+      return undefined;
+    }
+
+    setAutosaveStatus('pending');
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+    }
+
+    autosaveTimerRef.current = window.setTimeout(() => {
+      saveOrderForm({
+        payload: nextPayload,
+        showNotice: false,
+      });
+    }, 900);
+
+    return () => {
+      if (autosaveTimerRef.current) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+    };
+  }, [
+    orderForm,
+    isDetailOpen,
+    selectedOrder?.id,
+  ]);
+
+
+
   useEffect(() => {
     function handleEscape(event) {
       if (event.key !== 'Escape') return;
@@ -916,6 +1030,16 @@ function ServiceOrdersPage({ user = null }) {
   }, [isDetailOpen, isEquipmentModalOpen, isFieldSheetModalOpen, isTechnicianPickerOpen, selectedEquipmentDetail]);
 
   function openOrderDetail(order) {
+    setSignatureLauncherActiveOrderId(null);
+    setAutosaveStatus('saved');
+    setAutosaveError('');
+    setLastAutosaveAt(null);
+    autosaveRequestIdRef.current += 1;
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
     setSelectedOrder(order);
     setOrderForm({
       agendaDate: order.agenda_date ?? '',
@@ -933,6 +1057,8 @@ function ServiceOrdersPage({ user = null }) {
       clientAcceptanceSignature: order.client_acceptance_signature_data_url ?? '',
     });
     setActiveTab('info');
+    setFieldSheetWorkspaceView('capture');
+    setExpandedFieldSheetWorkOrders(new Set());
     setEtsSearch('');
     setSelectedWorkOrderContext(null);
     setIsAdminActionsOpen(false);
@@ -943,6 +1069,16 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   function closeOrderDetail() {
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+
+    autosaveRequestIdRef.current += 1;
+    setAutosaveStatus('idle');
+    setAutosaveError('');
+    setLastAutosaveAt(null);
+    setSignatureLauncherActiveOrderId(null);
     setIsDetailOpen(false);
     setSelectedOrder(null);
     setSelectedEquipmentForSheet(null);
@@ -972,8 +1108,108 @@ function ServiceOrdersPage({ user = null }) {
     setError('');
   }
 
+    function buildOrderUpdatePayload(form = orderForm) {
+    return {
+      agenda_date: form.agendaDate || null,
+      service_date: form.serviceDate || null,
+      technician_id: form.technicianId
+        ? Number(form.technicianId)
+        : null,
+      requires_payment: Boolean(form.requiresPayment),
+      notes: form.notes.trim() || null,
+    };
+  }
+
+  function buildSelectedOrderPayload(order = selectedOrder) {
+    if (!order) return null;
+
+    return {
+      agenda_date: order.agenda_date || null,
+      service_date: order.service_date || null,
+      technician_id: order.technician_id
+        ? Number(order.technician_id)
+        : null,
+      requires_payment: order.requires_payment !== false,
+      notes: order.notes?.trim() || null,
+    };
+  }
+
+  function orderPayloadsAreEqual(left, right) {
+    if (!left || !right) return false;
+
+    return (
+      left.agenda_date === right.agenda_date &&
+      left.service_date === right.service_date &&
+      left.technician_id === right.technician_id &&
+      left.requires_payment === right.requires_payment &&
+      left.notes === right.notes
+    );
+  }
+
   function updateOrderForm(field, value) {
-    setOrderForm((current) => ({ ...current, [field]: value }));
+    setOrderForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+
+    setAutosaveStatus('pending');
+    setAutosaveError('');
+  }
+
+  async function saveOrderForm({
+    showNotice = false,
+    payload = buildOrderUpdatePayload(),
+  } = {}) {
+    if (!selectedOrder) return null;
+
+    const persistedPayload = buildSelectedOrderPayload(selectedOrder);
+
+    if (orderPayloadsAreEqual(payload, persistedPayload)) {
+      setAutosaveStatus('saved');
+      return selectedOrder;
+    }
+
+    const requestId = autosaveRequestIdRef.current + 1;
+    autosaveRequestIdRef.current = requestId;
+
+    setAutosaveStatus('saving');
+    setAutosaveError('');
+
+    try {
+      const updated = await updateServiceOrder(
+        selectedOrder.id,
+        payload,
+      );
+
+      if (requestId !== autosaveRequestIdRef.current) {
+        return updated;
+      }
+
+      setSelectedOrder(updated);
+
+      setServiceOrders((current) =>
+        current.map((order) =>
+          order.id === updated.id ? updated : order,
+        ),
+      );
+
+      setAutosaveStatus('saved');
+      setLastAutosaveAt(new Date());
+
+      if (showNotice) {
+        setNotice(`Orden ${updated.folio} actualizada`);
+      }
+
+      return updated;
+    } catch (requestError) {
+      if (requestId === autosaveRequestIdRef.current) {
+        setAutosaveStatus('error');
+        setAutosaveError(requestError.message);
+        setError(requestError.message);
+      }
+
+      return null;
+    }
   }
 
   function updateEquipmentForm(field, value) {
@@ -981,24 +1217,23 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   async function handleOrderSubmit(event) {
-    event.preventDefault();
+    event?.preventDefault?.();
+
     if (!selectedOrder) return;
-    setIsSaving(true);
+
+    if (autosaveTimerRef.current) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+
     setError('');
     setNotice('');
+    setIsSaving(true);
+
     try {
-      const updated = await updateServiceOrder(selectedOrder.id, {
-        agenda_date: orderForm.agendaDate || null,
-        service_date: orderForm.serviceDate || null,
-        technician_id: orderForm.technicianId ? Number(orderForm.technicianId) : null,
-        requires_payment: Boolean(orderForm.requiresPayment),
-        notes: orderForm.notes.trim() || null
+      await saveOrderForm({
+        showNotice: true,
       });
-      setSelectedOrder(updated);
-      setNotice(`Orden ${updated.folio} actualizada`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
     } finally {
       setIsSaving(false);
     }
@@ -1008,33 +1243,45 @@ function ServiceOrdersPage({ user = null }) {
     setError('');
     setNotice('');
 
-    const expectedEquipment = safeNumber(
-      selectedOrderMetrics.expectedEquipment
+    const expectedEquipment = Number(
+      selectedOrderMetrics.expectedEquipment ?? 0
     );
-    const registeredEquipment = selectedEquipment.length;
+    const registeredEquipment = Number(selectedEquipment.length ?? 0);
+    const contextualCapacity = selectedWorkOrderContext
+      ? workOrderCapacitySummary.groups.find((workOrder) => {
+          if (selectedWorkOrderContext.id) {
+            return Number(workOrder.id) === Number(selectedWorkOrderContext.id);
+          }
+
+          return String(workOrder.work_order_number ?? '') ===
+            String(selectedWorkOrderContext.number ?? '');
+        })
+      : null;
+    const capacity = Number(
+      contextualCapacity?.limit ?? workOrderCapacitySummary.totalLimit ?? 0
+    );
+    const registered = Number(
+      contextualCapacity?.registered ??
+        workOrderCapacitySummary.totalRegistered ??
+        0
+    );
 
     if (
       !item &&
-      expectedEquipment > 0 &&
-      registeredEquipment >= expectedEquipment
+      ((expectedEquipment > 0 && registeredEquipment >= expectedEquipment) ||
+        (capacity > 0 && registered >= capacity))
     ) {
       setIsEquipmentLimitNoticeOpen(true);
       return;
     }
 
-    if (!item && !hasAvailableWorkOrderCapacity) {
+    if (!item && capacity <= 0) {
       setError('No hay Orden de Trabajo con capacidad disponible.');
       return;
     }
 
-    const contextualWorkOrder = selectedWorkOrderContext?.id
-      ? relatedWorkOrders.find(
-          (workOrder) =>
-            Number(workOrder.id) === Number(selectedWorkOrderContext.id)
-        )
-      : null;
     const preferredWorkOrder = contextualCapacity?.available > 0
-      ? contextualWorkOrder
+      ? contextualCapacity
       : workOrderCapacitySummary.groups.find((workOrder) => workOrder.available > 0) || relatedWorkOrders[0];
     if (item) {
       setEditingEquipmentId(item.id);
@@ -1211,12 +1458,19 @@ function ServiceOrdersPage({ user = null }) {
         .filter((sheet) => sheet.apply_certificate_client_to_order && sheet.certificate_client_mode === 'different')
         .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0))[0];
 
+      const suggestion = suggestOfficialFieldSheetTemplate({
+        instrumentType: item.instrument_type,
+        magnitude: item.magnitude,
+        serviceType: item.service_type,
+        equipmentName: item.name,
+      });
       setPendingFieldSheetEquipment(item);
       setFieldSheetCreateForm({
-        templateKey: 'anemometro',
+        templateKey: suggestion.templateKey,
+        templateSuggestion: suggestion.matchedBy,
+        attention: inheritedCertificateClient?.certificate_client_attention ?? '',
         certificateClientMode: inheritedCertificateClient?.certificate_client_mode ?? 'billing',
         certificateClientCompany: inheritedCertificateClient?.certificate_client_company ?? '',
-        certificateClientAttention: inheritedCertificateClient?.certificate_client_attention ?? '',
         certificateClientAddress: inheritedCertificateClient?.certificate_client_address ?? '',
         applyCertificateClientToOrder: inheritedCertificateClient?.apply_certificate_client_to_order ?? true,
       });
@@ -1226,8 +1480,12 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
-      async function confirmCreateFieldSheet() {
+  async function confirmCreateFieldSheet() {
     if (!pendingFieldSheetEquipment) return;
+    if (!fieldSheetCreateForm.templateKey || !officialFieldSheetTemplates[fieldSheetCreateForm.templateKey]) {
+      setError('No se pudo determinar automáticamente la plantilla. Selecciona una hoja de campo.');
+      return;
+    }
 
     setIsSaving(true);
     setError('');
@@ -1237,9 +1495,12 @@ function ServiceOrdersPage({ user = null }) {
       const sheet = await createFieldSheet({
         equipment_id: pendingFieldSheetEquipment.id,
         template_key: fieldSheetCreateForm.templateKey,
+        template_version: officialFieldSheetTemplates[fieldSheetCreateForm.templateKey].version,
+        template_snapshot: officialFieldSheetTemplates[fieldSheetCreateForm.templateKey],
+        attention: fieldSheetCreateForm.attention.trim() || null,
         certificate_client_mode: fieldSheetCreateForm.certificateClientMode,
         certificate_client_company: fieldSheetCreateForm.certificateClientCompany || null,
-        certificate_client_attention: fieldSheetCreateForm.certificateClientAttention || null,
+        certificate_client_attention: fieldSheetCreateForm.attention.trim() || null,
         certificate_client_address: fieldSheetCreateForm.certificateClientAddress || null,
         apply_certificate_client_to_order: Boolean(fieldSheetCreateForm.applyCertificateClientToOrder),
       });
@@ -1299,6 +1560,96 @@ function ServiceOrdersPage({ user = null }) {
       ...current,
       [field]: value,
     }));
+  }
+
+  function openCertificateClientModal() {
+    setError('');
+    const billingClient = clientsById.get(selectedOrder?.client_id);
+    const profiles = (billingClient?.certificate_profiles ?? []).filter((profile) => profile.is_active !== false);
+    const preferred = profiles.find((profile) => profile.is_default) ?? profiles[0];
+    const hasCurrentValues = Boolean(
+      fieldSheetCreateForm.certificateClientCompany || fieldSheetCreateForm.certificateClientAddress
+    );
+    setFieldSheetCreateForm((current) => ({ ...current, certificateClientMode: 'different' }));
+    setCertificateClientDraft({
+      profileId: hasCurrentValues ? '' : preferred ? String(preferred.id) : '',
+      label: hasCurrentValues ? '' : preferred?.label ?? '',
+      company: hasCurrentValues
+        ? fieldSheetCreateForm.certificateClientCompany
+        : preferred?.company ?? '',
+      address: hasCurrentValues
+        ? fieldSheetCreateForm.certificateClientAddress
+        : preferred?.address ?? '',
+      attention: hasCurrentValues ? fieldSheetCreateForm.attention : preferred?.attention ?? '',
+      saveToClient: !preferred && !hasCurrentValues,
+      isDefault: false,
+    });
+    setIsCertificateClientModalOpen(true);
+  }
+
+  function closeCertificateClientModal() {
+    setIsCertificateClientModalOpen(false);
+    if (!fieldSheetCreateForm.certificateClientCompany || !fieldSheetCreateForm.certificateClientAddress) {
+      setFieldSheetCreateForm((current) => ({ ...current, certificateClientMode: 'billing' }));
+    }
+  }
+
+  function selectCertificateProfile(profileId) {
+    const billingClient = clientsById.get(selectedOrder?.client_id);
+    const profile = (billingClient?.certificate_profiles ?? []).find(
+      (item) => String(item.id) === String(profileId)
+    );
+    setCertificateClientDraft((current) => ({
+      ...current,
+      profileId,
+      label: profile?.label ?? '',
+      company: profile?.company ?? '',
+      address: profile?.address ?? '',
+      attention: profile?.attention ?? '',
+      saveToClient: !profile,
+      isDefault: false,
+    }));
+  }
+
+  async function applyCertificateClientDraft() {
+    const company = certificateClientDraft.company.trim();
+    const address = certificateClientDraft.address.trim();
+    if (!company || !address) {
+      setError('Captura empresa y domicilio para el cliente del certificado.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    try {
+      if (certificateClientDraft.saveToClient && selectedOrder?.client_id) {
+        const savedProfile = await createClientCertificateProfile(selectedOrder.client_id, {
+          label: certificateClientDraft.label.trim() || company,
+          company,
+          address,
+          attention: certificateClientDraft.attention.trim() || null,
+          is_default: Boolean(certificateClientDraft.isDefault),
+        });
+        setClients((current) => current.map((client) => {
+          if (client.id !== selectedOrder.client_id) return client;
+          const profiles = certificateClientDraft.isDefault
+            ? (client.certificate_profiles ?? []).map((profile) => ({ ...profile, is_default: false }))
+            : (client.certificate_profiles ?? []);
+          return { ...client, certificate_profiles: [...profiles, savedProfile] };
+        }));
+      }
+      setFieldSheetCreateForm((current) => ({
+        ...current,
+        certificateClientMode: 'different',
+        certificateClientCompany: company,
+        certificateClientAddress: address,
+        attention: certificateClientDraft.attention.trim(),
+      }));
+      setIsCertificateClientModalOpen(false);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function applyNextCalibrationInterval(months) {
@@ -1450,9 +1801,9 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
-  function openFieldSheetPdf(mode = 'view') {
-    if (!selectedFieldSheet) return;
-    const pdfWindow = window.open(getFieldSheetPdfUrl(selectedFieldSheet.id), '_blank', 'noopener,noreferrer');
+  function openFieldSheetPdf(mode = 'view', sheet = selectedFieldSheet) {
+    if (!sheet) return;
+    const pdfWindow = window.open(getFieldSheetPdfUrl(sheet.id), '_blank', 'noopener,noreferrer');
     if (mode === 'print' && pdfWindow) {
       pdfWindow.addEventListener('load', () => {
         pdfWindow.focus();
@@ -1535,29 +1886,37 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
-  async function reviewCurrentFieldSheet() {
-    if (!selectedFieldSheet) return;
-    if (selectedFieldSheet.status !== 'completed') {
+  async function reviewFieldSheetRecord(sheet) {
+    if (!sheet) return null;
+    if (sheet.status !== 'completed') {
       setError('Solo una hoja completada puede enviarse a revision.');
-      return;
+      return null;
     }
     setIsSaving(true);
     setError('');
     setNotice('');
     try {
-      const reviewed = await reviewFieldSheet(selectedFieldSheet.id);
-      setSelectedFieldSheet(reviewed);
-      setFieldSheetForm(fieldSheetToForm(reviewed));
+      const reviewed = await reviewFieldSheet(sheet.id);
+      if (selectedFieldSheet?.id === reviewed.id) {
+        setSelectedFieldSheet(reviewed);
+        setFieldSheetForm(fieldSheetToForm(reviewed));
+      }
       setFieldSheets((current) =>
         current.map((sheet) => (sheet.id === reviewed.id ? reviewed : sheet))
       );
       setNotice('Hoja de campo enviada a revision');
       await loadServiceOrderData();
+      return reviewed;
     } catch (requestError) {
       setError(requestError.message);
     } finally {
       setIsSaving(false);
     }
+    return null;
+  }
+
+  async function reviewCurrentFieldSheet() {
+    return reviewFieldSheetRecord(selectedFieldSheet);
   }
 
   /* async function createCertificateFromCurrentFieldSheet() {
@@ -2021,6 +2380,52 @@ function ServiceOrdersPage({ user = null }) {
                 Cerrar
               </button>
             </div>
+                        <div
+              aria-live="polite"
+              className={`ets-autosave-status is-${autosaveStatus}`}
+            >
+              <span className="ets-autosave-status__dot" />
+
+              <div>
+                <strong>
+                  {autosaveStatus === 'pending'
+                    ? 'Cambios pendientes'
+                    : autosaveStatus === 'saving'
+                      ? 'Guardando cambios...'
+                      : autosaveStatus === 'saved'
+                        ? 'Cambios guardados'
+                        : autosaveStatus === 'error'
+                          ? 'Error al guardar'
+                          : 'Autosave activo'}
+                </strong>
+
+                <small>
+                  {autosaveStatus === 'error'
+                    ? autosaveError
+                    : lastAutosaveAt
+                      ? `Último guardado: ${lastAutosaveAt.toLocaleTimeString(
+                          'es-MX',
+                          {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          },
+                        )}`
+                      : 'Los cambios se guardan automáticamente'}
+                </small>
+              </div>
+
+              {autosaveStatus === 'error' ? (
+                <button
+                  className="table-button"
+                  disabled={isSaving}
+                  onClick={() => handleOrderSubmit()}
+                  type="button"
+                >
+                  Reintentar
+                </button>
+              ) : null}
+            </div>
 
             <div className="ets-modal-action-ribbon" aria-label="Acciones principales del ETS">
               <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
@@ -2032,8 +2437,19 @@ function ServiceOrdersPage({ user = null }) {
               <button className="table-button" onClick={() => openWorkOrderPdf('print')} type="button">
                 Imprimir
               </button>
-              <button className="primary-button" disabled={isSaving || activeTab !== 'info'} form="service-order-summary-form" type="submit">
-                {isSaving ? 'Guardando...' : 'Guardar cambios'}
+              <button
+                className="primary-button"
+                disabled={
+                  isSaving ||
+                  autosaveStatus === 'saving' ||
+                  activeTab !== 'info'
+                }
+                form="service-order-summary-form"
+                type="submit"
+              >
+                {isSaving || autosaveStatus === 'saving'
+                  ? 'Guardando...'
+                  : 'Guardar ahora'}
               </button>
               {canUseAdminActions ? (
                 <div className="ets-admin-actions">
@@ -2248,15 +2664,25 @@ function ServiceOrdersPage({ user = null }) {
                     </div>
                   </section>
 
-                  <div className="quotation-detail-save">
-                    <span>Resumen queda listo automaticamente cuando exista fecha de agenda, fecha de servicio y tecnico asignado.</span>
+                  <div className="quotation-detail-save field-sheet-action-panel">
+                    <span>
+                      Los cambios se guardan automáticamente. El resumen queda
+                      listo cuando exista fecha de agenda, fecha de servicio y
+                      técnico asignado.
+                    </span>
+
                     <div className="toolbar-actions">
                       <button
-                        className="primary-button"
-                        disabled={isSaving}
+                        className="table-button"
+                        disabled={
+                          isSaving ||
+                          autosaveStatus === 'saving'
+                        }
                         type="submit"
                       >
-                        {isSaving ? 'Guardando...' : 'Guardar'}
+                        {isSaving || autosaveStatus === 'saving'
+                          ? 'Guardando...'
+                          : 'Guardar ahora'}
                       </button>
                     </div>
                   </div>
@@ -2281,7 +2707,7 @@ function ServiceOrdersPage({ user = null }) {
                       </button>
                     ) : null}
                     {canUseTechnicalActions ? (
-                      <button className="primary-button" disabled={!hasAvailableWorkOrderCapacity} onClick={() => openEquipmentModal()} type="button">
+                      <button className="primary-button" disabled={isSaving} onClick={() => openEquipmentModal()} type="button">
                         + Agregar equipo
                       </button>
                     ) : null}
@@ -2301,7 +2727,7 @@ function ServiceOrdersPage({ user = null }) {
                     </span>
                   ))}
                 </div>
-                {renderSignatureLauncher()}
+                {shouldShowSignatureLauncher && renderSignatureLauncher()}
                 {!hasAvailableWorkOrderCapacity ? (
                   <div className="clients-empty">Todas las Ordenes de Trabajo llegaron a su capacidad.</div>
                 ) : null}
@@ -2741,7 +3167,7 @@ function ServiceOrdersPage({ user = null }) {
                   <p>Documentos</p>
                   <h3>Documentos del expediente</h3>
                 </div>
-                {renderSignatureLauncher()}
+                {shouldShowSignatureLauncher && renderSignatureLauncher()}
                 <div className="field-sheet-prep-list">
                   <article className="glass-card-mini">
                     <strong>Cotizacion</strong>
@@ -2814,9 +3240,21 @@ function ServiceOrdersPage({ user = null }) {
                   />
                 </label>
                 <div className="quotation-detail-save">
-                  <span>Las observaciones quedan fuera del resumen para mantener la vista principal enfocada en avance e indicadores.</span>
-                  <button className="primary-button" disabled={isSaving} onClick={handleOrderSubmit} type="button">
-                    {isSaving ? 'Guardando...' : 'Guardar notas'}
+                  <span>
+                    Las observaciones se guardan automáticamente después de dejar de escribir.
+                  </span>
+                  <button
+                    className="table-button"
+                    disabled={
+                      isSaving ||
+                      autosaveStatus === 'saving'
+                    }
+                    onClick={handleOrderSubmit}
+                    type="button"
+                  >
+                    {isSaving || autosaveStatus === 'saving'
+                      ? 'Guardando...'
+                      : 'Guardar ahora'}
                   </button>
                 </div>
               </section>
@@ -3273,7 +3711,7 @@ function ServiceOrdersPage({ user = null }) {
       ) : null}
               {isFieldSheetCreateModalOpen && selectedOrder && pendingFieldSheetEquipment ? (
           <div className="modal-backdrop" role="presentation">
-            <section className="client-modal quotation-detail-modal" aria-modal="true" role="dialog">
+            <section className="client-modal field-sheet-create-modal" aria-modal="true" role="dialog">
               <div className="quotation-detail-header">
                 <div>
                   <p>Nueva hoja de campo</p>
@@ -3293,92 +3731,79 @@ function ServiceOrdersPage({ user = null }) {
                 </button>
               </div>
 
-              <div className="client-form">
-                <h3>Cliente del certificado</h3>
-
-                <label>
-                  <input
-                    checked={fieldSheetCreateForm.certificateClientMode === 'billing'}
-                    onChange={() => updateFieldSheetCreateForm('certificateClientMode', 'billing')}
-                    type="radio"
-                  />
-                  Usar el mismo cliente facturado
-                </label>
-
-                <label>
-                  <input
-                    checked={fieldSheetCreateForm.certificateClientMode === 'different'}
-                    onChange={() => updateFieldSheetCreateForm('certificateClientMode', 'different')}
-                    type="radio"
-                  />
-                  Usar cliente diferente para el certificado
-                </label>
-
-                {fieldSheetCreateForm.certificateClientMode === 'different' ? (
-                  <div className="client-form__grid">
-                    <label>
-                      Empresa
-                      <input
-                        onChange={(event) =>
-                          updateFieldSheetCreateForm('certificateClientCompany', event.target.value)
-                        }
-                        type="text"
-                        value={fieldSheetCreateForm.certificateClientCompany}
-                      />
-                    </label>
-
-                    <label>
-                      Atención
-                      <input
-                        onChange={(event) =>
-                          updateFieldSheetCreateForm('certificateClientAttention', event.target.value)
-                        }
-                        type="text"
-                        value={fieldSheetCreateForm.certificateClientAttention}
-                      />
-                    </label>
-
-                    <label className="form-field--wide">
-                      Dirección
-                      <input
-                        onChange={(event) =>
-                          updateFieldSheetCreateForm('certificateClientAddress', event.target.value)
-                        }
-                        type="text"
-                        value={fieldSheetCreateForm.certificateClientAddress}
-                      />
-                    </label>
-
-                    <label className="form-field--wide">
-                      <input
-                        checked={fieldSheetCreateForm.applyCertificateClientToOrder}
-                        onChange={(event) =>
-                          updateFieldSheetCreateForm('applyCertificateClientToOrder', event.target.checked)
-                        }
-                        type="checkbox"
-                      />
-                      Usar este cliente para las demás hojas de esta orden
-                    </label>
+              <div className="field-sheet-create-form">
+                <section className="field-sheet-create-section">
+                  <div className="field-sheet-create-section__heading">
+                    <div><span>1</span><h3>Cliente del certificado</h3></div>
+                    <small>Define qué datos aparecerán en la hoja y el certificado.</small>
                   </div>
-                ) : null}
 
-                <h3>Plantilla</h3>
+                  <div className="field-sheet-client-choice-grid">
+                    <button
+                      className={fieldSheetCreateForm.certificateClientMode === 'billing' ? 'field-sheet-client-choice is-active' : 'field-sheet-client-choice'}
+                      onClick={() => updateFieldSheetCreateForm('certificateClientMode', 'billing')}
+                      type="button"
+                    >
+                      <span className="field-sheet-choice-dot" />
+                      <span><strong>Mismo cliente facturado</strong><small>Usar razón social y domicilio del cliente actual.</small></span>
+                    </button>
+                    <button
+                      className={fieldSheetCreateForm.certificateClientMode === 'different' ? 'field-sheet-client-choice is-active' : 'field-sheet-client-choice'}
+                      onClick={openCertificateClientModal}
+                      type="button"
+                    >
+                      <span className="field-sheet-choice-dot" />
+                      <span><strong>Cliente diferente</strong><small>Elegir o capturar datos específicos para certificados.</small></span>
+                    </button>
+                  </div>
 
-                <label>
+                  <div className="field-sheet-client-summary">
+                    <div><span>Empresa</span><strong>{fieldSheetCreateForm.certificateClientMode === 'different' ? fieldSheetCreateForm.certificateClientCompany || 'Pendiente de capturar' : getClientDisplayName(clientsById.get(selectedOrder.client_id))}</strong></div>
+                    <div><span>Domicilio</span><strong>{fieldSheetCreateForm.certificateClientMode === 'different' ? fieldSheetCreateForm.certificateClientAddress || 'Pendiente de capturar' : getClientAddress(clientsById.get(selectedOrder.client_id)) || 'Sin domicilio capturado'}</strong></div>
+                    {fieldSheetCreateForm.certificateClientMode === 'different' ? <button className="icon-text-button" onClick={openCertificateClientModal} type="button">Editar datos</button> : null}
+                  </div>
+
+                  {fieldSheetCreateForm.certificateClientMode === 'billing' ? (
+                    <label className="field-sheet-create-field">
+                      Atención
+                      <input onChange={(event) => updateFieldSheetCreateForm('attention', event.target.value)} placeholder="Nombre de la persona que recibirá la atención" type="text" value={fieldSheetCreateForm.attention} />
+                    </label>
+                  ) : (
+                    <label className="field-sheet-inline-check">
+                      <input checked={fieldSheetCreateForm.applyCertificateClientToOrder} onChange={(event) => updateFieldSheetCreateForm('applyCertificateClientToOrder', event.target.checked)} type="checkbox" />
+                      <span><strong>Usar estos datos en las demás hojas de esta orden</strong><small>No cambia el cliente de facturación.</small></span>
+                    </label>
+                  )}
+                </section>
+
+                <section className="field-sheet-create-section">
+                  <div className="field-sheet-create-section__heading">
+                    <div><span>2</span><h3>Plantilla</h3></div>
+                    <small>La sugerencia puede modificarse antes de crear la hoja.</small>
+                  </div>
+
+                {fieldSheetCreateForm.templateSuggestion ? (
+                  <div className="form-notice">Sugerencia automática por “{fieldSheetCreateForm.templateSuggestion}”. Puedes cambiarla antes de crear.</div>
+                ) : (
+                  <div className="form-error">No se pudo determinar automáticamente la plantilla. Selecciona una hoja de campo.</div>
+                )}
+
+                <label className="field-sheet-create-field">
                   Tipo de hoja de campo
                   <select
                     onChange={(event) => updateFieldSheetCreateForm('templateKey', event.target.value)}
                     value={fieldSheetCreateForm.templateKey}
                   >
-                    {(fieldSheetTemplates.length ? fieldSheetTemplates : fieldSheetTemplateOptions).map((template) => (
-                      <option key={template.value || template.template_key || template.key} value={template.value || template.template_key || template.key}>
-                        {template.label || template.name}
-                      </option>
+                    <option value="">Selecciona una plantilla…</option>
+                    {officialFieldSheetTemplateOptions.map((template) => (
+                      <option key={template.value} value={template.value}>{template.label}</option>
                     ))}
                   </select>
                 </label>
 
-                <div className="client-form__actions client-form__actions--modal">
+                </section>
+
+                <div className="field-sheet-create-actions">
                   <button
                     className="icon-text-button"
                     disabled={isSaving}
@@ -3393,13 +3818,54 @@ function ServiceOrdersPage({ user = null }) {
 
                   <button
                     className="primary-button"
-                    disabled={isSaving}
+                    disabled={isSaving || !fieldSheetCreateForm.templateKey || (fieldSheetCreateForm.certificateClientMode === 'different' && (!fieldSheetCreateForm.certificateClientCompany || !fieldSheetCreateForm.certificateClientAddress))}
                     onClick={confirmCreateFieldSheet}
                     type="button"
                   >
                     {isSaving ? 'Creando...' : 'Crear hoja'}
                   </button>
                 </div>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {isCertificateClientModalOpen && selectedOrder ? (
+          <div className="modal-backdrop modal-backdrop--nested" role="presentation">
+            <section className="client-modal certificate-client-modal" aria-modal="true" aria-labelledby="certificate-client-title" role="dialog">
+              <div className="section-heading">
+                <div><p>Cliente del certificado</p><h2 id="certificate-client-title">Datos diferentes al facturado</h2></div>
+                <button className="icon-text-button" disabled={isSaving} onClick={closeCertificateClientModal} type="button">Cerrar</button>
+              </div>
+              <p className="certificate-client-help">Estos datos se usarán en la hoja de campo. Puedes guardarlos en el cliente facturado para reutilizarlos después.</p>
+              {error ? <div className="form-error dashboard-error">{error}</div> : null}
+              {(clientsById.get(selectedOrder.client_id)?.certificate_profiles ?? []).filter((profile) => profile.is_active !== false).length ? (
+                <label className="field-sheet-create-field">
+                  Datos guardados
+                  <select onChange={(event) => selectCertificateProfile(event.target.value)} value={certificateClientDraft.profileId}>
+                    <option value="">Capturar datos nuevos…</option>
+                    {(clientsById.get(selectedOrder.client_id)?.certificate_profiles ?? []).filter((profile) => profile.is_active !== false).map((profile) => <option key={profile.id} value={profile.id}>{profile.label}{profile.is_default ? ' · Predeterminado' : ''}</option>)}
+                  </select>
+                </label>
+              ) : null}
+              <div className="certificate-client-form">
+                <label>Empresa<input autoFocus onChange={(event) => setCertificateClientDraft((current) => ({ ...current, company: event.target.value, profileId: '' }))} type="text" value={certificateClientDraft.company} /></label>
+                <label>Atención<input onChange={(event) => setCertificateClientDraft((current) => ({ ...current, attention: event.target.value, profileId: '' }))} placeholder="Nombre de la persona" type="text" value={certificateClientDraft.attention} /></label>
+                <label className="form-field--wide">Domicilio<textarea onChange={(event) => setCertificateClientDraft((current) => ({ ...current, address: event.target.value, profileId: '' }))} rows={3} value={certificateClientDraft.address} /></label>
+              </div>
+              <label className="field-sheet-inline-check">
+                <input checked={certificateClientDraft.saveToClient} onChange={(event) => setCertificateClientDraft((current) => ({ ...current, saveToClient: event.target.checked }))} type="checkbox" />
+                <span><strong>Guardar en “Datos para certificados” del cliente</strong><small>Quedará disponible para futuras órdenes.</small></span>
+              </label>
+              {certificateClientDraft.saveToClient ? (
+                <div className="certificate-client-save-options">
+                  <label>Nombre para identificarlo<input onChange={(event) => setCertificateClientDraft((current) => ({ ...current, label: event.target.value }))} placeholder="Ej. Planta Guadalajara" type="text" value={certificateClientDraft.label} /></label>
+                  <label className="field-sheet-inline-check"><input checked={certificateClientDraft.isDefault} onChange={(event) => setCertificateClientDraft((current) => ({ ...current, isDefault: event.target.checked }))} type="checkbox" /><span><strong>Usar como predeterminado</strong></span></label>
+                </div>
+              ) : null}
+              <div className="field-sheet-create-actions">
+                <button className="icon-text-button" disabled={isSaving} onClick={closeCertificateClientModal} type="button">Cancelar</button>
+                <button className="primary-button" disabled={isSaving || !certificateClientDraft.company.trim() || !certificateClientDraft.address.trim()} onClick={applyCertificateClientDraft} type="button">{isSaving ? 'Guardando...' : 'Usar estos datos'}</button>
               </div>
             </section>
           </div>
@@ -3555,6 +4021,9 @@ function ServiceOrdersPage({ user = null }) {
                     report_made_by: fieldSheetForm.reportMadeBy || '',
                     purchase_order_or_quotation: fieldSheetForm.purchaseOrderOrQuotation || '',
                   }}
+                  institution={selectedFieldSheet?.institutional_snapshot || null}
+                  signatures={fieldSheetForm.signatures || []}
+                  users={users}
                   resultSections={buildFieldSheetResultSections(
                     fieldSheetForm.resultsRows || [],
                     fieldSheetForm.templateKey || 'general',
@@ -3598,8 +4067,16 @@ function ServiceOrdersPage({ user = null }) {
                   onResultChange={(sectionKey, rowNumber, columnKey, value) => {
                     updateFieldSheetResult(sectionKey, rowNumber, columnKey, value);
                   }}
+                  onSignatureChange={(index, updates) => {
+                    setFieldSheetForm((current) => ({
+                      ...current,
+                      signatures: (current.signatures || []).map((signature, signatureIndex) =>
+                        signatureIndex === index ? { ...signature, ...updates } : signature
+                      ),
+                    }));
+                  }}
                 />
-                <div className="quotation-detail-save">
+                <div className="quotation-detail-save field-sheet-action-panel">
                   <span>Para completar se requieren condición inicial/final, resultados estructurados y observaciones o evidencia.</span>
                   <div className="toolbar-actions">
                     <button className="table-button" onClick={() => openFieldSheetPdf('view')} type="button">
@@ -3628,7 +4105,7 @@ function ServiceOrdersPage({ user = null }) {
                 </div>
 
                 {canUseAdminActions ? (
-                  <div className="quotation-detail-save">
+                  <div className="quotation-detail-save field-sheet-admin-actions">
                     <span>Acciones administrativas de hoja de campo.</span>
                     <button className="table-button table-button--danger" disabled={isSaving} onClick={handleDeleteFieldSheet} type="button">
                       Eliminar hoja de campo

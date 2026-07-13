@@ -38,10 +38,25 @@ export function getClientDisplayName(client) {
   return client?.commercial_name || client?.legal_name || 'Cliente sin nombre';
 }
 
+export function getClientAddress(client) {
+  if (!client) return '';
+  return [
+    client.street,
+    client.exterior_number,
+    client.interior_number,
+    client.neighborhood,
+    client.locality,
+    client.municipality,
+    client.city,
+    client.state,
+    client.postal_code,
+    client.country,
+  ].map((value) => String(value || '').trim()).filter(Boolean).join(', ');
+}
+
 export function formatModuleDateTime(date) {
   return new Intl.DateTimeFormat('es-MX', {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(date);
 }
-

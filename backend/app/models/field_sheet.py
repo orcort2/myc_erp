@@ -71,6 +71,7 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     apply_certificate_client_to_order: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     template_definition_json: Mapped[dict | None] = mapped_column(JSON)
     template_definition_version: Mapped[int | None] = mapped_column(Integer)
+    institutional_snapshot_json: Mapped[dict | None] = mapped_column(JSON)
 
     equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
 
@@ -92,6 +93,12 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         back_populates="field_sheet",
         cascade="all, delete-orphan",
         order_by="FieldSheetResult.section_key, FieldSheetResult.row_number",
+    )
+
+    signatures: Mapped[list["FieldSheetSignature"]] = relationship(
+        back_populates="field_sheet",
+        cascade="all, delete-orphan",
+        order_by="FieldSheetSignature.position.asc()",
     )
 
     uncertainty_calculations: Mapped[list["UncertaintyCalculation"]] = relationship(
@@ -124,6 +131,10 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     def template_definition(self) -> dict | None:
         return self.template_definition_json
 
+    @property
+    def institutional_snapshot(self) -> dict | None:
+        return self.institutional_snapshot_json
+
 
 class FieldSheetResult(IntegerPkMixin, TimestampMixin, Base):
     __tablename__ = "field_sheet_results"
@@ -148,3 +159,26 @@ class FieldSheetResult(IntegerPkMixin, TimestampMixin, Base):
     row_data: Mapped[dict | None] = mapped_column(JSON)
 
     field_sheet: Mapped["FieldSheet"] = relationship(back_populates="results_rows")
+
+
+class FieldSheetSignature(IntegerPkMixin, TimestampMixin, Base):
+    __tablename__ = "field_sheet_signatures"
+    __table_args__ = (
+        UniqueConstraint(
+            "field_sheet_id",
+            "role",
+            name="uq_field_sheet_signature_role",
+        ),
+    )
+
+    field_sheet_id: Mapped[int] = mapped_column(ForeignKey("field_sheets.id"), index=True)
+    role: Mapped[str] = mapped_column(String(80), index=True)
+    display_label: Mapped[str] = mapped_column(String(180))
+    name: Mapped[str | None] = mapped_column(String(180))
+    signature_data: Mapped[str | None] = mapped_column(Text)
+    signed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+
+    field_sheet: Mapped["FieldSheet"] = relationship(back_populates="signatures")
+    user: Mapped["User | None"] = relationship()

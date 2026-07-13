@@ -15,6 +15,11 @@ from app.schemas.field_sheet_template import (
     FieldSheetTemplateUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.field_sheet_template_engine import (
+    DEFAULT_SIGNATURE_LAYOUT,
+    OFFICIAL_TABLE_FAMILIES,
+    get_official_pilot_template,
+)
 
 
 FIELD_SHEET_BLOCK_TYPES = {
@@ -81,6 +86,8 @@ BLOCK_TYPE_LABELS = {
     "ElectricalTableBlock": "Eléctrica",
 }
 FIELD_SHEET_TEMPLATE_KEYS = (
+    "calibradores",
+    "presion",
     "general",
     "temperatura",
     "termometro",
@@ -586,6 +593,8 @@ def _default_block(block_type: str, order: int) -> dict:
 
 
 TEMPLATE_BLOCK_ASSIGNMENTS = {
+    "calibradores": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "SectionedTableBlock", "ObservationsBlock", "SignaturesBlock"],
+    "presion": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "PressureTableBlock", "ObservationsBlock", "SignaturesBlock"],
     "general": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "SimpleComparisonTableBlock", "ObservationsBlock", "SignaturesBlock"],
     "temperatura": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "SimpleComparisonTableBlock", "ObservationsBlock", "SignaturesBlock"],
     "termometro": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "SimpleComparisonTableBlock", "ObservationsBlock", "SignaturesBlock"],
@@ -629,6 +638,8 @@ TEMPLATE_ALIASES = {
 }
 
 TEMPLATE_TABLE_FAMILY = {
+    "calibradores": "replicated_comparison",
+    "presion": "direction_cycle",
     "general": "direct_comparison",
     "temperatura": "direct_comparison",
     "termometro": "direct_comparison",
@@ -660,6 +671,8 @@ TEMPLATE_TABLE_FAMILY = {
 }
 
 TEMPLATE_NAMES = {
+    "calibradores": "Hoja de Campo Calibradores",
+    "presion": "Hoja de Campo Presión",
     "general": "Hoja de Campo General",
     "temperatura": "Hoja de Campo Temperatura",
     "termometro": "Hoja de Campo Termómetro",
@@ -692,6 +705,8 @@ TEMPLATE_NAMES = {
 
 
 def _pdf_template_for_key(template_key: str) -> str:
+    if get_official_pilot_template(template_key) is not None:
+        return "field_sheet_engine_pdf.html"
     if template_key == "electrica":
         return "field_sheet_electrical_pdf.html"
     if template_key == "anemometro":
@@ -815,6 +830,9 @@ def normalize_template_definition(payload: dict) -> dict:
         "pdf_config": dict(payload.get("pdf_config") or {}),
         "permissions_config": dict(payload.get("permissions_config") or {}),
         "metadata": dict(payload.get("metadata") or {}),
+        "signature_layout": dict(payload.get("signature_layout") or DEFAULT_SIGNATURE_LAYOUT),
+        "pagination": dict(payload.get("pagination") or {"mode": "dynamic", "label": "Página X de Y"}),
+        "automation": dict(payload.get("automation") or {"mode": "manual_only", "calculations": []}),
     }
     definition["visible_fields"] = _collect_visible_fields(definition["blocks"])
     definition["result_sections"] = _build_result_sections(definition["blocks"])
@@ -823,6 +841,9 @@ def normalize_template_definition(payload: dict) -> dict:
 
 def build_fallback_template_definition(template_key: str) -> dict:
     template_key = _resolve_template_key(template_key)
+    official_template = get_official_pilot_template(template_key)
+    if official_template is not None:
+        return normalize_template_definition(official_template)
     blocks = [_default_block(block_type, index) for index, block_type in enumerate(TEMPLATE_BLOCK_ASSIGNMENTS[template_key], start=1)]
     return normalize_template_definition(
         {
@@ -1170,7 +1191,7 @@ def import_field_sheet_template(db: Session, payload: FieldSheetTemplateImport, 
 def get_field_sheet_template_catalog() -> dict:
     return {
         "block_types": _catalog_block_types(),
-        "table_families": [deepcopy(item) for item in TABLE_FAMILY_DEFINITIONS.values()],
+        "table_families": [deepcopy(item) for item in OFFICIAL_TABLE_FAMILIES.values()],
         "supported_template_keys": sorted(TEMPLATE_BLOCK_ASSIGNMENTS.keys()),
     }
 

@@ -1,170 +1,365 @@
-.field-sheet-page {
-  background: white;
-  border: 1px solid #d0d5dd;
-  color: #111827;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 11px;
-  margin: 0 auto;
-  max-width: 1120px;
-  padding: 18px 22px;
+.field-sheet-document {
+  display: grid;
+  gap: 22px;
 }
 
-.field-sheet-header {
+.field-sheet-page {
+  background: #fff;
+  border: 1px solid #d0d5dd;
+  box-sizing: border-box;
+  color: #111;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9px;
+  margin: 0 auto;
+  height: 1056px;
+  min-height: 1056px;
+  padding: 16px 24px 34px;
+  position: relative;
+  width: 816px;
+}
+
+.field-sheet-document-header {
   align-items: center;
+  background: #fff;
   display: grid;
-  grid-template-columns: 190px 1fr 90px;
-  gap: 12px;
-  margin-bottom: 8px;
+  grid-template-columns: 150px minmax(0, 1fr) 150px;
+  gap: 4px 10px;
+  margin-bottom: 3px;
+  position: relative;
+  z-index: 1;
 }
 
 .field-sheet-logo-box {
-  text-align: center;
+  align-items: flex-start;
+  display: flex;
+  justify-content: center;
 }
 
 .field-sheet-logo {
-  max-height: 62px;
-  max-width: 150px;
+  display: block;
+  max-height: 58px;
+  max-width: 140px;
+  object-fit: contain;
 }
 
 .field-sheet-company {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
   text-align: center;
 }
 
-.field-sheet-company strong {
+.field-sheet-company > strong {
+  display: block;
   font-size: 15px;
+  line-height: 1.05;
+  margin-bottom: 4px;
 }
 
-.field-sheet-code {
-  align-items: center;
-  display: flex;
-  flex-direction: column;
-  font-size: 13px;
-  font-weight: 700;
+.field-sheet-company > span {
+  display: block;
+  font-size: 9px;
+  line-height: 1.25;
 }
 
 .field-sheet-title {
-  font-size: 15px;
-  margin: 4px 0 10px;
+  color: #163f7a;
+  font-size: 16px;
+  line-height: 1.1;
+  margin: 2px 0 0;
   text-align: center;
 }
 
-.field-sheet-block-title,
-.field-sheet-results-title {
-  background: #d9eaf7;
-  border: 1px solid #111827;
+.field-sheet-subtitle {
+  color: #163f7a;
+  font-size: 9px;
   font-weight: 700;
-  margin-top: 6px;
-  padding: 3px 6px;
+  margin-top: 2px;
+}
+
+.field-sheet-document-meta {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  font-size: 10px;
+  gap: 2px;
+  justify-self: end;
+}
+
+.field-sheet-heading-band {
+  grid-column: 1 / -1;
+  min-width: 0;
   text-align: center;
 }
 
-.field-sheet-top-row,
-.field-sheet-user-grid,
-.field-sheet-instrument-grid,
-.field-sheet-date-grid,
-.field-sheet-env-grid,
-.field-sheet-check-row,
-.field-sheet-units-row,
-.field-sheet-footer {
+.field-sheet-continuation-label {
+  color: #475467;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin-top: 1px;
+  text-transform: uppercase;
+}
+
+.field-sheet-continuation-header {
+  align-items: center;
   display: grid;
-  gap: 6px;
-  margin-top: 5px;
+  gap: 1px;
+  grid-column: 1 / -1;
+  justify-items: center;
+  min-height: 48px;
+  text-align: center;
 }
 
-.field-sheet-top-row {
+.field-sheet-continuation-header > strong {
+  font-size: 12px;
+}
+
+.field-sheet-continuation-header .field-sheet-title {
+  margin: 0;
+}
+
+.field-sheet-continuation-header > span {
+  color: #475467;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.field-sheet-reference-row {
+  display: grid;
+  gap: 72px;
   grid-template-columns: 1fr 1fr;
+  margin: 2px 34px 4px;
 }
 
-.field-sheet-user-grid {
-  grid-template-columns: 1fr;
+.field-sheet-page-content {
+  position: relative;
 }
 
-.field-sheet-instrument-grid {
+.field-sheet-common-section {
+  break-inside: avoid;
+  margin-top: 3px;
+  page-break-inside: avoid;
+}
+
+.field-sheet-section-heading,
+.field-sheet-results-heading {
+  background: transparent;
+  border: 0;
+  color: #111;
+  font-size: 13px;
+  line-height: 1.1;
+  margin: 3px 0 4px;
+  padding: 0;
+  text-align: center;
+}
+
+.field-sheet-section-heading--blue {
+  color: #214c80;
+}
+
+.field-sheet-customer-grid {
+  display: grid;
+  gap: 2px;
+}
+
+.field-sheet-customer-field {
+  grid-column: 1 / -1;
+}
+
+.field-sheet-instrument-grid,
+.field-sheet-calibration-grid,
+.field-sheet-environment-grid,
+.field-sheet-dynamic-grid {
+  display: grid;
+  gap: 2px 46px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.field-sheet-date-grid {
+.field-sheet-calibration-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px 20px;
+  margin-top: 3px;
 }
 
-.field-sheet-env-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.field-sheet-environment-grid {
+  gap: 1px 60px;
+  margin: 3px 45px 0;
 }
 
-.field-sheet-check-row {
-  grid-template-columns: 1fr 1fr 1fr;
-}
-
-.field-sheet-units-row {
-  grid-template-columns: 1fr;
-}
-
-.field-sheet-footer {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 12px;
-}
-
-.field-sheet-page label {
+.field-sheet-line-field {
   align-items: center;
   display: flex;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
+}
+
+.field-sheet-line-field > span {
+  flex: 0 0 auto;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .field-sheet-input {
+  appearance: none;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid #111827;
+  border-bottom: 1px solid #111;
+  box-sizing: border-box;
+  color: #111;
   flex: 1;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 10px;
   min-width: 0;
   outline: none;
-  padding: 2px 3px;
+  padding: 1px 2px;
 }
 
-.field-sheet-textarea {
-  border: 1px solid #111827;
-  flex: 1;
-  font-family: inherit;
-  font-size: 11px;
-  min-height: 54px;
+.field-sheet-input[type='date'] {
   min-width: 0;
-  outline: none;
-  padding: 4px 6px;
-  resize: vertical;
+}
+
+.field-sheet-input:focus,
+.field-sheet-textarea:focus {
+  background: rgba(23, 92, 211, .05);
+  box-shadow: 0 1px 0 #175cd3;
+}
+
+.field-sheet-observation-section {
+  align-items: start;
+  display: grid;
+  gap: 48px;
+  grid-template-columns: minmax(0, .85fr) minmax(0, 1.45fr);
+  margin-top: 4px;
+}
+
+.field-sheet-condition-column {
+  display: grid;
+  gap: 4px;
+  padding-top: 14px;
+}
+
+.field-sheet-check-field {
+  align-items: center;
+  display: flex;
+  font-weight: 400;
+  justify-content: space-between;
 }
 
 .field-sheet-checkbox {
-  height: 14px;
-  width: 14px;
+  height: 18px;
+  margin: 0;
+  width: 18px;
+}
+
+.field-sheet-observation-column {
+  display: grid;
+  gap: 4px;
+}
+
+.field-sheet-observation-title {
+  display: block;
+  font-size: 10px;
+  text-align: center;
+}
+
+.field-sheet-observation-box {
+  border: 2px solid #111;
+  display: grid;
+  min-height: 34px;
+  position: relative;
+}
+
+.field-sheet-observation-box > span {
+  font-weight: 400;
+  padding: 2px 4px 0;
+}
+
+.field-sheet-textarea,
+.field-sheet-observation-box textarea {
+  background: transparent;
+  border: 0;
+  box-sizing: border-box;
+  color: #111;
+  font-family: inherit;
+  font-size: 10px;
+  min-height: 22px;
+  outline: none;
+  padding: 2px 4px 4px;
+  resize: none;
+  width: 100%;
+}
+
+.field-sheet-results-section {
+  break-inside: avoid;
+  margin-top: 4px;
+  page-break-inside: avoid;
+}
+
+.field-sheet-results-heading {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.field-sheet-table-group + .field-sheet-table-group {
+  margin-top: 4px;
+}
+
+.field-sheet-table-section-title {
+  border: 2px solid #111;
+  border-bottom: 0;
+  font-weight: 700;
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  min-height: 15px;
+  padding: 1px 4px;
+  text-align: center;
 }
 
 .field-sheet-results-table {
   border-collapse: collapse;
-  margin-top: 6px;
+  table-layout: fixed;
   width: 100%;
 }
 
 .field-sheet-results-table th,
 .field-sheet-results-table td {
-  border: 1px solid #111827;
-  height: 28px;
-  padding: 2px 4px;
+  border: 1px solid #111;
+  box-sizing: border-box;
+  height: 14px;
+  padding: 0 2px;
   text-align: center;
 }
 
 .field-sheet-results-table th {
-  background: #d9eaf7;
+  background: transparent;
   font-weight: 700;
 }
 
-.field-sheet-results-table td:first-child {
-  font-weight: 700;
-  width: 44px;
+.field-sheet-results-table thead {
+  display: table-header-group;
+}
+
+.field-sheet-grouped-header th {
+  height: 16px;
+}
+
+.field-sheet-table-note {
+  border: 1px solid #111;
+  border-top: 0;
+  font-size: 8px;
+  padding: 2px 4px;
+}
+
+.field-sheet-table-checkbox {
+  height: 14px;
+  margin: 0;
+  width: 14px;
+}
+
+.field-sheet-results-table td:first-child,
+.field-sheet-results-table th:first-child {
+  width: 42px;
 }
 
 .field-sheet-results-table .field-sheet-input {
@@ -172,34 +367,202 @@
   text-align: center;
 }
 
-.field-sheet-observations {
-  align-items: stretch !important;
-  display: flex;
-  flex-direction: column;
-  font-weight: 700;
-  margin-top: 8px;
+.field-sheet-signatures {
+  break-inside: avoid;
+  display: grid;
+  gap: 6px 20px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 6px 32px 8px;
+  page-break-inside: avoid;
 }
 
-.field-sheet-observations textarea {
-  border: 1px solid #111827;
-  font-family: inherit;
-  font-size: 11px;
-  min-height: 54px;
-  padding: 6px;
-  resize: vertical;
-  width: 100%;
-}
-
-.field-sheet-dynamic-grid {
+.field-sheet-signatures--two_by_two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.field-sheet-dynamic-grid label {
-  align-items: flex-start;
-  flex-direction: column;
+.field-sheet-signature-slot {
+  min-width: 0;
+  text-align: center;
+}
+
+.field-sheet-signature-line {
+  align-items: flex-end;
+  border-bottom: 1px solid #111;
+  display: flex;
+  height: 24px;
+  justify-content: center;
+}
+
+.field-sheet-signature-line img {
+  max-height: 22px;
+  max-width: 90%;
+  object-fit: contain;
+}
+
+.field-sheet-signature-slot > strong {
+  display: block;
+  font-size: 9px;
+  margin-top: 3px;
+  text-transform: uppercase;
+}
+
+.field-sheet-signature-meta {
+  display: grid;
+  gap: 2px;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  margin-top: 4px;
+}
+
+.field-sheet-signature-meta .field-sheet-input,
+.field-sheet-signature-meta select {
+  font-size: 8px;
+  text-align: center;
+}
+
+.field-sheet-document-footer {
+  align-items: end;
+  bottom: 7px;
+  display: grid;
+  font-size: 9px;
+  grid-template-columns: 1.6fr .7fr .7fr;
+  left: 24px;
+  position: absolute;
+  right: 24px;
+}
+
+.field-sheet-document-footer label {
+  align-items: end;
+  display: flex;
+  gap: 4px;
+}
+
+.field-sheet-document-footer label > span {
+  white-space: nowrap;
+}
+
+.field-sheet-document-footer span:nth-child(2) {
+  text-align: center;
+}
+
+.field-sheet-document-footer span:last-child {
+  text-align: right;
 }
 
 .field-sheet-empty-block {
   color: #475467;
   font-style: italic;
+}
+
+.field-sheet-cup-diagram {
+  align-items: center;
+  border: 1px solid #111;
+  break-inside: avoid;
+  display: grid;
+  grid-template-columns: 1fr 1.35fr;
+  margin-top: 5px;
+  min-height: 104px;
+  padding: 4px 12px;
+  page-break-inside: avoid;
+}
+
+.field-sheet-cup-diagram div {
+  display: grid;
+  gap: 4px;
+}
+
+.field-sheet-cup-diagram small {
+  color: #475467;
+  font-size: 8px;
+}
+
+.field-sheet-cup-diagram svg {
+  height: 94px;
+  width: 100%;
+}
+
+.field-sheet-document[data-template-key='copa'] .field-sheet-page-content {
+  align-items: start;
+  display: grid;
+  gap: 3px 10px;
+  grid-template-areas:
+    'customer customer'
+    'equipment equipment'
+    'calibration calibration'
+    'environment observations'
+    'diagram diameter'
+    'diagram times'
+    'standard average'
+    'signatures signatures';
+  grid-template-columns: 1fr 1.08fr;
+}
+
+.field-sheet-document[data-template-key='copa'] .field-sheet-customer-section { grid-area: customer; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-instrument-section { grid-area: equipment; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-calibration-section { grid-area: calibration; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-environment-section { grid-area: environment; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-observation-section { grid-area: observations; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-cup-diagram { grid-area: diagram; margin: 0; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-results-section--cup_diameter { grid-area: diameter; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-results-section--flow_times { grid-area: times; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-results-section--standard_details { grid-area: standard; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-results-section--average_temperature { grid-area: average; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-signatures { grid-area: signatures; }
+
+.field-sheet-document[data-template-key='copa'] .field-sheet-observation-section {
+  display: block;
+  margin: 0;
+}
+
+.field-sheet-document[data-template-key='copa'] .field-sheet-condition-column {
+  display: none;
+}
+
+.field-sheet-document[data-template-key='copa'] .field-sheet-signatures {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 0;
+}
+
+.field-sheet-document[data-template-key='copa'] .field-sheet-signature-slot[data-signature-role='client_by'] {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.field-sheet-document[data-template-key='copa'] .field-sheet-signature-slot[data-signature-role='calibrated_by'] { grid-column: 1; grid-row: 2; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-signature-slot[data-signature-role='authorized_by'] { grid-column: 2; grid-row: 2; }
+.field-sheet-document[data-template-key='copa'] .field-sheet-signature-slot[data-signature-role='report_made_by'] { grid-column: 3; grid-row: 2; }
+
+@page {
+  margin: 0;
+  size: Letter portrait;
+}
+
+@media print {
+  .field-sheet-document {
+    display: block;
+  }
+
+  .field-sheet-page {
+    background: #fff !important;
+    border: 0;
+    height: 276mm;
+    margin: 0;
+    min-height: 276mm;
+    padding: 4mm 6.35mm 9mm;
+    break-after: page;
+    page-break-after: always;
+    width: 215.9mm;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .field-sheet-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+
+  .field-sheet-input:focus,
+  .field-sheet-textarea:focus {
+    background: transparent;
+    box-shadow: none;
+  }
 }

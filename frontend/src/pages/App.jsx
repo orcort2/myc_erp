@@ -13,7 +13,6 @@ import CapturePage from './CapturePage.jsx';
 import DashboardHome from './DashboardHome.jsx';
 import DocumentLibraryPage from './DocumentLibraryPage.jsx';
 import EquipmentPage from './EquipmentPage.jsx';
-import FieldSheetsPage from './FieldSheetsPage.jsx';
 import FlowTestPage from './FlowTestPage.jsx';
 import LoginPage from './LoginPage.jsx';
 import ModulePage from './ModulePage.jsx';
@@ -26,6 +25,7 @@ import StandardsPage from './StandardsPage.jsx';
 import UncertaintyPage from './UncertaintyPage.jsx';
 import SignatureLabPage from './SignatureLabPage.jsx';
 import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
+import FieldSheetLabPage from './labs/FieldSheetLabPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -51,6 +51,10 @@ export function App() {
     let isMounted = true;
 
     async function checkSession() {
+      if (path === '/dashboard/field-sheet-lab' || path === '/dashboard/field-sheet-preview') {
+        if (isMounted) setIsCheckingSession(false);
+        return;
+      }
       if (!getAccessToken()) {
         if (isMounted) {
           setIsCheckingSession(false);
@@ -105,6 +109,10 @@ export function App() {
     navigate('/login');
   }
 
+  if (path === '/dashboard/field-sheet-lab' || path === '/dashboard/field-sheet-preview') {
+    return <FieldSheetLabPage />;
+  }
+
   if (isCheckingSession) {
     return (
       <main className="loading-screen">
@@ -152,8 +160,6 @@ export function App() {
         <ServiceOrdersPage user={user} />
       ) : selectedModule?.key === 'equipment' ? (
         <EquipmentPage module={selectedModule} timestamp={now} />
-      ) : selectedModule?.key === 'fieldSheets' ? (
-        <FieldSheetsPage module={selectedModule} timestamp={now} />
       ) : selectedModule?.key === 'certificates' ? (
         <CertificatesPage />
       ) : selectedModule?.key === 'capture' ? (

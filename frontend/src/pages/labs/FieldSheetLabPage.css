@@ -1,0 +1,155 @@
+.field-sheet-lab {
+  background: #eef2f6;
+  color: #101828;
+  min-height: 100vh;
+}
+
+.field-sheet-lab-toolbar {
+  align-items: flex-end;
+  background: rgba(255, 255, 255, .96);
+  border-bottom: 1px solid #d0d5dd;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  padding: 18px 24px;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.field-sheet-lab-toolbar h1 { font-size: 24px; margin: 3px 0; }
+.field-sheet-lab-toolbar p { color: #667085; margin: 0; }
+.field-sheet-lab-eyebrow { color: #175cd3; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.field-sheet-lab-toolbar__actions { align-items: flex-end; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.field-sheet-lab-toolbar label, .field-sheet-lab-table-tools label, .field-sheet-lab-inspector label { color: #475467; display: grid; font-size: 11px; font-weight: 700; gap: 4px; }
+.field-sheet-lab-toolbar select, .field-sheet-lab-table-tools select, .field-sheet-lab-inspector select { background: white; border: 1px solid #98a2b3; border-radius: 8px; min-height: 36px; padding: 0 34px 0 10px; }
+.field-sheet-lab-toolbar button, .field-sheet-lab-table-tools button, .field-sheet-lab-print-modal button, .field-sheet-lab-signature-tools button { align-items: center; background: white; border: 1px solid #98a2b3; border-radius: 8px; color: #344054; cursor: pointer; display: inline-flex; font-weight: 700; gap: 6px; min-height: 36px; padding: 0 11px; }
+.field-sheet-lab-toolbar button:hover, .field-sheet-lab-table-tools button:hover { background: #f9fafb; border-color: #175cd3; color: #175cd3; }
+
+.field-sheet-lab-workspace {   display: grid;   grid-template-columns: minmax(0, 1fr);   min-height: calc(100vh - 102px); }
+.field-sheet-lab-workspace.has-inspector {   grid-template-columns: minmax(850px, 1fr) 340px; }
+.field-sheet-lab-canvas {  min-width: 0;   overflow: auto;   padding: 24px 32px 64px; }
+.field-sheet-lab-paper {   margin: 0 auto;   min-width: 816px;   width: 816px; }
+/*
+ * Carta vertical a 96 dpi:
+ * 8.5in × 11in = 816px × 1056px.
+ */
+.field-sheet-lab-paper .field-sheet-page {   background: #fff;   box-sizing: border-box;   height: 1056px;   margin: 0 auto 24px;   max-width: none;   min-height: 1056px;   overflow: hidden;   padding: 18px 22px;   width: 816px; }
+.field-sheet-lab-table-tools {  align-items: end;   background: rgba(255, 255, 255, .96);   border: 1px solid #d0d5dd;   border-radius: 10px;   display: flex;   flex-wrap: wrap;   gap: 8px;   margin: 0 auto 12px;   padding: 10px;   width: 816px; }
+.field-sheet-lab-print-document {  margin: 24px auto;   width: 816px; }
+.field-sheet-lab-print-document .field-sheet-page {
+  background: #fff;
+  box-sizing: border-box;
+  height: 1056px;
+  margin: 0 auto 24px;
+  max-width: none;
+  min-height: 1056px;
+  overflow: hidden;
+  padding: 18px 22px;
+  width: 816px;
+}
+
+.field-sheet-lab-inspector { background: #101828; color: #f2f4f7; height: calc(100vh - 102px); overflow: auto; position: sticky; top: 102px; }
+.field-sheet-lab-inspector__header { align-items: center; border-bottom: 1px solid #344054; display: flex; justify-content: space-between; padding: 16px; }
+.field-sheet-lab-inspector__header div { display: grid; gap: 3px; }
+.field-sheet-lab-inspector__header span { color: #84adff; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.field-sheet-lab-inspector__header button { background: transparent; border: 0; color: white; cursor: pointer; }
+.field-sheet-lab-inspector__section { border-bottom: 1px solid #344054; }
+.field-sheet-lab-inspector__section > button { align-items: center; background: transparent; border: 0; color: white; cursor: pointer; display: flex; justify-content: space-between; padding: 12px 16px; width: 100%; }
+.field-sheet-lab-inspector__section > button span { align-items: center; display: flex; gap: 8px; }
+.field-sheet-lab-inspector__body { color: #d0d5dd; padding: 0 16px 16px; }
+.field-sheet-lab-inspector dl { display: grid; font-size: 12px; gap: 7px 12px; grid-template-columns: 92px minmax(0, 1fr); margin: 0; }
+.field-sheet-lab-inspector dt { color: #98a2b3; }
+.field-sheet-lab-inspector dd { margin: 0; overflow-wrap: anywhere; }
+.field-sheet-lab-inspector pre { background: #0c111d; border: 1px solid #344054; border-radius: 8px; color: #b9e6fe; font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0; max-height: 420px; overflow: auto; padding: 10px; white-space: pre-wrap; }
+.field-sheet-lab-block-list { display: grid; gap: 6px; list-style: decimal; margin: 0; padding-left: 20px; }
+.field-sheet-lab-block-list li { padding-left: 3px; }
+.field-sheet-lab-block-list strong, .field-sheet-lab-block-list small { display: block; }
+.field-sheet-lab-block-list small { color: #98a2b3; }
+.field-sheet-lab-signature-tools { display: grid; gap: 6px; margin-top: 14px; }
+.field-sheet-lab-signature-tools button { background: #1d2939; border-color: #475467; color: white; font-size: 11px; justify-content: center; }
+
+.field-sheet-lab-structure { align-items: center; background: #f8faff; border-bottom: 1px solid #b2ccff; display: flex; gap: 8px; overflow-x: auto; padding: 14px 24px; }
+.field-sheet-lab-structure__node { background: white; border: 1px solid #84adff; border-radius: 9px; display: grid; flex: 0 0 auto; min-width: 130px; padding: 8px 10px; text-align: center; }
+.field-sheet-lab-structure__node.is-root { background: #175cd3; color: white; font-weight: 800; }
+.field-sheet-lab-structure__node small { color: #667085; font-size: 9px; margin-top: 2px; }
+.field-sheet-lab-structure__arrow { color: #175cd3; font-size: 20px; transform: rotate(-90deg); }
+
+.field-sheet-lab-print-modal { background: #d0d5dd; inset: 0; overflow: auto; position: fixed; z-index: 100; }
+.field-sheet-lab-print-modal__bar { align-items: center; background: #101828; color: white; display: flex; justify-content: space-between; padding: 12px 20px; position: sticky; top: 0; z-index: 2; }
+.field-sheet-lab-print-modal__bar > div:first-child { display: grid; }
+.field-sheet-lab-print-modal__bar span { color: #84adff; font-size: 10px; text-transform: uppercase; }
+.field-sheet-lab-print-modal__bar > div:last-child { display: flex; gap: 8px; }
+.field-sheet-lab-print-document { margin: 24px auto; width: min(960px, calc(100% - 40px)); }
+
+@media (max-width: 1050px) {
+  .field-sheet-lab-toolbar { align-items: flex-start; flex-direction: column; }
+  .field-sheet-lab-workspace.has-inspector { grid-template-columns: minmax(680px, 1fr) 310px; }
+  .field-sheet-lab-inspector { height: calc(100vh - 160px); top: 160px; }
+}
+
+@media (max-width: 760px) {
+  .field-sheet-lab-workspace.has-inspector { display: block; }
+  .field-sheet-lab-inspector { height: auto; position: static; }
+  .field-sheet-lab-toolbar__actions { justify-content: flex-start; }
+}
+
+@media print {
+  html,
+  body {
+    background: white !important;
+    height: auto;
+    margin: 0;
+    padding: 0;
+  }
+
+  .field-sheet-lab > :not(.field-sheet-lab-print-modal),
+  .field-sheet-lab-print-modal__bar {
+    display: none !important;
+  }
+
+  .field-sheet-lab-print-modal {
+    background: white;
+    inset: auto;
+    overflow: visible;
+    position: static;
+  }
+
+  .field-sheet-lab-print-document {
+    margin: 0;
+    position: static;
+    width: 215.9mm;
+  }
+
+  .field-sheet-lab-print-document .field-sheet-page {
+    border: 0;
+    box-shadow: none;
+    box-sizing: border-box;
+    height: 276mm;
+    margin: 0;
+    max-width: none;
+    min-height: 276mm;
+    padding: 4mm 6.35mm 9mm;
+    page-break-after: always;
+    width: 215.9mm;
+  }
+
+  .field-sheet-lab-print-document .field-sheet-page:last-child {
+    page-break-after: auto;
+  }
+
+  .field-sheet-lab-print-document input,
+  .field-sheet-lab-print-document textarea,
+  .field-sheet-lab-print-document select {
+    appearance: none;
+    background: transparent !important;
+    color: #111 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  @page {
+    margin: 0;
+    size: Letter portrait;
+  }
+}

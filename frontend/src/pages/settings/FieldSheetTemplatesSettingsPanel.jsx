@@ -14,9 +14,11 @@ import {
   duplicateFieldSheetTemplate,
   exportFieldSheetTemplate,
   getFieldSheetTemplateCatalog,
+  getInstitutionalConfiguration,
   importFieldSheetTemplate,
   listFieldSheetTemplates,
   updateFieldSheetTemplateDefinition,
+  updateInstitutionalConfiguration,
 } from '../../services/api.js';
 import { buildFieldSheetResultSections, getFieldSheetTemplate, normalizeTemplate } from '../../utils/fieldSheets.js';
 
@@ -181,6 +183,15 @@ function FieldSheetTemplatesSettingsPanel({ user }) {
   const [notice, setNotice] = useState('');
   const [newBlockType, setNewBlockType] = useState('ResultsTableBlock');
   const [importPayload, setImportPayload] = useState('');
+  const [institution, setInstitution] = useState({
+    legal_name: 'METROLOGÍA Y SERVICIOS MYC',
+    document_code: 'FCA-30',
+    initial_revision: 'R1',
+    address: '',
+    phone: '',
+    email: '',
+    logo_path: 'frontend/src/assets/myc-logo.png',
+  });
 
   const templatesById = useMemo(() => Object.fromEntries(templates.map((template) => [String(template.id), normalizeTemplate(template)])), [templates]);
   const blockTypes = useMemo(() => (catalog.block_types?.length ? catalog.block_types : Object.keys(fieldSheetBlockFamilies).map((key) => ({ key, label: key, is_table: key.includes('Table') }))), [catalog]);
@@ -194,15 +205,17 @@ function FieldSheetTemplatesSettingsPanel({ user }) {
     setError('');
     setIsLoading(true);
     try {
-      const [templateData, catalogData] = await Promise.all([
+      const [templateData, catalogData, institutionData] = await Promise.all([
         listFieldSheetTemplates({ includeAll: true }),
         getFieldSheetTemplateCatalog(),
+        getInstitutionalConfiguration(),
       ]);
       const normalizedTemplates = Array.isArray(templateData) && templateData.length
         ? templateData.map((item) => normalizeTemplate(item))
         : Object.values(fallbackTemplates).map((item) => normalizeTemplate(item));
       setTemplates(normalizedTemplates);
       setCatalog(catalogData || { block_types: [], table_families: [] });
+      setInstitution((current) => ({ ...current, ...(institutionData || {}) }));
       const initial = normalizedTemplates[0] || createBlankTemplate('general');
       setSelectedTemplateId(initial.id ? String(initial.id) : '');
       setDraft(cloneTemplate(initial));
@@ -326,6 +339,9 @@ function FieldSheetTemplatesSettingsPanel({ user }) {
       pdf_config: draft.pdf_config || {},
       permissions_config: draft.permissions_config || {},
       metadata: draft.metadata || {},
+      signature_layout: draft.signature_layout || {},
+      pagination: draft.pagination || { mode: 'dynamic', label: 'Página X de Y' },
+      automation: draft.automation || { mode: 'manual_only', calculations: [] },
     };
   }
 
@@ -428,6 +444,29 @@ function FieldSheetTemplatesSettingsPanel({ user }) {
     }
   }
 
+  async function handleInstitutionSave() {
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const saved = await updateInstitutionalConfiguration({
+        legal_name: institution.legal_name,
+        document_code: institution.document_code,
+        initial_revision: institution.initial_revision,
+        address: institution.address || null,
+        phone: institution.phone || null,
+        email: institution.email || null,
+        logo_path: institution.logo_path || null,
+      });
+      setInstitution(saved);
+      setNotice('Identidad institucional actualizada');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   if (!canManageTemplates(user)) {
     return <div className="clients-empty">Sin permisos para administrar plantillas de hojas.</div>;
   }
@@ -443,6 +482,25 @@ function FieldSheetTemplatesSettingsPanel({ user }) {
           <h2>{isLoading ? 'Cargando...' : `${templates.length || TEMPLATE_KEYS.length} versiones disponibles`}</h2>
         </div>
       </div>
+
+      <section className="quotation-section">
+        <div className="quotation-section__title">
+          <p>Identidad institucional</p>
+          <h3>Fuente única para hojas de campo</h3>
+        </div>
+        <div className="client-form client-form--modal">
+          <label>Razón social<input value={institution.legal_name || ''} onChange={(event) => setInstitution((current) => ({ ...current, legal_name: event.target.value }))} /></label>
+          <label>Código documental<input value={institution.document_code || ''} onChange={(event) => setInstitution((current) => ({ ...current, document_code: event.target.value }))} /></label>
+          <label>Revisión inicial<input value={institution.initial_revision || ''} onChange={(event) => setInstitution((current) => ({ ...current, initial_revision: event.target.value }))} /></label>
+          <label>Domicilio<input value={institution.address || ''} onChange={(event) => setInstitution((current) => ({ ...current, address: event.target.value }))} /></label>
+          <label>Teléfono<input value={institution.phone || ''} onChange={(event) => setInstitution((current) => ({ ...current, phone: event.target.value }))} /></label>
+          <label>Correo<input type="email" value={institution.email || ''} onChange={(event) => setInstitution((current) => ({ ...current, email: event.target.value }))} /></label>
+          <label>Ruta o URL del logotipo<input value={institution.logo_path || ''} onChange={(event) => setInstitution((current) => ({ ...current, logo_path: event.target.value }))} /></label>
+        </div>
+        <div className="settings-filters__actions">
+          <button className="primary-button" disabled={isSaving} onClick={handleInstitutionSave} type="button">Guardar identidad</button>
+        </div>
+      </section>
 
       <div className="quotation-commercial-grid service-order-info-grid">
         <article>
@@ -620,6 +678,7 @@ function FieldSheetTemplatesSettingsPanel({ user }) {
         </div>
         <FieldSheetLayout
           template={normalizeTemplate(draft)}
+          institution={institution}
           values={blankPreviewValues()}
           resultSections={buildFieldSheetResultSections([], draft.template_key || draft.key || 'general', {
             [draft.template_key || draft.key || 'general']: normalizeTemplate(draft),

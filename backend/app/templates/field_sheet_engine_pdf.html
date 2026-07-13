@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: Letter portrait;
+      margin: 12mm 10mm 14mm;
+      @bottom-left { content: "{{ institution.document_code }} · {{ institution.initial_revision }}"; font: 7pt Arial; color: #475467; }
+      @bottom-right { content: "Página " counter(page) " de " counter(pages); font: 7pt Arial; color: #475467; }
+    }
+    * { box-sizing: border-box; }
+    body { color: #101828; font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; margin: 0; }
+    .header { align-items: center; display: grid; grid-template-columns: 32mm 1fr 25mm; gap: 3mm; margin-bottom: 2mm; }
+    .logo { max-height: 16mm; max-width: 30mm; }
+    .identity { line-height: 1.25; text-align: center; }
+    .identity strong { display: block; font-size: 10pt; }
+    .identity span { display: block; }
+    .control { border: .25mm solid #344054; display: grid; font-weight: 700; grid-template-rows: 1fr 1fr; text-align: center; }
+    .control span { padding: 1.2mm; }
+    .control span + span { border-top: .25mm solid #344054; }
+    h1 { color: #175cd3; font-size: 10pt; margin: 1mm 0 2mm; text-align: center; text-transform: uppercase; }
+    .block { break-inside: avoid; margin-top: 1.4mm; }
+    .block-title, .section-title { background: #dbeafe; border: .25mm solid #344054; font-weight: 700; padding: 1mm 1.5mm; text-align: center; }
+    .info-table td { border: .25mm solid #344054; height: 5.2mm; padding: .8mm 1.2mm; text-align: left; vertical-align: middle; width: 50%; }
+    .info-table strong { font-size: 6.8pt; }
+    table { border-collapse: collapse; table-layout: fixed; width: 100%; }
+    thead { display: table-header-group; }
+    tr { break-inside: avoid; }
+    .results th, .results td { border: .25mm solid #344054; height: 4.6mm; padding: .5mm; text-align: center; vertical-align: middle; word-break: break-word; }
+    .results th { background: #dbeafe; font-weight: 700; }
+    .results th.number, .results td.number { width: 8mm; }
+    .result-section { break-inside: avoid; margin-top: 1.4mm; }
+    .notes { border: .25mm solid #344054; min-height: 12mm; padding: 1.2mm; white-space: pre-wrap; }
+    .signatures { display: grid; gap: 3mm; grid-template-columns: repeat({{ [signatures|length, 1]|max }}, minmax(0, 1fr)); margin-top: 2mm; }
+    .signature { min-height: 12mm; text-align: center; }
+    .signature-image { display: block; height: 6mm; margin: 0 auto; max-width: 38mm; object-fit: contain; }
+    .signature-space { height: 6mm; }
+    .signature-line { border-top: .25mm solid #344054; padding-top: 1mm; }
+    .signature small { display: block; color: #475467; }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div>{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="MYC">{% endif %}</div>
+    <div class="identity">
+      <strong>{{ institution.legal_name }}</strong>
+      {% if institution.address %}<span>{{ institution.address }}</span>{% endif %}
+      {% if institution.phone or institution.email %}<span>{% if institution.phone %}{{ institution.phone }}{% endif %}{% if institution.phone and institution.email %} · {% endif %}{% if institution.email %}{{ institution.email }}{% endif %}</span>{% endif %}
+    </div>
+    <div class="control"><span>{{ institution.document_code }}</span><span>{{ institution.initial_revision }}</span></div>
+  </header>
+  <h1>{{ template_definition.name }}</h1>
+
+  <section class="block">
+    <div class="block-title">Referencia documental</div>
+    <table class="info-table"><tr><td><strong>Orden de trabajo:</strong> {{ field_sheet.work_order_number or '-' }}</td><td><strong>Certificado:</strong> {{ certificate_folio }}</td></tr></table>
+  </section>
+  <section class="block">
+    <div class="block-title">Datos del usuario</div>
+    <table class="info-table"><tr><td><strong>Atención:</strong> {{ client_attention or '-' }}</td><td><strong>Empresa:</strong> {{ client_name or '-' }}</td></tr><tr><td colspan="2"><strong>Domicilio:</strong> {{ client_address or '-' }}</td></tr></table>
+  </section>
+  <section class="block">
+    <div class="block-title">Datos del instrumento</div>
+    <table class="info-table"><tr><td><strong>Instrumento:</strong> {{ equipment.name or '-' }}</td><td><strong>Marca:</strong> {{ equipment.brand or '-' }}</td></tr><tr><td><strong>Modelo:</strong> {{ equipment.model or '-' }}</td><td><strong>Serie:</strong> {{ equipment.serial_number or '-' }}</td></tr><tr><td><strong>Identificación:</strong> {{ equipment.internal_id or '-' }}</td><td><strong>División mínima:</strong> {{ field_sheet.minimum_division or '-' }}</td></tr></table>
+  </section>
+  <section class="block">
+    <div class="block-title">Datos de calibración y ambiente</div>
+    <table class="info-table"><tr><td><strong>Recepción:</strong> {{ field_sheet.reception_date|date }}</td><td><strong>Calibración:</strong> {{ field_sheet.calibration_date|date }}</td></tr><tr><td><strong>Próxima calibración:</strong> {{ field_sheet.next_calibration_date|date }}</td><td><strong>Lugar:</strong> {{ field_sheet.calibration_place or '-' }}</td></tr><tr><td><strong>Humedad inicial/final:</strong> {{ field_sheet.environment_humidity_start or '-' }} / {{ field_sheet.environment_humidity_end or '-' }}</td><td><strong>Temperatura inicial/final:</strong> {{ field_sheet.environment_temperature_start or '-' }} / {{ field_sheet.environment_temperature_end or '-' }}</td></tr></table>
+  </section>
+  <section class="block">
+    <div class="block-title">Condición y observaciones</div>
+    <table class="info-table"><tr><td><strong>Condición inicial:</strong> {{ field_sheet.initial_condition or '-' }}</td><td><strong>Condición final:</strong> {{ field_sheet.final_condition or '-' }}</td></tr><tr><td colspan="2"><strong>Observaciones:</strong> {{ field_sheet.observations or '-' }}</td></tr></table>
+  </section>
+
+  {% for section in sections %}
+  <section class="result-section">
+    <div class="section-title">{{ section.title }}</div>
+    <table class="results">
+      <thead><tr><th class="number">No.</th>{% for column in section.columns %}<th style="width: {{ column.width or 'auto' }}">{{ column.label }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for row in section.rows %}
+        <tr><td class="number">{{ row.row_number }}</td>{% for column in section.columns %}<td>{{ row_value(row, column) }}</td>{% endfor %}</tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+
+  <section class="signatures">
+    {% for signature in signatures %}
+    <div class="signature">
+      {% if signature.signature_data %}<img class="signature-image" src="{{ signature.signature_data }}" alt="Firma {{ signature.display_label }}">{% else %}<div class="signature-space"></div>{% endif %}
+      <div class="signature-line"><strong>{{ signature.display_label }}</strong><br>{{ signature.name or 'Pendiente' }}{% if signature.signed_at %}<small>{{ signature.signed_at|date }}</small>{% endif %}</div>
+    </div>
+    {% endfor %}
+  </section>
+</body>
+</html>

@@ -3,7 +3,7 @@ from app.models.calibration_procedure import CalibrationProcedure
 from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 from app.models.catalog_item import CatalogItem
 from app.models.certificate import Certificate
-from app.models.client import Client, ClientContact
+from app.models.client import Client, ClientCertificateProfile, ClientContact
 from app.models.document_template import DocumentTemplate
 from app.models.controlled_document import (
     ControlledDocument,
@@ -13,8 +13,9 @@ from app.models.controlled_document import (
     TechnicalProfileAllowedPattern,
 )
 from app.models.equipment import Equipment
-from app.models.field_sheet import FieldSheet, FieldSheetResult
+from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSignature
 from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
+from app.models.institutional_configuration import InstitutionalConfiguration
 from app.models.invoice import CreditNote, Invoice, InvoiceItem, InvoicePayment, InvoiceSettings
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
 from app.models.reference_standard import (
@@ -47,6 +48,7 @@ __all__ = [
     "CatalogItem",
     "Certificate",
     "Client",
+    "ClientCertificateProfile",
     "ClientContact",
     "ControlledDocument",
     "ControlledDocumentVersion",
@@ -56,7 +58,9 @@ __all__ = [
     "FieldSheet",
     "FieldSheetReferenceStandard",
     "FieldSheetResult",
+    "FieldSheetSignature",
     "FieldSheetTemplateDefinition",
+    "InstitutionalConfiguration",
     "Invoice",
     "InvoiceItem",
     "InvoicePayment",

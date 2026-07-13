@@ -1,7 +1,8 @@
 export const clientModalTabs = [
   { key: 'general', label: 'Datos generales' },
   { key: 'address', label: 'Domicilio' },
-  { key: 'fiscal', label: 'Datos fiscales' }
+  { key: 'fiscal', label: 'Datos fiscales' },
+  { key: 'certificate-data', label: 'Datos para certificados' }
 ];
 
 export const clientTemplateColumns = [

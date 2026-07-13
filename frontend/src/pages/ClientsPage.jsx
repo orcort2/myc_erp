@@ -8,13 +8,16 @@ import { clientModalTabs, clientTemplateColumns } from '../constants/templates.j
 import {
   confirmClientImport,
   createClient,
+  createClientCertificateProfile,
   createQuotation,
   deleteClient,
+  deleteClientCertificateProfile,
   exportClients,
   listClients,
   previewClientImport,
   previewClientTaxConstancy,
   updateClient,
+  updateClientCertificateProfile,
   uploadClientTaxConstancy
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
@@ -85,6 +88,11 @@ function ClientsPage() {
   const [clientImportSummary, setClientImportSummary] = useState(null);
   const [clientImportMessage, setClientImportMessage] = useState('');
   const [clientModalTab, setClientModalTab] = useState('general');
+  const [certificateProfiles, setCertificateProfiles] = useState([]);
+  const [editingCertificateProfileId, setEditingCertificateProfileId] = useState(null);
+  const [certificateProfileForm, setCertificateProfileForm] = useState({
+    label: '', company: '', address: '', attention: '', isDefault: false
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -220,6 +228,8 @@ function ClientsPage() {
     setIsClientModalOpen(false);
     setClientModalTab('general');
     setValidationErrors({});
+    setCertificateProfiles([]);
+    setEditingCertificateProfileId(null);
     setNotice('');
     setError('');
   }
@@ -244,6 +254,8 @@ function ClientsPage() {
     setError('');
     setValidationErrors({});
     setClientModalTab('general');
+    setCertificateProfiles([]);
+    setEditingCertificateProfileId(null);
     setIsClientModalOpen(true);
   }
 
@@ -264,6 +276,8 @@ function ClientsPage() {
     setTaxConstancyMessage('');
     setTaxRegimeOptions([]);
     setIsClientModalOpen(true);
+    setCertificateProfiles((client.certificate_profiles ?? []).filter((profile) => profile.is_active !== false));
+    setEditingCertificateProfileId(null);
 
     setForm({
       clientType: client.client_type ?? 'persona_moral',
@@ -295,6 +309,87 @@ function ClientsPage() {
       taxRegime: client.tax_regime ?? '',
       cfdiUse: client.cfdi_use ?? ''
     });
+  }
+
+  function resetCertificateProfileForm() {
+    setEditingCertificateProfileId(null);
+    setCertificateProfileForm({ label: '', company: '', address: '', attention: '', isDefault: false });
+  }
+
+  function editCertificateProfile(profile) {
+    setEditingCertificateProfileId(profile.id);
+    setCertificateProfileForm({
+      label: profile.label ?? '',
+      company: profile.company ?? '',
+      address: profile.address ?? '',
+      attention: profile.attention ?? '',
+      isDefault: Boolean(profile.is_default),
+    });
+  }
+
+  async function saveCertificateProfile() {
+    if (!editingClientId) return;
+    const payload = {
+      label: certificateProfileForm.label.trim(),
+      company: certificateProfileForm.company.trim(),
+      address: certificateProfileForm.address.trim(),
+      attention: certificateProfileForm.attention.trim() || null,
+      is_default: Boolean(certificateProfileForm.isDefault),
+    };
+    if (!payload.label || !payload.company || !payload.address) {
+      setError('Captura nombre, empresa y domicilio del dato para certificado.');
+      return;
+    }
+    setIsSaving(true);
+    setError('');
+    try {
+      const saved = editingCertificateProfileId
+        ? await updateClientCertificateProfile(editingClientId, editingCertificateProfileId, payload)
+        : await createClientCertificateProfile(editingClientId, payload);
+      setCertificateProfiles((current) => {
+        const normalized = saved.is_default
+          ? current.map((profile) => ({ ...profile, is_default: false }))
+          : current;
+        return normalized.some((profile) => profile.id === saved.id)
+          ? normalized.map((profile) => (profile.id === saved.id ? saved : profile))
+          : [...normalized, saved];
+      });
+      setClients((current) => current.map((client) => client.id === editingClientId
+        ? { ...client, certificate_profiles: (() => {
+          const profiles = saved.is_default
+            ? (client.certificate_profiles ?? []).map((profile) => ({ ...profile, is_default: false }))
+            : (client.certificate_profiles ?? []);
+          return profiles.some((profile) => profile.id === saved.id)
+            ? profiles.map((profile) => (profile.id === saved.id ? saved : profile))
+            : [...profiles, saved];
+        })() }
+        : client));
+      resetCertificateProfileForm();
+      setNotice('Dato para certificado guardado');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function removeCertificateProfile(profile) {
+    if (!editingClientId) return;
+    setIsSaving(true);
+    setError('');
+    try {
+      await deleteClientCertificateProfile(editingClientId, profile.id);
+      setCertificateProfiles((current) => current.filter((item) => item.id !== profile.id));
+      setClients((current) => current.map((client) => client.id === editingClientId
+        ? { ...client, certificate_profiles: (client.certificate_profiles ?? []).filter((item) => item.id !== profile.id) }
+        : client));
+      if (editingCertificateProfileId === profile.id) resetCertificateProfileForm();
+      setNotice('Dato para certificado eliminado');
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function startEdit(client) {
@@ -1229,6 +1324,39 @@ function ClientsPage() {
 
                   {taxConstancyMessage ? <div className="client-fiscal-note">{taxConstancyMessage}</div> : null}
                 </>
+              ) : null}
+
+              {clientModalTab === 'certificate-data' ? (
+                <section className="client-certificate-profiles">
+                  {!editingClientId ? (
+                    <div className="form-notice">Guarda primero el cliente para poder registrar datos reutilizables de certificados.</div>
+                  ) : (
+                    <>
+                      <div className="client-certificate-profiles__intro">
+                        <div><h3>Datos para certificados</h3><p>Empresas, domicilios y personas de atención que pueden diferir de los datos de facturación.</p></div>
+                        <button className="table-button" onClick={resetCertificateProfileForm} type="button">Agregar datos</button>
+                      </div>
+                      {certificateProfiles.length ? (
+                        <div className="client-certificate-profile-list">
+                          {certificateProfiles.map((profile) => (
+                            <article className={editingCertificateProfileId === profile.id ? 'client-certificate-profile is-active' : 'client-certificate-profile'} key={profile.id}>
+                              <div><strong>{profile.label}</strong>{profile.is_default ? <span>Predeterminado</span> : null}<p>{profile.company}</p><small>{profile.address}</small>{profile.attention ? <small>Atención: {profile.attention}</small> : null}</div>
+                              <div><button className="icon-text-button" onClick={() => editCertificateProfile(profile)} type="button">Editar</button><button className="icon-text-button danger-text" onClick={() => removeCertificateProfile(profile)} type="button">Eliminar</button></div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : <div className="clients-empty">Aún no hay datos adicionales para certificados.</div>}
+                      <div className="client-certificate-profile-editor">
+                        <label>Nombre para identificarlo<input onChange={(event) => setCertificateProfileForm((current) => ({ ...current, label: event.target.value }))} placeholder="Ej. Planta Guadalajara" type="text" value={certificateProfileForm.label} /></label>
+                        <label>Empresa<input onChange={(event) => setCertificateProfileForm((current) => ({ ...current, company: event.target.value }))} type="text" value={certificateProfileForm.company} /></label>
+                        <label>Atención<input onChange={(event) => setCertificateProfileForm((current) => ({ ...current, attention: event.target.value }))} type="text" value={certificateProfileForm.attention} /></label>
+                        <label className="form-field--wide">Domicilio<textarea onChange={(event) => setCertificateProfileForm((current) => ({ ...current, address: event.target.value }))} rows={3} value={certificateProfileForm.address} /></label>
+                        <label className="field-sheet-inline-check form-field--wide"><input checked={certificateProfileForm.isDefault} onChange={(event) => setCertificateProfileForm((current) => ({ ...current, isDefault: event.target.checked }))} type="checkbox" /><span><strong>Usar como opción predeterminada</strong></span></label>
+                        <div className="client-certificate-profile-editor__actions form-field--wide"><button className="icon-text-button" onClick={resetCertificateProfileForm} type="button">Limpiar</button><button className="primary-button" disabled={isSaving} onClick={saveCertificateProfile} type="button">{editingCertificateProfileId ? 'Actualizar datos' : 'Guardar datos'}</button></div>
+                      </div>
+                    </>
+                  )}
+                </section>
               ) : null}
 
               <div className="client-form__actions client-form__actions--modal">

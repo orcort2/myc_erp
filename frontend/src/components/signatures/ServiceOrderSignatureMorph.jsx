@@ -56,6 +56,7 @@ export default function ServiceOrderSignatureMorph({
   updateSignatureForm,
   saveSignatures,
   isSaving: isSavingExternal = false,
+  onLifecycleChange,
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState('client');
@@ -121,6 +122,7 @@ export default function ServiceOrderSignatureMorph({
   function handleOpen() {
     window.clearTimeout(closeTimerRef.current);
     closeAnimationRef.current?.cancel();
+    onLifecycleChange?.(true);
     setIsResettingClose(false);
     setIsClosing(false);
     setOpen(true);
@@ -133,6 +135,7 @@ export default function ServiceOrderSignatureMorph({
     setStep('client');
     setSavingStep(null);
     setIsClosing(false);
+    onLifecycleChange?.(false);
 
     resetTransitionFrameRef.current = window.requestAnimationFrame(() => {
       resetTransitionFrameRef.current = window.requestAnimationFrame(() => {
@@ -237,6 +240,7 @@ export default function ServiceOrderSignatureMorph({
 
   async function handleSaveTechnician() {
     setSavingStep('technician');
+    onLifecycleChange?.(true);
 
     try {
       await saveSignatures();

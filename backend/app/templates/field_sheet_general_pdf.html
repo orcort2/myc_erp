@@ -33,7 +33,9 @@
         {% if logo_uri %}<img alt="MYC" src="{{ logo_uri }}" />{% endif %}
         <div class="title">
           <h1>{{ template_definition.name }}</h1>
-          <p>Metrología y Servicios MYC</p>
+          <p>{{ institution.legal_name }}</p>
+          {% if institution.address %}<p>{{ institution.address }}</p>{% endif %}
+          {% if institution.phone or institution.email %}<p>{{ institution.phone or '' }}{% if institution.phone and institution.email %} · {% endif %}{{ institution.email or '' }}</p>{% endif %}
         </div>
       </div>
       <div class="code">
@@ -113,11 +115,11 @@
     </section>
 
     <section class="signatures">
-      <article class="signature"><span class="label">Calibró</span><strong>{{ field_sheet.calibrated_by or '-' }}</strong></article>
-      <article class="signature"><span class="label">Revisó</span><strong>{{ field_sheet.reviewed_by or '-' }}</strong></article>
-      <article class="signature"><span class="label">Elaboró reporte</span><strong>{{ field_sheet.report_made_by or '-' }}</strong></article>
+      {% for signature in signatures %}
+      <article class="signature"><span class="label">{{ signature.display_label }}</span><strong>{{ signature.name or '-' }}</strong>{% if signature.signed_at %}<br>{{ signature.signed_at|date }}{% endif %}</article>
+      {% endfor %}
     </section>
 
-    <p class="footer">{{ template_definition.code }} {{ template_definition.revision }} · {{ template_definition.name }}</p>
+    <p class="footer">{{ institution.document_code }} {{ institution.initial_revision }} · {{ template_definition.name }}</p>
   </body>
 </html>

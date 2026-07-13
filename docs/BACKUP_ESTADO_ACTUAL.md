@@ -1,17 +1,18 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-07-10 15:41:07 CST
-Version actual: ERP MYC v0.3.0
-Nombre de version: Ventas Finalizado
-Version anterior: v0.2.0 (Clientes Finalizado)
+Ultima actualizacion: 2026-07-13 15:26:00 CST
+Version actual: ERP MYC v0.4.0
+Nombre de version: Datos de Certificados
+Version anterior: v0.3.0 (Ventas Finalizado)
 Nota: desde esta version, cada actualizacion del backup debe conservar fecha y hora para tener record de cambios.
 Ruta actual del proyecto
 /Users/saulcortes/Desktop/myc_erp
 La carpeta padre antes se llamaba ERP MYC, pero fue renombrada a myc_erp. No hay problema con el cambio. De ahora en adelante todas las rutas deben apuntar a myc_erp.
 Git ya esta inicializado.
 Ultimo commit conocido:
-b10f094 se intento mejorar el canvas para firma de ordenes de trabajo
+f10ed5a se tiene la primera version del render para la digitalización de archivos
 Commits recientes:
+f10ed5a se tiene la primera version del render para la digitalización de archivos
 b10f094 se intento mejorar el canvas para firma de ordenes de trabajo
 fb25d13 se agrego un modal de firmas especial
 a74fb37 Sincroniza estado final del backup
@@ -25,10 +26,264 @@ ad1aef0 se declara ordenes de trabajo por ETS
 Estado Git verificado:
 ## main...origin/main
  M docs/BACKUP_ESTADO_ACTUAL.md
+ M frontend/src/components/document-designer/DocumentPreviewRenderer.jsx
+ M frontend/src/components/document-designer/document-designer.css
+ M frontend/src/components/document-designer/documentDesignerModel.js
+ M frontend/src/pages/labs/DocumentDesignerLabPage.jsx
  M frontend/src/components/signatures/ServiceOrderSignatureMorph.jsx
- M frontend/src/components/signatures/SignaturePad.jsx
- M frontend/src/components/signatures/signature.css
+ M frontend/src/pages/ServiceOrdersPage.jsx
+ M frontend/src/styles/global.css
+?? frontend/src/components/document-designer/documentCanvasEngine.js
+?? backups/erp_myc_2026_07_13_1109.sql
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-07-13 15:26:00 CST - Hojas de Campo agrupadas por Orden de Trabajo:
+- Se reactivo `Hojas de Campo` en la navegacion principal; la pagina existente estaba implementada pero no registrada en `navigation/modules`.
+- El modulo ofrece dos vistas sobre los mismos registros: `Todas las hojas` y `Ordenes de Trabajo`; no se creo un modulo ni persistencia paralela.
+- `Todas las hojas` muestra folio, cliente, instrumento, marca/modelo, serie, identificacion, plantilla, estado, fecha y ultima actualizacion, con los nueve filtros solicitados.
+- `Ordenes de Trabajo` agrupa exclusivamente por `service_order -> work_order -> equipment -> field_sheet`, incluye equipos sin hoja y nunca agrupa por serie o identificacion.
+- Cada acordeon de OT calcula equipos, hojas creadas, captura, revision, aprobadas, pendientes y porcentaje de avance.
+- Los equipos muestran una sola accion primaria: `Crear hoja` cuando no existe o `Abrir/Continuar captura` cuando ya existe; la regla usa el mapa de una hoja activa por equipo.
+- Las acciones abren el mismo expediente operativo de Servicios mediante contexto de equipo y OT. Tambien se ofrecen PDF y envio a revision cuando el estado lo permite, sin mezclar acciones administrativas del ETS.
+- Filtros de OT: numero, cliente, ETS, estado general, fecha y tecnico responsable.
+- Validacion PostgreSQL: 3 ETS, 4 OT, 50 equipos, 0 equipos sin OT y 0 equipos con hojas activas duplicadas.
+- Validacion visual: escritorio 1280 px sin overflow horizontal; filas de equipo de 83 px y resumen de OT de 92.5 px. Vista movil 390 px en una columna y sin overflow.
+- `npm run build` OK, backend unittest 9/9 OK y `git diff --check` OK.
+- Backup SQL actualizado: `backups/erp_myc_2026_07_13_1526.sql` (1.4 MB), verificado con revision `f0c1d2e3f4a5`.
+
+Actualizacion 2026-07-13 15:17:00 CST - ERP MYC v0.4.0, Datos de Certificados:
+- El modal de creacion de Hojas de Campo se compacto y reorganizo en dos pasos: cliente del certificado y plantilla.
+- Se corrigio la regla global que convertia radios y casillas en controles sobredimensionados; las opciones ahora son tarjetas compactas accesibles.
+- `Cliente diferente al facturado` abre un segundo modal para capturar empresa, domicilio y Atencion, sin saturar el flujo principal.
+- Los datos alternos pueden guardarse y reutilizarse desde la nueva pestaña `Datos para certificados` del cliente facturado.
+- Se agrego el modelo `client_certificate_profiles` con etiqueta, empresa, domicilio, Atencion, valor predeterminado, auditoria y borrado logico.
+- La migracion `f0c1d2e3f4a5` amplia el modulo de Clientes previamente sellado. Por tratarse de una capacidad funcional nueva y compatible, la version cambia de v0.3.0 a v0.4.0.
+- El cliente de facturacion, ETS, equipo y datos operativos existentes no se modifican; el perfil alterno solo alimenta hojas y certificados.
+- `npm run build` OK y backend unittest 9/9 OK.
+- Prueba PostgreSQL transaccional: crear, editar, marcar predeterminado, listar y eliminar un perfil OK; rollback confirmado y sin datos residuales.
+- Prueba transaccional de creacion de hoja con cliente diferente: empresa, domicilio y Atencion llegaron a la captura; rollback confirmado y sin hoja residual.
+- Validacion visual a 1280 x 720: modal principal de 820 x 672 px, tarjetas de opcion de 68 px, campos de 40 px y sin overflow; modal secundario de 680 x 579 px, casillas de 17 x 17 px y sin overflow.
+- Backup SQL actualizado: `backups/erp_myc_2026_07_13_1517.sql` (1.3 MB), verificado con revision `f0c1d2e3f4a5` y tabla `client_certificate_profiles`.
+
+Actualizacion 2026-07-13 15:06:00 CST - Correccion de creacion y precarga de Hojas de Campo:
+- Se reprodujo el error 500 mostrado al crear una hoja: `FieldSheet` recibia `work_order_id` tanto desde el payload como desde la relacion del equipo.
+- Se excluyo el valor duplicado y la Orden de Trabajo se resuelve exclusivamente desde el equipo seleccionado.
+- El modo `Usar el mismo cliente facturado` ahora congela en la hoja la empresa y el domicilio vigentes del cliente maestro.
+- `Atencion` se captura manualmente en el modal para cualquiera de los dos modos de cliente.
+- La captura abre inmediatamente despues de crear y conserva la precarga del equipo: instrumento, marca, modelo, serie, identificacion, alcance y condicion inicial; tambien muestra folio, fechas y cliente resueltos por backend.
+- Prueba transaccional sobre el equipo manometro del ETS OSMYC-26-07-0006: creacion correcta con 11 filas, folio reservado, empresa, domicilio, condicion inicial y Atencion manual; rollback confirmado sin datos residuales.
+- `npm run build` OK, backend unittest 8/8 OK y `git diff --check` OK.
+- Backup SQL actualizado: `backups/erp_myc_2026_07_13_1506.sql`.
+
+Actualizacion 2026-07-13 14:56:00 CST - Identidad institucional real e inicio de integracion operativa de 23 hojas:
+Identidad:
+- Se elimino `LAB_INSTITUTION`; el laboratorio consume `GET /api/institutional-configuration` y el endpoint de lectura es publico para permitir el laboratorio permanente sin sesion.
+- La fuente central editable contiene razon social, FCA-30, R1, domicilio de Av. Cristobal Colon 6086 Int. 57, telefonos 33 5009 2659 / 33 1398 8169, correo contacto@mycmetrology.com.mx y logotipo MYC.
+- La migracion `f0b1c2d3e4f5` completa solo valores vacios o simulados; no sustituye valores institucionales ya editados. Los snapshots existentes con identidad completa permanecen inmutables.
+Integracion operativa:
+- El selector de creacion ETS usa las 23 plantillas de `officialFieldSheetTemplates.js` y guarda `template_key`, `template_version`, `template_snapshot` e `institutional_snapshot`.
+- La sugerencia se movio a un catalogo declarativo por servicio, tipo, magnitud o nombre de equipo. Si no hay coincidencia, obliga seleccion manual y no asigna General silenciosamente.
+- Se conservaron la proteccion backend contra dos hojas activas, apertura directa tras crear, captura con `FieldSheetLayout`, `results_rows`, firmas y estados actuales.
+- Se agrego validacion backend de permisos read/create/update/review y propagacion del usuario a auditoria.
+Validacion:
+- `npm run build` OK.
+- Backend unittest: 7 pruebas OK, incluyendo contrato de las 23 claves e identidad completa no simulada.
+- Navegador: 23/23 plantillas muestran identidad real, ninguna contiene `simulada`, `myc.test` o `33 0000 0000`, y ninguna pagina presenta overflow.
+- Se regeneraron 23 PDF Carta; 21 tienen una pagina, Electrica y TLD 6 Canales tienen dos. Texto institucional y paginacion verificados con pypdf; siete formatos representativos se renderizaron para inspeccion visual.
+Backup:
+- `backups/erp_myc_2026_07_13_1456.sql` (1.3 MB), verificado con revision `f0b1c2d3e4f5` e identidad institucional real.
+Pendientes que impiden declarar completa la integracion solicitada:
+- Ejecutar E2E autenticado ETS -> equipo -> folio -> captura -> revision -> aprobacion; la sesion de navegador disponible redirige a login.
+- Sustituir el PDF Jinja backend por una salida verdaderamente compartida con el renderer React; hoy usa el mismo snapshot pero sigue siendo un renderer paralelo.
+- Completar filtros y apertura de captura desde el listado global de Hojas y endpoints explicitos de aprobar/rechazar.
+
+Actualizacion 2026-07-13 14:41:27 CST - Paginacion real y 23 Hojas de Campo en laboratorio:
+Alcance:
+- Se corrigio el encabezado para centrar titulo y subtitulo contra el ancho completo de Carta, independientemente de logo, codigo y revision.
+- Se implemento paginacion declarativa en el renderer comun con bloques indivisibles, division de filas, encabezados de tabla repetidos, encabezados de continuacion, pie y Pagina X de Y.
+- Se eliminaron cortes, superposicion con pies, overflow oculto y paginas residuales.
+Catalogo:
+- El selector del laboratorio contiene las 23 hojas oficiales distribuidas en las ocho familias semanticas aprobadas.
+- Electrica y TLD 6 Canales generan dos paginas; TLD normal y las otras veinte hojas generan una.
+- Copa usa una composicion especializada declarativa con diagrama controlado, subtablas y cuatro firmas.
+Validacion:
+- Las 25 paginas visibles tienen centro de titulo en 0 px, cero overflow y separacion positiva respecto al pie.
+- Una prueba de crecimiento con 84 filas genero tres paginas, repitio encabezado de tabla y movio firmas completas a la ultima pagina.
+- 23 PDF Carta y 25 PNG de evidencia generados desde el mismo `FieldSheetLayout`.
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- Suite backend `unittest` -> 5 pruebas OK; backend operativo sin cambios en esta fase.
+Documentacion y evidencias:
+- `docs/IMPLEMENTACION_23_HOJAS_CAMPO_LAB.md`.
+- `output/pdf/field-sheet-lab/` y `output/pdf/field-sheet-lab/evidence-final/`.
+- `scripts/render-field-sheet-lab-pdfs.sh` permite regenerar todas las evidencias.
+Backup:
+- Se actualizo este respaldo documental.
+- No se genero respaldo SQL nuevo porque no hubo cambios de esquema, datos ni integracion con backend; sigue vigente `backups/erp_myc_2026_07_13_1233.sql`.
+Pendientes:
+- Validacion de Calidad para etiquetas ambiguas y activo oficial del diagrama de Copa.
+- La conexion de estas plantillas al modulo operativo, ETS y seleccion automatica queda expresamente fuera de esta fase.
+
+Actualizacion 2026-07-13 12:43:22 CST - Laboratorio permanente de Hojas de Campo:
+Objetivo:
+- Validar el motor visual y operativo con datos simulados antes de conectarlo completamente con ETS, equipos, certificados o base de datos.
+Implementacion:
+- Se agregaron las rutas publicas de desarrollo `/dashboard/field-sheet-lab` y `/dashboard/field-sheet-preview`.
+- El laboratorio permite alternar sin recarga entre Anemometro, Calibradores, Presion y Bascula y Balanza.
+- Todos los campos, tablas, unidades, fechas, condiciones, observaciones y firmas se editan localmente.
+- Las tablas permiten agregar y retirar filas por seccion y navegar con Tab, Shift+Tab, flechas y Enter.
+- El inspector expone plantilla, version, familia, bloques, tabla, snapshot inmutable y JSON actual.
+- `Mostrar estructura` se deriva directamente de `template.blocks` y hace visible el ensamblado real de componentes reutilizables.
+Impresion:
+- `Vista PDF` y el lienzo renderizan el mismo `FieldSheetLayout` y comparten el mismo estado; no se creo un renderer paralelo.
+- La impresion usa `window.print()` y reglas Carta mientras esta fase permanece desconectada del PDF backend.
+Validacion:
+- Prueba interactiva de las cuatro plantillas, edicion, alta de fila, foco por teclado, inspector, estructura y vista PDF -> OK.
+- Consola del navegador -> 0 errores.
+- `npm run build` -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Documentacion:
+- `docs/LABORATORIO_HOJAS_CAMPO.md` contiene acceso, alcance, pruebas y limites deliberados.
+Backup:
+- Se actualizo este respaldo documental.
+- No se genero respaldo SQL porque el laboratorio solo modifica frontend y documentacion; el respaldo vigente de base de datos sigue siendo `backups/erp_myc_2026_07_13_1233.sql`.
+
+Actualizacion 2026-07-13 12:33:42 CST - Motor base oficial de Hojas de Campo, fase 1:
+Alcance:
+- Se implemento una estructura compartida, ocho familias semanticas, modificadores declarativos, bloques reutilizables, firmas comunes, paginacion dinamica y snapshots inmutables.
+- Se dejaron funcionales Anemometro, Calibradores, Presion y Bascula y Balanza con geometria basada en los PDF originales.
+Identidad institucional:
+- Se creo una configuracion central editable con razon social `METROLOGIA Y SERVICIOS MYC`, codigo `FCA-30` y revision `R1`.
+- Domicilio, telefono, correo y logotipo se resuelven desde la configuracion; cada hoja conserva snapshot institucional.
+Persistencia y compatibilidad:
+- Se agregaron `institutional_configurations`, `field_sheets.institutional_snapshot_json` y `field_sheet_signatures`.
+- Las firmas soportan rol, etiqueta, nombre, dato de firma, fecha, usuario ERP y posicion.
+- Se conservaron ETS, equipos, folios, certificados, estados, auditoria, PDF, `results_rows`, `row_data` y los tres nombres de firma heredados mediante adaptadores.
+- La migracion no reescribe snapshots de plantillas historicas.
+Automatizacion:
+- No se implementaron calculos, incertidumbre, promedios, cumplimiento, tolerancias, conversiones ni seleccion automatica de patrones.
+- Presion y Bascula conservan encabezados configurables y marca de validacion funcional pendiente.
+Migracion:
+- `f0a1b2c3d4e5_add_field_sheet_engine_foundation.py` aplicada correctamente; base local en `f0a1b2c3d4e5 (head)`.
+Pruebas:
+- 5 pruebas unitarias backend -> OK.
+- Compilacion Python y OpenAPI -> OK.
+- Prueba transaccional de snapshot, `results_rows` y firma -> OK; rollback sin datos residuales.
+- `npm run build` -> OK; se conserva la advertencia no bloqueante de chunk mayor a 500 kB.
+- Cuatro PDF Carta renderizados e inspeccionados; todos generan una sola pagina, `Pagina 1 de 1`, `FCA-30` y `R1`, sin paginas residuales.
+Documentacion y evidencias:
+- Entrega tecnica en `docs/IMPLEMENTACION_MOTOR_HOJAS_CAMPO_FASE_1.md`.
+- PDF en `output/pdf/` e imagenes en `output/pdf/evidence/`.
+Backup SQL:
+- `backups/erp_myc_2026_07_13_1233.sql` generado despues de aplicar y verificar la migracion.
+Pendientes:
+- Validacion de Calidad para Presion, Bascula, General, Electrica, Reglas y Verificacion.
+- Implementacion detallada de las otras 19 plantillas y captura grafica de firmas en una fase posterior.
+
+Actualizacion 2026-07-13 12:17:25 CST - Analisis oficial de las 23 Hojas de Campo originales:
+Objetivo:
+- Analizar los 23 PDF originales de MYC como referencia oficial del diseno documental antes de continuar la implementacion del Constructor Visual.
+Corpus verificado:
+- Se revisaron 23 archivos y 27 paginas fisicas, todas en formato Carta vertical.
+- Veinte formatos tienen una pagina; Electrica tiene tres paginas fisicas; TLD 6 Canales y TLD tienen dos paginas cada uno.
+- Se inspeccionaron estructura, geometria, encabezados, pies, campos, tablas, firmas, observaciones, continuaciones y elementos graficos especiales.
+Conclusiones principales:
+- Se confirmo una estructura madre comun y ocho familias semanticas reales de tablas de medicion.
+- La variacion entre plantillas se concentra en la magnitud, campos particulares del instrumento, configuracion de mediciones, paginacion y posicion de firmas.
+- Copa es la unica composicion documental completamente especial y requiere bloques propios para sus subtablas y diagrama.
+- Se documentaron inconsistencias institucionales, domicilios, telefonos, codigos, revisiones, paginacion, ortografia y rotulos ambiguos que deben resolverse antes de normalizar o publicar plantillas editables.
+Documentacion creada:
+- `docs/ANALISIS_HOJAS_CAMPO_ORIGINALES.md` contiene el inventario por formato, matriz de tablas, bloques reutilizables, familias, inconsistencias, riesgos, decisiones pendientes y huellas SHA-256 de los 23 archivos fuente.
+Alcance y validacion:
+- No se modifico codigo, modelo del constructor, renderer, rutas, backend, base de datos ni plantillas operativas como parte de este analisis.
+- No se genero respaldo SQL porque no hubo cambios de datos ni de backend.
+- `git diff --check` -> OK.
+Siguiente paso:
+- Esperar definiciones de negocio sobre las ambiguedades documentadas y nuevas instrucciones antes de iniciar implementacion.
+
+Actualizacion 2026-07-13 12:05:01 CST - Estructura base oficial y Field Registry v1 de Hojas de Campo:
+Objetivo:
+- Formalizar la primera estructura madre compartida por las Hojas de Campo y el inventario canónico de campos antes de construir familias de tablas o modificar el motor operativo.
+Auditoria previa:
+- Se confirmo que `frontend/src/constants/fieldSheetTemplates.js` ya contiene un catalogo plano con claves legacy, mientras backend define familias de bloque anteriores en `backend/app/schemas/field_sheet_template.py` y `backend/app/services/field_sheet_templates.py`.
+- Esas definiciones no forman todavia una fuente unica: usan nombres distintos, metadatos incompletos y no cubren el contrato canonico propuesto.
+- Se verifico que varias fuentes conceptuales solicitadas no existen hoy, entre ellas configuracion institucional global, `service.contact_name`, `service.address`, metadatos extendidos de equipo, folio propio de Hoja de Campo y firmas de cliente/autorizador.
+Documentacion creada:
+- Se creo `docs/FIELD_SHEET_FIELD_REGISTRY.md` como definicion arquitectonica oficial v1.
+- Se definio `field-sheet-base` con once bloques en orden: encabezado, referencia, cliente, instrumento, fechas, ambiente, condicion, observaciones, mediciones, firmas y pie.
+- El registro documenta identidad, etiqueta, tipo, categoria, fuente, editabilidad, obligatoriedad, visibilidad, impresion, busqueda, filtro, alcance y estado de disponibilidad.
+- Se incluyeron las familias institution, document, customer, service, instrument, environment, equipment, capture, signature y measurement.
+- Se definieron roles de tabla `reference`, `measurement`, `result`, `unit` y `notes`; las etiquetas como Patron, IBC o Equipo quedan como presentacion de una columna y no como claves nuevas.
+- Se documento la equivalencia entre las claves planas actuales y los IDs canonicos para una migracion futura compatible.
+- `docs/MDE_SPEC.md` ahora enlaza esta especializacion oficial y deja explicito que todavia no sustituye contratos operativos, snapshots, payloads ni PDFs.
+Alcance y validacion:
+- No se modificaron modelos, migraciones, endpoints, plantillas activas, captura, constructor visual ni renderizadores.
+- Se verificaron por busqueda las fuentes reales de `FieldSheet`, `FieldSheetResult`, `Equipment`, `Client`, `ServiceOrder`, `ServiceWorkOrder` y `User` antes de asignar estados `available`, `snapshot`, `resolver`, `planned` o `runtime`.
+- `git diff --check` -> OK.
+Backup:
+- Se actualizo este respaldo documental.
+- No se genero respaldo SQL porque esta fase solo agrega especificacion y no cambia backend ni base de datos.
+Siguiente paso:
+- Convertir el inventario aprobado en un modulo de datos puro con validacion de IDs unicos, contrato completo, resolucion de alias y pruebas, antes de conectarlo al constructor, formularios o PDF.
+
+Actualizacion 2026-07-13 11:40:53 CST - Sprint 4 Edicion libre, seleccion multiple y gestion de paginas:
+Estado anterior:
+- El Sprint 3 ya permitia insertar, seleccionar, duplicar, eliminar y mover un solo objeto dentro de un documento multipagina, con limites de area imprimible e insercion inteligente.
+- La seleccion estaba basada en un unico elemento; no existian grupos, portapapeles interno, atajos de edicion ni gestion completa de formato y ciclo de vida de paginas.
+Archivos modificados:
+- `frontend/src/pages/labs/DocumentDesignerLabPage.jsx`
+- `frontend/src/components/document-designer/DocumentPreviewRenderer.jsx`
+- `frontend/src/components/document-designer/documentCanvasEngine.js`
+- `frontend/src/components/document-designer/documentDesignerModel.js`
+- `frontend/src/components/document-designer/document-designer.css`
+- `docs/BACKUP_ESTADO_ACTUAL.md`
+Modelo de seleccion y edicion:
+- La fuente unica de seleccion ahora es `selectedObjectIds`; `selectedElementId` se deriva unicamente para mantener compatible el inspector de objeto individual.
+- La seleccion multiple se limita a la pagina activa, admite Cmd/Ctrl/Shift para alternar objetos, muestra un contorno grupal y conserva las distancias relativas durante el arrastre libre del grupo.
+- `activePageId` identifica la hoja de trabajo para insercion, pegado, configuracion y acciones de pagina; al cambiar de pagina se evita conservar una seleccion cruzada invalida.
+- El arrastre manual ya no aplica deteccion de colisiones: los objetos pueden superponerse intencionalmente, pero el grupo completo sigue limitado al area imprimible.
+Portapapeles y atajos:
+- El portapapeles interno usa la estructura `{ mode, objects, sourcePageId }`; copiar conserva el documento, cortar elimina la seleccion y pegar crea identificadores independientes en la pagina activa.
+- El pegado grupal conserva posiciones relativas, busca una ubicacion valida y respeta los limites imprimibles.
+- Atajos implementados: Cmd/Ctrl+C, Cmd/Ctrl+X, Cmd/Ctrl+V, Cmd/Ctrl+A, Delete/Backspace y Escape.
+- Los atajos destructivos y de seleccion no interceptan escritura en `input`, `textarea`, `select` ni elementos editables.
+Gestion de paginas y formatos:
+- El panel izquierdo muestra todas las paginas, su formato, orientacion y cantidad de objetos, y permite activarlas, agregarlas, duplicarlas o solicitar su borrado.
+- El inspector configura Carta, Oficio, A4, A3 y Personalizado; admite orientacion vertical/horizontal y dimensiones personalizadas entre 50 y 1000 mm.
+- Cambiar dimensiones normaliza la geometria existente para mantener objetos dentro del area imprimible y conserva la relacion de aspecto de imagenes.
+- Duplicar una pagina clona configuracion y objetos con IDs nuevos; borrar usa `ConfirmDialog`, selecciona una hoja vecina y nunca permite eliminar la ultima pagina.
+Validacion ejecutada:
+- Pruebas puras del motor: pegado grupal con IDs unicos y distancias relativas conservadas, duplicado independiente, Carta horizontal en 279.4 x 215.9 mm y cero objetos fuera de limites tras redimensionar.
+- Prueba interactiva: seleccion multiple y contorno grupal, arrastre conjunto con el mismo delta para todos los objetos, clic simple posterior, superposicion manual sin redistribucion, copiar/pegar y cortar/pegar, insercion en pagina activa, alta/duplicado/borrado de paginas, proteccion de Backspace dentro del textarea, Cmd+A y Escape.
+- Formatos verificados visualmente: Carta, Oficio, A4, A3 y Personalizado en ambas orientaciones aplicables; el duplicado personalizado se pudo cambiar a A4 sin modificar su pagina de origen.
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Backup y estado pendiente:
+- No se genero un respaldo SQL nuevo porque este sprint solo modifica frontend y documentacion; se conserva `backups/erp_myc_2026_07_13_1109.sql` como ultimo respaldo de base de datos.
+- Quedan fuera de este sprint resize de objetos, snapping, guias, reglas, undo/redo, capas, exportacion PDF, persistencia y backend del diseñador.
+- Los cambios locales previos de ETS y firmas se conservaron sin modificarlos.
+
+Actualizacion 2026-07-13 11:09:07 CST - Sprint 3 Motor del lienzo y backup:
+Objetivo:
+- Convertir el laboratorio del Constructor Visual de Documentos en un lienzo multipagina robusto sin cambiar el modelo `documentDefinition -> pages -> objects`.
+- Actualizar el respaldo de base de datos al finalizar la implementacion y sus validaciones.
+Cambios principales:
+- Se creo `frontend/src/components/document-designer/documentCanvasEngine.js` con utilidades centrales para area imprimible, normalizacion geometrica, deteccion de colisiones, busqueda de posicion, calculo de insercion, creacion de paginas e insercion inteligente.
+- La insercion comienza debajo del ultimo objeto visible, respeta margenes y una separacion uniforme de 4 mm; si no hay espacio crea una pagina A4 nueva con la configuracion de la pagina anterior.
+- Insercion y duplicado comparten el mismo algoritmo, generan `page_id` correcto y nunca colocan un objeto nuevo fuera del area imprimible.
+- Movimiento por arrastre y cambios X/Y del inspector se limitan a margenes, ancho y alto imprimibles.
+- El renderer mantiene seleccion e interaccion sobre varias paginas y muestra borde, cuatro referencias e indicador `Seleccionado`.
+- Se agrego una barra de estado con paginas, objetos, tamano, orientacion y geometria/pagina del objeto seleccionado en tiempo real.
+Validacion ejecutada:
+- Prueba automatizada con 20 bloques: 3 paginas totales, 10 bloques en cada pagina nueva, cero colisiones y cero violaciones de limites.
+- Prueba en navegador: 20 inserciones, duplicado que crea pagina 4, limites X=12 mm/Y=263 mm, eliminacion y seleccion multipagina sin errores de consola.
+- `npm run build` en frontend -> OK con advertencia no bloqueante de chunk mayor a 500 kB.
+- `git diff --check` -> OK.
+Backup generado:
+- `backups/erp_myc_2026_07_13_1109.sql`
+- Tamano verificado: 1.3 MB.
+Estado pendiente / nota:
+- No se implementaron resize, snapping, guias magneticas, reglas, exportacion PDF, backend ni persistencia del diseñador; corresponden a sprints posteriores.
+- Los cambios locales previos de ETS y firmas se conservaron sin modificarlos.
 
 Actualizacion 2026-07-10 10:47:17 CST - Curva interpolatingSpring para el cierre Genie de firmas:
 Objetivo:

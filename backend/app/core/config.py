@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     app_name: str = "ERP MYC"
-    app_version: str = "0.1.0"
+    app_version: str = "0.4.0"
     environment: str = "development"
     database_url: str = Field(
         default="postgresql+psycopg://localhost:5432/erp_myc"

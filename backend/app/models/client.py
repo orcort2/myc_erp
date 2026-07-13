@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -43,6 +43,9 @@ class Client(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     contacts: Mapped[list["ClientContact"]] = relationship(
         back_populates="client", cascade="all, delete-orphan"
     )
+    certificate_profiles: Mapped[list["ClientCertificateProfile"]] = relationship(
+        back_populates="client", cascade="all, delete-orphan"
+    )
     quotations: Mapped[list["Quotation"]] = relationship(back_populates="client")
     service_orders: Mapped[list["ServiceOrder"]] = relationship(back_populates="client")
 
@@ -57,3 +60,16 @@ class ClientContact(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     position: Mapped[str | None] = mapped_column(String(120))
 
     client: Mapped[Client] = relationship(back_populates="contacts")
+
+
+class ClientCertificateProfile(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
+    __tablename__ = "client_certificate_profiles"
+
+    client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"), index=True)
+    label: Mapped[str] = mapped_column(String(120))
+    company: Mapped[str] = mapped_column(String(255))
+    address: Mapped[str] = mapped_column(Text)
+    attention: Mapped[str | None] = mapped_column(String(180))
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    client: Mapped[Client] = relationship(back_populates="certificate_profiles")

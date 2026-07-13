@@ -7,6 +7,10 @@ export const PAGE_SIZES_MM = {
     width: 210,
     height: 297,
   },
+  A3: {
+    width: 297,
+    height: 420,
+  },
   LETTER: {
     width: 215.9,
     height: 279.4,
@@ -37,7 +41,112 @@ const SUPPORTED_OBJECT_TYPES = new Set([
   'document-revision',
   'signature-line',
   'group',
+  'myc-header',
+  'myc-footer',
+  'client-data',
+  'equipment-data',
+  'service-data',
+  'personnel-data',
+  'editable-table',
+  'environmental-conditions',
+  'results',
+  'observations',
+  'signature-single',
+  'signature-double',
+  'signature-triple',
+  'pagination',
+  'qr-code',
+  'authentication',
+  'title',
+  'divider',
+  'spacer',
 ]);
+
+export const DOCUMENT_BLOCK_LIBRARY = [
+  {
+    category: 'Estructura MYC',
+    blocks: [
+      {
+        type: 'myc-header', label: 'Encabezado MYC', description: 'Identidad institucional',
+        size: { width: 180, height: 25 },
+        props: { showLogo: true, showBusinessName: true, showAddress: true, showContact: true, showAccreditation: true, documentTitle: 'Título del documento' },
+      },
+      {
+        type: 'myc-footer', label: 'Pie institucional', description: 'Datos institucionales y página',
+        size: { width: 180, height: 18 },
+        props: { showBusinessName: true, showAddress: true, showPhones: true, showWebsite: true, showPagination: true },
+      },
+    ],
+  },
+  {
+    category: 'Información',
+    blocks: [
+      { type: 'client-data', label: 'Datos del cliente', description: 'Identificación del cliente', size: { width: 180, height: 31 }, props: { showTradeName: true, showBusinessName: true, showRfc: true, showAddress: true, showContact: true, showEmail: true } },
+      { type: 'equipment-data', label: 'Datos del equipo', description: 'Identificación del instrumento', size: { width: 180, height: 38 }, props: { showInstrument: true, showBrand: true, showModel: true, showSerial: true, showInternalId: true, showLocation: true, showResolution: true } },
+      { type: 'service-data', label: 'Datos del servicio', description: 'Folios y fechas del servicio', size: { width: 180, height: 34 }, props: { showEtsFolio: true, showWorkOrderFolio: true, showCertificateFolio: true, showServiceType: true, showServiceDate: true, showNextCalibration: true } },
+      { type: 'personnel-data', label: 'Datos del personal', description: 'Responsables del servicio', size: { width: 180, height: 25 }, props: { showTechnician: true, showCaptureResponsible: true, showQualityResponsible: true, showAdvisor: true } },
+    ],
+  },
+  {
+    category: 'Tablas',
+    blocks: [
+      { type: 'editable-table', label: 'Tabla editable', description: 'Tabla documental configurable', size: { width: 180, height: 40 }, props: { title: 'Tabla de ejemplo', columns: 3, headers: ['Columna 1', 'Columna 2', 'Columna 3'], initialRows: 3, showBorders: true } },
+      { type: 'environmental-conditions', label: 'Condiciones ambientales', description: 'Condiciones del servicio', size: { width: 180, height: 28 }, props: { showTemperature: true, showHumidity: true, showPressure: true, showInitialCondition: true, showFinalCondition: true } },
+      { type: 'results', label: 'Resultados', description: 'Resultados de ejemplo', size: { width: 180, height: 42 }, props: { title: 'Resultados', columns: 5, headers: ['Punto', 'Unidad', 'Referencia', 'Resultado', 'Observación'], showUnit: true, showReference: true, showResult: true, showObservation: true } },
+      { type: 'observations', label: 'Observaciones', description: 'Notas y comentarios', size: { width: 180, height: 28 }, props: { title: 'Observaciones', initialText: 'Sin observaciones.', lines: 3 } },
+    ],
+  },
+  {
+    category: 'Firmas',
+    blocks: [
+      { type: 'signature-single', label: 'Firma simple', description: 'Un espacio de firma', size: { width: 180, height: 34 }, props: { title: 'Autorización', signerLabel: 'Firma', showNames: true, showPositions: true, showDates: false } },
+      { type: 'signature-double', label: 'Firma doble', description: 'Dos espacios de firma', size: { width: 180, height: 38 }, props: { title: 'Firmas', leftLabel: 'Elaboró', rightLabel: 'Revisó', showNames: true, showPositions: true, showDates: false } },
+      { type: 'signature-triple', label: 'Firma triple', description: 'Tres espacios de firma', size: { width: 180, height: 38 }, props: { title: 'Firmas', leftLabel: 'Elaboró', centerLabel: 'Revisó', rightLabel: 'Autorizó', showNames: true, showPositions: true, showDates: false } },
+    ],
+  },
+  {
+    category: 'Control documental',
+    blocks: [
+      { type: 'document-code', label: 'Código del documento', description: 'Clave documental', size: { width: 70, height: 10 }, props: { code: 'MYC-0000', showLabel: true, align: 'left' } },
+      { type: 'document-revision', label: 'Revisión', description: 'Control de revisión', size: { width: 70, height: 12 }, props: { revision: 'R0', showRevisionDate: true, revisionDate: '2026-07-13' } },
+      { type: 'pagination', label: 'Paginación', description: 'Número de página', size: { width: 55, height: 9 }, props: { format: 'Página 1 de 3', align: 'right' } },
+      { type: 'qr-code', label: 'Código QR', description: 'Representación simulada', size: { width: 35, height: 42 }, props: { content: 'https://myc.example/verificar', size: 28, label: 'Escanea para verificar' } },
+      { type: 'authentication', label: 'Autenticación', description: 'Folio y verificación', size: { width: 180, height: 22 }, props: { text: 'Documento autenticado', folio: 'MYC-AUTH-0000', url: 'https://myc.example/verificar', showVerificationCode: true } },
+    ],
+  },
+  {
+    category: 'Elementos básicos',
+    blocks: [
+      { type: 'title', label: 'Título', description: 'Encabezado de contenido', size: { width: 180, height: 12 }, props: { text: 'Título del documento', level: 1, align: 'left', bold: true, fontSize: 18 } },
+      { type: 'text', label: 'Texto', description: 'Contenido libre', size: { width: 180, height: 22 }, props: { text: 'Texto de ejemplo', align: 'left', bold: false, italic: false, fontSize: 10 } },
+      { type: 'image', label: 'Imagen', description: 'Imagen por URL o ruta', size: { width: 70, height: 35 }, props: { url: '', alt: 'Imagen de ejemplo', imageWidth: 70, align: 'center' } },
+      { type: 'divider', label: 'Separador', description: 'Línea divisoria', size: { width: 180, height: 5 }, props: { thickness: 1, lineStyle: 'solid', spacingTop: 2, spacingBottom: 2 } },
+      { type: 'spacer', label: 'Espaciador', description: 'Espacio vertical', size: { width: 180, height: 10 }, props: { height: 10 } },
+    ],
+  },
+];
+
+export function createDocumentBlock(type, overrides = {}) {
+  const definition = DOCUMENT_BLOCK_LIBRARY
+    .flatMap((category) => category.blocks)
+    .find((block) => block.type === type);
+
+  if (!definition) {
+    throw new Error(`Bloque documental no registrado: ${type}`);
+  }
+
+  return createDocumentElement(type, {
+    width: definition.size.width,
+    height: definition.size.height,
+    label: definition.label,
+    props: deepClone(definition.props),
+    ...overrides,
+    props: {
+      ...deepClone(definition.props),
+      ...deepClone(overrides.props || {}),
+    },
+  });
+}
 
 export function mmToPx(value) {
   const number = Number(value);
@@ -235,12 +344,14 @@ export function normalizeDocumentDefinition(definition) {
 export function normalizePageObject(page, fallbackId = 'page-1') {
   const source = page && typeof page === 'object' ? page : {};
 
-  const dimensions = getPageDimensions({
-    size: source.size || 'A4',
-    orientation: source.orientation || 'portrait',
-    customWidth: source.width,
-    customHeight: source.height,
-  });
+  const dimensions = source.size === 'CUSTOM'
+    ? { width: Number(source.width) || 210, height: Number(source.height) || 297 }
+    : getPageDimensions({
+        size: source.size || 'A4',
+        orientation: source.orientation || 'portrait',
+        customWidth: source.width,
+        customHeight: source.height,
+      });
 
   return createPageObject({
     ...source,
@@ -542,4 +653,16 @@ function createElementId(type) {
   return `${safeType}-${Date.now()}-${Math.random()
     .toString(16)
     .slice(2)}`;
+}
+
+function deepClone(value) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof structuredClone === 'function') {
+    return structuredClone(value);
+  }
+
+  return JSON.parse(JSON.stringify(value));
 }

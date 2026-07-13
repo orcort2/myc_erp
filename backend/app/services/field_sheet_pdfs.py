@@ -11,12 +11,16 @@ from weasyprint import HTML
 from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.services.field_sheets import get_field_sheet
 from app.services.field_sheet_templates import get_field_sheet_template
+from app.services.institutional_configurations import (
+    get_or_create_institutional_configuration,
+    institutional_snapshot,
+    resolve_logo_path,
+)
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = APP_DIR.parents[1]
 TEMPLATE_DIR = APP_DIR / "templates"
-LOGO_PATH = PROJECT_ROOT / "frontend" / "src" / "assets" / "myc-logo.png"
 
 
 @dataclass(frozen=True)
@@ -55,7 +59,7 @@ def _row_value(row: FieldSheetResult, column) -> str:
 def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[ResultTableSection]:
     sections: list[ResultTableSection] = []
     rows_by_section = {
-        section.key: [row for row in field_sheet.results_rows if row.section_key == section.key]
+        section["key"]: [row for row in field_sheet.results_rows if row.section_key == section["key"]]
         for section in template_definition["result_sections"]
     }
     for section in template_definition["result_sections"]:
@@ -70,7 +74,7 @@ def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[
     return sections
 
 
-def _render_html(field_sheet: FieldSheet, template_definition: dict) -> str:
+def _render_html(field_sheet: FieldSheet, template_definition: dict, institution: dict) -> str:
     equipment = field_sheet.equipment
     service_order = equipment.service_order
     client = service_order.client
@@ -80,15 +84,7 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict) -> str:
         autoescape=select_autoescape(("html", "xml")),
     )
     env.filters["date"] = _format_date
-    template_map = {
-        "electrica": "field_sheet_electrical_pdf.html",
-        "anemometro": "field_sheet_anemometer_pdf.html",
-    }
-
-    template_name = template_map.get(
-        field_sheet.template_key,
-        "field_sheet_general_pdf.html",
-    )
+    template_name = template_definition.get("pdf_template") or "field_sheet_engine_pdf.html"
     template = env.get_template(template_name)
     client_name = (
         field_sheet.company
@@ -108,6 +104,7 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict) -> str:
         field_sheet.address
         or (field_sheet.certificate_client_address if field_sheet.certificate_client_mode == "different" else None)
     )
+    logo_path = resolve_logo_path(institution, PROJECT_ROOT)
     return template.render(
         field_sheet=field_sheet,
         equipment=equipment,
@@ -118,10 +115,12 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict) -> str:
         client_address=client_address,
         certificate_folio=(certificate.expected_folio or certificate.folio) if certificate else "-",
         template_definition=template_definition,
+        institution=institution,
+        signatures=field_sheet.signatures,
         sections=_group_sections(field_sheet, template_definition),
         row_value=_row_value,
         checkbox=_checkbox,
-        logo_uri=LOGO_PATH.as_uri() if LOGO_PATH.exists() else None,
+        logo_uri=logo_path.as_uri() if logo_path else None,
     )
 
 
@@ -131,7 +130,10 @@ def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
         db,
         field_sheet.template_key,
     )
-    html = _render_html(field_sheet, template_definition)
+    institution = field_sheet.institutional_snapshot_json
+    if not institution:
+        institution = institutional_snapshot(get_or_create_institutional_configuration(db))
+    html = _render_html(field_sheet, template_definition, institution)
     pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
     equipment_name = field_sheet.equipment.name or f"equipo-{field_sheet.equipment_id}"
     return (

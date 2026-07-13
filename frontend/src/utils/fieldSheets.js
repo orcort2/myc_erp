@@ -1,5 +1,6 @@
 import { emptyFieldSheetForm } from '../constants/forms.js';
 import { fieldSheetTemplates, templateNameByKey } from '../constants/fieldSheetTemplates.js';
+import { officialFieldSheetTemplates } from '../constants/officialFieldSheetTemplates.js';
 
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
@@ -143,7 +144,10 @@ function buildVisibleFields(blocks = []) {
 }
 
 function buildFallbackTemplate(templateKey = 'general') {
-  const fallback = fieldSheetTemplates[templateKey] ?? fieldSheetTemplates.general;
+  const fallback = officialFieldSheetTemplates[templateKey]
+    ?? fieldSheetTemplates[templateKey]
+    ?? officialFieldSheetTemplates.general
+    ?? fieldSheetTemplates.general;
   return safeObject(fallback);
 }
 
@@ -283,7 +287,14 @@ function getNormalizedTemplate(templateKey = 'general', templatesByKey = null) {
   if (external) {
     return normalizeTemplate(external, templateKey, null);
   }
-  return normalizeTemplate(fieldSheetTemplates[templateKey] ?? fieldSheetTemplates.general, templateKey, null);
+  return normalizeTemplate(
+    officialFieldSheetTemplates[templateKey]
+      ?? fieldSheetTemplates[templateKey]
+      ?? officialFieldSheetTemplates.general
+      ?? fieldSheetTemplates.general,
+    templateKey,
+    null,
+  );
 }
 
 function getNormalizedSections(template, templateKey = 'general', templatesByKey = null) {
@@ -419,6 +430,16 @@ export function fieldSheetToForm(fieldSheet) {
       notes: item.notes ?? '',
       referenceStandard: item.reference_standard ?? null,
     })),
+    signatures: safeArray(fieldSheet?.signatures).map((signature, index) => ({
+      id: signature.id ?? null,
+      role: signature.role,
+      displayLabel: signature.display_label ?? signature.role,
+      name: signature.name ?? '',
+      signatureData: signature.signature_data ?? '',
+      signedAt: signature.signed_at ?? '',
+      userId: signature.user_id ?? '',
+      position: signature.position ?? index,
+    })),
   };
 }
 
@@ -462,6 +483,16 @@ export function buildFieldSheetPayload(form, templatesByKey = null) {
     certificate_client_address: form.certificateClientAddress.trim() || null,
     apply_certificate_client_to_order: Boolean(form.applyCertificateClientToOrder),
     reference_standards: [],
+    signatures: safeArray(form.signatures).map((signature, index) => ({
+      id: signature.id ?? undefined,
+      role: signature.role,
+      display_label: signature.displayLabel || signature.role,
+      name: String(signature.name ?? '').trim() || null,
+      signature_data: signature.signatureData || null,
+      signed_at: signature.signedAt || null,
+      user_id: signature.userId ? Number(signature.userId) : null,
+      position: signature.position ?? index,
+    })),
     results_rows: normalizeResultsRows(form.resultsRows, normalizedTemplate).map((row) => ({
       id: row.id ?? undefined,
       section_key: row.sectionKey,

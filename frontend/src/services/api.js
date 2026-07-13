@@ -170,6 +170,17 @@ export async function getFieldSheetTemplateCatalog() {
   return request('/field-sheet-templates/catalog');
 }
 
+export async function getInstitutionalConfiguration() {
+  return request('/institutional-configuration');
+}
+
+export async function updateInstitutionalConfiguration(payload) {
+  return request('/institutional-configuration', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createFieldSheetTemplate(payload) {
   return request('/field-sheet-templates', {
     method: 'POST',
@@ -384,6 +395,26 @@ export async function updateClient(clientId, payload) {
 
 export async function deleteClient(clientId) {
   return request(`/clients/${clientId}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function createClientCertificateProfile(clientId, payload) {
+  return request(`/clients/${clientId}/certificate-profiles`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateClientCertificateProfile(clientId, profileId, payload) {
+  return request(`/clients/${clientId}/certificate-profiles/${profileId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function deleteClientCertificateProfile(clientId, profileId) {
+  return request(`/clients/${clientId}/certificate-profiles/${profileId}`, {
     method: 'DELETE'
   });
 }

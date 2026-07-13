@@ -24,6 +24,36 @@ class ClientContactRead(ClientContactBase):
     updated_at: datetime
 
 
+class ClientCertificateProfileBase(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+    company: str = Field(min_length=1, max_length=255)
+    address: str = Field(min_length=1)
+    attention: str | None = Field(default=None, max_length=180)
+    is_default: bool = False
+
+
+class ClientCertificateProfileCreate(ClientCertificateProfileBase):
+    pass
+
+
+class ClientCertificateProfileUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=120)
+    company: str | None = Field(default=None, min_length=1, max_length=255)
+    address: str | None = Field(default=None, min_length=1)
+    attention: str | None = Field(default=None, max_length=180)
+    is_default: bool | None = None
+
+
+class ClientCertificateProfileRead(ClientCertificateProfileBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    client_id: int
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
 class ClientBase(BaseModel):
     client_type: str = Field(min_length=1, max_length=30)
     legal_name: str = Field(min_length=1, max_length=255)
@@ -95,6 +125,7 @@ class ClientRead(ClientBase):
     created_at: datetime
     updated_at: datetime
     contacts: list[ClientContactRead] = Field(default_factory=list)
+    certificate_profiles: list[ClientCertificateProfileRead] = Field(default_factory=list)
     tax_constancy_filename: str | None = None
     tax_constancy_uploaded_at: datetime | None = None
 

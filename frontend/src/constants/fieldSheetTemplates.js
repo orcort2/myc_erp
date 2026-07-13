@@ -39,14 +39,14 @@ export const fieldSheetFieldCatalog = {
 };
 
 export const tableFamilyDefinitions = {
-  direct_comparison: { family_key: 'direct_comparison', name: 'Comparación directa', description: 'Patrón contra indicación', default_rows: 10, min_rows: 3, max_rows: 20, allow_add_rows: true, allow_remove_rows: true, allow_sections: false },
-  multipoint: { family_key: 'multipoint', name: 'Multipunto', description: 'Puntos nominales o de prueba', default_rows: 10, min_rows: 3, max_rows: 20, allow_add_rows: true, allow_remove_rows: true, allow_sections: true },
-  pressure: { family_key: 'pressure', name: 'Presión', description: 'Ascendente y descendente', default_rows: 10, min_rows: 3, max_rows: 20, allow_add_rows: true, allow_remove_rows: true, allow_sections: false },
-  dimensional: { family_key: 'dimensional', name: 'Dimensional', description: 'Longitud y dimensión', default_rows: 10, min_rows: 3, max_rows: 20, allow_add_rows: true, allow_remove_rows: true, allow_sections: true },
-  mass: { family_key: 'mass', name: 'Masa', description: 'Carga y repetibilidad', default_rows: 10, min_rows: 3, max_rows: 20, allow_add_rows: true, allow_remove_rows: true, allow_sections: true },
-  electrical: { family_key: 'electrical', name: 'Eléctrica', description: 'Múltiples magnitudes', default_rows: 5, min_rows: 3, max_rows: 10, allow_add_rows: true, allow_remove_rows: true, allow_sections: true },
-  repeatability: { family_key: 'repeatability', name: 'Repetibilidad', description: 'Lecturas repetidas', default_rows: 5, min_rows: 3, max_rows: 10, allow_add_rows: true, allow_remove_rows: true, allow_sections: false },
-  custom: { family_key: 'custom', name: 'Libre', description: 'Columnas configurables', default_rows: 5, min_rows: 1, max_rows: 50, allow_add_rows: true, allow_remove_rows: true, allow_sections: true },
+  replicated_comparison: { family_key: 'replicated_comparison', name: 'Comparación replicada', description: 'Una referencia y varias lecturas', default_rows: 10, min_rows: 1, max_rows: 20 },
+  direction_cycle: { family_key: 'direction_cycle', name: 'Ciclo o dirección', description: 'Ascenso, descenso o sentido', default_rows: 10, min_rows: 1, max_rows: 20 },
+  before_after: { family_key: 'before_after', name: 'Antes y después', description: 'Estados antes y después', default_rows: 4, min_rows: 1, max_rows: 20 },
+  mass_balance_composite: { family_key: 'mass_balance_composite', name: 'Masa y balanza compuesta', description: 'Excentricidad, ciclo y repetibilidad', default_rows: 6, min_rows: 1, max_rows: 20 },
+  paired_multichannel: { family_key: 'paired_multichannel', name: 'Multicanal pareada', description: 'Pares repetidos por canal', default_rows: 5, min_rows: 1, max_rows: 20 },
+  threshold_event: { family_key: 'threshold_event', name: 'Evento o umbral', description: 'Filas fijas de evento', default_rows: 2, min_rows: 1, max_rows: 20 },
+  verification_compliance: { family_key: 'verification_compliance', name: 'Verificación y cumplimiento', description: 'Resultados con declaración manual', default_rows: 6, min_rows: 1, max_rows: 20 },
+  cup_specialized: { family_key: 'cup_specialized', name: 'Copa especializada', description: 'Tiempos, temperatura y geometría', default_rows: 5, min_rows: 1, max_rows: 20 },
 };
 
 export const fieldSheetBlockFamilies = {
@@ -128,6 +128,8 @@ const electricalColumns = [
 ];
 
 export const templateNameByKey = {
+  calibradores: 'Hoja de Campo Calibradores',
+  presion: 'Hoja de Campo Presión',
   general: 'Hoja de Campo General',
   temperatura: 'Hoja de Campo Temperatura',
   termometro: 'Hoja de Campo Termómetro',
@@ -159,6 +161,8 @@ export const templateNameByKey = {
 };
 
 const templateAssignments = {
+  calibradores: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'SectionedTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
+  presion: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'PressureTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   general: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'SimpleComparisonTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   temperatura: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'SimpleComparisonTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   termometro: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'SimpleComparisonTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
@@ -176,7 +180,7 @@ const templateAssignments = {
   flexometro: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'DimensionalTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   masa: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'MassBalanceTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   balanza: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'MassBalanceTableBlock', 'RepeatabilityTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
-  bascula: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'MassBalanceTableBlock', 'RepeatabilityTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
+  bascula: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'MassBalanceTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   peso_patron: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'MassBalanceTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   electrica: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'ElectricalTableBlock', 'SectionedTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
   multimetro: ['HeaderBlock', 'ClientBlock', 'EquipmentBlock', 'CalibrationDataBlock', 'EnvironmentalBlock', 'ElectricalTableBlock', 'SectionedTableBlock', 'ObservationsBlock', 'SignaturesBlock', 'FooterBlock'],
@@ -190,13 +194,15 @@ const templateAssignments = {
 };
 
 const templateTableFamily = {
+  calibradores: 'replicated_comparison',
+  presion: 'direction_cycle',
   general: 'direct_comparison',
   temperatura: 'direct_comparison',
   termometro: 'direct_comparison',
   termohigrometro: 'direct_comparison',
   cronometro: 'direct_comparison',
   tacometro: 'direct_comparison',
-  anemometro: 'multipoint',
+  anemometro: 'replicated_comparison',
   luxometro: 'multipoint',
   sonido: 'multipoint',
   sonometro: 'multipoint',
@@ -214,7 +220,7 @@ const templateTableFamily = {
   flexometro: 'dimensional',
   masa: 'mass',
   balanza: 'mass',
-  bascula: 'mass',
+  bascula: 'mass_balance_composite',
   peso_patron: 'mass',
   electrica: 'electrical',
   multimetro: 'electrical',
@@ -335,7 +341,58 @@ function buildVisibleFields(blocks = []) {
 }
 
 function buildFallbackTemplate(templateKey) {
-  const blocks = (templateAssignments[templateKey] ?? templateAssignments.general).map((blockType, index) => buildBlock(blockType, index + 1));
+  let blocks = (templateAssignments[templateKey] ?? templateAssignments.general).map((blockType, index) => buildBlock(blockType, index + 1));
+  const replicatedColumns = [
+    column('pattern_value', 'Patrón', '25%'),
+    column('ibc_value_1', 'IBC 1', '25%'),
+    column('ibc_value_2', 'IBC 2', '25%'),
+    column('ibc_value_3', 'IBC 3', '25%'),
+  ];
+  const pilotSections = {
+    anemometro: [{ key: 'measurements', title: 'Resultados de la calibración', rows: 10, columns: replicatedColumns }],
+    calibradores: [
+      { key: 'exterior', title: 'Medición de exteriores', rows: 7, columns: replicatedColumns },
+      { key: 'interior', title: 'Medición de interiores', rows: 5, columns: replicatedColumns },
+      { key: 'depth', title: 'Medición de profundidades', rows: 3, columns: replicatedColumns },
+    ],
+    presion: [{
+      key: 'pressure_cycle',
+      title: 'Ciclo de presión',
+      rows: 11,
+      columns: [
+        column('ibc_value_1', 'IBC', '25%', { metadata: { label_configurable: true } }),
+        column('pattern_value', 'Patrón ascendente', '25%', { metadata: { label_configurable: true } }),
+        column('ibc_value_2', 'Patrón descendente', '25%', { metadata: { label_configurable: true } }),
+        column('ibc_value_3', 'Patrón ascendente', '25%', { metadata: { label_configurable: true } }),
+      ],
+    }],
+    bascula: [
+      { key: 'eccentricity_cycle', title: 'Excentricidad y ciclo', rows: 6, columns: [column('position', 'Posición'), column('pattern_value', 'Patrón'), column('ibc_value_1', 'IBC 1'), column('ibc_value_2', 'IBC 2'), column('ibc_value_3', 'IBC 3')] },
+      { key: 'repeatability_50', title: 'Repetibilidad al 50 %', rows: 5, columns: [column('pattern_value', 'Patrón'), column('ibc_value_1', 'Indicación')] },
+      { key: 'repeatability_100', title: 'Repetibilidad al 100 %', rows: 5, columns: [column('pattern_value', 'Patrón'), column('ibc_value_1', 'Indicación')] },
+    ],
+  };
+  if (pilotSections[templateKey]) {
+    blocks = blocks.map((block) => {
+      const isTable = String(block.block_type || '').includes('TableBlock') || block.block_type === 'ResultsTableBlock';
+      return isTable
+        ? {
+            ...block,
+            key: `${templateKey}_measurements`,
+            block_key: `${templateKey}_measurements`,
+            title: 'Resultados de la calibración',
+            sections: pilotSections[templateKey],
+            columns: [],
+            rows: null,
+            min_rows: null,
+            max_rows: null,
+            allow_add_rows: false,
+            allow_remove_rows: false,
+            table_config: { family: templateTableFamily[templateKey], manual_only: true, dynamic_pagination: true },
+          }
+        : block;
+    });
+  }
   return {
     id: null,
     source: 'fallback',
@@ -352,7 +409,7 @@ function buildFallbackTemplate(templateKey) {
     document_code: 'FCA-30',
     document_revision: 'R1',
     pages: templateKey === 'electrica' ? 2 : 1,
-    pdf_template: templateKey === 'electrica' ? 'field_sheet_electrical_pdf.html' : templateKey === 'anemometro' ? 'field_sheet_anemometer_pdf.html' : 'field_sheet_general_pdf.html',
+    pdf_template: pilotSections[templateKey] ? 'field_sheet_engine_pdf.html' : templateKey === 'electrica' ? 'field_sheet_electrical_pdf.html' : 'field_sheet_general_pdf.html',
     table_family: templateTableFamily[templateKey] ?? 'custom',
     blocks,
     visible_fields: buildVisibleFields(blocks),
@@ -362,6 +419,16 @@ function buildFallbackTemplate(templateKey) {
     pdf_config: {},
     permissions_config: {},
     metadata: {},
+    signature_layout: {
+      layout: 'three_columns',
+      slots: [
+        { role: 'calibrated_by', display_label: 'Calibró' },
+        { role: 'reviewed_by', display_label: 'Revisó' },
+        { role: 'report_made_by', display_label: 'Elaboró informe' },
+      ],
+    },
+    pagination: { mode: 'dynamic', label: 'Página X de Y' },
+    automation: { mode: 'manual_only', calculations: [] },
   };
 }
 

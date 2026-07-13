@@ -6,6 +6,7 @@ import {
   pxToMm,
   validateDocumentDefinition,
 } from './documentDesignerModel.js';
+import { clampObjectPosition } from './documentCanvasEngine.js';
 
 const ASSET_REGISTRY = {
   'myc-logo': mycLogo,
@@ -93,6 +94,7 @@ function SelectionHandles({ visible }) {
 
   return (
     <>
+      <span className="mde-selection-indicator" aria-hidden="true">Seleccionado</span>
       <span className="mde-selection-handle is-top-left" aria-hidden="true" />
       <span className="mde-selection-handle is-top-right" aria-hidden="true" />
       <span className="mde-selection-handle is-bottom-left" aria-hidden="true" />
@@ -105,8 +107,11 @@ function createDragHandler({
   element,
   page,
   zoom,
+  isSelected,
   onSelectElement,
+  onMoveStart,
   onMoveElement,
+  onMoveEnd,
 }) {
   return (event) => {
     if (event.button !== 0) {
@@ -114,9 +119,20 @@ function createDragHandler({
     }
 
     event.stopPropagation();
-    onSelectElement?.(element.id);
+    const additive = event.metaKey || event.ctrlKey || event.shiftKey;
+    const preserveSelectionForDrag = isSelected && !additive;
+    if (!preserveSelectionForDrag) {
+      onSelectElement?.(element.id, page.id, { additive });
+    }
+
+    if (additive) {
+      return;
+    }
 
     if (element.locked || !onMoveElement) {
+      if (preserveSelectionForDrag) {
+        onSelectElement?.(element.id, page.id, { additive: false });
+      }
       return;
     }
 
@@ -127,20 +143,28 @@ function createDragHandler({
     const startX = Number(element.x) || 0;
     const startY = Number(element.y) || 0;
     const safeZoom = Math.max(0.01, Number(zoom) || 1);
-
-    const maxX = Math.max(0, Number(page.width) - Number(element.width || 0));
-    const maxY = Math.max(0, Number(page.height) - Number(element.height || 0));
+    let didMove = false;
+    onMoveStart?.(element.id, page.id);
 
     function handlePointerMove(pointerEvent) {
+      if (Math.abs(pointerEvent.clientX - startClientX) + Math.abs(pointerEvent.clientY - startClientY) >= 2) {
+        didMove = true;
+      }
       const deltaXmm = pxToMm((pointerEvent.clientX - startClientX) / safeZoom);
       const deltaYmm = pxToMm((pointerEvent.clientY - startClientY) / safeZoom);
-
-      const nextX = Math.min(maxX, Math.max(0, startX + deltaXmm));
-      const nextY = Math.min(maxY, Math.max(0, startY + deltaYmm));
+      const nextPosition = clampObjectPosition(page, element, {
+        x: startX + deltaXmm,
+        y: startY + deltaYmm,
+      });
 
       onMoveElement(element.id, {
-        x: Number(nextX.toFixed(2)),
-        y: Number(nextY.toFixed(2)),
+        x: nextPosition.x,
+        y: nextPosition.y,
+      }, {
+        deltaX: deltaXmm,
+        deltaY: deltaYmm,
+        pageId: page.id,
+        moveSelection: isSelected,
       });
     }
 
@@ -149,6 +173,10 @@ function createDragHandler({
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
       document.body.classList.remove('is-mde-dragging');
+      onMoveEnd?.(element.id, page.id);
+      if (!didMove && preserveSelectionForDrag) {
+        onSelectElement?.(element.id, page.id, { additive: false });
+      }
     }
 
     document.body.classList.add('is-mde-dragging');
@@ -164,7 +192,9 @@ function getInteractiveProps({
   zoom,
   isSelected,
   onSelectElement,
+  onMoveStart,
   onMoveElement,
+  onMoveEnd,
 }) {
   return {
     className: `mde-preview-object${isSelected ? ' is-selected' : ''}${
@@ -178,20 +208,22 @@ function getInteractiveProps({
     'aria-label': `${element.type}: ${element.id}`,
     onClick: (event) => {
       event.stopPropagation();
-      onSelectElement?.(element.id);
     },
     onPointerDown: createDragHandler({
       element,
       page,
       zoom,
+      isSelected,
       onSelectElement,
+      onMoveStart,
       onMoveElement,
+      onMoveEnd,
     }),
     onKeyDown: (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
         event.stopPropagation();
-        onSelectElement?.(element.id);
+        onSelectElement?.(element.id, page.id, { additive: event.metaKey || event.ctrlKey || event.shiftKey });
       }
     },
   };
@@ -390,6 +422,128 @@ function SignatureLineObject(props) {
   );
 }
 
+const SAMPLE_FIELDS = {
+  'client-data': [
+    ['showTradeName', 'Nombre comercial', 'Cliente de ejemplo'], ['showBusinessName', 'Razón social', 'Cliente MYC, S.A. de C.V.'], ['showRfc', 'RFC', 'XAXX010101000'], ['showAddress', 'Domicilio', 'Domicilio de ejemplo'], ['showContact', 'Contacto', 'Persona de contacto'], ['showEmail', 'Correo', 'cliente@ejemplo.com'],
+  ],
+  'equipment-data': [
+    ['showInstrument', 'Instrumento', 'Instrumento de ejemplo'], ['showBrand', 'Marca', 'Marca ejemplo'], ['showModel', 'Modelo', 'Modelo 000'], ['showSerial', 'Serie', 'SN-0000'], ['showInternalId', 'ID interno', 'MYC-0000'], ['showLocation', 'Ubicación', 'Laboratorio'], ['showResolution', 'División mínima', '0.01'],
+  ],
+  'service-data': [
+    ['showEtsFolio', 'ETS', 'ETS-0000'], ['showWorkOrderFolio', 'OT', 'OT-0000'], ['showCertificateFolio', 'Certificado', 'MYC-0000'], ['showServiceType', 'Servicio', 'Calibración'], ['showServiceDate', 'Fecha', '13/07/2026'], ['showNextCalibration', 'Próxima calibración', 'Julio 2027'],
+  ],
+  'personnel-data': [
+    ['showTechnician', 'Técnico', 'Técnico de ejemplo'], ['showCaptureResponsible', 'Captura', 'Responsable de captura'], ['showQualityResponsible', 'Calidad', 'Responsable de calidad'], ['showAdvisor', 'Asesor', 'Asesor de ejemplo'],
+  ],
+  'environmental-conditions': [
+    ['showTemperature', 'Temperatura', '23.0 °C'], ['showHumidity', 'Humedad', '45 %HR'], ['showPressure', 'Presión', '101.3 kPa'], ['showInitialCondition', 'Condición inicial', 'Estable'], ['showFinalCondition', 'Condición final', 'Estable'],
+  ],
+};
+
+function BlockShell(props, children, extraStyle = {}) {
+  const { element, isSelected } = props;
+  const interactiveProps = getInteractiveProps(props);
+  return (
+    <div
+      {...interactiveProps}
+      className={`${interactiveProps.className} mde-preview-object--myc-block`}
+      style={{
+        ...buildCommonElementStyle(element),
+        display: element.visible === false ? 'none' : 'flex',
+        flexDirection: 'column',
+        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontSize: '10px',
+        overflow: 'hidden',
+        ...extraStyle,
+      }}
+    >
+      {children}
+      <SelectionHandles visible={isSelected} />
+    </div>
+  );
+}
+
+function SampleFields({ element }) {
+  const fields = (SAMPLE_FIELDS[element.type] || []).filter(([flag]) => element.props?.[flag]);
+  return (
+    <>
+      <strong className="mde-myc-block-title">{element.label}</strong>
+      <div className="mde-myc-fields">
+        {fields.map(([flag, label, value]) => <span key={flag}><b>{label}</b><em>{value}</em></span>)}
+      </div>
+    </>
+  );
+}
+
+function ExampleTable({ title, headers, rows = 2, showBorders = true }) {
+  const safeHeaders = headers?.length ? headers : ['Columna 1'];
+  return (
+    <div className={`mde-myc-table${showBorders ? ' has-borders' : ''}`}>
+      {title ? <strong>{title}</strong> : null}
+      <div className="mde-myc-table-row is-header" style={{ gridTemplateColumns: `repeat(${safeHeaders.length}, minmax(0, 1fr))` }}>{safeHeaders.map((header, index) => <span key={`${header}-${index}`}>{header}</span>)}</div>
+      {Array.from({ length: rows }, (_, row) => <div className="mde-myc-table-row" style={{ gridTemplateColumns: `repeat(${safeHeaders.length}, minmax(0, 1fr))` }} key={row}>{safeHeaders.map((_, column) => <span key={column}>Dato {row + 1}.{column + 1}</span>)}</div>)}
+    </div>
+  );
+}
+
+function Signatures({ element, labels }) {
+  const props = element.props || {};
+  return (
+    <><strong className="mde-myc-block-title">{props.title}</strong><div className="mde-myc-signatures">{labels.map((label) => <div key={label}><span className="mde-myc-signature-rule" /><b>{label}</b>{props.showNames ? <small>Nombre de ejemplo</small> : null}{props.showPositions ? <small>Puesto</small> : null}{props.showDates ? <small>Fecha</small> : null}</div>)}</div></>
+  );
+}
+
+function MycBlockObject(componentProps) {
+  const { element } = componentProps;
+  const props = element.props || {};
+
+  if (SAMPLE_FIELDS[element.type]) return BlockShell(componentProps, <SampleFields element={element} />);
+
+  switch (element.type) {
+    case 'myc-header':
+      return BlockShell(componentProps, <div className="mde-myc-header">{props.showLogo ? <img src={mycLogo} alt="MYC" /> : null}<div>{props.showBusinessName ? <strong>METROLOGÍA Y SERVICIOS MYC</strong> : null}<b>{props.documentTitle}</b>{props.showAddress ? <small>Domicilio institucional de ejemplo</small> : null}{props.showContact ? <small>contacto@myc.example</small> : null}</div>{props.showAccreditation ? <span>Acreditación</span> : null}</div>);
+    case 'myc-footer':
+      return BlockShell(componentProps, <div className="mde-myc-footer"><div>{props.showBusinessName ? <b>Metrología y Servicios MYC</b> : null}{props.showAddress ? <span>Domicilio institucional</span> : null}{props.showPhones ? <span>Tel. 000 000 0000</span> : null}{props.showWebsite ? <span>www.myc.example</span> : null}</div>{props.showPagination ? <strong>Página 1 de 1</strong> : null}</div>);
+    case 'editable-table':
+      return BlockShell(componentProps, <ExampleTable title={props.title} headers={(props.headers || []).slice(0, props.columns)} rows={props.initialRows} showBorders={props.showBorders} />);
+    case 'results': {
+      const optionalHeaders = [props.showUnit && 'Unidad', props.showReference && 'Referencia', props.showResult && 'Resultado', props.showObservation && 'Observación'].filter(Boolean);
+      const headers = (props.headers?.length ? props.headers : ['Punto', ...optionalHeaders]).slice(0, props.columns);
+      return BlockShell(componentProps, <ExampleTable title={props.title} headers={headers} rows={2} showBorders />);
+    }
+    case 'observations':
+      return BlockShell(componentProps, <><strong className="mde-myc-block-title">{props.title}</strong><p className="mde-myc-observations">{props.initialText}</p>{Array.from({ length: Math.max(0, props.lines - 1) }, (_, index) => <span className="mde-myc-writing-line" key={index} />)}</>);
+    case 'signature-single':
+      return BlockShell(componentProps, <Signatures element={element} labels={[props.signerLabel]} />);
+    case 'signature-double':
+      return BlockShell(componentProps, <Signatures element={element} labels={[props.leftLabel, props.rightLabel]} />);
+    case 'signature-triple':
+      return BlockShell(componentProps, <Signatures element={element} labels={[props.leftLabel, props.centerLabel, props.rightLabel]} />);
+    case 'document-code':
+      return BlockShell(componentProps, <div style={{ textAlign: props.align }}><b>{props.showLabel ? 'Código: ' : ''}</b>{props.code}</div>, { justifyContent: 'center' });
+    case 'document-revision':
+      return BlockShell(componentProps, <div><b>Revisión: </b>{props.revision}{props.showRevisionDate ? <small> · {props.revisionDate}</small> : null}</div>, { justifyContent: 'center' });
+    case 'pagination':
+      return BlockShell(componentProps, <div style={{ textAlign: props.align }}>{props.format}</div>, { justifyContent: 'center' });
+    case 'qr-code':
+      return BlockShell(componentProps, <div className="mde-myc-qr"><span style={{ width: props.size, height: props.size }}>QR</span><small>{props.label}</small></div>, { alignItems: 'center' });
+    case 'authentication':
+      return BlockShell(componentProps, <div className="mde-myc-auth"><strong>{props.text}</strong><span>Folio: {props.folio}</span>{props.showVerificationCode ? <code>VERIF-MYC-0000</code> : null}<small>{props.url}</small></div>);
+    case 'title':
+      return BlockShell(componentProps, <div style={{ textAlign: props.align, fontSize: toCssFontSize(props.fontSize), fontWeight: props.bold ? 700 : 400 }}>{props.text}</div>, { justifyContent: 'center' });
+    case 'text':
+      return BlockShell(componentProps, <div style={{ textAlign: props.align, fontSize: toCssFontSize(props.fontSize), fontWeight: props.bold ? 700 : 400, fontStyle: props.italic ? 'italic' : 'normal' }}>{props.text}</div>);
+    case 'image':
+      return BlockShell(componentProps, props.url ? <img className="mde-myc-user-image" src={props.url} alt={props.alt} style={{ width: `${props.imageWidth}mm`, alignSelf: props.align === 'right' ? 'flex-end' : props.align === 'center' ? 'center' : 'flex-start' }} /> : <div className="mde-myc-image-placeholder">Imagen de ejemplo<br /><small>{props.alt}</small></div>);
+    case 'divider':
+      return BlockShell(componentProps, <span style={{ borderTop: `${props.thickness}px ${props.lineStyle} #344054`, marginTop: `${props.spacingTop}px`, marginBottom: `${props.spacingBottom}px`, width: '100%' }} />, { justifyContent: 'center' });
+    case 'spacer':
+      return BlockShell(componentProps, <span className="mde-myc-spacer">Espaciador · {props.height} mm</span>, { justifyContent: 'center' });
+    default:
+      return <UnsupportedObject {...componentProps} />;
+  }
+}
+
 function UnsupportedObject(props) {
   const { element, isSelected } = props;
   const interactiveProps = getInteractiveProps(props);
@@ -415,18 +569,26 @@ function PreviewObject({
   definition,
   data,
   zoom,
-  selectedElementId,
+  selectedObjectIds,
   onSelectElement,
+  onMoveStart,
   onMoveElement,
+  onMoveEnd,
 }) {
   const commonProps = {
     element,
     page,
     zoom,
-    isSelected: selectedElementId === element.id,
+    isSelected: selectedObjectIds.includes(element.id),
     onSelectElement,
+    onMoveStart,
     onMoveElement,
+    onMoveEnd,
   };
+
+  if (element.props) {
+    return <MycBlockObject {...commonProps} />;
+  }
 
   switch (element.type) {
     case 'text':
@@ -463,10 +625,14 @@ function DocumentPage({
   definition,
   data,
   zoom,
-  selectedElementId,
+  selectedObjectIds,
+  activePageId,
   onSelectElement,
+  onMoveStart,
   onMoveElement,
+  onMoveEnd,
   onClearSelection,
+  onActivatePage,
 }) {
   const widthPx = mmToPx(page.width);
   const heightPx = mmToPx(page.height);
@@ -477,17 +643,24 @@ function DocumentPage({
     bottom: mmToPx(page.margins?.bottom || 0),
     left: mmToPx(page.margins?.left || 0),
   };
+  const selectedObjects = (page.objects || []).filter((object) => selectedObjectIds.includes(object.id));
+  const groupBounds = selectedObjects.length > 1 ? {
+    left: Math.min(...selectedObjects.map((object) => Number(object.x) || 0)),
+    top: Math.min(...selectedObjects.map((object) => Number(object.y) || 0)),
+    right: Math.max(...selectedObjects.map((object) => (Number(object.x) || 0) + (Number(object.width) || 0))),
+    bottom: Math.max(...selectedObjects.map((object) => (Number(object.y) || 0) + (Number(object.height) || 0))),
+  } : null;
 
   return (
     <div
-      className="mde-preview-page-frame"
+      className={`mde-preview-page-frame${activePageId === page.id ? ' is-active' : ''}`}
       style={{
         width: `${widthPx * zoom}px`,
         height: `${heightPx * zoom}px`,
       }}
     >
       <article
-        className="mde-preview-page"
+        className={`mde-preview-page${selectedObjects.length > 1 ? ' has-multi-selection' : ''}`}
         data-page-id={page.id}
         style={{
           width: `${widthPx}px`,
@@ -498,7 +671,8 @@ function DocumentPage({
         }}
         onClick={(event) => {
           if (event.target === event.currentTarget) {
-            onClearSelection?.();
+            onActivatePage?.(page.id);
+            onClearSelection?.(page.id);
           }
         }}
       >
@@ -515,6 +689,21 @@ function DocumentPage({
           />
         ) : null}
 
+        {groupBounds ? (
+          <div
+            className="mde-selection-group-outline"
+            aria-hidden="true"
+            style={{
+              left: `${mmToPx(groupBounds.left)}px`,
+              top: `${mmToPx(groupBounds.top)}px`,
+              width: `${mmToPx(groupBounds.right - groupBounds.left)}px`,
+              height: `${mmToPx(groupBounds.bottom - groupBounds.top)}px`,
+            }}
+          >
+            <span>{selectedObjects.length} objetos</span>
+          </div>
+        ) : null}
+
         {[...(page.objects || [])]
           .sort(
             (left, right) =>
@@ -528,9 +717,11 @@ function DocumentPage({
               definition={definition}
               data={data}
               zoom={zoom}
-              selectedElementId={selectedElementId}
+              selectedObjectIds={selectedObjectIds}
               onSelectElement={onSelectElement}
+              onMoveStart={onMoveStart}
               onMoveElement={onMoveElement}
+              onMoveEnd={onMoveEnd}
             />
           ))}
       </article>
@@ -544,13 +735,21 @@ export default function DocumentPreviewRenderer({
   zoom = 1,
   showValidation = true,
   selectedElementId = null,
+  selectedObjectIds = null,
+  activePageId = null,
   onSelectElement,
+  onMoveStart,
   onMoveElement,
+  onMoveEnd,
   onClearSelection,
+  onActivatePage,
 }) {
   const normalizedDefinition = normalizeDocumentDefinition(definition);
   const validation = validateDocumentDefinition(normalizedDefinition);
   const safeZoom = Math.min(2, Math.max(0.25, Number(zoom) || 1));
+  const selectedIds = Array.isArray(selectedObjectIds)
+    ? selectedObjectIds
+    : selectedElementId ? [selectedElementId] : [];
 
   return (
     <section className="mde-preview-renderer">
@@ -593,10 +792,14 @@ export default function DocumentPreviewRenderer({
             definition={normalizedDefinition}
             data={data}
             zoom={safeZoom}
-            selectedElementId={selectedElementId}
+            selectedObjectIds={selectedIds}
+            activePageId={activePageId}
             onSelectElement={onSelectElement}
+            onMoveStart={onMoveStart}
             onMoveElement={onMoveElement}
+            onMoveEnd={onMoveEnd}
             onClearSelection={onClearSelection}
+            onActivatePage={onActivatePage}
           />
         ))}
       </div>

@@ -138,6 +138,7 @@ export const emptyFieldSheetForm = {
   applyCertificateClientToOrder: false,
   resultsRows: [],
   referenceStandards: [],
+  signatures: [],
   newReferenceStandardId: '',
   newReferenceStandardUsageRole: 'primary',
   newReferenceStandardMeasurementSection: '',
