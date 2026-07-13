@@ -72,6 +72,9 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     template_definition_json: Mapped[dict | None] = mapped_column(JSON)
     template_definition_version: Mapped[int | None] = mapped_column(Integer)
     institutional_snapshot_json: Mapped[dict | None] = mapped_column(JSON)
+    # Valores editables propios de la hoja que no deben modificar los maestros
+    # de cliente/equipo (incluye overrides y campos declarativos por plantilla).
+    capture_values: Mapped[dict | None] = mapped_column(JSON)
 
     equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
 

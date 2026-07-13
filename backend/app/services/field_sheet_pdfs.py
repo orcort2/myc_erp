@@ -29,6 +29,7 @@ class ResultTableSection:
     title: str
     columns: list
     rows: list[FieldSheetResult]
+    unit_value: str | None = None
 
 
 def _filename(value: str) -> str:
@@ -62,13 +63,16 @@ def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[
         section["key"]: [row for row in field_sheet.results_rows if row.section_key == section["key"]]
         for section in template_definition["result_sections"]
     }
+    capture_values = field_sheet.capture_values or {}
     for section in template_definition["result_sections"]:
+        unit_field = (section.get("metadata") or {}).get("unit_field")
         sections.append(
             ResultTableSection(
                 key=section["key"],
                 title=section["title"],
                 columns=section["columns"],
                 rows=rows_by_section.get(section["key"], []),
+                unit_value=str(capture_values.get(unit_field) or "") if unit_field else None,
             )
         )
     return sections
@@ -104,15 +108,25 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict, institution
         field_sheet.address
         or (field_sheet.certificate_client_address if field_sheet.certificate_client_mode == "different" else None)
     )
+    capture_values = field_sheet.capture_values or {}
+    equipment_values = {
+        "name": capture_values.get("instrument") or equipment.name,
+        "range_or_capacity": capture_values.get("scope") or equipment.range_or_capacity,
+        "brand": capture_values.get("brand") or equipment.brand,
+        "model": capture_values.get("model") or equipment.model,
+        "serial_number": capture_values.get("serial_number") or equipment.serial_number,
+        "internal_id": capture_values.get("internal_id") or equipment.internal_id,
+    }
     logo_path = resolve_logo_path(institution, PROJECT_ROOT)
     return template.render(
         field_sheet=field_sheet,
-        equipment=equipment,
+        equipment=equipment_values,
         service_order=service_order,
         client=client,
         client_name=client_name,
         client_attention=client_attention,
         client_address=client_address,
+        capture_values=capture_values,
         certificate_folio=(certificate.expected_folio or certificate.folio) if certificate else "-",
         template_definition=template_definition,
         institution=institution,

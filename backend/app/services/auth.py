@@ -61,6 +61,12 @@ def _build_tokens(user: User) -> dict:
     }
 
 
+def registration_status(db: Session) -> dict[str, bool]:
+    """Public bootstrap state used only to label the login registration link."""
+    user_count = db.scalar(select(func.count(User.id))) or 0
+    return {"has_users": user_count > 0}
+
+
 def register_user(db: Session, payload: UserRegister) -> dict:
     ensure_initial_roles(db)
     existing_user = _get_user_by_email(db, payload.email)

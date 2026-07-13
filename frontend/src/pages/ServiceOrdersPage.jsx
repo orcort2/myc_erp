@@ -1,4 +1,4 @@
-import { ClipboardList, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardList, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
@@ -73,7 +73,7 @@ import {
   fieldSheetToForm,
   buildFieldSheetPayload,
   buildFieldSheetResultSections,
-  getFieldSheetCompletionErrors,
+  getFieldSheetCompletionValidation,
   updateFieldSheetResultCell,
   updateFieldSheetResultsRowsForTemplate
 } from '../utils/fieldSheets.js';
@@ -82,7 +82,7 @@ import {
   officialFieldSheetTemplates,
 } from '../constants/officialFieldSheetTemplates.js';
 import { suggestOfficialFieldSheetTemplate } from '../utils/fieldSheetTemplateResolver.js';
-import { formatDate, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
+import { formatDate, formatDateTime, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 
@@ -197,6 +197,7 @@ function ServiceOrdersPage({ user = null }) {
   const [isFieldSheetCreateModalOpen, setIsFieldSheetCreateModalOpen] = useState(false);
   const [isCertificateClientModalOpen, setIsCertificateClientModalOpen] = useState(false);
   const [fieldSheetWorkspaceView, setFieldSheetWorkspaceView] = useState('capture');
+  const [fieldSheetValidationErrors, setFieldSheetValidationErrors] = useState({});
   const [expandedFieldSheetWorkOrders, setExpandedFieldSheetWorkOrders] = useState(() => new Set());
   const [pendingFieldSheetEquipment, setPendingFieldSheetEquipment] = useState(null);
   const [fieldSheetCreateForm, setFieldSheetCreateForm] = useState({
@@ -1418,10 +1419,13 @@ function ServiceOrdersPage({ user = null }) {
     });
   }
 
-  async function openFieldSheetForEquipment(item) {
+  async function openFieldSheetForEquipment(item, workOrder = null) {
     setError('');
     setNotice('');
     setSelectedEquipmentForSheet(item);
+    if (workOrder) {
+      setSelectedWorkOrderContext(workOrderContextFromWorkOrder(workOrder));
+    }
 
     try {
       const existing = fieldSheetsByEquipmentId.get(item.id);
@@ -1548,6 +1552,7 @@ function ServiceOrdersPage({ user = null }) {
     setFieldSheetCertificateType('trazable');
     setFieldSheetPatternSelection(null);
     setFieldSheetTab('info');
+    setFieldSheetValidationErrors({});
     setError('');
   }
 
@@ -1855,14 +1860,19 @@ function ServiceOrdersPage({ user = null }) {
 
   async function completeCurrentFieldSheet() {
     if (!selectedFieldSheet) return;
-    const missing = getFieldSheetCompletionErrors(fieldSheetForm, selectedFieldSheet?.template_definition
+    const validationErrors = getFieldSheetCompletionValidation(fieldSheetForm, selectedFieldSheet?.template_definition
       ? { [fieldSheetForm.templateKey || 'general']: selectedFieldSheet.template_definition }
       : fieldSheetTemplatesByKey);
-    if (missing.length) {
-      setError(`No se puede completar. Faltan: ${missing.join(', ')}.`);
+    if (Object.keys(validationErrors).length) {
+      setFieldSheetValidationErrors(validationErrors);
+      setError('Completa los campos marcados antes de avanzar.');
       setFieldSheetTab('technical');
+      window.setTimeout(() => {
+        document.querySelector('.field-sheet-modal [data-validation-error="true"] input, .field-sheet-modal [data-validation-error="true"] textarea, .field-sheet-modal [data-validation-error="true"] select')?.focus();
+      }, 0);
       return;
     }
+    setFieldSheetValidationErrors({});
     setIsSaving(true);
     setError('');
     setNotice('');
@@ -2865,37 +2875,89 @@ function ServiceOrdersPage({ user = null }) {
               <section className="quotation-section">
                 <div className="quotation-section__title">
                   <p>Hoja de campo</p>
-                  <h3>Preparacion tecnica</h3>
+                  <h3>Preparación y captura del ETS</h3>
+                </div>
+                <div className="ets-field-sheet-subtabs" role="tablist" aria-label="Vistas de Hojas de Campo del ETS">
+                  <button aria-selected={fieldSheetWorkspaceView === 'capture'} className={fieldSheetWorkspaceView === 'capture' ? 'is-active' : ''} onClick={() => setFieldSheetWorkspaceView('capture')} type="button">Captura de hojas</button>
+                  <button aria-selected={fieldSheetWorkspaceView === 'work-orders'} className={fieldSheetWorkspaceView === 'work-orders' ? 'is-active' : ''} onClick={() => { setFieldSheetWorkspaceView('work-orders'); clearWorkOrderContext(); }} type="button">Por Orden de Trabajo</button>
                 </div>
                 <div className="ets-stage-note">
-                  Captura puede avanzar con hojas utilizables o certificados esperados disponibles; el tecnico puede seguir completando hojas en paralelo.
+                  Esta carpeta muestra únicamente las hojas, equipos y Órdenes de Trabajo del ETS {selectedOrder.folio}.
                 </div>
-                {selectedWorkOrderContext ? (
+
+                {fieldSheetWorkspaceView === 'capture' && selectedWorkOrderContext ? (
                   <div className="ets-stage-note">
                     Mostrando flujo de la {selectedWorkOrderContext.label}.
                     <button className="table-button" onClick={clearWorkOrderContext} type="button">Ver todas</button>
                   </div>
                 ) : null}
-                {selectedEquipment.length ? (
+
+                {fieldSheetWorkspaceView === 'capture' && selectedEquipment.length ? (
                   <div className="field-sheet-prep-list">
                     {filteredSelectedEquipment
-                      .map((item) => (
-                        <article className="glass-card-mini ets-list-item" key={item.id}>
-                          <strong>{item.name}</strong>
-                          <span>
-                            {fieldSheetsByEquipmentId.has(item.id)
-                              ? `Hoja ${fieldSheetsByEquipmentId.get(item.id).id} · ${fieldSheetStatusLabels[fieldSheetsByEquipmentId.get(item.id).status] ?? fieldSheetsByEquipmentId.get(item.id).status}`
-                              : `${item.brand || '-'} · ${item.model || '-'} · ${item.serial_number || 'Sin serie'}`}
-                          </span>
-                          <button className="table-button" onClick={() => openFieldSheetForEquipment(item)} type="button">
-                            {fieldSheetsByEquipmentId.has(item.id) ? 'Abrir hoja de campo' : 'Crear hoja de campo'}
-                          </button>
-                        </article>
-                      ))}
+                      .map((item) => {
+                        const sheet = fieldSheetsByEquipmentId.get(item.id);
+                        return (
+                          <article className="glass-card-mini ets-list-item ets-field-sheet-capture-card" key={item.id}>
+                            <div><strong>{item.name}</strong><span>{[item.brand, item.model, item.serial_number || 'Sin serie'].filter(Boolean).join(' · ')}</span></div>
+                            <div><small>Identificación</small><strong>{item.internal_id || '-'}</strong></div>
+                            <div><small>Plantilla</small><strong>{sheet ? getFieldSheetTemplateLabel(sheet.template_key) : 'Por seleccionar'}</strong></div>
+                            <mark className={`quotation-status status-${sheet?.status || 'pending'}`}>{sheet ? fieldSheetStatusLabels[sheet.status] ?? sheet.status : 'Sin hoja'}</mark>
+                            <div className="toolbar-actions">
+                              <button className="table-button table-button--primary" onClick={() => openFieldSheetForEquipment(item)} type="button">{sheet ? ['draft', 'in_progress', 'returned_to_technician', 'rejected'].includes(sheet.status) ? 'Continuar captura' : 'Abrir hoja' : 'Crear hoja'}</button>
+                              {sheet ? <button className="table-button" onClick={() => openFieldSheetPdf('view', sheet)} type="button">Ver PDF</button> : null}
+                              {sheet?.status === 'completed' ? <button className="table-button" disabled={isSaving} onClick={() => reviewFieldSheetRecord(sheet)} type="button">Enviar a revisión</button> : null}
+                            </div>
+                          </article>
+                        );
+                      })}
                   </div>
-                ) : (
+                ) : null}
+
+                {fieldSheetWorkspaceView === 'capture' && !selectedEquipment.length ? (
                   <div className="clients-empty">Agrega equipos para preparar hojas de campo.</div>
-                )}
+                ) : null}
+
+                {fieldSheetWorkspaceView === 'work-orders' ? (
+                  <div className="ets-field-sheet-work-orders">
+                    {workOrderCapacitySummary.groups.map((workOrder) => {
+                      const metrics = getFieldSheetWorkOrderMetrics(workOrder);
+                      const expanded = expandedFieldSheetWorkOrders.has(workOrder.id);
+                      const equipmentListId = `field-sheet-work-order-${workOrder.id}-equipment`;
+                      return (
+                        <article className={expanded ? 'ets-field-sheet-work-order is-expanded' : 'ets-field-sheet-work-order'} key={workOrder.id}>
+                          <button aria-controls={equipmentListId} aria-expanded={expanded} className="ets-field-sheet-work-order__summary" onClick={() => toggleFieldSheetWorkOrder(workOrder.id)} type="button">
+                            <span>{expanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}</span>
+                            <div><small>Orden de Trabajo</small><strong>OT-{workOrder.work_order_number ?? '-'}</strong><span>{getClientDisplayName(clientsById.get(selectedOrder.client_id))}</span></div>
+                            <div className="ets-field-sheet-work-order__metrics"><span><strong>{metrics.equipmentCount}</strong>Equipos</span><span><strong>{metrics.created} / {metrics.equipmentCount}</strong>Hojas creadas</span><span><strong>{metrics.approved}</strong>Aprobadas</span><span><strong>{metrics.capture}</strong>En captura</span><span><strong>{metrics.pending}</strong>Pendientes</span></div>
+                            <div className="ets-field-sheet-work-order__progress"><div><span style={{ width: `${metrics.progress}%` }} /></div><strong>{metrics.created} / {metrics.equipmentCount} hojas</strong><small>{metrics.progress}%</small></div>
+                            <mark className={`quotation-status status-${workOrder.status}`}>{serviceOrderStatusLabels[workOrder.status] ?? workOrder.status ?? 'Pendiente'}</mark>
+                          </button>
+
+                          {expanded ? (
+                            <div className="ets-field-sheet-work-order__equipment" id={equipmentListId}>
+                              {metrics.rows.length ? metrics.rows.map(({ item, sheet }) => {
+                                const certificate = activeCertificatesByEquipmentId.get(item.id);
+                                return (
+                                  <article className="ets-field-sheet-equipment-row" key={item.id}>
+                                    <div><strong>{item.name}</strong><span>{[item.brand, item.model].filter(Boolean).join(' · ') || 'Sin marca/modelo'}</span></div>
+                                    <dl><div><dt>Serie</dt><dd>{item.serial_number || '-'}</dd></div><div><dt>Identificación</dt><dd>{item.internal_id || '-'}</dd></div><div><dt>Hoja</dt><dd>{sheet ? getFieldSheetTemplateLabel(sheet.template_key) : 'Sin crear'}</dd></div><div><dt>Folio</dt><dd>{sheet?.reserved_certificate_folio || certificate?.expected_folio || certificate?.folio || '-'}</dd></div><div><dt>Actualizada</dt><dd>{sheet ? formatDateTime(sheet.updated_at) : '-'}</dd></div></dl>
+                                    <mark className={`quotation-status status-${sheet?.status || 'pending'}`}>{sheet ? fieldSheetStatusLabels[sheet.status] ?? sheet.status : 'Sin hoja'}</mark>
+                                    <div className="toolbar-actions">
+                                      <button className="table-button table-button--primary" onClick={() => openFieldSheetForEquipment(item, workOrder)} type="button">{sheet ? ['draft', 'in_progress', 'returned_to_technician', 'rejected'].includes(sheet.status) ? 'Continuar captura' : 'Abrir hoja' : 'Crear hoja'}</button>
+                                      {sheet ? <button className="table-button" onClick={() => openFieldSheetPdf('view', sheet)} type="button">Ver PDF</button> : null}
+                                      {sheet?.status === 'completed' ? <button className="table-button" disabled={isSaving} onClick={() => reviewFieldSheetRecord(sheet)} type="button">Enviar a revisión</button> : null}
+                                    </div>
+                                  </article>
+                                );
+                              }) : <div className="clients-empty">Esta Orden de Trabajo todavía no tiene equipos.</div>}
+                            </div>
+                          ) : null}
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </section>
             ) : null}
 
@@ -3970,38 +4032,30 @@ function ServiceOrdersPage({ user = null }) {
                     || getFieldSheetTemplate(fieldSheetForm.templateKey || 'general', fieldSheetTemplatesByKey)
                   }
                   values={{
+                    ...(fieldSheetForm.captureValues || {}),
                     work_order_number: selectedFieldSheet?.work_order_number || selectedOrder?.work_order_number || '',
-                    certificate_number:
+                    reserved_certificate_folio:
                       selectedFieldSheet?.reserved_certificate_folio ||
                       fieldSheetForm.reservedCertificateFolio ||
                       activeCertificatesByEquipmentId.get(selectedEquipmentForSheet?.id)?.expected_folio ||
                       activeCertificatesByEquipmentId.get(selectedEquipmentForSheet?.id)?.folio ||
                       '',
 
-                    attention:
-                      fieldSheetForm.certificateClientMode === 'different'
-                        ? fieldSheetForm.certificateClientAttention
-                        : fieldSheetForm.attention || '',
-
+                    attention: fieldSheetForm.attention || fieldSheetForm.certificateClientAttention || '',
                     company:
-                      fieldSheetForm.certificateClientMode === 'different'
-                        ? fieldSheetForm.certificateClientCompany
-                        : fieldSheetForm.company ||
-                          clientsById.get(selectedOrder?.client_id)?.commercial_name ||
-                          clientsById.get(selectedOrder?.client_id)?.legal_name ||
-                          '',
-
-                    address:
-                      fieldSheetForm.certificateClientMode === 'different'
-                        ? fieldSheetForm.certificateClientAddress
-                        : fieldSheetForm.address || '',
-                    instrument: selectedEquipmentForSheet?.name || '',
-                    scope: selectedEquipmentForSheet?.range_or_capacity || '',
+                      fieldSheetForm.company ||
+                      fieldSheetForm.certificateClientCompany ||
+                      clientsById.get(selectedOrder?.client_id)?.commercial_name ||
+                      clientsById.get(selectedOrder?.client_id)?.legal_name ||
+                      '',
+                    address: fieldSheetForm.address || fieldSheetForm.certificateClientAddress || '',
+                    instrument: fieldSheetForm.captureValues?.instrument ?? selectedEquipmentForSheet?.name ?? '',
+                    scope: fieldSheetForm.captureValues?.scope ?? selectedEquipmentForSheet?.range_or_capacity ?? '',
                     minimum_division: fieldSheetForm.minimumDivision || '',
-                    brand: selectedEquipmentForSheet?.brand || '',
-                    serial_number: selectedEquipmentForSheet?.serial_number || '',
-                    model: selectedEquipmentForSheet?.model || '',
-                    internal_id: selectedEquipmentForSheet?.internal_id || '',
+                    brand: fieldSheetForm.captureValues?.brand ?? selectedEquipmentForSheet?.brand ?? '',
+                    serial_number: fieldSheetForm.captureValues?.serial_number ?? selectedEquipmentForSheet?.serial_number ?? '',
+                    model: fieldSheetForm.captureValues?.model ?? selectedEquipmentForSheet?.model ?? '',
+                    internal_id: fieldSheetForm.captureValues?.internal_id ?? selectedEquipmentForSheet?.internal_id ?? '',
                     location: fieldSheetForm.location || '',
                     calibration_place: fieldSheetForm.calibrationPlace || '',
                     reception_date: fieldSheetForm.receptionDate || '',
@@ -4014,8 +4068,12 @@ function ServiceOrdersPage({ user = null }) {
                     equipment_good_condition: fieldSheetForm.equipmentGeneralCondition || false,
                     consider_deviations: fieldSheetForm.considerEquipmentDeviations || false,
                     units: fieldSheetForm.units || '',
+                    method: fieldSheetForm.method || '',
+                    initial_condition: fieldSheetForm.initialCondition || '',
+                    final_condition: fieldSheetForm.finalCondition || '',
+                    pattern_used: fieldSheetForm.patternUsed || '',
                     observations: fieldSheetForm.observations || '',
-                    others: fieldSheetForm.evidenceNotes || '',
+                    evidence_notes: fieldSheetForm.evidenceNotes || '',
                     calibrated_by: fieldSheetForm.calibratedBy || '',
                     reviewed_by: fieldSheetForm.reviewedBy || '',
                     report_made_by: fieldSheetForm.reportMadeBy || '',
@@ -4024,6 +4082,7 @@ function ServiceOrdersPage({ user = null }) {
                   institution={selectedFieldSheet?.institutional_snapshot || null}
                   signatures={fieldSheetForm.signatures || []}
                   users={users}
+                  validationErrors={fieldSheetValidationErrors}
                   resultSections={buildFieldSheetResultSections(
                     fieldSheetForm.resultsRows || [],
                     fieldSheetForm.templateKey || 'general',
@@ -4053,7 +4112,11 @@ function ServiceOrdersPage({ user = null }) {
                       consider_deviations: 'considerEquipmentDeviations',
                       units: 'units',
                       observations: 'observations',
-                      others: 'evidenceNotes',
+                      evidence_notes: 'evidenceNotes',
+                      initial_condition: 'initialCondition',
+                      final_condition: 'finalCondition',
+                      pattern_used: 'patternUsed',
+                      method: 'method',
                       calibrated_by: 'calibratedBy',
                       reviewed_by: 'reviewedBy',
                       report_made_by: 'reportMadeBy',
@@ -4062,10 +4125,29 @@ function ServiceOrdersPage({ user = null }) {
 
                     if (map[key]) {
                       updateFieldSheetForm(map[key], value);
+                    } else {
+                      setFieldSheetForm((current) => ({
+                        ...current,
+                        captureValues: { ...(current.captureValues || {}), [key]: value },
+                      }));
                     }
+                    setFieldSheetValidationErrors((current) => {
+                      const next = { ...current };
+                      delete next[key];
+                      if (key === 'observations' || key === 'evidence_notes') {
+                        delete next.observations;
+                        delete next.evidence_notes;
+                      }
+                      return next;
+                    });
                   }}
                   onResultChange={(sectionKey, rowNumber, columnKey, value) => {
                     updateFieldSheetResult(sectionKey, rowNumber, columnKey, value);
+                    setFieldSheetValidationErrors((current) => {
+                      const next = { ...current };
+                      delete next.results_rows;
+                      return next;
+                    });
                   }}
                   onSignatureChange={(index, updates) => {
                     setFieldSheetForm((current) => ({

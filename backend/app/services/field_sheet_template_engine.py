@@ -228,14 +228,14 @@ def _table_block(block_type: str, key: str, title: str, sections: list[dict], fa
     )
 
 
-def _template(key: str, name: str, family: str, table: dict, *, ambiguous: bool = False) -> dict:
+def _template(key: str, name: str, family: str, table: dict, *, ambiguous: bool = False, version: int = 1) -> dict:
     return {
         "template_key": key,
         "key": key,
         "name": name,
         "description": "Plantilla oficial MYC basada en FCA-30 R1.",
         "status": "active",
-        "version": 1,
+        "version": version,
         "is_active": True,
         "code": "FCA-30",
         "revision": "R1",
@@ -334,7 +334,6 @@ OFFICIAL_PILOT_TEMPLATES = {
                     "Excentricidad y ciclo",
                     6,
                     [
-                        _column("position", "Posición", configurable=True),
                         _column("pattern_value", "Patrón", configurable=True),
                         _column("ibc_value_1", "IBC 1", configurable=True),
                         _column("ibc_value_2", "IBC 2", configurable=True),
@@ -361,6 +360,7 @@ OFFICIAL_PILOT_TEMPLATES = {
             ambiguous=True,
         ),
         ambiguous=True,
+        version=3,
     ),
 }
 
@@ -368,4 +368,3 @@ OFFICIAL_PILOT_TEMPLATES = {
 def get_official_pilot_template(template_key: str) -> dict | None:
     template = OFFICIAL_PILOT_TEMPLATES.get(template_key)
     return deepcopy(template) if template else None
-

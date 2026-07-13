@@ -137,6 +137,10 @@ export async function register({ email, fullName, password }) {
   return payload.user;
 }
 
+export async function getRegistrationStatus() {
+  return request('/auth/registration-status');
+}
+
 export async function getCurrentUser() {
   return request('/auth/me');
 }

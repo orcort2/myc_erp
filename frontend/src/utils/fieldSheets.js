@@ -422,6 +422,7 @@ export function fieldSheetToForm(fieldSheet) {
     certificateClientAttention: fieldSheet?.certificate_client_attention ?? '',
     certificateClientAddress: fieldSheet?.certificate_client_address ?? '',
     applyCertificateClientToOrder: Boolean(fieldSheet?.apply_certificate_client_to_order),
+    captureValues: { ...(fieldSheet?.capture_values || {}) },
     resultsRows: normalizeResultsRows(fieldSheet?.results_rows, normalizedTemplate),
     referenceStandards: safeArray(fieldSheet?.reference_standards).map((item) => ({
       referenceStandardId: String(item.reference_standard_id),
@@ -482,6 +483,7 @@ export function buildFieldSheetPayload(form, templatesByKey = null) {
     certificate_client_attention: form.certificateClientAttention.trim() || null,
     certificate_client_address: form.certificateClientAddress.trim() || null,
     apply_certificate_client_to_order: Boolean(form.applyCertificateClientToOrder),
+    capture_values: { ...safeObject(form.captureValues) },
     reference_standards: [],
     signatures: safeArray(form.signatures).map((signature, index) => ({
       id: signature.id ?? undefined,
@@ -489,7 +491,11 @@ export function buildFieldSheetPayload(form, templatesByKey = null) {
       display_label: signature.displayLabel || signature.role,
       name: String(signature.name ?? '').trim() || null,
       signature_data: signature.signatureData || null,
-      signed_at: signature.signedAt || null,
+      signed_at: signature.signedAt
+        ? /^\d{4}-\d{2}-\d{2}$/.test(signature.signedAt)
+          ? `${signature.signedAt}T00:00:00`
+          : signature.signedAt
+        : null,
       user_id: signature.userId ? Number(signature.userId) : null,
       position: signature.position ?? index,
     })),
@@ -537,12 +543,31 @@ export function hasStructuredFieldSheetResults(form, templatesByKey = null) {
 }
 
 export function getFieldSheetCompletionErrors(form, templatesByKey = null) {
-  const errors = [];
-  if (!String(form.initialCondition ?? '').trim()) errors.push('Condicion inicial');
-  if (!String(form.finalCondition ?? '').trim()) errors.push('Condicion final');
-  if (!hasStructuredFieldSheetResults(form, templatesByKey)) errors.push('Resultados estructurados');
+  return Object.values(getFieldSheetCompletionValidation(form, templatesByKey));
+}
+
+export function getFieldSheetCompletionValidation(form, templatesByKey = null) {
+  const errors = {};
+  if (!String(form.initialCondition ?? '').trim()) errors.initial_condition = 'Captura la condición inicial.';
+  if (!String(form.finalCondition ?? '').trim()) errors.final_condition = 'Captura la condición final.';
+  if (!hasStructuredFieldSheetResults(form, templatesByKey)) errors.results_rows = 'Captura al menos un resultado.';
   if (!String(form.observations ?? '').trim() && !String(form.evidenceNotes ?? '').trim()) {
-    errors.push('Observaciones o evidencia');
+    errors.observations = 'Captura observaciones o evidencia.';
+    errors.evidence_notes = 'Captura observaciones o evidencia.';
   }
+  const template = getNormalizedTemplate(form.templateKey || 'general', templatesByKey);
+  const formKeys = {
+    attention: 'attention', company: 'company', address: 'address', minimum_division: 'minimumDivision',
+    location: 'location', calibration_place: 'calibrationPlace', reception_date: 'receptionDate',
+    calibration_date: 'calibrationDate', next_calibration_date: 'nextCalibrationDate',
+    humidity_start: 'environmentHumidityStart', humidity_end: 'environmentHumidityEnd',
+    temperature_start: 'environmentTemperatureStart', temperature_end: 'environmentTemperatureEnd',
+    units: 'units', method: 'method', initial_condition: 'initialCondition', final_condition: 'finalCondition',
+    observations: 'observations', evidence_notes: 'evidenceNotes', pattern_used: 'patternUsed',
+  };
+  safeArray(template.blocks).flatMap((block) => safeArray(block.fields)).filter((field) => field.required).forEach((field) => {
+    const value = formKeys[field.key] ? form[formKeys[field.key]] : safeObject(form.captureValues)[field.key];
+    if (!String(value ?? '').trim()) errors[field.key] = `${field.label || field.key} es obligatorio.`;
+  });
   return errors;
 }

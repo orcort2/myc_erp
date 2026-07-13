@@ -367,7 +367,7 @@ function buildFallbackTemplate(templateKey) {
       ],
     }],
     bascula: [
-      { key: 'eccentricity_cycle', title: 'Excentricidad y ciclo', rows: 6, columns: [column('position', 'Posición'), column('pattern_value', 'Patrón'), column('ibc_value_1', 'IBC 1'), column('ibc_value_2', 'IBC 2'), column('ibc_value_3', 'IBC 3')] },
+      { key: 'eccentricity_cycle', title: 'Excentricidad y ciclo', rows: 6, columns: [column('pattern_value', 'Patrón'), column('ibc_value_1', 'IBC 1'), column('ibc_value_2', 'IBC 2'), column('ibc_value_3', 'IBC 3')] },
       { key: 'repeatability_50', title: 'Repetibilidad al 50 %', rows: 5, columns: [column('pattern_value', 'Patrón'), column('ibc_value_1', 'Indicación')] },
       { key: 'repeatability_100', title: 'Repetibilidad al 100 %', rows: 5, columns: [column('pattern_value', 'Patrón'), column('ibc_value_1', 'Indicación')] },
     ],

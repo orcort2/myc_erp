@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import BrandLockup from '../components/BrandLockup.jsx';
-import { login, register } from '../services/api.js';
+import { getRegistrationStatus, login, register } from '../services/api.js';
 import { navigate } from '../utils/routing.js';
 
 function LoginPage({ onAuthenticated }) {
@@ -11,6 +11,24 @@ function LoginPage({ onAuthenticated }) {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [hasRegisteredUsers, setHasRegisteredUsers] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    getRegistrationStatus()
+      .then((status) => {
+        if (isMounted) setHasRegisteredUsers(Boolean(status?.has_users));
+      })
+      .catch(() => {
+        // Keep the registration link available if the status check is temporarily unavailable.
+        if (isMounted) setHasRegisteredUsers(true);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -93,7 +111,11 @@ function LoginPage({ onAuthenticated }) {
           }}
           type="button"
         >
-          {mode === 'login' ? 'Crear primer usuario' : 'Ya tengo usuario'}
+          {mode === 'login'
+            ? hasRegisteredUsers === false
+              ? 'Crear primer usuario'
+              : 'Registrarse'
+            : 'Ya tengo usuario'}
         </button>
       </section>
     </main>

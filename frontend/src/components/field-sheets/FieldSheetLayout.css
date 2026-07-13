@@ -223,6 +223,22 @@
   box-shadow: 0 1px 0 #175cd3;
 }
 
+.has-validation-error .field-sheet-input,
+.has-validation-error .field-sheet-textarea,
+.has-validation-error .field-sheet-results-table {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.28);
+}
+
+.field-sheet-validation-message {
+  color: #b42318;
+  display: block;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
 .field-sheet-observation-section {
   align-items: start;
   display: grid;
@@ -389,8 +405,33 @@
   align-items: flex-end;
   border-bottom: 1px solid #111;
   display: flex;
-  height: 24px;
+  height: 42px;
   justify-content: center;
+}
+
+.field-sheet-signature-capture {
+  height: 40px;
+  position: relative;
+  width: 100%;
+}
+
+.field-sheet-signature-capture canvas {
+  cursor: crosshair;
+  height: 34px;
+  touch-action: none;
+  width: 100%;
+}
+
+.field-sheet-signature-capture button {
+  background: rgba(255, 255, 255, .9);
+  border: 1px solid #94a3b8;
+  border-radius: 3px;
+  bottom: 1px;
+  color: #475569;
+  font-size: 7px;
+  padding: 1px 3px;
+  position: absolute;
+  right: 1px;
 }
 
 .field-sheet-signature-line img {
@@ -537,6 +578,10 @@
 }
 
 @media print {
+  .field-sheet-signature-capture button,
+  .field-sheet-validation-message {
+    display: none;
+  }
   .field-sheet-document {
     display: block;
   }

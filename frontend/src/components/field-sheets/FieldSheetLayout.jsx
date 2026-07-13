@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import mycLogo from '../../assets/myc-logo.png';
 import { fieldSheetFieldCatalog } from '../../constants/fieldSheetTemplates.js';
@@ -30,6 +30,71 @@ function FieldInput({ value = '', onChange, type = 'text', className = '', place
       placeholder={placeholder}
       {...inputProps}
     />
+  );
+}
+
+function SignatureCanvas({ label, value, onChange }) {
+  const canvasRef = useRef(null);
+  const drawingRef = useRef(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext('2d');
+    if (!canvas || !context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (!value) return;
+    const image = new Image();
+    image.onload = () => context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    image.src = value;
+  }, [value]);
+
+  function point(event) {
+    const canvas = canvasRef.current;
+    const bounds = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - bounds.left) * (canvas.width / bounds.width),
+      y: (event.clientY - bounds.top) * (canvas.height / bounds.height),
+    };
+  }
+
+  function begin(event) {
+    const context = canvasRef.current.getContext('2d');
+    const start = point(event);
+    drawingRef.current = true;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    context.strokeStyle = '#0f172a';
+    context.lineWidth = 2;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    context.moveTo(start.x, start.y);
+  }
+
+  function draw(event) {
+    if (!drawingRef.current) return;
+    const next = point(event);
+    const context = canvasRef.current.getContext('2d');
+    context.lineTo(next.x, next.y);
+    context.stroke();
+  }
+
+  function end() {
+    if (!drawingRef.current) return;
+    drawingRef.current = false;
+    onChange?.(canvasRef.current.toDataURL('image/png'));
+  }
+
+  function clear() {
+    const canvas = canvasRef.current;
+    canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+    onChange?.('');
+  }
+
+  return (
+    <div className="field-sheet-signature-capture">
+      <canvas aria-label={`Firma ${label}`} height="70" onPointerDown={begin} onPointerMove={draw} onPointerUp={end} onPointerCancel={end} ref={canvasRef} width="320" />
+      <button onClick={clear} type="button">Limpiar firma</button>
+    </div>
   );
 }
 
@@ -133,6 +198,7 @@ export default function FieldSheetLayout({
   onValueChange,
   onResultChange,
   onSignatureChange,
+  validationErrors = {},
 }) {
   const normalizedTemplate = normalizeTemplate(template);
   const [institutionState, setInstitutionState] = useState(institutionProp || null);
@@ -201,8 +267,9 @@ export default function FieldSheetLayout({
           : 'text';
 
     if (inputType === 'checkbox') {
+      const error = validationErrors[field.key];
       return (
-        <label className={`field-sheet-check-field ${className}`} key={field.key}>
+        <label className={`field-sheet-check-field ${className} ${error ? 'has-validation-error' : ''}`} data-field-key={field.key} data-validation-error={error ? 'true' : undefined} key={field.key}>
           <span>{field.label}</span>
           <input
             className="field-sheet-checkbox"
@@ -210,19 +277,23 @@ export default function FieldSheetLayout({
             checked={Boolean(value(field.key))}
             onChange={(event) => onValueChange?.(field.key, event.target.checked)}
           />
+          {error ? <small className="field-sheet-validation-message">{error}</small> : null}
         </label>
       );
     }
 
+    const error = validationErrors[field.key];
     return (
-      <label className={`field-sheet-line-field ${className}`} key={field.key}>
+      <label className={`field-sheet-line-field ${className} ${error ? 'has-validation-error' : ''}`} data-field-key={field.key} data-validation-error={error ? 'true' : undefined} key={field.key}>
         <span>{field.label}</span>
         <FieldInput
           type={inputType}
           value={value(field.key)}
           placeholder={field.placeholder || ''}
+          aria-invalid={error ? 'true' : undefined}
           onChange={(nextValue) => onValueChange?.(field.key, nextValue)}
         />
+        {error ? <small className="field-sheet-validation-message">{error}</small> : null}
       </label>
     );
   }
@@ -293,13 +364,15 @@ export default function FieldSheetLayout({
             {blockFields
               .filter((field) => field.field_type === 'textarea')
               .map((field) => (
-                <label className="field-sheet-observation-box" key={field.key}>
+                <label className={`field-sheet-observation-box ${validationErrors[field.key] ? 'has-validation-error' : ''}`} data-field-key={field.key} data-validation-error={validationErrors[field.key] ? 'true' : undefined} key={field.key}>
                   <span>{field.label || 'Otros:'}</span>
                   <FieldInput
                     type="textarea"
                     value={value(field.key)}
+                    aria-invalid={validationErrors[field.key] ? 'true' : undefined}
                     onChange={(nextValue) => onValueChange?.(field.key, nextValue)}
                   />
+                  {validationErrors[field.key] ? <small className="field-sheet-validation-message">{validationErrors[field.key]}</small> : null}
                 </label>
               ))}
           </div>
@@ -344,9 +417,7 @@ export default function FieldSheetLayout({
         {signatureSlots.map((signature, index) => (
           <div className="field-sheet-signature-slot" data-signature-role={signature.role} key={signature.role}>
             <div className="field-sheet-signature-line">
-              {signature.signatureData || signature.signature_data ? (
-                <img src={signature.signatureData || signature.signature_data} alt={`Firma ${signature.role}`} />
-              ) : null}
+              <SignatureCanvas label={signature.displayLabel || signature.display_label || signature.role} value={signature.signatureData || signature.signature_data || ''} onChange={(signatureData) => onSignatureChange?.(index, { signatureData })} />
             </div>
             <strong>{signature.displayLabel || signature.display_label || signature.role}</strong>
             <div className="field-sheet-signature-meta">
@@ -369,7 +440,7 @@ export default function FieldSheetLayout({
     const hideRowNumbers = section.metadata?.hide_row_numbers;
     const hideRowValues = section.metadata?.hide_row_values;
     return (
-      <section className={`field-sheet-results-section field-sheet-results-section--${section.key}`} data-section-key={section.key} key={`${section.key}-${section.rows?.[0]?.rowNumber || 0}`}>
+      <section className={`field-sheet-results-section field-sheet-results-section--${section.key} ${validationErrors.results_rows ? 'has-validation-error' : ''}`} data-section-key={section.key} data-validation-error={validationErrors.results_rows ? 'true' : undefined} key={`${section.key}-${section.rows?.[0]?.rowNumber || 0}`}>
         <div className="field-sheet-table-group">
           <div className="field-sheet-table-section-title">
             {section.title || unit.block.title}{continuation ? ' - continuación' : ''}
@@ -408,12 +479,17 @@ export default function FieldSheetLayout({
             </tbody>
           </table>
           {section.metadata?.note ? <div className="field-sheet-table-note">{section.metadata.note}</div> : null}
+          {validationErrors.results_rows ? <div className="field-sheet-validation-message">{validationErrors.results_rows}</div> : null}
         </div>
       </section>
     );
   }
 
   const pages = paginateFieldSheet(blocks, resultSections || []);
+  // `reserved_certificate_folio` is the canonical operational key. Keep the
+  // former renderer alias so historical snapshots still display their folio.
+  const reservedCertificateFolio =
+    value('reserved_certificate_folio') || value('certificate_number');
 
   return (
     <div className="field-sheet-document" data-page-count={pages.length} data-template-key={normalizedTemplate.template_key}>
@@ -444,8 +520,8 @@ export default function FieldSheetLayout({
           </header>
 
           <div className="field-sheet-reference-row">
-            <label className="field-sheet-line-field"><span>Orden de trabajo:</span><FieldInput value={value('work_order_number')} onChange={(nextValue) => onValueChange?.('work_order_number', nextValue)} /></label>
-            <label className="field-sheet-line-field"><span>Certificado No.:</span><FieldInput value={value('reserved_certificate_folio')} onChange={(nextValue) => onValueChange?.('reserved_certificate_folio', nextValue)} /></label>
+            <label className="field-sheet-line-field"><span>Orden de trabajo:</span><FieldInput value={value('work_order_number')} readOnly aria-readonly="true" title="Orden de trabajo asociada por el ERP" /></label>
+            <label className="field-sheet-line-field"><span>Certificado No.:</span><FieldInput value={reservedCertificateFolio} readOnly aria-readonly="true" title="Folio reservado automáticamente para el certificado" /></label>
           </div>
 
           <div className="field-sheet-page-content">

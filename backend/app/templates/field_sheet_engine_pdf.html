@@ -5,11 +5,13 @@
   <style>
     @page {
       size: Letter portrait;
+      background: #ffffff;
       margin: 12mm 10mm 14mm;
       @bottom-left { content: "{{ institution.document_code }} · {{ institution.initial_revision }}"; font: 7pt Arial; color: #475467; }
       @bottom-right { content: "Página " counter(page) " de " counter(pages); font: 7pt Arial; color: #475467; }
     }
     * { box-sizing: border-box; }
+    html, body { background: #ffffff; }
     body { color: #101828; font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; margin: 0; }
     .header { align-items: center; display: grid; grid-template-columns: 32mm 1fr 25mm; gap: 3mm; margin-bottom: 2mm; }
     .logo { max-height: 16mm; max-width: 30mm; }
@@ -62,20 +64,20 @@
   </section>
   <section class="block">
     <div class="block-title">Datos del instrumento</div>
-    <table class="info-table"><tr><td><strong>Instrumento:</strong> {{ equipment.name or '-' }}</td><td><strong>Marca:</strong> {{ equipment.brand or '-' }}</td></tr><tr><td><strong>Modelo:</strong> {{ equipment.model or '-' }}</td><td><strong>Serie:</strong> {{ equipment.serial_number or '-' }}</td></tr><tr><td><strong>Identificación:</strong> {{ equipment.internal_id or '-' }}</td><td><strong>División mínima:</strong> {{ field_sheet.minimum_division or '-' }}</td></tr></table>
+    <table class="info-table"><tr><td><strong>Instrumento:</strong> {{ equipment.name or '-' }}</td><td><strong>Alcance:</strong> {{ equipment.range_or_capacity or '-' }}</td></tr><tr><td><strong>Marca:</strong> {{ equipment.brand or '-' }}</td><td><strong>Modelo:</strong> {{ equipment.model or '-' }}</td></tr><tr><td><strong>Serie:</strong> {{ equipment.serial_number or '-' }}</td><td><strong>Identificación:</strong> {{ equipment.internal_id or '-' }}</td></tr><tr><td><strong>División mínima:</strong> {{ field_sheet.minimum_division or '-' }}</td><td><strong>Ubicación:</strong> {{ field_sheet.location or '-' }}</td></tr>{% if capture_values.instrument_type %}<tr><td colspan="2"><strong>Tipo:</strong> {{ capture_values.instrument_type }}</td></tr>{% endif %}</table>
   </section>
   <section class="block">
     <div class="block-title">Datos de calibración y ambiente</div>
-    <table class="info-table"><tr><td><strong>Recepción:</strong> {{ field_sheet.reception_date|date }}</td><td><strong>Calibración:</strong> {{ field_sheet.calibration_date|date }}</td></tr><tr><td><strong>Próxima calibración:</strong> {{ field_sheet.next_calibration_date|date }}</td><td><strong>Lugar:</strong> {{ field_sheet.calibration_place or '-' }}</td></tr><tr><td><strong>Humedad inicial/final:</strong> {{ field_sheet.environment_humidity_start or '-' }} / {{ field_sheet.environment_humidity_end or '-' }}</td><td><strong>Temperatura inicial/final:</strong> {{ field_sheet.environment_temperature_start or '-' }} / {{ field_sheet.environment_temperature_end or '-' }}</td></tr></table>
+    <table class="info-table"><tr><td><strong>Recepción:</strong> {{ field_sheet.reception_date|date }}</td><td><strong>Calibración:</strong> {{ field_sheet.calibration_date|date }}</td></tr><tr><td><strong>Próxima calibración:</strong> {{ field_sheet.next_calibration_date|date }}</td><td><strong>Lugar:</strong> {{ field_sheet.calibration_place or '-' }}</td></tr><tr><td><strong>Unidades:</strong> {{ field_sheet.units or '-' }}</td><td><strong>Método:</strong> {{ field_sheet.method or '-' }}</td></tr><tr><td><strong>Humedad inicial/final:</strong> {{ field_sheet.environment_humidity_start or '-' }} / {{ field_sheet.environment_humidity_end or '-' }}</td><td><strong>Temperatura inicial/final:</strong> {{ field_sheet.environment_temperature_start or '-' }} / {{ field_sheet.environment_temperature_end or '-' }}</td></tr></table>
   </section>
   <section class="block">
     <div class="block-title">Condición y observaciones</div>
-    <table class="info-table"><tr><td><strong>Condición inicial:</strong> {{ field_sheet.initial_condition or '-' }}</td><td><strong>Condición final:</strong> {{ field_sheet.final_condition or '-' }}</td></tr><tr><td colspan="2"><strong>Observaciones:</strong> {{ field_sheet.observations or '-' }}</td></tr></table>
+    <table class="info-table"><tr><td><strong>Condición inicial:</strong> {{ field_sheet.initial_condition or '-' }}</td><td><strong>Condición final:</strong> {{ field_sheet.final_condition or '-' }}</td></tr><tr><td colspan="2"><strong>Patrón usado:</strong> {{ field_sheet.pattern_used or '-' }}</td></tr><tr><td colspan="2"><strong>Observaciones:</strong> {{ field_sheet.observations or '-' }}</td></tr><tr><td colspan="2"><strong>Evidencia / notas:</strong> {{ field_sheet.evidence_notes or '-' }}</td></tr></table>
   </section>
 
   {% for section in sections %}
   <section class="result-section">
-    <div class="section-title">{{ section.title }}</div>
+    <div class="section-title">{{ section.title }}{% if section.unit_value %} · Unidades: {{ section.unit_value }}{% endif %}</div>
     <table class="results">
       <thead><tr><th class="number">No.</th>{% for column in section.columns %}<th style="width: {{ column.width or 'auto' }}">{{ column.label }}</th>{% endfor %}</tr></thead>
       <tbody>

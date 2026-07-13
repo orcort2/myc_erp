@@ -136,6 +136,7 @@ export const emptyFieldSheetForm = {
   certificateClientAttention: '',
   certificateClientAddress: '',
   applyCertificateClientToOrder: false,
+  captureValues: {},
   resultsRows: [],
   referenceStandards: [],
   signatures: [],

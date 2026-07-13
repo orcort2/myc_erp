@@ -33,7 +33,7 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
             "anemometro": [("measurements", 10, 4)],
             "calibradores": [("exterior", 7, 4), ("interior", 5, 4), ("depth", 3, 4)],
             "presion": [("pressure_cycle", 11, 4)],
-            "bascula": [("eccentricity_cycle", 6, 5), ("repeatability_50", 5, 2), ("repeatability_100", 5, 2)],
+            "bascula": [("eccentricity_cycle", 6, 4), ("repeatability_50", 5, 2), ("repeatability_100", 5, 2)],
         }
         for key, geometry in expected.items():
             definition = build_fallback_template_definition(key)
@@ -51,6 +51,12 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
             expected_count = sum(section["rows"] for section in definition["result_sections"])
             self.assertEqual(len(rows), expected_count)
             self.assertTrue(all(row.row_data == {} for row in rows))
+
+    def test_new_scale_snapshot_has_no_position_column(self):
+        template = build_fallback_template_definition("bascula")
+        eccentricity = next(section for section in template["result_sections"] if section["key"] == "eccentricity_cycle")
+        self.assertEqual(template["version"], 3)
+        self.assertNotIn("position", [column["key"] for column in eccentricity["columns"]])
 
     def test_template_accessor_returns_a_deep_copy(self):
         first = get_official_pilot_template("presion")
@@ -74,4 +80,3 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

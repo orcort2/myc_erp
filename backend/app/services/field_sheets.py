@@ -38,6 +38,8 @@ FIELD_SHEET_REFERENCE_USAGE_ROLES = {
     "environmental",
     "other",
 }
+EDITABLE_STATUSES = {"draft", "in_progress", "rejected", "returned_to_technician"}
+TERMINAL_STATUSES = {"approved", "cancelled"}
 
 
 def _json_safe(value):
@@ -113,6 +115,7 @@ def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
         "certificate_client_attention": field_sheet.certificate_client_attention,
         "certificate_client_address": field_sheet.certificate_client_address,
         "apply_certificate_client_to_order": field_sheet.apply_certificate_client_to_order,
+        "capture_values": field_sheet.capture_values or {},
         "reserved_certificate_folio": field_sheet.reserved_certificate_folio,
         "results_rows": _serialize_result_rows(field_sheet.results_rows),
         "signatures": [
@@ -325,6 +328,25 @@ def _validate_ready_to_complete(field_sheet: FieldSheet) -> None:
         if not value or not value.strip():
             missing_fields.append(field_name)
 
+    field_aliases = {
+        "humidity_start": "environment_humidity_start",
+        "humidity_end": "environment_humidity_end",
+        "temperature_start": "environment_temperature_start",
+        "temperature_end": "environment_temperature_end",
+    }
+    capture_values = field_sheet.capture_values or {}
+    for block in (field_sheet.template_definition_json or {}).get("blocks") or []:
+        for field in block.get("fields") or []:
+            if not field.get("required"):
+                continue
+            key = field.get("key")
+            model_key = field_aliases.get(key, key)
+            value = getattr(field_sheet, model_key, None)
+            if value in (None, ""):
+                value = capture_values.get(key)
+            if value in (None, "") and key not in missing_fields:
+                missing_fields.append(key)
+
     has_observations = bool(field_sheet.observations and field_sheet.observations.strip())
     has_evidence = bool(field_sheet.evidence_notes and field_sheet.evidence_notes.strip())
     if not has_observations and not has_evidence:
@@ -344,6 +366,7 @@ def _validate_ready_to_complete(field_sheet: FieldSheet) -> None:
 
 def _apply_results_updates(field_sheet: FieldSheet, results_rows: list[FieldSheetResultUpdate]) -> None:
     existing_by_id = {row.id: row for row in field_sheet.results_rows}
+    existing_by_key = {(row.section_key, row.row_number): row for row in field_sheet.results_rows}
     new_rows: list[FieldSheetResult] = []
     for row_payload in results_rows:
         row_data = row_payload.model_dump(exclude={"id"})
@@ -352,8 +375,13 @@ def _apply_results_updates(field_sheet: FieldSheet, results_rows: list[FieldShee
             if row_data.get(key) not in (None, ""):
                 raw_data.setdefault(key, row_data.get(key))
         row_data["row_data"] = raw_data
-        if row_payload.id is not None and row_payload.id in existing_by_id:
-            row = existing_by_id[row_payload.id]
+        existing_row = (
+            existing_by_id.get(row_payload.id)
+            if row_payload.id is not None
+            else existing_by_key.get((row_payload.section_key, row_payload.row_number))
+        )
+        if existing_row is not None:
+            row = existing_row
             for key, value in row_data.items():
                 setattr(row, key, value)
             new_rows.append(row)
@@ -488,6 +516,7 @@ def list_field_sheets(
     query = (
         select(FieldSheet)
         .options(
+            selectinload(FieldSheet.certificates),
             selectinload(FieldSheet.results_rows),
             selectinload(FieldSheet.signatures),
             selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
@@ -515,6 +544,7 @@ def get_field_sheet(db: Session, field_sheet_id: int) -> FieldSheet:
         select(FieldSheet)
         .where(FieldSheet.id == field_sheet_id)
         .options(
+            selectinload(FieldSheet.certificates),
             selectinload(FieldSheet.results_rows),
             selectinload(FieldSheet.signatures),
             selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
@@ -569,6 +599,7 @@ def create_field_sheet(
                 "reception_date",
                 "calibration_date",
                 "purchase_order_or_quotation",
+                "capture_values",
             }
         ),
         template_key=payload.template_key,
@@ -588,6 +619,15 @@ def create_field_sheet(
         calibration_date=payload.calibration_date or service_order.service_date,
         purchase_order_or_quotation=payload.purchase_order_or_quotation
         or (service_order.quotation.folio if service_order.quotation else None),
+        capture_values={
+            "instrument": equipment.name or "",
+            "scope": equipment.range_or_capacity or "",
+            "brand": equipment.brand or "",
+            "model": equipment.model or "",
+            "serial_number": equipment.serial_number or "",
+            "internal_id": equipment.internal_id or "",
+            **(payload.capture_values or {}),
+        },
     )
     if payload.certificate_client_mode == "billing":
         client = service_order.client

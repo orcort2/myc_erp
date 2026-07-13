@@ -167,6 +167,10 @@ function ClientsPage() {
   const selectedClient = selectedClients.length === 1 ? selectedClients[0] : null;
   const allVisibleSelected = visibleClientIds.length > 0 && visibleClientIds.every((id) => selectedClientIds.includes(id));
   const someVisibleSelected = visibleClientIds.some((id) => selectedClientIds.includes(id));
+  const allFilteredClientsSelected =
+    visibleClients.length > 0 && visibleClients.every((client) => selectedClientIds.includes(client.id));
+  const canSelectAllFilteredClients =
+    allVisibleSelected && visibleClients.length > visibleClientIds.length && !allFilteredClientsSelected;
 
   const paginationStart = visibleClients.length ? pageStartIndex + 1 : 0;
   const paginationEnd = Math.min(pageEndIndex, visibleClients.length);
@@ -544,6 +548,11 @@ function ClientsPage() {
     });
   }
 
+  function selectAllFilteredClients() {
+    setSelectedClientIds(visibleClients.map((client) => client.id));
+    setNotice(`${visibleClients.length} clientes seleccionados para exportar.`);
+  }
+
   function clearClientSelection() {
     setSelectedClientIds([]);
   }
@@ -865,6 +874,14 @@ function ClientsPage() {
           selectedCount={selectedClients.length}
           onClear={clearClientSelection}
           actions={[
+            ...(canSelectAllFilteredClients
+              ? [
+                  {
+                    label: `Seleccionar todos (${visibleClients.length})`,
+                    onClick: selectAllFilteredClients
+                  }
+                ]
+              : []),
             ...(selectedClient
               ? [
                   { label: 'Editar', onClick: () => startEdit(selectedClient) },

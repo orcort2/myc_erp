@@ -2,19 +2,30 @@ export function formatDate(value) {
   if (!value) {
     return '-';
   }
+  const normalizedValue = String(value);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(normalizedValue)
+    ? new Date(`${normalizedValue}T00:00:00`)
+    : new Date(normalizedValue);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
   return new Intl.DateTimeFormat('es-MX', {
     dateStyle: 'medium'
-  }).format(new Date(`${value}T00:00:00`));
+  }).format(date);
 }
 
 export function formatDateTime(value) {
   if (!value) {
     return '-';
   }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '-';
+  }
   return new Intl.DateTimeFormat('es-MX', {
     dateStyle: 'medium',
     timeStyle: 'short'
-  }).format(new Date(value));
+  }).format(date);
 }
 
 export function formatMoney(value) {

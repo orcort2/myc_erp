@@ -1,6 +1,6 @@
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
-Ultima actualizacion: 2026-07-13 15:26:00 CST
+Ultima actualizacion: 2026-07-13 16:33:00 CST
 Version actual: ERP MYC v0.4.0
 Nombre de version: Datos de Certificados
 Version anterior: v0.3.0 (Ventas Finalizado)
@@ -36,6 +36,64 @@ Estado Git verificado:
 ?? frontend/src/components/document-designer/documentCanvasEngine.js
 ?? backups/erp_myc_2026_07_13_1109.sql
 frontend/assets/ contiene el logo original disponible localmente. La copia optimizada usada por Vite vive en frontend/src/assets/myc-logo.png.
+
+Actualizacion 2026-07-13 16:33:00 CST - Contrato final de captura de Hojas de Campo:
+- Báscula y Balanza queda en version 3. La seccion `eccentricity_cycle` conserva seis filas y cuatro columnas: Patron, IBC 1, IBC 2 e IBC 3; `Posicion` se retiro de definiciones oficiales frontend/backend y de snapshots nuevos.
+- La migracion `f1d2e3f4a5b6` fue aplicada correctamente. Agrega `field_sheets.capture_values` y crea la nueva version activa de Báscula sin modificar `template_definition_json` ni `results_rows` de hojas historicas.
+- `capture_values` congela overrides editables de instrumento, alcance, marca, modelo, serie, identificacion y campos declarativos como `instrument_type` o las seis unidades de Electrica, sin modificar el maestro del equipo.
+- Se corrigio el error 500 causado por reglas `EDITABLE_STATUSES`/`TERMINAL_STATUSES` ausentes y el upsert de `results_rows` ahora reconoce filas por id o por `(section_key, row_number)`.
+- El renderer permite editar campos comunes, overrides, campos declarativos, todas las celdas, nombres, usuario, fecha y firma dibujada. Orden de Trabajo y folio reservado permanecen de solo lectura por ser referencias controladas por ERP.
+- Los obligatorios actuales son condicion inicial, condicion final, al menos un resultado y observaciones o evidencia. Solo se marcan despues de intentar Completar; se muestra mensaje local, se enfoca el primero y el error desaparece al capturar.
+- Las definiciones futuras pueden agregar campos con `required: true`; frontend y backend respetan esa declaracion sin convertir en obligatorios los demas campos.
+- El PDF usa los overrides congelados, incluye alcance, ubicacion, unidades, metodo, patron, evidencia y unidades particulares de Electrica. Se fijo fondo blanco explicito para evitar transparencia negra entre visores.
+- No se implementaron calculos: las 23 plantillas mantienen `automation.mode = manual_only` y `calculations = []`; errores, promedios o resultados continúan como captura manual.
+- Prueba transaccional con savepoint y rollback: Báscula, Anemometro, Calibradores, Electrica y Copa guardaron/recargaron campos y filas, bloquearon obligatorios vacios, avanzaron a `under_review` y generaron PDF verificable.
+- Evidencias: `backend/output/pdf/field_sheet_validation/{bascula,anemometro,calibradores,electrica,copa}.pdf`; Electrica genera dos paginas sin recortes ni pagina residual.
+- `npm run build` OK; backend unittest 12/12 OK; auditoria Node de 23 plantillas OK; `git diff --check` OK.
+- El entorno bloqueo una segunda aprobacion de acceso PostgreSQL por limite de creditos despues de aplicar la migracion. No se genero un dump SQL posterior; el ultimo dump valido sigue siendo `backups/erp_myc_2026_07_13_1547.sql` y debe renovarse cuando vuelva a estar disponible la aprobacion.
+
+Actualizacion 2026-07-13 15:47:00 CST - Ampliacion del modal operativo del ETS:
+- Se confirmo que el expediente heredaba el limite de `1080 x 720 px` de `quotation-detail-modal`, insuficiente para sus pestañas, tablas y acordeones de Hojas de Campo.
+- `service-order-modal` ahora tiene un maximo de 1480 px de ancho y utiliza la altura disponible de la ventana, conservando 16 px de margen vertical.
+- El cambio es exclusivo del expediente ETS; los modales comerciales, de creacion y formularios auxiliares mantienen sus dimensiones actuales.
+- En pantallas menores a 680 px el ETS ocupa el ancho disponible, conserva 12 px de margen exterior y limita su altura al viewport dinamico.
+- `npm run build` OK, backend unittest 9/9 OK y `git diff --check` OK.
+- Backup SQL actualizado: `backups/erp_myc_2026_07_13_1547.sql` (1.4 MB), SHA-256 `a5e46c4eccccbe592ac21c195558ae781149a6a43dd8e215e97305b48f25e48c`.
+
+Actualizacion 2026-07-13 15:45:00 CST - Acordeon de Hojas de Campo por Orden de Trabajo:
+- Se identifico la causa de la pantalla en blanco: al expandir una OT con hoja existente, `updated_at` se enviaba a `formatDate`, que trataba el timestamp como fecha simple y producia una fecha invalida; `Intl.DateTimeFormat` lanzaba una excepcion durante el render.
+- La lista desplegable ahora usa `formatDateTime` para la ultima modificacion de cada hoja.
+- Los formateadores compartidos aceptan fechas simples y timestamps, y devuelven `-` ante datos invalidos en lugar de interrumpir React.
+- El encabezado de cada OT conserva unicamente la accion de expandir/contraer dentro del ETS; se agregaron `aria-controls`, `aria-expanded` e identificador estable para relacionarlo con su lista de equipos y hojas.
+- Al desplegar se muestran los equipos de esa OT, su plantilla, folio, estado, ultima modificacion y una unica accion primaria de crear o abrir/continuar la hoja.
+- Pruebas de fecha simple, timestamp y valores invalidos OK; `npm run build` OK, backend unittest 9/9 OK y `git diff --check` OK.
+- La comprobacion del navegador no reporto errores de consola; la sesion automatizada disponible no estaba autenticada, por lo que no se alteraron usuarios ni datos para entrar al ETS.
+- Backup SQL actualizado: `backups/erp_myc_2026_07_13_1545.sql` (1.4 MB), SHA-256 `b29ccb966293fd98046a4e5f5da0a8dc1bb6048c1937926bbf92ef23875a23a4`.
+
+Actualizacion 2026-07-13 15:43:00 CST - Folio reservado visible en Hojas de Campo:
+- Se confirmo en PostgreSQL que la hoja activa 4, del equipo 51, tiene el certificado activo esperado `MYCA-07-2026-0051`.
+- Se confirmo que `FieldSheetRead` entrega ese valor mediante `reserved_certificate_folio`; la reserva y la serializacion backend ya eran correctas.
+- Se corrigio el ensamble operativo en `ServiceOrdersPage.jsx`: el renderer ahora recibe la clave canonica `reserved_certificate_folio` en lugar del alias incorrecto `certificate_number`.
+- `FieldSheetLayout.jsx` conserva lectura retrocompatible del alias anterior para snapshots historicos, pero muestra el folio reservado como dato de solo lectura para evitar que se sustituya manualmente.
+- Las consultas de listado y detalle cargan explicitamente los certificados ligados directamente a la hoja, ademas del certificado activo del equipo.
+- Validacion visual en el laboratorio: el campo `Certificado No.` muestra su valor y queda `readOnly`; validacion real de esquema API: hoja 4 devuelve `MYCA-07-2026-0051`.
+- `npm run build` OK, backend unittest 9/9 OK y `git diff --check` OK.
+- Backup SQL actualizado: `backups/erp_myc_2026_07_13_1543.sql` (1.4 MB), SHA-256 `414b23f59aa192552fbab6ccdb34019bb3b27d4d3a1bbc37146f082da7eb3154`.
+
+Actualizacion 2026-07-13 15:39:00 CST - Correccion definitiva de ubicacion de Hojas de Campo:
+- Se revierte la ubicacion documentada a las 15:26: la agrupacion por OT no pertenece a un modulo principal independiente.
+- Se retiro `Hojas de Campo` de `navigation`, `modules` y `App.jsx`; tampoco permanece la ruta `/dashboard#hojas-campo` ni el enlace por `sessionStorage` que sacaba al usuario del ETS.
+- Se retiro `FieldSheetsPage.jsx` porque dejo de ser una superficie operativa accesible.
+- El flujo definitivo es `Servicios -> abrir ETS -> Hojas de Campo -> Captura de hojas / Por Orden de Trabajo`.
+- Las dos subpestanas viven dentro de `ServiceOrdersPage.jsx` y trabajan sobre `selectedOrder`, `relatedWorkOrders`, `selectedEquipment` y `selectedFieldSheets`.
+- `Captura de hojas` conserva crear, abrir, continuar, PDF, estado y envio a revision mediante las funciones existentes del expediente.
+- `Por Orden de Trabajo` muestra solo las OT del ETS abierto, calcula equipos, hojas, aprobadas, captura, revision, pendientes y avance; cada acordeon usa `work_order_id -> equipment_id -> field_sheet`.
+- Crear o abrir una hoja llama directamente `openFieldSheetForEquipment(item)` sin abandonar el ETS y conserva `selectedOrder` y la OT del equipo.
+- Se generalizaron `openFieldSheetPdf` y `reviewFieldSheetRecord` para reutilizar exactamente las mismas operaciones desde ambas subpestanas.
+- Validacion PostgreSQL: 0 equipos cruzados entre ETS, 0 hojas cruzadas entre OT y 0 hojas activas duplicadas por equipo.
+- Validacion visual interna: 1280 px sin overflow, resumen OT de 77.5 px, filas de equipo de 57 px; 390 px en una columna y sin overflow.
+- `npm run build` OK, backend unittest 9/9 OK y `git diff --check` OK.
+- Backup SQL actualizado: `backups/erp_myc_2026_07_13_1539.sql` (1.4 MB), verificado con revision `f0c1d2e3f4a5`.
 
 Actualizacion 2026-07-13 15:26:00 CST - Hojas de Campo agrupadas por Orden de Trabajo:
 - Se reactivo `Hojas de Campo` en la navegacion principal; la pagina existente estaba implementada pero no registrada en `navigation/modules`.

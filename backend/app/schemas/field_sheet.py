@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.calibration_procedure import CalibrationProcedureRead
 from app.schemas.reference_standard import (
@@ -129,9 +129,16 @@ class FieldSheetBase(BaseModel):
     certificate_client_attention: str | None = None
     certificate_client_address: str | None = None
     apply_certificate_client_to_order: bool = False
+    capture_values: dict = Field(default_factory=dict)
     results_rows: list[FieldSheetResultCreate] = Field(default_factory=list)
     reference_standards: list[FieldSheetReferenceStandardCreate] = Field(default_factory=list)
     signatures: list[FieldSheetSignatureCreate] = Field(default_factory=list)
+
+    @field_validator("capture_values", mode="before")
+    @classmethod
+    def normalize_legacy_capture_values(cls, value):
+        """Expose an empty object for sheets created before this column existed."""
+        return {} if value is None else value
 
 
 class FieldSheetCreate(FieldSheetBase):
@@ -177,6 +184,7 @@ class FieldSheetUpdate(BaseModel):
     certificate_client_attention: str | None = None
     certificate_client_address: str | None = None
     apply_certificate_client_to_order: bool | None = None
+    capture_values: dict | None = None
     results_rows: list[FieldSheetResultUpdate] | None = None
     reference_standards: list[FieldSheetReferenceStandardCreate] | None = None
     signatures: list[FieldSheetSignatureUpdate] | None = None

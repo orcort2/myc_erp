@@ -13,12 +13,18 @@ from app.schemas.auth import (
 from app.services.auth import (
     authenticate_user,
     get_current_user,
+    registration_status,
     refresh_tokens,
     register_user,
 )
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.get("/registration-status")
+def get_registration_status(db: Session = Depends(get_db)) -> dict[str, bool]:
+    return registration_status(db)
 
 
 @router.post("/register", response_model=TokenPair)

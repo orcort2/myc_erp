@@ -89,7 +89,7 @@ function template(key, name, family, blocks, expectedPages = 1, extra = {}) {
     template_key: key,
     name: `Hoja de Campo ${name}`,
     subtitle: extra.subtitle || '',
-    version: 1,
+    version: extra.version || 1,
     code: 'FCA-30',
     revision: 'R1',
     document_code: 'FCA-30',
@@ -112,10 +112,10 @@ const templates = [
   template('anemometro', 'Anemómetro', 'replicated_comparison', commonBlocks('ReplicatedComparisonTableBlock', [section('measurements', 'Resultados de la calibración', 10, commonColumns.replicated3)])),
   template('angulimetro', 'Angulímetro', 'replicated_comparison', commonBlocks('ReplicatedComparisonTableBlock', [section('measurements', 'Resultados de la calibración', 5, commonColumns.ordinal3)])),
   template('bascula', 'Báscula y Balanza', 'mass_balance_composite', commonBlocks('CompositeTestTableBlock', [
-    section('eccentricity_cycle', 'Excentricidad y ciclo', 6, [column('position', 'Posición'), column('pattern_value', 'Patrón'), column('ibc_1', 'IBC 1'), column('ibc_2', 'IBC 2'), column('ibc_3', 'IBC 3')], { label_configurable: true }),
+    section('eccentricity_cycle', 'Excentricidad y ciclo', 6, [column('pattern_value', 'Patrón'), column('ibc_1', 'IBC 1'), column('ibc_2', 'IBC 2'), column('ibc_3', 'IBC 3')], { label_configurable: true }),
     section('repeatability_50', 'Repetibilidad al 50 %', 5, [column('pattern_value', 'Patrón'), column('indication', 'Indicación')]),
     section('repeatability_100', 'Repetibilidad al 100 %', 5, [column('pattern_value', 'Patrón'), column('indication', 'Indicación')]),
-  ]), 1, { ambiguous_labels: true }),
+  ]), 1, { ambiguous_labels: true, version: 3 }),
   template('calibradores', 'Calibradores', 'replicated_comparison', commonBlocks('SectionedTableBlock', [
     section('exterior', 'Medición de exteriores', 7, commonColumns.replicated3),
     section('interior', 'Medición de interiores', 5, commonColumns.replicated3),
@@ -184,4 +184,3 @@ const templates = [
 export const officialFieldSheetTemplateKeys = templates.map((item) => item.key);
 export const officialFieldSheetTemplates = Object.fromEntries(templates.map((item) => [item.key, item]));
 export const officialFieldSheetTemplateOptions = templates.map((item) => ({ value: item.key, label: item.name }));
-
