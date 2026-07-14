@@ -2,15 +2,17 @@ import { ShieldCheck } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
 import {
   equipmentStatusLabels,
   certificateStatusLabels,
   certificateTypeLabels,
-  certificateTransitions,
-  qualityTabs
+  certificateTransitions
 } from '../constants/statuses.js';
 import {
+  authenticateCertificate,
   changeCertificateStatus,
+  downloadOriginalCertificatePdf,
   getCertificate,
   listAuditLogs,
   listCertificates,
@@ -18,7 +20,8 @@ import {
   listEquipment,
   listFieldSheets,
   listServiceOrders,
-  manualAcceptCertificateMatch
+  manualAcceptCertificateMatch,
+  validateCertificatePdfMatch
 } from '../services/api.js';
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
@@ -55,6 +58,8 @@ function QualityPage() {
   const [loadingAction, setLoadingAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [correctionRequest, setCorrectionRequest] = useState(null);
+  const [correctionReason, setCorrectionReason] = useState('');
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
   const clientsById = useMemo(
@@ -78,26 +83,24 @@ function QualityPage() {
   );
 
   const displayedCertificates = useMemo(() => {
+    const qualityFlowCertificates = certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved'].includes(certificate.status));
     if (activeTab === 'pending') {
-      return certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'quality_rejected'].includes(certificate.status));
+      return qualityFlowCertificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated'].includes(certificate.status));
     }
     if (activeTab === 'review') {
-      return certificates.filter((certificate) => ['ready_for_quality', 'quality_review'].includes(certificate.status));
+      return qualityFlowCertificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated'].includes(certificate.status));
     }
     if (activeTab === 'approved') {
-      return certificates.filter((certificate) => ['quality_approved', 'pdf_pending'].includes(certificate.status));
+      return qualityFlowCertificates.filter((certificate) => certificate.status === 'quality_approved');
     }
-    if (activeTab === 'pdf') {
-      return certificates.filter((certificate) => certificate.status === 'pdf_uploaded');
-    }
-    if (activeTab === 'released') {
-      return certificates.filter((certificate) => ['released_to_client', 'released'].includes(certificate.status));
-    }
-    if (activeTab === 'suspended') {
-      return certificates.filter((certificate) => certificate.status === 'suspended');
-    }
-    return certificates;
+    return qualityFlowCertificates;
   }, [activeTab, certificates]);
+
+  const qualityTabs = [
+    { key: 'pending', label: 'Pendientes' },
+    { key: 'review', label: 'En revisión' },
+    { key: 'approved', label: 'Aprobados' }
+  ];
 
   async function loadQualityData() {
     setError('');
@@ -193,6 +196,65 @@ function QualityPage() {
     });
   }
 
+  async function runQualityOperation(actionKey, operation, successMessage, { closeAfter = false } = {}) {
+    if (!selectedCertificate) return;
+    setLoadingAction(actionKey);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await operation();
+      setCertificates((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setNotice(successMessage);
+      if (closeAfter) closeQualityDetail();
+      else setSelectedCertificate(updated);
+      await loadQualityData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoadingAction('');
+    }
+  }
+
+  async function confirmCorrectionRequest() {
+    const reason = correctionReason.trim();
+    if (!correctionRequest || !reason) {
+      setError('El comentario de corrección es obligatorio.');
+      return;
+    }
+    setLoadingAction('request-correction');
+    setError('');
+    try {
+      const updated = await changeCertificateStatus(correctionRequest.id, 'request-correction', reason);
+      setCertificates((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setCorrectionRequest(null);
+      setCorrectionReason('');
+      closeQualityDetail();
+      setNotice(`Certificado ${updated.folio} regresado a Captura para corrección`);
+      await loadQualityData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoadingAction('');
+    }
+  }
+
+  async function openOriginalPdf(certificate) {
+    const pdfWindow = window.open('', '_blank');
+    if (!pdfWindow) {
+      setError('El navegador bloqueó la vista del PDF. Permite ventanas emergentes.');
+      return;
+    }
+    try {
+      const { blob } = await downloadOriginalCertificatePdf(certificate.id, certificate.final_pdf_original_filename);
+      const url = URL.createObjectURL(blob);
+      pdfWindow.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+    } catch (requestError) {
+      pdfWindow.close();
+      setError(requestError.message);
+    }
+  }
+
   const selectedContext = selectedCertificate ? getCertificateContext(selectedCertificate) : {};
   const selectedOrder = selectedContext.order;
   const selectedEquipment = selectedContext.item;
@@ -207,7 +269,7 @@ function QualityPage() {
         <div>
           <p>Supervision transversal</p>
           <h1>Calidad</h1>
-          <span>Revision formal, aprobacion y liberacion controlada de certificados.</span>
+          <span>Revisión del PDF, validación, aprobación y autenticación de certificados.</span>
         </div>
       </div>
 
@@ -216,16 +278,16 @@ function QualityPage() {
 
       <section className="operations-band certificates-summary" aria-label="Resumen de calidad">
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'quality_rejected'].includes(certificate.status)).length}</strong>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated'].includes(certificate.status)).length}</strong>
           <span>Pendientes calidad</span>
         </div>
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['quality_approved', 'pdf_pending'].includes(certificate.status)).length}</strong>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => certificate.status === 'quality_approved').length}</strong>
           <span>Aprobados</span>
         </div>
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['released_to_client', 'released'].includes(certificate.status)).length}</strong>
-          <span>Liberados</span>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => certificate.authenticated_pdf_path).length}</strong>
+          <span>Autenticados</span>
         </div>
       </section>
 
@@ -250,41 +312,19 @@ function QualityPage() {
             <h2>{isLoading ? 'Cargando...' : `${displayedCertificates.length} certificados`}</h2>
           </div>
         </div>
-        <div className="clients-table quality-table" aria-busy={isLoading}>
-          <div className="clients-table__head">
-            <span>Folio</span>
-            <span>Cliente</span>
-            <span>Orden de Servicio</span>
-            <span>Equipo</span>
-            <span>Tecnico</span>
-            <span>Fecha</span>
-            <span>Estado</span>
-          </div>
-          {isLoading ? (
-            <div className="clients-empty">Cargando certificados para calidad...</div>
-          ) : displayedCertificates.length ? (
-            displayedCertificates.map((certificate) => {
+        {isLoading ? <div className="clients-empty">Cargando certificados para Calidad...</div> : (
+          <WorkOrderFlowGroups
+            emptyMessage="No hay certificados en esta vista de Calidad."
+            equipmentById={equipmentById}
+            getGroupState={(items) => items.every((item) => item.status === 'quality_approved') ? { label: 'APROBADA', tone: 'approved' } : { label: 'EN REVISIÓN', tone: 'quality_review' }}
+            items={displayedCertificates}
+            orders={serviceOrders}
+            renderItem={(certificate) => {
               const context = getCertificateContext(certificate);
-              return (
-                <button className="clients-table__row quotation-row-button" key={certificate.id} onClick={() => openQualityDetail(certificate)} type="button">
-                  <span className="certificate-folio">{certificate.folio}</span>
-                  <span>{getClientDisplayName(context.client)}</span>
-                  <span>{context.order?.folio || '-'}</span>
-                  <span>{context.item?.name || '-'}</span>
-                  <span>{getTechnicianLabel(context.order)}</span>
-                  <span>{formatDate(certificate.issued_on) !== '-' ? formatDate(certificate.issued_on) : formatDateTime(certificate.created_at)}</span>
-                  <span>
-                    <mark className={`quotation-status status-${certificate.status}`}>
-                      {certificateStatusLabels[certificate.status] ?? certificate.status}
-                    </mark>
-                  </span>
-                </button>
-              );
-            })
-          ) : (
-            <div className="clients-empty">No hay certificados en esta vista de calidad.</div>
-          )}
-        </div>
+              return <button className="flow-certificate-card flow-certificate-card--button" key={certificate.id} onClick={() => openQualityDetail(certificate)} type="button"><div className="flow-certificate-card__title"><div><span>Certificado</span><strong>{certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark></div><dl><div><dt>Cliente</dt><dd>{getClientDisplayName(context.client)}</dd></div><div><dt>Equipo</dt><dd>{context.item?.name || '-'}</dd></div><div><dt>Técnico</dt><dd>{getTechnicianLabel(context.order)}</dd></div><div><dt>Fecha</dt><dd>{formatDate(certificate.issued_on) !== '-' ? formatDate(certificate.issued_on) : formatDateTime(certificate.created_at)}</dd></div><div><dt>PDF</dt><dd>{certificate.final_pdf_original_filename || 'Pendiente'}</dd></div><div><dt>Match</dt><dd>{certificate.match_status || 'pending'}</dd></div></dl></button>;
+            }}
+          />
+        )}
       </section>
 
       {isDetailOpen && selectedCertificate ? (
@@ -364,9 +404,12 @@ function QualityPage() {
                     <h3>Control de aprobacion</h3>
                   </div>
                   <div className="toolbar-actions quality-actions">
+                    <button className="table-button table-button--primary" disabled={!selectedCertificate.final_pdf_path} onClick={() => openOriginalPdf(selectedCertificate)} type="button">Revisar PDF</button>
+                    <button className="table-button" disabled={Boolean(loadingAction) || !['ready_for_quality', 'quality_review'].includes(selectedCertificate.status)} onClick={() => runQualityOperation('validate-match', () => validateCertificatePdfMatch(selectedCertificate.id), 'Match validado por Calidad')} type="button">{loadingAction === 'validate-match' ? 'Validando...' : 'Validar match'}</button>
+                    <button className="table-button" disabled={Boolean(loadingAction) || selectedCertificate.status !== 'match_validated' || !['mismatch', 'warning'].includes(selectedCertificate.match_status)} onClick={() => runQualityOperation('manual-match', () => manualAcceptCertificateMatch(selectedCertificate.id, 'Aceptado manualmente por Calidad'), 'Match aceptado manualmente')} type="button">Aceptar match manual</button>
                     <button
                       className="table-button table-button--primary"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'quality_approved')}
+                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'quality_approved') || !['matched', 'warning', 'manual_accepted'].includes(selectedCertificate.match_status)}
                       onClick={() => handleQualityAction('quality-approve', 'Aprobar calidad')}
                       type="button"
                     >
@@ -374,46 +417,19 @@ function QualityPage() {
                     </button>
                     <button
                       className="table-button"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'quality_rejected')}
-                      onClick={() => handleQualityAction('quality-reject', 'Rechazar', 'Rechazo solicitado por calidad')}
+                      disabled={Boolean(loadingAction) || !['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved'].includes(selectedCertificate.status)}
+                      onClick={() => { setCorrectionRequest(selectedCertificate); setCorrectionReason(''); }}
                       type="button"
                     >
-                      {loadingAction === 'quality-rejectRechazar' ? 'Procesando...' : 'Rechazar'}
-                    </button>
-                    <button
-                      className="table-button"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'suspended')}
-                      onClick={() => handleQualityAction('suspend', 'Suspender')}
-                      type="button"
-                    >
-                      {loadingAction === 'suspendSuspender' ? 'Procesando...' : 'Suspender'}
+                      Regresar a Captura
                     </button>
                     <button
                       className="table-button table-button--primary"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'released_to_client')}
-                      onClick={() => handleQualityAction('release-to-client', 'Liberar cliente')}
+                      disabled={Boolean(loadingAction) || selectedCertificate.status !== 'quality_approved' || !selectedCertificate.final_pdf_path || !['matched', 'warning', 'manual_accepted'].includes(selectedCertificate.match_status)}
+                      onClick={() => runQualityOperation('authenticate', () => authenticateCertificate(selectedCertificate.id), 'Certificado autenticado y enviado a Certificados', { closeAfter: true })}
                       type="button"
                     >
-                      {loadingAction === 'release-to-clientLiberar cliente' ? 'Procesando...' : 'Liberar cliente'}
-                    </button>
-                    <button
-                      className="table-button"
-                      disabled={Boolean(loadingAction) || !selectedCertificate.final_pdf_path}
-                      onClick={async () => {
-                        setLoadingAction('manual-match');
-                        try {
-                          const updated = await manualAcceptCertificateMatch(selectedCertificate.id, 'Aceptado manualmente por calidad');
-                          setSelectedCertificate(updated);
-                          await loadQualityData();
-                        } catch (requestError) {
-                          setError(requestError.message);
-                        } finally {
-                          setLoadingAction('');
-                        }
-                      }}
-                      type="button"
-                    >
-                      Aceptar match
+                      {loadingAction === 'authenticate' ? 'Autenticando...' : 'Autenticar / Sellar'}
                     </button>
                   </div>
                 </section>
@@ -528,6 +544,22 @@ function QualityPage() {
                 )}
               </section>
             ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {correctionRequest ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-modal="true" className="client-modal confirm-dialog" role="dialog">
+            <div className="section-heading confirm-dialog__header"><div><p>Corrección requerida</p><h2>Marca los errores del PDF</h2></div></div>
+            <div className="confirm-dialog__body">
+              <p>El comentario se conservará en el historial. La hoja vinculada no cambiará de estado.</p>
+              <textarea autoFocus className="form-textarea" onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Describe los errores y la corrección requerida" rows={5} value={correctionReason} />
+            </div>
+            <div className="confirm-dialog__actions">
+              <button className="confirm-dialog__cancel" disabled={Boolean(loadingAction)} onClick={() => { setCorrectionRequest(null); setCorrectionReason(''); }} type="button">Cancelar</button>
+              <button className="confirm-dialog__confirm" disabled={Boolean(loadingAction) || !correctionReason.trim()} onClick={confirmCorrectionRequest} type="button">{loadingAction ? 'Procesando...' : 'Regresar a Captura'}</button>
+            </div>
           </section>
         </div>
       ) : null}

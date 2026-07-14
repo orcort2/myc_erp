@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -48,3 +48,25 @@ class Certificate(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     service_order: Mapped["ServiceOrder"] = relationship(back_populates="certificates")
     equipment: Mapped["Equipment"] = relationship(back_populates="certificates")
     field_sheet: Mapped["FieldSheet | None"] = relationship(back_populates="certificates")
+    pdf_versions: Mapped[list["CertificatePdfVersion"]] = relationship(
+        back_populates="certificate",
+        cascade="all, delete-orphan",
+        order_by="CertificatePdfVersion.version_number",
+    )
+
+
+class CertificatePdfVersion(IntegerPkMixin, TimestampMixin, Base):
+    __tablename__ = "certificate_pdf_versions"
+    __table_args__ = (UniqueConstraint("certificate_id", "version_number"),)
+
+    certificate_id: Mapped[int] = mapped_column(ForeignKey("certificates.id"), index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    file_path: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_filename: Mapped[str | None] = mapped_column(String(255))
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    source_status: Mapped[str | None] = mapped_column(String(60))
+    change_reason: Mapped[str | None] = mapped_column(Text)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+
+    certificate: Mapped["Certificate"] = relationship(back_populates="pdf_versions")

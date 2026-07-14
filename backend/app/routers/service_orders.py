@@ -11,7 +11,7 @@ from app.schemas.service_order import (
     ServiceOrderUpdate,
 )
 from app.models.user import User
-from app.services.auth import get_optional_current_user
+from app.services.auth import get_optional_current_user, require_permission
 from app.schemas.certificate import CertificateBatchActionRead, CertificateBulkUploadRead
 from app.services.certificates import (
     authenticate_certificates_for_service_order,
@@ -580,24 +580,27 @@ def upload_service_order_certificate_pdfs(
     service_order_id: int,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.upload_pdf")),
 ) -> CertificateBulkUploadRead:
-    return bulk_upload_certificate_pdfs(db, service_order_id, files)
+    return bulk_upload_certificate_pdfs(db, service_order_id, files, user_id=current_user.id)
 
 
 @router.post("/{service_order_id}/certificates/authenticate-approved", response_model=CertificateBatchActionRead)
 def authenticate_service_order_certificates(
     service_order_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.approve")),
 ) -> CertificateBatchActionRead:
-    return authenticate_certificates_for_service_order(db, service_order_id)
+    return authenticate_certificates_for_service_order(db, service_order_id, user_id=current_user.id)
 
 
 @router.post("/{service_order_id}/certificates/release-authenticated", response_model=CertificateBatchActionRead)
 def release_service_order_certificates(
     service_order_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("release.manage")),
 ) -> CertificateBatchActionRead:
-    return release_authenticated_certificates_for_service_order(db, service_order_id)
+    return release_authenticated_certificates_for_service_order(db, service_order_id, user_id=current_user.id)
 
 
 @router.patch("/{service_order_id}", response_model=ServiceOrderRead)

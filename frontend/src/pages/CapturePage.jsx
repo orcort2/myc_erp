@@ -1,6 +1,8 @@
 import { FileUp, Send, UploadCloud } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
+import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
+import { certificateStatusLabels, certificateTypeLabels, fieldSheetStatusLabels } from '../constants/statuses.js';
 import {
   bulkUploadCertificatePdfs,
   changeCertificateStatus,
@@ -9,15 +11,12 @@ import {
   listEquipment,
   listFieldSheets,
   listServiceOrders,
-  uploadCertificatePdf,
-  validateCertificatePdfMatch
+  uploadCertificatePdf
 } from '../services/api.js';
-import { certificateStatusLabels, certificateTypeLabels } from '../constants/statuses.js';
 import { getClientDisplayName } from '../utils/formatters.js';
 
-function statusText(value) {
-  return certificateStatusLabels[value] ?? value ?? '-';
-}
+const CAPTURE_UPLOAD_STATUSES = new Set(['expected', 'field_sheet_ready', 'capture_pending', 'capture_in_progress', 'pdf_uploaded', 'quality_rejected', 'correction_requested', 'returned_to_technician']);
+const CAPTURE_SEND_STATUSES = new Set(['capture_in_progress', 'pdf_uploaded']);
 
 export default function CapturePage() {
   const [certificates, setCertificates] = useState([]);
@@ -25,7 +24,7 @@ export default function CapturePage() {
   const [equipment, setEquipment] = useState([]);
   const [fieldSheets, setFieldSheets] = useState([]);
   const [clients, setClients] = useState([]);
-  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [bulkOrderId, setBulkOrderId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [loadingAction, setLoadingAction] = useState('');
   const [error, setError] = useState('');
@@ -35,21 +34,19 @@ export default function CapturePage() {
   const equipmentById = useMemo(() => new Map(equipment.map((item) => [item.id, item])), [equipment]);
   const sheetsById = useMemo(() => new Map(fieldSheets.map((item) => [item.id, item])), [fieldSheets]);
   const clientsById = useMemo(() => new Map(clients.map((item) => [item.id, item])), [clients]);
-  const displayedCertificates = useMemo(
-    () => certificates.filter((item) => !selectedOrderId || String(item.service_order_id) === String(selectedOrderId)),
-    [certificates, selectedOrderId]
-  );
+  const captureCertificates = useMemo(() => certificates, [certificates]);
+  const bulkEligibleOrderIds = useMemo(() => new Set(
+    certificates
+      .filter((item) => CAPTURE_UPLOAD_STATUSES.has(item.status) && !item.authenticated_pdf_path)
+      .map((item) => String(item.service_order_id))
+  ), [certificates]);
 
   async function loadData() {
     setError('');
     setIsLoading(true);
     try {
       const [certs, serviceOrders, equipmentItems, sheets, clientItems] = await Promise.all([
-        listCertificates(),
-        listServiceOrders(),
-        listEquipment(),
-        listFieldSheets(),
-        listClients()
+        listCertificates(), listServiceOrders(), listEquipment(), listFieldSheets(), listClients()
       ]);
       setCertificates(Array.isArray(certs) ? certs : []);
       setOrders(Array.isArray(serviceOrders) ? serviceOrders : []);
@@ -63,17 +60,7 @@ export default function CapturePage() {
     }
   }
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  function context(certificate) {
-    const order = ordersById.get(certificate.service_order_id);
-    const item = equipmentById.get(certificate.equipment_id);
-    const sheet = sheetsById.get(certificate.field_sheet_id);
-    const client = order ? clientsById.get(order.client_id) : null;
-    return { order, item, sheet, client };
-  }
+  useEffect(() => { loadData(); }, []);
 
   async function runAction(certificate, action, label) {
     setLoadingAction(`${certificate.id}-${action}`);
@@ -105,28 +92,19 @@ export default function CapturePage() {
     }
   }
 
-  async function validateMatch(certificate) {
-    setLoadingAction(`${certificate.id}-match`);
-    setError('');
-    try {
-      await validateCertificatePdfMatch(certificate.id);
-      setNotice('Matching actualizado');
-      await loadData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoadingAction('');
-    }
-  }
-
   async function bulkUpload(event) {
     const files = event.target.files;
-    if (!selectedOrderId || !files?.length) return;
+    if (!bulkOrderId || !files?.length) return;
+    if (!bulkEligibleOrderIds.has(String(bulkOrderId))) {
+      setError('Este ETS ya terminó Captura; los PDFs enviados no pueden reemplazarse desde esta etapa.');
+      event.target.value = '';
+      return;
+    }
     setLoadingAction('bulk');
     setError('');
     try {
-      const result = await bulkUploadCertificatePdfs(selectedOrderId, files);
-      setNotice(`Carga masiva: ${result.matched} matched, ${result.warnings} warnings, ${result.mismatches} mismatch`);
+      const result = await bulkUploadCertificatePdfs(bulkOrderId, files);
+      setNotice(`Carga masiva: ${result.matched} match, ${result.warnings} advertencias, ${result.mismatches} sin match`);
       await loadData();
     } catch (requestError) {
       setError(requestError.message);
@@ -136,90 +114,66 @@ export default function CapturePage() {
     }
   }
 
+  function renderCertificate(certificate) {
+    const order = ordersById.get(certificate.service_order_id);
+    const item = equipmentById.get(certificate.equipment_id);
+    const sheet = sheetsById.get(certificate.field_sheet_id);
+    const client = order ? clientsById.get(order.client_id) : null;
+    const busy = Boolean(loadingAction);
+    return (
+      <article className="flow-certificate-card" key={certificate.id}>
+        <div className="flow-certificate-card__title">
+          <div><span>Certificado</span><strong>{certificate.expected_folio ?? certificate.folio}</strong></div>
+          <mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark>
+        </div>
+        <dl>
+          <div><dt>Cliente</dt><dd>{getClientDisplayName(client)}</dd></div>
+          <div><dt>Equipo</dt><dd>{item?.name ?? '-'}</dd></div>
+          <div><dt>Serie</dt><dd>{item?.serial_number ?? item?.internal_id ?? '-'}</dd></div>
+          <div><dt>Tipo</dt><dd>{certificateTypeLabels[certificate.certificate_type] ?? certificate.certificate_type}</dd></div>
+          <div><dt>PDF</dt><dd>{certificate.final_pdf_original_filename ?? 'Sin PDF'}</dd></div>
+          <div><dt>Hoja</dt><dd>{sheet ? `#${sheet.id} · ${fieldSheetStatusLabels[sheet.status] ?? sheet.status}` : '-'}</dd></div>
+        </dl>
+        <div className="toolbar-actions">
+          {CAPTURE_UPLOAD_STATUSES.has(certificate.status) ? <label className="table-button">{certificate.status === 'correction_requested' || certificate.final_pdf_path ? 'Reemplazar PDF' : 'Subir PDF'}<input accept="application/pdf" hidden type="file" onChange={(event) => uploadPdf(certificate, event.target.files?.[0])} /></label> : null}
+          {CAPTURE_SEND_STATUSES.has(certificate.status) ? <button className="table-button table-button--primary" disabled={busy || !certificate.final_pdf_path} onClick={() => runAction(certificate, 'send-to-quality', 'Enviado a Calidad')} type="button"><Send size={14} /> Enviar a Calidad</button> : null}
+          {!CAPTURE_UPLOAD_STATUSES.has(certificate.status) && !CAPTURE_SEND_STATUSES.has(certificate.status) ? <span className="flow-action-complete">Enviado a Calidad</span> : null}
+        </div>
+      </article>
+    );
+  }
+
   return (
     <section className="module-workspace service-orders-workspace">
       <div className="module-workspace__hero clients-hero">
         <span className="module-workspace__icon"><FileUp size={28} /></span>
-        <div>
-          <p>Certificados externos</p>
-          <h1>Captura</h1>
-          <span>Control de captura en Excel, envio a calidad y carga de PDFs finales.</span>
-        </div>
+        <div><p>Certificados externos</p><h1>Captura</h1><span>Sube el PDF original o su corrección y envíalo a Calidad.</span></div>
       </div>
-
       {error ? <div className="form-error dashboard-error">{error}</div> : null}
       {notice ? <div className="form-notice dashboard-error">{notice}</div> : null}
-
       <section className="operations-band certificates-summary">
-        <div className="operations-band__metric"><strong>{isLoading ? '-' : certificates.filter((item) => ['expected', 'field_sheet_ready', 'capture_pending'].includes(item.status)).length}</strong><span>Pendientes captura</span></div>
-        <div className="operations-band__metric"><strong>{isLoading ? '-' : certificates.filter((item) => item.status === 'capture_in_progress').length}</strong><span>En captura</span></div>
-        <div className="operations-band__metric"><strong>{isLoading ? '-' : certificates.filter((item) => item.status === 'pdf_uploaded').length}</strong><span>PDF subido</span></div>
+        <div className="operations-band__metric"><strong>{isLoading ? '-' : captureCertificates.filter((item) => CAPTURE_UPLOAD_STATUSES.has(item.status) && !item.final_pdf_path).length}</strong><span>Pendientes captura</span></div>
+        <div className="operations-band__metric"><strong>{isLoading ? '-' : captureCertificates.filter((item) => item.status === 'capture_in_progress').length}</strong><span>En captura</span></div>
+        <div className="operations-band__metric"><strong>{isLoading ? '-' : captureCertificates.filter((item) => item.status === 'ready_for_quality').length}</strong><span>Enviados a Calidad</span></div>
       </section>
-
       <section className="clients-list-panel">
         <div className="section-heading">
-          <div>
-            <p>Ordenes y certificados</p>
-            <h2>{displayedCertificates.length} certificados esperados</h2>
-          </div>
+          <div><p>ETS y Órdenes de Trabajo</p><h2>{captureCertificates.length} certificados en Captura</h2></div>
           <div className="toolbar-actions">
-            <select value={selectedOrderId} onChange={(event) => setSelectedOrderId(event.target.value)}>
-              <option value="">Todas las ordenes</option>
-              {orders.map((order) => (
-                <option key={order.id} value={order.id}>OT {order.work_order_number} - {order.folio}</option>
-              ))}
-            </select>
-            <label className="secondary-button">
-              <UploadCloud size={16} />
-              PDFs masivos
-              <input accept="application/pdf" multiple type="file" hidden onChange={bulkUpload} disabled={!selectedOrderId || loadingAction === 'bulk'} />
-            </label>
+            <select value={bulkOrderId} onChange={(event) => setBulkOrderId(event.target.value)}><option value="">Selecciona ETS para carga masiva</option>{orders.filter((order) => bulkEligibleOrderIds.has(String(order.id))).map((order) => <option key={order.id} value={order.id}>{order.folio}</option>)}</select>
+            <label className="secondary-button"><UploadCloud size={16} /> PDFs masivos<input accept="application/pdf" disabled={!bulkOrderId || !bulkEligibleOrderIds.has(String(bulkOrderId)) || loadingAction === 'bulk'} hidden multiple type="file" onChange={bulkUpload} /></label>
           </div>
         </div>
-
-        <div className="clients-table certificates-table">
-          <div className="clients-table__head">
-            <span>Folio</span>
-            <span>Cliente</span>
-            <span>Equipo</span>
-            <span>Tipo</span>
-            <span>Estado</span>
-            <span>PDF / Match</span>
-            <span>Hoja</span>
-            <span>Acciones</span>
-          </div>
-          {displayedCertificates.length ? displayedCertificates.map((certificate) => {
-            const { order, item, sheet, client } = context(certificate);
-            return (
-              <div className="clients-table__row" key={certificate.id}>
-                <span><strong>{certificate.expected_folio ?? certificate.folio}</strong><br /><small>OT {order?.work_order_number ?? '-'}</small></span>
-                <span>{client ? getClientDisplayName(client) : '-'}</span>
-                <span>{item?.name ?? '-'}<br /><small>{item?.serial_number ?? item?.internal_id ?? ''}</small></span>
-                <span>{certificateTypeLabels[certificate.certificate_type] ?? certificate.certificate_type}</span>
-                <span><mark className={`quotation-status status-${certificate.status}`}>{statusText(certificate.status)}</mark></span>
-                <span>{certificate.final_pdf_original_filename ?? 'Sin PDF'}<br /><small>{certificate.match_status ?? 'pending'}</small></span>
-                <span>{sheet ? `#${sheet.id} ${sheet.status}` : '-'}</span>
-                <span className="table-actions">
-                  <button className="table-button" type="button" onClick={() => runAction(certificate, 'start-capture', 'Captura iniciada')} disabled={loadingAction !== ''}>
-                    Iniciar
-                  </button>
-                  <button className="table-button" type="button" onClick={() => runAction(certificate, 'send-to-quality', 'Enviado a calidad')} disabled={loadingAction !== ''}>
-                    <Send size={14} /> Calidad
-                  </button>
-                  <label className="table-button">
-                    PDF
-                    <input accept="application/pdf" hidden type="file" onChange={(event) => uploadPdf(certificate, event.target.files?.[0])} />
-                  </label>
-                  <button className="table-button" type="button" onClick={() => validateMatch(certificate)} disabled={loadingAction !== ''}>
-                    Match
-                  </button>
-                </span>
-              </div>
-            );
-          }) : (
-            <div className="clients-empty">No hay certificados para captura.</div>
-          )}
-        </div>
+        {isLoading ? <div className="clients-empty">Cargando certificados de Captura...</div> : (
+          <WorkOrderFlowGroups
+            emptyMessage="No hay certificados en Captura."
+            equipmentById={equipmentById}
+            getGroupState={(items) => items.every((item) => item.status === 'ready_for_quality') ? { label: 'LISTA', tone: 'approved' } : { label: 'EN PROCESO', tone: 'capture_in_progress' }}
+            items={captureCertificates}
+            orders={orders}
+            renderItem={renderCertificate}
+          />
+        )}
       </section>
     </section>
   );

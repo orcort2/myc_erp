@@ -17,7 +17,7 @@ from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder
 from app.schemas.certificate import CertificateVerificationRead
 from app.services.audit_logs import write_audit_log
-from app.services.storage_service import build_storage_path, delete_if_unreferenced, relative_storage_path, resolve_storage_path
+from app.services.storage_service import build_storage_path, relative_storage_path, resolve_storage_path
 
 
 def _verification_url(code: str) -> str:
@@ -227,12 +227,13 @@ def authenticate_certificate_pdf(
         )
     if not certificate.final_pdf_path:
         raise HTTPException(status_code=409, detail="No se puede autenticar sin PDF original")
+    if certificate.match_status not in {"matched", "warning", "manual_accepted"}:
+        raise HTTPException(status_code=409, detail="No se puede autenticar sin un match validado o aceptado por Calidad")
     source = resolve_storage_path(certificate.final_pdf_path)
     if source is None or not source.exists():
         raise HTTPException(status_code=404, detail="PDF original no encontrado")
 
     now = datetime.now(timezone.utc)
-    previous_authenticated_pdf_path = certificate.authenticated_pdf_path
     code = _authentication_code(certificate, now)
     url = _verification_url(code)
     document_hash = _sha256_file(source)
@@ -253,6 +254,8 @@ def authenticate_certificate_pdf(
     certificate.authenticated_pdf_generated_at = now
     certificate.authenticated_by_id = user_id
     certificate.verification_url = url
+    previous_status = certificate.status
+    certificate.status = "authenticated"
     write_audit_log(
         db,
         action="certificate.pdf_authenticated",
@@ -260,22 +263,13 @@ def authenticate_certificate_pdf(
         entity_id=certificate.id,
         user_id=user_id,
         new_values={
+            "previous_status": previous_status,
+            "status": certificate.status,
             "authentication_code": code,
             "authentication_hash": document_hash,
             "authenticated_pdf_path": str(target),
         },
     )
-    if previous_authenticated_pdf_path and previous_authenticated_pdf_path != str(target):
-        delete_if_unreferenced(
-            db,
-            previous_authenticated_pdf_path,
-            user_id=user_id,
-            module="Certificados",
-            entity="certificates",
-            entity_id=certificate.id,
-            filename=Path(previous_authenticated_pdf_path).name,
-            reason="Archivo autenticado eliminado automaticamente al regenerar autenticacion.",
-        )
     return certificate
 
 

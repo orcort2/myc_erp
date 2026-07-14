@@ -41,18 +41,24 @@ export const certificateStatusLabels = {
   ready_for_quality: 'Listo para calidad',
   generated: 'Generado',
   quality_review: 'En revision',
-  quality_rejected: 'Rechazado calidad',
-  correction_requested: 'Correccion solicitada',
-  returned_to_technician: 'Devuelto a tecnico',
-  quality_approved: 'Aprobado calidad',
+  match_validated: 'Match validado',
+  quality_rejected: 'Corrección requerida',
+  correction_requested: 'Corrección requerida',
+  returned_to_technician: 'Corrección requerida',
+  quality_approved: 'Aprobado',
   approved: 'Aprobado',
   pdf_pending: 'PDF pendiente',
   pdf_uploaded: 'PDF subido',
-  released_to_client: 'Liberado al cliente',
+  authenticated: 'Autenticado',
+  released_to_client: 'Liberado',
   released: 'Liberado',
   cancelled: 'Cancelado',
   suspended: 'Suspendido'
 };
+
+export function getCertificateStatusLabel(certificate) {
+  return certificateStatusLabels[certificate?.status] ?? certificate?.status ?? '-';
+}
 
 export const quotationStatusLabels = {
   draft: 'Borrador',
@@ -122,13 +128,10 @@ export const certificateTabs = [
 ];
 
 export const certificateActions = [
-  { key: 'start-capture', nextStatus: 'capture_in_progress', label: 'Iniciar captura' },
   { key: 'send-to-quality', nextStatus: 'ready_for_quality', label: 'Enviar a calidad' },
-  { key: 'quality-reject', nextStatus: 'quality_rejected', label: 'Rechazar calidad' },
-  { key: 'return-to-technician', nextStatus: 'returned_to_technician', label: 'Regresar a tecnico' },
+  { key: 'request-correction', nextStatus: 'correction_requested', label: 'Regresar a Captura' },
   { key: 'quality-approve', nextStatus: 'quality_approved', label: 'Aprobar calidad' },
-  { key: 'release-to-client', nextStatus: 'released_to_client', label: 'Liberar cliente' },
-  { key: 'suspend', nextStatus: 'suspended', label: 'Suspender' }
+  { key: 'release-to-client', nextStatus: 'released_to_client', label: 'Liberar cliente' }
 ];
 
 export const certificateTransitions = {
@@ -137,16 +140,18 @@ export const certificateTransitions = {
   field_sheet_ready: new Set(['capture_pending', 'capture_in_progress', 'suspended']),
   capture_pending: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
   capture_in_progress: new Set(['ready_for_quality', 'quality_rejected', 'suspended']),
-  ready_for_quality: new Set(['quality_review', 'quality_approved', 'quality_rejected', 'suspended']),
+  ready_for_quality: new Set(['quality_review', 'match_validated', 'correction_requested', 'suspended']),
   generated: new Set(['quality_review', 'quality_rejected', 'suspended']),
-  quality_review: new Set(['quality_approved', 'quality_rejected', 'suspended']),
+  quality_review: new Set(['match_validated', 'correction_requested', 'suspended']),
+  match_validated: new Set(['quality_approved', 'correction_requested', 'suspended']),
   quality_rejected: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
   returned_to_technician: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
   correction_requested: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
-  quality_approved: new Set(['pdf_pending', 'pdf_uploaded', 'released_to_client', 'suspended']),
-  approved: new Set(['pdf_pending', 'pdf_uploaded', 'released_to_client', 'suspended']),
-  pdf_pending: new Set(['pdf_uploaded', 'released_to_client', 'suspended']),
-  pdf_uploaded: new Set(['released_to_client', 'suspended']),
+  quality_approved: new Set(['authenticated', 'pdf_pending', 'pdf_uploaded', 'suspended']),
+  approved: new Set(['authenticated', 'pdf_pending', 'pdf_uploaded', 'suspended']),
+  pdf_pending: new Set(['authenticated', 'pdf_uploaded', 'suspended']),
+  pdf_uploaded: new Set(['authenticated', 'ready_for_quality', 'suspended']),
+  authenticated: new Set(['released_to_client', 'suspended']),
   released_to_client: new Set([]),
   released: new Set([]),
   cancelled: new Set([]),

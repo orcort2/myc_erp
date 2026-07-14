@@ -1,128 +1,82 @@
+import { Download, Eye, FileCheck2, ShieldCheck } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileCheck2, X } from 'lucide-react';
-
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
-import { emptyCertificateForm } from '../constants/forms.js';
-import {
-  equipmentStatusLabels,
-  fieldSheetStatusLabels,
-  certificateStatusLabels,
-  certificateTypeLabels,
-  certificateTabs,
-  certificateActions,
-  certificateTransitions,
-  certificateReadyFieldSheetStatuses,
-  certificateReadyEquipmentStatuses
-} from '../constants/statuses.js';
+import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
+import { getCertificateStatusLabel, certificateTypeLabels } from '../constants/statuses.js';
 import {
   changeCertificateStatus,
-  createCertificate,
-  deleteCertificate,
+  downloadAuthenticatedCertificatePdf,
+  downloadOriginalCertificatePdf,
   getCertificate,
+  getCertificateReleaseReadiness,
   listCertificates,
   listClients,
   listEquipment,
-  listFieldSheets,
-  listServiceOrders,
-  updateCertificate
+  listServiceOrders
 } from '../services/api.js';
-import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
+import useConfirmDialog from '../utils/useConfirmDialog.js';
 
-function CertificatesPage() {
+function triggerDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+export default function CertificatesPage() {
   const [certificates, setCertificates] = useState([]);
-  const [serviceOrders, setServiceOrders] = useState([]);
+  const [orders, setOrders] = useState([]);
   const [equipment, setEquipment] = useState([]);
-  const [fieldSheets, setFieldSheets] = useState([]);
   const [clients, setClients] = useState([]);
-  const [activeTab, setActiveTab] = useState('pending');
+  const [readinessByOrderId, setReadinessByOrderId] = useState(new Map());
+  const [activeTab, setActiveTab] = useState('available');
   const [selectedCertificate, setSelectedCertificate] = useState(null);
-  const [certificateDetailTab, setCertificateDetailTab] = useState('info');
-  const [certificateForm, setCertificateForm] = useState(emptyCertificateForm);
-  const [certificateSourceSheet, setCertificateSourceSheet] = useState(null);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
   const [loadingAction, setLoadingAction] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
-  const clientsById = useMemo(
-    () => new Map(clients.map((client) => [client.id, client])),
-    [clients]
+  const ordersById = useMemo(() => new Map(orders.map((item) => [item.id, item])), [orders]);
+  const equipmentById = useMemo(() => new Map(equipment.map((item) => [item.id, item])), [equipment]);
+  const clientsById = useMemo(() => new Map(clients.map((item) => [item.id, item])), [clients]);
+  const authenticatedCertificates = useMemo(
+    () => certificates.filter((item) => item.authenticated_pdf_path && ['authenticated', 'released_to_client', 'released'].includes(item.status)),
+    [certificates]
+  );
+  const displayedCertificates = useMemo(
+    () => authenticatedCertificates.filter((item) => activeTab === 'released' ? ['released_to_client', 'released'].includes(item.status) : !['released_to_client', 'released'].includes(item.status)),
+    [activeTab, authenticatedCertificates]
   );
 
-  const ordersById = useMemo(
-    () => new Map(serviceOrders.map((order) => [order.id, order])),
-    [serviceOrders]
-  );
-
-  const equipmentById = useMemo(
-    () => new Map(equipment.map((item) => [item.id, item])),
-    [equipment]
-  );
-
-  const fieldSheetsById = useMemo(
-    () => new Map(fieldSheets.map((sheet) => [sheet.id, sheet])),
-    [fieldSheets]
-  );
-
-  const activeCertificatesByFieldSheetId = useMemo(() => {
-    const map = new Map();
-    certificates
-      .filter((certificate) => certificate.is_active !== false)
-      .forEach((certificate) => {
-        map.set(certificate.field_sheet_id, certificate);
-      });
-    return map;
-  }, [certificates]);
-
-  const pendingFieldSheets = useMemo(
-    () =>
-      fieldSheets.filter((sheet) => {
-        const item = equipmentById.get(sheet.equipment_id);
-        return (
-          sheet.is_active !== false &&
-          certificateReadyFieldSheetStatuses.has(sheet.status) &&
-          certificateReadyEquipmentStatuses.has(item?.status) &&
-          !activeCertificatesByFieldSheetId.has(sheet.id)
-        );
-      }),
-    [activeCertificatesByFieldSheetId, equipmentById, fieldSheets]
-  );
-
-  const displayedCertificates = useMemo(() => {
-    if (activeTab === 'review') {
-      return certificates.filter((certificate) => certificate.status === 'quality_review');
-    }
-    if (activeTab === 'approved') {
-      return certificates.filter((certificate) => certificate.status === 'approved');
-    }
-    if (activeTab === 'released') {
-      return certificates.filter((certificate) => certificate.status === 'released');
-    }
-    return certificates;
-  }, [activeTab, certificates]);
-
-  async function loadCertificateData() {
+  async function loadData() {
     setError('');
     setIsLoading(true);
     try {
-      const [certificatesResult, ordersResult, equipmentResult, fieldSheetsResult, clientsResult] = await Promise.all([
-        listCertificates(),
-        listServiceOrders(),
-        listEquipment(),
-        listFieldSheets(),
-        listClients()
+      const [certificateItems, orderItems, equipmentItems, clientItems] = await Promise.all([
+        listCertificates(), listServiceOrders(), listEquipment(), listClients()
       ]);
-      setCertificates(Array.isArray(certificatesResult) ? certificatesResult : []);
-      setServiceOrders(Array.isArray(ordersResult) ? ordersResult : []);
-      setEquipment(Array.isArray(equipmentResult) ? equipmentResult : []);
-      setFieldSheets(Array.isArray(fieldSheetsResult) ? fieldSheetsResult : []);
-      setClients(Array.isArray(clientsResult) ? clientsResult : []);
+      const safeCertificates = Array.isArray(certificateItems) ? certificateItems : [];
+      const safeOrders = Array.isArray(orderItems) ? orderItems : [];
+      setCertificates(safeCertificates);
+      setOrders(safeOrders);
+      setEquipment(Array.isArray(equipmentItems) ? equipmentItems : []);
+      setClients(Array.isArray(clientItems) ? clientItems : []);
+      const authenticatedOrderIds = [...new Set(safeCertificates.filter((item) => item.authenticated_pdf_path).map((item) => item.service_order_id))];
+      const readinessEntries = await Promise.all(authenticatedOrderIds.map(async (orderId) => {
+        try {
+          return [orderId, await getCertificateReleaseReadiness(orderId)];
+        } catch (requestError) {
+          return [orderId, { release_allowed: false, reason: requestError.message }];
+        }
+      }));
+      setReadinessByOrderId(new Map(readinessEntries));
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -130,167 +84,89 @@ function CertificatesPage() {
     }
   }
 
-  useEffect(() => {
-    loadCertificateData();
-  }, []);
+  useEffect(() => { loadData(); }, []);
 
-  function getCertificateContext(certificate) {
+  function context(certificate) {
     const order = ordersById.get(certificate.service_order_id);
-    const item = equipmentById.get(certificate.equipment_id);
-    const sheet = fieldSheetsById.get(certificate.field_sheet_id);
-    const client = order ? clientsById.get(order.client_id) : null;
-    return { client, item, order, sheet };
+    return {
+      order,
+      item: equipmentById.get(certificate.equipment_id),
+      client: order ? clientsById.get(order.client_id) : null
+    };
   }
 
-  function getSheetContext(sheet) {
-    const item = equipmentById.get(sheet.equipment_id);
-    const order = item ? ordersById.get(item.service_order_id) : null;
-    const client = order ? clientsById.get(order.client_id) : null;
-    return { client, item, order };
-  }
-
-  function getCertificateCreationError(sheet) {
-    const { item, order } = getSheetContext(sheet);
-    if (!order) {
-      return 'La hoja no tiene orden de servicio disponible.';
-    }
-    if (!certificateReadyFieldSheetStatuses.has(sheet.status)) {
-      return 'La hoja debe estar completada, en revision o aprobada.';
-    }
-    if (!certificateReadyEquipmentStatuses.has(item?.status)) {
-      return 'El equipo debe estar calibrado o etiquetado.';
-    }
-    if (activeCertificatesByFieldSheetId.has(sheet.id)) {
-      return 'La hoja de campo ya tiene un certificado activo.';
-    }
-    return '';
-  }
-
-  function openCreateCertificate(sheet) {
-    const validationError = getCertificateCreationError(sheet);
-    if (validationError) {
-      setError(validationError);
+  async function openAuthenticatedPdf(certificate) {
+    const pdfWindow = window.open('', '_blank');
+    if (!pdfWindow) {
+      setError('El navegador bloqueó la vista del PDF. Permite ventanas emergentes.');
       return;
     }
-    setCertificateSourceSheet(sheet);
-    setCertificateForm(emptyCertificateForm);
-    setIsCreateModalOpen(true);
-    setError('');
-    setNotice('');
-  }
-
-  function closeCreateCertificate() {
-    setIsCreateModalOpen(false);
-    setCertificateSourceSheet(null);
-    setCertificateForm(emptyCertificateForm);
-    setError('');
-  }
-
-  async function handleCreateCertificate(event) {
-    event.preventDefault();
-    if (!certificateSourceSheet) return;
-    const { item, order } = getSheetContext(certificateSourceSheet);
-    const validationError = getCertificateCreationError(certificateSourceSheet);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    setIsSaving(true);
-    setError('');
-    setNotice('');
     try {
-      const created = await createCertificate({
-        service_order_id: order.id,
-        equipment_id: item.id,
-        field_sheet_id: certificateSourceSheet.id,
-        certificate_type: certificateForm.certificateType,
-        notes: certificateForm.notes.trim() || null
-      });
-      setNotice(`Certificado ${created.folio} creado`);
-      closeCreateCertificate();
-      await loadCertificateData();
-      await openCertificateDetail(created);
+      const { blob } = await downloadAuthenticatedCertificatePdf(certificate.id, certificate.folio, certificate.authentication_code);
+      const url = URL.createObjectURL(blob);
+      pdfWindow.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+    } catch (requestError) {
+      pdfWindow.close();
+      setError(requestError.message);
+    }
+  }
+
+  async function downloadAuthenticated(certificate) {
+    setLoadingAction(`${certificate.id}-download`);
+    try {
+      const { blob, filename } = await downloadAuthenticatedCertificatePdf(certificate.id, certificate.folio, certificate.authentication_code);
+      triggerDownload(blob, filename);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
-      setIsSaving(false);
+      setLoadingAction('');
     }
   }
 
-  async function openCertificateDetail(certificate) {
-    setError('');
-    setNotice('');
+  async function openOriginalPdf(certificate) {
+    const pdfWindow = window.open('', '_blank');
+    if (!pdfWindow) return;
     try {
-      const fresh = await getCertificate(certificate.id);
-      setSelectedCertificate(fresh);
-      setCertificateForm({
-        certificateType: fresh.certificate_type ?? 'trazable',
-        notes: fresh.notes ?? ''
-      });
-      setCertificateDetailTab('info');
-      setIsDetailOpen(true);
+      const { blob } = await downloadOriginalCertificatePdf(certificate.id, certificate.final_pdf_original_filename);
+      const url = URL.createObjectURL(blob);
+      pdfWindow.location.replace(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+    } catch (requestError) {
+      pdfWindow.close();
+      setError(requestError.message);
+    }
+  }
+
+  async function openAuthentication(certificate) {
+    try {
+      setSelectedCertificate(await getCertificate(certificate.id));
     } catch (requestError) {
       setError(requestError.message);
     }
   }
 
-  function closeCertificateDetail() {
-    setIsDetailOpen(false);
-    setSelectedCertificate(null);
-    setCertificateForm(emptyCertificateForm);
-    setCertificateDetailTab('info');
-    setError('');
-  }
-
-  function updateCertificateForm(field, value) {
-    setCertificateForm((current) => ({ ...current, [field]: value }));
-  }
-
-  async function saveCertificateNotes() {
-    if (!selectedCertificate) return;
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await updateCertificate(selectedCertificate.id, {
-        notes: certificateForm.notes.trim() || null
-      });
-      setSelectedCertificate(updated);
-      setCertificates((current) =>
-        current.map((certificate) => (certificate.id === updated.id ? updated : certificate))
-      );
-      setNotice('Notas del certificado guardadas');
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
+  function releaseCertificate(certificate) {
+    if (!['matched', 'warning', 'manual_accepted'].includes(certificate.match_status)) {
+      setError('No se puede liberar: el certificado no tiene un match aceptado por Calidad.');
+      return;
     }
-  }
-
-  function isCertificateActionAllowed(certificate, action) {
-    return certificateTransitions[certificate.status]?.has(action.nextStatus) ?? false;
-  }
-
-  async function handleCertificateAction(action) {
-    if (!selectedCertificate) return;
-    const nextLabel = certificateStatusLabels[action.nextStatus] ?? action.nextStatus;
+    const readiness = readinessByOrderId.get(certificate.service_order_id);
+    if (readiness && !readiness.release_allowed) {
+      setError(readiness.reason);
+      return;
+    }
     openConfirm({
-      title: 'Confirmar cambio de certificado',
-      message: `El certificado ${selectedCertificate.folio} cambiará a ${nextLabel}.`,
-      confirmText: `Cambiar a ${nextLabel}`,
+      title: 'Liberar certificado',
+      message: `El certificado ${certificate.folio} quedará disponible para el cliente.`,
+      confirmText: 'Liberar',
       variant: 'danger',
       onConfirm: async () => {
-        setLoadingAction(action.key);
-        setError('');
-        setNotice('');
+        setLoadingAction(`${certificate.id}-release`);
         try {
-          const updated = await changeCertificateStatus(selectedCertificate.id, action.key);
-          setSelectedCertificate(updated);
-          setCertificates((current) =>
-            current.map((certificate) => (certificate.id === updated.id ? updated : certificate))
-          );
-          setNotice(`Certificado ${updated.folio} actualizado a ${certificateStatusLabels[updated.status]}`);
-          await loadCertificateData();
+          await changeCertificateStatus(certificate.id, 'release-to-client');
+          setNotice(`Certificado ${certificate.folio} liberado`);
+          await loadData();
         } catch (requestError) {
           setError(requestError.message);
         } finally {
@@ -300,467 +176,56 @@ function CertificatesPage() {
     });
   }
 
-  async function handleDeleteCertificateRecord() {
-    if (!selectedCertificate) return;
-    openConfirm({
-      title: 'Dar de baja certificado',
-      message: `Esta acción dará de baja el certificado ${selectedCertificate.folio}.\nNo se eliminará físicamente y es una acción administrativa distinta de suspender o cambiar estado.`,
-      confirmText: 'Dar de baja certificado',
-      variant: 'danger',
-      onConfirm: async () => {
-        setError('');
-        setNotice('');
-        try {
-          await deleteCertificate(selectedCertificate.id);
-          closeCertificateDetail();
-          setNotice('Certificado dado de baja');
-          await loadCertificateData();
-        } catch (requestError) {
-          setError(requestError.message);
-        }
-      }
-    });
+  function renderCertificate(certificate) {
+    const { client, item } = context(certificate);
+    const released = ['released_to_client', 'released'].includes(certificate.status);
+    const readiness = readinessByOrderId.get(certificate.service_order_id);
+    const blockedReason = !released && !['matched', 'warning', 'manual_accepted'].includes(certificate.match_status)
+      ? 'No se puede liberar: el match no fue aceptado por Calidad.'
+      : !released && readiness && !readiness.release_allowed ? readiness.reason : '';
+    return (
+      <article className="flow-certificate-card" key={certificate.id}>
+        <button className="flow-certificate-card__primary" onClick={() => openAuthenticatedPdf(certificate)} type="button">
+          <div className="flow-certificate-card__title"><div><span>Certificado autenticado</span><strong>{certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{getCertificateStatusLabel(certificate)}</mark></div>
+          <dl><div><dt>Cliente</dt><dd>{getClientDisplayName(client)}</dd></div><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Serie</dt><dd>{item?.serial_number || item?.internal_id || '-'}</dd></div><div><dt>Tipo</dt><dd>{certificateTypeLabels[certificate.certificate_type] ?? certificate.certificate_type}</dd></div><div><dt>Autenticación</dt><dd>{certificate.authentication_code || '-'}</dd></div><div><dt>Fecha</dt><dd>{formatDateTime(certificate.authenticated_pdf_generated_at)}</dd></div></dl>
+          <span className="flow-primary-hint"><Eye size={15} /> Ver PDF autenticado</span>
+        </button>
+        {blockedReason ? <div className="flow-release-blocked">{blockedReason}</div> : null}
+        <div className="toolbar-actions">
+          <button className="table-button" disabled={Boolean(loadingAction)} onClick={() => downloadAuthenticated(certificate)} type="button"><Download size={14} /> Descargar</button>
+          <button className="table-button" onClick={() => openAuthentication(certificate)} type="button"><ShieldCheck size={14} /> Ver autenticación</button>
+          {released ? <span className="flow-action-complete">Liberado</span> : <button className="table-button table-button--primary" disabled={Boolean(loadingAction) || Boolean(blockedReason)} onClick={() => releaseCertificate(certificate)} title={blockedReason || undefined} type="button">Liberar</button>}
+        </div>
+      </article>
+    );
   }
-
-  const selectedContext = selectedCertificate ? getCertificateContext(selectedCertificate) : {};
-  const selectedSheet = selectedContext.sheet;
 
   return (
     <section className="module-workspace certificates-workspace">
-      <div className="module-workspace__hero clients-hero">
-        <span className="module-workspace__icon">
-          <FileCheck2 size={28} />
-        </span>
-        <div>
-          <p>Calidad documental</p>
-          <h1>Certificados</h1>
-          <span>Generacion, revision, aprobacion y liberacion de certificados por equipo.</span>
-        </div>
-      </div>
-
+      <div className="module-workspace__hero clients-hero"><span className="module-workspace__icon"><FileCheck2 size={28} /></span><div><p>Entrega documental</p><h1>Certificados</h1><span>Consulta certificados autenticados y administra exclusivamente su liberación.</span></div></div>
       {error ? <div className="form-error dashboard-error">{error}</div> : null}
       {notice ? <div className="form-notice dashboard-error">{notice}</div> : null}
-
-      <section className="operations-band certificates-summary" aria-label="Resumen de certificados">
-        <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.length}</strong>
-          <span>Total certificados</span>
-        </div>
-        <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => certificate.status === 'quality_review').length}</strong>
-          <span>En revision</span>
-        </div>
-        <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => certificate.status === 'released').length}</strong>
-          <span>Liberados</span>
-        </div>
+      <section className="operations-band certificates-summary">
+        <div className="operations-band__metric"><strong>{isLoading ? '-' : authenticatedCertificates.filter((item) => item.status === 'authenticated').length}</strong><span>Disponibles</span></div>
+        <div className="operations-band__metric"><strong>{isLoading ? '-' : authenticatedCertificates.filter((item) => ['released_to_client', 'released'].includes(item.status)).length}</strong><span>Liberados</span></div>
+        <div className="operations-band__metric"><strong>{isLoading ? '-' : authenticatedCertificates.length}</strong><span>Total autenticados</span></div>
+      </section>
+      <div className="module-tabs" role="tablist"><button className={activeTab === 'available' ? 'module-tab is-active' : 'module-tab'} onClick={() => setActiveTab('available')} type="button">Disponibles</button><button className={activeTab === 'released' ? 'module-tab is-active' : 'module-tab'} onClick={() => setActiveTab('released')} type="button">Liberados</button></div>
+      <section className="clients-list-panel">
+        <div className="section-heading"><div><p>ETS y Órdenes de Trabajo</p><h2>{displayedCertificates.length} certificados {activeTab === 'released' ? 'liberados' : 'disponibles'}</h2></div></div>
+        {isLoading ? <div className="clients-empty">Cargando certificados autenticados...</div> : <WorkOrderFlowGroups emptyMessage="No hay certificados autenticados en esta vista." equipmentById={equipmentById} getGroupState={(items) => items.every((item) => ['released_to_client', 'released'].includes(item.status)) ? { label: 'LISTA', tone: 'released' } : { label: 'DISPONIBLE', tone: 'authenticated' }} items={displayedCertificates} orders={orders} renderItem={renderCertificate} />}
       </section>
 
-      <div className="module-tabs" role="tablist" aria-label="Navegacion de certificados">
-        {certificateTabs.map((tab) => (
-          <button
-            aria-selected={activeTab === tab.key}
-            className={activeTab === tab.key ? 'module-tab is-active' : 'module-tab'}
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            type="button"
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'pending' ? (
-        <section className="clients-list-panel">
-          <div className="section-heading">
-            <div>
-              <p>Hojas listas</p>
-              <h2>{isLoading ? 'Cargando...' : `${pendingFieldSheets.length} pendientes`}</h2>
-            </div>
-          </div>
-          <div className="clients-table pending-certificates-table" aria-busy={isLoading}>
-            <div className="clients-table__head">
-              <span>Cliente</span>
-              <span>Orden</span>
-              <span>Equipo</span>
-              <span>Hoja</span>
-              <span>Estado hoja</span>
-              <span>Estado equipo</span>
-              <span>Acciones</span>
-            </div>
-            {isLoading ? (
-              <div className="clients-empty">Cargando hojas disponibles...</div>
-            ) : pendingFieldSheets.length ? (
-              pendingFieldSheets.map((sheet) => {
-                const { client, item, order } = getSheetContext(sheet);
-                return (
-                  <div className="clients-table__row" key={sheet.id}>
-                    <span>{getClientDisplayName(client)}</span>
-                    <span>{order?.folio || '-'}</span>
-                    <span>{item?.name || '-'}</span>
-                    <span>#{sheet.id}</span>
-                    <span>
-                      <mark className={`quotation-status status-${sheet.status}`}>
-                        {fieldSheetStatusLabels[sheet.status] ?? sheet.status}
-                      </mark>
-                    </span>
-                    <span>
-                      <mark className={`quotation-status status-${item?.status}`}>
-                        {equipmentStatusLabels[item?.status] ?? item?.status ?? '-'}
-                      </mark>
-                    </span>
-                    <span className="clients-table__actions">
-                      <button className="table-button table-button--primary" onClick={() => openCreateCertificate(sheet)} type="button">
-                        Crear certificado
-                      </button>
-                    </span>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="clients-empty">No hay hojas de campo pendientes de certificado.</div>
-            )}
-          </div>
-        </section>
-      ) : (
-        <section className="clients-list-panel">
-          <div className="section-heading">
-            <div>
-              <p>Listado documental</p>
-              <h2>{isLoading ? 'Cargando...' : `${displayedCertificates.length} certificados`}</h2>
-            </div>
-          </div>
-          <div className="clients-table certificates-table" aria-busy={isLoading}>
-            <div className="clients-table__head">
-              <span>Folio</span>
-              <span>Cliente</span>
-              <span>Orden</span>
-              <span>Equipo</span>
-              <span>Tipo</span>
-              <span>Estado</span>
-              <span>Emision</span>
-              <span>Liberacion</span>
-              <span>Acciones</span>
-            </div>
-            {isLoading ? (
-              <div className="clients-empty">Cargando certificados...</div>
-            ) : displayedCertificates.length ? (
-              displayedCertificates.map((certificate) => {
-                const { client, item, order } = getCertificateContext(certificate);
-                return (
-                  <button className="clients-table__row quotation-row-button" key={certificate.id} onClick={() => openCertificateDetail(certificate)} type="button">
-                    <span className="certificate-folio">{certificate.folio}</span>
-                    <span>{getClientDisplayName(client)}</span>
-                    <span>{order?.folio || '-'}</span>
-                    <span>{item?.name || '-'}</span>
-                    <span>{certificateTypeLabels[certificate.certificate_type] ?? certificate.certificate_type}</span>
-                    <span>
-                      <mark className={`quotation-status status-${certificate.status}`}>
-                        {certificateStatusLabels[certificate.status] ?? certificate.status}
-                      </mark>
-                    </span>
-                    <span>{formatDate(certificate.issued_on)}</span>
-                    <span>{formatDate(certificate.released_on)}</span>
-                    <span>Ver ficha</span>
-                  </button>
-                );
-              })
-            ) : (
-              <div className="clients-empty">No hay certificados en esta vista.</div>
-            )}
-          </div>
-        </section>
-      )}
-
-      {isCreateModalOpen && certificateSourceSheet ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="client-modal certificate-create-modal" aria-modal="true" role="dialog">
-            <div className="section-heading">
-              <div>
-                <p>Nuevo certificado</p>
-                <h2>Crear desde hoja #{certificateSourceSheet.id}</h2>
-              </div>
-            </div>
-            <form className="client-form client-form--modal" onSubmit={handleCreateCertificate}>
-              <label>
-                Tipo de certificado
-                <select
-                  onChange={(event) => updateCertificateForm('certificateType', event.target.value)}
-                  value={certificateForm.certificateType}
-                >
-                  <option value="acreditado">Acreditado</option>
-                  <option value="trazable">Trazable</option>
-                </select>
-              </label>
-              <label className="form-field--wide">
-                Notas
-                <textarea
-                  onChange={(event) => updateCertificateForm('notes', event.target.value)}
-                  rows={4}
-                  value={certificateForm.notes}
-                />
-              </label>
-              <div className="client-form__actions client-form__actions--modal">
-                <button className="icon-text-button" disabled={isSaving} onClick={closeCreateCertificate} type="button">
-                  Cancelar
-                </button>
-                <button className="primary-button" disabled={isSaving} type="submit">
-                  {isSaving ? 'Creando...' : 'Crear certificado'}
-                </button>
-              </div>
-            </form>
-          </section>
-        </div>
+      {selectedCertificate ? (
+        <div className="modal-backdrop" role="presentation"><section className="client-modal quotation-detail-modal certificate-detail-modal" aria-modal="true" role="dialog">
+          <div className="quotation-detail-header"><div><p>Autenticación</p><h2>{selectedCertificate.folio}</h2><span>{getCertificateStatusLabel(selectedCertificate)}</span></div><button className="icon-text-button" onClick={() => setSelectedCertificate(null)} type="button">Cerrar</button></div>
+          <section className="quotation-section"><div className="quotation-section__title"><p>Sello digital</p><h3>Datos de autenticación</h3></div><div className="quotation-commercial-grid service-order-info-grid">
+            <article><span>Código</span><strong>{selectedCertificate.authentication_code || '-'}</strong></article><article><span>Fecha</span><strong>{formatDateTime(selectedCertificate.authenticated_pdf_generated_at)}</strong></article><article><span>Autenticado por</span><strong>{selectedCertificate.authenticated_by_id ? `Usuario #${selectedCertificate.authenticated_by_id}` : 'Sistema'}</strong></article><article><span>Aprobado por</span><strong>{selectedCertificate.quality_reviewed_by_id ? `Usuario #${selectedCertificate.quality_reviewed_by_id}` : '-'}</strong></article><article><span>Liberado por</span><strong>{selectedCertificate.released_to_client_by_id ? `Usuario #${selectedCertificate.released_to_client_by_id}` : '-'}</strong></article><article><span>Fecha liberación</span><strong>{formatDate(selectedCertificate.released_on)}</strong></article><article className="form-field--wide"><span>Hash</span><strong className="certificate-hash">{selectedCertificate.authentication_hash || '-'}</strong></article>
+          </div></section>
+          <section className="quotation-section"><div className="quotation-section__title"><p>Auditoría</p><h3>Archivos conservados</h3></div><div className="quotation-history-list"><article><strong>PDF autenticado</strong><span>{selectedCertificate.authenticated_pdf_path ? 'Disponible' : 'No disponible'}</span></article><article><strong>PDF original actual</strong><span>{selectedCertificate.final_pdf_original_filename || 'No disponible'}</span></article><article><strong>Match</strong><span>{selectedCertificate.match_status}</span></article>{(selectedCertificate.pdf_versions || []).map((version) => <article key={version.id}><strong>PDF versión {version.version_number}{version.is_current ? ' · actual' : ''}</strong><span>{version.original_filename || 'PDF'} · {formatDateTime(version.uploaded_at)}{version.change_reason ? ` · ${version.change_reason}` : ''}</span></article>)}</div><div className="toolbar-actions"><button className="table-button table-button--primary" onClick={() => openAuthenticatedPdf(selectedCertificate)} type="button">Ver PDF autenticado</button><button className="table-button" disabled={!selectedCertificate.final_pdf_path} onClick={() => openOriginalPdf(selectedCertificate)} type="button">Ver PDF original (auditoría)</button></div></section>
+        </section></div>
       ) : null}
-
-      {isDetailOpen && selectedCertificate ? (
-        <div className="modal-backdrop" role="presentation">
-          <section className="client-modal quotation-detail-modal field-sheet-modal certificate-detail-modal" aria-modal="true" role="dialog">
-            <div className="quotation-detail-header">
-              <div>
-                <p>Certificado</p>
-                <h2 className="certificate-folio-heading">{selectedCertificate.folio}</h2>
-                <span>
-                  {certificateTypeLabels[selectedCertificate.certificate_type] ?? selectedCertificate.certificate_type}
-                  {' · '}
-                  {getClientDisplayName(selectedContext.client)}
-                </span>
-              </div>
-              <mark className={`quotation-status quotation-status--large status-${selectedCertificate.status}`}>
-                {certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status}
-              </mark>
-              <button className="icon-text-button" onClick={closeCertificateDetail} type="button">
-                Cerrar
-              </button>
-            </div>
-
-            <div className="client-modal-tabs quotation-detail-tabs" role="tablist" aria-label="Detalle de certificado">
-              {[
-                ['info', 'Informacion'],
-                ['technical', 'Datos tecnicos'],
-                ['quality', 'Calidad'],
-                ['history', 'Historial']
-              ].map(([key, label]) => (
-                <button
-                  aria-selected={certificateDetailTab === key}
-                  className={certificateDetailTab === key ? 'client-modal-tab is-active' : 'client-modal-tab'}
-                  key={key}
-                  onClick={() => setCertificateDetailTab(key)}
-                  type="button"
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {certificateDetailTab === 'info' ? (
-              <>
-                <section className="quotation-section">
-                  <div className="quotation-section__title">
-                    <p>Informacion documental</p>
-                    <h3>Ficha de certificado</h3>
-                  </div>
-                  <div className="quotation-commercial-grid service-order-info-grid">
-                    <article>
-                      <span>Folio</span>
-                      <strong>{selectedCertificate.folio}</strong>
-                    </article>
-                    <article>
-                      <span>Tipo</span>
-                      <strong>{certificateTypeLabels[selectedCertificate.certificate_type] ?? selectedCertificate.certificate_type}</strong>
-                    </article>
-                    <article>
-                      <span>Cliente</span>
-                      <strong>{getClientDisplayName(selectedContext.client)}</strong>
-                    </article>
-                    <article>
-                      <span>Orden de Servicio</span>
-                      <strong>{selectedContext.order?.folio || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Equipo</span>
-                      <strong>{selectedContext.item?.name || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Hoja de Campo</span>
-                      <strong>#{selectedCertificate.field_sheet_id}</strong>
-                    </article>
-                    <article>
-                      <span>Fecha emision</span>
-                      <strong>{formatDate(selectedCertificate.issued_on)}</strong>
-                    </article>
-                    <article>
-                      <span>Fecha liberacion</span>
-                      <strong>{formatDate(selectedCertificate.released_on)}</strong>
-                    </article>
-                    <article>
-                      <span>Estado</span>
-                      <strong>{certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status}</strong>
-                    </article>
-                  </div>
-                </section>
-
-                <section className="quotation-section">
-                  <div className="quotation-section__title">
-                    <p>Notas</p>
-                    <h3>Observaciones documentales</h3>
-                  </div>
-                  <label className="quotation-notes-field">
-                    <textarea
-                      disabled={['released', 'cancelled'].includes(selectedCertificate.status)}
-                      onChange={(event) => updateCertificateForm('notes', event.target.value)}
-                      rows={4}
-                      value={certificateForm.notes}
-                    />
-                  </label>
-                  <div className="quotation-detail-save">
-                    <span>Las notas quedan bloqueadas al liberar o cancelar.</span>
-                    <button className="primary-button" disabled={isSaving || ['released', 'cancelled'].includes(selectedCertificate.status)} onClick={saveCertificateNotes} type="button">
-                      {isSaving ? 'Guardando...' : 'Guardar notas'}
-                    </button>
-                  </div>
-                </section>
-              </>
-            ) : null}
-
-            {certificateDetailTab === 'technical' ? (
-              <section className="quotation-section">
-                <div className="quotation-section__title">
-                  <p>Datos tecnicos</p>
-                  <h3>Hoja de campo en lectura</h3>
-                </div>
-                {selectedSheet ? (
-                  <div className="field-sheet-form-grid read-only-grid">
-                    <article>
-                      <span>Condicion inicial</span>
-                      <strong>{selectedSheet.initial_condition || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Condicion final</span>
-                      <strong>{selectedSheet.final_condition || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Patron utilizado</span>
-                      <strong>{selectedSheet.pattern_used || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Resultados</span>
-                      <strong>{selectedSheet.results || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Observaciones</span>
-                      <strong>{selectedSheet.observations || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Evidencia / notas</span>
-                      <strong>{selectedSheet.evidence_notes || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Metodo</span>
-                      <strong>{selectedSheet.method || '-'}</strong>
-                    </article>
-                    <article>
-                      <span>Condiciones ambientales</span>
-                      <strong>{selectedSheet.environmental_conditions || '-'}</strong>
-                    </article>
-                    <article className="form-field--wide">
-                      <span>Notas del tecnico</span>
-                      <strong>{selectedSheet.technician_notes || '-'}</strong>
-                    </article>
-                  </div>
-                ) : (
-                  <div className="clients-empty">No se encontro la hoja de campo vinculada.</div>
-                )}
-              </section>
-            ) : null}
-
-            {certificateDetailTab === 'quality' ? (
-              <>
-                <section className="quotation-section">
-                  <div className="quotation-section__title">
-                    <p>Calidad</p>
-                    <h3>Flujo de certificado</h3>
-                  </div>
-                  <div className="quotation-actions">
-                    {certificateActions.map((action) => (
-                      <button
-                        className={action.key === 'release' ? 'table-button table-button--primary' : 'table-button'}
-                        disabled={Boolean(loadingAction) || !isCertificateActionAllowed(selectedCertificate, action)}
-                        key={action.key}
-                        onClick={() => handleCertificateAction(action)}
-                        type="button"
-                      >
-                        {loadingAction === action.key ? 'Procesando...' : action.label}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="quotation-section danger-zone">
-                  <div className="danger-zone__copy">
-                    <p>Zona de baja</p>
-                    <span>Esta acción da de baja el certificado sin borrarlo físicamente. No sustituye suspender ni cambiar estado.</span>
-                  </div>
-                  <button className="table-button table-button--danger" onClick={handleDeleteCertificateRecord} type="button">
-                    Dar de baja certificado
-                  </button>
-                </section>
-              </>
-            ) : null}
-
-            {certificateDetailTab === 'history' ? (
-              <section className="quotation-section">
-                <div className="quotation-section__title">
-                  <p>Historial</p>
-                  <h3>Eventos documentales</h3>
-                </div>
-                <div className="quotation-history-list">
-                  <article>
-                    <strong>Certificado creado</strong>
-                    <span>{formatDateTime(selectedCertificate.created_at)}</span>
-                  </article>
-                  <article>
-                    <strong>Ultima actualizacion</strong>
-                    <span>{formatDateTime(selectedCertificate.updated_at)}</span>
-                  </article>
-                  <article>
-                    <strong>Estado actual</strong>
-                    <span>{certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status}</span>
-                  </article>
-                  <article>
-                    <strong>Orden de Servicio origen</strong>
-                    <span>{selectedContext.order?.folio || '-'}</span>
-                  </article>
-                  <article>
-                    <strong>Equipo origen</strong>
-                    <span>{selectedContext.item?.name || '-'}</span>
-                  </article>
-                  <article>
-                    <strong>Hoja de Campo origen</strong>
-                    <span>#{selectedCertificate.field_sheet_id}</span>
-                  </article>
-                </div>
-              </section>
-            ) : null}
-          </section>
-        </div>
-      ) : null}
-
-      <ConfirmDialog
-        cancelText={confirmDialog?.cancelText}
-        confirmText={confirmDialog?.confirmText}
-        isLoading={Boolean(confirmDialog?.isConfirming)}
-        isOpen={Boolean(confirmDialog)}
-        message={confirmDialog?.message}
-        onClose={closeConfirm}
-        onConfirm={handleConfirm}
-        title={confirmDialog?.title}
-        variant={confirmDialog?.variant}
-      />
+      <ConfirmDialog cancelText={confirmDialog?.cancelText} confirmText={confirmDialog?.confirmText} isLoading={Boolean(confirmDialog?.isConfirming)} isOpen={Boolean(confirmDialog)} message={confirmDialog?.message} onClose={closeConfirm} onConfirm={handleConfirm} title={confirmDialog?.title} variant={confirmDialog?.variant} />
     </section>
   );
 }
-
-
-
-export default CertificatesPage;

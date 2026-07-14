@@ -13,6 +13,7 @@ CertificateStatus = Literal[
     "ready_for_quality",
     "generated",
     "quality_review",
+    "match_validated",
     "quality_rejected",
     "correction_requested",
     "returned_to_technician",
@@ -20,6 +21,7 @@ CertificateStatus = Literal[
     "approved",
     "pdf_pending",
     "pdf_uploaded",
+    "authenticated",
     "released_to_client",
     "released",
     "cancelled",
@@ -92,6 +94,20 @@ class CertificateBatchActionRead(BaseModel):
     results: list[CertificateBatchActionItemRead] = Field(default_factory=list)
 
 
+class CertificatePdfVersionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    version_number: int
+    file_path: str
+    original_filename: str | None = None
+    uploaded_at: datetime
+    uploaded_by_id: int | None = None
+    source_status: str | None = None
+    change_reason: str | None = None
+    is_current: bool
+
+
 class CertificateRead(CertificateBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -126,6 +142,7 @@ class CertificateRead(CertificateBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    pdf_versions: list[CertificatePdfVersionRead] = Field(default_factory=list)
 
 
 class CertificateVerificationRead(BaseModel):

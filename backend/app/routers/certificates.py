@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.models.user import User
 from app.schemas.certificate import (
     CertificateCreate,
     CertificatePdfUploadRead,
@@ -16,6 +17,7 @@ from app.services.certificates import (
     create_certificate,
     deactivate_certificate,
     get_certificate,
+    get_service_order_release_readiness,
     list_certificates,
     quality_approve,
     quality_reject,
@@ -30,6 +32,7 @@ from app.services.certificates import (
 )
 from app.services.storage_service import resolve_storage_path
 from app.services.certificate_authentication import authenticate_certificate_pdf
+from app.services.auth import require_permission
 
 
 router = APIRouter(prefix="/certificates", tags=["certificates"])
@@ -42,6 +45,7 @@ def get_certificates(
     client_visible: bool | None = Query(default=None),
     include_inactive: bool = Query(default=False),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
 ) -> list[CertificateRead]:
     return list_certificates(
         db,
@@ -56,13 +60,23 @@ def get_certificates(
 def post_certificate(
     payload: CertificateCreate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.create")),
 ) -> CertificateRead:
-    return create_certificate(db, payload)
+    return create_certificate(db, payload, user_id=current_user.id)
+
+
+@router.get("/release-readiness/{service_order_id}")
+def certificate_release_readiness(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
+) -> dict:
+    return get_service_order_release_readiness(db, service_order_id)
 
 
 @router.get("/{certificate_id}", response_model=CertificateRead)
 def get_certificate_by_id(
-    certificate_id: int, db: Session = Depends(get_db)
+    certificate_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("certificates.read"))
 ) -> CertificateRead:
     return get_certificate(db, certificate_id)
 
@@ -72,8 +86,9 @@ def patch_certificate(
     certificate_id: int,
     payload: CertificateUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.capture")),
 ) -> CertificateRead:
-    return update_certificate(db, certificate_id, payload)
+    return update_certificate(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/generate", response_model=CertificateRead)
@@ -81,8 +96,9 @@ def generate_certificate(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.capture")),
 ) -> CertificateRead:
-    return change_status(db, certificate_id, "capture_in_progress", payload)
+    return change_status(db, certificate_id, "capture_in_progress", payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/quality", response_model=CertificateRead)
@@ -90,8 +106,9 @@ def quality_certificate(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.quality")),
 ) -> CertificateRead:
-    return change_status(db, certificate_id, "quality_review", payload)
+    return change_status(db, certificate_id, "quality_review", payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/start-capture", response_model=CertificateRead)
@@ -99,8 +116,9 @@ def start_certificate_capture(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.capture")),
 ) -> CertificateRead:
-    return start_capture(db, certificate_id, payload)
+    return start_capture(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/send-to-quality", response_model=CertificateRead)
@@ -108,8 +126,9 @@ def send_certificate_to_quality(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.capture")),
 ) -> CertificateRead:
-    return send_to_quality(db, certificate_id, payload)
+    return send_to_quality(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/quality-approve", response_model=CertificateRead)
@@ -117,8 +136,9 @@ def quality_approve_certificate(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.approve")),
 ) -> CertificateRead:
-    return quality_approve(db, certificate_id, payload)
+    return quality_approve(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/quality-reject", response_model=CertificateRead)
@@ -126,8 +146,9 @@ def quality_reject_certificate(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.quality")),
 ) -> CertificateRead:
-    return quality_reject(db, certificate_id, payload)
+    return quality_reject(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/return-to-technician", response_model=CertificateRead)
@@ -135,25 +156,29 @@ def return_certificate_to_technician(
     certificate_id: int,
     payload: CertificateStatusChange,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.quality")),
 ) -> CertificateRead:
-    return return_to_technician(db, certificate_id, payload)
+    return return_to_technician(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/upload-pdf", response_model=CertificateRead)
 def upload_certificate_final_pdf(
     certificate_id: int,
     file: UploadFile = File(...),
+    comment: str | None = Form(default=None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.upload_pdf")),
 ) -> CertificateRead:
-    return upload_certificate_pdf(db, certificate_id, file)
+    return upload_certificate_pdf(db, certificate_id, file, user_id=current_user.id, comment=comment)
 
 
 @router.post("/{certificate_id}/validate-pdf-match", response_model=CertificateRead)
 def validate_certificate_pdf_match_route(
     certificate_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.quality")),
 ) -> CertificateRead:
-    return validate_pdf_match(db, certificate_id)
+    return validate_pdf_match(db, certificate_id, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/release-to-client", response_model=CertificateRead)
@@ -161,17 +186,19 @@ def release_certificate_to_client(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("release.manage")),
 ) -> CertificateRead:
-    return release_to_client(db, certificate_id, payload)
+    return release_to_client(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/authenticate", response_model=CertificateRead)
 def authenticate_certificate(
     certificate_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.approve")),
 ) -> CertificateRead:
     certificate = get_certificate(db, certificate_id)
-    authenticate_certificate_pdf(db, certificate)
+    authenticate_certificate_pdf(db, certificate, user_id=current_user.id)
     db.commit()
     return get_certificate(db, certificate_id)
 
@@ -180,6 +207,7 @@ def authenticate_certificate(
 def get_authenticated_certificate_pdf(
     certificate_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
 ) -> FileResponse:
     certificate = get_certificate(db, certificate_id)
     if not certificate.authenticated_pdf_path:
@@ -197,6 +225,7 @@ def get_authenticated_certificate_pdf(
 def get_original_certificate_pdf(
     certificate_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
 ) -> FileResponse:
     certificate = get_certificate(db, certificate_id)
     if not certificate.final_pdf_path:
@@ -213,16 +242,18 @@ def manual_accept_certificate_match(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.match_override")),
 ) -> CertificateRead:
-    return manual_accept_match(db, certificate_id, payload)
+    return manual_accept_match(db, certificate_id, payload, user_id=current_user.id)
 
 @router.post("/{certificate_id}/request-correction", response_model=CertificateRead)
 def request_certificate_correction(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.quality")),
 ) -> CertificateRead:
-    return request_correction(db, certificate_id, payload)
+    return request_correction(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/draft", response_model=CertificateRead)
@@ -230,16 +261,18 @@ def return_certificate_to_draft(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.capture")),
 ) -> CertificateRead:
-    return change_status(db, certificate_id, "draft", payload)
+    return change_status(db, certificate_id, "draft", payload, user_id=current_user.id)
 
 @router.post("/{certificate_id}/approve", response_model=CertificateRead)
 def approve_certificate(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.approve")),
 ) -> CertificateRead:
-    return quality_approve(db, certificate_id, payload)
+    return quality_approve(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/release", response_model=CertificateRead)
@@ -247,8 +280,9 @@ def release_certificate(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("release.manage")),
 ) -> CertificateRead:
-    return release_to_client(db, certificate_id, payload)
+    return release_to_client(db, certificate_id, payload, user_id=current_user.id)
 
 
 @router.post("/{certificate_id}/suspend", response_model=CertificateRead)
@@ -256,13 +290,14 @@ def suspend_certificate(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.quality")),
 ) -> CertificateRead:
-    return change_status(db, certificate_id, "suspended", payload)
+    return change_status(db, certificate_id, "suspended", payload, user_id=current_user.id)
 
 
 @router.delete("/{certificate_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_certificate(
-    certificate_id: int, db: Session = Depends(get_db)
+    certificate_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("certificates.create"))
 ) -> Response:
-    deactivate_certificate(db, certificate_id)
+    deactivate_certificate(db, certificate_id, user_id=current_user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

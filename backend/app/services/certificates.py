@@ -8,9 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.folios import FolioRequest, generate_folio
-from app.models.certificate import Certificate
+from app.models.certificate import Certificate, CertificatePdfVersion
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
+from app.models.invoice import Invoice
 from app.models.service_order import ServiceOrder
 from app.schemas.certificate import (
     CertificateBatchActionItemRead,
@@ -30,14 +31,17 @@ from app.services.storage_service import delete_if_unreferenced, safe_filename, 
 TERMINAL_STATUSES = {"released_to_client", "released", "cancelled"}
 CAPTURE_READY_STATUSES = {"expected", "field_sheet_ready", "capture_pending", "quality_rejected", "correction_requested", "returned_to_technician"}
 QUALITY_READY_STATUSES = {"ready_for_quality", "quality_review"}
-QUALITY_APPROVED_STATUSES = {"quality_approved", "approved", "pdf_pending", "pdf_uploaded"}
+QUALITY_APPROVED_STATUSES = {"quality_approved", "approved"}
+AUTHENTICATED_STATUSES = {"authenticated"}
+ACCEPTED_MATCH_STATUSES = {"matched", "warning", "manual_accepted"}
 
 LEGACY_STATUS_MAP = {
     "generated": "capture_in_progress",
     "quality_review": "quality_review",
     "approved": "quality_approved",
     "released": "released_to_client",
-    "correction_requested": "quality_rejected",
+    "quality_rejected": "correction_requested",
+    "returned_to_technician": "correction_requested",
 }
 
 ALLOWED_TRANSITIONS = {
@@ -46,13 +50,15 @@ ALLOWED_TRANSITIONS = {
     "field_sheet_ready": {"capture_pending", "capture_in_progress", "cancelled", "suspended"},
     "capture_pending": {"capture_in_progress", "ready_for_quality", "cancelled", "suspended"},
     "capture_in_progress": {"ready_for_quality", "quality_rejected", "cancelled", "suspended"},
-    "ready_for_quality": {"quality_review", "quality_approved", "quality_rejected", "cancelled", "suspended"},
-    "quality_review": {"quality_approved", "quality_rejected", "cancelled", "suspended"},
+    "ready_for_quality": {"quality_review", "match_validated", "correction_requested", "cancelled", "suspended"},
+    "quality_review": {"match_validated", "correction_requested", "cancelled", "suspended"},
+    "match_validated": {"quality_approved", "correction_requested", "cancelled", "suspended"},
     "quality_rejected": {"capture_in_progress", "ready_for_quality", "cancelled", "suspended"},
     "returned_to_technician": {"capture_in_progress", "ready_for_quality", "cancelled", "suspended"},
-    "quality_approved": {"pdf_pending", "pdf_uploaded", "released_to_client", "suspended"},
-    "pdf_pending": {"pdf_uploaded", "released_to_client", "suspended"},
-    "pdf_uploaded": {"ready_for_quality", "released_to_client", "suspended"},
+    "quality_approved": {"authenticated", "pdf_pending", "pdf_uploaded", "suspended"},
+    "pdf_pending": {"pdf_uploaded", "authenticated", "suspended"},
+    "pdf_uploaded": {"ready_for_quality", "authenticated", "suspended"},
+    "authenticated": {"released_to_client", "suspended"},
     "released_to_client": set(),
     "cancelled": set(),
     "suspended": {"capture_pending", "cancelled"},
@@ -69,6 +75,7 @@ def _with_relations():
         selectinload(Certificate.service_order),
         selectinload(Certificate.equipment),
         selectinload(Certificate.field_sheet),
+        selectinload(Certificate.pdf_versions),
     )
 
 
@@ -146,6 +153,66 @@ def _validate_certificate_links(db: Session, payload: CertificateCreate) -> None
             raise HTTPException(status_code=404, detail="Hoja de campo no encontrada")
         if field_sheet.equipment_id != payload.equipment_id:
             raise HTTPException(status_code=409, detail="La hoja de campo no pertenece al equipo indicado")
+
+
+def get_service_order_release_readiness(db: Session, service_order_id: int) -> dict:
+    """Single source of truth for the financial gate before client release."""
+    service_order = db.get(ServiceOrder, service_order_id)
+    if service_order is None or not service_order.is_active:
+        raise HTTPException(status_code=404, detail="Orden de servicio no encontrada")
+    if not service_order.requires_payment:
+        return {
+            "release_allowed": True,
+            "payment_status": "not_required",
+            "reason": "La orden no requiere pago para liberar certificados.",
+        }
+
+    invoices = list(
+        db.scalars(
+            select(Invoice).where(
+                Invoice.service_order_id == service_order_id,
+                Invoice.is_active.is_(True),
+                Invoice.status != "cancelled",
+            )
+        ).all()
+    )
+    if not invoices:
+        return {
+            "release_allowed": False,
+            "payment_status": "pending",
+            "reason": "No se puede liberar: no existe una factura liquidada para este ETS.",
+        }
+
+    unpaid = [invoice for invoice in invoices if invoice.status != "paid" or getattr(invoice, "balance_due", 0) > 0]
+    if unpaid:
+        return {
+            "release_allowed": False,
+            "payment_status": "pending",
+            "reason": "No se puede liberar: pago pendiente.",
+        }
+    return {
+        "release_allowed": True,
+        "payment_status": "paid",
+        "reason": "Pago confirmado para las facturas activas del ETS.",
+    }
+
+
+def _ensure_payment_allows_release(db: Session, certificate: Certificate, *, user_id: int | None = None) -> None:
+    readiness = get_service_order_release_readiness(db, certificate.service_order_id)
+    if readiness["release_allowed"]:
+        return
+    write_audit_log(
+        db,
+        action="certificate.release_blocked",
+        entity="certificates",
+        entity_id=certificate.id,
+        user_id=user_id,
+        previous_values={"status": certificate.status},
+        new_values={"payment_status": readiness["payment_status"], "reason": readiness["reason"]},
+        comment=readiness["reason"],
+    )
+    db.commit()
+    raise HTTPException(status_code=409, detail=readiness["reason"])
 
 
 def _ensure_no_active_certificate(db: Session, field_sheet_id: int | None) -> None:
@@ -330,9 +397,7 @@ def change_status(
         return send_to_quality(db, certificate_id, payload, user_id=user_id)
     if new_status == "quality_approved":
         return quality_approve(db, certificate_id, payload, user_id=user_id)
-    if new_status == "quality_rejected":
-        return quality_reject(db, certificate_id, payload, user_id=user_id)
-    if new_status == "returned_to_technician":
+    if new_status == "correction_requested":
         return return_to_technician(db, certificate_id, payload, user_id=user_id)
     if new_status == "released_to_client":
         return release_to_client(db, certificate_id, payload, user_id=user_id)
@@ -382,7 +447,7 @@ def send_to_quality(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
-    if certificate.status not in {"capture_in_progress", "capture_pending", "pdf_uploaded", "quality_rejected", "correction_requested"}:
+    if certificate.status not in {"capture_in_progress", "capture_pending", "pdf_uploaded"}:
         raise HTTPException(status_code=409, detail="El certificado no puede enviarse a calidad desde este estado")
     if not certificate.final_pdf_path:
         raise HTTPException(status_code=409, detail="No se puede enviar a calidad sin PDF cargado")
@@ -410,17 +475,20 @@ def quality_approve(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
-    if certificate.status not in QUALITY_READY_STATUSES:
-        raise HTTPException(status_code=409, detail="El certificado no esta en revision de calidad")
+    if certificate.status != "match_validated":
+        raise HTTPException(status_code=409, detail="Calidad debe validar o aceptar el match antes de aprobar")
+    if not certificate.final_pdf_path:
+        raise HTTPException(status_code=409, detail="No se puede aprobar sin PDF original")
+    if certificate.match_status not in ACCEPTED_MATCH_STATUSES:
+        raise HTTPException(status_code=409, detail="Calidad debe validar o aceptar el match antes de aprobar")
     now = datetime.now(timezone.utc)
     certificate.quality_reviewed_at = now
     certificate.quality_reviewed_by_id = user_id
     certificate.quality_rejection_reason = None
-    next_status = "pdf_uploaded" if certificate.final_pdf_path else "pdf_pending"
     return _set_status(
         db,
         certificate,
-        next_status,
+        "quality_approved",
         action="certificate.quality_approved",
         user_id=user_id,
         comment=payload.comment if payload else None,
@@ -435,22 +503,8 @@ def quality_reject(
     *,
     user_id: int | None = None,
 ) -> Certificate:
-    certificate = get_certificate(db, certificate_id)
-    if certificate.status not in QUALITY_READY_STATUSES | {"quality_approved", "pdf_pending", "pdf_uploaded"}:
-        raise HTTPException(status_code=409, detail="El certificado no puede rechazarse desde este estado")
-    now = datetime.now(timezone.utc)
-    certificate.quality_reviewed_at = now
-    certificate.quality_reviewed_by_id = user_id
-    certificate.quality_rejection_reason = (payload.reason or payload.comment) if payload else None
-    return _set_status(
-        db,
-        certificate,
-        "quality_rejected",
-        action="certificate.quality_rejected",
-        user_id=user_id,
-        comment=payload.comment if payload else None,
-        extra_values={"quality_rejection_reason": certificate.quality_rejection_reason},
-    )
+    # Ruta conservada sólo por compatibilidad; ya no existe un flujo de rechazo.
+    return return_to_technician(db, certificate_id, payload, user_id=user_id)
 
 
 def return_to_technician(
@@ -461,28 +515,25 @@ def return_to_technician(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
-    if certificate.status not in {"capture_in_progress", "ready_for_quality", "quality_review", "quality_rejected", "pdf_uploaded"}:
-        raise HTTPException(status_code=409, detail="El certificado no puede regresarse al tecnico desde este estado")
+    if certificate.status not in QUALITY_READY_STATUSES | {"match_validated", "quality_approved"}:
+        raise HTTPException(status_code=409, detail="El certificado no puede regresarse a Captura desde este estado")
     reason = (payload.reason or payload.comment) if payload else None
     if not reason or not reason.strip():
-        raise HTTPException(status_code=422, detail="El motivo de regreso al tecnico es obligatorio")
+        raise HTTPException(status_code=422, detail="El comentario de corrección es obligatorio")
     certificate.quality_rejection_reason = reason.strip()
-    if certificate.field_sheet is not None:
-        certificate.field_sheet.status = "returned_to_technician"
-        certificate.field_sheet.returned_to_technician_at = datetime.now(timezone.utc)
-        certificate.field_sheet.returned_to_technician_by_id = user_id
-        certificate.field_sheet.returned_to_technician_reason = reason.strip()
+    certificate.quality_reviewed_at = datetime.now(timezone.utc)
+    certificate.quality_reviewed_by_id = user_id
     return _set_status(
         db,
         certificate,
-        "returned_to_technician",
-        action="certificate.returned_to_technician",
+        "correction_requested",
+        action="certificate.returned_to_capture",
         user_id=user_id,
         comment=reason.strip(),
         extra_values={
             "reason": reason.strip(),
+            "pdf_path": certificate.final_pdf_path,
             "field_sheet_id": certificate.field_sheet_id,
-            "field_sheet_status": "returned_to_technician" if certificate.field_sheet_id else None,
         },
     )
 
@@ -492,11 +543,11 @@ def _storage_dir(certificate: Certificate) -> Path:
     return Path("certificados") / key
 
 
-def _save_upload(certificate: Certificate, upload: UploadFile) -> tuple[str, str]:
+def _save_upload(certificate: Certificate, upload: UploadFile, version_number: int) -> tuple[str, str]:
     original = upload.filename or "certificado.pdf"
     if not original.lower().endswith(".pdf"):
         raise HTTPException(status_code=422, detail="Solo se permiten archivos PDF")
-    filename = f"{certificate.expected_folio or certificate.folio}_{safe_filename(original, fallback='certificado.pdf')}"
+    filename = f"{certificate.expected_folio or certificate.folio}_v{version_number}_{safe_filename(original, fallback='certificado.pdf')}"
     stored_file = save_upload(
         upload,
         directory=_storage_dir(certificate),
@@ -512,13 +563,45 @@ def upload_certificate_pdf(
     upload: UploadFile,
     *,
     user_id: int | None = None,
+    comment: str | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
+    if certificate.authenticated_pdf_path or certificate.status in AUTHENTICATED_STATUSES | TERMINAL_STATUSES:
+        raise HTTPException(status_code=409, detail="El PDF original no puede reemplazarse después de autenticar")
+    if certificate.status not in CAPTURE_READY_STATUSES | {"capture_in_progress", "pdf_uploaded"}:
+        raise HTTPException(status_code=409, detail="El PDF solo puede cargarse durante Captura")
+    source_status = certificate.status
     previous_final_pdf_path = certificate.final_pdf_path
-    previous_final_pdf_filename = certificate.final_pdf_original_filename
-    previous_authenticated_pdf_path = certificate.authenticated_pdf_path
-    path, original = _save_upload(certificate, upload)
+    if previous_final_pdf_path and not certificate.pdf_versions:
+        db.add(CertificatePdfVersion(
+            certificate_id=certificate.id,
+            version_number=1,
+            file_path=previous_final_pdf_path,
+            original_filename=certificate.final_pdf_original_filename,
+            uploaded_at=certificate.final_pdf_uploaded_at or certificate.updated_at,
+            uploaded_by_id=certificate.final_pdf_uploaded_by_id,
+            source_status=source_status,
+            change_reason="Versión anterior incorporada al historial",
+            is_current=False,
+        ))
+        next_version = 2
+    else:
+        next_version = max((item.version_number for item in certificate.pdf_versions), default=0) + 1
+    path, original = _save_upload(certificate, upload, next_version)
     now = datetime.now(timezone.utc)
+    for version in certificate.pdf_versions:
+        version.is_current = False
+    db.add(CertificatePdfVersion(
+        certificate_id=certificate.id,
+        version_number=next_version,
+        file_path=path,
+        original_filename=original,
+        uploaded_at=now,
+        uploaded_by_id=user_id,
+        source_status=source_status,
+        change_reason=comment or certificate.quality_rejection_reason,
+        is_current=True,
+    ))
     certificate.final_pdf_path = path
     certificate.final_pdf_original_filename = original
     certificate.final_pdf_uploaded_at = now
@@ -536,13 +619,19 @@ def upload_certificate_pdf(
         "capture_in_progress",
         "quality_rejected",
         "returned_to_technician",
+        "correction_requested",
     }:
         certificate.status = "pdf_uploaded"
     elif certificate.status in QUALITY_APPROVED_STATUSES:
         certificate.status = "pdf_uploaded"
-    result = validate_certificate_pdf_match(certificate, original)
-    certificate.match_status = result["status"]
-    certificate.match_details = result
+    precheck = validate_certificate_pdf_match(certificate, original)
+    certificate.match_status = "pending"
+    certificate.match_details = {
+        **precheck,
+        "status": "pending",
+        "precheck_status": precheck["status"],
+        "validated_by_quality": False,
+    }
     write_audit_log(
         db,
         action="certificate.pdf_uploaded",
@@ -554,34 +643,10 @@ def upload_certificate_pdf(
             "match_status": certificate.match_status,
             "status": certificate.status,
             "authenticated_pdf_path": None,
+            "version_number": next_version,
+            "replaces_pdf_path": previous_final_pdf_path,
         },
-    )
-    write_audit_log(
-        db,
-        action="certificate.pdf_match_validated",
-        entity="certificates",
-        entity_id=certificate.id,
-        user_id=user_id,
-        new_values={"match_status": certificate.match_status, "score": result["score"]},
-    )
-    delete_if_unreferenced(
-        db,
-        previous_final_pdf_path,
-        user_id=user_id,
-        module="Certificados",
-        entity="certificates",
-        entity_id=certificate.id,
-        filename=previous_final_pdf_filename,
-    )
-    delete_if_unreferenced(
-        db,
-        previous_authenticated_pdf_path,
-        user_id=user_id,
-        module="Certificados",
-        entity="certificates",
-        entity_id=certificate.id,
-        filename=Path(previous_authenticated_pdf_path).name if previous_authenticated_pdf_path else None,
-        reason="Archivo autenticado eliminado automaticamente al reemplazar el PDF original.",
+        comment=comment or certificate.quality_rejection_reason,
     )
     db.commit()
     return get_certificate(db, certificate.id)
@@ -594,16 +659,25 @@ def validate_pdf_match(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
+    if certificate.status not in QUALITY_READY_STATUSES:
+        raise HTTPException(status_code=409, detail="El match solo puede validarse durante Calidad")
+    if not certificate.final_pdf_path:
+        raise HTTPException(status_code=409, detail="No se puede validar el match sin PDF original")
     result = validate_certificate_pdf_match(certificate)
+    result["validated_by_quality"] = True
+    result["validated_by_id"] = user_id
     certificate.match_status = result["status"]
     certificate.match_details = result
+    previous_status = certificate.status
+    certificate.status = "match_validated"
     write_audit_log(
         db,
         action="certificate.pdf_match_validated",
         entity="certificates",
         entity_id=certificate.id,
         user_id=user_id,
-        new_values={"match_status": certificate.match_status, "score": result["score"]},
+        previous_values={"status": previous_status},
+        new_values={"status": certificate.status, "match_status": certificate.match_status, "score": result["score"]},
     )
     db.commit()
     return get_certificate(db, certificate.id)
@@ -617,20 +691,30 @@ def manual_accept_match(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
+    if certificate.status != "match_validated":
+        raise HTTPException(status_code=409, detail="Primero debe validarse el match en Calidad")
+    if certificate.match_status not in {"mismatch", "warning"}:
+        raise HTTPException(status_code=409, detail="La aceptación manual sólo aplica a matches con discrepancias")
+    if not certificate.final_pdf_path:
+        raise HTTPException(status_code=409, detail="No se puede aceptar el match sin PDF original")
     details = certificate.match_details or {}
     details["manual_acceptance"] = {
         "accepted_at": datetime.now(timezone.utc).isoformat(),
+        "accepted_by_id": user_id,
         "comment": payload.comment if payload else None,
     }
     certificate.match_status = "manual_accepted"
     certificate.match_details = details
+    previous_status = certificate.status
+    certificate.status = "match_validated"
     write_audit_log(
         db,
         action="certificate.pdf_match_manual_accepted",
         entity="certificates",
         entity_id=certificate.id,
         user_id=user_id,
-        new_values={"match_status": certificate.match_status},
+        previous_values={"status": previous_status},
+        new_values={"status": certificate.status, "match_status": certificate.match_status},
         comment=payload.comment if payload else None,
     )
     db.commit()
@@ -645,14 +729,12 @@ def release_to_client(
     user_id: int | None = None,
 ) -> Certificate:
     certificate = get_certificate(db, certificate_id)
-    if certificate.status not in QUALITY_APPROVED_STATUSES:
-        raise HTTPException(status_code=409, detail="Solo certificados aprobados por calidad pueden liberarse")
-    if not certificate.final_pdf_path:
-        raise HTTPException(status_code=409, detail="No se puede liberar sin PDF final")
-    if certificate.match_status not in {"matched", "manual_accepted", "warning"}:
+    if certificate.status not in AUTHENTICATED_STATUSES or not certificate.authenticated_pdf_path:
+        raise HTTPException(status_code=409, detail="Solo certificados autenticados pueden liberarse")
+    if certificate.match_status not in ACCEPTED_MATCH_STATUSES:
         raise HTTPException(status_code=409, detail="El PDF no tiene match aceptable")
+    _ensure_payment_allows_release(db, certificate, user_id=user_id)
     now = datetime.now(timezone.utc)
-    authenticate_certificate_pdf(db, certificate, user_id=user_id)
     certificate.client_visible = True
     certificate.released_to_client_at = now
     certificate.released_to_client_by_id = user_id
@@ -709,6 +791,7 @@ def bulk_upload_certificate_pdfs(
         if not candidates:
             continue
         best = candidates[0]
+        precheck = validate_certificate_pdf_match(best, filename)
         # Reset file pointer in case future upload implementations read before saving.
         upload.file.seek(0)
         updated = upload_certificate_pdf(db, best.id, upload, user_id=user_id)
@@ -717,8 +800,8 @@ def bulk_upload_certificate_pdfs(
             CertificatePdfUploadRead(
                 certificate_id=updated.id,
                 filename=filename,
-                match_status=updated.match_status,
-                match_details=updated.match_details or {},
+                match_status=precheck["status"],
+                match_details={**precheck, "precheck_only": True},
             )
         )
     matched = len([item for item in results if item.match_status == "matched"])
@@ -761,7 +844,7 @@ def authenticate_certificates_for_service_order(
 
     for certificate in certificates:
         folio = certificate.expected_folio or certificate.folio
-        if certificate.authenticated_pdf_path:
+        if certificate.authenticated_pdf_path and certificate.status in AUTHENTICATED_STATUSES | {"released_to_client", "released"}:
             skipped += 1
             results.append(
                 CertificateBatchActionItemRead(
@@ -776,7 +859,7 @@ def authenticate_certificates_for_service_order(
         if (
             not certificate.final_pdf_path
             or certificate.status not in allowed_statuses
-            or certificate.match_status not in {"matched", "warning", "manual_accepted"}
+            or certificate.match_status not in ACCEPTED_MATCH_STATUSES
         ):
             skipped += 1
             results.append(
@@ -828,6 +911,19 @@ def release_authenticated_certificates_for_service_order(
     user_id: int | None = None,
 ) -> CertificateBatchActionRead:
     certificates = list_certificates(db, service_order_id=service_order_id)
+    readiness = get_service_order_release_readiness(db, service_order_id)
+    if not readiness["release_allowed"]:
+        write_audit_log(
+            db,
+            action="certificate.release_blocked",
+            entity="service_orders",
+            entity_id=service_order_id,
+            user_id=user_id,
+            new_values={"payment_status": readiness["payment_status"], "reason": readiness["reason"]},
+            comment=readiness["reason"],
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail=readiness["reason"])
     results: list[CertificateBatchActionItemRead] = []
     released = 0
     skipped = 0
@@ -850,8 +946,8 @@ def release_authenticated_certificates_for_service_order(
         if (
             not certificate.authenticated_pdf_path
             or not certificate.final_pdf_path
-            or certificate.match_status not in {"matched", "warning", "manual_accepted"}
-            or certificate.status not in QUALITY_APPROVED_STATUSES
+            or certificate.match_status not in ACCEPTED_MATCH_STATUSES
+            or certificate.status not in AUTHENTICATED_STATUSES
         ):
             skipped += 1
             results.append(
@@ -908,7 +1004,7 @@ def release_authenticated_certificates_for_service_order(
     if service_order is not None and certificates:
         refreshed = list_certificates(db, service_order_id=service_order_id)
         if refreshed and all(item.status == "released_to_client" for item in refreshed):
-            service_order.status = "pending_payment" if service_order.requires_payment else "released"
+            service_order.status = "released"
             db.commit()
 
     return CertificateBatchActionRead(

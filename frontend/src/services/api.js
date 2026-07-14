@@ -700,6 +700,10 @@ export async function getCertificate(certificateId) {
   return request(`/certificates/${certificateId}`);
 }
 
+export async function getCertificateReleaseReadiness(serviceOrderId) {
+  return request(`/certificates/release-readiness/${serviceOrderId}`);
+}
+
 export async function createCertificate(payload) {
   return request('/certificates', {
     method: 'POST',
@@ -721,9 +725,10 @@ export async function changeCertificateStatus(certificateId, action, comment = n
   });
 }
 
-export async function uploadCertificatePdf(certificateId, file) {
+export async function uploadCertificatePdf(certificateId, file, comment = null) {
   const formData = new FormData();
   formData.append('file', file);
+  if (comment) formData.append('comment', comment);
   return uploadRequest(`/certificates/${certificateId}/upload-pdf`, formData);
 }
 
@@ -776,6 +781,28 @@ export async function downloadAuthenticatedCertificatePdf(certificateId, folio =
     getFilenameFromDisposition(disposition) ??
     `Certificado_${sanitizePdfFilenamePart(folio ?? certificateId)}_${sanitizePdfFilenamePart(authenticationCode ?? 'autenticado')}.pdf`;
   return { blob: await response.blob(), filename };
+}
+
+export async function downloadOriginalCertificatePdf(certificateId, filename = null) {
+  const token = getAccessToken();
+  const headers = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const response = await fetch(getOriginalCertificatePdfUrl(certificateId), { headers });
+  if (!response.ok) {
+    let message = 'No se pudo abrir el PDF original';
+    try {
+      const payload = await response.json();
+      message = typeof payload.detail === 'string' ? payload.detail : message;
+    } catch {
+      // Keep default message.
+    }
+    throw new Error(message);
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? '';
+  return {
+    blob: await response.blob(),
+    filename: getFilenameFromDisposition(disposition) ?? filename ?? `Certificado_${certificateId}_original.pdf`
+  };
 }
 
 export async function bulkUploadCertificatePdfs(serviceOrderId, files) {
