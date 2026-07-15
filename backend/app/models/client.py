@@ -33,6 +33,9 @@ class Client(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     state: Mapped[str | None] = mapped_column(String(180))
     postal_code: Mapped[str | None] = mapped_column(String(20))
     country: Mapped[str | None] = mapped_column(String(120))
+    # Código SAT de país del domicilio fiscal; `country` se conserva por compatibilidad.
+    fiscal_country_code: Mapped[str | None] = mapped_column(String(10))
+    fiscal_review_required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     fiscal_postal_code: Mapped[str | None] = mapped_column(String(20))
     tax_constancy_filename: Mapped[str | None] = mapped_column(String(255))
     tax_constancy_path: Mapped[str | None] = mapped_column(String(500))

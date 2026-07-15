@@ -1,26 +1,68 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-ROOT="/Users/saulcortes/Desktop/myc_erp"
+# Resolve the actual script before deriving the repository root.  `myc` is
+# commonly installed as /usr/local/bin/myc -> <repo>/scripts/myc; using
+# BASH_SOURCE directly would otherwise incorrectly resolve /usr/local.
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  TARGET="$(readlink "$SOURCE")"
+  [[ "$TARGET" == /* ]] || TARGET="$SOURCE_DIR/$TARGET"
+  SOURCE="$TARGET"
+done
+ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
+export PROJECT_ROOT="$ROOT"
 
-case "$1" in
-  local) "$ROOT/scripts/start-local.sh" ;;
-  tunnel) "$ROOT/scripts/start-tunnel.sh" ;;
-  doctor) "$ROOT/scripts/doctor.sh" ;;
-  status) "$ROOT/scripts/status.sh" ;;
-  stop) "$ROOT/scripts/stop.sh" ;;
-  restart) "$ROOT/scripts/restart-local.sh" ;;
-  build) "$ROOT/scripts/build.sh" ;;
-  update) "$ROOT/scripts/update.sh" ;;
-  backup) "$ROOT/scripts/backup-db.sh" ;;
-  clean) "$ROOT/scripts/clean.sh" ;;
-  menu|"") "$ROOT/scripts/myc.sh" ;;
-  help)
-    echo "MYC SYSTEM CLI"
-    echo "myc menu | local | tunnel | doctor | status | stop | restart | build | update | backup | clean"
+usage() {
+  cat <<'EOF'
+MYC SYSTEM CLI
+myc menu | doctor | status | init [db] | reset db | migrate | backup | restore [archivo]
+    sat status|import|reimport|compare | seed | dev local|tunnel | git status | data doctor
+    local | tunnel | stop | restart | build | update | clean
+EOF
+}
+
+run_sat() {
+  local action="${1:-status}"
+  case "$action" in
+    status) (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_sqlite_catalogs.py --help >/dev/null && echo "Use 'sat import' para importar desde SQLite o 'sat compare' para comparar fuentes.") ;;
+    import|reimport)
+      (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_sqlite_catalogs.py --publication-date "${SAT_PUBLICATION_DATE:-2026-07-03}") ;;
+    compare)
+      (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_official_xls_catalogs.py --help) ;;
+    *) echo "Acción SAT no reconocida: $action" >&2; return 2 ;;
+  esac
+}
+
+case "${1:-menu}" in
+  menu) exec "$ROOT/scripts/myc.sh" ;;
+  local) exec "$ROOT/scripts/start-local.sh" ;;
+  tunnel) exec "$ROOT/scripts/start-tunnel.sh" ;;
+  dev) case "${2:-local}" in local) exec "$ROOT/scripts/start-local.sh";; tunnel) exec "$ROOT/scripts/start-tunnel.sh";; *) usage; exit 2;; esac ;;
+  doctor) exec "$ROOT/scripts/doctor.sh" ;;
+  status) exec "$ROOT/scripts/status.sh" ;;
+  stop) exec "$ROOT/scripts/stop.sh" ;;
+  restart) exec "$ROOT/scripts/restart-local.sh" ;;
+  build) exec "$ROOT/scripts/build.sh" ;;
+  update) exec "$ROOT/scripts/update.sh" ;;
+  clean) exec "$ROOT/scripts/clean.sh" ;;
+  backup) exec "$ROOT/scripts/backup-db.sh" ;;
+  migrate) source "$ROOT/scripts/toolkit/lib/common.sh"; myc_run_alembic upgrade head ;;
+  restore) source "$ROOT/scripts/toolkit/lib/database.sh"; [[ -n "${2:-}" ]] || { echo "Indica el archivo a restaurar." >&2; exit 2; }; myc_restore_database "$2" ;;
+  init) case "${2:-}" in ""|db) exec "$ROOT/scripts/toolkit/system/init.sh";; *) usage; exit 2;; esac ;;
+  reset) [[ "${2:-}" == "db" ]] || { usage; exit 2; }; exec "$ROOT/scripts/toolkit/system/reset-db.sh" ;;
+  sat) shift; run_sat "$@" ;;
+  seed) exec "$ROOT/scripts/toolkit/seed/equipment.sh" "${@:2}" ;;
+  git) shift; case "${1:-status}" in status) (cd "$ROOT" && git status);; *) usage; exit 2;; esac ;;
+  data)
+    data_command="${2:-doctor}"
+    case "$data_command" in
+      doctor|duplicates|orphaned) shift 2; cd "$ROOT/backend"; exec "$ROOT/venv/bin/python" -m app.cli.data "$data_command" "$@" ;;
+      client-delete-eligibility) shift 2; cd "$ROOT/backend"; exec "$ROOT/venv/bin/python" -m app.cli.data client-delete-eligibility "$@" ;;
+      *) usage; exit 2 ;;
+    esac
     ;;
-  *)
-    echo "Comando no reconocido: $1"
-    echo "Usa: myc help"
-    exit 1
-    ;;
+  help|-h|--help) usage ;;
+  *) echo "Comando no reconocido: $1" >&2; usage; exit 2 ;;
 esac

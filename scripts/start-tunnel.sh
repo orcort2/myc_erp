@@ -1,10 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/toolkit/lib" && pwd)/common.sh"
 
-cd /Users/saulcortes/Desktop/myc_erp || exit 1
-
-echo "Configurando frontend para túnel..."
-cp frontend/.env.tunnel frontend/.env.local
-
-echo "Levantando frontend conectado al API público..."
-cd frontend || exit 1
-npm run dev
+[[ -f "$FRONTEND_DIR/.env.tunnel" ]] && cp "$FRONTEND_DIR/.env.tunnel" "$FRONTEND_DIR/.env.local"
+echo "Levantando frontend para API pública en $FRONTEND_HOST:$FRONTEND_PORT..."
+(cd "$FRONTEND_DIR" && npm run dev -- --host "$FRONTEND_HOST" --port "$FRONTEND_PORT")

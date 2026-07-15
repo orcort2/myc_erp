@@ -14,6 +14,7 @@ from app.schemas.invoice import (
     InvoiceRead,
     InvoiceSettingsRead,
     InvoiceSettingsUpdate,
+    InvoiceSourceChange,
     InvoiceStatusChange,
     InvoiceUpdate,
     ReleasedUninvoicedRow,
@@ -22,6 +23,7 @@ from app.services.auth import require_permission
 from app.services.invoice_pdfs import generate_invoice_payment_receipt_pdf, generate_invoice_pdf
 from app.services.invoices import (
     change_invoice_status,
+    confirm_invoice_review,
     create_credit_note,
     create_invoice,
     get_financial_dashboard,
@@ -32,6 +34,7 @@ from app.services.invoices import (
     list_invoice_payments,
     list_invoices,
     list_released_uninvoiced,
+    mark_invoice_source_changed,
     register_invoice_payment,
     update_invoice,
     update_invoice_settings,
@@ -91,7 +94,8 @@ def create_invoice_route(
     return create_invoice(db, payload, user_id=current_user.id)
 
 
-@router.patch("/invoices/{invoice_id}", response_model=InvoiceRead)
+@router.put("/invoices/{invoice_id}", response_model=InvoiceRead)
+@router.patch("/invoices/{invoice_id}", response_model=InvoiceRead, include_in_schema=False)
 def update_invoice_route(
     invoice_id: int,
     payload: InvoiceUpdate,
@@ -109,6 +113,25 @@ def change_status_route(
     current_user: User = Depends(require_permission("invoices.manage")),
 ):
     return change_invoice_status(db, invoice_id, payload, user_id=current_user.id)
+
+
+@router.post("/invoices/{invoice_id}/source-change", response_model=InvoiceRead)
+def invoice_source_change_route(
+    invoice_id: int,
+    payload: InvoiceSourceChange,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("invoices.manage")),
+):
+    return mark_invoice_source_changed(db, invoice_id, payload, user_id=current_user.id)
+
+
+@router.post("/invoices/{invoice_id}/confirm-review", response_model=InvoiceRead)
+def confirm_invoice_review_route(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("invoices.manage")),
+):
+    return confirm_invoice_review(db, invoice_id, user_id=current_user.id)
 
 
 @router.post("/invoices/{invoice_id}/payments", response_model=InvoiceRead)

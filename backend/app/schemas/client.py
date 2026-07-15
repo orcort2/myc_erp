@@ -78,6 +78,7 @@ class ClientBase(BaseModel):
     state: str | None = Field(default=None, max_length=180)
     postal_code: str | None = Field(default=None, max_length=20)
     country: str | None = Field(default=None, max_length=120)
+    fiscal_country_code: str | None = Field(default=None, max_length=10)
     fiscal_postal_code: str | None = Field(default=None, max_length=20)
     payment_terms: str | None = Field(default=None, max_length=120)
     notes: str | None = None
@@ -111,6 +112,7 @@ class ClientUpdate(BaseModel):
     state: str | None = Field(default=None, max_length=180)
     postal_code: str | None = Field(default=None, max_length=20)
     country: str | None = Field(default=None, max_length=120)
+    fiscal_country_code: str | None = Field(default=None, max_length=10)
     fiscal_postal_code: str | None = Field(default=None, max_length=20)
     payment_terms: str | None = Field(default=None, max_length=120)
     notes: str | None = None
@@ -128,6 +130,29 @@ class ClientRead(ClientBase):
     certificate_profiles: list[ClientCertificateProfileRead] = Field(default_factory=list)
     tax_constancy_filename: str | None = None
     tax_constancy_uploaded_at: datetime | None = None
+    fiscal_review_required: bool = True
+
+
+class ClientDeleteEligibilityRead(BaseModel):
+    client_id: int
+    eligible_for_hard_delete: bool
+    recommended_action: str
+    blocking_dependencies: dict[str, int] = Field(default_factory=dict)
+    cascade_dependencies: dict[str, int] = Field(default_factory=dict)
+
+
+class ClientDeleteResultRead(BaseModel):
+    status: str
+    delete_mode: str
+    client_id: int
+    message: str
+    blocking_dependencies: dict[str, int] = Field(default_factory=dict)
+
+
+class ClientRestoreResultRead(BaseModel):
+    status: str
+    client_id: int
+    message: str
 
 
 class ClientImportRowRead(BaseModel):
@@ -138,6 +163,7 @@ class ClientImportRowRead(BaseModel):
     status: str
     errors: list[str] = Field(default_factory=list)
     duplicates: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
     raw: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -147,6 +173,7 @@ class ClientImportPreviewRead(BaseModel):
     valid_count: int = 0
     duplicate_count: int = 0
     error_count: int = 0
+    warning_count: int = 0
 
 
 class ClientImportConfirm(BaseModel):
@@ -160,6 +187,10 @@ class ClientImportResultRead(BaseModel):
     error_count: int
     imported_ids: list[int] = Field(default_factory=list)
     errors: list[dict[str, Any]] = Field(default_factory=list)
+    total_rows: int = 0
+    imported_with_warnings_count: int = 0
+    warning_count: int = 0
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ClientTaxConstancyPreviewRead(BaseModel):

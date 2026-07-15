@@ -1,46 +1,22 @@
-#!/bin/bash
-
-ROOT="/Users/saulcortes/Desktop/myc_erp"
+#!/usr/bin/env bash
+set -o pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/toolkit/lib" && pwd)/database.sh"
 
 ok() { echo "OK  $1"; }
 fail() { echo "NO  $1"; }
-line() { echo "----------------------------------------"; }
-
-echo "========================================"
-echo "        MYC SYSTEM DOCTOR"
-echo "========================================"
-
-cd "$ROOT" || exit 1
-
-line
-echo "Proyecto"
-[ -d "$ROOT/backend" ] && ok "backend encontrado" || fail "backend no encontrado"
-[ -d "$ROOT/frontend" ] && ok "frontend encontrado" || fail "frontend no encontrado"
-[ -d "$ROOT/venv" ] && ok "venv encontrado" || fail "venv no encontrado"
-
-line
-echo "Backend"
-cd "$ROOT/backend" || exit 1
-../venv/bin/python --version
-../venv/bin/python -m compileall app >/dev/null && ok "compileall backend" || fail "compileall backend"
-../venv/bin/alembic current && ok "alembic current" || fail "alembic current"
-../venv/bin/python -c "from app.main import app; print('OK  FastAPI:', app.title, len(app.routes), 'rutas')" || fail "FastAPI import"
-
-line
-echo "Frontend"
-cd "$ROOT/frontend" || exit 1
-node -v && ok "node disponible" || fail "node no disponible"
-npm -v && ok "npm disponible" || fail "npm no disponible"
-[ -f ".env.local" ] && ok ".env.local existe" || fail ".env.local no existe"
-grep -n "VITE_API_URL" .env.local 2>/dev/null || fail "VITE_API_URL no encontrado"
-
-line
-echo "Git"
-cd "$ROOT" || exit 1
-git branch --show-current
-git status --short
-
-line
-echo "Estado general"
-echo "Doctor finalizado."
-echo "========================================"
+check() { "$2" >/dev/null 2>&1 && ok "$1" || fail "$1"; }
+echo "MYC SYSTEM DOCTOR"
+check "backend encontrado" test -d "$BACKEND_DIR"
+check "frontend encontrado" test -d "$FRONTEND_DIR"
+check "entorno virtual" test -x "$PYTHON"
+check "PostgreSQL disponible" myc_check_postgres
+if [[ -x "$PYTHON" ]]; then
+  check "compileall backend" "$PYTHON" -m compileall -q "$BACKEND_DIR/app"
+  check "FastAPI importable" "$PYTHON" -c "from app.main import app"
+  check "Alembic current" myc_run_alembic current
+fi
+check "node disponible" node --version
+check "npm disponible" npm --version
+check "frontend/.env.local" test -f "$FRONTEND_DIR/.env.local"
+echo "Puertos configurados: backend $BACKEND_PORT, frontend $FRONTEND_PORT"
+echo "Git: $(cd "$PROJECT_ROOT" && git branch --show-current)"

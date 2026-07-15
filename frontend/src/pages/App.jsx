@@ -26,6 +26,7 @@ import UncertaintyPage from './UncertaintyPage.jsx';
 import SignatureLabPage from './SignatureLabPage.jsx';
 import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
 import FieldSheetLabPage from './labs/FieldSheetLabPage.jsx';
+import InvoiceWorkbenchLabPage from './labs/InvoiceWorkbenchLabPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -136,7 +137,11 @@ export function App() {
   }
 
   if (path === '/document-designer-lab') {
-  return <DocumentDesignerLabPage />;
+    return <DocumentDesignerLabPage />;
+  }
+
+  if (path === '/invoice-workbench-lab') {
+    return <InvoiceWorkbenchLabPage />;
   }
 
   const selectedModule = modules.find(

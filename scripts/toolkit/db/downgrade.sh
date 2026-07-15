@@ -14,6 +14,3 @@ fi
 cd "$BACKEND_DIR" || exit 1
 
 "$ALEMBIC" downgrade "$REVISION"
-
-echo
-read -p "Enter para continuar..."

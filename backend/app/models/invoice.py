@@ -28,6 +28,11 @@ class Invoice(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     balance_due: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     amount_paid: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
+    review_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    draft_reason: Mapped[str | None] = mapped_column(String(80), index=True)
+    source_snapshot: Mapped[dict | None] = mapped_column(JSON, default=dict)
+    # Datos fiscales inmutables usados para este documento.
+    fiscal_snapshot: Mapped[dict | None] = mapped_column(JSON, default=dict)
     payment_method: Mapped[str | None] = mapped_column(String(80))
     payment_form: Mapped[str | None] = mapped_column(String(80))
     usage_cfdi: Mapped[str | None] = mapped_column(String(80))

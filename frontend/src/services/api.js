@@ -238,7 +238,7 @@ export async function createInvoice(payload) {
 
 export async function updateInvoice(invoiceId, payload) {
   return request(`/invoices/${invoiceId}`, {
-    method: 'PATCH',
+    method: 'PUT',
     body: JSON.stringify(payload),
   });
 }
@@ -292,6 +292,19 @@ export async function updateInvoiceSettings(payload) {
   return request('/invoice-settings', {
     method: 'PATCH',
     body: JSON.stringify(payload),
+  });
+}
+
+export function markInvoiceSourceChanged(invoiceId, payload = {}) {
+  return request(`/invoices/${invoiceId}/source-change`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function confirmInvoiceReview(invoiceId) {
+  return request(`/invoices/${invoiceId}/confirm-review`, {
+    method: 'POST',
   });
 }
 
@@ -403,6 +416,18 @@ export async function deleteClient(clientId) {
   });
 }
 
+export async function getClientDeleteEligibility(clientId) {
+  return request(`/clients/${clientId}/delete-eligibility`);
+}
+
+export async function archiveClient(clientId) {
+  return request(`/clients/${clientId}/archive`, { method: 'POST' });
+}
+
+export async function restoreClient(clientId) {
+  return request(`/clients/${clientId}/restore`, { method: 'POST' });
+}
+
 export async function createClientCertificateProfile(clientId, payload) {
   return request(`/clients/${clientId}/certificate-profiles`, {
     method: 'POST',
@@ -469,6 +494,20 @@ export async function createQuotation(payload) {
 
 export async function listQuotations() {
   return request('/quotations');
+}
+
+export async function listSatCatalogs() {
+  return request('/sat-catalogs');
+}
+
+export async function listSatCatalogRecords(catalogCode, params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.search) searchParams.set('search', params.search);
+  if (params.activeOnly !== false) searchParams.set('active_only', 'true');
+  if (params.offset != null) searchParams.set('offset', String(params.offset));
+  if (params.limit != null) searchParams.set('limit', String(params.limit));
+  const query = searchParams.toString();
+  return request(`/sat-catalogs/${catalogCode}/records${query ? `?${query}` : ''}`);
 }
 
 export async function getQuotation(quotationId) {

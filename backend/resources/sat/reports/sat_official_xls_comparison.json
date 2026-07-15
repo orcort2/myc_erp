@@ -1,0 +1,1352 @@
+{
+  "source": {
+    "source_type": "sat_official_xls",
+    "origin": "SAT",
+    "filename": "catalogo sat.xlsx",
+    "file_format": ".xlsx",
+    "size_bytes": 16775146,
+    "sha256": "62cc150e10fb16efbda7642e3d65452748e180fafc8149abd65e4bc95205bc16",
+    "version": "20260703",
+    "data_date": "2026-07-03"
+  },
+  "inspection": {
+    "filename": "catalogo sat.xlsx",
+    "file_format": ".xlsx",
+    "sheets": [
+      "c_FormaPago",
+      "c_Moneda",
+      "c_TipoDeComprobante",
+      "c_Exportacion",
+      "c_MetodoPago",
+      "c_CodigoPostal_Parte_1",
+      "c_CodigoPostal_Parte_2",
+      "c_Periodicidad",
+      "c_Meses",
+      "c_TipoRelacion",
+      "c_RegimenFiscal",
+      "c_Pais",
+      "c_UsoCFDI",
+      "c_ClaveProdServ",
+      "c_ClaveUnidad",
+      "c_ObjetoImp",
+      "c_Impuesto",
+      "c_TipoFactor",
+      "c_TasaOCuota",
+      "c_Aduana",
+      "c_NumPedimentoAduana",
+      "c_PatenteAduanal",
+      "C_Colonia_1",
+      "C_Colonia_2",
+      "C_Colonia_3",
+      "c_Estado",
+      "C_Localidad",
+      "C_Municipio"
+    ],
+    "catalogs": {
+      "payment_forms": {
+        "sheets": [
+          {
+            "sheet": "c_FormaPago",
+            "header_row": 6,
+            "columns": [
+              "c_formapago",
+              "descripcion",
+              "bancarizado",
+              "numero_de_operacion",
+              "rfc_del_emisor_de_la_cuenta_ordenante",
+              "cuenta_ordenante",
+              "patron_para_cuenta_ordenante",
+              "rfc_del_emisor_cuenta_de_beneficiario",
+              "cuenta_de_benenficiario",
+              "patron_para_cuenta_beneficiaria",
+              "tipo_cadena_pago",
+              "nombre_del_banco_emisor_de_la_cuenta_ordenante_en_caso_de_extranjero",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 22
+          }
+        ],
+        "record_count": 22,
+        "status": "ready"
+      },
+      "currencies": {
+        "sheets": [
+          {
+            "sheet": "c_Moneda",
+            "header_row": 5,
+            "columns": [
+              "c_moneda",
+              "descripcion",
+              "decimales",
+              "porcentaje_variacion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 183
+          }
+        ],
+        "record_count": 183,
+        "status": "ready"
+      },
+      "voucher_types": {
+        "sheets": [
+          {
+            "sheet": "c_TipoDeComprobante",
+            "header_row": 5,
+            "columns": [
+              "c_tipodecomprobante",
+              "descripcion",
+              "valor_maximo",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 5
+          }
+        ],
+        "record_count": 5,
+        "status": "ready"
+      },
+      "exports": {
+        "sheets": [
+          {
+            "sheet": "c_Exportacion",
+            "header_row": 5,
+            "columns": [
+              "c_exportacion",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 4
+          }
+        ],
+        "record_count": 4,
+        "status": "ready"
+      },
+      "payment_methods": {
+        "sheets": [
+          {
+            "sheet": "c_MetodoPago",
+            "header_row": 6,
+            "columns": [
+              "c_metodopago",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 2
+          }
+        ],
+        "record_count": 2,
+        "status": "ready"
+      },
+      "postal_codes": {
+        "sheets": [
+          {
+            "sheet": "c_CodigoPostal_Parte_1",
+            "header_row": 6,
+            "columns": [
+              "c_codigopostal",
+              "c_estado",
+              "c_municipio",
+              "c_localidad",
+              "estimulo_franja_fronteriza",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia",
+              "referencias_del_huso_horario"
+            ],
+            "record_count": 60082
+          },
+          {
+            "sheet": "c_CodigoPostal_Parte_2",
+            "header_row": 6,
+            "columns": [
+              "c_codigopostal",
+              "c_estado",
+              "c_municipio",
+              "c_localidad",
+              "estimulo_franja_fronteriza",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia",
+              "referencias_del_huso_horario"
+            ],
+            "record_count": 35667
+          }
+        ],
+        "record_count": 95749,
+        "status": "ready"
+      },
+      "relation_types": {
+        "sheets": [
+          {
+            "sheet": "c_TipoRelacion",
+            "header_row": 5,
+            "columns": [
+              "c_tiporelacion",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 7
+          }
+        ],
+        "record_count": 7,
+        "status": "ready"
+      },
+      "fiscal_regimes": {
+        "sheets": [
+          {
+            "sheet": "c_RegimenFiscal",
+            "header_row": 6,
+            "columns": [
+              "c_regimenfiscal",
+              "descripcion",
+              "fisica",
+              "moral",
+              "fecha_de_inicio_de_vigencia",
+              "fecha_de_fin_de_vigencia"
+            ],
+            "record_count": 19
+          }
+        ],
+        "record_count": 19,
+        "status": "ready"
+      },
+      "countries": {
+        "sheets": [
+          {
+            "sheet": "c_Pais",
+            "header_row": 5,
+            "columns": [
+              "c_pais",
+              "descripcion",
+              "formato_de_codigo_postal",
+              "formato_de_registro_de_identidad_tributaria",
+              "validacion_del_registro_de_identidad_tributaria",
+              "agrupaciones"
+            ],
+            "record_count": 250
+          }
+        ],
+        "record_count": 250,
+        "status": "ready"
+      },
+      "cfdi_uses": {
+        "sheets": [
+          {
+            "sheet": "c_UsoCFDI",
+            "header_row": 5,
+            "columns": [
+              "c_usocfdi",
+              "descripcion",
+              "aplica_para_tipo_persona",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia",
+              "regimen_fiscal_receptor"
+            ],
+            "record_count": 24
+          }
+        ],
+        "record_count": 24,
+        "status": "ready"
+      },
+      "products_services": {
+        "sheets": [
+          {
+            "sheet": "c_ClaveProdServ",
+            "header_row": 5,
+            "columns": [
+              "c_claveprodserv",
+              "descripcion",
+              "incluir_iva_trasladado",
+              "incluir_ieps_trasladado",
+              "complemento_que_debe_incluir",
+              "fechainiciovigencia",
+              "fechafinvigencia",
+              "estimulo_franja_fronteriza",
+              "palabras_similares"
+            ],
+            "record_count": 52513
+          }
+        ],
+        "record_count": 52513,
+        "status": "ready"
+      },
+      "units": {
+        "sheets": [
+          {
+            "sheet": "c_ClaveUnidad",
+            "header_row": 6,
+            "columns": [
+              "c_claveunidad",
+              "nombre",
+              "descripcion",
+              "nota",
+              "fecha_de_inicio_de_vigencia",
+              "fecha_de_fin_de_vigencia",
+              "simbolo"
+            ],
+            "record_count": 2418
+          }
+        ],
+        "record_count": 2418,
+        "status": "ready"
+      },
+      "tax_objects": {
+        "sheets": [
+          {
+            "sheet": "c_ObjetoImp",
+            "header_row": 5,
+            "columns": [
+              "c_objetoimp",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 8
+          }
+        ],
+        "record_count": 8,
+        "status": "ready"
+      },
+      "taxes": {
+        "sheets": [
+          {
+            "sheet": "c_Impuesto",
+            "header_row": 5,
+            "columns": [
+              "c_impuesto",
+              "descripcion",
+              "retencion",
+              "traslado",
+              "local_o_federal",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 3
+          }
+        ],
+        "record_count": 3,
+        "status": "ready"
+      },
+      "factor_types": {
+        "sheets": [
+          {
+            "sheet": "c_TipoFactor",
+            "header_row": 5,
+            "columns": [
+              "c_tipofactor",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 3
+          }
+        ],
+        "record_count": 3,
+        "status": "ready"
+      },
+      "tax_rates": {
+        "sheets": [
+          {
+            "sheet": "c_TasaOCuota",
+            "header_row": 5,
+            "columns": [
+              "rango_o_fijo",
+              "valor_minimo",
+              "valor_maximo",
+              "impuesto",
+              "factor",
+              "traslado",
+              "retencion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 19
+          }
+        ],
+        "record_count": 19,
+        "status": "ready"
+      }
+    }
+  },
+  "comparison": {
+    "catalogs": [
+      {
+        "catalog": "payment_forms",
+        "sheets": [
+          {
+            "sheet": "c_FormaPago",
+            "header_row": 6,
+            "columns": [
+              "c_formapago",
+              "descripcion",
+              "bancarizado",
+              "numero_de_operacion",
+              "rfc_del_emisor_de_la_cuenta_ordenante",
+              "cuenta_ordenante",
+              "patron_para_cuenta_ordenante",
+              "rfc_del_emisor_cuenta_de_beneficiario",
+              "cuenta_de_benenficiario",
+              "patron_para_cuenta_beneficiaria",
+              "tipo_cadena_pago",
+              "nombre_del_banco_emisor_de_la_cuenta_ordenante_en_caso_de_extranjero",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 22
+          }
+        ],
+        "excel_records": 22,
+        "sqlite_records": 22,
+        "matches": 22,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "currencies",
+        "sheets": [
+          {
+            "sheet": "c_Moneda",
+            "header_row": 5,
+            "columns": [
+              "c_moneda",
+              "descripcion",
+              "decimales",
+              "porcentaje_variacion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 183
+          }
+        ],
+        "excel_records": 183,
+        "sqlite_records": 183,
+        "matches": 183,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "voucher_types",
+        "sheets": [
+          {
+            "sheet": "c_TipoDeComprobante",
+            "header_row": 5,
+            "columns": [
+              "c_tipodecomprobante",
+              "descripcion",
+              "valor_maximo",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 5
+          }
+        ],
+        "excel_records": 5,
+        "sqlite_records": null,
+        "matches": 0,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [
+          "E",
+          "I",
+          "N",
+          "P",
+          "T"
+        ],
+        "modified": [],
+        "duplicates": [],
+        "result": "sqlite_mapping_unavailable"
+      },
+      {
+        "catalog": "exports",
+        "sheets": [
+          {
+            "sheet": "c_Exportacion",
+            "header_row": 5,
+            "columns": [
+              "c_exportacion",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 4
+          }
+        ],
+        "excel_records": 4,
+        "sqlite_records": 4,
+        "matches": 4,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "payment_methods",
+        "sheets": [
+          {
+            "sheet": "c_MetodoPago",
+            "header_row": 6,
+            "columns": [
+              "c_metodopago",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 2
+          }
+        ],
+        "excel_records": 2,
+        "sqlite_records": 2,
+        "matches": 2,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "postal_codes",
+        "sheets": [
+          {
+            "sheet": "c_CodigoPostal_Parte_1",
+            "header_row": 6,
+            "columns": [
+              "c_codigopostal",
+              "c_estado",
+              "c_municipio",
+              "c_localidad",
+              "estimulo_franja_fronteriza",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia",
+              "referencias_del_huso_horario"
+            ],
+            "record_count": 60082
+          },
+          {
+            "sheet": "c_CodigoPostal_Parte_2",
+            "header_row": 6,
+            "columns": [
+              "c_codigopostal",
+              "c_estado",
+              "c_municipio",
+              "c_localidad",
+              "estimulo_franja_fronteriza",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia",
+              "referencias_del_huso_horario"
+            ],
+            "record_count": 35667
+          }
+        ],
+        "excel_records": 95749,
+        "sqlite_records": 95748,
+        "matches": 95748,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [
+          "Continúa en c_CodigoPostal_2"
+        ],
+        "modified": [],
+        "duplicates": [],
+        "result": "different"
+      },
+      {
+        "catalog": "relation_types",
+        "sheets": [
+          {
+            "sheet": "c_TipoRelacion",
+            "header_row": 5,
+            "columns": [
+              "c_tiporelacion",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 7
+          }
+        ],
+        "excel_records": 7,
+        "sqlite_records": 7,
+        "matches": 7,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "fiscal_regimes",
+        "sheets": [
+          {
+            "sheet": "c_RegimenFiscal",
+            "header_row": 6,
+            "columns": [
+              "c_regimenfiscal",
+              "descripcion",
+              "fisica",
+              "moral",
+              "fecha_de_inicio_de_vigencia",
+              "fecha_de_fin_de_vigencia"
+            ],
+            "record_count": 19
+          }
+        ],
+        "excel_records": 19,
+        "sqlite_records": 19,
+        "matches": 19,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "countries",
+        "sheets": [
+          {
+            "sheet": "c_Pais",
+            "header_row": 5,
+            "columns": [
+              "c_pais",
+              "descripcion",
+              "formato_de_codigo_postal",
+              "formato_de_registro_de_identidad_tributaria",
+              "validacion_del_registro_de_identidad_tributaria",
+              "agrupaciones"
+            ],
+            "record_count": 250
+          }
+        ],
+        "excel_records": 250,
+        "sqlite_records": 250,
+        "matches": 250,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "cfdi_uses",
+        "sheets": [
+          {
+            "sheet": "c_UsoCFDI",
+            "header_row": 5,
+            "columns": [
+              "c_usocfdi",
+              "descripcion",
+              "aplica_para_tipo_persona",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia",
+              "regimen_fiscal_receptor"
+            ],
+            "record_count": 24
+          }
+        ],
+        "excel_records": 24,
+        "sqlite_records": 24,
+        "matches": 24,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "products_services",
+        "sheets": [
+          {
+            "sheet": "c_ClaveProdServ",
+            "header_row": 5,
+            "columns": [
+              "c_claveprodserv",
+              "descripcion",
+              "incluir_iva_trasladado",
+              "incluir_ieps_trasladado",
+              "complemento_que_debe_incluir",
+              "fechainiciovigencia",
+              "fechafinvigencia",
+              "estimulo_franja_fronteriza",
+              "palabras_similares"
+            ],
+            "record_count": 52513
+          }
+        ],
+        "excel_records": 52513,
+        "sqlite_records": 52513,
+        "matches": 52513,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "units",
+        "sheets": [
+          {
+            "sheet": "c_ClaveUnidad",
+            "header_row": 6,
+            "columns": [
+              "c_claveunidad",
+              "nombre",
+              "descripcion",
+              "nota",
+              "fecha_de_inicio_de_vigencia",
+              "fecha_de_fin_de_vigencia",
+              "simbolo"
+            ],
+            "record_count": 2418
+          }
+        ],
+        "excel_records": 2418,
+        "sqlite_records": 2418,
+        "matches": 1507,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [
+          {
+            "code": "10",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Grupos"
+            },
+            "sqlite": {
+              "name": "Una unidad de conteo que define el número de grupos (grupo: conjunto de elementos clasificados juntos)."
+            }
+          },
+          {
+            "code": "11",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Equipos"
+            },
+            "sqlite": {
+              "name": "Unidad de recuento que define el número de equipos (equipo: un conjunto completo de equipo / materiales / objetos utilizados para un propósito específico)."
+            }
+          },
+          {
+            "code": "13",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Raciones"
+            },
+            "sqlite": {
+              "name": "Una unidad de recuento para definir el número de raciones (ración: una sola porción de las disposiciones)."
+            }
+          },
+          {
+            "code": "14",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Shot"
+            },
+            "sqlite": {
+              "name": "Unidad de medida para liquidos."
+            }
+          },
+          {
+            "code": "15",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Palo, medida militar."
+            },
+            "sqlite": {
+              "name": "Unidad para el momento de rotación relacionado con la longitud según el sistema de unidades Anglo-Americanas e Imperial."
+            }
+          },
+          {
+            "code": "1I",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Tipo de interés fijo"
+            },
+            "sqlite": {
+              "name": "Unidad de cantidad expresada como una tasa predeterminada o conjunto para el uso de una instalación o servicio."
+            }
+          },
+          {
+            "code": "20",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Contenedores de veinte pies"
+            },
+            "sqlite": {
+              "name": "Unidad de conteo que define el número de contenedores de transporte que miden 20 pies de longitud."
+            }
+          },
+          {
+            "code": "21",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Contenedor de cuarenta pies"
+            },
+            "sqlite": {
+              "name": "Unidad de conteo que define el número de contenedores de transporte que miden 40 pies de longitud."
+            }
+          },
+          {
+            "code": "24",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Libra teórica"
+            },
+            "sqlite": {
+              "name": "Unidad de masa que define la masa esperada de material expresado como el número de libras."
+            }
+          },
+          {
+            "code": "27",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Tonelada teórica"
+            },
+            "sqlite": {
+              "name": "Unidad de masa que define la masa esperada de material, expresada como el número de toneladas."
+            }
+          },
+          {
+            "code": "2A",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Radián por segundo"
+            },
+            "sqlite": {
+              "name": "Es la velocidad de un cuerpo que, con una rotación uniforme alrededor de un eje fijo, gira en 1 segundo, 1 radián."
+            }
+          },
+          {
+            "code": "2B",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Radián por segundo cuadrado"
+            },
+            "sqlite": {
+              "name": "Es la aceleración angular de un cuerpo animado de una rotación uniformemente variada alrededor de un eje fijo, cuya velocidad angular, varía 1 radián por segundo, en 1 segundo."
+            }
+          },
+          {
+            "code": "2G",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Voltios CA"
+            },
+            "sqlite": {
+              "name": "Una unidad de potencial eléctrico en relación a la corriente alterna (CA)."
+            }
+          },
+          {
+            "code": "2H",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Voltios CD"
+            },
+            "sqlite": {
+              "name": "Unidad de potencial eléctrico en relación con corriente directa (CD)."
+            }
+          },
+          {
+            "code": "2N",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Decibel"
+            },
+            "sqlite": {
+              "name": "Medida de sonoridad o sensación sonora que es igual a la décima parte de un bel."
+            }
+          },
+          {
+            "code": "2P",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Kilobyte"
+            },
+            "sqlite": {
+              "name": "Unidad de información igual a 10 ³  (1000) bytes."
+            }
+          },
+          {
+            "code": "36",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Pie cúbico por minuto por pie cuadrado"
+            },
+            "sqlite": {
+              "name": "Se requiere factor de conversión"
+            }
+          },
+          {
+            "code": "3C",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Manmonth"
+            },
+            "sqlite": {
+              "name": "Unidad de cuenta que define el número de meses que una persona o personas pueden desempeñar alguna actividad."
+            }
+          },
+          {
+            "code": "4H",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Micra"
+            },
+            "sqlite": {
+              "name": "El micrómetro, micrón o micra es una unidad de longitud equivalente a una milésima parte de un milímetro."
+            }
+          },
+          {
+            "code": "4L",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Megabyte"
+            },
+            "sqlite": {
+              "name": "Unidad que se usa para cuantificar un caudal de datos equivalente a 1000 kb/s."
+            }
+          },
+          {
+            "code": "56",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Sitas"
+            },
+            "sqlite": {
+              "name": "Unidad de área de placa de estaño igual a un área de superficie de 100 metros cuadrados."
+            }
+          },
+          {
+            "code": "57",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Malla"
+            },
+            "sqlite": {
+              "name": "Una unidad de recuento de definir el número de hebras por pulgada como una medida de la finura de un producto tejido."
+            }
+          },
+          {
+            "code": "58",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "kilogramo neto"
+            },
+            "sqlite": {
+              "name": "Unidad de masa que define el número total de kilogramos después de las deducciones."
+            }
+          },
+          {
+            "code": "59",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Parte por millón"
+            },
+            "sqlite": {
+              "name": "Una unidad de proporción igual a 10⁻⁶."
+            }
+          },
+          {
+            "code": "5B",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Batch"
+            },
+            "sqlite": {
+              "name": "Unidad de conteo que define el número de lotes (lote: cantidad de material producido en una operación o número de animales o personas que vienen a la vez)."
+            }
+          },
+          {
+            "code": "5E",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Mmscf/day"
+            },
+            "sqlite": {
+              "name": "Unidad de volumen equivalente a un millón (1,000,000) pies cúbicos de gas por día."
+            }
+          },
+          {
+            "code": "5I",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Pies cúbicos estándar"
+            },
+            "sqlite": {
+              "name": "Utilice estándar (código común WSD)"
+            }
+          },
+          {
+            "code": "5J",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Caballos de potencia hidráulica"
+            },
+            "sqlite": {
+              "name": "Unidad de potencia de la definición de los caballos de potencia hidráulica suministrada por una bomba de fluido dependiendo de la viscosidad del fluido."
+            }
+          },
+          {
+            "code": "60",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Tanto por ciento en peso"
+            },
+            "sqlite": {
+              "name": "Una unidad de proporción igual a 10⁻²."
+            }
+          },
+          {
+            "code": "61",
+            "fields": [
+              "name"
+            ],
+            "excel": {
+              "name": "Parte por mil millones (EUA)"
+            },
+            "sqlite": {
+              "name": "Una unidad de proporción igual a 10⁻⁹."
+            }
+          }
+        ],
+        "duplicates": [],
+        "result": "different"
+      },
+      {
+        "catalog": "tax_objects",
+        "sheets": [
+          {
+            "sheet": "c_ObjetoImp",
+            "header_row": 5,
+            "columns": [
+              "c_objetoimp",
+              "descripcion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 8
+          }
+        ],
+        "excel_records": 8,
+        "sqlite_records": 8,
+        "matches": 8,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "taxes",
+        "sheets": [
+          {
+            "sheet": "c_Impuesto",
+            "header_row": 5,
+            "columns": [
+              "c_impuesto",
+              "descripcion",
+              "retencion",
+              "traslado",
+              "local_o_federal",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 3
+          }
+        ],
+        "excel_records": 3,
+        "sqlite_records": 3,
+        "matches": 3,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "factor_types",
+        "sheets": [
+          {
+            "sheet": "c_TipoFactor",
+            "header_row": 5,
+            "columns": [
+              "c_tipofactor",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 3
+          }
+        ],
+        "excel_records": 3,
+        "sqlite_records": 3,
+        "matches": 3,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [],
+        "modified": [],
+        "duplicates": [],
+        "result": "equal"
+      },
+      {
+        "catalog": "tax_rates",
+        "sheets": [
+          {
+            "sheet": "c_TasaOCuota",
+            "header_row": 5,
+            "columns": [
+              "rango_o_fijo",
+              "valor_minimo",
+              "valor_maximo",
+              "impuesto",
+              "factor",
+              "traslado",
+              "retencion",
+              "fecha_inicio_de_vigencia",
+              "fecha_fin_de_vigencia"
+            ],
+            "record_count": 19
+          }
+        ],
+        "excel_records": 19,
+        "sqlite_records": null,
+        "matches": 0,
+        "missing_in_excel": [],
+        "missing_in_sqlite": [
+          "0.000000",
+          "0.000000 | IEPS | Tasa | Sí | No",
+          "0.000000..0.160000",
+          "0.000000..0.350000",
+          "0.000000..72.160500",
+          "0.030000",
+          "0.060000",
+          "0.070000",
+          "0.080000",
+          "0.080000 | IEPS | Tasa | Sí | Sí",
+          "0.090000",
+          "0.160000",
+          "0.250000",
+          "0.265000",
+          "0.300000",
+          "0.304000",
+          "0.500000",
+          "0.530000",
+          "1.600000"
+        ],
+        "modified": [],
+        "duplicates": [],
+        "result": "sqlite_mapping_unavailable"
+      }
+    ],
+    "has_differences": true
+  },
+  "activation": "activated",
+  "reports": [
+    {
+      "catalog": "payment_forms",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "f0e55e4a0b72da47f98a882ad3978009469803ccb9301830e6d8e3f3d03728c5",
+      "status": "imported",
+      "record_count": 22,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "currencies",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "5f8874286f680a56eca1dc3feca6d1b7ec3545684133ffa70de42da73cfa2f18",
+      "status": "imported",
+      "record_count": 183,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "voucher_types",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "aa67e633c4e969c1ae8d4ce5ad85c320b8bdbaa5af998111f496c5fa88a0cf7f",
+      "status": "imported",
+      "record_count": 5,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "exports",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "cc3e9aa9eebdbb712e3483db3f473fab60b621ab9655e228efaade20bd31cb0e",
+      "status": "imported",
+      "record_count": 4,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "payment_methods",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "15c61d185b91a45ba9e8d6e95983e4f8c2ce2c1e93316a34be8b811ae3011af3",
+      "status": "imported",
+      "record_count": 2,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "postal_codes",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "1ec72a3ee0538d1b5e4ba075bafa1103381727e9d67a1234a7a0bef89d7262c3",
+      "status": "imported",
+      "record_count": 95749,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "relation_types",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "223bea5116e7c67418b2747fc4b7f0e97b4b41560f6a0ac159ccbd5ee9634f23",
+      "status": "imported",
+      "record_count": 7,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "fiscal_regimes",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "78b80ba64e33669444274fc01cfa011be6ff69112e5fff073cfb0340f4f63c19",
+      "status": "imported",
+      "record_count": 19,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "countries",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "27f9078595884b80bdbb084f0cc64f843d848f19785fb7e58f85117e072a4dda",
+      "status": "imported",
+      "record_count": 250,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "cfdi_uses",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "416f6943845e8e8eba5a339fb03488c4b9ea8d51fca86a7a9e17126c335a3baf",
+      "status": "imported",
+      "record_count": 24,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "products_services",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "b38c4b7549945bb6332dd14be81458908786b239e408ba0104e6c57f9a2dab18",
+      "status": "imported",
+      "record_count": 52513,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "units",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "f98a1d9e9a03e6e32f2d837624680e10f7ea83c249056b8a1cdb38caa1521e89",
+      "status": "imported",
+      "record_count": 2418,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "tax_objects",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "bbe4c14299fc46d3f79172d75734efedbc0c97f3b436681253e7e8b35120c4e7",
+      "status": "imported",
+      "record_count": 8,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "taxes",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "5fbbf2aaa5d723522b884fb2677e5deff1f85ccf4850b673d7ab1c592e91e96e",
+      "status": "imported",
+      "record_count": 3,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "factor_types",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "c557c77ad840d33e8626dee436ff4c1d6b698245c735bd1e821c380491376727",
+      "status": "imported",
+      "record_count": 3,
+      "message": "Importación completada."
+    },
+    {
+      "catalog": "tax_rates",
+      "version": "20260703",
+      "source_filename": "catalogo sat.xlsx",
+      "checksum": "ebb30609333c377df887cf58313946f19d89d47a37a49e55f6c1d4cca77973cb",
+      "status": "imported",
+      "record_count": 19,
+      "message": "Importación completada."
+    }
+  ],
+  "elapsed_seconds": 81.007
+}

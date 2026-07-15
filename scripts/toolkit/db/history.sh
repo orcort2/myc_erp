@@ -6,6 +6,3 @@ source "$(cd "$(dirname "$0")/../.." && pwd)/config.sh"
 cd "$BACKEND_DIR" || exit 1
 
 "$ALEMBIC" history --verbose
-
-echo
-read -p "Enter para continuar..."

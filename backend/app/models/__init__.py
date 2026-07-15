@@ -17,6 +17,7 @@ from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSigna
 from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
 from app.models.institutional_configuration import InstitutionalConfiguration
 from app.models.invoice import CreditNote, Invoice, InvoiceItem, InvoicePayment, InvoiceSettings
+from app.models.sat_catalog import SatCatalog, SatCatalogAlias, SatCatalogFavorite, SatCatalogRecord, SatCatalogVersion
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
 from app.models.reference_standard import (
     FieldSheetReferenceStandard,
@@ -67,6 +68,11 @@ __all__ = [
     "InvoicePayment",
     "CreditNote",
     "InvoiceSettings",
+    "SatCatalog",
+    "SatCatalogAlias",
+    "SatCatalogFavorite",
+    "SatCatalogRecord",
+    "SatCatalogVersion",
     "IntegerPkMixin",
     "Quotation",
     "QuotationItem",

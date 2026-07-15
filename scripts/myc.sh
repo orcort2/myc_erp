@@ -1,144 +1,93 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-ROOT="/Users/saulcortes/Desktop/myc_erp"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PROJECT_ROOT="$ROOT"
+export MYC_INTERACTIVE=1
+
+run_and_pause() {
+  "$ROOT/scripts/myc" "$@"
+  local result=$?
+  read -r -p "Enter para continuar..." _
+  return $result
+}
 
 db_menu() {
   while true; do
     clear
-    echo "========================================"
-    echo "              BASE DE DATOS"
-    echo "========================================"
-    echo "1) Aplicar migraciones"
-    echo "2) Estado Alembic"
-    echo "3) Historial Alembic"
-    echo "4) Heads Alembic"
-    echo "5) Crear migración"
-    echo "6) Downgrade"
-    echo "7) Backup BD"
-    echo "8) Restaurar BD"
-    echo "0) Volver"
-    echo "========================================"
-    read -p "Elige una opción: " db_option
-
-    case $db_option in
-      1) "$ROOT/scripts/toolkit/db/upgrade.sh" ;;
-      2) "$ROOT/scripts/toolkit/db/current.sh" ;;
-      3) "$ROOT/scripts/toolkit/db/history.sh" ;;
-      4) "$ROOT/scripts/toolkit/db/heads.sh" ;;
-      5)
-        read -p "Nombre de la migración: " migration_name
-        "$ROOT/scripts/toolkit/db/revision.sh" "$migration_name"
-        ;;
-      6)
-        read -p "Revision destino (-1, base o id): " revision
-        "$ROOT/scripts/toolkit/db/downgrade.sh" "$revision"
-        ;;
-      7) "$ROOT/scripts/toolkit/db/backup.sh" ;;
-      8)
-        read -p "Archivo .sql: " backup_file
-        "$ROOT/scripts/toolkit/db/restore.sh" "$backup_file"
-        ;;
+    cat <<'EOF'
+========================================
+              BASE DE DATOS
+========================================
+1) Aplicar migraciones
+2) Estado Alembic
+3) Historial Alembic
+4) Heads Alembic
+5) Crear migración
+6) Downgrade
+7) Backup BD
+8) Restaurar BD
+9) Administrar tablas
+0) Volver
+========================================
+EOF
+    read -r -p "Elige una opción: " option
+    case "$option" in
+      1) run_and_pause migrate ;;
+      2) "$ROOT/scripts/toolkit/db/current.sh"; read -r -p "Enter para continuar..." _ ;;
+      3) "$ROOT/scripts/toolkit/db/history.sh"; read -r -p "Enter para continuar..." _ ;;
+      4) "$ROOT/scripts/toolkit/db/heads.sh"; read -r -p "Enter para continuar..." _ ;;
+      5) read -r -p "Nombre de la migración: " name; "$ROOT/scripts/toolkit/db/revision.sh" "$name"; read -r -p "Enter para continuar..." _ ;;
+      6) read -r -p "Revision destino (-1, base o id): " revision; "$ROOT/scripts/toolkit/db/downgrade.sh" "$revision"; read -r -p "Enter para continuar..." _ ;;
+      7) run_and_pause backup ;;
+      8) read -r -p "Archivo .sql: " file; run_and_pause restore "$file" ;;
+      9) "$ROOT/scripts/toolkit/db/manage/menu.sh" ;;
       0) return ;;
       *) echo "Opción inválida"; sleep 1 ;;
     esac
   done
-}
-
-dev_menu() {
-  while true; do
-    clear
-    echo "========================================"
-    echo "              DESARROLLO"
-    echo "========================================"
-    echo "1) Backend"
-    echo "2) Frontend"
-    echo "3) Build"
-    echo "4) Validaciones"
-    echo "0) Volver"
-    echo "========================================"
-    read -p "Elige una opción: " dev_option
-
-    case $dev_option in
-      1) "$ROOT/scripts/toolkit/dev/backend.sh" ;;
-      2) "$ROOT/scripts/toolkit/dev/frontend.sh" ;;
-      3) "$ROOT/scripts/toolkit/dev/build.sh"; read -p "Enter para continuar..." ;;
-      4) "$ROOT/scripts/toolkit/dev/check.sh"; read -p "Enter para continuar..." ;;
-      0) return ;;
-      *) echo "Opción inválida"; sleep 1 ;;
-    esac
-  done
-}
-
-git_menu() {
-  while true; do
-    clear
-    echo "========================================"
-    echo "                  GIT"
-    echo "========================================"
-    echo "1) Status"
-    echo "2) Historial"
-    echo "3) Ramas"
-    echo "0) Volver"
-    echo "========================================"
-    read -p "Elige una opción: " git_option
-
-    case $git_option in
-      1) "$ROOT/scripts/toolkit/git/status.sh"; read -p "Enter para continuar..." ;;
-      2) "$ROOT/scripts/toolkit/git/history.sh"; read -p "Enter para continuar..." ;;
-      3) "$ROOT/scripts/toolkit/git/branch.sh"; read -p "Enter para continuar..." ;;
-      0) return ;;
-      *) echo "Opción inválida"; sleep 1 ;;
-    esac
-  done
-}
-
-seed_menu() {
-  clear
-  echo "========================================"
-  echo "                SEED"
-  echo "========================================"
-  read -p "ID del ETS: " service_order_id
-  read -p "Cantidad de equipos: " equipment_count
-  "$ROOT/scripts/toolkit/seed/equipment.sh" --service-order-id "$service_order_id" --count "${equipment_count:-1}"
-  read -p "Enter para continuar..."
 }
 
 while true; do
   clear
-  echo "========================================"
-  echo "          MYC SYSTEM TOOLKIT"
-  echo "========================================"
-  echo "1) Desarrollo local"
-  echo "2) Desarrollo túnel"
-  echo "3) Doctor"
-  echo "4) Estado"
-  echo "5) Reiniciar local"
-  echo "6) Build"
-  echo "7) Actualizar"
-  echo "8) Backup BD"
-  echo "9) Limpiar"
-  echo "10) Base de datos"
-  echo "11) Desarrollo"
-  echo "12) Git"
-  echo "13) Seed"
-  echo "0) Salir"
-  echo "========================================"
-  read -p "Elige una opción: " option
-
-  case $option in
-    1) "$ROOT/scripts/start-local.sh" ;;
-    2) "$ROOT/scripts/start-tunnel.sh" ;;
-    3) "$ROOT/scripts/doctor.sh"; read -p "Enter para continuar..." ;;
-    4) "$ROOT/scripts/status.sh"; read -p "Enter para continuar..." ;;
-    5) "$ROOT/scripts/restart-local.sh" ;;
-    6) "$ROOT/scripts/build.sh"; read -p "Enter para continuar..." ;;
-    7) "$ROOT/scripts/update.sh"; read -p "Enter para continuar..." ;;
-    8) "$ROOT/scripts/backup-db.sh"; read -p "Enter para continuar..." ;;
-    9) "$ROOT/scripts/clean.sh"; read -p "Enter para continuar..." ;;
+  cat <<'EOF'
+========================================
+          MYC SYSTEM TOOLKIT
+========================================
+1) Desarrollo local
+2) Desarrollo túnel
+3) Doctor
+4) Estado
+5) Reiniciar local
+6) Build
+7) Actualizar
+8) Backup BD
+9) Limpiar
+10) Base de datos
+11) Git status
+12) SAT
+13) Seed de equipos
+0) Salir
+========================================
+EOF
+  read -r -p "Elige una opción: " option
+  case "$option" in
+    1) "$ROOT/scripts/myc" dev local ;;
+    2) "$ROOT/scripts/myc" dev tunnel ;;
+    3) run_and_pause doctor ;;
+    4) run_and_pause status ;;
+    5) "$ROOT/scripts/myc" restart ;;
+    6) run_and_pause build ;;
+    7) run_and_pause update ;;
+    8) run_and_pause backup ;;
+    9) run_and_pause clean ;;
     10) db_menu ;;
-    11) dev_menu ;;
-    12) git_menu ;;
-    13) seed_menu ;;
+    11) run_and_pause git status ;;
+    12) run_and_pause sat status ;;
+    13)
+      read -r -p "ID del ETS: " service_order_id
+      read -r -p "Cantidad de equipos: " equipment_count
+      run_and_pause seed --service-order-id "$service_order_id" --count "${equipment_count:-1}"
+      ;;
     0) exit 0 ;;
     *) echo "Opción inválida"; sleep 1 ;;
   esac

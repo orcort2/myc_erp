@@ -609,6 +609,17 @@ def register_service_order_exception(
     if target_status and previous_status not in TERMINAL_STATUSES:
         service_order.status = target_status
 
+    # A draft/pending invoice is still derived from this commercial source.
+    # Emitted invoices are intentionally excluded by the invoice service.
+    from app.services.invoices import resync_invoices_for_service_exception
+
+    resync_invoices_for_service_exception(
+        db,
+        service_order.id,
+        comment=payload.reason,
+        user_id=user_id,
+    )
+
     write_audit_log(
         db,
         action="service_order.exception_requested",

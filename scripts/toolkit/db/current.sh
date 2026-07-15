@@ -11,6 +11,3 @@ echo "Migración actual:"
 echo
 echo "Heads:"
 "$ALEMBIC" heads
-
-echo
-read -p "Enter para continuar..."

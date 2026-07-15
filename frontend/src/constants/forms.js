@@ -22,6 +22,7 @@ export const emptyClientForm = {
   addressState: '',
   postalCode: '',
   country: 'Mexico',
+  fiscalCountryCode: 'MEX',
   fiscalLegalName: '',
   fiscalRfc: '',
   fiscalPostalCode: '',

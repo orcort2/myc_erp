@@ -1,3 +1,25 @@
+## Importación tolerante de clientes (2026-07-14)
+
+La importación masiva registra clientes identificables aunque sus datos fiscales estén ausentes, incompletos o no se puedan normalizar. Esos registros quedan con `fiscal_review_required=true` y se reportan como advertencias; sólo se omiten filas sin nombre identificable, duplicadas o con un fallo real de persistencia.
+
+Los códigos SAT se resuelven con los catálogos locales por código o descripción normalizada inequívoca. La validación estricta de RFC, régimen, uso CFDI, código postal y conceptos se conserva para facturación/emisión, no para el alta masiva de cartera.
+
+Actualización 2026-07-14 16:42:31 CST - Toolkit portátil y gestión segura de clientes:
+
+- `scripts/myc`, `scripts/myc.sh` y `scripts/config.sh` resuelven la raíz desde la ubicación del script; no dependen de rutas personales.
+- El menú conserva `Enter para continuar...` una sola vez después de cada acción que regresa al menú. Los comandos directos no esperan entrada.
+- Se centralizaron puertos (`8000` y `5174`) y proceso local; `build` ya no ejecuta migraciones. El backup valida `pg_dump` y borra resultados incompletos.
+- El borrado físico de clientes sólo se permite sin cotizaciones, órdenes de servicio o facturas; con historial se archiva/restaura. La importación restaura RFC archivado en lugar de duplicarlo.
+- Validaciones: sintaxis Bash, `compileall`, pruebas de importación/eliminación (4/4) y `npm run build` correcto.
+- Backup SQL validado: `backups/erp_myc_20260714_164231.sql` (71 MB), SHA-256 `0e0aa62730fa5129c9c69fc898a0e5c85b400853757525f15b0f16632abbe152`.
+
+Actualización 2026-07-14 16:49 CST - Cierre técnico de eliminación y reimportación de clientes:
+
+- Se consolidó una única elegibilidad que cuenta dependencias directas e indirectas: cotizaciones, ETS, equipos, hojas de campo, certificados, facturas, pagos y notas de crédito.
+- `DELETE /clients/{id}` ahora elimina físicamente sólo sin historial y archiva automáticamente cuando existe historial, con respuesta estructurada y auditoría persistente.
+- Contactos y perfiles de certificado se eliminan sólo en hard delete mediante sus cascadas ORM; los registros históricos y `AuditLog` nunca se eliminan.
+- RFC genéricos no restauran clientes automáticamente durante importación; se reportan como incidencia ambigua. El diagnóstico completo se documentó en `docs/CLIENT_DELETION_CLOSURE.md`.
+
 Backup de estado actual - MYC SYSTEM
 Fecha: 2026-06-17
 Ultima actualizacion: 2026-07-13 16:33:00 CST

@@ -1,4 +1,4 @@
-import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, UserRound, X } from 'lucide-react';
+import { FlaskConical, LogOut, Menu, PanelLeftClose, PanelLeftOpen, UserRound, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import { navigation } from '../constants/navigation.js';
@@ -88,6 +88,13 @@ function AppLayout({ children, onLogout, showSidebar = false, subtitle, user }) 
                 </button>
               );
             })}
+          </nav>
+          <nav className="lab-nav-list" aria-label="Navegacion de desarrollo">
+            <span>Desarrollo</span>
+            <button className="nav-item nav-item--lab" onClick={() => navigateFromSidebar('/invoice-workbench-lab')} type="button" title="Invoice Workbench (LAB)">
+              <FlaskConical size={18} />
+              <span>Invoice Workbench (LAB)</span>
+            </button>
           </nav>
         </aside>
         </>

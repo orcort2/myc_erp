@@ -1,0 +1,26 @@
+#!/bin/bash
+
+ROOT="/Users/saulcortes/Desktop/myc_erp"
+
+case "$1" in
+  local) "$ROOT/scripts/start-local.sh" ;;
+  tunnel) "$ROOT/scripts/start-tunnel.sh" ;;
+  doctor) "$ROOT/scripts/doctor.sh" ;;
+  status) "$ROOT/scripts/status.sh" ;;
+  stop) "$ROOT/scripts/stop.sh" ;;
+  restart) "$ROOT/scripts/restart-local.sh" ;;
+  build) "$ROOT/scripts/build.sh" ;;
+  update) "$ROOT/scripts/update.sh" ;;
+  backup) "$ROOT/scripts/backup-db.sh" ;;
+  clean) "$ROOT/scripts/clean.sh" ;;
+  menu|"") "$ROOT/scripts/myc.sh" ;;
+  help)
+    echo "MYC SYSTEM CLI"
+    echo "myc menu | local | tunnel | doctor | status | stop | restart | build | update | backup | clean"
+    ;;
+  *)
+    echo "Comando no reconocido: $1"
+    echo "Usa: myc help"
+    exit 1
+    ;;
+esac

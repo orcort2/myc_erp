@@ -7,6 +7,8 @@ dist/
 .env
 tmp/
 output/
+backend/resources/sat/*.xls
+backend/resources/sat/*.xlsx
 storage/temporales/*
 !storage/temporales/.gitkeep
 
@@ -15,3 +17,11 @@ __pycache__/
 .DS_Store
 .env
 node_modules/
+
+# Respaldos locales de PostgreSQL
+backups/*.sql
+
+# Base SQLite generada con catálogos SAT
+backend/resources/sat/catalogs.db
+backend/resources/sat/catalogs.db-shm
+backend/resources/sat/catalogs.db-wal

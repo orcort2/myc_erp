@@ -22,6 +22,9 @@ ROLE_PERMISSIONS = {
         "quotations.update",
         "quotations.act_as_advisor",
         "service_orders.read",
+        "sat_catalogs.read",
+        "sat_catalogs.manage_favorites",
+        "sat_catalogs.manage_aliases",
     },
     "Tecnico": {
         "equipment.read",
@@ -121,6 +124,9 @@ ROLE_PERMISSIONS = {
         "invoices.manage",
         "certificates.release",
         "release.manage",
+        "sat_catalogs.read",
+        "sat_catalogs.manage_favorites",
+        "sat_catalogs.manage_aliases",
     },
     "Cliente": {
         "portal.read",
@@ -189,6 +195,8 @@ ROLE_PERMISSIONS = {
         "settings.master_catalogs.manage",
         "service_orders.sign",
         "service_orders.signatures.reopen",
+        "sat_catalogs.read",
+        "sat_catalogs.manage",
     },
 }
 
@@ -254,4 +262,8 @@ PERMISSIONS = {
     "SETTINGS_MASTER_CATALOGS_MANAGE": "settings.master_catalogs.manage",
     "SERVICE_ORDERS_SIGN": "service_orders.sign",
     "SERVICE_ORDERS_SIGNATURES_REOPEN": "service_orders.signatures.reopen",
+    "SAT_CATALOGS_READ": "sat_catalogs.read",
+    "SAT_CATALOGS_MANAGE": "sat_catalogs.manage",
+    "SAT_CATALOGS_MANAGE_FAVORITES": "sat_catalogs.manage_favorites",
+    "SAT_CATALOGS_MANAGE_ALIASES": "sat_catalogs.manage_aliases",
 }

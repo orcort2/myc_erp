@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import SelectionActionBar from '../components/SelectionActionBar.jsx';
+import SatCatalogField from '../components/invoice-workbench/SatCatalogField.jsx';
 import { emptyClientForm } from '../constants/forms.js';
 import { clientModalTabs, clientTemplateColumns } from '../constants/templates.js';
 import {
@@ -13,9 +14,12 @@ import {
   deleteClient,
   deleteClientCertificateProfile,
   exportClients,
+  getClientDeleteEligibility,
   listClients,
+  listSatCatalogs,
   previewClientImport,
   previewClientTaxConstancy,
+  restoreClient,
   updateClient,
   updateClientCertificateProfile,
   uploadClientTaxConstancy
@@ -71,6 +75,7 @@ function getMissingClientFields(client) {
 
 function ClientsPage() {
   const [clients, setClients] = useState([]);
+  const [satCatalogs, setSatCatalogs] = useState([]);
   const [selectedClientIds, setSelectedClientIds] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('active');
@@ -119,7 +124,13 @@ function ClientsPage() {
 
   useEffect(() => {
     loadClients();
+    listSatCatalogs().then((items) => setSatCatalogs(Array.isArray(items) ? items : [])).catch(() => setSatCatalogs([]));
   }, []);
+
+  const satCatalogByCode = useMemo(
+    () => new Map(satCatalogs.map((catalog) => [catalog.code, catalog])),
+    [satCatalogs]
+  );
 
   const visibleClients = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -311,7 +322,8 @@ function ClientsPage() {
       fiscalRfc: client.rfc ?? '',
       fiscalPostalCode: client.fiscal_postal_code ?? '',
       taxRegime: client.tax_regime ?? '',
-      cfdiUse: client.cfdi_use ?? ''
+      cfdiUse: client.cfdi_use ?? '',
+      fiscalCountryCode: client.fiscal_country_code ?? 'MEX'
     });
   }
 
@@ -508,19 +520,55 @@ function ClientsPage() {
   }
 
   async function handleDeactivateClient(client) {
+    let eligibility;
+    try {
+      eligibility = await getClientDeleteEligibility(client.id);
+    } catch (requestError) {
+      setError(requestError.message);
+      return;
+    }
+    const blockers = Object.entries(eligibility.blocking_dependencies ?? {})
+      .filter(([, count]) => count)
+      .map(([name, count]) => `${name}: ${count}`)
+      .join(', ');
+    const hardDelete = eligibility.eligible_for_hard_delete;
     openConfirm({
-      title: 'Eliminar cliente',
-      message: `Esta acción eliminará el cliente ${client.legal_name ?? client.commercial_name}.\nNo se eliminará físicamente el registro.`,
-      confirmText: 'Eliminar cliente',
+      title: hardDelete ? 'Eliminar definitivamente' : 'Archivar cliente',
+      message: hardDelete
+        ? `Este cliente no tiene historial y se eliminará definitivamente.`
+        : `Este cliente tiene historial y será archivado. Dependencias: ${blockers}.`,
+      confirmText: hardDelete ? 'Eliminar definitivamente' : 'Archivar cliente',
       variant: 'danger',
       onConfirm: async () => {
         setError('');
         setNotice('');
         setIsSaving(true);
         try {
-          await deleteClient(client.id);
+          const result = await deleteClient(client.id);
           if (editingClientId === client.id) resetForm();
-          setNotice('Cliente eliminado');
+          setNotice(result?.message ?? (hardDelete ? 'Cliente eliminado definitivamente' : 'Cliente archivado'));
+          await loadClients();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
+  }
+
+  async function handleRestoreClient(client) {
+    openConfirm({
+      title: 'Restaurar cliente',
+      message: `El cliente ${client.legal_name ?? client.commercial_name} volverá a estar activo.`,
+      confirmText: 'Restaurar cliente',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        setIsSaving(true);
+        try {
+          await restoreClient(client.id);
+          setNotice('Cliente restaurado');
           await loadClients();
         } catch (requestError) {
           setError(requestError.message);
@@ -560,9 +608,9 @@ function ClientsPage() {
   async function handleBulkDeleteClients() {
     if (!selectedClients.length) return;
     openConfirm({
-      title: 'Eliminar clientes',
-      message: `Se eliminarán ${selectedClients.length} clientes visibles seleccionados.\nNo se eliminarán físicamente los registros.`,
-      confirmText: 'Eliminar seleccionados',
+      title: 'Archivar clientes',
+      message: `Se archivarán ${selectedClients.length} clientes visibles seleccionados.`,
+      confirmText: 'Archivar seleccionados',
       variant: 'danger',
       onConfirm: async () => {
         setError('');
@@ -573,7 +621,7 @@ function ClientsPage() {
             await deleteClient(client.id);
           }
           clearClientSelection();
-          setNotice(`${selectedClients.length} clientes eliminados`);
+          setNotice(`${selectedClients.length} clientes archivados`);
           await loadClients();
         } catch (requestError) {
           setError(requestError.message);
@@ -678,7 +726,7 @@ function ClientsPage() {
       const preview = await previewClientImport(file);
       setClientImportPreview(preview);
       setClientImportMessage(
-        `Archivo validado. Listos: ${preview.valid_count ?? 0}. Omitibles: ${(preview.duplicate_count ?? 0) + (preview.error_count ?? 0)}.`
+        `Archivo validado. Importables: ${preview.valid_count ?? 0} (${preview.warning_count ?? 0} con advertencias). Duplicados: ${preview.duplicate_count ?? 0}. Errores: ${preview.error_count ?? 0}.`
       );
     } catch (requestError) {
       setClientImportPreview(null);
@@ -788,7 +836,7 @@ function ClientsPage() {
       const result = await confirmClientImport(rows);
       setClientImportSummary(result);
       setClientImportMessage(
-        `Importación finalizada: ${result.imported_count} importados, ${result.omitted_count} omitidos.`
+        `Importación finalizada: ${result.imported_count} importados (${result.imported_with_warnings_count ?? 0} con advertencias), ${result.duplicate_count} duplicados y ${result.error_count} errores.`
       );
       await loadClients();
     } catch (requestError) {
@@ -885,8 +933,12 @@ function ClientsPage() {
             ...(selectedClient
               ? [
                   { label: 'Editar', onClick: () => startEdit(selectedClient) },
-                  { label: 'Cotización', onClick: () => handleCreateQuotation(selectedClient) },
-                  { label: 'Eliminar', variant: 'danger', onClick: () => handleDeactivateClient(selectedClient) }
+                  ...(selectedClient.is_active
+                    ? [
+                        { label: 'Cotización', onClick: () => handleCreateQuotation(selectedClient) },
+                        { label: 'Archivar', variant: 'danger', onClick: () => handleDeactivateClient(selectedClient) }
+                      ]
+                    : [{ label: 'Restaurar', onClick: () => handleRestoreClient(selectedClient) }])
                 ]
               : []),
             ...(selectedClients.length > 1
@@ -1279,36 +1331,10 @@ function ClientsPage() {
                       value={form.fiscalRfc}
                     />
                   </label>
-                  <label>
-                    Código postal fiscal
-                    <input
-                      aria-invalid={Boolean(validationErrors.fiscalPostalCode)}
-                      inputMode="numeric"
-                      onChange={(event) => updateForm('fiscalPostalCode', event.target.value.replace(/\D/g, ''))}
-                      type="text"
-                      value={form.fiscalPostalCode}
-                    />
-                    {validationErrors.fiscalPostalCode ? <span className="field-error">{validationErrors.fiscalPostalCode}</span> : null}
-                  </label>
-                  <label>
-                    Régimen fiscal
-                    {taxRegimeOptions.length > 1 ? (
-                      <select className="client-tax-regime-select" onChange={(event) => updateForm('taxRegime', event.target.value)} value={form.taxRegime}>
-                        <option value="">Selecciona el régimen a usar</option>
-                        {taxRegimeOptions.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input onChange={(event) => updateForm('taxRegime', event.target.value)} type="text" value={form.taxRegime} />
-                    )}
-                  </label>
-                  <label>
-                    Uso CFDI
-                    <input onChange={(event) => updateForm('cfdiUse', event.target.value)} type="text" value={form.cfdiUse} />
-                  </label>
+                  <SatCatalogField catalog={satCatalogByCode.get('postal_codes')} catalogCode="postal_codes" label="Código postal fiscal" onChange={(value) => updateForm('fiscalPostalCode', value.code)} value={form.fiscalPostalCode ? { code: form.fiscalPostalCode } : null} />
+                  <SatCatalogField catalog={satCatalogByCode.get('fiscal_regimes')} catalogCode="fiscal_regimes" label="Régimen fiscal" onChange={(value) => updateForm('taxRegime', value.code)} value={form.taxRegime ? { code: form.taxRegime } : null} />
+                  <SatCatalogField catalog={satCatalogByCode.get('cfdi_uses')} catalogCode="cfdi_uses" label="Uso CFDI predeterminado" onChange={(value) => updateForm('cfdiUse', value.code)} value={form.cfdiUse ? { code: form.cfdiUse } : null} />
+                  <SatCatalogField catalog={satCatalogByCode.get('countries')} catalogCode="countries" label="País fiscal" onChange={(value) => updateForm('fiscalCountryCode', value.code)} value={form.fiscalCountryCode ? { code: form.fiscalCountryCode } : null} />
 
                   <input
                     accept=".pdf,.png,.jpg,.jpeg"
@@ -1451,9 +1477,23 @@ function ClientsPage() {
 
             {clientImportSummary ? (
               <div className="client-fiscal-note">
-                Resumen final: {clientImportSummary.imported_count} importados, {clientImportSummary.omitted_count} omitidos,
-                {` ${clientImportSummary.duplicate_count} duplicados y ${clientImportSummary.error_count} con error.`}
+                Resumen final: {clientImportSummary.imported_count} importados en total ({clientImportSummary.imported_with_warnings_count ?? 0} con advertencias),
+                {` ${clientImportSummary.duplicate_count} duplicados y ${clientImportSummary.error_count} errores.`}
               </div>
+            ) : null}
+
+            {clientImportSummary?.warnings?.length ? (
+              <section className="import-preview-section">
+                <h3>Importados con advertencias</h3>
+                <div className="import-preview-list">
+                  {clientImportSummary.warnings.slice(0, 20).map((item, index) => (
+                    <article className="import-row import-row--warning" key={`${index}-${item.message}`}>
+                      <strong>{item.name || 'Cliente importado'}</strong>
+                      <small>{item.message}</small>
+                    </article>
+                  ))}
+                </div>
+              </section>
             ) : null}
 
             {clientImportSummary?.errors?.length ? (

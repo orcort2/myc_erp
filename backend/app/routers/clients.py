@@ -3,15 +3,19 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.models.user import User
 from app.schemas.client import (
     ClientCertificateProfileCreate,
     ClientCertificateProfileRead,
     ClientCertificateProfileUpdate,
     ClientCreate,
+    ClientDeleteEligibilityRead,
+    ClientDeleteResultRead,
     ClientImportConfirm,
     ClientImportPreviewRead,
     ClientImportResultRead,
     ClientRead,
+    ClientRestoreResultRead,
     ClientTaxConstancyPreviewRead,
     ClientUpdate,
 )
@@ -19,18 +23,22 @@ from app.services.clients import (
     confirm_client_import,
     create_client_certificate_profile,
     create_client,
-    deactivate_client,
+    archive_client,
+    delete_client_permanently,
     deactivate_client_certificate_profile,
     export_clients_workbook,
     get_client,
+    get_client_delete_eligibility,
     list_clients,
     list_client_certificate_profiles,
     preview_client_import,
     preview_tax_constancy,
+    restore_client,
     upload_tax_constancy,
     update_client,
     update_client_certificate_profile,
 )
+from app.services.auth import require_permission
 
 
 router = APIRouter(prefix="/clients", tags=["clients"])
@@ -146,7 +154,48 @@ def delete_certificate_profile(client_id: int, profile_id: int, db: Session = De
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.delete("/{client_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_client(client_id: int, db: Session = Depends(get_db)) -> Response:
-    deactivate_client(db, client_id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+@router.get("/{client_id}/delete-eligibility", response_model=ClientDeleteEligibilityRead)
+def get_delete_eligibility(client_id: int, db: Session = Depends(get_db)) -> ClientDeleteEligibilityRead:
+    return get_client_delete_eligibility(db, client_id)
+
+
+@router.post("/{client_id}/archive", response_model=ClientDeleteResultRead)
+def archive_client_by_id(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("clients.update")),
+) -> ClientDeleteResultRead:
+    was_active = get_client(db, client_id, include_inactive=True).is_active
+    client = archive_client(db, client_id, user_id=current_user.id)
+    eligibility = get_client_delete_eligibility(db, client_id)
+    return ClientDeleteResultRead(
+        status="archived" if was_active else "already_archived",
+        delete_mode="archive",
+        client_id=client_id,
+        message="El cliente fue archivado." if was_active else "El cliente ya estaba archivado.",
+        blocking_dependencies=eligibility.blocking_dependencies,
+    )
+
+
+@router.post("/{client_id}/restore", response_model=ClientRestoreResultRead)
+def restore_client_by_id(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("clients.update")),
+) -> ClientRestoreResultRead:
+    was_active = get_client(db, client_id, include_inactive=True).is_active
+    client = restore_client(db, client_id, user_id=current_user.id)
+    return ClientRestoreResultRead(
+        status="already_active" if was_active else "restored",
+        client_id=client_id,
+        message="El cliente ya estaba activo." if was_active else "El cliente fue restaurado.",
+    )
+
+
+@router.delete("/{client_id}", response_model=ClientDeleteResultRead)
+def delete_client(
+    client_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("clients.update")),
+) -> ClientDeleteResultRead:
+    return delete_client_permanently(db, client_id, user_id=current_user.id)

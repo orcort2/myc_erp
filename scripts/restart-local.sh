@@ -1,7 +1,5 @@
-#!/bin/bash
-
-ROOT="/Users/saulcortes/Desktop/myc_erp"
-
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 "$ROOT/scripts/stop.sh"
-sleep 1
-"$ROOT/scripts/start-local.sh"
+exec "$ROOT/scripts/start-local.sh"

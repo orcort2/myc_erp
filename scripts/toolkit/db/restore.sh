@@ -18,6 +18,3 @@ fi
 DB_URL="${DATABASE_URL:-postgresql://localhost:5432/erp_myc}"
 
 psql "$DB_URL" -f "$FILE"
-
-echo
-read -p "Enter para continuar..."

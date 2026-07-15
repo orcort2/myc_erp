@@ -162,6 +162,10 @@ class InvoiceRead(BaseModel):
     balance_due: Decimal
     amount_paid: Decimal
     status: str
+    review_required: bool = False
+    draft_reason: str | None = None
+    source_snapshot: dict | None = None
+    fiscal_snapshot: dict | None = None
     payment_method: str | None = None
     payment_form: str | None = None
     usage_cfdi: str | None = None
@@ -178,6 +182,11 @@ class InvoiceRead(BaseModel):
     items: list[InvoiceItemRead] = Field(default_factory=list)
     payments: list[InvoicePaymentRead] = Field(default_factory=list)
     credit_notes: list[CreditNoteRead] = Field(default_factory=list)
+
+
+class InvoiceSourceChange(BaseModel):
+    reason: str = Field(default="service_exception", max_length=80)
+    comment: str | None = None
 
 
 class AccountsReceivableRow(BaseModel):

@@ -1,27 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/toolkit/lib" && pwd)/common.sh"
 
-ROOT="/Users/saulcortes/Desktop/myc_erp"
-
-echo "=================================="
-echo " MYC SYSTEM - BUILD CHECK"
-echo "=================================="
-
-cd "$ROOT/backend" || exit 1
-
-echo "Verificando backend..."
-../venv/bin/python -m compileall app || exit 1
-
-echo "Verificando migraciones..."
-../venv/bin/alembic upgrade head || exit 1
-
-echo "Verificando app..."
-../venv/bin/python -c "from app.main import app; print(app.title, len(app.routes))" || exit 1
-
-cd "$ROOT/frontend" || exit 1
-
-echo "Compilando frontend..."
-npm run build || exit 1
-
-echo "=================================="
-echo " TODO OK"
-echo "=================================="
+echo "MYC SYSTEM - BUILD CHECK"
+myc_require_venv
+(cd "$BACKEND_DIR" && "$PYTHON" -m compileall app && "$PYTHON" -c "from app.main import app; print(app.title, len(app.routes))")
+(cd "$FRONTEND_DIR" && npm run build)
+echo "TODO OK"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from io import BytesIO, StringIO
 from pathlib import Path
 from uuid import uuid4
@@ -10,22 +10,34 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile, status
 from openpyxl import Workbook, load_workbook
 from pypdf import PdfReader
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.client import Client, ClientCertificateProfile, ClientContact
+from app.models.certificate import Certificate
+from app.models.equipment import Equipment
+from app.models.field_sheet import FieldSheet
+from app.models.invoice import CreditNote, Invoice, InvoicePayment
+from app.models.quotation import Quotation
+from app.models.sat_catalog import SatCatalogRecord
+from app.models.service_order import ServiceOrder
 from app.schemas.client import (
     ClientCertificateProfileCreate,
     ClientCertificateProfileUpdate,
     ClientCreate,
+    ClientDeleteEligibilityRead,
+    ClientDeleteResultRead,
     ClientImportConfirm,
     ClientImportPreviewRead,
     ClientImportResultRead,
     ClientImportRowRead,
+    ClientRestoreResultRead,
     ClientTaxConstancyPreviewRead,
     ClientUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.sat_catalogs.service import latest_version, get_catalog
+from app.services.sat_catalogs.normalizers import normalize_search
 from app.services.storage_service import delete_if_unreferenced, save_upload
 
 
@@ -61,6 +73,109 @@ CLIENT_IMPORT_COLUMNS = [
 def _normalize_key(value: str | None) -> str:
     text = (value or "").strip().lower()
     return re.sub(r"[^a-z0-9]+", "", text)
+
+
+RFC_PATTERN = re.compile(r"^(?:[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}|XAXX010101000|XEXX010101000)$")
+GENERIC_RFCS = {"XAXX010101000", "XEXX010101000"}
+
+
+def _validate_sat_code(db: Session, catalog_code: str, value: str | None, label: str) -> None:
+    """Reject a supplied fiscal code unless it exists in the active local SAT version."""
+    if not value:
+        return
+    catalog = get_catalog(db, catalog_code)
+    version = latest_version(db, catalog)
+    if version is None:
+        raise HTTPException(status_code=409, detail=f"El catálogo SAT de {label} no está disponible localmente")
+    record = db.scalar(
+        select(SatCatalogRecord.id).where(
+            SatCatalogRecord.catalog_version_id == version.id,
+            SatCatalogRecord.normalized_code == normalize_search(value),
+            SatCatalogRecord.is_active.is_(True),
+            (SatCatalogRecord.valid_from.is_(None) | (SatCatalogRecord.valid_from <= date.today())),
+            (SatCatalogRecord.valid_until.is_(None) | (SatCatalogRecord.valid_until >= date.today())),
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=422, detail=f"Código SAT de {label} no válido: {value}")
+
+
+def _validate_fiscal_profile(db: Session, values: dict) -> None:
+    rfc = (values.get("rfc") or "").strip().upper()
+    if rfc and not RFC_PATTERN.fullmatch(rfc):
+        raise HTTPException(status_code=422, detail="RFC con estructura inválida")
+    if "rfc" in values:
+        values["rfc"] = rfc or None
+    if values.get("fiscal_postal_code"):
+        values["fiscal_postal_code"] = str(values["fiscal_postal_code"]).strip().zfill(5)
+    _validate_sat_code(db, "fiscal_regimes", values.get("tax_regime"), "régimen fiscal")
+    _validate_sat_code(db, "cfdi_uses", values.get("cfdi_use"), "uso CFDI")
+    _validate_sat_code(db, "postal_codes", values.get("fiscal_postal_code"), "código postal fiscal")
+    _validate_sat_code(db, "countries", values.get("fiscal_country_code"), "país fiscal")
+
+
+def _requires_fiscal_review(values: dict) -> bool:
+    required = ("rfc", "legal_name", "tax_regime", "cfdi_use", "fiscal_postal_code")
+    return any(not (values.get(key) or "").strip() for key in required)
+
+
+def _without_function_words(value: str | None) -> str:
+    return " ".join(word for word in normalize_search(value).split() if word not in {"de"})
+
+
+def _resolve_sat_import_value(
+    db: Session,
+    catalog_code: str,
+    value: str | None,
+    cache: dict | None = None,
+) -> str | None:
+    """Resolve a local SAT code or a unique normalized description without fuzzy matching."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    cache = cache if cache is not None else {}
+    normalized = normalize_search(raw)
+    result_key = ("result", catalog_code, normalized)
+    if result_key in cache:
+        return cache[result_key]
+
+    version_key = ("version", catalog_code)
+    if version_key not in cache:
+        catalog = get_catalog(db, catalog_code)
+        cache[version_key] = latest_version(db, catalog)
+    version = cache[version_key]
+    if version is None:
+        cache[result_key] = None
+        return None
+
+    exact = list(db.scalars(select(SatCatalogRecord).where(
+        SatCatalogRecord.catalog_version_id == version.id,
+        SatCatalogRecord.is_active.is_(True),
+        or_(
+            SatCatalogRecord.normalized_code == normalized,
+            SatCatalogRecord.normalized_name == normalized,
+        ),
+    )).all())
+    if len(exact) == 1:
+        cache[result_key] = exact[0].code
+        return cache[result_key]
+
+    # Los códigos postales pueden tener decenas de miles de registros. Para ese
+    # catálogo sólo se permite coincidencia exacta, nunca una carga completa.
+    if catalog_code == "postal_codes":
+        cache[result_key] = None
+        return None
+
+    functional = _without_function_words(raw)
+    candidates_key = ("candidates", catalog_code)
+    if candidates_key not in cache:
+        cache[candidates_key] = list(db.scalars(select(SatCatalogRecord).where(
+            SatCatalogRecord.catalog_version_id == version.id,
+            SatCatalogRecord.is_active.is_(True),
+        )).all())
+    matches = [record for record in cache[candidates_key] if _without_function_words(record.name) == functional]
+    cache[result_key] = matches[0].code if len(matches) == 1 else None
+    return cache[result_key]
 
 
 def _json_safe(value):
@@ -261,6 +376,8 @@ def _normalize_client_data(data: dict, *, partial: bool = False) -> dict:
         normalized["fiscal_postal_code"] = _clean_text(normalized.get("fiscal_postal_code")) or normalized.get("postal_code")
     if has("country"):
         normalized["country"] = _clean_text(normalized.get("country")) or "Mexico"
+    if has("fiscal_country_code"):
+        normalized["fiscal_country_code"] = _clean_text(normalized.get("fiscal_country_code"))
     if has("tax_regime"):
         normalized["tax_regime"] = _clean_text(normalized.get("tax_regime"))
     if has("cfdi_use"):
@@ -318,9 +435,23 @@ def _sync_contacts(client: Client, contacts_payload: list[dict] | None) -> None:
     client.contacts.extend(ClientContact(**contact) for contact in contacts_payload if contact.get("name"))
 
 
-def create_client(db: Session, payload: ClientCreate, *, user_id: int | None = None) -> Client:
+def create_client(
+    db: Session,
+    payload: ClientCreate,
+    *,
+    user_id: int | None = None,
+    validate_fiscal: bool = True,
+    fiscal_review_required: bool | None = None,
+) -> Client:
     data = _normalize_client_data(payload.model_dump(exclude={"contacts"}))
+    if validate_fiscal:
+        _validate_fiscal_profile(db, data)
     client = Client(**data)
+    client.fiscal_review_required = (
+        _requires_fiscal_review(data)
+        if fiscal_review_required is None
+        else fiscal_review_required
+    )
     _sync_contacts(client, [contact.model_dump() for contact in payload.contacts])
     db.add(client)
     db.flush()
@@ -340,10 +471,19 @@ def create_client(db: Session, payload: ClientCreate, *, user_id: int | None = N
 def update_client(db: Session, client_id: int, payload: ClientUpdate, *, user_id: int | None = None) -> Client:
     client = get_client(db, client_id, include_inactive=True)
     updates = _normalize_client_data(payload.model_dump(exclude_unset=True, exclude={"contacts"}), partial=True)
+    _validate_fiscal_profile(db, updates)
     previous_values = {key: getattr(client, key) for key in updates}
     previous_contacts = [{"name": item.name, "email": item.email, "phone": item.phone} for item in client.contacts]
     for key, value in updates.items():
         setattr(client, key, value)
+    if any(key in updates for key in {"rfc", "legal_name", "tax_regime", "cfdi_use", "fiscal_postal_code"}):
+        client.fiscal_review_required = _requires_fiscal_review({
+            "rfc": client.rfc,
+            "legal_name": client.legal_name,
+            "tax_regime": client.tax_regime,
+            "cfdi_use": client.cfdi_use,
+            "fiscal_postal_code": client.fiscal_postal_code,
+        })
     if payload.contacts is not None:
         _sync_contacts(client, [contact.model_dump() for contact in payload.contacts])
         previous_values["contacts"] = previous_contacts
@@ -363,36 +503,171 @@ def update_client(db: Session, client_id: int, payload: ClientUpdate, *, user_id
 
 
 def deactivate_client(db: Session, client_id: int, *, user_id: int | None = None) -> Client:
+    return archive_client(db, client_id, user_id=user_id)
+
+
+def get_client_delete_eligibility(db: Session, client_id: int) -> ClientDeleteEligibilityRead:
+    """Single source of truth for client removal transitions.
+
+    Counts include indirect records reachable through an ETS, so a historical
+    equipment/certificate cannot be lost merely because it has no client FK.
+    """
+    get_client(db, client_id, include_inactive=True)
+    invoice_filter = or_(Invoice.client_id == client_id, Invoice.fiscal_client_id == client_id)
+    blocking_dependencies = {
+        "quotations": int(db.scalar(select(func.count()).select_from(Quotation).where(Quotation.client_id == client_id)) or 0),
+        "service_orders": int(db.scalar(select(func.count()).select_from(ServiceOrder).where(ServiceOrder.client_id == client_id)) or 0),
+        "equipment": int(db.scalar(select(func.count()).select_from(Equipment).join(ServiceOrder).where(ServiceOrder.client_id == client_id)) or 0),
+        "field_sheets": int(db.scalar(select(func.count()).select_from(FieldSheet).join(Equipment).join(ServiceOrder).where(ServiceOrder.client_id == client_id)) or 0),
+        "certificates": int(db.scalar(select(func.count()).select_from(Certificate).join(ServiceOrder).where(ServiceOrder.client_id == client_id)) or 0),
+        "invoices": int(db.scalar(select(func.count()).select_from(Invoice).where(invoice_filter)) or 0),
+        "payments": int(db.scalar(select(func.count()).select_from(InvoicePayment).join(Invoice).where(invoice_filter)) or 0),
+        "credit_notes": int(db.scalar(select(func.count()).select_from(CreditNote).join(Invoice).where(invoice_filter)) or 0),
+    }
+    cascade_dependencies = {
+        "contacts": int(db.scalar(select(func.count()).select_from(ClientContact).where(ClientContact.client_id == client_id)) or 0),
+        "certificate_profiles": int(db.scalar(select(func.count()).select_from(ClientCertificateProfile).where(ClientCertificateProfile.client_id == client_id)) or 0),
+    }
+    eligible = not any(blocking_dependencies.values())
+    return ClientDeleteEligibilityRead(
+        client_id=client_id,
+        eligible_for_hard_delete=eligible,
+        recommended_action="hard_delete" if eligible else "archive",
+        blocking_dependencies=blocking_dependencies,
+        cascade_dependencies=cascade_dependencies,
+    )
+
+
+def archive_client(db: Session, client_id: int, *, user_id: int | None = None) -> Client:
     client = get_client(db, client_id, include_inactive=True)
-    previous_tax_constancy = client.tax_constancy_path
-    previous_tax_constancy_filename = client.tax_constancy_filename
+    if not client.is_active:
+        return client
     client.is_active = False
     client.deleted_at = datetime.now(timezone.utc)
     client.deleted_by = user_id
-    client.tax_constancy_filename = None
-    client.tax_constancy_path = None
-    client.tax_constancy_uploaded_at = None
     write_audit_log(
         db,
-        action="client.deactivated",
+        action="client_archived",
         entity="clients",
         entity_id=client.id,
         user_id=user_id,
         previous_values={"is_active": True},
-        new_values={"is_active": False},
-    )
-    delete_if_unreferenced(
-        db,
-        previous_tax_constancy,
-        user_id=user_id,
-        module="Clientes",
-        entity="clients",
-        entity_id=client.id,
-        filename=previous_tax_constancy_filename,
+        new_values={"is_active": False, "mode": "archive"},
     )
     db.commit()
     db.refresh(client)
     return client
+
+
+def restore_client(db: Session, client_id: int, *, user_id: int | None = None) -> Client:
+    client = get_client(db, client_id, include_inactive=True)
+    if client.is_active:
+        return client
+    normalized_rfc = (client.rfc or "").strip().upper()
+    if normalized_rfc and normalized_rfc not in GENERIC_RFCS:
+        active_match = db.scalar(
+            select(Client.id).where(
+                Client.id != client.id,
+                Client.is_active.is_(True),
+                func.upper(Client.rfc) == normalized_rfc,
+            )
+        )
+        if active_match is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No se puede restaurar: el RFC ya pertenece a otro cliente activo.",
+            )
+    client.is_active = True
+    client.deleted_at = None
+    client.deleted_by = None
+    write_audit_log(
+        db,
+        action="client_restored",
+        entity="clients",
+        entity_id=client.id,
+        user_id=user_id,
+        previous_values={"is_active": False},
+        new_values={"is_active": True, "mode": "restore"},
+    )
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+def delete_client_permanently(
+    db: Session, client_id: int, *, user_id: int | None = None
+) -> ClientDeleteResultRead:
+    client = get_client(db, client_id, include_inactive=True)
+    eligibility = get_client_delete_eligibility(db, client.id)
+    if not client.is_active:
+        return ClientDeleteResultRead(
+            status="already_archived",
+            delete_mode="archive",
+            client_id=client.id,
+            message="El cliente ya estaba archivado.",
+            blocking_dependencies=eligibility.blocking_dependencies,
+        )
+    if not eligibility.eligible_for_hard_delete:
+        write_audit_log(
+            db,
+            action="client_delete_blocked",
+            entity="clients",
+            entity_id=client.id,
+            user_id=user_id,
+            previous_values={"is_active": True, "rfc": client.rfc},
+            new_values={"mode": "archive", "blocking_dependencies": eligibility.blocking_dependencies},
+            comment="Eliminación física bloqueada por historial operativo.",
+        )
+        client.is_active = False
+        client.deleted_at = datetime.now(timezone.utc)
+        client.deleted_by = user_id
+        write_audit_log(
+            db,
+            action="client_archived",
+            entity="clients",
+            entity_id=client.id,
+            user_id=user_id,
+            previous_values={"is_active": True},
+            new_values={"is_active": False, "mode": "archive"},
+        )
+        db.commit()
+        return ClientDeleteResultRead(
+            status="archived",
+            delete_mode="archive",
+            client_id=client.id,
+            message="El cliente conserva historial y fue archivado.",
+            blocking_dependencies=eligibility.blocking_dependencies,
+        )
+    tax_constancy_path = client.tax_constancy_path
+    tax_constancy_filename = client.tax_constancy_filename
+    snapshot = {"legal_name": client.legal_name, "rfc": client.rfc, "commercial_name": client.commercial_name}
+    write_audit_log(
+        db,
+        action="client_hard_deleted",
+        entity="clients",
+        entity_id=client.id,
+        user_id=user_id,
+        previous_values=snapshot,
+        new_values={"deleted": True, "mode": "hard"},
+    )
+    db.delete(client)
+    db.flush()
+    delete_if_unreferenced(
+        db,
+        tax_constancy_path,
+        user_id=user_id,
+        module="Clientes",
+        entity="clients",
+        entity_id=client_id,
+        filename=tax_constancy_filename,
+    )
+    db.commit()
+    return ClientDeleteResultRead(
+        status="deleted",
+        delete_mode="hard",
+        client_id=client_id,
+        message="El cliente fue eliminado definitivamente.",
+    )
 
 
 def _extract_label_value(compact: str, start_label: str, end_label: str | None = None) -> str | None:
@@ -690,12 +965,43 @@ def _get_row_value(row: dict[str, str], names: list[str]) -> str:
     return ""
 
 
-def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Client]) -> ClientImportPreviewRead:
-    existing_rfc = {_normalize_key(client.rfc) for client in existing_clients if client.rfc}
-    existing_email = {_normalize_key(client.email) for client in existing_clients if client.email}
+def _import_fiscal_warnings(db: Session, row: dict[str, str], cache: dict | None = None) -> list[str]:
+    warnings = []
+    rfc = _get_row_value(row, ["rfc", "RFC"]).strip().upper()
+    if not rfc:
+        warnings.append("RFC ausente; cliente importado y marcado para revisión fiscal.")
+    elif not RFC_PATTERN.fullmatch(rfc):
+        warnings.append("RFC con formato no reconocido; cliente importado y marcado para revisión fiscal.")
+    for catalog, names, label in (
+        ("fiscal_regimes", ["regimen_fiscal", "Regimen fiscal", "Régimen fiscal"], "Régimen fiscal"),
+        ("cfdi_uses", ["uso_cfdi", "Uso CFDI"], "Uso CFDI"),
+        ("postal_codes", ["codigo_postal", "Codigo postal", "Código postal"], "Código postal fiscal"),
+    ):
+        value = _get_row_value(row, names)
+        if not value:
+            warnings.append(f"{label} ausente; cliente importado y marcado para revisión fiscal.")
+        elif _resolve_sat_import_value(db, catalog, value, cache) is None:
+            warnings.append(f"{label} no reconocido ({value}); cliente importado y marcado para revisión fiscal.")
+    return warnings
+
+
+def _build_import_preview(
+    db: Session,
+    rows: list[dict[str, str]],
+    existing_clients: list[Client],
+    resolver_cache: dict | None = None,
+) -> ClientImportPreviewRead:
+    resolver_cache = resolver_cache if resolver_cache is not None else {}
+    active_clients = [client for client in existing_clients if client.is_active]
+    inactive_by_rfc: dict[str, list[Client]] = {}
+    for client in existing_clients:
+        if not client.is_active and client.rfc:
+            inactive_by_rfc.setdefault(_normalize_key(client.rfc), []).append(client)
+    existing_rfc = {_normalize_key(client.rfc) for client in active_clients if client.rfc}
+    existing_email = {_normalize_key(client.email) for client in active_clients if client.email}
     existing_name = {
         _normalize_key(client.commercial_name or client.legal_name)
-        for client in existing_clients
+        for client in active_clients
         if client.commercial_name or client.legal_name
     }
 
@@ -719,13 +1025,7 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
             part for part in [first_name.strip(), first_last_name.strip(), second_last_name.strip()] if part.strip()
         )
 
-        display_name = (
-            name.strip()
-            or legal_name.strip()
-            or person_name.strip()
-            or contact_name.strip()
-            or f"Cliente importado {index + 1}"
-        )
+        display_name = name.strip() or legal_name.strip() or person_name.strip() or contact_name.strip()
 
         name_key = _normalize_key(display_name)
         rfc_key = _normalize_key(rfc)
@@ -733,11 +1033,10 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
 
         errors: list[str] = []
         duplicates: list[str] = []
+        warnings = _import_fiscal_warnings(db, row, resolver_cache) if display_name else []
 
-        # Importación flexible:
-        # No rechazar clientes por información incompleta.
-        # Los faltantes se mostrarán después como "Información pendiente" en la UI.
-        # Solo se omiten duplicados para evitar registros repetidos.
+        if not display_name:
+            errors.append("Nombre comercial, razón social o nombre del cliente obligatorio")
 
         if rfc_key and (rfc_key in existing_rfc or rfc_key in seen_rfc):
             duplicates.append("RFC")
@@ -753,7 +1052,18 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
         if name_key:
             seen_name.add(name_key)
 
-        row_status = "duplicate" if duplicates else "valid"
+        archived_matches = inactive_by_rfc.get(rfc_key, [])
+        ambiguous = False
+        if rfc_key in GENERIC_RFCS and archived_matches:
+            errors.append("RFC genérico: no se restaura automáticamente porque no identifica inequívocamente al cliente.")
+            ambiguous = True
+        elif len(archived_matches) > 1:
+            errors.append("Hay más de un cliente archivado con el mismo RFC; requiere revisión manual.")
+            ambiguous = True
+        elif len(archived_matches) == 1 and not duplicates:
+            warnings.append("Cliente archivado encontrado por RFC; acción propuesta: restaurar y actualizar.")
+
+        row_status = "ambiguous" if ambiguous else "error" if errors else "duplicate" if duplicates else "warning" if warnings else "valid"
 
         preview_rows.append(
             ClientImportRowRead(
@@ -764,6 +1074,7 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
                 status=row_status,
                 errors=errors,
                 duplicates=duplicates,
+                warnings=warnings,
                 raw=row,
             )
         )
@@ -771,16 +1082,17 @@ def _build_import_preview(rows: list[dict[str, str]], existing_clients: list[Cli
     return ClientImportPreviewRead(
         columns=list(rows[0].keys()) if rows else [],
         rows=preview_rows,
-        valid_count=len([row for row in preview_rows if row.status == "valid"]),
+        valid_count=len([row for row in preview_rows if row.status in {"valid", "warning"}]),
         duplicate_count=len([row for row in preview_rows if row.status == "duplicate"]),
-        error_count=0,
+        error_count=len([row for row in preview_rows if row.status in {"error", "ambiguous"}]),
+        warning_count=len([row for row in preview_rows if row.status == "warning"]),
     )
 
 def preview_client_import(db: Session, upload: UploadFile) -> ClientImportPreviewRead:
     columns, rows = _read_tabular_file(upload)
     if not columns:
         return ClientImportPreviewRead(columns=[], rows=[], valid_count=0, duplicate_count=0, error_count=0)
-    preview = _build_import_preview(rows, list_clients(db, include_inactive=True))
+    preview = _build_import_preview(db, rows, list_clients(db, include_inactive=True))
     preview.columns = columns
     return preview
 
@@ -794,7 +1106,11 @@ def _clean_import_email(value: str | None) -> str:
 
     return ""
 
-def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
+def _row_to_client_payload(
+    db: Session,
+    row: dict[str, str],
+    resolver_cache: dict | None = None,
+) -> tuple[ClientCreate, list[str]]:
     name = _get_row_value(row, ["nombre_comercial", "Nombre comercial", "nombre", "Cliente"]).strip()
     legal_name = _get_row_value(row, ["razon_social", "Razon social", "Razón social"]).strip()
     first_name = _get_row_value(row, ["nombres", "Nombre(s)", "Nombre"]).strip()
@@ -810,13 +1126,16 @@ def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
         or legal_name
         or " ".join(part for part in [first_name, first_last_name, second_last_name] if part).strip()
         or contact_name
-        or "Cliente importado"
+        or ""
     )
 
     valid_email = _clean_import_email(email)
 
     postal_code = _get_row_value(row, ["codigo_postal", "Codigo postal", "Código postal"]).strip()
-    valid_postal_code = postal_code if postal_code.isdigit() else ""
+    resolved_tax_regime = _resolve_sat_import_value(db, "fiscal_regimes", _get_row_value(row, ["regimen_fiscal", "Regimen fiscal", "Régimen fiscal"]), resolver_cache)
+    resolved_cfdi_use = _resolve_sat_import_value(db, "cfdi_uses", _get_row_value(row, ["uso_cfdi", "Uso CFDI"]), resolver_cache)
+    resolved_postal_code = _resolve_sat_import_value(db, "postal_codes", postal_code, resolver_cache)
+    warnings = _import_fiscal_warnings(db, row, resolver_cache)
 
     return ClientCreate(
         client_type=client_type,
@@ -829,8 +1148,8 @@ def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
         second_last_name=second_last_name or None,
         email=valid_email or None,
         phone=phone or None,
-        tax_regime=_get_row_value(row, ["regimen_fiscal", "Regimen fiscal", "Régimen fiscal"]).strip() or None,
-        cfdi_use=_get_row_value(row, ["uso_cfdi", "Uso CFDI"]).strip() or None,
+        tax_regime=resolved_tax_regime,
+        cfdi_use=resolved_cfdi_use,
         street_type=_get_row_value(row, ["tipo_vialidad", "Tipo de vialidad"]).strip() or None,
         street=_get_row_value(row, ["calle", "Calle"]).strip() or None,
         exterior_number=_get_row_value(row, ["numero_exterior", "Numero exterior", "Número exterior"]).strip() or None,
@@ -840,8 +1159,8 @@ def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
         municipality=_get_row_value(row, ["municipio", "Municipio", "municipio_ciudad", "Municipio / Ciudad", "Ciudad"]).strip() or None,
         city=_get_row_value(row, ["municipio_ciudad", "Municipio / Ciudad", "Ciudad", "municipio", "Municipio"]).strip() or None,
         state=_get_row_value(row, ["estado", "Estado"]).strip() or None,
-        postal_code=valid_postal_code or None,
-        fiscal_postal_code=valid_postal_code or None,
+        postal_code=postal_code if postal_code.isdigit() else None,
+        fiscal_postal_code=resolved_postal_code,
         country=_get_row_value(row, ["pais", "Pais", "País"]).strip() or "Mexico",
         contacts=[
             {
@@ -853,7 +1172,7 @@ def _row_to_client_payload(row: dict[str, str]) -> ClientCreate:
         ]
         if contact_name
         else [],
-    )
+    ), warnings
 
 
 def confirm_client_import(
@@ -862,20 +1181,69 @@ def confirm_client_import(
     *,
     user_id: int | None = None,
 ) -> ClientImportResultRead:
-    preview = _build_import_preview(payload.rows, list_clients(db, include_inactive=True))
+    resolver_cache: dict = {}
+    preview = _build_import_preview(db, payload.rows, list_clients(db, include_inactive=True), resolver_cache)
     imported_ids: list[int] = []
     errors: list[dict] = []
+    warnings: list[dict] = []
     duplicate_count = len([row for row in preview.rows if row.status == "duplicate"])
-    error_count = len([row for row in preview.rows if row.status == "error"])
+    error_count = len([row for row in preview.rows if row.status in {"error", "ambiguous"}])
     omitted_count = duplicate_count + error_count
 
-    for row in preview.rows:
-        if row.status != "valid":
+    for index, row in enumerate(preview.rows, start=1):
+        if row.status not in {"valid", "warning"}:
             continue
         try:
-            created = create_client(db, _row_to_client_payload(row.raw), user_id=user_id)
-            imported_ids.append(created.id)
+            client_payload, row_warnings = _row_to_client_payload(db, row.raw, resolver_cache)
+            rfc_key = _normalize_key(client_payload.rfc)
+            archived_matches = (
+                list(db.scalars(select(Client).where(func.upper(Client.rfc) == client_payload.rfc, Client.is_active.is_(False))).all())
+                if rfc_key and rfc_key not in GENERIC_RFCS
+                else []
+            )
+            if len(archived_matches) == 1:
+                archived = archived_matches[0]
+                restored = restore_client(db, archived.id, user_id=user_id)
+                updates = _normalize_client_data(client_payload.model_dump(exclude={"contacts"}), partial=True)
+                for key, value in updates.items():
+                    if value is not None:
+                        setattr(restored, key, value)
+                restored.fiscal_review_required = bool(row_warnings)
+                if not restored.contacts and client_payload.contacts:
+                    _sync_contacts(restored, [contact.model_dump() for contact in client_payload.contacts])
+                write_audit_log(
+                    db,
+                    action="client_import_restored",
+                    entity="clients",
+                    entity_id=restored.id,
+                    user_id=user_id,
+                    previous_values={"is_active": False, "rfc": restored.rfc},
+                    new_values={"is_active": True, "source": "import"},
+                )
+                db.commit()
+                imported_ids.append(restored.id)
+                row_warnings = [*row_warnings, "Cliente archivado restaurado y actualizado por coincidencia exacta de RFC."]
+            else:
+                created = create_client(
+                    db,
+                    client_payload,
+                    user_id=user_id,
+                    validate_fiscal=False,
+                    fiscal_review_required=bool(row_warnings),
+                )
+                imported_ids.append(created.id)
+                write_audit_log(
+                    db,
+                    action="client_import_created",
+                    entity="clients",
+                    entity_id=created.id,
+                    user_id=user_id,
+                    new_values={"rfc": created.rfc, "source": "import"},
+                )
+                db.commit()
+            warnings.extend({"row": index, "name": row.name, "message": warning} for warning in row_warnings)
         except Exception as exc:  # noqa: BLE001
+            db.rollback()
             omitted_count += 1
             errors.append({"row": row.raw, "message": str(exc)})
 
@@ -886,6 +1254,10 @@ def confirm_client_import(
         error_count=error_count + len(errors),
         imported_ids=imported_ids,
         errors=errors,
+        total_rows=len(preview.rows),
+        imported_with_warnings_count=len([row for row in preview.rows if row.status == "warning"]),
+        warning_count=len(warnings),
+        warnings=warnings,
     )
 
 

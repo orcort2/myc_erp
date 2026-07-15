@@ -88,6 +88,7 @@ export function toClientPayload(form) {
     state: form.addressState.trim() || null,
     postal_code: form.postalCode.trim() || null,
     country: form.country.trim() || null,
+    fiscal_country_code: form.fiscalCountryCode.trim() || null,
     fiscal_postal_code: form.fiscalPostalCode.trim() || null,
     contacts: contactName
       ? [

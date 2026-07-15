@@ -7,6 +7,3 @@ cd "$BACKEND_DIR" || exit 1
 
 echo "Aplicando migraciones Alembic..."
 "$ALEMBIC" upgrade head
-
-echo
-read -p "Enter para continuar..."

@@ -25,6 +25,7 @@ from app.routers import (
     quotations,
     reference_standards,
     reference_standard_certificates,
+    sat_catalogs,
     service_orders,
     technical_profiles,
     uncertainty,
@@ -71,6 +72,7 @@ app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
 app.include_router(certificates.router, prefix="/api")
 app.include_router(invoices.router, prefix="/api")
+app.include_router(sat_catalogs.router, prefix="/api")
 app.include_router(institutional_configurations.router, prefix="/api")
 app.include_router(client_portal.router, prefix="/api")
 app.include_router(metrology.router, prefix="/api")

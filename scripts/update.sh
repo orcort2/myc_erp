@@ -1,31 +1,10 @@
-#!/bin/bash
-
-ROOT="/Users/saulcortes/Desktop/myc_erp"
-
-echo "========================================"
-echo "        MYC SYSTEM UPDATE"
-echo "========================================"
-
-cd "$ROOT" || exit 1
-
-echo "Actualizando Git..."
-git pull || exit 1
-
-echo "Instalando dependencias backend..."
-cd "$ROOT/backend" || exit 1
-../venv/bin/pip install -r requirements.txt || exit 1
-
-echo "Aplicando migraciones..."
-../venv/bin/alembic upgrade head || exit 1
-
-echo "Instalando dependencias frontend..."
-cd "$ROOT/frontend" || exit 1
-npm install || exit 1
-
-echo "Build general..."
-"$ROOT/scripts/build.sh" || exit 1
-
-echo "Doctor..."
-"$ROOT/scripts/doctor.sh"
-
-echo "Sistema actualizado correctamente."
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")/toolkit/lib" && pwd)/common.sh"
+echo "MYC SYSTEM UPDATE"
+(cd "$PROJECT_ROOT" && git pull)
+(cd "$BACKEND_DIR" && "$PIP" install -r requirements.txt)
+myc_run_alembic upgrade head
+(cd "$FRONTEND_DIR" && npm install)
+"$PROJECT_ROOT/scripts/build.sh"
+"$PROJECT_ROOT/scripts/doctor.sh"

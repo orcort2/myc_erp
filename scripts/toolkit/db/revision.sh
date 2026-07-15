@@ -13,6 +13,3 @@ fi
 cd "$BACKEND_DIR" || exit 1
 
 "$ALEMBIC" revision -m "$NAME"
-
-echo
-read -p "Enter para continuar..."

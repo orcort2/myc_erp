@@ -19,11 +19,13 @@ from app.schemas.invoice import (
     InvoiceCreate,
     InvoicePaymentCreate,
     InvoiceSettingsUpdate,
+    InvoiceSourceChange,
     InvoiceStatusChange,
     InvoiceUpdate,
     ReleasedUninvoicedRow,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.clients import RFC_PATTERN, _validate_sat_code
 
 
 INVOICE_TERMINAL_STATUSES = {"paid", "cancelled", "credit_note"}
@@ -113,6 +115,39 @@ def _get_quotation(db: Session, quotation_id: int | None) -> Quotation | None:
     return quotation
 
 
+def _normalized_status(value: str | None) -> str:
+    return (value or "").strip().lower().replace(" ", "_")
+
+
+def _validate_billable_origin(quotation: Quotation | None, service_order: ServiceOrder | None, *, client_id: int) -> None:
+    if quotation is None:
+        raise HTTPException(status_code=409, detail="La factura requiere una cotizacion aprobada")
+    if service_order is None:
+        raise HTTPException(status_code=409, detail="La factura requiere una orden de servicio generada")
+
+    approved_statuses = {"approved", "aprobada", "accepted", "aceptada"}
+    if _normalized_status(getattr(quotation, "status", None)) not in approved_statuses:
+        raise HTTPException(status_code=409, detail="La cotizacion debe estar aprobada antes de facturar")
+
+    order_quotation_id = getattr(service_order, "quotation_id", None)
+    if order_quotation_id != quotation.id:
+        raise HTTPException(status_code=409, detail="La orden de servicio no pertenece a la cotizacion seleccionada")
+
+    quotation_client_id = getattr(quotation, "client_id", None)
+    order_client_id = getattr(service_order, "client_id", None)
+    if quotation_client_id not in {None, client_id} or order_client_id not in {None, client_id}:
+        raise HTTPException(status_code=409, detail="Cliente, cotizacion y orden de servicio no coinciden")
+
+
+def _invoice_source_snapshot(quotation: Quotation, service_order: ServiceOrder) -> dict:
+    return {
+        "quotation_id": quotation.id,
+        "quotation_updated_at": str(getattr(quotation, "updated_at", "") or ""),
+        "service_order_id": service_order.id,
+        "service_order_updated_at": str(getattr(service_order, "updated_at", "") or ""),
+    }
+
+
 def _validate_fiscal_client(client: Client) -> list[str]:
     missing = []
     if not client.rfc:
@@ -121,6 +156,64 @@ def _validate_fiscal_client(client: Client) -> list[str]:
         missing.append("Razon social")
     if not client.tax_regime:
         missing.append("Regimen fiscal")
+    return missing
+
+
+def _build_fiscal_snapshot(client: Client, *, cfdi_use: str | None) -> dict:
+    """Freeze the receiver profile used by a draft; never read the client again for that invoice."""
+    return {
+        "receiver_rfc": (client.rfc or "").strip().upper() or None,
+        "receiver_legal_name": (client.legal_name or "").strip() or None,
+        "receiver_tax_regime_code": (client.tax_regime or "").strip() or None,
+        "receiver_fiscal_postal_code": (client.fiscal_postal_code or "").strip() or None,
+        "receiver_cfdi_use_code": (cfdi_use or client.cfdi_use or "").strip() or None,
+        "receiver_country_code": (client.fiscal_country_code or "MEX").strip() or None,
+    }
+
+
+def _validate_fiscal_snapshot(db: Session, snapshot: dict, *, require_complete: bool) -> list[str]:
+    required = {
+        "receiver_rfc": "RFC",
+        "receiver_legal_name": "Razón social",
+        "receiver_tax_regime_code": "Régimen fiscal",
+        "receiver_fiscal_postal_code": "Código postal fiscal",
+        "receiver_cfdi_use_code": "Uso CFDI",
+    }
+    missing = [label for key, label in required.items() if not snapshot.get(key)]
+    if snapshot.get("receiver_rfc") and not RFC_PATTERN.fullmatch(snapshot["receiver_rfc"]):
+        raise HTTPException(status_code=422, detail="RFC receptor con estructura inválida")
+    for catalog, key, label in (
+        ("fiscal_regimes", "receiver_tax_regime_code", "régimen fiscal"),
+        ("postal_codes", "receiver_fiscal_postal_code", "código postal fiscal"),
+        ("cfdi_uses", "receiver_cfdi_use_code", "uso CFDI"),
+        ("countries", "receiver_country_code", "país fiscal"),
+    ):
+        _validate_sat_code(db, catalog, snapshot.get(key), label)
+    if require_complete and missing:
+        return missing
+    return []
+
+
+def _validate_invoice_configuration(db: Session, invoice: Invoice) -> list[str]:
+    missing = []
+    for catalog, value, label in (
+        ("payment_forms", invoice.payment_form, "Forma de pago"),
+        ("payment_methods", invoice.payment_method, "Método de pago"),
+        ("currencies", invoice.currency, "Moneda"),
+    ):
+        if not value:
+            missing.append(label)
+        else:
+            _validate_sat_code(db, catalog, value, label.lower())
+    for index, item in enumerate(invoice.items, start=1):
+        if not item.sat_key:
+            missing.append(f"Concepto {index}: clave de producto o servicio")
+        else:
+            _validate_sat_code(db, "products_services", item.sat_key, "clave de producto o servicio")
+        if not item.sat_unit:
+            missing.append(f"Concepto {index}: unidad SAT")
+        else:
+            _validate_sat_code(db, "units", item.sat_unit, "unidad SAT")
     return missing
 
 
@@ -208,6 +301,28 @@ def _recalculate_invoice(invoice: Invoice) -> None:
         invoice.status = "overdue"
 
 
+def _sync_invoice_items_from_quotation(invoice: Invoice, quotation: Quotation) -> None:
+    invoice.items = [
+        InvoiceItem(
+            quotation_item_id=item.id,
+            description=item.description or item.service_name,
+            quantity=item.quantity,
+            unit=item.unit,
+            sat_unit=item.sat_unit,
+            sat_key=item.sat_key,
+            unit_price=item.unit_price,
+            discount_total=Decimal("0.00"),
+            tax_rate=item.tax_rate,
+            notes=item.quotation_legend,
+            service_type=item.service_name,
+            source_type="quotation",
+        )
+        for item in quotation.items
+        if item.is_active
+    ]
+    _recalculate_invoice(invoice)
+
+
 def list_invoices(db: Session) -> list[Invoice]:
     query = (
         select(Invoice)
@@ -250,10 +365,30 @@ def create_invoice(db: Session, payload: InvoiceCreate, *, user_id: int | None =
     client = _get_client(db, payload.client_id)
     fiscal_client = _get_client(db, payload.fiscal_client_id or payload.client_id)
     service_order = _get_service_order(db, payload.service_order_id)
-    _get_quotation(db, payload.quotation_id)
+    quotation = _get_quotation(db, payload.quotation_id)
+    _validate_billable_origin(quotation, service_order, client_id=client.id)
+    existing = db.scalar(
+        select(Invoice.id).where(
+            Invoice.quotation_id == quotation.id,
+            Invoice.is_active.is_(True),
+            Invoice.status != "cancelled",
+        ).limit(1)
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="La cotizacion ya tiene una factura o borrador asociado",
+        )
     issued_on = payload.issued_on or date.today()
+    fiscal_snapshot = _build_fiscal_snapshot(fiscal_client, cfdi_use=payload.usage_cfdi)
     if payload.status in {"pending", "issued"}:
-        missing = _validate_fiscal_client(fiscal_client)
+        missing = _validate_fiscal_snapshot(db, fiscal_snapshot, require_complete=True)
+        missing.extend(_validate_invoice_configuration(db, Invoice(
+            payment_method=payload.payment_method,
+            payment_form=payload.payment_form,
+            currency=(payload.currency or settings.default_currency or "MXN").upper(),
+            items=[_build_invoice_item(db, item) for item in payload.items],
+        )))
         if missing:
             raise HTTPException(status_code=409, detail=f"Datos fiscales incompletos: {', '.join(missing)}")
     if payload.folio and settings.allow_manual_folio:
@@ -273,6 +408,10 @@ def create_invoice(db: Session, payload: InvoiceCreate, *, user_id: int | None =
         issued_on=issued_on,
         due_on=payload.due_on or (issued_on.fromordinal(issued_on.toordinal() + credit_days) if credit_days else issued_on),
         status=payload.status,
+        review_required=False,
+        draft_reason="created_from_quotation",
+        source_snapshot=_invoice_source_snapshot(quotation, service_order),
+        fiscal_snapshot=fiscal_snapshot,
         payment_method=payload.payment_method,
         payment_form=payload.payment_form,
         usage_cfdi=payload.usage_cfdi,
@@ -288,14 +427,15 @@ def create_invoice(db: Session, payload: InvoiceCreate, *, user_id: int | None =
     db.add(invoice)
     db.flush()
     write_audit_log(db, action="invoice.created", entity="invoices", entity_id=invoice.id, user_id=user_id, new_values={"folio": invoice.folio, "status": invoice.status})
+    write_audit_log(db, action="invoice_fiscal_snapshot_created", entity="invoices", entity_id=invoice.id, user_id=user_id, new_values=fiscal_snapshot, comment="invoice_workbench")
     db.commit()
     return get_invoice(db, invoice.id)
 
 
 def update_invoice(db: Session, invoice_id: int, payload: InvoiceUpdate, *, user_id: int | None = None) -> Invoice:
     invoice = get_invoice(db, invoice_id)
-    if invoice.status in {"paid", "cancelled"} and payload.items is not None:
-        raise HTTPException(status_code=409, detail="La factura no permite modificar conceptos en este estado")
+    if invoice.status not in {"draft", "pending"}:
+        raise HTTPException(status_code=409, detail="Solo se pueden modificar facturas en borrador o pendientes")
     updates = payload.model_dump(exclude_unset=True)
     if "fiscal_client_id" in updates and updates["fiscal_client_id"]:
         _get_client(db, updates["fiscal_client_id"])
@@ -309,6 +449,10 @@ def update_invoice(db: Session, invoice_id: int, payload: InvoiceUpdate, *, user
         if key == "items":
             continue
         setattr(invoice, key, value)
+    if not invoice.fiscal_snapshot:
+        fiscal_client = invoice.fiscal_client or invoice.client
+        invoice.fiscal_snapshot = _build_fiscal_snapshot(fiscal_client, cfdi_use=invoice.usage_cfdi)
+        write_audit_log(db, action="invoice_fiscal_snapshot_created", entity="invoices", entity_id=invoice.id, user_id=user_id, new_values=invoice.fiscal_snapshot, comment="legacy_backfill")
     invoice.updated_by_id = user_id
     _recalculate_invoice(invoice)
     write_audit_log(db, action="invoice.updated", entity="invoices", entity_id=invoice.id, user_id=user_id, new_values={"status": invoice.status})
@@ -322,8 +466,10 @@ def change_invoice_status(db: Session, invoice_id: int, payload: InvoiceStatusCh
     if payload.status not in INVOICE_ALLOWED_TRANSITIONS.get(current_status, set()):
         raise HTTPException(status_code=409, detail=f"Transicion no permitida: {current_status} -> {payload.status}")
     if payload.status in {"pending", "issued"}:
-        fiscal_client = invoice.fiscal_client or invoice.client
-        missing = _validate_fiscal_client(fiscal_client)
+        if invoice.review_required:
+            raise HTTPException(status_code=409, detail="La factura cambio por una excepcion de servicio. Revisala y confirma el borrador antes de emitir")
+        missing = _validate_fiscal_snapshot(db, invoice.fiscal_snapshot or {}, require_complete=True)
+        missing.extend(_validate_invoice_configuration(db, invoice))
         if missing:
             raise HTTPException(status_code=409, detail=f"Datos fiscales incompletos: {', '.join(missing)}")
     if payload.status == "cancelled" and invoice.amount_paid > Decimal("0.00") and not payload.comment:
@@ -333,6 +479,115 @@ def change_invoice_status(db: Session, invoice_id: int, payload: InvoiceStatusCh
         invoice.cancellation_reason = payload.comment
     _recalculate_invoice(invoice)
     write_audit_log(db, action=f"invoice.{payload.status}", entity="invoices", entity_id=invoice.id, user_id=user_id, previous_values={"status": current_status}, new_values={"status": invoice.status}, comment=payload.comment)
+    db.commit()
+    return get_invoice(db, invoice.id)
+
+
+def mark_invoice_source_changed(
+    db: Session,
+    invoice_id: int,
+    payload: InvoiceSourceChange,
+    *,
+    user_id: int | None = None,
+) -> Invoice:
+    invoice = get_invoice(db, invoice_id)
+    if invoice.status in {"issued", "paid", "partially_paid", "overdue", "cancelled", "credit_note"}:
+        raise HTTPException(
+            status_code=409,
+            detail="La factura ya fue emitida o cerrada. El servicio adicional requiere una nueva cotizacion, orden y factura",
+        )
+
+    previous_status = invoice.status
+    if invoice.quotation is not None:
+        _sync_invoice_items_from_quotation(invoice, invoice.quotation)
+    invoice.status = "draft"
+    invoice.review_required = True
+    invoice.draft_reason = payload.reason or "service_exception"
+    invoice.updated_by_id = user_id
+
+    snapshot = dict(invoice.source_snapshot or {})
+    snapshot["pending_source_change"] = True
+    snapshot["source_change_reason"] = invoice.draft_reason
+    snapshot["source_change_comment"] = payload.comment
+    invoice.source_snapshot = snapshot
+
+    write_audit_log(
+        db,
+        action="invoice.source_changed",
+        entity="invoices",
+        entity_id=invoice.id,
+        user_id=user_id,
+        previous_values={"status": previous_status, "review_required": False},
+        new_values={"status": "draft", "review_required": True, "draft_reason": invoice.draft_reason},
+        comment=payload.comment,
+    )
+    db.commit()
+    return get_invoice(db, invoice.id)
+
+
+def resync_invoices_for_service_exception(
+    db: Session,
+    service_order_id: int,
+    *,
+    reason: str = "service_exception",
+    comment: str | None = None,
+    user_id: int | None = None,
+) -> list[Invoice]:
+    invoices = list(db.scalars(
+        select(Invoice)
+        .where(
+            Invoice.service_order_id == service_order_id,
+            Invoice.is_active.is_(True),
+            Invoice.status.in_({"draft", "pending"}),
+        )
+        .options(selectinload(Invoice.quotation).selectinload(Quotation.items))
+    ).all())
+    for invoice in invoices:
+        if invoice.quotation is None:
+            continue
+        _sync_invoice_items_from_quotation(invoice, invoice.quotation)
+        invoice.status = "draft"
+        invoice.review_required = True
+        invoice.draft_reason = reason
+        invoice.updated_by_id = user_id
+        snapshot = dict(invoice.source_snapshot or {})
+        snapshot.update({
+            "pending_source_change": True,
+            "source_change_reason": reason,
+            "source_change_comment": comment,
+        })
+        invoice.source_snapshot = snapshot
+        write_audit_log(
+            db,
+            action="invoice.service_exception_resynced",
+            entity="invoices",
+            entity_id=invoice.id,
+            user_id=user_id,
+            previous_values={"status": "draft_or_pending"},
+            new_values={"status": "draft", "review_required": True, "draft_reason": reason},
+            comment=comment,
+        )
+    return invoices
+
+
+def confirm_invoice_review(db: Session, invoice_id: int, *, user_id: int | None = None) -> Invoice:
+    invoice = get_invoice(db, invoice_id)
+    if invoice.status != "draft":
+        raise HTTPException(status_code=409, detail="Solo los borradores pueden confirmarse")
+    invoice.review_required = False
+    invoice.draft_reason = None
+    invoice.updated_by_id = user_id
+    snapshot = dict(invoice.source_snapshot or {})
+    snapshot["pending_source_change"] = False
+    invoice.source_snapshot = snapshot
+    write_audit_log(
+        db,
+        action="invoice.review_confirmed",
+        entity="invoices",
+        entity_id=invoice.id,
+        user_id=user_id,
+        new_values={"review_required": False},
+    )
     db.commit()
     return get_invoice(db, invoice.id)
 
