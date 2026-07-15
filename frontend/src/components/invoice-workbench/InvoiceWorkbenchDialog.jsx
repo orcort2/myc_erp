@@ -1,6 +1,15 @@
-import { X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useEffect, useRef, useState } from 'react';
+import {
+  BadgeDollarSign,
+  CreditCard,
+  FileClock,
+  FileText,
+  History,
+  Landmark,
+  ReceiptText,
+  X,
+} from 'lucide-react';
 
 import {
   createGenieSpringKeyframes,
@@ -8,8 +17,142 @@ import {
   SIGNATURE_ICON_FADE_DURATION,
 } from '../signatures/signatureMorphAnimation.js';
 import InvoiceDraftView from './InvoiceDraftView.jsx';
+import InvoiceDetailView from './InvoiceDetailView.jsx';
 
 import './invoice-workbench.css';
+
+const WORKSPACE_TABS = [
+  {
+    key: 'workbench',
+    label: 'Mesa de trabajo',
+    icon: FileText,
+  },
+  {
+    key: 'invoice',
+    label: 'Factura',
+    icon: ReceiptText,
+  },
+  {
+    key: 'payments',
+    label: 'Pagos',
+    icon: CreditCard,
+  },
+  {
+    key: 'receivable',
+    label: 'Cuenta por cobrar',
+    icon: Landmark,
+  },
+  {
+    key: 'creditNotes',
+    label: 'Notas de crédito',
+    icon: BadgeDollarSign,
+  },
+  {
+    key: 'documents',
+    label: 'Documentos',
+    icon: FileClock,
+  },
+  {
+    key: 'history',
+    label: 'Historial',
+    icon: History,
+  },
+];
+
+const INVOICE_STATUS_LABELS = {
+  draft: 'Borrador',
+  pending: 'Pendiente',
+  issuing: 'Emitiendo',
+  issued: 'Emitida',
+  issue_failed: 'Error de emisión',
+  partially_paid: 'Pago parcial',
+  paid: 'Pagada',
+  overdue: 'Vencida',
+  cancelled: 'Cancelada',
+  credit_note: 'Nota de crédito',
+};
+
+function formatCurrency(value, currency = 'MXN') {
+  const amount = Number(value || 0);
+
+  return new Intl.NumberFormat('es-MX', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+  }).format(amount);
+}
+
+function WorkspaceEmptyState({ title, description }) {
+  return (
+    <div className="invoice-workspace-empty">
+      <FileText aria-hidden="true" size={30} />
+      <strong>{title}</strong>
+      <span>{description}</span>
+    </div>
+  );
+}
+
+function InvoiceWorkspaceSummary({ invoice, quotation, client }) {
+  const status = invoice?.status || 'ready';
+  const statusLabel =
+    INVOICE_STATUS_LABELS[status] ||
+    (invoice ? status : 'Lista para facturar');
+
+  return (
+    <div className="invoice-case-summary">
+      <article>
+        <span>Documento de origen</span>
+        <strong>{quotation?.folio || 'Sin folio'}</strong>
+      </article>
+
+      <article>
+        <span>Cliente</span>
+        <strong>
+          {client?.commercial_name ||
+            client?.legal_name ||
+            'Cliente sin nombre'}
+        </strong>
+      </article>
+
+      <article>
+        <span>Factura</span>
+        <strong>
+          {invoice
+            ? `${invoice.series || ''}-${invoice.folio || ''}`.replace(
+                /^-|-$|^$/,
+                'Sin folio'
+              )
+            : 'Pendiente'}
+        </strong>
+      </article>
+
+      <article>
+        <span>Estado</span>
+        <strong>{statusLabel}</strong>
+      </article>
+
+      <article>
+        <span>Total</span>
+        <strong>
+          {formatCurrency(
+            invoice?.total ?? quotation?.total ?? 0,
+            invoice?.currency || quotation?.currency || 'MXN'
+          )}
+        </strong>
+      </article>
+
+      <article>
+        <span>Saldo</span>
+        <strong>
+          {formatCurrency(
+            invoice?.balance_due ?? invoice?.total ?? quotation?.total ?? 0,
+            invoice?.currency || quotation?.currency || 'MXN'
+          )}
+        </strong>
+      </article>
+    </div>
+  );
+}
 
 export default function InvoiceWorkbenchDialog({
   open,
@@ -20,19 +163,47 @@ export default function InvoiceWorkbenchDialog({
   catalogByCode,
   isSaving = false,
   canIssue = false,
+  issueBlockedReason = '',
   originElement = null,
   onConceptChange,
   onDraftChange,
   onSaveDraft,
   onIssue,
+  onGoToInvoice,
+  onDownloadInstitutionalPdf,
+  onDownloadFiscalXml,
   onClose,
 }) {
   const [isClosing, setIsClosing] = useState(false);
+  const [activeWorkspaceTab, setActiveWorkspaceTab] =
+    useState('workbench');
 
   const closeTimerRef = useRef(null);
   const closeAnimationRef = useRef(null);
   const closeMetricsRef = useRef(null);
   const modalRef = useRef(null);
+
+  const invoiceStatus = invoice?.status || null;
+  const isIssued = useMemo(
+    () =>
+      [
+        'issued',
+        'partially_paid',
+        'paid',
+        'overdue',
+        'cancelled',
+      ].includes(invoiceStatus),
+    [invoiceStatus]
+  );
+
+  const title =
+    quotation?.folio ||
+    invoice?.folio ||
+    'Expediente sin folio';
+
+  const headerLabel = invoice
+    ? 'Expediente de facturación'
+    : 'Nuevo expediente de facturación';
 
   useEffect(() => {
     if (!open || isClosing) return undefined;
@@ -86,12 +257,16 @@ export default function InvoiceWorkbenchDialog({
   );
 
   useEffect(() => {
-    if (open) {
-      setIsClosing(false);
-    }
-  }, [open]);
+    if (!open) return;
 
-  if (!open || !quotation) {
+    setIsClosing(false);
+
+    if (!invoice) {
+      setActiveWorkspaceTab('workbench');
+    }
+  }, [invoice, open]);
+
+  if (!open || (!quotation && !invoice)) {
     return null;
   }
 
@@ -127,10 +302,87 @@ export default function InvoiceWorkbenchDialog({
     }, SIGNATURE_CLOSE_DURATION + SIGNATURE_ICON_FADE_DURATION);
   }
 
-  const title = quotation.folio || 'Cotización sin folio';
-  const headerLabel = invoice
-    ? 'Borrador de facturación'
-    : 'Precomprobante CFDI';
+  function renderActiveWorkspace() {
+    if (activeWorkspaceTab === 'workbench') {
+      return (
+        <InvoiceDraftView
+          canIssue={false}
+          issueBlockedReason={issueBlockedReason}
+          catalogByCode={catalogByCode}
+          client={client}
+          draft={draft}
+          invoice={invoice}
+          isSaving={isSaving}
+          onConceptChange={onConceptChange}
+          onDraftChange={onDraftChange}
+          onGoToInvoice={() => {
+            setActiveWorkspaceTab('invoice');
+            onGoToInvoice?.();
+          }}
+          onSaveDraft={onSaveDraft}
+          quotation={quotation}
+        />
+      );
+    }
+
+    if (activeWorkspaceTab === 'invoice') {
+      return (
+        <InvoiceDetailView
+          canEmit={canIssue}
+          client={client}
+          invoice={invoice}
+          isSaving={isSaving}
+          issueBlockedReason={issueBlockedReason}
+          onIssue={onIssue}
+          onDownloadInstitutionalPdf={onDownloadInstitutionalPdf}
+          onDownloadFiscalXml={onDownloadFiscalXml}
+        />
+      );
+    }
+
+    if (activeWorkspaceTab === 'payments') {
+      return (
+        <WorkspaceEmptyState
+          title="Centro de pagos"
+          description="Aquí se mostrarán los pagos vinculados exclusivamente a esta factura y el formulario para registrar nuevos movimientos."
+        />
+      );
+    }
+
+    if (activeWorkspaceTab === 'receivable') {
+      return (
+        <WorkspaceEmptyState
+          title="Cuenta por cobrar"
+          description="Aquí se mostrará el saldo, vencimiento, antigüedad y seguimiento de cobranza de este expediente."
+        />
+      );
+    }
+
+    if (activeWorkspaceTab === 'creditNotes') {
+      return (
+        <WorkspaceEmptyState
+          title="Notas de crédito"
+          description="Aquí se concentrarán las notas de crédito relacionadas exclusivamente con esta factura."
+        />
+      );
+    }
+
+    if (activeWorkspaceTab === 'documents') {
+      return (
+        <WorkspaceEmptyState
+          title="Documentos fiscales"
+          description="Los documentos disponibles de esta factura se descargan desde la pestaña Factura."
+        />
+      );
+    }
+
+    return (
+      <WorkspaceEmptyState
+        title="Historial del expediente"
+        description="Aquí se mostrarán los cambios, emisiones, pagos, recuperaciones documentales y acciones de auditoría."
+      />
+    );
+  }
 
   return createPortal(
     <div
@@ -150,8 +402,8 @@ export default function InvoiceWorkbenchDialog({
         aria-modal="true"
         className={
           isClosing
-            ? 'invoice-draft-modal closing'
-            : 'invoice-draft-modal'
+            ? 'invoice-draft-modal invoice-draft-modal--workspace closing'
+            : 'invoice-draft-modal invoice-draft-modal--workspace'
         }
         ref={modalRef}
         role="dialog"
@@ -164,7 +416,7 @@ export default function InvoiceWorkbenchDialog({
           </div>
 
           <button
-            aria-label="Cerrar precomprobante"
+            aria-label="Cerrar expediente de facturación"
             className="invoice-draft-modal__close"
             disabled={isClosing || isSaving}
             onClick={beginClose}
@@ -174,20 +426,44 @@ export default function InvoiceWorkbenchDialog({
           </button>
         </header>
 
-        <div className="invoice-draft-modal__content">
-          <InvoiceDraftView
-            canIssue={canIssue}
-            catalogByCode={catalogByCode}
-            client={client}
-            draft={draft}
-            invoice={invoice}
-            isSaving={isSaving}
-            onConceptChange={onConceptChange}
-            onDraftChange={onDraftChange}
-            onIssue={onIssue}
-            onSaveDraft={onSaveDraft}
-            quotation={quotation}
-          />
+        <InvoiceWorkspaceSummary
+          client={client}
+          invoice={invoice}
+          quotation={quotation}
+        />
+
+        <nav
+          aria-label="Secciones del expediente de facturación"
+          className="invoice-case-tabs"
+          role="tablist"
+        >
+          {WORKSPACE_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const disabled = tab.key !== 'workbench' && !invoice;
+
+            return (
+              <button
+                aria-selected={activeWorkspaceTab === tab.key}
+                className={
+                  activeWorkspaceTab === tab.key
+                    ? 'invoice-case-tab is-active'
+                    : 'invoice-case-tab'
+                }
+                disabled={disabled}
+                key={tab.key}
+                onClick={() => setActiveWorkspaceTab(tab.key)}
+                role="tab"
+                type="button"
+              >
+                <Icon aria-hidden="true" size={17} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+
+        <div className="invoice-draft-modal__content invoice-draft-modal__content--workspace">
+          {renderActiveWorkspace()}
         </div>
       </section>
     </div>,

@@ -1332,8 +1332,8 @@ function ClientsPage() {
                     />
                   </label>
                   <SatCatalogField catalog={satCatalogByCode.get('postal_codes')} catalogCode="postal_codes" label="Código postal fiscal" onChange={(value) => updateForm('fiscalPostalCode', value.code)} value={form.fiscalPostalCode ? { code: form.fiscalPostalCode } : null} />
-                  <SatCatalogField catalog={satCatalogByCode.get('fiscal_regimes')} catalogCode="fiscal_regimes" label="Régimen fiscal" onChange={(value) => updateForm('taxRegime', value.code)} value={form.taxRegime ? { code: form.taxRegime } : null} />
-                  <SatCatalogField catalog={satCatalogByCode.get('cfdi_uses')} catalogCode="cfdi_uses" label="Uso CFDI predeterminado" onChange={(value) => updateForm('cfdiUse', value.code)} value={form.cfdiUse ? { code: form.cfdiUse } : null} />
+                  <SatCatalogField catalog={satCatalogByCode.get('fiscal_regimes')} catalogCode="fiscal_regimes" label="Régimen fiscal" onChange={(value) => updateForm('taxRegime', value.code)} showAllOnOpen value={form.taxRegime ? { code: form.taxRegime } : null} />
+                  <SatCatalogField catalog={satCatalogByCode.get('cfdi_uses')} catalogCode="cfdi_uses" label="Uso CFDI predeterminado" onChange={(value) => updateForm('cfdiUse', value.code)} showAllOnOpen value={form.cfdiUse ? { code: form.cfdiUse } : null} />
                   <SatCatalogField catalog={satCatalogByCode.get('countries')} catalogCode="countries" label="País fiscal" onChange={(value) => updateForm('fiscalCountryCode', value.code)} value={form.fiscalCountryCode ? { code: form.fiscalCountryCode } : null} />
 
                   <input

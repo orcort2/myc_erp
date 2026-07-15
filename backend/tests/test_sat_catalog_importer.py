@@ -1,7 +1,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-import sqlite3
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -11,9 +10,8 @@ from app.core.db import Base
 from app.models.sat_catalog import SatCatalog, SatCatalogRecord
 from app.models.user import User
 from app.schemas.sat_catalog import SatCatalogRead
-from app.services.sat_catalogs.importer import import_catalog_file, import_catalog_records
+from app.services.sat_catalogs.importer import import_catalog_records
 from app.services.sat_catalogs.service import activate_catalog_version, add_alias, add_favorite, get_catalog, latest_version, list_catalogs, remove_favorite, search_records
-from app.services.sat_catalogs.sqlite_source import SatSqliteSourceError, extract_catalog_rows
 
 
 class SatCatalogImporterTests(unittest.TestCase):
@@ -31,50 +29,23 @@ class SatCatalogImporterTests(unittest.TestCase):
         self.session.close()
         self.engine.dispose()
 
-    def test_imports_csv_and_queries_latest_version(self):
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "c_moneda.csv"
-            source.write_text("Clave,Descripción,Fecha inicio vigencia\nMXN,Peso mexicano,2022-01-01\nUSD,Dólar americano,2022-01-01\n", encoding="utf-8")
-            report = import_catalog_file(self.session, catalog_code="currencies", path=source, version="2026-01-01")
-            skipped = import_catalog_file(self.session, catalog_code="currencies", path=source, version="otra-version")
+    def test_imports_official_rows_and_queries_latest_version(self):
+        report = import_catalog_records(self.session, catalog_code="currencies", rows=[{"code": "MXN", "name": "Peso mexicano", "valid_from": "2022-01-01"}, {"code": "USD", "name": "Dólar americano", "valid_from": "2022-01-01"}], source_filename="catalogo sat.xlsx", checksum="official-currency", version="20260714")
 
         self.assertEqual(report.status, "imported")
         self.assertEqual(report.record_count, 2)
-        self.assertEqual(skipped.status, "skipped")
         version, total, records = search_records(self.session, "currencies", search="peso", active_only=True, offset=0, limit=50)
-        self.assertEqual(version.version, "2026-01-01")
+        self.assertEqual(version.version, "20260714")
         self.assertEqual(total, 1)
         self.assertEqual(records[0].code, "MXN")
         self.assertEqual(self.session.query(SatCatalogRecord).count(), 2)
         catalog = list_catalogs(self.session)[0]
-        self.assertEqual(SatCatalogRead.model_validate(catalog).installed_version.version, "2026-01-01")
+        self.assertEqual(SatCatalogRead.model_validate(catalog).installed_version.version, "20260714")
 
-    def test_rejects_duplicate_codes_without_writing_records(self):
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "duplicado.csv"
-            source.write_text("code,name\nMXN,Peso\nMXN,Peso mexicano\n", encoding="utf-8")
-            with self.assertRaises(ValueError):
-                import_catalog_file(self.session, catalog_code="currencies", path=source, version="2026-01-01")
-
+    def test_rejects_duplicate_official_rows_without_writing_records(self):
+        with self.assertRaises(ValueError):
+            import_catalog_records(self.session, catalog_code="currencies", rows=[{"code": "MXN", "name": "Peso"}, {"code": "MXN", "name": "Peso mexicano"}], source_filename="catalogo sat.xlsx", checksum="duplicate", version="20260714")
         self.assertEqual(self.session.query(SatCatalogRecord).count(), 0)
-
-    def test_sqlite_adapter_uses_the_common_importer_and_rejects_incompatible_tables(self):
-        with tempfile.TemporaryDirectory() as directory:
-            source = Path(directory) / "catalogs.db"
-            connection = sqlite3.connect(source)
-            connection.execute("CREATE TABLE cfdi_40_monedas (id TEXT, texto TEXT, vigencia_desde TEXT, vigencia_hasta TEXT)")
-            connection.execute("INSERT INTO cfdi_40_monedas VALUES ('MXN', 'Peso mexicano', '2022-01-01', '')")
-            connection.commit()
-            connection.close()
-            table, rows = extract_catalog_rows(source, "currencies")
-            report = import_catalog_records(self.session, catalog_code="currencies", rows=rows, source_filename=f"{source.name}:{table}", checksum="sqlite-test-checksum", version="v1")
-            self.assertEqual(report.record_count, 1)
-            connection = sqlite3.connect(source)
-            connection.execute("CREATE TABLE cfdi_40_productos_servicios (texto TEXT)")
-            connection.commit()
-            connection.close()
-            with self.assertRaises(SatSqliteSourceError):
-                extract_catalog_rows(source, "products_services")
 
     def test_normalized_search_aliases_favorites_and_validity(self):
         report = import_catalog_records(
@@ -84,7 +55,7 @@ class SatCatalogImporterTests(unittest.TestCase):
                 {"id": "81141504", "texto": "Calibración de termómetro", "vigencia_desde": "2022-01-01", "vigencia_hasta": ""},
                 {"id": "00000000", "texto": "Histórico", "vigencia_desde": "2010-01-01", "vigencia_hasta": "2020-01-01"},
             ],
-            source_filename="test.sqlite:cfdi_40_productos_servicios",
+            source_filename="catalogo sat.xlsx",
             checksum="product-test-checksum",
             version="v1",
         )

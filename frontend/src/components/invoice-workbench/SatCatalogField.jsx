@@ -9,6 +9,7 @@ export default function SatCatalogField({
   label,
   onChange,
   value,
+  showAllOnOpen = false,
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [query, setQuery] = useState('');
@@ -18,6 +19,7 @@ export default function SatCatalogField({
 
   const fieldRef = useRef(null);
   const inputRef = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(-1);
 
   useEffect(() => {
     if (!isEditing) return undefined;
@@ -43,7 +45,7 @@ export default function SatCatalogField({
 
     const normalizedQuery = query.trim();
 
-    if (!normalizedQuery) {
+    if (!normalizedQuery && !showAllOnOpen) {
       setItems([]);
       setError('');
       setIsLoading(false);
@@ -59,7 +61,7 @@ export default function SatCatalogField({
       try {
         const result = await listSatCatalogRecords(catalogCode, {
           search: normalizedQuery,
-          limit: 20,
+          limit: showAllOnOpen ? 200 : 20,
         });
 
         if (!active) return;
@@ -78,7 +80,7 @@ export default function SatCatalogField({
           setIsLoading(false);
         }
       }
-    }, 220);
+    }, normalizedQuery ? 220 : 0);
 
     return () => {
       active = false;
@@ -93,6 +95,7 @@ export default function SatCatalogField({
     setQuery('');
     setItems([]);
     setError('');
+    setActiveIndex(-1);
 
     window.requestAnimationFrame(() => {
       inputRef.current?.focus();
@@ -114,6 +117,13 @@ export default function SatCatalogField({
     });
 
     closeEditor();
+  }
+
+  function onInputKeyDown(event) {
+    if (event.key === 'ArrowDown') { event.preventDefault(); setActiveIndex((index) => Math.min(index + 1, items.length - 1)); }
+    if (event.key === 'ArrowUp') { event.preventDefault(); setActiveIndex((index) => Math.max(index - 1, 0)); }
+    if (event.key === 'Enter' && activeIndex >= 0 && items[activeIndex]) { event.preventDefault(); selectItem(items[activeIndex]); }
+    if (event.key === 'Escape') { event.preventDefault(); closeEditor(); }
   }
 
   if (!catalog) {
@@ -145,6 +155,7 @@ export default function SatCatalogField({
             hasValue ? 'has-value' : 'is-empty'
           }`}
           onClick={openEditor}
+          aria-expanded="false"
           type="button"
         >
           <span className="invoice-sat-field__value-text">
@@ -163,8 +174,14 @@ export default function SatCatalogField({
             <Search aria-hidden="true" size={15} />
 
             <input
+              aria-activedescendant={activeIndex >= 0 ? `${catalogCode}-option-${items[activeIndex]?.id}` : undefined}
               aria-label={`Buscar ${label} en ${catalog.name}`}
+              aria-expanded="true"
+              aria-controls={`${catalogCode}-options`}
+              aria-autocomplete="list"
+              role="combobox"
               onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={onInputKeyDown}
               placeholder={`Buscar en ${catalog.name}`}
               ref={inputRef}
               value={query}
@@ -180,10 +197,8 @@ export default function SatCatalogField({
             </button>
           </div>
 
-          <div className="invoice-sat-field__results">
-            {!query.trim() ? (
-              <small>Escribe una clave o descripción para buscar.</small>
-            ) : null}
+          <div className="invoice-sat-field__results" id={`${catalogCode}-options`} role="listbox">
+            {!query.trim() && !showAllOnOpen ? <small>Escribe una clave o descripción para buscar.</small> : null}
 
             {isLoading ? (
               <small>Consultando catálogo local…</small>
@@ -204,12 +219,14 @@ export default function SatCatalogField({
 
             {items.map((item) => (
               <button
+                aria-selected={activeIndex === items.indexOf(item)}
+                id={`${catalogCode}-option-${item.id}`}
                 key={item.id ?? `${item.code}-${item.name}`}
                 onClick={() => selectItem(item)}
+                role="option"
                 type="button"
               >
-                <strong>{item.code}</strong>
-                <span>{item.name || 'Sin descripción'}</span>
+                <strong>{item.code} — {item.name || 'Sin descripción'}</strong>
               </button>
             ))}
           </div>

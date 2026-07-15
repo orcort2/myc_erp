@@ -18,7 +18,7 @@ usage() {
   cat <<'EOF'
 MYC SYSTEM CLI
 myc menu | doctor | status | init [db] | reset db | migrate | backup | restore [archivo]
-    sat status|import|reimport|compare | seed | dev local|tunnel | git status | data doctor
+    sat status|import|reimport | seed | dev local|tunnel | git status | data doctor
     local | tunnel | stop | restart | build | update | clean
 EOF
 }
@@ -26,11 +26,9 @@ EOF
 run_sat() {
   local action="${1:-status}"
   case "$action" in
-    status) (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_sqlite_catalogs.py --help >/dev/null && echo "Use 'sat import' para importar desde SQLite o 'sat compare' para comparar fuentes.") ;;
+    status) echo "Fuente SAT oficial: backend/resources/sat/catalogo sat.xlsx" ;;
     import|reimport)
-      (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_sqlite_catalogs.py --publication-date "${SAT_PUBLICATION_DATE:-2026-07-03}") ;;
-    compare)
-      (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_official_xls_catalogs.py --help) ;;
+      (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_official_xls_catalogs.py --publication-date "${SAT_PUBLICATION_DATE:-2026-07-14}" --activate) ;;
     *) echo "Acción SAT no reconocida: $action" >&2; return 2 ;;
   esac
 }

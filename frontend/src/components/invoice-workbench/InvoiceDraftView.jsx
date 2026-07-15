@@ -47,7 +47,9 @@ export default function InvoiceDraftView({
   isSaving = false,
   onSaveDraft,
   onIssue,
+  onGoToInvoice,
   canIssue = false,
+  issueBlockedReason = '',
 }) {
   const [activeTab, setActiveTab] = useState('summary');
 
@@ -144,8 +146,10 @@ export default function InvoiceDraftView({
 
       <InvoiceToolbar
         canIssue={canIssue}
+        issueBlockedReason={issueBlockedReason}
         isSaving={isSaving}
         onIssue={onIssue}
+        onGoToInvoice={invoice ? onGoToInvoice : null}
         onSaveDraft={onSaveDraft}
       />
     </section>

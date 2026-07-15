@@ -42,6 +42,11 @@ async function request(path, options = {}) {
       const payload = await response.json();
       if (typeof payload.detail === 'string') {
         message = payload.detail;
+      } else if (payload.detail && typeof payload.detail.detail === 'string') {
+        message = payload.detail.detail;
+        if (Array.isArray(payload.detail.fields)) {
+          message = `${message} ${payload.detail.fields.map((field) => field.message).join(' ')}`;
+        }
       } else if (payload.detail && typeof payload.detail.message === 'string') {
         message = payload.detail.message;
       } else if (typeof payload.message === 'string') {
@@ -250,8 +255,12 @@ export async function changeInvoiceStatus(invoiceId, payload) {
   });
 }
 
-export async function getInvoicePdfUrl(invoiceId) {
-  return `${API_URL}/invoices/${invoiceId}/pdf`;
+export function downloadInstitutionalInvoicePdf(invoiceId) {
+  return downloadRequest(`/invoices/${invoiceId}/institutional-pdf`);
+}
+
+export function downloadInvoiceFiscalXml(invoiceId) {
+  return downloadRequest(`/invoices/${invoiceId}/fiscal-xml`);
 }
 
 export async function listInvoicePayments() {
@@ -287,6 +296,11 @@ export async function createCreditNote(invoiceId, payload) {
 export async function getInvoiceSettings() {
   return request('/invoice-settings');
 }
+
+export function getFacturamaStatus() { return request('/integrations/facturama/status'); }
+export function issueInvoice(invoiceId) { return request(`/invoices/${invoiceId}/issue`, { method: 'POST' }); }
+export function recoverFacturamaDocuments(invoiceId) { return request(`/invoices/${invoiceId}/facturama-documents/recover`, { method: 'POST' }); }
+export function getFacturamaDocumentUrl(invoiceId, kind) { return `${API_URL}/invoices/${invoiceId}/facturama-documents/${kind}`; }
 
 export async function updateInvoiceSettings(payload) {
   return request('/invoice-settings', {

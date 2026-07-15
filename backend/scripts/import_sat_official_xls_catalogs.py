@@ -13,7 +13,6 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from app.core.db import SessionLocal  # noqa: E402
-from app.services.sat_catalogs.comparison import compare_all_catalog_sources  # noqa: E402
 from app.services.sat_catalogs.importer import import_catalog_records  # noqa: E402
 from app.services.sat_catalogs.sat_xls_source import CATALOG_SHEETS, catalog_checksum, detect_version, extract_catalog_rows, inspect_source, source_metadata  # noqa: E402
 from app.services.sat_catalogs.service import activate_catalog_version  # noqa: E402
@@ -37,38 +36,25 @@ def write_report(path: Path, payload: dict) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Importa catálogos CFDI 4.0 desde el Excel oficial SAT en modo seguro.")
-    parser.add_argument("--source", type=Path, default=BACKEND_DIR / "resources/sat/catCFDI_V_4_20260703.xls")
-    parser.add_argument("--sqlite-source", type=Path, default=BACKEND_DIR / "resources/sat/catalogs.db")
+    parser.add_argument("--source", type=Path, default=BACKEND_DIR / "resources/sat/catalogo sat.xlsx")
     parser.add_argument("--catalog", choices=[*CATALOG_SHEETS, "all"], default="all")
     parser.add_argument("--version")
     parser.add_argument("--publication-date", type=date.fromisoformat)
     parser.add_argument("--user-id", type=int)
     parser.add_argument("--report", type=Path, default=BACKEND_DIR / "resources/sat/reports/sat_official_xls_comparison.json")
-    parser.add_argument("--compare-only", action="store_true")
     parser.add_argument("--activate", action="store_true", help="Activa las versiones staged al finalizar la transacción.")
-    parser.add_argument("--allow-differences", action="store_true", help="Confirma explícitamente la activación aunque el reporte difiera de SQLite.")
     args = parser.parse_args()
 
     source = args.source.expanduser()
     version = resolve_version(source, args.version)
     started = time.perf_counter()
     inspection = inspect_source(source)
-    comparison = compare_all_catalog_sources(source, args.sqlite_source)
     payload = {
         "source": source_metadata(source, version=version, publication_date=args.publication_date),
         "inspection": inspection,
-        "comparison": comparison,
         "activation": "not_requested",
     }
     write_report(args.report, payload)
-    if args.compare_only:
-        payload["elapsed_seconds"] = round(time.perf_counter() - started, 3)
-        write_report(args.report, payload)
-        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
-        return 0
-    if args.activate and comparison["has_differences"] and not args.allow_differences:
-        raise ValueError("El Excel difiere de SQLite. Revisa el reporte y usa --allow-differences para confirmar la activación.")
-
     targets = list(CATALOG_SHEETS) if args.catalog == "all" else [args.catalog]
     db = SessionLocal()
     try:

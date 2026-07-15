@@ -1,6 +1,2 @@
-Descargado: 2026-07-14T15:41:10Z
-Origen: https://github.com/phpcfdi/resources-sat-catalogs/releases/latest/download/catalogs.db.bz2
-
-6dbf3e6772a1dd7665a471b2c6436767137feac0ef3e37acb683f9e22d714bb9  catalogs.db.bz2
-151c07c6b8350ccbd59b60fb460e254e0bbfb10b720a66ae614632a2008bac3c  catalogs.db
+Fuente única oficial SAT.
 62cc150e10fb16efbda7642e3d65452748e180fafc8149abd65e4bc95205bc16  catalogo sat.xlsx (SAT official source, received 2026-07-14, format XLSX)

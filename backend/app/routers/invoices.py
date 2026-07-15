@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -7,6 +7,7 @@ from app.models.user import User
 from app.schemas.invoice import (
     AccountsReceivableRow,
     CreditNoteCreate,
+    FacturamaReconciliationConfirmation,
     FinancialDashboardRead,
     InvoiceCreate,
     InvoicePaymentCreate,
@@ -20,7 +21,11 @@ from app.schemas.invoice import (
     ReleasedUninvoicedRow,
 )
 from app.services.auth import require_permission
-from app.services.invoice_pdfs import generate_invoice_payment_receipt_pdf, generate_invoice_pdf
+from app.services.invoice_pdfs import (
+    generate_invoice_payment_receipt_pdf,
+    generate_invoice_pdf,
+    get_invoice_fiscal_xml,
+)
 from app.services.invoices import (
     change_invoice_status,
     confirm_invoice_review,
@@ -39,6 +44,8 @@ from app.services.invoices import (
     update_invoice,
     update_invoice_settings,
 )
+from app.core.config import get_settings
+from app.services.facturama.invoices import issue_invoice, read_document, reconcile_invoice, recover_documents
 
 
 router = APIRouter(tags=["invoices"])
@@ -154,14 +161,71 @@ def create_credit_note_route(
     return create_credit_note(db, invoice_id, payload, user_id=current_user.id)
 
 
-@router.get("/invoices/{invoice_id}/pdf")
-def invoice_pdf(
+@router.post("/invoices/{invoice_id}/issue", response_model=InvoiceRead)
+async def issue_invoice_route(
+    invoice_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("invoices.manage")),
+):
+    return await issue_invoice(db, invoice_id, user_id=current_user.id, client=request.app.state.facturama_client, settings=get_settings())
+
+
+@router.post("/invoices/{invoice_id}/reconcile", response_model=InvoiceRead)
+async def reconcile_invoice_route(
+    invoice_id: int,
+    request: Request,
+    payload: FacturamaReconciliationConfirmation | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("invoices.manage")),
+):
+    return await reconcile_invoice(
+        db,
+        invoice_id,
+        user_id=current_user.id,
+        client=request.app.state.facturama_client,
+        confirmation=payload.model_dump() if payload else None,
+    )
+
+
+@router.post("/invoices/{invoice_id}/facturama-documents/recover", response_model=InvoiceRead)
+async def recover_facturama_documents_route(
+    invoice_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(require_permission("invoices.manage")),
+):
+    return await recover_documents(db, invoice_id, user_id=current_user.id, client=request.app.state.facturama_client)
+
+
+@router.get("/invoices/{invoice_id}/facturama-documents/{kind}")
+def facturama_document_route(invoice_id: int, kind: str, db: Session = Depends(get_db), current_user: User = Depends(require_permission("invoices.read"))):
+    if kind not in {"xml", "pdf"}:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    content, filename, media_type = read_document(get_invoice(db, invoice_id), kind)
+    return Response(content=content, media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/invoices/{invoice_id}/institutional-pdf")
+def institutional_invoice_pdf(
     invoice_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("invoices.read")),
 ):
     pdf, filename = generate_invoice_pdf(db, invoice_id)
-    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/invoices/{invoice_id}/fiscal-xml")
+def invoice_fiscal_xml(
+    invoice_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("invoices.read")),
+):
+    content, filename = get_invoice_fiscal_xml(db, invoice_id)
+    return Response(
+        content=content,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/invoice-payments", response_model=list[InvoicePaymentRead])

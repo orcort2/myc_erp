@@ -219,16 +219,9 @@ def _validate_invoice_configuration(db: Session, invoice: Invoice) -> list[str]:
 
 def _next_invoice_folio(db: Session, settings: InvoiceSettings, *, issued_on: date, series: str | None = None) -> tuple[str, str]:
     series_value = (series or settings.default_series or "F").strip().upper()
-    if settings.reset_annually:
-        year_prefix = f"{series_value}-{issued_on:%Y}-"
-        last = db.scalar(
-            select(Invoice.folio).where(Invoice.folio.like(f"{year_prefix}%")).order_by(Invoice.folio.desc()).limit(1)
-        )
-        sequence = settings.next_sequence if not last else int(last.rsplit("-", 1)[-1]) + 1
-        folio = f"{year_prefix}{sequence:04d}"
-    else:
-        sequence = int(settings.next_sequence or 1)
-        folio = f"{series_value}-{issued_on:%Y}-{sequence:04d}"
+    sequence = int(settings.next_sequence or 1)
+    # Identificador interno MYC; no es la serie ni el folio fiscal del CFDI.
+    folio = f"MYCF-{issued_on:%Y}-{sequence:04d}"
     settings.next_sequence = sequence + 1
     return series_value, folio
 
@@ -434,7 +427,7 @@ def create_invoice(db: Session, payload: InvoiceCreate, *, user_id: int | None =
 
 def update_invoice(db: Session, invoice_id: int, payload: InvoiceUpdate, *, user_id: int | None = None) -> Invoice:
     invoice = get_invoice(db, invoice_id)
-    if invoice.status not in {"draft", "pending"}:
+    if invoice.status not in {"draft", "pending", "issue_failed"}:
         raise HTTPException(status_code=409, detail="Solo se pueden modificar facturas en borrador o pendientes")
     updates = payload.model_dump(exclude_unset=True)
     if "fiscal_client_id" in updates and updates["fiscal_client_id"]:

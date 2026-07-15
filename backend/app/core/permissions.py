@@ -122,6 +122,7 @@ ROLE_PERMISSIONS = {
         "payments.manage",
         "invoices.read",
         "invoices.manage",
+        "integrations.facturama.status",
         "certificates.release",
         "release.manage",
         "sat_catalogs.read",

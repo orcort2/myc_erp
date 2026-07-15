@@ -177,6 +177,12 @@ class InvoiceRead(BaseModel):
     created_by_id: int | None = None
     updated_by_id: int | None = None
     last_payment_on: date | None = None
+    facturama_id: str | None = None
+    cfdi_uuid: str | None = None
+    facturama_environment: str | None = None
+    stamped_at: datetime | None = None
+    facturama_xml_path: str | None = None
+    facturama_pdf_path: str | None = None
     created_at: datetime
     updated_at: datetime
     items: list[InvoiceItemRead] = Field(default_factory=list)
@@ -277,3 +283,18 @@ class InvoiceSettingsRead(InvoiceSettingsUpdate):
     emitter_data: dict | None = None
     pdf_template_name: str | None = None
     cfdi_future_parameters: dict | None = None
+
+
+class FacturamaReconciliationConfirmation(BaseModel):
+    """Facts independently confirmed in Facturama for a manual reconciliation."""
+
+    facturama_id: str = Field(min_length=1, max_length=100)
+    uuid: str = Field(min_length=1, max_length=64)
+    cfdi_type: str = Field(default="I", min_length=1, max_length=4)
+    series: str = Field(min_length=1, max_length=20)
+    folio: str = Field(min_length=1, max_length=40)
+    receiver_rfc: str = Field(min_length=12, max_length=13)
+    subtotal: Decimal
+    total: Decimal
+    issued_at: datetime
+    status: str = Field(default="active", max_length=40)

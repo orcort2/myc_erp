@@ -1,7 +1,10 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.services.facturama.client import FacturamaClient
 from app.routers import (
     audit_logs,
     auth,
@@ -17,6 +20,7 @@ from app.routers import (
     field_sheets,
     health,
     invoices,
+    integrations,
     institutional_configurations,
     metrology,
     modules,
@@ -35,10 +39,19 @@ from app.routers import (
 from app.routers import field_sheet_templates
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Keep reusable external clients alive for the whole application lifetime."""
+    app.state.facturama_client = FacturamaClient(settings)
+    yield
+    await app.state.facturama_client.aclose()
+
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="API base para el sistema ERP MYC.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -72,6 +85,7 @@ app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
 app.include_router(certificates.router, prefix="/api")
 app.include_router(invoices.router, prefix="/api")
+app.include_router(integrations.router, prefix="/api")
 app.include_router(sat_catalogs.router, prefix="/api")
 app.include_router(institutional_configurations.router, prefix="/api")
 app.include_router(client_portal.router, prefix="/api")

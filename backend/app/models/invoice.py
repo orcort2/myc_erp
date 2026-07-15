@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import JSON, Boolean, Date, ForeignKey, Numeric, String, Text
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -44,6 +44,17 @@ class Invoice(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     updated_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     last_payment_on: Mapped[date | None] = mapped_column(Date)
+    facturama_id: Mapped[str | None] = mapped_column(String(100), unique=True, index=True)
+    cfdi_uuid: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    facturama_environment: Mapped[str | None] = mapped_column(String(20), index=True)
+    stamped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    facturama_request_json: Mapped[dict | None] = mapped_column(JSON)
+    facturama_response_json: Mapped[dict | None] = mapped_column(JSON)
+    facturama_http_status: Mapped[int | None] = mapped_column(Integer)
+    facturama_error_message: Mapped[str | None] = mapped_column(Text)
+    facturama_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    facturama_xml_path: Mapped[str | None] = mapped_column(String(500))
+    facturama_pdf_path: Mapped[str | None] = mapped_column(String(500))
 
     client: Mapped["Client"] = relationship(foreign_keys=[client_id])
     fiscal_client: Mapped["Client | None"] = relationship(foreign_keys=[fiscal_client_id])
@@ -52,6 +63,23 @@ class Invoice(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     items: Mapped[list["InvoiceItem"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
     payments: Mapped[list["InvoicePayment"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
     credit_notes: Mapped[list["CreditNote"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
+    facturama_attempts: Mapped[list["FacturamaInvoiceAttempt"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
+
+
+class FacturamaInvoiceAttempt(IntegerPkMixin, TimestampMixin, Base):
+    __tablename__ = "facturama_invoice_attempts"
+
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoices.id"), index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    request_json: Mapped[dict | None] = mapped_column(JSON)
+    response_json: Mapped[dict | None] = mapped_column(JSON)
+    http_status: Mapped[int | None] = mapped_column(Integer)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    issued_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    invoice: Mapped[Invoice] = relationship(back_populates="facturama_attempts")
 
 
 class InvoiceItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):

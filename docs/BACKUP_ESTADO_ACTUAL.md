@@ -1,3 +1,29 @@
+## Actualización 2026-07-15 — Imprimible institucional de factura MYC
+
+- `invoice_pdfs.py` genera el encabezado del emisor con la misma configuración institucional utilizada por las cotizaciones; combina razón social, RFC y régimen fiscal del CFDI con domicilio, código postal, teléfono, correo y sitio web configurados para MYC, sin valores duplicados en HTML.
+- La resolución de nomenclaturas del PDF consulta la versión activa de los catálogos SAT cargados y sólo acepta registros vigentes. Cubre forma y método de pago, moneda, uso CFDI, regímenes fiscales, tipo de comprobante, exportación, producto/servicio, unidad y objeto de impuesto.
+- `invoice_pdf.html` sustituye las tarjetas fiscales voluminosas por tres bandas horizontales compactas: forma/método de pago, moneda/uso CFDI y régimen del receptor/exportación. Cada valor se presenta como `código - descripción` en una sola línea.
+- Se conservan QR SAT, UUID, certificados, sellos digitales, cadena original, importe con letra, leyenda legal y paginación. No se modificaron emisión CFDI, XML, conciliación ni evidencias internas de Facturama.
+- Validaciones: generación real del PDF institucional de la factura timbrada `Factura_MYC_F-F-2026-0002.pdf` (57,349 bytes, una página tamaño carta), inspección visual de identidad MYC y todos los datos fiscales; unittest de documentos y Facturama 21/21 correcto. No hubo cambios de esquema ni de datos, por lo que no corresponde regenerar el respaldo SQL.
+
+## Actualización 2026-07-15 — Documentos de factura MYC
+
+- La pestaña `Factura` ahora expone únicamente `Descargar PDF` y `Descargar XML`. Se retiraron de la vista normal el PDF administrativo, los documentos técnicos del PAC, la recuperación visible y cualquier identificación visual del proveedor.
+- Las acciones de descarga se ubican ahora en el encabezado superior de la pestaña `Factura`, junto al estado del comprobante; conservan sus validaciones de disponibilidad y ya no dependen de la sección inferior del expediente.
+- `GET /api/invoices/{invoice_id}/institutional-pdf` genera el PDF institucional con `invoice_pdfs.py` y `invoice_pdf.html`; responde como `application/pdf` y descarga `Factura_MYC_<serie>-<folio>.pdf`.
+- `GET /api/invoices/{invoice_id}/fiscal-xml` entrega exclusivamente el XML fiscal almacenado de la factura; valida existencia, ubicación permitida y XML válido, responde como `application/xml` y descarga `Factura_MYC_<serie>-<folio>.xml`.
+- La recuperación, almacenamiento y evidencia interna de documentos Facturama se preservan para una futura sección administrativa de excepciones, sin exponer rutas físicas ni controles de proveedor en el flujo ordinario.
+- Validaciones: suite backend de documentos e infraestructura Facturama 19/19 correcta; `npm run build` correcto (con advertencia conocida de chunk mayor a 500 kB); búsqueda de interfaz sin acciones/documentos PAC y `git diff --check` correcto. No hubo cambios de esquema ni datos, por lo que no corresponde regenerar el respaldo SQL.
+
+## Actualización 2026-07-15 — Registro maestro de archivos
+
+- `docs/PROJECT_FILE_REGISTRY.md` se reconstruyó como referencia oficial del repositorio: registra 390 archivos funcionales existentes, agrupados en Backend, Frontend, Scripts, Recursos, Configuración, Documentación y Pruebas.
+- El inventario excluye artefactos locales o generados: `.DS_Store`, cachés Python/Pytest, `node_modules`, `dist`, `build`, `output`, `tmp`, `storage`, `backups`, respaldos SQL, reportes generados y bloqueos. Conserva el XLSX oficial SAT como recurso operativo.
+- Cada fila documenta ruta, módulo, función, responsabilidad concreta, dependencias, consumidores, criticidad y estado. Las integraciones Facturama quedan marcadas `En desarrollo`; laboratorios y scripts legacy conservan sus estados correspondientes.
+- Se agregó `scripts/generate_project_file_registry.py`, generador reproducible que inventaría sólo rutas existentes y aplica las exclusiones. Debe ejecutarse y revisarse como parte de cualquier cambio de inventario.
+- `AGENTS.md` incorpora la regla de cierre: no se concluye ningún trabajo sin sincronizar y validar el registro. No hubo cambios de esquema ni de datos; por tanto, no corresponde regenerar el respaldo SQL.
+- Validaciones ejecutadas: generación determinista (SHA-256 idéntico en dos corridas), cobertura de 390/390 rutas funcionales, exclusiones sin coincidencias y `git diff --check` correcto.
+
 ## Importación tolerante de clientes (2026-07-14)
 
 La importación masiva registra clientes identificables aunque sus datos fiscales estén ausentes, incompletos o no se puedan normalizar. Esos registros quedan con `fiscal_review_required=true` y se reportan como advertencias; sólo se omiten filas sin nombre identificable, duplicadas o con un fallo real de persistencia.
@@ -6433,3 +6459,127 @@ Validacion ejecutada:
 
 Declaracion de cierre:
 - Control Documental V1 queda sellado y estable, listo para convertirse en la base documental del ERP MYC.
+
+---
+
+# Auditoría integral acumulativa — estado verificado 2026-07-15
+
+## 1. Identificación y entorno
+
+- Sistema: ERP MYC v0.4.0; ruta local `/Users/saulcortes/Desktop/myc_erp`; rama de trabajo `main` con cambios locales no confirmados.
+- Backend: Python/FastAPI 0.137.1, SQLAlchemy 2.0.51, Pydantic 2, Alembic 1.18.4, PostgreSQL mediante `psycopg`.
+- Frontend: React 19, Vite 6, `lucide-react`; `frontend/package.json` define `dev`, `build`, `preview`, `dev:local` y `dev:tunnel`.
+- Base local declarada: `postgresql+psycopg://localhost:5432/erp_myc`; almacenamiento configurable con `STORAGE_ROOT`.
+- Autenticación: JWT con acceso/refresh; roles definidos en `backend/app/core/permissions.py`: Administrador, Comercial, Técnico, Captura, Calidad, Finanzas, Cliente y Desarrollador.
+- Entornos: scripts locales y túnel Cloudflare (`scripts/start-local.sh`, `scripts/start-tunnel.sh`); dominios públicos no verificados durante este barrido.
+
+## 2. Base de datos, migraciones y SAT
+
+El head verificado de Alembic es `670da69de732` (`add_facturama_invoice_traceability`). La cadena inicia en `c0fa71033b73_create_mvp_schema` y suma ampliaciones de clientes, cotizaciones, ETS/OT, equipos, hojas de campo, certificados, documentos, patrones, incertidumbre, catálogos SAT, workbench de factura y Facturama. La lista completa, con revisiones y dependencias, permanece documentada en la sección histórica anterior y en `backend/migrations/versions/`.
+
+Tablas críticas: `users`/`roles`, `clients`/contactos/perfiles, `quotations`/items/snapshots, `service_orders`/work_orders/items/firmas, `equipment`, `field_sheets`/results/signatures, `certificates`/pdf_versions, documentos controlados/versiones, patrones/incertidumbre, `invoices`/items/payments/credit_notes/settings/facturama_invoice_attempts` y `sat_catalog*`.
+
+SAT operativo: fuente única pretendida `backend/resources/sat/catalogo sat.xlsx`; importador `backend/scripts/import_sat_official_xls_catalogs.py`; extracción `sat_xls_source.py`; normalización/validación/persistencia en `normalizers.py`, `validators.py`, `importer.py` y `service.py`. El XLSX contiene el régimen `626`; la carga PostgreSQL y su versión activa no se consultaron en esta auditoría porque no se alteró ni accedió a la base. Los reportes JSON son evidencia de importación, no una fuente de catálogo. El script genérico `import_catalog_file` y `parsers.py` aún aceptan CSV/JSON como API interna: **SSoT estricta parcial** hasta retirarlos o blindarlos.
+
+## 3. Arquitectura y navegación
+
+`backend/app/` concentra core, modelos, schemas, routers y servicios; `frontend/src/` contiene páginas, componentes, servicios API, constantes, utilidades y estilos. `backend/tests/` tiene pruebas de clientes, certificados, hojas, SAT y Facturama. `scripts/` y `scripts/toolkit/` gestionan desarrollo, migraciones, backup, restauración, SAT y mantenimiento.
+
+Navegación visible se concentra en `frontend/src/pages/App.jsx`, `AppLayout.jsx` y `constants/navigation.js`: Dashboard, Clientes, Cotizaciones, Servicios/ETS, Equipos, Certificados, Calidad, Documentos, Patrones/Estándares, Incertidumbre, Facturación y Configuración. Labs (`pages/labs/`) son superficies de desarrollo; su visibilidad productiva no fue verificada en navegador autenticado.
+
+## 4. Módulos funcionales
+
+| Módulo | Backend/persistencia | Frontend | Estado verificado |
+|---|---|---|---|
+| Autenticación/usuarios | `routers/auth.py`, `services/auth.py`, `models/user.py` | `LoginPage.jsx`, Settings usuarios | Operativo; JWT, refresh, permisos y roles. |
+| Clientes | router/service/model/schema cliente, contactos, perfiles y constancia | `ClientsPage.jsx` | Operativo parcial; alta/edición/importación, archivo fiscal y archivado. Eliminación condicionada por historial. |
+| Cotizaciones | modelos quotation/items/snapshots, router/service/PDF | `QuotationsPage.jsx` | Operativo parcial; enlaza origen de facturación. |
+| ETS/Servicios | service_orders, work orders, firmas y capacidad de certificado | `ServiceOrdersPage.jsx` | Operativo parcial; flujo amplio y dependiente de estados. |
+| Equipos | modelo/router/service equipment | `EquipmentPage.jsx` | Operativo parcial; relación con OT y hojas. |
+| Hojas de campo | modelos results/signatures/templates, motor y PDFs | `FieldSheetLayout`, labs y ETS | Operativo parcial; snapshots y captura existen; cálculo no se declara automatizado. |
+| Certificados | modelo, PDF versionado, autenticación y matching | `CertificatesPage.jsx` | Operativo parcial; PDF/estados y autenticación presentes. |
+| Control documental | controlled_documents/versiones/interpretations/templates | `DocumentLibraryPage.jsx`, diseñador | Operativo parcial; histórico declara V1 sellado; integración transversal no verificada. |
+| Patrones/incertidumbre | reference standards/certificates/uncertainty models | Standards/Uncertainty pages | Parcial; modelos y servicios presentes. |
+| Diseñador | templates y `document-designer/*` | `DocumentDesignerLabPage.jsx` | Lab activo; no se verifica como editor productivo universal. |
+| Facturación | invoices, SAT, Facturama | `BillingPage.jsx`, workbench | Parcial; detalle en sección 5. |
+
+## 5. Facturación y Facturama
+
+Página principal: `frontend/src/pages/BillingPage.jsx`. Tiene vistas Centro de facturación, Dashboard y Configuración; carga facturas, cotizaciones, clientes, OT, settings y catálogos SAT desde `frontend/src/services/api.js`.
+
+Workbench: `InvoiceWorkbenchDialog.jsx` renderiza `InvoiceDraftView.jsx`; éste consume Resumen, Receptor, Conceptos, Fiscal, Advanced Fiscal y Toolbar. `invoiceWorkbenchDraft.js` resuelve selecciones contra `/api/sat-catalogs`. `SatCatalogField.jsx` consulta registros reales y ofrece búsqueda/teclado. La configuración de emisor incluye razón social, RFC y `emitter_data.expedition_place` de cinco dígitos.
+
+Factura/expediente: `InvoiceDetailView.jsx` existe y es renderizado por `InvoiceWorkbenchDialog.jsx`; muestra detalle, documentos y acciones según props. El detalle completo, filtros y badges fueron revisados sólo por código, no en navegador autenticado.
+
+Backend: `routers/invoices.py` expone dashboard, cuentas por cobrar, liberados sin factura, CRUD, cambios/revisión, pagos, notas, emisión, recuperación documental técnica, PDF institucional, XML fiscal y settings. `services/invoices.py` calcula totales, genera folio interno, valida snapshots SAT y administra pagos/cobranza. `models/invoice.py` contiene `Invoice`, `InvoiceItem`, `InvoicePayment`, `CreditNote`, `InvoiceSettings` y `FacturamaInvoiceAttempt`.
+
+Facturama: `FacturamaClient` usa Basic Auth con secretos; `FacturamaHealthService` consulta un recurso de sólo lectura; `GET /api/integrations/facturama/status` devuelve estado. `POST /api/invoices/{id}/issue` llama `services/facturama/invoices.py`: sólo Sandbox, lock de fila, estado `issuing`, payload de `invoice_mapper.py`, persistencia de ID/UUID/JSON/HTTP/error e intento. Recupera XML/PDF usando el ID Facturama y los guarda bajo `storage/facturama/{invoice_id}/`. Producción se rechaza. Cancelación CFDI y conciliación posterior a timeout siguen pendientes; el PDF institucional MYC ya se genera desde los datos persistidos de la factura.
+
+Folios: `services/invoices.py::_next_invoice_folio` genera nuevos folios internos `MYCF-AAAA-NNNN`; el mapper no manda ese valor como `Folio` CFDI. Para Facturama el payload fija `Serie: "MYCF"` y `Folio: null`; `Invoice.series` y la configuración de serie son exclusivamente identificadores internos. UUID es fiscal. Facturas históricas con formato anterior no se migraron.
+
+Documentos: `/api/invoices/{id}/institutional-pdf` produce la representación institucional con `invoice_pdfs.py` y `templates/invoice_pdf.html`; `/api/invoices/{id}/fiscal-xml` entrega el XML fiscal almacenado con nombre público, MIME correcto y validación XML. Los documentos técnicos de Facturama se preservan mediante `/facturama-documents/{kind}`, fuera de la vista ordinaria. Las descargas nuevas usan `fetch` autenticado desde `api.js`, no enlaces directos.
+
+## 6. Endpoints e integraciones clave
+
+- Auth: `/api/auth/*`; consumidor Login/API; operativo por router y pruebas de base.
+- Clientes, cotizaciones, servicios, equipos, hojas, certificados, documentos, patrones, incertidumbre y usuarios: routers homónimos registrados en `backend/app/main.py`; consumidores son sus páginas homónimas. Inventario detallado histórico se conserva arriba; este barrido confirma que todos se registran bajo `/api`.
+- Facturación: `GET/POST /invoices`, `GET/PUT /invoices/{id}`, `POST /invoices/{id}/status`, `/source-change`, `/confirm-review`, `/payments`, `/credit-notes`, `/issue`, `/facturama-documents/recover`; `GET /invoices/{id}/institutional-pdf`, `/fiscal-xml`, `/facturama-documents/{kind}`, dashboard, cobranza, liberados, payments y settings.
+- SAT: `GET /sat-catalogs`, `/{code}/versions`, `/{code}/records` y favoritos/aliases; consumidor `SatCatalogField`.
+- Integraciones: `GET /integrations/facturama/status`; consumidor Billing/Workbench.
+
+## 7. Pruebas, scripts y configuración
+
+Pruebas presentes: `test_client_*`, `test_certificate_*`, `test_field_sheet_*`, `test_sat_*`, `test_facturama_*`. Resultado verificable de la sesión anterior: Facturama 9 pruebas y SAT 8 pruebas correctas; build Vite correcto con advertencia de bundle >500 kB. No se ejecutó la suite completa en este barrido.
+
+Comandos verificados por código: `scripts/toolkit/db/upgrade.sh` o `alembic upgrade head`; SAT `cd backend && ../venv/bin/python scripts/import_sat_official_xls_catalogs.py --source resources/sat/catalogo\ sat.xlsx --version 20260714 --publication-date 2026-07-14 --activate`; backup `scripts/backup-db.sh`. Variables relevantes: `DATABASE_URL`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `STORAGE_ROOT`, `FACTURAMA_ENABLED`, `FACTURAMA_ENVIRONMENT`, `FACTURAMA_USERNAME`, `FACTURAMA_PASSWORD`, URLs Sandbox/Producción, timeout y `VITE_API_URL`. No se documentan secretos.
+
+## 8. Código legado, incidencias y pendientes
+
+- Lab/duplicado: `InvoiceWorkbenchModal.jsx`, `InvoiceWorkbenchHeader.jsx`, `InvoiceWorkbenchSidebar.jsx`, `InvoiceQuotationList.jsx` y `pages/labs/InvoiceWorkbenchLabPage.jsx` no son importados por `BillingPage`; son lab o legado no productivo.
+- `recoverFacturamaDocuments` está expuesto en API; disponibilidad UX completa no verificada.
+- Componentes y funciones no usados fuera de Labs requieren revisión antes de eliminarse; no se borraron.
+- P0: configurar RFC y lugar de expedición reales para emitir; sin ellos el mapper/UX bloquean Facturama.
+- P1: sección administrativa de excepciones para documentos técnicos del PAC, expediente fiscal completo y conciliación de timeout.
+- P2: filtros/badges/historial de Facturas, normalización de estados `issue_failed`/`issue_error`, confirmar descargas autenticadas.
+- P3: consolidar labs/duplicados y reducir bundle Vite.
+
+## Suma explícita del estado actual
+
+**Implementado y operativo:** CRUD interno de clientes/cotizaciones/ETS/equipos según routers; persistencia SQLAlchemy/Alembic; JWT/roles; carga SAT XLSX; CRUD de borradores; emisión Facturama Sandbox con persistencia; XML/PDF Facturama; auditoría general; PDF administrativo; scripts de desarrollo/migración/backup.
+
+**Implementado parcialmente:** módulos ETS, hojas, certificados, documentos, patrones e incertidumbre; Facturación visual, expediente, pagos, notas, settings y recuperación documental; selectores SAT; PDF institucional transversal.
+
+**Visible pero no funcional o no verificado:** Labs; enlaces de descarga autenticados; módulos visuales no revisados con sesión real; métricas y flujos que dependen de datos locales no inspeccionados en navegador.
+
+**No implementado:** cancelación CFDI, conciliación de timeout Facturama, PDF CFDI MYC basado en XML, historial fiscal especializado y modelo independiente de documentos de factura.
+
+**Código legado o duplicado:** workbench modal/header/sidebar/lista de laboratorio; importación CSV/JSON interna SAT; CSS/labs históricos conservados.
+
+**Bloqueos actuales:** datos fiscales reales del emisor (RFC y lugar de expedición), configuración/credenciales Sandbox válidas, falta de PDF MYC y necesidad de validar descargas con sesión autenticada.
+
+**Próximo paso recomendado:** validar un borrador fiscalmente completo en Sandbox con datos reales configurados, confirmar la emisión/documentos desde una sesión autenticada y, sin reemitir, implementar la representación PDF MYC desde el XML guardado.
+
+## Actualización operativa — trazabilidad de rechazos Facturama (2026-07-15)
+
+- Las tablas verificadas para la emisión son `invoices` y `facturama_invoice_attempts`. La primera conserva los campos `facturama_request_json`, `facturama_response_json`, `facturama_http_status` y `facturama_error_message`; la segunda conserva por intento `request_json`, `response_json`, `http_status`, `status` y `error_message`.
+- La emisión persiste el payload antes de contactar al PAC. Si Facturama responde con error HTTP, el intento queda en `failed`, se guarda su estado HTTP y se conserva en ambos registros una instantánea saneada de `status_code`, texto, encabezados y JSON de respuesta. No se registran encabezados de autorización, API keys, tokens, secretos ni contraseñas: se reemplazan por `[REDACTED]`.
+- El error al frontend mantiene el código interno `facturama_api_error` y añade `provider_status` y `provider_detail` saneado, sin exponer encabezados, credenciales ni el payload completo.
+- Consulta segura de la base local durante esta actualización: 2 facturas y 1 intento histórico. El intento previo está en `issue_failed` y no tiene traza de respuesta; no se modificó ni se inventó información retrospectiva. Los intentos nuevos siguen el estado `failed`.
+- Validación ejecutada: `python -m unittest tests.test_facturama_infrastructure tests.test_facturama_invoice_mapper` (11 pruebas correctas) y compilación de `app/services/facturama` correcta.
+
+## Actualización operativa — serie fiscal Facturama (2026-07-15)
+
+- `backend/app/services/facturama/invoice_mapper.py` envía para toda emisión Sandbox `"Serie": "MYCF"` y `"Folio": null`. La serie y el folio internos de `Invoice` no se reutilizan como identificadores CFDI.
+- Configuración visual: `default_series` se etiqueta como serie interna y advierte que no modifica la serie enviada a Facturama.
+- Validación ejecutada: pruebas del mapper Facturama actualizadas y correctas; no se aplicó migración ni se modificaron datos de la base local.
+
+## Actualización operativa — conciliación segura Facturama (2026-07-15)
+
+- Emisión: toda respuesta HTTP recibida de `POST /3/cfdis` se persiste inmediatamente y antes de interpretar su JSON en `invoices.facturama_response_json`/`facturama_http_status` y en el intento equivalente. La instantánea conserva estado HTTP, cuerpo, encabezados saneados y JSON; no almacena credenciales, tokens, llaves ni cookies.
+- Estados: `issuing`, `issue_unknown`, `issued` y los fallos históricos ambiguos bloquean una nueva emisión. Una respuesta 2xx sin Id/UUID, JSON inválido, error 5xx o error de transporte pasa a `issue_unknown`; no se reemite automáticamente. Un 4xx confirmado queda como `issue_rejected`, único estado de fallo habilitado para reintento.
+- Conciliación: `POST /api/invoices/{invoice_id}/reconcile` ofrece búsqueda automática por GET `/cfdi?type=issued` con coincidencia única de serie, folio, RFC receptor, total y fecha aproximada. También admite confirmación manual estricta: consulta por GET el ID Facturama, valida los datos contra la factura local y valida el UUID contra el XML descargado por GET antes de marcar `issued`. No ejecuta `POST /3/cfdis`.
+- Descargas: al conciliar, XML y PDF se recuperan mediante GET y se almacenan en el `STORAGE_ROOT` configurado. La lectura posterior de documentos resuelve la ruta desde ese almacenamiento, no desde una ruta relativa del backend.
+- Factura local 2: conciliada contra Sandbox con su intento 9, estado `issued`, respuesta marcada `reconciled: true`, estado HTTP 200, errores limpiados, auditoría `facturama.issue_reconciled` y XML/PDF presentes. La verificación confirmó que el máximo de intento continúa en 9: no se creó un intento ni una emisión adicional.
+- Fecha de timbrado: las fechas `Date` de Facturama sin offset se interpretan con `America/Mexico_City`, que corresponde al lugar de expedición configurado; así se conserva la hora local fiscal al guardar `stamped_at` y al comparar durante conciliación.
+- Migraciones: no se requirió una migración; se modificó la base local para conciliar el registro existente, por lo que se regeneró el respaldo SQL y se verificó la revisión Alembic vigente.
+- Validación ejecutada: `python -m unittest tests.test_facturama_infrastructure tests.test_facturama_invoice_mapper tests.test_facturama_reconciliation` (15 pruebas correctas), compilación de los módulos modificados y verificación de los archivos recuperados.

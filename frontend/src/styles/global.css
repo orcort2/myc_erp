@@ -1,19 +1,54 @@
 :root {
-  --myc-primary: #08756f;
-  --myc-primary-dark: #053542;
-  --myc-accent: #46d8c4;
-  --myc-navy: #051f2d;
-  --myc-exeption: #e4e5da;
-  --myc-bg: #eaf4f2;
-  --myc-surface: #f6fbfa;
-  --myc-text: #0d2633;
-  --myc-muted: #465f70;
-  --myc-soft-text: #121313;
-  --myc-line: rgba(8, 117, 111, 0.18);
-  --glass-bg: rgba(255, 255, 255, 0.34);
-  --glass-bg-strong: rgba(255, 255, 255, 0.48);
-  --glass-border: rgba(201, 255, 247, 0.54);
-  --glass-shadow: 0 24px 70px rgba(5, 31, 45, 0.2);
+  /* MYC Design System V2 — Industrial Liquid Glass */
+  color-scheme: light;
+
+  --myc-primary: #0b6a75;
+  --myc-primary-dark: #074c56;
+  --myc-primary-hover: #095965;
+  --myc-primary-active: #074c56;
+  --myc-accent: #3db7b3;
+  --myc-accent-soft: rgba(61, 183, 179, 0.16);
+
+  --myc-navy: #082b30;
+  --myc-exeption: #e8eef0;
+
+  --myc-bg: #dce4e6;
+  --myc-surface: #e8eef0;
+  --myc-surface-1: #e8eef0;
+  --myc-surface-2: #f2f5f6;
+  --myc-surface-3: #f7f9fa;
+  --myc-input: #fcfdfd;
+
+  --myc-text: #243235;
+  --myc-muted: #5f7073;
+  --myc-soft-text: #5f7073;
+  --myc-placeholder: #8b989c;
+
+  --myc-border: #c6d4d8;
+  --myc-divider: #d7e2e4;
+  --myc-line: rgba(11, 106, 117, 0.18);
+
+  --myc-sidebar: #082b30;
+  --myc-sidebar-alt: #0c3840;
+
+  --myc-success: #2d8c63;
+  --myc-warning: #d29a1a;
+  --myc-danger: #c44a47;
+  --myc-info: #3a86c8;
+
+  --glass-bg: rgba(255, 255, 255, 0.28);
+  --glass-bg-strong: rgba(255, 255, 255, 0.38);
+  --glass-bg-soft: rgba(255, 255, 255, 0.20);
+  --glass-border: rgba(255, 255, 255, 0.32);
+  --glass-shadow: 0 18px 50px rgba(10, 20, 25, 0.08);
+  --glass-shadow-strong: 0 24px 64px rgba(10, 20, 25, 0.13);
+  --glass-highlight: rgba(255, 255, 255, 0.58);
+
+  --myc-radius-sm: 6px;
+  --myc-radius-md: 8px;
+  --myc-radius-lg: 12px;
+  --myc-radius-xl: 18px;
+
   color: var(--myc-text);
   background: var(--myc-bg);
   font-family:
@@ -6299,4 +6334,1181 @@ button {
     opacity: 1;
     transform: scale(1.18);
   }
+}
+
+/* ==========================================================================
+   MYC DESIGN SYSTEM V2 — GLOBAL REBRAND LAYER
+   Este bloque prevalece sobre estilos legacy sin alterar la estructura.
+   ========================================================================== */
+
+html,
+body {
+  background: var(--myc-bg);
+  color: var(--myc-text);
+}
+
+body {
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(61, 183, 179, 0.28);
+  color: var(--myc-text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--myc-placeholder);
+  opacity: 1;
+}
+
+/* Fondo global: menos luminosidad, más profundidad visual. */
+.loading-screen,
+.auth-screen,
+.app-shell {
+  background:
+    radial-gradient(circle at 82% 12%, rgba(61, 183, 179, 0.18), transparent 34%),
+    radial-gradient(circle at 16% 84%, rgba(11, 106, 117, 0.15), transparent 38%),
+    linear-gradient(145deg, var(--myc-sidebar) 0%, var(--myc-sidebar-alt) 31%, #64858a 64%, var(--myc-bg) 100%);
+}
+
+.app-shell--module,
+.app-shell--dashboard {
+  background:
+    radial-gradient(circle at 85% 10%, rgba(61, 183, 179, 0.16), transparent 32%),
+    linear-gradient(145deg, #23464c 0%, #527176 28%, var(--myc-bg) 76%, #d3dddf 100%);
+}
+
+/* Liquid Glass compartido */
+.topbar,
+.workspace-header__summary,
+.flow-strip,
+.module-card,
+.operations-band,
+.dashboard-control-panel,
+.dashboard-section-block,
+.module-workspace__hero,
+.module-workspace__panel,
+.clients-list-panel,
+.client-modal,
+.module-tabs,
+.document-library-panel,
+.pattern-selection-panel {
+  backdrop-filter: blur(16px) saturate(126%);
+  -webkit-backdrop-filter: blur(16px) saturate(126%);
+  border-color: var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.topbar,
+.workspace-header__summary,
+.flow-strip,
+.operations-band,
+.dashboard-control-panel,
+.dashboard-section-block,
+.module-workspace__hero,
+.module-workspace__panel,
+.clients-list-panel,
+.module-tabs {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(61, 183, 179, 0.08)),
+    var(--glass-bg);
+}
+
+.module-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.34), rgba(61, 183, 179, 0.08) 48%, rgba(255, 255, 255, 0.12)),
+    var(--glass-bg);
+}
+
+.module-card:hover {
+  border-color: rgba(61, 183, 179, 0.52);
+  box-shadow: var(--glass-shadow-strong);
+}
+
+/* Sidebar */
+.sidebar {
+  background:
+    linear-gradient(180deg, rgba(8, 43, 48, 0.96), rgba(12, 56, 64, 0.94));
+  border-right-color: rgba(125, 220, 211, 0.16);
+}
+
+.nav-item {
+  background: rgba(255, 255, 255, 0.075);
+  color: rgba(241, 249, 249, 0.92);
+}
+
+.nav-item:hover {
+  background: rgba(61, 183, 179, 0.16);
+}
+
+.nav-item.is-active,
+.nav-item[aria-current="page"] {
+  background: rgba(61, 183, 179, 0.20);
+  border-color: rgba(125, 220, 211, 0.30);
+  color: #ffffff;
+}
+
+.nav-item--lab {
+  background: rgba(61, 183, 179, 0.10);
+  border-color: rgba(125, 220, 211, 0.16);
+}
+
+/* Tipografía y jerarquía */
+.workspace-header h1,
+.module-workspace__hero h1,
+.module-workspace__panel h2,
+.section-heading h2,
+.dashboard-control-panel__header h2,
+.dashboard-section-heading h2,
+.module-card h2,
+.topbar__identity strong,
+.clients-table__head,
+.read-only-grid strong {
+  color: var(--myc-navy);
+}
+
+.workspace-header span,
+.module-workspace__hero span,
+.module-workspace__panel p,
+.module-card p,
+.clients-table__row,
+.field-sheet-form-grid label,
+.client-form label,
+.inline-select-field,
+.ets-stage-note {
+  color: var(--myc-muted);
+}
+
+/* Superficies operativas */
+.clients-table__row,
+.ets-summary-card,
+.ets-summary-link,
+.ets-equipment-card,
+.ets-work-order-folder,
+.ets-signature-card,
+.glass-card-mini,
+.read-only-grid article,
+.field-sheet-create-section,
+.field-sheet-client-choice,
+.field-sheet-client-summary,
+.ets-field-sheet-work-order,
+.ets-field-sheet-equipment-row,
+.document-version-list button,
+.document-version-list span {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.30), rgba(255, 255, 255, 0.12)),
+    var(--glass-bg-soft);
+  border-color: var(--myc-line);
+  color: var(--myc-text);
+}
+
+.clients-table__row--clickable:hover,
+.quotation-row-button:hover,
+.quotation-row-button:focus-visible,
+.ets-summary-card:hover,
+.ets-summary-card:focus-visible,
+.ets-equipment-card:hover,
+.ets-equipment-card:focus-visible {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.40), rgba(61, 183, 179, 0.12)),
+    var(--glass-bg);
+  border-color: rgba(11, 106, 117, 0.34);
+}
+
+/* Controles */
+input,
+select,
+textarea,
+.document-library-form input,
+.document-library-form select,
+.document-library-form textarea,
+.document-library-filters input,
+.document-library-filters select,
+.client-form input,
+.client-form select,
+.client-form textarea,
+.field-sheet-form-grid input,
+.field-sheet-form-grid select,
+.field-sheet-form-grid textarea,
+.field-sheet-create-field input,
+.field-sheet-create-field select,
+.certificate-client-form input,
+.certificate-client-form textarea,
+.certificate-client-save-options input,
+.inline-select-field select,
+.ets-expedient-search input,
+.field-sheet-results-row input {
+  background: color-mix(in srgb, var(--myc-input) 88%, transparent);
+  border-color: var(--myc-border);
+  color: var(--myc-text);
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+.client-form input:focus,
+.client-form select:focus,
+.client-form textarea:focus,
+.field-sheet-form-grid input:focus,
+.field-sheet-form-grid select:focus,
+.field-sheet-form-grid textarea:focus {
+  border-color: var(--myc-primary);
+  box-shadow: 0 0 0 3px rgba(61, 183, 179, 0.16);
+  outline: none;
+}
+
+/* Botones */
+.primary-button,
+.table-button--primary {
+  background: linear-gradient(135deg, var(--myc-primary), var(--myc-primary-hover));
+  color: #ffffff;
+}
+
+.primary-button:hover,
+.table-button--primary:hover {
+  background: linear-gradient(135deg, var(--myc-primary-hover), var(--myc-primary-active));
+}
+
+.icon-text-button,
+.table-button,
+.sidebar-collapse-button,
+.sidebar-mobile-close,
+.sidebar-menu-button {
+  border-color: var(--myc-line);
+}
+
+.icon-text-button,
+.table-button {
+  background: rgba(255, 255, 255, 0.40);
+  color: var(--myc-primary-dark);
+}
+
+.icon-text-button:hover,
+.table-button:hover {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(11, 106, 117, 0.32);
+}
+
+/* Estados semánticos */
+.status-pill,
+.quotation-status.status-accepted,
+.quotation-status.status-approved,
+.quotation-status.status-released,
+.quotation-status.status-completed,
+.quotation-status.status-calibrated,
+.quotation-status.status-labeled {
+  background: rgba(45, 140, 99, 0.12);
+  border-color: rgba(45, 140, 99, 0.28);
+  color: #216f4e;
+}
+
+.quotation-status.status-pending,
+.quotation-status.status-progress,
+.ets-stage-badge.is-reopened,
+.ets-inline-stage.is-reopened,
+.ets-stage.is-reopened {
+  background: rgba(210, 154, 26, 0.14);
+  border-color: rgba(210, 154, 26, 0.28);
+  color: #805c0f;
+}
+
+.status-pill--danger,
+.quotation-status.status-rejected,
+.quotation-status.status-expired,
+.quotation-status.status-cancelled,
+.quotation-status.status-suspended,
+.quotation-status.status-not_done,
+.ets-stage-badge.is-blocked,
+.ets-inline-stage.is-blocked,
+.ets-stage.is-blocked {
+  background: rgba(196, 74, 71, 0.12);
+  border-color: rgba(196, 74, 71, 0.28);
+  color: #913a38;
+}
+
+/* ==========================================================================
+   DARK MODE
+   Compatible con data-theme="dark", .dark, .dark-theme y .theme-dark.
+   ========================================================================== */
+
+:root[data-theme="dark"],
+html[data-theme="dark"],
+body[data-theme="dark"],
+:root.dark,
+html.dark,
+body.dark,
+body.dark-theme,
+.theme-dark {
+  color-scheme: dark;
+
+  --myc-primary: #66d7d0;
+  --myc-primary-dark: #66d7d0;
+  --myc-primary-hover: #7de3dc;
+  --myc-primary-active: #4fc1ba;
+  --myc-accent: #45bdb5;
+  --myc-accent-soft: rgba(69, 189, 181, 0.16);
+
+  --myc-navy: #e5efef;
+  --myc-exeption: #20343a;
+
+  --myc-bg: #0c171b;
+  --myc-surface: #122126;
+  --myc-surface-1: #122126;
+  --myc-surface-2: #182a30;
+  --myc-surface-3: #20343a;
+  --myc-input: #16262b;
+
+  --myc-text: #e5efef;
+  --myc-muted: #a7b9ba;
+  --myc-soft-text: #a7b9ba;
+  --myc-placeholder: #778b8e;
+
+  --myc-border: #31474c;
+  --myc-divider: #263b40;
+  --myc-line: rgba(102, 215, 208, 0.18);
+
+  --myc-sidebar: #071216;
+  --myc-sidebar-alt: #0c252b;
+
+  --myc-success: #56b88b;
+  --myc-warning: #e2b44a;
+  --myc-danger: #dd7774;
+  --myc-info: #67a9df;
+
+  --glass-bg: rgba(22, 42, 48, 0.62);
+  --glass-bg-strong: rgba(27, 51, 58, 0.82);
+  --glass-bg-soft: rgba(22, 42, 48, 0.42);
+  --glass-border: rgba(125, 220, 211, 0.18);
+  --glass-shadow: 0 20px 55px rgba(0, 0, 0, 0.32);
+  --glass-shadow-strong: 0 26px 72px rgba(0, 0, 0, 0.42);
+  --glass-highlight: rgba(206, 255, 249, 0.12);
+}
+
+:root[data-theme="dark"] body,
+html[data-theme="dark"] body,
+body[data-theme="dark"],
+:root.dark body,
+html.dark body,
+body.dark,
+body.dark-theme,
+.theme-dark {
+  background: var(--myc-bg);
+  color: var(--myc-text);
+}
+
+:root[data-theme="dark"] .app-shell,
+html[data-theme="dark"] .app-shell,
+body[data-theme="dark"] .app-shell,
+.dark .app-shell,
+.dark-theme .app-shell,
+.theme-dark .app-shell {
+  background:
+    radial-gradient(circle at 78% 14%, rgba(69, 189, 181, 0.10), transparent 32%),
+    linear-gradient(145deg, #071216 0%, #0c252b 42%, #0c171b 100%);
+}
+
+:root[data-theme="dark"] .topbar,
+:root[data-theme="dark"] .workspace-header__summary,
+:root[data-theme="dark"] .flow-strip,
+:root[data-theme="dark"] .module-card,
+:root[data-theme="dark"] .operations-band,
+:root[data-theme="dark"] .dashboard-control-panel,
+:root[data-theme="dark"] .dashboard-section-block,
+:root[data-theme="dark"] .module-workspace__hero,
+:root[data-theme="dark"] .module-workspace__panel,
+:root[data-theme="dark"] .clients-list-panel,
+:root[data-theme="dark"] .client-modal,
+:root[data-theme="dark"] .module-tabs,
+html[data-theme="dark"] .topbar,
+html[data-theme="dark"] .workspace-header__summary,
+html[data-theme="dark"] .flow-strip,
+html[data-theme="dark"] .module-card,
+html[data-theme="dark"] .operations-band,
+html[data-theme="dark"] .dashboard-control-panel,
+html[data-theme="dark"] .dashboard-section-block,
+html[data-theme="dark"] .module-workspace__hero,
+html[data-theme="dark"] .module-workspace__panel,
+html[data-theme="dark"] .clients-list-panel,
+html[data-theme="dark"] .client-modal,
+html[data-theme="dark"] .module-tabs,
+.dark .topbar,
+.dark .workspace-header__summary,
+.dark .flow-strip,
+.dark .module-card,
+.dark .operations-band,
+.dark .dashboard-control-panel,
+.dark .dashboard-section-block,
+.dark .module-workspace__hero,
+.dark .module-workspace__panel,
+.dark .clients-list-panel,
+.dark .client-modal,
+.dark .module-tabs,
+.dark-theme .topbar,
+.dark-theme .workspace-header__summary,
+.dark-theme .flow-strip,
+.dark-theme .module-card,
+.dark-theme .operations-band,
+.dark-theme .dashboard-control-panel,
+.dark-theme .dashboard-section-block,
+.dark-theme .module-workspace__hero,
+.dark-theme .module-workspace__panel,
+.dark-theme .clients-list-panel,
+.dark-theme .client-modal,
+.dark-theme .module-tabs,
+.theme-dark .topbar,
+.theme-dark .workspace-header__summary,
+.theme-dark .flow-strip,
+.theme-dark .module-card,
+.theme-dark .operations-band,
+.theme-dark .dashboard-control-panel,
+.theme-dark .dashboard-section-block,
+.theme-dark .module-workspace__hero,
+.theme-dark .module-workspace__panel,
+.theme-dark .clients-list-panel,
+.theme-dark .client-modal,
+.theme-dark .module-tabs {
+  background:
+    linear-gradient(145deg, rgba(46, 78, 86, 0.28), rgba(69, 189, 181, 0.05)),
+    var(--glass-bg);
+  border-color: var(--glass-border);
+  color: var(--myc-text);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea,
+.dark input,
+.dark select,
+.dark textarea,
+.dark-theme input,
+.dark-theme select,
+.dark-theme textarea,
+.theme-dark input,
+.theme-dark select,
+.theme-dark textarea {
+  background: var(--myc-input);
+  border-color: var(--myc-border);
+  color: var(--myc-text);
+}
+
+:root[data-theme="dark"] .clients-table__row,
+:root[data-theme="dark"] .ets-summary-card,
+:root[data-theme="dark"] .ets-summary-link,
+:root[data-theme="dark"] .ets-equipment-card,
+:root[data-theme="dark"] .ets-work-order-folder,
+:root[data-theme="dark"] .ets-signature-card,
+:root[data-theme="dark"] .glass-card-mini,
+:root[data-theme="dark"] .read-only-grid article,
+:root[data-theme="dark"] .field-sheet-create-section,
+:root[data-theme="dark"] .field-sheet-client-choice,
+:root[data-theme="dark"] .field-sheet-client-summary,
+html[data-theme="dark"] .clients-table__row,
+html[data-theme="dark"] .ets-summary-card,
+html[data-theme="dark"] .ets-summary-link,
+html[data-theme="dark"] .ets-equipment-card,
+html[data-theme="dark"] .ets-work-order-folder,
+html[data-theme="dark"] .ets-signature-card,
+html[data-theme="dark"] .glass-card-mini,
+html[data-theme="dark"] .read-only-grid article,
+html[data-theme="dark"] .field-sheet-create-section,
+html[data-theme="dark"] .field-sheet-client-choice,
+html[data-theme="dark"] .field-sheet-client-summary,
+.dark .clients-table__row,
+.dark .ets-summary-card,
+.dark .ets-summary-link,
+.dark .ets-equipment-card,
+.dark .ets-work-order-folder,
+.dark .ets-signature-card,
+.dark .glass-card-mini,
+.dark .read-only-grid article,
+.dark .field-sheet-create-section,
+.dark .field-sheet-client-choice,
+.dark .field-sheet-client-summary,
+.dark-theme .clients-table__row,
+.dark-theme .ets-summary-card,
+.dark-theme .ets-summary-link,
+.dark-theme .ets-equipment-card,
+.dark-theme .ets-work-order-folder,
+.dark-theme .ets-signature-card,
+.dark-theme .glass-card-mini,
+.dark-theme .read-only-grid article,
+.dark-theme .field-sheet-create-section,
+.dark-theme .field-sheet-client-choice,
+.dark-theme .field-sheet-client-summary,
+.theme-dark .clients-table__row,
+.theme-dark .ets-summary-card,
+.theme-dark .ets-summary-link,
+.theme-dark .ets-equipment-card,
+.theme-dark .ets-work-order-folder,
+.theme-dark .ets-signature-card,
+.theme-dark .glass-card-mini,
+.theme-dark .read-only-grid article,
+.theme-dark .field-sheet-create-section,
+.theme-dark .field-sheet-client-choice,
+.theme-dark .field-sheet-client-summary {
+  background:
+    linear-gradient(145deg, rgba(47, 78, 85, 0.32), rgba(18, 33, 38, 0.46)),
+    var(--glass-bg-soft);
+  border-color: var(--myc-line);
+  color: var(--myc-text);
+}
+
+:root[data-theme="dark"] .icon-text-button,
+:root[data-theme="dark"] .table-button,
+html[data-theme="dark"] .icon-text-button,
+html[data-theme="dark"] .table-button,
+.dark .icon-text-button,
+.dark .table-button,
+.dark-theme .icon-text-button,
+.dark-theme .table-button,
+.theme-dark .icon-text-button,
+.theme-dark .table-button {
+  background: rgba(32, 52, 58, 0.86);
+  border-color: var(--myc-border);
+  color: var(--myc-text);
+}
+
+:root[data-theme="dark"] .workspace-header h1,
+:root[data-theme="dark"] .module-workspace__hero h1,
+:root[data-theme="dark"] .module-workspace__panel h2,
+:root[data-theme="dark"] .section-heading h2,
+:root[data-theme="dark"] .dashboard-control-panel__header h2,
+:root[data-theme="dark"] .dashboard-section-heading h2,
+:root[data-theme="dark"] .module-card h2,
+:root[data-theme="dark"] .topbar__identity strong,
+html[data-theme="dark"] .workspace-header h1,
+html[data-theme="dark"] .module-workspace__hero h1,
+html[data-theme="dark"] .module-workspace__panel h2,
+html[data-theme="dark"] .section-heading h2,
+html[data-theme="dark"] .dashboard-control-panel__header h2,
+html[data-theme="dark"] .dashboard-section-heading h2,
+html[data-theme="dark"] .module-card h2,
+html[data-theme="dark"] .topbar__identity strong,
+.dark .workspace-header h1,
+.dark .module-workspace__hero h1,
+.dark .module-workspace__panel h2,
+.dark .section-heading h2,
+.dark .dashboard-control-panel__header h2,
+.dark .dashboard-section-heading h2,
+.dark .module-card h2,
+.dark .topbar__identity strong,
+.dark-theme .workspace-header h1,
+.dark-theme .module-workspace__hero h1,
+.dark-theme .module-workspace__panel h2,
+.dark-theme .section-heading h2,
+.dark-theme .dashboard-control-panel__header h2,
+.dark-theme .dashboard-section-heading h2,
+.dark-theme .module-card h2,
+.dark-theme .topbar__identity strong,
+.theme-dark .workspace-header h1,
+.theme-dark .module-workspace__hero h1,
+.theme-dark .module-workspace__panel h2,
+.theme-dark .section-heading h2,
+.theme-dark .dashboard-control-panel__header h2,
+.theme-dark .dashboard-section-heading h2,
+.theme-dark .module-card h2,
+.theme-dark .topbar__identity strong {
+  color: var(--myc-text);
+}
+
+/* Los documentos físicos e imprimibles conservan fondo blanco. */
+.field-sheet-page,
+.field-sheet-document-header,
+.ets-signature-canvas {
+  color-scheme: light;
+}
+
+@media print {
+  .field-sheet-page,
+  .field-sheet-document-header {
+    background: #ffffff !important;
+    color: #111111 !important;
+  }
+}
+
+/* ==========================================================================
+   MYC DESIGN SYSTEM V2.1 — REDUCCIÓN DE LUMINOSIDAD
+   Ajuste posterior: superficies menos blancas y glass más sobrio.
+   ========================================================================== */
+
+:root {
+  --myc-bg: #cfdadc;
+  --myc-surface: #dbe4e6;
+  --myc-surface-1: #dbe4e6;
+  --myc-surface-2: #e5ebec;
+  --myc-surface-3: #edf1f2;
+  --myc-input: #f4f7f7;
+
+  --myc-text: #203033;
+  --myc-muted: #596b6e;
+  --myc-soft-text: #596b6e;
+  --myc-border: #b7c7ca;
+  --myc-divider: #c8d4d6;
+
+  --glass-bg: rgba(223, 233, 234, 0.46);
+  --glass-bg-strong: rgba(230, 237, 238, 0.60);
+  --glass-bg-soft: rgba(214, 226, 228, 0.34);
+  --glass-border: rgba(240, 250, 250, 0.30);
+  --glass-highlight: rgba(255, 255, 255, 0.28);
+  --glass-shadow: 0 18px 48px rgba(8, 31, 36, 0.12);
+  --glass-shadow-strong: 0 24px 62px rgba(8, 31, 36, 0.17);
+}
+
+.app-shell--module,
+.app-shell--dashboard {
+  background:
+    radial-gradient(circle at 84% 11%, rgba(61, 183, 179, 0.11), transparent 30%),
+    linear-gradient(145deg, #193b42 0%, #365960 24%, #91a9ad 56%, var(--myc-bg) 100%);
+}
+
+.topbar,
+.workspace-header__summary,
+.flow-strip,
+.operations-band,
+.dashboard-control-panel,
+.dashboard-section-block,
+.module-workspace__hero,
+.module-workspace__panel,
+.clients-list-panel,
+.module-tabs {
+  background:
+    linear-gradient(145deg, rgba(231, 239, 240, 0.56), rgba(61, 183, 179, 0.06)),
+    var(--glass-bg);
+}
+
+.module-card {
+  background:
+    linear-gradient(145deg, rgba(230, 238, 239, 0.52), rgba(61, 183, 179, 0.06) 48%, rgba(215, 226, 228, 0.24)),
+    var(--glass-bg);
+}
+
+.clients-table__row,
+.ets-summary-card,
+.ets-summary-link,
+.ets-equipment-card,
+.ets-work-order-folder,
+.ets-signature-card,
+.glass-card-mini,
+.read-only-grid article,
+.field-sheet-create-section,
+.field-sheet-client-choice,
+.field-sheet-client-summary,
+.ets-field-sheet-work-order,
+.ets-field-sheet-equipment-row,
+.document-version-list button,
+.document-version-list span {
+  background:
+    linear-gradient(145deg, rgba(231, 238, 239, 0.44), rgba(204, 217, 220, 0.24)),
+    var(--glass-bg-soft);
+}
+
+.clients-table__row--clickable:hover,
+.quotation-row-button:hover,
+.quotation-row-button:focus-visible,
+.ets-summary-card:hover,
+.ets-summary-card:focus-visible,
+.ets-equipment-card:hover,
+.ets-equipment-card:focus-visible {
+  background:
+    linear-gradient(145deg, rgba(234, 241, 242, 0.54), rgba(61, 183, 179, 0.10)),
+    rgba(218, 228, 230, 0.52);
+}
+
+input,
+select,
+textarea,
+.document-library-form input,
+.document-library-form select,
+.document-library-form textarea,
+.document-library-filters input,
+.document-library-filters select,
+.client-form input,
+.client-form select,
+.client-form textarea,
+.field-sheet-form-grid input,
+.field-sheet-form-grid select,
+.field-sheet-form-grid textarea,
+.field-sheet-create-field input,
+.field-sheet-create-field select,
+.certificate-client-form input,
+.certificate-client-form textarea,
+.certificate-client-save-options input,
+.inline-select-field select,
+.ets-expedient-search input,
+.field-sheet-results-row input {
+  background: rgba(244, 247, 247, 0.86);
+}
+
+.icon-text-button,
+.table-button {
+  background: rgba(226, 235, 236, 0.72);
+}
+
+.icon-text-button:hover,
+.table-button:hover {
+  background: rgba(237, 242, 243, 0.90);
+}
+
+/* El modal ETS estaba acumulando demasiadas capas claras. */
+.service-order-modal,
+.quotation-detail-modal,
+.client-modal {
+  background:
+    linear-gradient(145deg, rgba(221, 231, 233, 0.82), rgba(198, 215, 218, 0.60)),
+    rgba(211, 224, 226, 0.78);
+  border-color: rgba(242, 250, 250, 0.32);
+}
+
+/* Menor brillo en encabezados y paneles internos del ETS. */
+.service-order-modal .quotation-detail-header,
+.service-order-modal .ets-progress-panel,
+.service-order-modal .ets-auth-panel,
+.service-order-modal .ets-stage-note,
+.service-order-modal .ets-active-context,
+.service-order-modal .ets-modal-action-ribbon,
+.service-order-modal .ets-expedient-search,
+.service-order-modal .field-sheet-create-section {
+  background:
+    linear-gradient(145deg, rgba(228, 236, 237, 0.58), rgba(203, 218, 221, 0.34)),
+    rgba(214, 226, 228, 0.48);
+  border-color: rgba(11, 106, 117, 0.16);
+}
+
+/* Mantener blancos reales solo en documentos físicos e inputs donde sea necesario. */
+.field-sheet-page,
+.field-sheet-document-header,
+.ets-signature-canvas {
+  background: #ffffff;
+}
+
+/* ==========================================================================
+   MYC DESIGN SYSTEM V2.2 — CONTRASTE Y MENOR FATIGA VISUAL
+   Reduce superficies blancas y refuerza la legibilidad en modo claro.
+   ========================================================================== */
+
+:root {
+  --myc-bg: #bccacc;
+  --myc-surface: #c8d4d6;
+  --myc-surface-1: #c8d4d6;
+  --myc-surface-2: #d5dfe1;
+  --myc-surface-3: #e2e9ea;
+  --myc-input: #edf2f2;
+
+  --myc-text: #10292e;
+  --myc-muted: #40565a;
+  --myc-soft-text: #40565a;
+  --myc-placeholder: #718387;
+
+  --myc-border: #9fb1b5;
+  --myc-divider: #afbec1;
+  --myc-line: rgba(7, 76, 86, 0.24);
+
+  --glass-bg: rgba(188, 204, 207, 0.60);
+  --glass-bg-strong: rgba(201, 214, 216, 0.74);
+  --glass-bg-soft: rgba(173, 193, 197, 0.46);
+  --glass-border: rgba(226, 238, 239, 0.30);
+  --glass-highlight: rgba(255, 255, 255, 0.18);
+  --glass-shadow: 0 18px 46px rgba(6, 28, 33, 0.16);
+  --glass-shadow-strong: 0 24px 60px rgba(6, 28, 33, 0.22);
+}
+
+.app-shell--module,
+.app-shell--dashboard {
+  background:
+    radial-gradient(circle at 84% 11%, rgba(61, 183, 179, 0.09), transparent 28%),
+    linear-gradient(145deg, #17383f 0%, #2b5057 24%, #708d92 52%, #aebfc2 78%, var(--myc-bg) 100%);
+}
+
+/* Paneles principales: menos blanco, más material. */
+.topbar,
+.workspace-header__summary,
+.flow-strip,
+.operations-band,
+.dashboard-control-panel,
+.dashboard-section-block,
+.module-workspace__hero,
+.module-workspace__panel,
+.clients-list-panel,
+.module-tabs,
+.service-order-modal,
+.quotation-detail-modal,
+.client-modal {
+  background:
+    linear-gradient(145deg, rgba(205, 217, 219, 0.70), rgba(156, 181, 186, 0.28)),
+    var(--glass-bg);
+  border-color: rgba(225, 237, 238, 0.28);
+  box-shadow: var(--glass-shadow);
+}
+
+/* Cards y métricas: evitar blanco puro. */
+.module-card,
+.operations-band__metric,
+.dashboard-progress-summary,
+.dashboard-executive-grid .operations-band__metric,
+.dashboard-section-block .operations-band__metric,
+.flow-strip span,
+.clients-table__row,
+.ets-summary-card,
+.ets-summary-link,
+.ets-equipment-card,
+.ets-work-order-folder,
+.ets-signature-card,
+.glass-card-mini,
+.read-only-grid article,
+.field-sheet-create-section,
+.field-sheet-client-choice,
+.field-sheet-client-summary,
+.ets-field-sheet-work-order,
+.ets-field-sheet-equipment-row,
+.document-version-list button,
+.document-version-list span {
+  background:
+    linear-gradient(145deg, rgba(216, 225, 227, 0.62), rgba(177, 195, 198, 0.30)),
+    rgba(185, 201, 204, 0.48);
+  border-color: rgba(7, 76, 86, 0.18);
+}
+
+/* Contraste tipográfico reforzado. */
+.workspace-header h1,
+.module-workspace__hero h1,
+.module-workspace__panel h2,
+.section-heading h2,
+.dashboard-control-panel__header h2,
+.dashboard-section-heading h2,
+.module-card h2,
+.topbar__identity strong,
+.clients-table__head,
+.read-only-grid strong,
+.operations-band__metric strong,
+.dashboard-progress-summary strong,
+.dashboard-control-panel strong,
+.dashboard-section-block strong,
+.flow-strip span,
+.ets-summary-card strong,
+.ets-summary-link strong,
+.ets-equipment-card strong {
+  color: #0b2a30;
+}
+
+.workspace-header span,
+.module-workspace__hero span,
+.module-workspace__panel p,
+.module-card p,
+.clients-table__row,
+.operations-band__metric span,
+.dashboard-progress-summary span,
+.dashboard-control-panel span,
+.dashboard-section-block span,
+.ets-summary-card span,
+.ets-summary-link span,
+.ets-equipment-card span,
+.field-sheet-form-grid label,
+.client-form label,
+.inline-select-field,
+.ets-stage-note {
+  color: #3f5559;
+}
+
+/* Tabs y bandas del dashboard */
+.flow-strip span,
+.module-tab,
+.client-modal-tab,
+.ets-folder-tab {
+  background: rgba(210, 221, 223, 0.58);
+  border-color: rgba(7, 76, 86, 0.16);
+  color: #17383f;
+}
+
+.module-tab.is-active,
+.client-modal-tab.is-active,
+.ets-folder-tab.is-active {
+  background:
+    linear-gradient(145deg, rgba(175, 211, 210, 0.78), rgba(150, 190, 191, 0.54));
+  border-color: rgba(11, 106, 117, 0.34);
+  color: #0b4f58;
+}
+
+/* Inputs siguen siendo claramente editables, pero sin blanco puro. */
+input,
+select,
+textarea,
+.document-library-form input,
+.document-library-form select,
+.document-library-form textarea,
+.document-library-filters input,
+.document-library-filters select,
+.client-form input,
+.client-form select,
+.client-form textarea,
+.field-sheet-form-grid input,
+.field-sheet-form-grid select,
+.field-sheet-form-grid textarea,
+.field-sheet-create-field input,
+.field-sheet-create-field select,
+.certificate-client-form input,
+.certificate-client-form textarea,
+.certificate-client-save-options input,
+.inline-select-field select,
+.ets-expedient-search input,
+.field-sheet-results-row input {
+  background: rgba(232, 238, 239, 0.90);
+  border-color: #9fb1b5;
+  color: #10292e;
+}
+
+/* Botones secundarios más definidos. */
+.icon-text-button,
+.table-button {
+  background: rgba(202, 214, 216, 0.78);
+  border-color: rgba(7, 76, 86, 0.20);
+  color: #12383f;
+}
+
+.icon-text-button:hover,
+.table-button:hover {
+  background: rgba(218, 226, 228, 0.92);
+  border-color: rgba(11, 106, 117, 0.34);
+}
+
+/* Modal ETS: eliminar acumulación de capas claras. */
+.service-order-modal .quotation-detail-header,
+.service-order-modal .ets-progress-panel,
+.service-order-modal .ets-auth-panel,
+.service-order-modal .ets-stage-note,
+.service-order-modal .ets-active-context,
+.service-order-modal .ets-modal-action-ribbon,
+.service-order-modal .ets-expedient-search,
+.service-order-modal .field-sheet-create-section {
+  background:
+    linear-gradient(145deg, rgba(200, 213, 215, 0.70), rgba(163, 184, 188, 0.34)),
+    rgba(184, 201, 204, 0.54);
+  border-color: rgba(7, 76, 86, 0.18);
+}
+
+/* Hover con profundidad, sin destello blanco. */
+.clients-table__row--clickable:hover,
+.quotation-row-button:hover,
+.quotation-row-button:focus-visible,
+.ets-summary-card:hover,
+.ets-summary-card:focus-visible,
+.ets-equipment-card:hover,
+.ets-equipment-card:focus-visible {
+  background:
+    linear-gradient(145deg, rgba(208, 220, 222, 0.72), rgba(119, 170, 173, 0.20)),
+    rgba(180, 198, 201, 0.56);
+  border-color: rgba(11, 106, 117, 0.38);
+}
+
+/* Documentos físicos permanecen blancos. */
+.field-sheet-page,
+.field-sheet-document-header,
+.ets-signature-canvas {
+  background: #ffffff;
+  color: #111111;
+}
+
+/* ==========================================================================
+   MYC DESIGN SYSTEM V2.3 — CONTRASTE SEGÚN CONTEXTO
+   Regla: texto claro sobre fondos oscuros; texto oscuro dentro de glass claro.
+   ========================================================================== */
+
+:root {
+  --myc-on-dark: #f1f8f8;
+  --myc-on-dark-muted: #c2d2d4;
+  --myc-on-dark-accent: #78ddd6;
+}
+
+/*
+ * Encabezados de página colocados directamente sobre el fondo oscuro.
+ * Estos no deben heredar el color oscuro usado dentro de tarjetas claras.
+ */
+.workspace > .workspace-header,
+.app-shell--dashboard .workspace-header,
+.app-shell--module .workspace-header {
+  color: var(--myc-on-dark);
+}
+
+.workspace > .workspace-header h1,
+.app-shell--dashboard .workspace-header h1,
+.app-shell--module .workspace-header h1 {
+  color: var(--myc-on-dark);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.20);
+}
+
+.workspace > .workspace-header > div:first-child > p,
+.app-shell--dashboard .workspace-header > div:first-child > p,
+.app-shell--module .workspace-header > div:first-child > p {
+  color: var(--myc-on-dark-accent);
+}
+
+.workspace > .workspace-header > div:first-child > span:not(.workspace-header__welcome),
+.app-shell--dashboard .workspace-header > div:first-child > span:not(.workspace-header__welcome),
+.app-shell--module .workspace-header > div:first-child > span:not(.workspace-header__welcome) {
+  color: var(--myc-on-dark-muted);
+}
+
+/*
+ * Los elementos que sí tienen una superficie clara propia conservan texto oscuro.
+ */
+.workspace-header__welcome {
+  background:
+    linear-gradient(145deg, rgba(216, 226, 228, 0.86), rgba(183, 201, 204, 0.70));
+  border-color: rgba(235, 246, 247, 0.36);
+  color: #12343a !important;
+  text-shadow: none;
+}
+
+.workspace-header__summary,
+.workspace-header__summary strong,
+.workspace-header__summary span {
+  text-shadow: none;
+}
+
+.workspace-header__summary strong {
+  color: #0b4f58;
+}
+
+.workspace-header__summary span {
+  color: #40565a;
+}
+
+/* Pantallas de autenticación y carga: fondo oscuro, contenido claro. */
+.auth-screen .auth-heading h1,
+.loading-screen .auth-heading h1 {
+  color: var(--myc-on-dark);
+}
+
+.auth-screen .auth-heading p,
+.loading-screen .auth-heading p {
+  color: var(--myc-on-dark-accent);
+}
+
+.auth-screen .auth-heading span,
+.loading-screen .auth-heading span,
+.auth-screen .auth-form label {
+  color: var(--myc-on-dark-muted);
+}
+
+/* Navegación y zonas oscuras permanentes. */
+.sidebar,
+.sidebar strong,
+.sidebar .nav-item,
+.sidebar .lab-nav-list > span {
+  color: var(--myc-on-dark);
+}
+
+.sidebar .brand-lockup span,
+.sidebar .lab-nav-list > span {
+  color: rgba(226, 239, 240, 0.68);
+}
+
+/* Menús oscuros o bloques de código. */
+.json-preview,
+.json-preview *,
+.ets-admin-actions__menu.is-dark,
+.ets-admin-actions__menu.is-dark * {
+  color: var(--myc-on-dark);
+}
+
+/*
+ * Protección contra reglas globales demasiado amplias:
+ * dentro de paneles claros se restablece texto oscuro.
+ */
+.topbar,
+.topbar *,
+.module-workspace__hero,
+.module-workspace__hero *,
+.module-workspace__panel,
+.module-workspace__panel *,
+.dashboard-control-panel,
+.dashboard-control-panel *,
+.dashboard-section-block,
+.dashboard-section-block *,
+.operations-band,
+.operations-band *,
+.flow-strip,
+.flow-strip *,
+.clients-list-panel,
+.clients-list-panel *,
+.client-modal,
+.client-modal *,
+.service-order-modal,
+.service-order-modal *,
+.quotation-detail-modal,
+.quotation-detail-modal * {
+  text-shadow: none;
+}
+
+.topbar,
+.module-workspace__hero,
+.module-workspace__panel,
+.dashboard-control-panel,
+.dashboard-section-block,
+.operations-band,
+.flow-strip,
+.clients-list-panel,
+.client-modal,
+.service-order-modal,
+.quotation-detail-modal {
+  color: var(--myc-text);
+}
+
+/* Textos secundarios dentro de superficies claras. */
+.topbar span,
+.module-workspace__hero span,
+.module-workspace__panel p,
+.dashboard-control-panel span,
+.dashboard-section-block span,
+.operations-band__metric span,
+.clients-list-panel span,
+.client-modal span,
+.service-order-modal span,
+.quotation-detail-modal span {
+  color: var(--myc-muted);
+}
+
+/* Títulos dentro de superficies claras. */
+.topbar strong,
+.module-workspace__hero h1,
+.module-workspace__panel h2,
+.dashboard-control-panel h2,
+.dashboard-section-block h2,
+.operations-band__metric strong,
+.clients-list-panel h2,
+.client-modal h2,
+.service-order-modal h2,
+.quotation-detail-modal h2 {
+  color: var(--myc-text);
+}
+
+/* En modo oscuro, todas las superficies oscuras mantienen texto claro. */
+:root[data-theme="dark"] .workspace-header h1,
+html[data-theme="dark"] .workspace-header h1,
+body[data-theme="dark"] .workspace-header h1,
+.dark .workspace-header h1,
+.dark-theme .workspace-header h1,
+.theme-dark .workspace-header h1 {
+  color: var(--myc-on-dark);
+}
+
+:root[data-theme="dark"] .workspace-header > div:first-child > p,
+html[data-theme="dark"] .workspace-header > div:first-child > p,
+body[data-theme="dark"] .workspace-header > div:first-child > p,
+.dark .workspace-header > div:first-child > p,
+.dark-theme .workspace-header > div:first-child > p,
+.theme-dark .workspace-header > div:first-child > p {
+  color: var(--myc-on-dark-accent);
+}
+
+:root[data-theme="dark"] .workspace-header > div:first-child > span:not(.workspace-header__welcome),
+html[data-theme="dark"] .workspace-header > div:first-child > span:not(.workspace-header__welcome),
+body[data-theme="dark"] .workspace-header > div:first-child > span:not(.workspace-header__welcome),
+.dark .workspace-header > div:first-child > span:not(.workspace-header__welcome),
+.dark-theme .workspace-header > div:first-child > span:not(.workspace-header__welcome),
+.theme-dark .workspace-header > div:first-child > span:not(.workspace-header__welcome) {
+  color: var(--myc-on-dark-muted);
 }

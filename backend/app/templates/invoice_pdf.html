@@ -1,120 +1,686 @@
 <!doctype html>
 <html lang="es">
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      body { font-family: Arial, sans-serif; color: #1f2937; font-size: 11px; }
-      .header, .totals, .box { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
-      .header td { vertical-align: top; }
-      .title { font-size: 20px; font-weight: 700; }
-      .muted { color: #6b7280; }
-      .box td, .box th, .totals td { border: 1px solid #d1d5db; padding: 6px; }
-      .box th { background: #eef2ff; text-align: left; }
-      .right { text-align: right; }
-      .badge { display: inline-block; padding: 4px 8px; background: #dbeafe; border-radius: 999px; font-weight: 700; }
-      .legend { margin-top: 18px; padding: 10px; border: 1px solid #f59e0b; background: #fffbeb; }
-    </style>
-  </head>
-  <body>
-    <table class="header">
-      <tr>
-        <td>
-          <div class="title">FACTURA / PREFACTURA</div>
-          <div>{{ (settings.emitter_data or {}).get('commercial_name', 'MYC SYSTEM') }}</div>
-          <div class="muted">{{ (settings.emitter_data or {}).get('legal_name', '') }}</div>
-          <div class="muted">RFC: {{ (settings.emitter_data or {}).get('rfc', '') }}</div>
-          <div class="muted">{{ (settings.emitter_data or {}).get('address', '') }}</div>
-        </td>
-        <td class="right">
-          <div><strong>{{ invoice.series }}-{{ invoice.folio }}</strong></div>
-          <div>Fecha: {{ invoice.issued_on or '-' }}</div>
-          <div>Vencimiento: {{ invoice.due_on or '-' }}</div>
-          <div><span class="badge">{{ invoice.status }}</span></div>
-        </td>
-      </tr>
-    </table>
+<head>
+  <meta charset="utf-8">
+  <title>Factura {{ invoice.series }}-{{ invoice.folio }}</title>
 
-    <table class="box">
-      <tr>
-        <th>Receptor</th>
-        <th>Orden / Referencia</th>
-      </tr>
-      <tr>
-        <td>
-          <div><strong>{{ (invoice.fiscal_client or invoice.client).legal_name }}</strong></div>
-          <div>RFC: {{ (invoice.fiscal_client or invoice.client).rfc or '-' }}</div>
-          <div>Régimen: {{ (invoice.fiscal_client or invoice.client).tax_regime or '-' }}</div>
-          <div>Correo: {{ (invoice.fiscal_client or invoice.client).email or '-' }}</div>
-        </td>
-        <td>
-          <div>OS: {{ invoice.service_order.folio if invoice.service_order else '-' }}</div>
-          <div>OT: {{ invoice.service_order.work_order_number if invoice.service_order else '-' }}</div>
-          <div>Cotización: {{ invoice.quotation.folio if invoice.quotation else '-' }}</div>
-        </td>
-      </tr>
-    </table>
+  <style>
+    @page {
+      size: letter;
+      margin: 12mm 12mm 14mm;
 
-    <table class="box">
+      @bottom-center {
+        content: "Página " counter(page) " de " counter(pages);
+        color: #60747b;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 8px;
+      }
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      color: #102f39;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 9.2px;
+      line-height: 1.35;
+      margin: 0;
+    }
+
+    .header {
+      align-items: flex-start;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .brand {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      width: 59%;
+    }
+
+    .brand img {
+      height: 66px;
+      object-fit: contain;
+      width: 92px;
+    }
+
+    .brand-copy h1 {
+      color: #064f56;
+      font-size: 15px;
+      margin: 0 0 4px;
+      text-transform: uppercase;
+    }
+
+    .brand-copy p,
+    .invoice-meta p,
+    .party-card p,
+    .notes p {
+      margin: 0;
+    }
+
+    .brand-copy {
+      color: #365d66;
+    }
+
+    .brand-copy p + p {
+      margin-top: 2px;
+    }
+
+    .invoice-meta {
+      border: 1px solid #9fc9cb;
+      border-radius: 8px;
+      overflow: hidden;
+      width: 38%;
+    }
+
+    .invoice-meta__title {
+      background: #073f48;
+      color: #fff;
+      padding: 7px 10px;
+      text-align: center;
+    }
+
+    .invoice-meta__title strong {
+      display: block;
+      font-size: 14px;
+      letter-spacing: .6px;
+      text-transform: uppercase;
+    }
+
+    .invoice-meta__title span {
+      display: block;
+      font-size: 8.5px;
+      margin-top: 2px;
+    }
+
+    .invoice-meta__row {
+      align-items: flex-start;
+      border-top: 1px solid #d2e6e7;
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 8px;
+    }
+
+    .invoice-meta__row span {
+      color: #50717b;
+      font-size: 7.8px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .invoice-meta__row strong {
+      max-width: 63%;
+      text-align: right;
+      word-break: break-word;
+    }
+
+    .parties {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr;
+      margin-bottom: 12px;
+    }
+
+    .party-card,
+    .fiscal-band,
+    .notes,
+    .stamps {
+      border: 1px solid #b8d5d7;
+      border-radius: 8px;
+    }
+
+    .party-card {
+      min-height: 84px;
+      padding: 10px;
+      position: relative;
+    }
+
+    .party-card__label {
+      background: #0b6d70;
+      border-radius: 0 0 6px 0;
+      color: #fff;
+      font-size: 8px;
+      font-weight: 700;
+      left: 0;
+      letter-spacing: .5px;
+      padding: 4px 14px;
+      position: absolute;
+      text-transform: uppercase;
+      top: 0;
+    }
+
+    .party-card strong {
+      color: #073f48;
+      display: block;
+      font-size: 11.5px;
+      margin: 18px 0 5px;
+    }
+
+    .party-card p + p { margin-top: 2px; }
+
+    .catalog-code {
+      color: #073f48;
+      display: block;
+      font-size: 9px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .catalog-name {
+      color: #50717b;
+      display: block;
+      font-size: 7.9px;
+      line-height: 1.25;
+      margin-top: 2px;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    .items { margin: 4px 0 11px; }
+
+    .items th {
+      background: #073f48;
+      color: #fff;
+      font-size: 7.5px;
+      padding: 7px 5px;
+      text-align: left;
+      text-transform: uppercase;
+    }
+
+    .items td {
+      border-bottom: 1px solid #dceaea;
+      padding: 7px 5px;
+      vertical-align: top;
+    }
+
+    .items .numeric {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .items .description { width: 34%; }
+
+    .concept-note {
+      color: #55717a;
+      display: block;
+      font-size: 7.8px;
+      line-height: 1.25;
+      margin-top: 2px;
+    }
+
+    .tax-note {
+      color: #0a7478;
+      display: block;
+      font-size: 7.8px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .summary {
+      align-items: flex-start;
+      display: flex;
+      gap: 8px;
+      margin: 0 0 11px;
+      width: 100%;
+    }
+
+    .amount-words {
+      border: 1px solid #b8d5d7;
+      border-radius: 8px;
+      flex: 1 1 auto;
+      min-width: 0;
+      padding: 10px;
+    }
+
+    .amount-words span,
+    .notes h3,
+    .stamps h3 {
+      color: #50717b;
+      display: block;
+      font-size: 7.8px;
+      font-weight: 700;
+      letter-spacing: .5px;
+      margin: 0 0 6px;
+      text-transform: uppercase;
+    }
+
+    .amount-words strong {
+      color: #073f48;
+      font-size: 10px;
+    }
+
+    .totals {
+      border: 1px solid #b8d5d7;
+      border-radius: 8px;
+      flex: 0 0 300px;
+      margin-left: auto;
+      overflow: hidden;
+      width: 300px;
+    }
+
+    .totals div {
+      align-items: center;
+      display: flex;
+      justify-content: space-between;
+      padding: 7px 10px;
+    }
+
+    .totals div + div { border-top: 1px solid #dceaea; }
+
+    .totals .grand {
+      background: #073f48;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .fiscal-band {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      margin-bottom: 7px;
+      overflow: hidden;
+    }
+
+    .fiscal-band article {
+      min-height: 35px;
+      padding: 5px 8px 6px;
+    }
+
+    .fiscal-band article:nth-child(even) {
+      border-left: 1px solid #dceaea;
+    }
+
+    .fiscal-band article:nth-child(n + 3) {
+      border-top: 1px solid #dceaea;
+    }
+
+    .fiscal-band span {
+      color: #50717b;
+      display: block;
+      font-size: 6.8px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .fiscal-band .catalog-value {
+      color: #073f48;
+      display: block;
+      font-size: 8.2px;
+      font-weight: 700;
+      line-height: 1.2;
+      margin-top: 1px;
+      white-space: nowrap;
+    }
+
+    .notes {
+      margin-bottom: 10px;
+      padding: 10px;
+      text-align: center;
+    }
+
+    .notes strong { color: #076f73; }
+
+    .fiscal-detail {
+      align-items: stretch;
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 112px 1fr;
+      page-break-inside: avoid;
+    }
+
+    .qr-card {
+      border: 1px solid #b8d5d7;
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    .qr-card img {
+      height: 96px;
+      width: 96px;
+    }
+
+    .qr-card span {
+      color: #60747b;
+      display: block;
+      font-size: 7px;
+      margin-top: 5px;
+    }
+
+    .stamps {
+      padding: 10px;
+      word-break: break-all;
+    }
+
+    .certificate-strip {
+      background: #f2fafa;
+      border-bottom: 1px solid #dceaea;
+      color: #365d66;
+      font-size: 7px;
+      line-height: 1.3;
+      margin: -10px -10px 8px;
+      padding: 6px 10px;
+      word-break: normal;
+    }
+
+    .certificate-strip strong { color: #073f48; }
+
+    .stamp-block + .stamp-block {
+      border-top: 1px solid #dceaea;
+      margin-top: 8px;
+      padding-top: 8px;
+    }
+
+    .stamp-block p {
+      font-family: "Courier New", monospace;
+      font-size: 6.7px;
+      line-height: 1.25;
+      margin: 0;
+    }
+
+    .legal {
+      border-top: 1px solid #b8d5d7;
+      margin-top: 12px;
+      padding-top: 8px;
+      text-align: center;
+    }
+
+    .legal strong {
+      color: #073f48;
+      display: block;
+      font-size: 9px;
+    }
+
+    .legal span {
+      color: #60747b;
+      display: block;
+      font-size: 7.5px;
+      margin-top: 3px;
+    }
+
+    .empty {
+      color: #6f858b;
+      padding: 18px;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <header class="header">
+    <section class="brand">
+      {% if logo_uri %}
+      <img alt="MYC" src="{{ logo_uri }}">
+      {% endif %}
+
+      <div class="brand-copy">
+        <h1>{{ fiscal.issuer.name }}</h1>
+        <p>RFC: {{ fiscal.issuer.rfc or "—" }}</p>
+        <p>
+          Régimen fiscal:
+          {{ fiscal.issuer.tax_regime.code or "—" }}
+          {% if fiscal.issuer.tax_regime.name %}
+          · {{ fiscal.issuer.tax_regime.name }}
+          {% endif %}
+        </p>
+        {% if fiscal.issuer.address %}<p>{{ fiscal.issuer.address }}</p>{% endif %}
+        {% if fiscal.issuer.postal_code and fiscal.issuer.postal_code not in fiscal.issuer.address %}<p>C.P. {{ fiscal.issuer.postal_code }}</p>{% endif %}
+        {% if fiscal.issuer.phone %}<p>Tel: {{ fiscal.issuer.phone }}</p>{% endif %}
+        {% if fiscal.issuer.email %}<p>{{ fiscal.issuer.email }}</p>{% endif %}
+        {% if fiscal.issuer.website %}<p>{{ fiscal.issuer.website }}</p>{% endif %}
+      </div>
+    </section>
+
+    <section class="invoice-meta">
+      <div class="invoice-meta__title">
+        <strong>Factura electrónica</strong>
+        <span>Representación impresa de un CFDI</span>
+      </div>
+
+      <div class="invoice-meta__row">
+        <span>Serie / folio</span>
+        <strong>{{ invoice.series }}-{{ invoice.folio }}</strong>
+      </div>
+
+      <div class="invoice-meta__row">
+        <span>Folio fiscal (UUID)</span>
+        <strong>{{ fiscal.uuid or "Pendiente" }}</strong>
+      </div>
+
+      <div class="invoice-meta__row">
+        <span>Lugar de expedición</span>
+        <strong>{{ fiscal.expedition_place or "—" }}</strong>
+      </div>
+
+      <div class="invoice-meta__row">
+        <span>Fecha y hora de emisión</span>
+        <strong>{{ invoice.issued_on|date }}</strong>
+      </div>
+
+      <div class="invoice-meta__row">
+        <span>Tipo de comprobante</span>
+        <strong>{{ fiscal.voucher_type.code or fiscal.cfdi_type or "I" }}{% if fiscal.voucher_type.name %} - {{ fiscal.voucher_type.name }}{% endif %}</strong>
+      </div>
+
+      <div class="invoice-meta__row">
+        <span>Fecha y hora de certificación</span>
+        <strong>{{ fiscal.stamped_at|date(true) }}</strong>
+      </div>
+    </section>
+  </header>
+
+  <section class="parties">
+    <article class="party-card">
+      <span class="party-card__label">Receptor</span>
+      <strong>{{ fiscal.receiver.name }}</strong>
+      <p>RFC: {{ fiscal.receiver.rfc or "—" }}</p>
+      <p>
+        Régimen:
+        {{ fiscal.receiver.tax_regime.code or "—" }}
+        {% if fiscal.receiver.tax_regime.name %}
+        · {{ fiscal.receiver.tax_regime.name }}
+        {% endif %}
+      </p>
+      <p>Código postal fiscal: {{ fiscal.receiver.postal_code or "—" }}</p>
+      <p>
+        Uso CFDI:
+        {{ fiscal.receiver.cfdi_use.code or "—" }}
+        {% if fiscal.receiver.cfdi_use.name %}
+        · {{ fiscal.receiver.cfdi_use.name }}
+        {% endif %}
+      </p>
+    </article>
+  </section>
+
+  <table class="items">
+    <thead>
       <tr>
-        <th>Descripción</th>
-        <th>Cant.</th>
+        <th>No. ident.</th>
+        <th>Cantidad</th>
         <th>Unidad</th>
-        <th>P. unit.</th>
-        <th>Descuento</th>
-        <th>IVA</th>
-        <th>Importe</th>
+        <th>Clave SAT</th>
+        <th class="description">Descripción</th>
+        <th class="numeric">Valor unitario</th>
+        <th class="numeric">Importe</th>
       </tr>
-      {% for item in invoice.items %}
-      <tr>
-        <td>
-          <strong>{{ item.description }}</strong>
-          <div class="muted">{{ item.notes or '' }}</div>
-        </td>
-        <td class="right">{{ item.quantity }}</td>
-        <td>{{ item.unit or '-' }}</td>
-        <td class="right">{{ item.unit_price }}</td>
-        <td class="right">{{ item.discount_total }}</td>
-        <td class="right">{{ item.tax_total }}</td>
-        <td class="right">{{ item.line_total }}</td>
-      </tr>
-      {% endfor %}
-    </table>
+    </thead>
 
-    <table class="box">
-      <tr>
-        <th>Certificados incluidos</th>
-      </tr>
-      <tr>
-        <td>
-          {% set certs = invoice.items | selectattr('certificate', 'defined') | list %}
-          {% for item in invoice.items if item.certificate %}
-            <div>{{ item.certificate.expected_folio or item.certificate.folio }} - {{ item.certificate.equipment.name if item.certificate.equipment else '' }}</div>
-          {% else %}
-            <div>-</div>
-          {% endfor %}
-        </td>
-      </tr>
-    </table>
+    <tbody>
+      {% if item_rows %}
+        {% for row in item_rows %}
+        {% set item = row.item %}
+        <tr>
+          <td>{{ item.quotation_item_id or item.id or loop.index }}</td>
+          <td>{{ item.quantity }}</td>
 
-    <table class="totals">
-      <tr><td>Subtotal</td><td class="right">{{ invoice.subtotal }}</td></tr>
-      <tr><td>IVA</td><td class="right">{{ invoice.tax_total }}</td></tr>
-      <tr><td>Descuento</td><td class="right">{{ invoice.discount_total }}</td></tr>
-      <tr><td>Total</td><td class="right"><strong>{{ invoice.total }}</strong></td></tr>
-      <tr><td>Pagado</td><td class="right">{{ invoice.amount_paid }}</td></tr>
-      <tr><td>Saldo</td><td class="right"><strong>{{ invoice.balance_due }}</strong></td></tr>
-    </table>
+          <td>
+            <span class="catalog-code">{{ row.unit.code or item.sat_unit or "—" }}</span>
+            {% if row.unit.name %}
+            <span class="concept-note">{{ row.unit.name }}</span>
+            {% endif %}
+          </td>
 
-    <div><strong>Observaciones:</strong> {{ invoice.observations or '-' }}</div>
-    <div><strong>Pagos registrados:</strong></div>
-    {% for payment in invoice.payments %}
-      <div>{{ payment.paid_on }} | {{ payment.amount }} | {{ payment.payment_form or '-' }} | {{ payment.reference or '-' }}</div>
-    {% else %}
-      <div>-</div>
-    {% endfor %}
+          <td>
+            <span class="catalog-code">{{ row.product_service.code or item.sat_key or "—" }}</span>
+            {% if row.product_service.name %}
+            <span class="concept-note">{{ row.product_service.name }}</span>
+            {% endif %}
+          </td>
 
-    <div class="legend">
-      Documento administrativo interno, no CFDI timbrado.
+          <td class="description">
+            <strong>{{ item.description }}</strong>
+
+            {% if item.notes %}
+            <span class="concept-note">{{ item.notes }}</span>
+            {% endif %}
+
+            <span class="tax-note">
+              IVA {{ item.tax_rate or 0 }}%:
+              {{ item.tax_total|money }}
+            </span>
+
+            <span class="concept-note">
+              Objeto de impuesto:
+              {{ row.tax_object.code or "—" }}
+              {% if row.tax_object.name %}
+              · {{ row.tax_object.name }}
+              {% endif %}
+            </span>
+          </td>
+
+          <td class="numeric">{{ item.unit_price|money }}</td>
+          <td class="numeric">{{ item.line_total|money }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr>
+          <td class="empty" colspan="7">Sin conceptos registrados</td>
+        </tr>
+      {% endif %}
+    </tbody>
+  </table>
+
+  <section class="summary">
+    <article class="amount-words">
+      <span>Importe con letra</span>
+      <strong>{{ total_words }}</strong>
+    </article>
+
+    <div class="totals">
+      <div>
+        <span>Subtotal</span>
+        <strong>{{ invoice.subtotal|money }}</strong>
+      </div>
+
+      {% if invoice.discount_total %}
+      <div>
+        <span>Descuento</span>
+        <strong>{{ invoice.discount_total|money }}</strong>
+      </div>
+      {% endif %}
+
+      <div>
+        <span>IVA / Impuestos</span>
+        <strong>{{ invoice.tax_total|money }}</strong>
+      </div>
+
+      {% if invoice.withholding_total %}
+      <div>
+        <span>Retenciones</span>
+        <strong>{{ invoice.withholding_total|money }}</strong>
+      </div>
+      {% endif %}
+
+      <div class="grand">
+        <span>Total</span>
+        <strong>{{ invoice.total|money }}</strong>
+      </div>
     </div>
-  </body>
+  </section>
+
+  <section class="fiscal-band">
+    <article>
+      <span>Forma de pago</span>
+      <strong class="catalog-value">{{ fiscal.payment_form.code or "—" }}{% if fiscal.payment_form.name %} - {{ fiscal.payment_form.name }}{% endif %}</strong>
+    </article>
+
+    <article>
+      <span>Método de pago</span>
+      <strong class="catalog-value">{{ fiscal.payment_method.code or "—" }}{% if fiscal.payment_method.name %} - {{ fiscal.payment_method.name }}{% endif %}</strong>
+    </article>
+
+    <article>
+      <span>Moneda</span>
+      <strong class="catalog-value">{{ fiscal.currency.code or "—" }}{% if fiscal.currency.name %} - {{ fiscal.currency.name }}{% endif %}</strong>
+    </article>
+
+    <article>
+      <span>Uso de CFDI</span>
+      <strong class="catalog-value">{{ fiscal.receiver.cfdi_use.code or "—" }}{% if fiscal.receiver.cfdi_use.name %} - {{ fiscal.receiver.cfdi_use.name }}{% endif %}</strong>
+    </article>
+
+    <article>
+      <span>Régimen fiscal del receptor</span>
+      <strong class="catalog-value">{{ fiscal.receiver.tax_regime.code or "—" }}{% if fiscal.receiver.tax_regime.name %} - {{ fiscal.receiver.tax_regime.name }}{% endif %}</strong>
+    </article>
+
+    <article>
+      <span>Exportación</span>
+      <strong class="catalog-value">{{ fiscal.exportation.code or "—" }}{% if fiscal.exportation.name %} - {{ fiscal.exportation.name }}{% endif %}</strong>
+    </article>
+  </section>
+
+  {% if invoice.observations %}
+  <section class="notes">
+    <p>{{ invoice.observations }}</p>
+  </section>
+  {% endif %}
+
+  <section class="fiscal-detail">
+    <aside class="qr-card">
+      {% if qr_uri %}
+      <img alt="Código QR de verificación SAT" src="{{ qr_uri }}">
+      <span>Verificación SAT</span>
+      {% else %}
+      <span>QR pendiente</span>
+      {% endif %}
+    </aside>
+
+    <article class="stamps">
+      <div class="certificate-strip">
+        CFDI {{ fiscal.version or "4.0" }} · UUID: <strong>{{ fiscal.uuid or "—" }}</strong> ·
+        Certificado emisor: <strong>{{ fiscal.certificate_number or "—" }}</strong> ·
+        Certificado SAT: <strong>{{ fiscal.sat_certificate_number or "—" }}</strong>
+      </div>
+      <div class="stamp-block">
+        <h3>Sello digital del CFDI</h3>
+        <p>{{ fiscal.cfdi_seal or "—" }}</p>
+      </div>
+
+      <div class="stamp-block">
+        <h3>Sello digital del SAT</h3>
+        <p>{{ fiscal.sat_seal or "—" }}</p>
+      </div>
+
+      <div class="stamp-block">
+        <h3>Cadena original del complemento de certificación digital del SAT</h3>
+        <p>{{ fiscal.original_chain or "—" }}</p>
+      </div>
+    </article>
+  </section>
+
+  <footer class="legal">
+    <strong>Este documento es una representación impresa de un CFDI.</strong>
+    <span>
+      CFDI con UUID:
+      {{ fiscal.uuid or "Pendiente de certificación" }}
+    </span>
+  </footer>
+</body>
 </html>

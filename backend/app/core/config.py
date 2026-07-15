@@ -1,6 +1,7 @@
 from functools import lru_cache
+from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +25,13 @@ class Settings(BaseSettings):
     ]
     storage_root: str = "storage"
     public_verify_base_url: str = "https://api-erp.mycmetrology.com.mx"
+    facturama_enabled: bool = False
+    facturama_environment: Literal["sandbox", "production"] = "sandbox"
+    facturama_username: SecretStr = SecretStr("")
+    facturama_password: SecretStr = SecretStr("")
+    facturama_sandbox_url: str = ""
+    facturama_production_url: str = ""
+    facturama_timeout_seconds: float = Field(default=30, gt=0)
 
 
 @lru_cache

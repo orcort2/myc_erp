@@ -1,11 +1,9 @@
-import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
 from openpyxl import Workbook
 
-from app.services.sat_catalogs.comparison import compare_catalog_sources
 from app.services.sat_catalogs.sat_xls_source import SatXlsSourceError, extract_catalog_rows
 
 
@@ -67,26 +65,14 @@ class SatOfficialXlsSourceTests(unittest.TestCase):
         self.assertEqual(rows[0]["code"], "0.160000")
         self.assertEqual(rows[1]["code"], "0.160000 | IEPS | Tasa | Sí | No")
 
-    def test_comparison_reports_source_only_catalog_and_sqlite_difference(self):
-        with tempfile.TemporaryDirectory() as directory:
-            source = self.write_workbook(directory, "c_Moneda", [
-                ["Catálogo de moneda"],
-                ["c_Moneda", "Descripción", "Fecha inicio de vigencia"],
-                ["MXN", "Peso mexicano", "2022-01-01"],
-                ["USD", "Dólar americano", "2022-01-01"],
-            ])
-            sqlite_source = Path(directory) / "catalogs.db"
-            connection = sqlite3.connect(sqlite_source)
-            connection.execute("CREATE TABLE cfdi_40_monedas (id TEXT, texto TEXT, vigencia_desde TEXT)")
-            connection.execute("INSERT INTO cfdi_40_monedas VALUES ('MXN', 'Peso mexicano', '2022-01-01')")
-            connection.commit()
-            connection.close()
-            report = compare_catalog_sources(source, sqlite_source, "currencies")
-        self.assertEqual(report["result"], "different")
-        self.assertEqual(report["missing_in_sqlite"], ["USD"])
-
     def test_rejects_missing_required_sheet(self):
         with tempfile.TemporaryDirectory() as directory:
             source = self.write_workbook(directory, "otra", [["clave"]])
             with self.assertRaises(SatXlsSourceError):
                 extract_catalog_rows(source, "voucher_types")
+
+    def test_official_regime_626_is_read_from_the_xlsx(self):
+        source = Path(__file__).resolve().parents[1] / "resources/sat/catalogo sat.xlsx"
+        rows, _ = extract_catalog_rows(source, "fiscal_regimes")
+        record = next(row for row in rows if row["code"] == "626")
+        self.assertEqual(record["name"], "Régimen Simplificado de Confianza")
