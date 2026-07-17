@@ -13,6 +13,7 @@ while [[ -L "$SOURCE" ]]; do
 done
 ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
 export PROJECT_ROOT="$ROOT"
+source "$ROOT/scripts/toolkit/lib/common.sh"
 
 usage() {
   cat <<'EOF'
@@ -28,7 +29,7 @@ run_sat() {
   case "$action" in
     status) echo "Fuente SAT oficial: backend/resources/sat/catalogo sat.xlsx" ;;
     import|reimport)
-      (cd "$ROOT/backend" && "$ROOT/venv/bin/python" scripts/import_sat_official_xls_catalogs.py --publication-date "${SAT_PUBLICATION_DATE:-2026-07-14}" --activate) ;;
+      (cd "$ROOT/backend" && "$PYTHON" scripts/import_sat_official_xls_catalogs.py --version "$(myc_sat_catalog_version)" --publication-date "${SAT_PUBLICATION_DATE:-2026-07-14}" --activate) ;;
     *) echo "Acción SAT no reconocida: $action" >&2; return 2 ;;
   esac
 }

@@ -27,22 +27,65 @@ db_menu() {
 7) Backup BD
 8) Restaurar BD
 9) Administrar tablas
+10) Resetear BD de desarrollo
 0) Volver
 ========================================
 EOF
+
     read -r -p "Elige una opción: " option
+
     case "$option" in
-      1) run_and_pause migrate ;;
-      2) "$ROOT/scripts/toolkit/db/current.sh"; read -r -p "Enter para continuar..." _ ;;
-      3) "$ROOT/scripts/toolkit/db/history.sh"; read -r -p "Enter para continuar..." _ ;;
-      4) "$ROOT/scripts/toolkit/db/heads.sh"; read -r -p "Enter para continuar..." _ ;;
-      5) read -r -p "Nombre de la migración: " name; "$ROOT/scripts/toolkit/db/revision.sh" "$name"; read -r -p "Enter para continuar..." _ ;;
-      6) read -r -p "Revision destino (-1, base o id): " revision; "$ROOT/scripts/toolkit/db/downgrade.sh" "$revision"; read -r -p "Enter para continuar..." _ ;;
-      7) run_and_pause backup ;;
-      8) read -r -p "Archivo .sql: " file; run_and_pause restore "$file" ;;
-      9) "$ROOT/scripts/toolkit/db/manage/menu.sh" ;;
-      0) return ;;
-      *) echo "Opción inválida"; sleep 1 ;;
+      1)
+        run_and_pause migrate
+        ;;
+      2)
+        "$ROOT/scripts/toolkit/db/current.sh"
+        read -r -p "Enter para continuar..." _
+        ;;
+      3)
+        "$ROOT/scripts/toolkit/db/history.sh"
+        read -r -p "Enter para continuar..." _
+        ;;
+      4)
+        "$ROOT/scripts/toolkit/db/heads.sh"
+        read -r -p "Enter para continuar..." _
+        ;;
+      5)
+        read -r -p "Nombre de la migración: " name
+        "$ROOT/scripts/toolkit/db/revision.sh" "$name"
+        read -r -p "Enter para continuar..." _
+        ;;
+      6)
+        read -r -p "Revision destino (-1, base o id): " revision
+        "$ROOT/scripts/toolkit/db/downgrade.sh" "$revision"
+        read -r -p "Enter para continuar..." _
+        ;;
+      7)
+        run_and_pause backup
+        ;;
+      8)
+        read -r -p "Archivo .sql: " file
+        run_and_pause restore "$file"
+        ;;
+      9)
+        "$ROOT/scripts/toolkit/db/manage/menu.sh"
+        ;;
+      10)
+        read -r -p "ADVERTENCIA: se eliminará toda la BD. Escribe REINICIAR ERP para continuar: " confirmation
+        if [[ "$confirmation" == "REINICIAR ERP" ]]; then
+          MYC_ALLOW_RESET='REINICIAR ERP' "$ROOT/scripts/toolkit/db/dbreset.sh"
+        else
+          echo "Reset cancelado."
+        fi
+        read -r -p "Enter para continuar..." _
+        ;;
+      0)
+        return
+        ;;
+      *)
+        echo "Opción inválida"
+        sleep 1
+        ;;
     esac
   done
 }

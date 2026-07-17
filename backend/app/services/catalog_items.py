@@ -6,6 +6,9 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.models.catalog_item import CatalogItem
+from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
+from app.services.storage_service import resolve_storage_path
+from datetime import date
 from app.schemas.catalog_item import (
     CatalogItemCreate,
     CatalogItemUpdate,
@@ -113,6 +116,9 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
     values["quotation_legend"] = _quotation_legend(values)
     if values.get("item_type") == "product":
         values["calibration_scope"] = None
+        values["expected_certificate_master_id"] = None
+    if values.get("category") != "Calibracion":
+        values["expected_certificate_master_id"] = None
     if values.get("internal_unit") != "other":
         values["custom_internal_unit"] = None
 
@@ -123,6 +129,29 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
             values.get("margin_percent", Decimal("0.00")),
         )
     return values
+
+
+def _ensure_certificate_master(db: Session, document_id: int | None) -> None:
+    if document_id is None:
+        return
+    document = db.get(ControlledDocument, document_id)
+    if document is None or document.document_type != "certificate_master" or document.status != "active":
+        raise HTTPException(status_code=422, detail="La plantilla esperada debe ser un Master de Certificado activo")
+    active_version = db.scalar(select(ControlledDocumentVersion.id).where(
+        ControlledDocumentVersion.document_id == document_id,
+        ControlledDocumentVersion.status == "active",
+    ))
+    version = db.scalar(select(ControlledDocumentVersion).where(
+        ControlledDocumentVersion.document_id == document_id,
+        ControlledDocumentVersion.status == "active",
+    ))
+    if version is None:
+        raise HTTPException(status_code=422, detail="El Master de Certificado no tiene una versión activa")
+    if version.expires_on and version.expires_on < date.today():
+        raise HTTPException(status_code=422, detail="El Master de Certificado está caducado")
+    path = resolve_storage_path(version.file_path)
+    if not version.file_path or not path or not path.is_file() or path.suffix.lower() != ".xlsx":
+        raise HTTPException(status_code=422, detail="El Master de Certificado no tiene un archivo XLSX disponible")
 
 
 def list_catalog_items(
@@ -181,6 +210,7 @@ def create_catalog_item(
     user_id: int | None = None,
 ) -> CatalogItem:
     values = _prepare_values(payload.model_dump())
+    _ensure_certificate_master(db, values.get("expected_certificate_master_id"))
     values["internal_key"] = _generate_internal_key(
         db, values["item_type"], values["category"], values["commodity"]
     )
@@ -228,12 +258,14 @@ def update_catalog_item(
         "internal_cost": item.internal_cost,
         "cost_currency": item.cost_currency,
         "calibration_scope": item.calibration_scope,
+        "expected_certificate_master_id": item.expected_certificate_master_id,
         "quotation_legend": item.quotation_legend,
         "tax_object": item.tax_object,
     } | updates
 
     should_recalculate = bool({"origin_price", "exchange_rate", "margin_percent"} & set(updates))
     prepared = _prepare_values(merged, recalculate_price=should_recalculate)
+    _ensure_certificate_master(db, prepared.get("expected_certificate_master_id"))
     CatalogItemCreate(**prepared)
     if {"item_type", "category"} & set(updates):
         prepared["internal_key"] = _generate_internal_key(

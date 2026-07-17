@@ -1,3 +1,55 @@
+## Actualización 2026-07-17 — Modal fiscal de clientes
+
+- La pestaña **Datos fiscales** del alta/edición de cliente ya no comparte renglones entre los selectores SAT y la constancia. RFC, código postal, régimen fiscal, uso CFDI y país fiscal se disponen en una sola columna, por lo que descripciones largas no invaden el panel lateral.
+- La carga y el estado de la constancia se mantienen en una columna lateral independiente, alineada después de los selectores fiscales y con límites de ancho para no superponerse; en pantallas angostas se apilan debajo de los campos.
+- Validación: `npm run build` correcto; permanece únicamente la advertencia conocida del bundle mayor a 500 kB. No hubo migración ni cambio de datos.
+
+## Actualización 2026-07-17 — Reset de base de datos de desarrollo
+
+- `scripts/toolkit/db/dbreset.sh` es ahora el adaptador único del menú hacia `scripts/toolkit/system/reset-db.sh`; el menú solicita la frase destructiva y establece el token sólo para esa ejecución. El comando de CLI `scripts/myc reset db` usa el mismo orquestador.
+- El orquestador valida entorno no productivo y token explícito, respalda si existe base, termina conexiones, elimina/recrea BD, reutiliza `system/init.sh` para Alembic, importa los catálogos SAT mediante el importador existente, comprueba conexión final y muestra el resumen de migración/inicializadores. La versión requerida por el importador se obtiene de `backend/resources/sat/VERSION.txt` (o `SAT_CATALOG_VERSION`), pues el XLSX no contiene YYYYMMDD en su nombre.
+- No existe actualmente un script reutilizable de seed inicial genérico ni de creación de administrador; el resumen lo declara sin inventar lógica ni credenciales. No se ejecutó un reset real durante esta corrección para preservar los datos locales.
+- Corrección SAT: el importador abortaba porque `catalogo sat.xlsx` no incluye YYYYMMDD en su nombre y el menú/reset omitían el argumento obligatorio `--version`. `scripts/myc sat import` y el reset ya leen `20260703` de `VERSION.txt` (admite reemplazo con `SAT_CATALOG_VERSION`) y lo envían al importador. Se ejecutó la carga integrada contra la BD local: 16 versiones activas y 151,229 registros SAT; Alembic permanece en `fd5e6f7a8b9c (head)`.
+- Validaciones: sintaxis Bash, resolución de versión desde `VERSION.txt`, ejecución de `scripts/myc sat import` y consulta de conteos SAT. Hubo cambio de datos SAT local; se regeneró `backup_erp_myc_antes_prueba.sql` (80 MB, SHA-256 `600a407aa723ddc548f5772317294a7dbb65d7802184d5221e004431349885ba`) con `alembic_version=fd5e6f7a8b9c`.
+
+## Actualización 2026-07-17 — UX de Plantillas Maestras y nombres de paquetes
+
+- La subvista Plantillas Maestras usa navegación Liquid Glass propia, acción primaria única, filtros contextuales sin selector de tipo redundante y tabla con cabecera/fila de mayor contraste; conserva responsive sin alterar modelos ni endpoints del submódulo.
+- El paquete de Captura usa el estándar de carpetas `FOLIO_ETS/FOLIO_ETS - OT-####/` y el backend siempre entrega `Content-Disposition` con nombre no vacío. El frontend descarta `null`, `undefined` o vacío y usa como respaldo el folio del ETS o `ETS-{id}`.
+- Causa raíz de `null.zip`: el cliente aceptaba `filename=null`/ausente procedente del header sin fallback; quedó cubierto en ambos extremos. La validación E2E de bytes continúa pendiente de una Hoja de Campo elegible de prueba.
+- No hubo migración ni cambio de datos en esta corrección; el respaldo SQL permanece vigente en `fd5e6f7a8b9c`.
+
+## Actualización 2026-07-17 — Submódulo de Plantillas Maestras
+
+- Control Documental incluye la subvista **Plantillas Maestras**, que registra Masters de Certificado con XLSX validado, versión, vigencia, hash SHA-256, tamaño, historial de versiones, activación y descarga del archivo original.
+- La migración `fd5e6f7a8b9c` agrega caducidad/tamaño a versiones documentales y hash/vigencia al snapshot de equipo. Está aplicada y `alembic current` reporta `fd5e6f7a8b9c (head)`.
+- Se creó el Master de prueba `MC-PRUEBA-001` y se vinculó al servicio de Calibración de prueba. El equipo nuevo de prueba `2` confirmó el snapshot de documento `8`, versión `1`, XLSX y hash; no se aplicó backfill a equipos históricos.
+- Se regeneró `backup_erp_myc_antes_prueba.sql` (80 MB), `alembic_version=fd5e6f7a8b9c`, SHA-256 `dc552986e3d050a003b117a5cc54e8f9d8d22bd006728c779285333e0c41c251`.
+- Pendiente: completar la Hoja de Campo de prueba y ejecutar el E2E PDF/XLSX/ZIP de Captura sin alterar el flujo existente.
+
+## Actualización 2026-07-17 — Corrección contextual de Cotizaciones y auditoría de Captura
+
+- El cierre de una Cotización abierta desde ETS vuelve mediante la entrada existente de historial (`history.back()`), por lo que Servicios restaura el contexto previamente guardado; una cotización abierta desde Ventas sólo cierra su modal.
+- El panel de precio final del Catálogo ocupa ahora su propio renglón del grid y el selector Estado queda alineado al inicio, con la altura estándar de los controles.
+- Se registró `docs/AUDITORIA_PAQUETE_CAPTURA_2026-07-17.md`: el ETS de prueba está bloqueado por falta de Master/snapshot en el equipo, por lo cual el handler sólo consulta summary y no llega al endpoint de descarga. No se modificó el flujo de descarga en esta intervención.
+- No hubo cambios de esquema ni de datos; no corresponde regenerar el respaldo SQL.
+
+## Actualización 2026-07-17 — Correcciones UX de Cotizaciones y Paquete de Captura
+
+- El salto ETS → Cotización conserva un contexto de retorno en sesión: ETS, pestaña, OT, subvista y posición de scroll. Al cerrar la cotización, se restaura el expediente ETS en lugar de dejar al usuario en Ventas.
+- Las partidas sustituyen el `datalist` por un selector institucional buscable con resultados enriquecidos; la descripción comercial es un `textarea` ampliable por partida, conserva saltos de línea y se persiste en la partida sin alterar catálogo.
+- Los botones principales afectados reemplazan el texto `Guardar ahora` por el icono compacto institucional `Save` con etiqueta accesible.
+- La descarga de paquete de una sola partida ahora interpreta `multipart/mixed` en el frontend y descarga ambos adjuntos reales (PDF y Excel), en vez de descargar el cuerpo multipart como un archivo sin formato. Los ZIP de OT múltiple y ETS permanecen como descargas directas.
+- Validaciones: build frontend, compilación backend, pruebas operativas de Hojas de Campo y certificados, e inventario/reglas de diff sincronizados.
+
+## Actualización 2026-07-17 — Paquete de Captura para certificados de Calibración
+
+- Se agregó y aplicó la migración `fc4d5e6f7a8b_capture_packages`, que incorpora el Master de Certificado esperado en catálogo, el snapshot de documento/versión/archivo en equipos y la traza persistente de Excels recibidos (`certificate_capture_files`).
+- `capture_packages.py` centraliza elegibilidad progresiva, nombres Windows-seguros, PDF/Excel con una base idéntica, paquete por OT, ZIP general ETS y carga tolerante de ZIP/subcarpetas/Excels; los archivos no identificados se conservan como incidencia.
+- Los endpoints de ETS exponen resumen de bloqueos, descarga de paquete y carga de Captura. La interfaz del ETS permite descargar el paquete general o por OT y subir ZIP/XLSX/XLSM.
+- Validaciones ejecutadas: `compileall`, pruebas operativas de Hojas de Campo y certificados (12/12), y `npm run build` correcto (permanece la advertencia conocida del bundle mayor a 500 kB).
+- Base local validada: `alembic current` reporta `fc4d5e6f7a8b (head)`. Se regeneró `backup_erp_myc_antes_prueba.sql` (80 MB); su `alembic_version` es `fc4d5e6f7a8b` y SHA-256 `bd103402be0aaa7a1ea28cebe7ad2d7198c409b6bdcf5457a9491d137254a150`.
+
 ## Actualización 2026-07-15 — Imprimible institucional de factura MYC
 
 - `invoice_pdfs.py` genera el encabezado del emisor con la misma configuración institucional utilizada por las cotizaciones; combina razón social, RFC y régimen fiscal del CFDI con domicilio, código postal, teléfono, correo y sitio web configurados para MYC, sin valores duplicados en HTML.

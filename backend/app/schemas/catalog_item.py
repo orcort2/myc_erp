@@ -119,6 +119,7 @@ class CatalogItemBase(BaseModel):
     internal_cost: Decimal | None = Field(default=None, ge=0)
     cost_currency: str | None = Field(default=None, min_length=3, max_length=3)
     calibration_scope: CalibrationScope | None = None
+    expected_certificate_master_id: int | None = None
     quotation_legend: str | None = None
     tax_object: TaxObject = "iva_16"
     tax_rate: Decimal | None = Field(default=None, ge=0)
@@ -158,6 +159,7 @@ class CatalogItemUpdate(BaseModel):
     internal_cost: Decimal | None = Field(default=None, ge=0)
     cost_currency: str | None = Field(default=None, min_length=3, max_length=3)
     calibration_scope: CalibrationScope | None = None
+    expected_certificate_master_id: int | None = None
     quotation_legend: str | None = None
     tax_object: TaxObject | None = None
 

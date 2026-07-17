@@ -1315,7 +1315,8 @@ function ClientsPage() {
               ) : null}
 
               {clientModalTab === 'fiscal' ? (
-                <>
+                <div className="client-fiscal-layout">
+                  <div className="client-fiscal-fields">
                   {form.clientType === 'persona_moral' ? (
                     <label>
                       Razón social
@@ -1336,6 +1337,9 @@ function ClientsPage() {
                   <SatCatalogField catalog={satCatalogByCode.get('cfdi_uses')} catalogCode="cfdi_uses" label="Uso CFDI predeterminado" onChange={(value) => updateForm('cfdiUse', value.code)} showAllOnOpen value={form.cfdiUse ? { code: form.cfdiUse } : null} />
                   <SatCatalogField catalog={satCatalogByCode.get('countries')} catalogCode="countries" label="País fiscal" onChange={(value) => updateForm('fiscalCountryCode', value.code)} value={form.fiscalCountryCode ? { code: form.fiscalCountryCode } : null} />
 
+                  {taxConstancyMessage ? <div className="client-fiscal-note">{taxConstancyMessage}</div> : null}
+                  </div>
+
                   <input
                     accept=".pdf,.png,.jpg,.jpeg"
                     hidden
@@ -1344,7 +1348,8 @@ function ClientsPage() {
                     type="file"
                   />
 
-                  <div className="client-form__visual-actions">
+                  <aside className="client-fiscal-support">
+                    <div className="client-form__visual-actions">
                     <button
                       className="table-button"
                       disabled={isSaving}
@@ -1363,10 +1368,9 @@ function ClientsPage() {
                         Descartar archivo
                       </button>
                     ) : null}
-                  </div>
-
-                  {taxConstancyMessage ? <div className="client-fiscal-note">{taxConstancyMessage}</div> : null}
-                </>
+                    </div>
+                  </aside>
+                </div>
               ) : null}
 
               {clientModalTab === 'certificate-data' ? (

@@ -1,4 +1,6 @@
-from sqlalchemy import ForeignKey, String, Text
+from datetime import date
+
+from sqlalchemy import Date, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -27,6 +29,17 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         String(60),
         index=True,
     )
+    certificate_master_document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("controlled_documents.id"), index=True
+    )
+    certificate_master_version_id: Mapped[int | None] = mapped_column(
+        ForeignKey("controlled_document_versions.id"), index=True
+    )
+    certificate_template_path_snapshot: Mapped[str | None] = mapped_column(String(255))
+    certificate_template_filename_snapshot: Mapped[str | None] = mapped_column(String(255))
+    certificate_template_checksum_snapshot: Mapped[str | None] = mapped_column(String(128))
+    certificate_template_effective_date_snapshot: Mapped[date | None] = mapped_column(Date)
+    certificate_template_expires_on_snapshot: Mapped[date | None] = mapped_column(Date)
 
     status: Mapped[str] = mapped_column(
         String(60),

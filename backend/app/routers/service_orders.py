@@ -33,11 +33,64 @@ from app.services.work_order_pdfs import (
     generate_service_order_work_orders_pdf,
     generate_work_order_pdf,
 )
+from app.services.capture_packages import (
+    package_summary,
+    list_capture_files,
+    service_order_package,
+    upload_capture_files,
+    work_order_package,
+)
 
 from io import BytesIO
 
 
 router = APIRouter(prefix="/service-orders", tags=["service-orders"])
+
+
+@router.get("/{service_order_id}/capture-package-summary")
+def get_capture_package_summary(
+    service_order_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
+) -> dict:
+    return package_summary(db, service_order_id)
+
+
+@router.get("/{service_order_id}/capture-package")
+def download_capture_package(
+    service_order_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
+) -> StreamingResponse:
+    payload, filename = service_order_package(db, service_order_id)
+    filename = filename or f"ETS-{service_order_id}.zip"
+    return StreamingResponse(BytesIO(payload), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/{service_order_id}/work-orders/{work_order_id}/capture-package")
+def download_work_order_capture_package(
+    service_order_id: int, work_order_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
+) -> StreamingResponse:
+    payload, filename, media_type = work_order_package(db, service_order_id, work_order_id)
+    filename = filename or f"ETS-{service_order_id}-OT-{work_order_id}.zip"
+    return StreamingResponse(BytesIO(payload), media_type=media_type, headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/{service_order_id}/capture-files")
+def post_capture_files(
+    service_order_id: int, files: list[UploadFile] = File(...), db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.upload_pdf")),
+) -> dict:
+    return upload_capture_files(db, service_order_id, files, user_id=current_user.id)
+
+
+@router.get("/{service_order_id}/capture-files")
+def get_capture_files(
+    service_order_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
+) -> list[dict]:
+    return [{"id": item.id, "certificate_id": item.certificate_id, "filename": item.original_filename,
+             "status": item.identification_status, "validation": item.validation_results,
+             "created_at": item.created_at} for item in list_capture_files(db, service_order_id)]
 
 from datetime import date, datetime, timezone
 from math import ceil

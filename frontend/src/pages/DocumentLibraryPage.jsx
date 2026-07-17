@@ -17,7 +17,9 @@ import {
   activateControlledDocumentVersion,
   archiveControlledDocument,
   createControlledDocument,
+  createCertificateMaster,
   createControlledDocumentVersion,
+  downloadControlledDocumentVersion,
   listControlledDocuments,
   updateControlledDocument
 } from '../services/api.js';
@@ -161,6 +163,9 @@ function DocumentLibraryPage({ user = null }) {
   const [versionForm, setVersionForm] = useState(emptyVersion);
   const [isDocumentFormOpen, setIsDocumentFormOpen] = useState(false);
   const [isVersionFormOpen, setIsVersionFormOpen] = useState(false);
+  const [isMasterFormOpen, setIsMasterFormOpen] = useState(false);
+  const [masterForm, setMasterForm] = useState({ code: '', name: '', description: '', revision: '1.0', effectiveDate: '', expiresOn: '', file: null });
+  const [catalogView, setCatalogView] = useState('documents');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
@@ -204,11 +209,12 @@ function DocumentLibraryPage({ user = null }) {
     return documents.filter((item) => {
       const searchable = [item.code, item.name, item.document_type, typeLabels[item.document_type], item.current_revision, item.status, statusLabels[item.status]]
         .filter(Boolean).join(' ').toLowerCase();
-      return (!query || searchable.includes(query))
+      return (catalogView !== 'masters' || item.document_type === 'certificate_master')
+        && (!query || searchable.includes(query))
         && (!filters.status || item.status === filters.status)
         && (!filters.type || item.document_type === filters.type);
     });
-  }, [documents, filters]);
+  }, [documents, filters, catalogView]);
 
   const activeCount = documents.filter((item) => item.status === 'active').length;
   const draftCount = documents.filter((item) => item.status === 'draft').length;
@@ -224,6 +230,26 @@ function DocumentLibraryPage({ user = null }) {
   function openCreateForm() {
     setDocumentForm(emptyDocument);
     setIsDocumentFormOpen(true);
+  }
+
+  async function saveMaster(event) {
+    event.preventDefault();
+    if (!masterForm.file) { setError('Selecciona un archivo XLSX.'); return; }
+    setIsSaving(true); setError('');
+    try {
+      const saved = await createCertificateMaster(masterForm);
+      setNotice('Plantilla Maestra registrada como borrador. Activa su versión cuando esté vigente.');
+      setIsMasterFormOpen(false);
+      setMasterForm({ code: '', name: '', description: '', revision: '1.0', effectiveDate: '', expiresOn: '', file: null });
+      await loadDocuments(saved.id);
+    } catch (requestError) { setError(requestError.message); } finally { setIsSaving(false); }
+  }
+
+  async function downloadVersion(version) {
+    try {
+      const { blob, filename } = await downloadControlledDocumentVersion(selectedDocument.id, version.id);
+      const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = filename || version.original_filename; link.click(); URL.revokeObjectURL(url);
+    } catch (requestError) { setError(requestError.message); }
   }
 
   function openEditForm() {
@@ -346,7 +372,7 @@ function DocumentLibraryPage({ user = null }) {
           <h1>Control Documental</h1>
           <span>Catalogo central de formatos, revisiones, versiones y vigencias del sistema.</span>
         </div>
-        {canManage ? <button className="primary-button" type="button" onClick={openCreateForm}><Plus size={17} /> Registrar documento</button> : null}
+        {canManage && catalogView === 'documents' ? <button className="primary-button" type="button" onClick={openCreateForm}><Plus size={17} /> Registrar documento</button> : null}
       </header>
 
       {error ? <div className="form-error dashboard-error">{error}</div> : null}
@@ -361,19 +387,21 @@ function DocumentLibraryPage({ user = null }) {
 
       <section className="clients-list-panel document-catalog-panel">
         <div className="section-heading document-catalog-heading">
-          <div><p>Catalogo vigente</p><h2>Lista Maestra de Documentos</h2><span>{filteredDocuments.length} documentos registrados</span></div>
+          <div><p>Catalogo vigente</p><h2>{catalogView === 'masters' ? 'Plantillas Maestras' : 'Lista Maestra de Documentos'}</h2><span>{filteredDocuments.length} {catalogView === 'masters' ? `${filteredDocuments.length === 1 ? 'plantilla registrada' : 'plantillas registradas'}` : 'documentos registrados'}</span></div>
           <div className="document-catalog-filters">
             <label className="document-search"><Search size={16} /><input aria-label="Buscar documentos" placeholder="Buscar codigo, nombre, tipo, revision o estado" value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} /></label>
             <select aria-label="Filtrar por estado" value={filters.status} onChange={(event) => setFilters({ ...filters, status: event.target.value })}>
               <option value="">Todos los estados</option>
               {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
-            <select aria-label="Filtrar por tipo" value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}>
+            {catalogView !== 'masters' ? <select aria-label="Filtrar por tipo" value={filters.type} onChange={(event) => setFilters({ ...filters, type: event.target.value })}>
               <option value="">Todos los tipos</option>
               {documentTypes.map((type) => <option key={type} value={type}>{typeLabels[type]}</option>)}
-            </select>
+            </select> : <span className="document-filter-context">Maestro de certificado</span>}
           </div>
         </div>
+
+        <div className="document-subnav" aria-label="Submódulos de Control Documental"><div className="document-subnav__tabs" role="tablist"><button aria-selected={catalogView === 'documents'} className={catalogView === 'documents' ? 'is-active' : ''} onClick={() => { setCatalogView('documents'); setFilters((current) => ({ ...current, type: '' })); }} role="tab" type="button">Lista Maestra</button><button aria-selected={catalogView === 'masters'} className={catalogView === 'masters' ? 'is-active' : ''} onClick={() => { setCatalogView('masters'); setFilters((current) => ({ ...current, type: 'certificate_master' })); }} role="tab" type="button">Plantillas Maestras</button></div>{catalogView === 'masters' && canManage ? <button className="primary-button document-subnav__action" onClick={() => setIsMasterFormOpen(true)} type="button"><Plus size={16} /> Nueva plantilla</button> : null}</div>
 
         <div className="clients-table document-catalog-table" role="table" aria-label="Lista Maestra de Documentos">
           <div className="clients-table__head document-catalog-grid" role="row">
@@ -463,6 +491,7 @@ function DocumentLibraryPage({ user = null }) {
                           ['Aprobador', version.approved_by_id ? `Usuario ${version.approved_by_id}` : 'No definido']
                         ]} />
                         <p>{version.change_summary || 'Sin resumen de cambios.'}</p>
+                        {version.file_path ? <button className="secondary-button" type="button" onClick={() => downloadVersion(version)}>Descargar XLSX</button> : null}
                         {canManage && version.status !== 'active' ? <button className="secondary-button" type="button" onClick={() => activateVersion(version)}><CheckCircle2 size={15} /> Activar version</button> : null}
                       </article>
                     ))}
@@ -553,6 +582,8 @@ function DocumentLibraryPage({ user = null }) {
           </form>
         </div>
       ) : null}
+
+      {isMasterFormOpen ? <div className="modal-backdrop"><form className="client-modal document-form-modal" onSubmit={saveMaster}><header className="document-detail-header"><div><p>Control Documental</p><h2>Nueva Plantilla Maestra</h2></div><button className="icon-button" onClick={() => setIsMasterFormOpen(false)} type="button"><X size={20} /></button></header><div className="document-form-grid"><label>Código<input required value={masterForm.code} onChange={(event) => setMasterForm({ ...masterForm, code: event.target.value })} /></label><label>Nombre<input required value={masterForm.name} onChange={(event) => setMasterForm({ ...masterForm, name: event.target.value })} /></label><label>Versión<input required value={masterForm.revision} onChange={(event) => setMasterForm({ ...masterForm, revision: event.target.value })} /></label><label>Inicio de vigencia<input required type="date" value={masterForm.effectiveDate} onChange={(event) => setMasterForm({ ...masterForm, effectiveDate: event.target.value })} /></label><label>Caducidad<input type="date" value={masterForm.expiresOn} onChange={(event) => setMasterForm({ ...masterForm, expiresOn: event.target.value })} /></label><label>Archivo XLSX<input accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required type="file" onChange={(event) => setMasterForm({ ...masterForm, file: event.target.files?.[0] || null })} /></label><label className="document-form-wide">Descripción<textarea rows={3} value={masterForm.description} onChange={(event) => setMasterForm({ ...masterForm, description: event.target.value })} /></label></div><footer className="document-form-actions"><button className="ghost-button" onClick={() => setIsMasterFormOpen(false)} type="button">Cancelar</button><button aria-label="Guardar Plantilla Maestra" className="primary-button" disabled={isSaving} title="Guardar Plantilla Maestra" type="submit">{isSaving ? 'Guardando...' : <Plus size={17} />}</button></footer></form></div> : null}
 
       <ConfirmDialog
         cancelText={confirmDialog?.cancelText}

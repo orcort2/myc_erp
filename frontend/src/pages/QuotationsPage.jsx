@@ -1,4 +1,4 @@
-import { Download, FileText, Upload } from 'lucide-react';
+import { Download, FileText, Save, Upload } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
@@ -31,6 +31,7 @@ import {
   getQuotationTemplate,
   listQuotationSnapshots,
   listCatalogItems,
+  listControlledDocuments,
   listClients,
   listQuotations,
   restoreQuotationSnapshot,
@@ -118,6 +119,7 @@ function mapCatalogItemFromApi(item) {
     itemType: item.item_type,
     commodity: item.commodity,
     calibrationScope: item.calibration_scope ?? '',
+    expectedCertificateMasterId: item.expected_certificate_master_id ? String(item.expected_certificate_master_id) : '',
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
     internalKey: item.internal_key ?? '',
@@ -160,6 +162,7 @@ function mapCatalogPayloadFromForm(form) {
     internal_cost: form.internalCost === '' ? null : Number(form.internalCost),
     cost_currency: form.internalCost === '' ? null : form.costCurrency,
     calibration_scope: calibrationScope,
+    expected_certificate_master_id: form.category === 'Calibracion' ? Number(form.expectedCertificateMasterId) || null : null,
     quotation_legend: null,
     tax_object: form.taxObject || 'iva_16'
   };
@@ -361,6 +364,8 @@ function QuotationsPage() {
   const [draftItems, setDraftItems] = useState([]);
   const [selectedQuotation, setSelectedQuotation] = useState(null);
   const [catalogItems, setCatalogItems] = useState([]);
+  const [activeServicePickerId, setActiveServicePickerId] = useState(null);
+  const [certificateMasters, setCertificateMasters] = useState([]);
   const [productForm, setProductForm] = useState(emptyProductForm);
   const [templateForm, setTemplateForm] = useState(defaultQuotationTemplate);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -443,11 +448,12 @@ function QuotationsPage() {
     setError('');
     setIsLoading(true);
     try {
-      const [quotationResult, clientResult, catalogResult, templateResult] = await Promise.allSettled([
+      const [quotationResult, clientResult, catalogResult, templateResult, mastersResult] = await Promise.allSettled([
         listQuotations(),
         listClients(),
         listCatalogItems({ is_active: true }),
-        getQuotationTemplate()
+        getQuotationTemplate(),
+        listControlledDocuments({ document_type: 'certificate_master', status: 'active' })
       ]);
       if (quotationResult.status === 'rejected') {
         throw quotationResult.reason;
@@ -458,6 +464,7 @@ function QuotationsPage() {
       if (catalogResult.status === 'rejected') {
         throw catalogResult.reason;
       }
+      setCertificateMasters(mastersResult.status === 'fulfilled' ? mastersResult.value : []);
       const quotationItems = quotationResult.value;
       const clientItems = clientResult.value;
       const catalogApiItems = catalogResult.value;
@@ -639,6 +646,21 @@ function QuotationsPage() {
     setEditingItemForms({});
     setQuotationDetailTab('info');
     setError('');
+    const rawContext = window.sessionStorage.getItem('myc:contextReturn');
+    if (rawContext) {
+      try {
+        const context = JSON.parse(rawContext);
+        if (context.target === 'service-order') {
+          // La apertura desde ETS crea la entrada de historial que el propio
+          // expediente usa para reabrir su modal y restaurar su contexto.
+          // Volver a esa entrada evita rutas fijas, duplicados y bucles.
+          window.history.back();
+          return;
+        }
+      } catch {
+        window.sessionStorage.removeItem('myc:contextReturn');
+      }
+    }
   }
 
   async function refreshQuotationSnapshots(quotationId) {
@@ -871,6 +893,7 @@ function QuotationsPage() {
         name: item.name,
         type: item.type,
         calibrationScope: item.calibrationScope || 'traceable',
+        expectedCertificateMasterId: item.expectedCertificateMasterId || '',
         quotationLegend: item.quotationLegend,
         satKey: item.satKey,
         satUnit: item.satUnit,
@@ -2031,8 +2054,8 @@ function QuotationsPage() {
 
                   <div className="quotation-detail-save">
                     <span>{isDetailAutosaving ? 'Guardando automaticamente...' : autosaveStatus || 'Guardado automatico activo.'}</span>
-                    <button className="primary-button" disabled={isDetailSaving || isQuotationTerminal(selectedQuotation)} type="submit">
-                      {isDetailSaving ? 'Guardando...' : 'Guardar ahora'}
+                    <button aria-label="Guardar" className="primary-button" disabled={isDetailSaving || isQuotationTerminal(selectedQuotation)} title="Guardar" type="submit">
+                      {isDetailSaving ? 'Guardando...' : <Save size={17} />}
                     </button>
                   </div>
                 </form>
@@ -2130,10 +2153,11 @@ function QuotationsPage() {
                                     type="text"
                                     value={form.description}
                                   />
-                                  <input
+                                  <textarea
+                                    className="quote-line-description"
                                     onChange={(event) => updateEditingItem(item.id, 'observations', event.target.value)}
                                     placeholder="Descripcion comercial del servicio"
-                                    type="text"
+                                    rows={3}
                                     value={form.observations || ''}
                                   />
                                   <select
@@ -2266,8 +2290,10 @@ function QuotationsPage() {
                           <div className="quotation-items-table__row quotation-items-table__row--draft" key={draft.id}>
                           <span className="quote-line-concept">
                             <mark className="status-pill status-pill--muted">Borrador</mark>
+                            <div className="quote-service-picker">
                             <input
-                              list={`catalog-options-${draft.id}`}
+                              aria-autocomplete="list"
+                              onBlur={() => window.setTimeout(() => setActiveServicePickerId(null), 160)}
                               onChange={(event) => {
                                 const selected = catalogItems.find((item) => item.name === event.target.value);
                                 if (selected) {
@@ -2277,19 +2303,28 @@ function QuotationsPage() {
                                   updateDraftItem(draft.id, 'description', event.target.value);
                                 }
                               }}
+                              onFocus={() => setActiveServicePickerId(draft.id)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Escape') setActiveServicePickerId(null);
+                                if (event.key === 'Enter' && activeServicePickerId === draft.id && filteredConcepts[0]) {
+                                  event.preventDefault();
+                                  selectDraftCatalogConcept(draft.id, filteredConcepts[0].id);
+                                  setActiveServicePickerId(null);
+                                }
+                              }}
                               placeholder="Buscar concepto o capturar nombre"
                               type="text"
                               value={draft.catalogSearch || draft.description}
                             />
-                            <datalist id={`catalog-options-${draft.id}`}>
-                              {filteredConcepts.map((item) => (
-                                <option key={item.id} label={`${item.category} · ${item.internalKey}`} value={item.name} />
-                              ))}
-                            </datalist>
-                            <input
+                            {activeServicePickerId === draft.id && filteredConcepts.length ? <div className="quote-service-picker__menu" role="listbox">
+                              {filteredConcepts.map((item) => <button key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => { selectDraftCatalogConcept(draft.id, item.id); setActiveServicePickerId(null); }} role="option" type="button"><strong>{item.name}</strong><small>{item.category} · {item.internalKey} · {formatMoney(item.finalPriceMxn)}</small></button>)}
+                            </div> : null}
+                            </div>
+                            <textarea
+                              className="quote-line-description"
                               onChange={(event) => updateDraftItem(draft.id, 'observations', event.target.value)}
                               placeholder="Descripcion comercial del servicio"
-                              type="text"
+                              rows={3}
                               value={draft.observations || ''}
                             />
                             <select
@@ -2710,6 +2745,15 @@ function QuotationsPage() {
                   </select>
                 </label>
               ) : null}
+              {productForm.category === 'Calibracion' ? (
+                <label>
+                  Plantilla esperada de certificado
+                  <select onChange={(event) => updateProductForm('expectedCertificateMasterId', event.target.value)} value={productForm.expectedCertificateMasterId || ''}>
+                    <option value="">Sin asignar</option>
+                    {certificateMasters.map((master) => <option key={master.id} value={master.id}>{master.code} · {master.name} · Rev. {master.current_revision || '-'}</option>)}
+                  </select>
+                </label>
+              ) : null}
               <label>
                 Precio origen
                 <input
@@ -2783,7 +2827,7 @@ function QuotationsPage() {
                   ))}
                 </select>
               </label>
-              <div className="price-preview-card">
+              <div className="price-preview-card price-preview-card--catalog">
                 <span>Precio final MXN</span>
                 <strong>{formatMoney(calculateFinalPriceMxn(productForm))}</strong>
                 <small>Base: {formatMoney(productForm.basePrice || 0)} {productForm.sourceCurrency}</small>
@@ -2795,7 +2839,7 @@ function QuotationsPage() {
                     : 'Sin IVA 16% agregado en el precio final.'}
                 </small>
               </div>
-              <label>
+              <label className="catalog-status-field">
                 Estado
                 <select onChange={(event) => updateProductForm('status', event.target.value)} value={productForm.status}>
                   <option>Activo</option>

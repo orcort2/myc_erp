@@ -24,6 +24,19 @@ myc_run_alembic() {
   (cd "$BACKEND_DIR" && "$ALEMBIC" "$@")
 }
 
+myc_sat_catalog_version() {
+  local version_file version
+  if [[ -n "${SAT_CATALOG_VERSION:-}" ]]; then
+    printf '%s\n' "$SAT_CATALOG_VERSION"
+    return
+  fi
+  version_file="$BACKEND_DIR/resources/sat/VERSION.txt"
+  [[ -f "$version_file" ]] || { echo "No se encontró la versión SAT: $version_file" >&2; return 1; }
+  version="$(grep -Eo '[0-9]{8}' "$version_file" | tail -n 1)"
+  [[ -n "$version" ]] || { echo "No se encontró una versión YYYYMMDD en $version_file" >&2; return 1; }
+  printf '%s\n' "$version"
+}
+
 myc_listener_pids() {
   lsof -tiTCP:"$1" -sTCP:LISTEN 2>/dev/null || true
 }

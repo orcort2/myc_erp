@@ -5,6 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.certificate import Certificate
+from app.models.catalog_item import CatalogItem
+from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
 from app.schemas.certificate import CertificateCreate
@@ -239,6 +241,42 @@ def _ensure_expected_certificate_for_equipment(
     )
 
 
+def _snapshot_certificate_master(db: Session, equipment: Equipment, document_id: int | None) -> None:
+    """Freeze the exact active certificate template used by an equipment."""
+    if document_id is None:
+        return
+    document = db.get(ControlledDocument, document_id)
+    version = db.scalar(select(ControlledDocumentVersion).where(
+        ControlledDocumentVersion.document_id == document_id,
+        ControlledDocumentVersion.status == "active",
+    ))
+    if document is None or document.document_type != "certificate_master" or document.status != "active" or version is None:
+        raise HTTPException(status_code=422, detail="La plantilla esperada debe ser un Master de Certificado activo con versión disponible")
+    if version.expires_on and version.expires_on < date.today():
+        raise HTTPException(status_code=422, detail="La plantilla esperada de certificado está caducada")
+    equipment.certificate_master_document_id = document.id
+    equipment.certificate_master_version_id = version.id
+    equipment.certificate_template_path_snapshot = version.file_path
+    equipment.certificate_template_filename_snapshot = version.original_filename
+    equipment.certificate_template_checksum_snapshot = version.checksum
+    equipment.certificate_template_effective_date_snapshot = version.effective_date
+    equipment.certificate_template_expires_on_snapshot = version.expires_on
+
+
+def _master_from_service_catalog(db: Session, equipment: Equipment) -> int | None:
+    """Resolve the master selected on the calibration service without touching history."""
+    if equipment.certificate_master_document_id:
+        return equipment.certificate_master_document_id
+    item = db.get(ServiceOrderItem, equipment.service_order_item_id) if equipment.service_order_item_id else None
+    if item is None:
+        return None
+    return db.scalar(select(CatalogItem.expected_certificate_master_id).where(
+        CatalogItem.is_active.is_(True), CatalogItem.item_type == "service",
+        CatalogItem.category == "Calibracion", CatalogItem.name == item.service_name,
+        CatalogItem.expected_certificate_master_id.is_not(None),
+    ).limit(1))
+
+
 def create_equipment(
     db: Session, payload: EquipmentCreate, *, user_id: int | None = None
 ) -> Equipment:
@@ -284,6 +322,7 @@ def create_equipment(
     equipment = Equipment(**data, status="registered")
     db.add(equipment)
     db.flush()
+    _snapshot_certificate_master(db, equipment, _master_from_service_catalog(db, equipment))
 
     certificate_type = certificate_type_from_scope(equipment.calibration_scope)
     if certificate_type:

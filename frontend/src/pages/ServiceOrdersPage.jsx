@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, ClipboardList, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, ClipboardList, Save, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
@@ -34,6 +34,9 @@ import {
   downloadAuthenticatedCertificatePdf,
   downloadOriginalCertificatePdf,
   downloadWorkOrderPdf,
+  downloadCapturePackage,
+  getCapturePackageSummary,
+  uploadCaptureFiles,
   createEquipment,
   createFieldSheet,
   deleteEquipment,
@@ -846,6 +849,14 @@ function ServiceOrdersPage({ user = null }) {
       return;
     }
     window.sessionStorage.setItem('myc:openQuotationId', String(selectedOrder.quotation_id));
+    window.sessionStorage.setItem('myc:contextReturn', JSON.stringify({
+      target: 'service-order',
+      serviceOrderId: selectedOrder.id,
+      activeTab,
+      workOrderContext: selectedWorkOrderContext,
+      fieldSheetWorkspaceView,
+      scrollY: window.scrollY,
+    }));
     navigate('/dashboard#cotizaciones');
   }
 
@@ -961,6 +972,27 @@ function ServiceOrdersPage({ user = null }) {
   useEffect(() => {
     loadServiceOrderData();
   }, []);
+
+  useEffect(() => {
+    const rawContext = window.sessionStorage.getItem('myc:contextReturn');
+    if (!rawContext || isDetailOpen || !serviceOrders.length) return;
+    try {
+      const context = JSON.parse(rawContext);
+      if (context.target !== 'service-order') return;
+      const order = serviceOrders.find((item) => item.id === context.serviceOrderId);
+      if (!order) return;
+      window.sessionStorage.removeItem('myc:contextReturn');
+      openOrderDetail(order);
+      window.setTimeout(() => {
+        setActiveTab(context.activeTab || 'info');
+        setSelectedWorkOrderContext(context.workOrderContext || null);
+        setFieldSheetWorkspaceView(context.fieldSheetWorkspaceView || 'capture');
+        window.scrollTo({ top: Number(context.scrollY) || 0 });
+      }, 0);
+    } catch {
+      window.sessionStorage.removeItem('myc:contextReturn');
+    }
+  }, [serviceOrders, isDetailOpen]);
 
   useEffect(() => {
     if (!selectedOrder?.id) {
@@ -1786,6 +1818,27 @@ function ServiceOrdersPage({ user = null }) {
     URL.revokeObjectURL(url);
   }
 
+  async function downloadMultipartCapture(blob, contentType) {
+    const boundary = contentType.match(/boundary=([^;]+)/i)?.[1]?.replaceAll('"', '');
+    if (!boundary) throw new Error('La respuesta del paquete de Captura no incluye un límite multipart válido.');
+    const payload = new TextDecoder('latin1').decode(await blob.arrayBuffer());
+    const parts = payload.split(`--${boundary}`).slice(1, -1);
+    if (!parts.length) throw new Error('El paquete de Captura no contiene archivos.');
+    let downloads = 0;
+    parts.forEach((part) => {
+      const separator = part.indexOf('\r\n\r\n');
+      if (separator < 0) return;
+      const headers = part.slice(0, separator);
+      const filename = headers.match(/filename="?([^"\r\n]+)"?/i)?.[1];
+      const mime = headers.match(/Content-Type:\s*([^\r\n]+)/i)?.[1] || 'application/octet-stream';
+      if (!filename) return;
+      const body = part.slice(separator + 4).replace(/\r\n$/, '');
+      triggerBlobDownload(new Blob([Uint8Array.from(body, (char) => char.charCodeAt(0))], { type: mime }), filename);
+      downloads += 1;
+    });
+    if (!downloads) throw new Error('El paquete multipart no contiene adjuntos descargables.');
+  }
+
   function openWorkOrderPdf(mode = 'view') {
     if (!selectedOrder) return;
 
@@ -1875,6 +1928,42 @@ function ServiceOrdersPage({ user = null }) {
       setNotice(`PDF ${filename} generado correctamente`);
     } catch (requestError) {
       setError(requestError.message);
+    }
+  }
+
+  async function handleDownloadCapturePackage(workOrderId = null) {
+    if (!selectedOrder) return;
+    setError('');
+    try {
+      const summary = await getCapturePackageSummary(selectedOrder.id);
+      if (!summary.ready_total) {
+        const reasons = summary.work_orders.flatMap((group) => group.blocked.map((item) => `${item.equipment_name}: ${item.reason}`));
+        throw new Error(`No hay equipos listos. ${reasons.join(' · ')}`);
+      }
+      const fallbackFilename = `${selectedOrder.folio || `ETS-${selectedOrder.id}`}${workOrderId ? `-OT-${selectedWorkOrderContext?.number || workOrderId}` : ''}.zip`;
+      const { blob, filename, contentType } = await downloadCapturePackage(selectedOrder.id, workOrderId, fallbackFilename);
+      if (contentType.toLowerCase().startsWith('multipart/mixed')) {
+        await downloadMultipartCapture(blob, contentType);
+      } else {
+        triggerBlobDownload(blob, filename);
+      }
+      setNotice('Paquete de Captura descargado.');
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  async function handleCaptureFilesUpload(files, input) {
+    if (!selectedOrder || !files?.length) return;
+    setError('');
+    try {
+      const result = await uploadCaptureFiles(selectedOrder.id, files);
+      const unidentified = result.processed.filter((item) => item.status === 'unidentified').map((item) => item.filename);
+      setNotice(unidentified.length ? `Procesados ${result.count}. No identificados: ${unidentified.join(', ')}` : `Procesados ${result.count} archivo(s) de Captura.`);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      if (input) input.value = '';
     }
   }
 
@@ -2531,7 +2620,7 @@ function ServiceOrdersPage({ user = null }) {
               >
                 {isSaving || autosaveStatus === 'saving'
                   ? 'Guardando...'
-                  : 'Guardar ahora'}
+                  : <Save size={17} aria-label="Guardar" />}
               </button>
               {canUseAdminActions ? (
                 <div className="ets-admin-actions">
@@ -2764,7 +2853,7 @@ function ServiceOrdersPage({ user = null }) {
                       >
                         {isSaving || autosaveStatus === 'saving'
                           ? 'Guardando...'
-                          : 'Guardar ahora'}
+                          : <Save size={17} aria-label="Guardar" />}
                       </button>
                     </div>
                   </div>
@@ -3025,6 +3114,9 @@ function ServiceOrdersPage({ user = null }) {
                               }) : <div className="clients-empty">Esta Orden de Trabajo todavía no tiene equipos.</div>}
                             </div>
                           ) : null}
+                          <div className="toolbar-actions">
+                            <button className="table-button" onClick={() => handleDownloadCapturePackage(workOrder.id)} type="button">Descargar paquete de Captura</button>
+                          </div>
                         </article>
                       );
                     })}
@@ -3046,6 +3138,8 @@ function ServiceOrdersPage({ user = null }) {
                       <input accept="application/pdf" multiple onChange={(event) => handleBulkPdfUpload(event.target.files, event.target)} type="file" />
                     </label>
                   ) : null}
+                  <button className="table-button table-button--primary" onClick={() => handleDownloadCapturePackage()} type="button">Descargar paquete de Captura</button>
+                  <label className="table-button table-button--file">Sube el ZIP generado por el ERP o los archivos Excel corregidos.<input accept=".xls,.xlsx,.xlsm,.zip" multiple onChange={(event) => handleCaptureFilesUpload(event.target.files, event.target)} type="file" /></label>
                   {canUseAdminActions ? (
                     <button className="table-button" onClick={() => openExceptionRequest('Captura', 'Hojas')} type="button">
                       Solicitar excepcion
@@ -3262,7 +3356,7 @@ function ServiceOrdersPage({ user = null }) {
                   >
                     {isSaving || autosaveStatus === 'saving'
                       ? 'Guardando...'
-                      : 'Guardar ahora'}
+                      : <Save size={17} aria-label="Guardar" />}
                   </button>
                 </div>
               </section>

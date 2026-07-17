@@ -19,6 +19,7 @@ class EquipmentBase(BaseModel):
     work_order_id: int | None = None
     service_order_item_id: int | None = None
     calibration_scope: str | None = Field(default=None, max_length=60)
+    certificate_master_document_id: int | None = None
     name: str = Field(min_length=1, max_length=180)
     brand: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
@@ -37,6 +38,7 @@ class EquipmentUpdate(BaseModel):
     work_order_id: int | None = None
     service_order_item_id: int | None = None
     calibration_scope: str | None = Field(default=None, max_length=60)
+    certificate_master_document_id: int | None = None
     name: str | None = Field(default=None, min_length=1, max_length=180)
     brand: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
@@ -57,6 +59,9 @@ class EquipmentRead(EquipmentBase):
     id: int
     work_order_number: int | None = None
     status: EquipmentStatus
+    certificate_master_document_id: int | None = None
+    certificate_master_version_id: int | None = None
+    certificate_template_filename_snapshot: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

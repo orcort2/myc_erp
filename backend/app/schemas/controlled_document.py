@@ -83,6 +83,8 @@ class ControlledDocumentVersionBase(BaseModel):
     change_summary: str | None = None
     reviewed_by_id: int | None = None
     effective_date: date | None = None
+    expires_on: date | None = None
+    file_size_bytes: int | None = None
 
 
 class ControlledDocumentVersionCreate(ControlledDocumentVersionBase):

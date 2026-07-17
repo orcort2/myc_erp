@@ -70,3 +70,15 @@ class CertificatePdfVersion(IntegerPkMixin, TimestampMixin, Base):
     is_current: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     certificate: Mapped["Certificate"] = relationship(back_populates="pdf_versions")
+
+
+class CertificateCaptureFile(IntegerPkMixin, TimestampMixin, Base):
+    __tablename__ = "certificate_capture_files"
+
+    certificate_id: Mapped[int | None] = mapped_column(ForeignKey("certificates.id"), index=True)
+    service_order_id: Mapped[int] = mapped_column(ForeignKey("service_orders.id"), index=True)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_path: Mapped[str | None] = mapped_column(String(255))
+    identification_status: Mapped[str] = mapped_column(String(40), default="unidentified", index=True)
+    validation_results: Mapped[dict | None] = mapped_column(JSON)
+    uploaded_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)

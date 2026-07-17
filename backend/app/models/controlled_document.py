@@ -51,6 +51,8 @@ class ControlledDocumentVersion(IntegerPkMixin, TimestampMixin, Base):
     reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True)
     status: Mapped[str] = mapped_column(String(40), default="draft", index=True)
     effective_date: Mapped[date | None] = mapped_column(Date)
+    expires_on: Mapped[date | None] = mapped_column(Date)
+    file_size_bytes: Mapped[int | None] = mapped_column(Integer)
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -116,7 +116,8 @@ async function downloadRequest(path, options = {}) {
   }
   return {
     blob: await response.blob(),
-    filename: response.headers.get('content-disposition')?.match(/filename=\"?([^"]+)\"?/)?.[1] ?? null
+    filename: response.headers.get('content-disposition')?.match(/filename=\"?([^"]+)\"?/)?.[1] ?? null,
+    contentType: response.headers.get('content-type') ?? ''
   };
 }
 
@@ -947,6 +948,29 @@ export async function listCatalogItems(params = {}) {
   return request(`/catalog-items${buildQuery(params)}`);
 }
 
+export async function getCapturePackageSummary(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/capture-package-summary`);
+}
+
+export async function downloadCapturePackage(serviceOrderId, workOrderId = null, fallbackFilename = null) {
+  const path = workOrderId
+    ? `/service-orders/${serviceOrderId}/work-orders/${workOrderId}/capture-package`
+    : `/service-orders/${serviceOrderId}/capture-package`;
+  const response = await downloadRequest(path);
+  const invalidName = !response.filename || ['null', 'undefined', ''].includes(response.filename.toLowerCase());
+  return { ...response, filename: invalidName ? (fallbackFilename || `ETS-${serviceOrderId}.zip`) : response.filename };
+}
+
+export async function uploadCaptureFiles(serviceOrderId, files) {
+  const formData = new FormData();
+  Array.from(files || []).forEach((file) => formData.append('files', file));
+  return uploadRequest(`/service-orders/${serviceOrderId}/capture-files`, formData);
+}
+
+export async function listCaptureFiles(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/capture-files`);
+}
+
 export async function listReferenceStandards(params = {}) {
   return request(`/reference-standards${buildQuery(params)}`);
 }
@@ -1105,6 +1129,22 @@ export async function createControlledDocument(payload) {
     method: 'POST',
     body: JSON.stringify(payload)
   });
+}
+
+export async function createCertificateMaster({ code, name, description, revision, effectiveDate, expiresOn, file }) {
+  const formData = new FormData();
+  formData.append('code', code);
+  formData.append('name', name);
+  formData.append('revision', revision);
+  formData.append('effective_date', effectiveDate);
+  if (expiresOn) formData.append('expires_on', expiresOn);
+  if (description) formData.append('description', description);
+  formData.append('file', file);
+  return uploadRequest('/documents/certificate-masters', formData);
+}
+
+export async function downloadControlledDocumentVersion(documentId, versionId) {
+  return downloadRequest(`/documents/${documentId}/versions/${versionId}/download`);
 }
 
 export async function updateControlledDocument(documentId, payload) {

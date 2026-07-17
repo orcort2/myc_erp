@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import Numeric, String, Text
+from sqlalchemy import ForeignKey, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -28,6 +28,12 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     internal_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     cost_currency: Mapped[str | None] = mapped_column(String(3))
     calibration_scope: Mapped[str | None] = mapped_column(String(60))
+    # Sólo aplica a servicios de calibración. El equipo congela la versión activa
+    # al momento de crearse, por lo que este vínculo nunca se consulta para
+    # reconstruir entregables históricos.
+    expected_certificate_master_id: Mapped[int | None] = mapped_column(
+        ForeignKey("controlled_documents.id"), index=True
+    )
     quotation_legend: Mapped[str | None] = mapped_column(Text)
     tax_object: Mapped[str] = mapped_column(String(20), default="iva_16", index=True)
     tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=16)
