@@ -9,3 +9,47 @@ No se puede dar por terminado ningún desarrollo, corrección, migración, cambi
 Si una migración o un cambio de datos modifica la base local, regenerar también `backup_erp_myc_antes_prueba.sql` y confirmar que su `alembic_version` coincide con el head de Alembic. No incluir secretos, credenciales ni contenido sensible de la base en el documento.
 
 El reset destructivo de desarrollo se ejecuta por el menú Base de datos → Resetear BD de desarrollo (el menú solicita la frase de confirmación) o por `scripts/myc reset db` con `MYC_ALLOW_RESET='REINICIAR ERP'`. Ambos reutilizan `scripts/toolkit/system/reset-db.sh`; nunca duplicar ese flujo.
+
+## Procedimiento oficial para auditorías integrales de avance
+
+Toda auditoría de avance del ERP debe revisar el sistema completo y contrastar el código vigente con las decisiones históricas verificables del proyecto. No basta inventariar archivos ni repetir declaraciones de cierre anteriores.
+
+El entregable debe ser un documento Markdown con: resumen ejecutivo; tabla general de todos los módulos; auditoría módulo por módulo; pendientes consolidados; módulos SELLADOS; trabajo restante priorizado; y orden recomendado hasta una versión estable. Para cada módulo debe usar exactamente uno de estos estados: `SELLADO`, `CASI SELLADO`, `EN DESARROLLO`, `PENDIENTE` o `NO INICIADO`.
+
+Cada módulo debe documentar: finalidad y flujo; archivos principales; validaciones frontend/backend, permisos, estados y reglas de negocio existentes; observaciones históricas marcadas como `✅ Resuelta`, `⚠ Parcialmente resuelta` o `❌ Sigue pendiente`; únicamente los pendientes reales para cerrar; riesgos de arquitectura, integridad, UX, mantenimiento o escalabilidad; y los archivos más relevantes, sin convertir el informe en un listado exhaustivo.
+
+La revisión debe cubrir frontend, backend, base de datos, migraciones, APIs, seguridad, integraciones, scripts, infraestructura y componentes reutilizables. Debe incluir cualquier módulo descubierto además de los solicitados y realizar una revisión especial de ETS, Hojas de Campo, Calidad, Certificados, Facturación, Control Documental, Seguridad y Base de datos. En Facturación se deben comprobar Mesa de trabajo, Facturas, borradores, persistencia, emisión, Facturama, PDF institucional MYC, XML, conexión, SAT, impresión, excepciones, historial, pagos, reutilización y consistencia. En Base de datos se deben distinguir tablas obsoletas demostrables, columnas legacy/sin uso verificable, duplicaciones conceptuales, migraciones pendientes e inconsistencias.
+
+No asumir ni inventar funciones. Toda conclusión debe citar evidencia local verificable o declarar explícitamente que no pudo comprobarse. Compilación, existencia de archivos o una declaración histórica de “sellado” no bastan por sí solas. No marcar `SELLADO` cuando exista cualquier pendiente funcional o de UX dentro del alcance acordado. Las mejoras futuras expresamente fuera de alcance no deben mezclarse con los pendientes de cierre.
+
+## Documentación integrada al desarrollo
+
+La documentación es parte obligatoria de toda modificación del ERP y no una tarea posterior u opcional. Esto aplica a funcionalidades, correcciones, refactorizaciones, arquitectura, flujos, reglas de negocio, eliminación de código o módulos, endpoints, permisos, decisiones técnicas, cierres, auditorías, observaciones, UX, base de datos, migraciones, estados, nomenclaturas y cualquier cambio que altere el comportamiento o el estado del sistema.
+
+Antes de dar por terminada cualquier tarea se debe:
+
+1. Identificar los documentos afectados según `docs/project/DOCUMENTATION_INDEX.md`, que es la única autoridad de jerarquía y precedencia documental.
+2. Actualizar la documentación en el mismo trabajo, sin esperar una solicitud adicional del usuario.
+3. Corregir referencias cruzadas y comprobar que no existan contradicciones, reglas duplicadas, decisiones incompatibles ni estados divergentes.
+4. Sincronizar `docs/BACKUP_ESTADO_ACTUAL.md` y `docs/PROJECT_FILE_REGISTRY.md` conforme a las reglas generales de este archivo.
+
+El enrutamiento obligatorio es:
+
+- `docs/project/PROJECT_STATUS.md` cuando cambie el estado de un módulo.
+- `docs/project/CURRENT_SCOPE.md` cuando cambie el alcance funcional.
+- `docs/project/CURRENT_PROCESS_FLOW.md` cuando cambie el flujo operativo.
+- `docs/project/BUSINESS_RULES.md` cuando cambie una regla de negocio.
+- `docs/project/DECISIONS.md` cuando se tome o cambie una decisión arquitectónica o funcional.
+- `docs/project/OBSERVATIONS_REGISTER.md` cuando una observación aparezca, cambie de estado o quede resuelta.
+- `docs/project/TECHNICAL_DEBT.md` cuando aparezca, cambie o desaparezca deuda técnica.
+- `docs/architecture/` y `docs/modules/` únicamente cuando cambien sus contratos vigentes.
+- `docs/audits/` para revisiones técnicas completas o fotografías fechadas del sistema.
+- `docs/closures/` para implementaciones concluidas y validadas.
+
+No crear documentación fuera de la estructura autorizada sin una justificación registrada en `docs/project/DOCUMENTATION_INDEX.md`.
+
+Toda respuesta final de una tarea debe incluir un apartado `## Documentación actualizada` con: documentos modificados; motivo; documentos revisados sin cambios; y cualquier creación, movimiento, fusión o archivo. Si no se requieren cambios documentales, debe indicarse y justificarse expresamente. Una tarea no está terminada hasta realizar esta revisión.
+
+## Arquitectura obligatoria del Workbench de Facturación
+
+Toda apertura, creación/actualización de borrador, emisión, descarga o refresco del Workbench debe reutilizar `frontend/src/components/invoice-workbench/useInvoiceWorkbenchController.js` y el agregado backend `Invoice`. Los contextos se transportan mediante `frontend/src/utils/invoiceWorkbenchContext.js` con `invoice_id` o `service_order_id`. No reintroducir `localStorage`, payloads fiscales duplicados, controladores paralelos, otra máquina de estados ni otro flujo de emisión. El contrato completo está en `docs/architecture/INVOICE_WORKBENCH_CONTROLLER.md`.

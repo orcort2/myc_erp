@@ -227,8 +227,13 @@ export async function getInvoiceDashboard() {
   return request('/invoices/dashboard');
 }
 
-export async function listInvoices() {
-  return request('/invoices');
+export async function listInvoices(params = {}) {
+  const query = new URLSearchParams();
+  if (params.serviceOrderId != null) {
+    query.set('service_order_id', String(params.serviceOrderId));
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request(`/invoices${suffix}`);
 }
 
 export async function getInvoice(invoiceId) {
@@ -362,9 +367,9 @@ export async function getDashboardCounts() {
       Boolean(order.agenda_date),
       order.total_equipment > 0,
       certificateItems.some((certificate) => certificate.service_order_id === order.id),
-      certificateItems.some((certificate) => certificate.service_order_id === order.id && certificate.final_pdf_path),
-      certificateItems.some((certificate) => certificate.service_order_id === order.id && ['quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(certificate.status)),
+      certificateItems.some((certificate) => certificate.service_order_id === order.id && ['quality_approved', 'approved', 'authenticated', 'released_to_client'].includes(certificate.status)),
       certificateItems.some((certificate) => certificate.service_order_id === order.id && certificate.authenticated_pdf_path),
+      certificateItems.some((certificate) => certificate.service_order_id === order.id && ['authenticated', 'released_to_client'].includes(certificate.status)),
       !order.requires_payment || ['released', 'closed'].includes(order.status),
       order.status === 'closed'
     ];
@@ -383,13 +388,13 @@ export async function getDashboardCounts() {
     capturePending: certificateItems.filter((item) => ['expected', 'field_sheet_ready', 'capture_pending', 'capture_in_progress', 'quality_rejected'].includes(item.status)).length,
     quality: certificateItems.filter((item) => ['ready_for_quality', 'quality_review'].includes(item.status)).length,
     qualityPending: certificateItems.filter((item) => ['ready_for_quality', 'quality_review'].includes(item.status)).length,
-    certificatesToRelease: certificateItems.filter((item) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(item.status)).length,
+    certificatesToRelease: certificateItems.filter((item) => item.status === 'authenticated' && Boolean(item.authenticated_pdf_path)).length,
     billingPending: serviceOrderItems.filter((item) => item.status === 'pending_payment' || item.requires_payment).length,
     certificates: certificateItems.length,
     certificatesReview: certificateItems.filter((item) => ['ready_for_quality', 'quality_review'].includes(item.status)).length,
-    certificatesApproved: certificateItems.filter((item) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(item.status)).length,
+    certificatesApproved: certificateItems.filter((item) => ['quality_approved', 'approved'].includes(item.status)).length,
     certificatesReleased: certificateItems.filter((item) => item.status === 'released_to_client').length,
-    authenticationPending: certificateItems.filter((item) => ['quality_approved', 'pdf_pending', 'pdf_uploaded'].includes(item.status) && !item.authenticated_pdf_path).length,
+    authenticationPending: certificateItems.filter((item) => ['quality_approved', 'approved'].includes(item.status)).length,
     authenticatedCertificates: certificateItems.filter((item) => item.authenticated_pdf_path).length,
     returnedToTechnician: fieldSheetItems.filter((item) => item.status === 'returned_to_technician').length,
     etsAverageProgress
@@ -409,6 +414,10 @@ export async function listClients(params = {}) {
   }
   const suffix = query.toString() ? `?${query.toString()}` : '';
   return request(`/clients${suffix}`);
+}
+
+export async function getClient(clientId) {
+  return request(`/clients/${clientId}`);
 }
 
 export async function createClient(payload) {
@@ -969,6 +978,18 @@ export async function uploadCaptureFiles(serviceOrderId, files) {
 
 export async function listCaptureFiles(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/capture-files`);
+}
+
+export async function listCaptureMasterReadiness(serviceOrderId = null) {
+  return request(`/certificates/capture-master-readiness${serviceOrderId ? `?service_order_id=${serviceOrderId}` : ''}`);
+}
+
+export async function downloadCaptureMaster(certificateId, fallbackFilename = null) {
+  const response = await downloadRequest(`/certificates/${certificateId}/capture-master`);
+  return {
+    ...response,
+    filename: response.filename || fallbackFilename || `Master_${certificateId}.xlsx`,
+  };
 }
 
 export async function listReferenceStandards(params = {}) {

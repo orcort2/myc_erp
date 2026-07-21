@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.services.facturama.client import FacturamaClient
+from app.services.office_converter import diagnose_office_converter
 from app.routers import (
     audit_logs,
     auth,
@@ -43,6 +45,17 @@ from app.routers import field_sheet_templates
 async def lifespan(app: FastAPI):
     """Keep reusable external clients alive for the whole application lifetime."""
     app.state.facturama_client = FacturamaClient(settings)
+    office_diagnostic = diagnose_office_converter()
+    office_logger = logging.getLogger("app.startup.office_converter")
+    if office_diagnostic.available:
+        office_logger.info(
+            "LibreOffice disponible executable=%s source=%s version=%s",
+            office_diagnostic.executable,
+            office_diagnostic.source,
+            office_diagnostic.version,
+        )
+    else:
+        office_logger.warning("LibreOffice no disponible: %s", office_diagnostic.error)
     yield
     await app.state.facturama_client.aclose()
 

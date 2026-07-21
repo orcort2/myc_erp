@@ -8,7 +8,7 @@ function activeWorkOrders(order) {
   return [{ id: `legacy-${order.id}`, work_order_number: order.work_order_number, status: order.status, isLegacy: true }];
 }
 
-function itemBelongsToWorkOrder(item, workOrder, equipmentById, getItemEquipmentId) {
+export function itemBelongsToWorkOrder(item, workOrder, equipmentById, getItemEquipmentId = (candidate) => candidate.equipment_id) {
   const equipment = equipmentById.get(getItemEquipmentId(item));
   if (!equipment) return false;
   if (!workOrder.isLegacy && equipment.work_order_id != null) {

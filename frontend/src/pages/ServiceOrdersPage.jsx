@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import CaptureProcessingSummary from '../components/CaptureProcessingSummary.jsx';
 import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
 import {
   emptyServiceOrderForm,
@@ -23,7 +24,6 @@ import {
 import {
   authenticateCertificate,
   authenticateApprovedCertificates,
-  bulkUploadCertificatePdfs,
   changeEquipmentStatus,
   changeCertificateStatus,
   completeFieldSheet,
@@ -32,9 +32,9 @@ import {
   createClientCertificateProfile,
   downloadFieldSheetPdf,
   downloadAuthenticatedCertificatePdf,
-  downloadOriginalCertificatePdf,
   downloadWorkOrderPdf,
   downloadCapturePackage,
+  downloadCaptureMaster,
   getCapturePackageSummary,
   uploadCaptureFiles,
   createEquipment,
@@ -47,6 +47,8 @@ import {
   getServiceOrderWorkOrdersPdfUrl,
   getServiceWorkOrderPdfUrl,
   listCalibrationProcedures,
+  listCaptureFiles,
+  listCaptureMasterReadiness,
   listCertificates,
   listClients,
   listEquipment,
@@ -56,19 +58,18 @@ import {
   listReferenceStandards,
   listServiceOrders,
   listUsers,
-  manualAcceptCertificateMatch,
   reviewFieldSheet,
   suggestFieldSheetPatterns,
   updateEquipment,
   updateFieldSheet,
   updateServiceOrder,
   confirmServiceOrderSignatures,
-  uploadCertificatePdf,
-  validateCertificatePdfMatch,
   releaseAuthenticatedCertificates,
   validateFieldSheetPatterns
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
+import { getCaptureMasterReadiness } from '../utils/captureMasters.js';
+import { buildInvoiceWorkbenchPath } from '../utils/invoiceWorkbenchContext.js';
 import { navigate } from '../utils/routing.js';
 import {
   getFieldSheetTemplate,
@@ -83,6 +84,7 @@ import {
 } from '../utils/fieldSheets.js';
 import {
   getCaptureStageStatus,
+  getCertificateReleasePresentation,
   getCertificateStageStatus,
   getEquipmentStageStatus,
   getFieldSheetStageStatus,
@@ -163,6 +165,10 @@ const calibrationScopeBadgeLabels = {
   accredited_linked_lab: 'Vinculados',
 };
 
+function isMacCaptureAuxiliary(filename = '') {
+  return filename.split('/').some((part) => part === '__MACOSX') || filename.split('/').pop() === '.DS_Store' || filename.split('/').pop()?.startsWith('._');
+}
+
 function ServiceOrdersPage({ user = null }) {
   const [serviceOrders, setServiceOrders] = useState([]);
   const [clients, setClients] = useState([]);
@@ -171,6 +177,9 @@ function ServiceOrdersPage({ user = null }) {
   const [equipment, setEquipment] = useState([]);
   const [fieldSheets, setFieldSheets] = useState([]);
   const [certificates, setCertificates] = useState([]);
+  const [captureFiles, setCaptureFiles] = useState([]);
+  const [captureMasterReadiness, setCaptureMasterReadiness] = useState([]);
+  const [captureProcessingResult, setCaptureProcessingResult] = useState(null);
   const [certificateReleaseReadiness, setCertificateReleaseReadiness] = useState(null);
   const [referenceStandards, setReferenceStandards] = useState([]);
   const [calibrationProcedures, setCalibrationProcedures] = useState([]);
@@ -522,6 +531,46 @@ function ServiceOrdersPage({ user = null }) {
     });
   }, [equipment, fieldSheets, normalizedEtsSearch, selectedCertificates, selectedWorkOrderContext]);
 
+  const latestCaptureFileByCertificateId = useMemo(() => {
+    const selectedIds = new Set(filteredSelectedCertificates.map((certificate) => certificate.id));
+    const latest = new Map();
+    captureFiles.forEach((file) => {
+      if (file.certificate_id && selectedIds.has(file.certificate_id) && !latest.has(file.certificate_id) && !isMacCaptureAuxiliary(file.filename)) {
+        latest.set(file.certificate_id, file);
+      }
+    });
+    return latest;
+  }, [captureFiles, filteredSelectedCertificates]);
+
+  const authoritativeCaptureReadinessByCertificateId = useMemo(() => new Map(
+    captureMasterReadiness.map((row) => [row.certificate_id, {
+      masterExpected: Boolean(row.master_expected),
+      identified: Boolean(row.identified),
+      ready: Boolean(row.ready),
+      reason: row.reason || '',
+      warnings: Array.isArray(row.warnings) ? row.warnings : [],
+      mismatches: Array.isArray(row.mismatches) ? row.mismatches : [],
+      master: row.master || null,
+    }])
+  ), [captureMasterReadiness]);
+
+  const captureMasterMetrics = useMemo(() => {
+    const readinessRows = filteredSelectedCertificates.map((certificate) => (
+      authoritativeCaptureReadinessByCertificateId.get(certificate.id) || getCaptureMasterReadiness({
+        certificate,
+        equipment: equipment.find((item) => item.id === certificate.equipment_id),
+        captureFile: latestCaptureFileByCertificateId.get(certificate.id),
+      })
+    ));
+    return {
+      expected: readinessRows.filter((row) => row.masterExpected).length,
+      identified: readinessRows.filter((row) => row.identified).length,
+      warnings: readinessRows.reduce((sum, row) => sum + row.warnings.length, 0),
+      mismatches: readinessRows.reduce((sum, row) => sum + row.mismatches.length, 0),
+      unidentified: readinessRows.filter((row) => row.masterExpected && !row.identified).length,
+    };
+  }, [authoritativeCaptureReadinessByCertificateId, equipment, filteredSelectedCertificates, latestCaptureFileByCertificateId]);
+
   const filteredTechnicianOptions = useMemo(() => {
     const query = technicianSearch.trim().toLowerCase();
     const list = technicianOptions.filter((systemUser) => {
@@ -546,7 +595,8 @@ function ServiceOrdersPage({ user = null }) {
     : 1;
 
   const selectedOrderMetrics = useMemo(
-    () => (selectedOrder ? getOrderMetrics(selectedOrder) : {
+    () => {
+      if (!selectedOrder) return {
       equipmentCount: 0,
       expectedEquipment: 0,
       completedEquipment: 0,
@@ -560,19 +610,17 @@ function ServiceOrdersPage({ user = null }) {
       released: 0,
       billingPending: false,
       advance: 0
-    }),
-    [selectedOrder, equipment, fieldSheets, certificates]
+      };
+      const metrics = getOrderMetrics(selectedOrder);
+      return {
+        ...metrics,
+        billingPending: certificateReleaseReadiness
+          ? !certificateReleaseReadiness.release_allowed
+          : metrics.billingPending,
+      };
+    },
+    [selectedOrder, equipment, fieldSheets, certificates, certificateReleaseReadiness]
   );
-
-  const captureMetrics = useMemo(() => ({
-    expected: filteredSelectedCertificates.length,
-    uploaded: filteredSelectedCertificates.filter((certificate) => certificate.final_pdf_path).length,
-    pending: filteredSelectedCertificates.filter((certificate) => !certificate.final_pdf_path).length,
-    matched: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'matched').length,
-    warnings: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'warning').length,
-    mismatches: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'mismatch').length,
-    manual: filteredSelectedCertificates.filter((certificate) => certificate.match_status === 'manual_accepted').length
-  }), [filteredSelectedCertificates]);
 
   const qualityMetrics = useMemo(() => ({
     pending: filteredSelectedCertificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated'].includes(certificate.status)).length,
@@ -969,9 +1017,35 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
+  async function loadCaptureFilesData(serviceOrderId = selectedOrder?.id) {
+    if (!serviceOrderId) {
+      setCaptureFiles([]);
+      setCaptureMasterReadiness([]);
+      return [];
+    }
+    const [result, readinessResult] = await Promise.all([
+      listCaptureFiles(serviceOrderId),
+      listCaptureMasterReadiness(serviceOrderId),
+    ]);
+    const nextFiles = Array.isArray(result) ? result : [];
+    setCaptureFiles(nextFiles);
+    setCaptureMasterReadiness(Array.isArray(readinessResult) ? readinessResult : []);
+    return nextFiles;
+  }
+
   useEffect(() => {
     loadServiceOrderData();
   }, []);
+
+  useEffect(() => {
+    setCaptureProcessingResult(null);
+    if (!selectedOrder?.id) {
+      setCaptureFiles([]);
+      setCaptureMasterReadiness([]);
+      return;
+    }
+    loadCaptureFilesData(selectedOrder.id).catch((requestError) => setError(requestError.message));
+  }, [selectedOrder?.id]);
 
   useEffect(() => {
     const rawContext = window.sessionStorage.getItem('myc:contextReturn');
@@ -1953,13 +2027,31 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
+  async function handleDownloadCaptureMaster(certificate) {
+    setError('');
+    try {
+      const captureFile = latestCaptureFileByCertificateId.get(certificate.id);
+      const { blob, filename } = await downloadCaptureMaster(certificate.id, captureFile?.filename);
+      triggerBlobDownload(blob, filename);
+      setNotice(`Master ${filename} descargado para revisión.`);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
   async function handleCaptureFilesUpload(files, input) {
     if (!selectedOrder || !files?.length) return;
     setError('');
+    setNotice('');
     try {
-      const result = await uploadCaptureFiles(selectedOrder.id, files);
-      const unidentified = result.processed.filter((item) => item.status === 'unidentified').map((item) => item.filename);
-      setNotice(unidentified.length ? `Procesados ${result.count}. No identificados: ${unidentified.join(', ')}` : `Procesados ${result.count} archivo(s) de Captura.`);
+      const serviceOrderId = selectedOrder.id;
+      const result = await uploadCaptureFiles(serviceOrderId, files);
+      setCaptureProcessingResult(result);
+      await Promise.all([
+        loadServiceOrderData(),
+        loadCaptureFilesData(serviceOrderId),
+      ]);
+      setNotice('Paquete procesado correctamente. La información de Captura ya está actualizada.');
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -2154,7 +2246,10 @@ function ServiceOrdersPage({ user = null }) {
       const updated = await changeCertificateStatus(certificate.id, action, comment);
       setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setNotice(message);
-      await loadServiceOrderData();
+      await Promise.all([
+        loadServiceOrderData(),
+        selectedOrder?.id ? loadCaptureFilesData(selectedOrder.id) : Promise.resolve([]),
+      ]);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -2192,59 +2287,6 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
-  async function handleCertificateMatchAcceptance(certificate) {
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await manualAcceptCertificateMatch(certificate.id, 'Aceptado manualmente desde ETS');
-      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice(`Match aceptado para ${updated.folio}`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleCertificateMatchValidation(certificate) {
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await validateCertificatePdfMatch(certificate.id);
-      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice(`Matching ${updated.match_status} para ${updated.folio}`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleCertificatePdfUpload(certificate, files, input = null) {
-    const [file] = Array.from(files ?? []);
-    if (!file) return;
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await uploadCertificatePdf(certificate.id, file);
-      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice(`PDF cargado para ${updated.folio}. Match: ${updated.match_status}`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-      if (input) {
-        input.value = '';
-      }
-    }
-  }
-
   async function openAuthenticatedCertificatePdf(certificate) {
     if (!certificate.authenticated_pdf_path) {
       setError('El certificado aun no tiene PDF autenticado.');
@@ -2260,30 +2302,6 @@ function ServiceOrdersPage({ user = null }) {
         certificate.id,
         certificate.expected_folio || certificate.folio,
         certificate.authentication_code,
-      );
-      const pdfUrl = URL.createObjectURL(blob);
-      pdfWindow.location.replace(pdfUrl);
-      window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 5 * 60 * 1000);
-    } catch (requestError) {
-      pdfWindow.close();
-      setError(requestError.message);
-    }
-  }
-
-  async function openOriginalCertificatePdf(certificate) {
-    if (!certificate.final_pdf_path) {
-      setError('El certificado aun no tiene PDF original cargado.');
-      return;
-    }
-    const pdfWindow = window.open('', '_blank');
-    if (!pdfWindow) {
-      setError('No se pudo abrir el PDF original.');
-      return;
-    }
-    try {
-      const { blob } = await downloadOriginalCertificatePdf(
-        certificate.id,
-        certificate.expected_folio || certificate.folio,
       );
       const pdfUrl = URL.createObjectURL(blob);
       pdfWindow.location.replace(pdfUrl);
@@ -2320,25 +2338,6 @@ function ServiceOrdersPage({ user = null }) {
     });
   }
 
-  async function handleBulkPdfUpload(files, input = null) {
-    if (!selectedOrder || !files?.length) return;
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const result = await bulkUploadCertificatePdfs(selectedOrder.id, files);
-      setNotice(`Carga masiva: ${result.matched} matched, ${result.warnings} warning, ${result.mismatches} mismatch, ${result.missing} faltantes`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-      if (input) {
-        input.value = '';
-      }
-    }
-  }
-
   function summarizeBatchResult(result) {
     const processed = result.results?.filter((item) => ['authenticated', 'released'].includes(item.status)).map((item) => item.folio).filter(Boolean) ?? [];
     const actionCount = result.authenticated ?? result.released ?? 0;
@@ -2349,7 +2348,7 @@ function ServiceOrdersPage({ user = null }) {
     if (!selectedOrder) return;
     openConfirm({
       title: 'Autenticar aprobados',
-      message: 'Se autenticarán los certificados aprobados con PDF y match aceptable. El lote continuará aunque algun certificado falle.',
+      message: 'Se generará y autenticará el PDF final de cada Master aprobado. El lote continuará aunque algún certificado falle.',
       confirmText: 'Autenticar',
       onConfirm: async () => {
         setIsSaving(true);
@@ -2371,7 +2370,7 @@ function ServiceOrdersPage({ user = null }) {
     if (!selectedOrder) return;
     openConfirm({
       title: 'Liberar autenticados',
-      message: 'Se liberarán al cliente los certificados autenticados con PDF y match aceptable. El lote continuará aunque algun certificado falle.',
+      message: 'Se liberarán al cliente los certificados autenticados que tengan su PDF y cumplan la regla financiera vigente. El lote continuará aunque algún certificado falle.',
       confirmText: 'Liberar',
       onConfirm: async () => {
         setIsSaving(true);
@@ -2669,10 +2668,10 @@ function ServiceOrdersPage({ user = null }) {
                 ['capture', 'Captura'],
                 ['quality', 'Calidad'],
                 ['certificates', 'Certificados'],
+                ['billing', 'Facturacion'],
                 ['documents', 'Documentos'],
                 ['notes', 'Notas'],
-                ['history', 'Historial'],
-                ['billing', 'Facturacion']
+                ['history', 'Historial']
               ].map(([key, label]) => (
                 <button
                   aria-selected={activeTab === key}
@@ -3130,14 +3129,8 @@ function ServiceOrdersPage({ user = null }) {
                 <div className="quotation-section__title">
                   <div>
                     <p>Captura</p>
-                    <h3>Certificados externos y PDFs finales</h3>
+                    <h3>Masters XLSX para revisión de Calidad</h3>
                   </div>
-                  {canUseCaptureActions && filteredSelectedCertificates.some((certificate) => ['expected', 'field_sheet_ready', 'capture_pending', 'capture_in_progress', 'pdf_uploaded', 'quality_rejected', 'correction_requested', 'returned_to_technician'].includes(certificate.status) && !certificate.authenticated_pdf_path) ? (
-                    <label className="table-button table-button--file">
-                      Subir PDFs multiples
-                      <input accept="application/pdf" multiple onChange={(event) => handleBulkPdfUpload(event.target.files, event.target)} type="file" />
-                    </label>
-                  ) : null}
                   <button className="table-button table-button--primary" onClick={() => handleDownloadCapturePackage()} type="button">Descargar paquete de Captura</button>
                   <label className="table-button table-button--file">Sube el ZIP generado por el ERP o los archivos Excel corregidos.<input accept=".xls,.xlsx,.xlsm,.zip" multiple onChange={(event) => handleCaptureFilesUpload(event.target.files, event.target)} type="file" /></label>
                   {canUseAdminActions ? (
@@ -3146,21 +3139,20 @@ function ServiceOrdersPage({ user = null }) {
                     </button>
                   ) : null}
                 </div>
+                <CaptureProcessingSummary result={captureProcessingResult} />
                 <div className="ets-metric-strip">
                   {[
-                    ['Esperados', captureMetrics.expected],
-                    ['PDFs cargados', captureMetrics.uploaded],
-                    ['PDFs pendientes', captureMetrics.pending],
-                    ['Matches', captureMetrics.matched],
-                    ['Warnings', captureMetrics.warnings],
-                    ['Mismatches', captureMetrics.mismatches],
-                    ['Manual', captureMetrics.manual]
+                    ['Masters esperados', captureMasterMetrics.expected],
+                    ['Masters identificados', captureMasterMetrics.identified],
+                    ['Alertas Master', captureMasterMetrics.warnings],
+                    ['Diferencias Master', captureMasterMetrics.mismatches],
+                    ['Masters sin identificar', captureMasterMetrics.unidentified]
                   ].map(([label, value]) => (
                     <span className="ets-metric-badge" key={label}><strong>{safeNumber(value)}</strong>{label}</span>
                   ))}
                 </div>
                 <div className="ets-stage-note">
-                  La carga de PDFs no espera el cierre total de hojas. Cada certificado puede iniciar captura, cargar PDF y pasar a calidad conforme este listo.
+                  Cada certificado puede enviarse a Calidad cuando su Master está identificado y no contiene diferencias bloqueantes. Las advertencias no bloquean.
                 </div>
                 <WorkOrderFlowGroups
                   emptyMessage="No hay certificados pendientes de Captura en este ETS."
@@ -3170,9 +3162,11 @@ function ServiceOrdersPage({ user = null }) {
                   orders={[selectedOrder]}
                   renderItem={(certificate) => {
                     const item = equipmentById.get(certificate.equipment_id);
+                    const captureFile = latestCaptureFileByCertificateId.get(certificate.id);
+                    const masterReadiness = authoritativeCaptureReadinessByCertificateId.get(certificate.id) || getCaptureMasterReadiness({ certificate, equipment: item, captureFile });
                     const uploadStatuses = ['expected', 'field_sheet_ready', 'capture_pending', 'capture_in_progress', 'pdf_uploaded', 'quality_rejected', 'correction_requested', 'returned_to_technician'];
                     const hasCaptureAction = uploadStatuses.includes(certificate.status) && !certificate.authenticated_pdf_path;
-                    return <article className="flow-certificate-card" key={certificate.id}><div className="flow-certificate-card__title"><div><span>Certificado</span><strong>{certificate.expected_folio || certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark></div><dl><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Serie</dt><dd>{item?.serial_number || '-'}</dd></div><div><dt>PDF</dt><dd>{certificate.final_pdf_path ? 'Cargado' : 'Pendiente'}</dd></div><div><dt>Match</dt><dd>{certificate.match_status}</dd></div></dl>{canUseCaptureActions && hasCaptureAction ? <div className="toolbar-actions"><label className="table-button table-button--file">{certificate.status === 'correction_requested' || certificate.final_pdf_path ? 'Reemplazar PDF' : 'Subir PDF'}<input accept="application/pdf" onChange={(event) => handleCertificatePdfUpload(certificate, event.target.files, event.target)} type="file" /></label>{['capture_in_progress', 'pdf_uploaded'].includes(certificate.status) ? <button className="table-button table-button--primary" disabled={!certificate.final_pdf_path} onClick={() => handleCertificateWorkflow(certificate, 'send-to-quality', `Certificado ${certificate.folio} enviado a calidad`)} type="button">Enviar a Calidad</button> : null}</div> : <span className="flow-action-complete">Enviado a Calidad</span>}</article>;
+                    return <article className="flow-certificate-card" key={certificate.id}><div className="flow-certificate-card__title"><div><span>Certificado</span><strong>{certificate.expected_folio || certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark></div><dl><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Serie</dt><dd>{item?.serial_number || '-'}</dd></div><div><dt>Master</dt><dd>{masterReadiness.identified ? 'Identificado' : 'Pendiente'}</dd></div><div><dt>Alertas</dt><dd>{masterReadiness.warnings.length}</dd></div><div><dt>Diferencias</dt><dd>{masterReadiness.mismatches.length}</dd></div><div><dt>Readiness</dt><dd>{masterReadiness.ready ? 'Listo para Calidad' : masterReadiness.reason}</dd></div></dl>{canUseCaptureActions && hasCaptureAction ? <div className="toolbar-actions"><button className="table-button table-button--primary" disabled={isSaving || !masterReadiness.ready} onClick={() => handleCertificateWorkflow(certificate, 'send-to-quality', `Certificado ${certificate.folio} enviado a Calidad`)} title={masterReadiness.ready ? 'Enviar únicamente este certificado a Calidad' : masterReadiness.reason} type="button">Enviar a Calidad</button></div> : <span className="flow-action-complete">Enviado a Calidad</span>}</article>;
                   }}
                 />
               </section>
@@ -3212,13 +3206,15 @@ function ServiceOrdersPage({ user = null }) {
                 <WorkOrderFlowGroups
                   emptyMessage="No hay certificados dentro del flujo de Calidad para este ETS."
                   equipmentById={equipmentById}
-                  getGroupState={() => ({ label: 'EN REVISIÓN', tone: 'quality_review' })}
-                  items={filteredSelectedCertificates.filter((item) => ['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved'].includes(item.status))}
+                  getGroupState={(items) => items.every((item) => ['quality_approved', 'approved'].includes(item.status)) ? { label: 'APROBADA', tone: 'approved' } : { label: 'EN REVISIÓN', tone: 'quality_review' }}
+                  items={filteredSelectedCertificates.filter((item) => ['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved', 'approved'].includes(item.status))}
                   orders={[selectedOrder]}
                   renderItem={(certificate) => {
                     const item = equipmentById.get(certificate.equipment_id);
                     const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
-                    return <button className="flow-certificate-card flow-certificate-card--button" key={certificate.id} onClick={() => setSelectedQualityCertificate(certificate)} type="button"><div className="flow-certificate-card__title"><div><span>Certificado</span><strong>{certificate.expected_folio || certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark></div><dl><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Hoja</dt><dd>{sheet ? fieldSheetStatusLabels[sheet.status] ?? sheet.status : '-'}</dd></div><div><dt>PDF</dt><dd>{certificate.final_pdf_path ? 'Cargado' : 'Pendiente'}</dd></div><div><dt>Match</dt><dd>{certificate.match_status}</dd></div></dl><span className="flow-primary-hint">Revisar en Calidad</span></button>;
+                    const captureFile = latestCaptureFileByCertificateId.get(certificate.id);
+                    const readiness = authoritativeCaptureReadinessByCertificateId.get(certificate.id) || getCaptureMasterReadiness({ certificate, equipment: item, captureFile });
+                    return <button className="flow-certificate-card flow-certificate-card--button" key={certificate.id} onClick={() => setSelectedQualityCertificate(certificate)} type="button"><div className="flow-certificate-card__title"><div><span>Certificado</span><strong>{certificate.expected_folio || certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark></div><dl><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Hoja</dt><dd>{sheet ? fieldSheetStatusLabels[sheet.status] ?? sheet.status : '-'}</dd></div><div><dt>Master</dt><dd>{readiness.identified ? 'Identificado' : 'Pendiente'}</dd></div><div><dt>Alertas</dt><dd>{readiness.warnings.length}</dd></div><div><dt>Diferencias</dt><dd>{readiness.mismatches.length}</dd></div></dl><span className="flow-primary-hint">Revisar Master en Calidad</span></button>;
                   }}
                 />
               </section>
@@ -3226,26 +3222,26 @@ function ServiceOrdersPage({ user = null }) {
 
             {activeTab === 'certificates' ? (
               <section className="quotation-section">
-                <div className="quotation-section__title">
+                <div className="quotation-section__title quotation-section__title--stacked">
                   <div>
                     <p>Certificados</p>
                     <h3>Disponibilidad y liberación al cliente</h3>
-                    <span className="ets-stage-note">
-                      Pago: {certificateReleaseReadiness?.payment_status === 'paid' ? 'confirmado' : certificateReleaseReadiness?.payment_status === 'not_required' ? 'no requerido' : 'pendiente'} · {certificateReleaseReadiness?.reason || 'Validando reglas de liberación.'}
-                    </span>
+                  </div>
+                  <div className="ets-stage-note" role="status">
+                    Pago: {certificateReleaseReadiness?.payment_status === 'paid' ? 'confirmado' : certificateReleaseReadiness?.payment_status === 'not_required' ? 'no requerido' : 'pendiente'} · {certificateReleaseReadiness?.reason || 'Validando reglas de liberación.'}
                   </div>
                 </div>
                 <WorkOrderFlowGroups
                   emptyMessage="No hay certificados autenticados en este ETS."
                   equipmentById={equipmentById}
-                  getGroupState={(items) => items.every((item) => ['released_to_client', 'released'].includes(item.status)) ? { label: 'LISTA', tone: 'released' } : { label: 'DISPONIBLE', tone: 'authenticated' }}
+                  getGroupState={(items) => getCertificateReleasePresentation({ released: items.every((item) => ['released_to_client', 'released'].includes(item.status)), releaseReadiness: certificateReleaseReadiness })}
                   items={filteredSelectedCertificates.filter((item) => item.authenticated_pdf_path && ['authenticated', 'released_to_client', 'released'].includes(item.status))}
                   orders={[selectedOrder]}
                   renderItem={(certificate) => {
                     const item = equipmentById.get(certificate.equipment_id);
                     const released = ['released_to_client', 'released'].includes(certificate.status);
-                    const blockedReason = !released && !['matched', 'warning', 'manual_accepted'].includes(certificate.match_status) ? 'No se puede liberar: el match no fue aceptado por Calidad.' : !released && !certificateReleaseReadiness?.release_allowed ? certificateReleaseReadiness?.reason || 'Pago pendiente' : '';
-                    return <article className="flow-certificate-card" key={certificate.id}><button className="flow-certificate-card__primary" onClick={() => openAuthenticatedCertificatePdf(certificate)} type="button"><div className="flow-certificate-card__title"><div><span>Certificado autenticado</span><strong>{certificate.expected_folio || certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{getCertificateStatusLabel(certificate)}</mark></div><dl><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Serie</dt><dd>{item?.serial_number || '-'}</dd></div><div><dt>Código</dt><dd>{certificate.authentication_code || '-'}</dd></div><div><dt>Fecha</dt><dd>{certificate.authenticated_pdf_generated_at ? new Date(certificate.authenticated_pdf_generated_at).toLocaleString('es-MX') : '-'}</dd></div></dl><span className="flow-primary-hint">Ver PDF autenticado</span></button>{blockedReason ? <div className="flow-release-blocked">{blockedReason}</div> : null}<div className="toolbar-actions"><button className="table-button" onClick={() => handleDownloadAuthenticatedCertificatePdf(certificate)} type="button">Descargar</button><button className="table-button" onClick={() => showCertificateAuthentication(certificate)} type="button">Ver autenticación</button>{released ? <span className="flow-action-complete">Liberado</span> : canUseReleaseActions ? <button className="table-button table-button--primary" disabled={isSaving || Boolean(blockedReason)} onClick={() => handleCertificateWorkflow(certificate, 'release-to-client', `Certificado ${certificate.folio} liberado al cliente`)} title={blockedReason || 'Liberar al cliente'} type="button">Liberar</button> : null}</div></article>;
+                    const releasePresentation = getCertificateReleasePresentation({ released, releaseReadiness: certificateReleaseReadiness });
+                    return <article className="flow-certificate-card" key={certificate.id}><button className="flow-certificate-card__primary" onClick={() => openAuthenticatedCertificatePdf(certificate)} type="button"><div className="flow-certificate-card__title"><div><span>Certificado autenticado</span><strong>{certificate.expected_folio || certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{getCertificateStatusLabel(certificate)}</mark></div><dl><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Serie</dt><dd>{item?.serial_number || '-'}</dd></div><div><dt>Código</dt><dd>{certificate.authentication_code || '-'}</dd></div><div><dt>Fecha</dt><dd>{certificate.authenticated_pdf_generated_at ? new Date(certificate.authenticated_pdf_generated_at).toLocaleString('es-MX') : '-'}</dd></div></dl><span className="flow-primary-hint">Ver PDF autenticado</span></button><div className={releasePresentation.status === 'blocked' ? 'flow-release-blocked' : 'flow-release-ready'}>{releasePresentation.message}</div><div className="toolbar-actions"><button className="table-button" onClick={() => handleDownloadAuthenticatedCertificatePdf(certificate)} type="button">Descargar</button><button className="table-button" onClick={() => showCertificateAuthentication(certificate)} type="button">Ver autenticación</button>{released ? <span className="flow-action-complete">Liberado</span> : canUseReleaseActions ? <button className="table-button table-button--primary" disabled={isSaving || !releasePresentation.canRelease} onClick={() => handleCertificateWorkflow(certificate, 'release-to-client', `Certificado ${certificate.folio} liberado al cliente`)} title={releasePresentation.canRelease ? 'Liberar al cliente' : releasePresentation.message} type="button">Liberar</button> : null}</div></article>;
                   }}
                 />
                 {selectedAuthentication ? (
@@ -3485,8 +3481,9 @@ function ServiceOrdersPage({ user = null }) {
                   <button
                     className="primary-button"
                     onClick={() => {
-                      window.localStorage.setItem('myc_billing_order_id', String(selectedOrder.id));
-                      navigate('/dashboard#facturacion');
+                      navigate(buildInvoiceWorkbenchPath({
+                        service_order_id: selectedOrder.id,
+                      }));
                     }}
                     type="button"
                   >
@@ -4375,9 +4372,10 @@ function ServiceOrdersPage({ user = null }) {
         const certificate = certificates.find((item) => item.id === selectedQualityCertificate.id) || selectedQualityCertificate;
         const item = equipment.find((equipmentItem) => equipmentItem.id === certificate.equipment_id);
         const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
-        const canReview = ['ready_for_quality', 'quality_review'].includes(certificate.status);
-        const canApprove = certificate.status === 'match_validated' && ['matched', 'warning', 'manual_accepted'].includes(certificate.match_status);
-        const canAuthenticate = Boolean(certificate.final_pdf_path) && certificate.status === 'quality_approved' && ['matched', 'warning', 'manual_accepted'].includes(certificate.match_status);
+        const captureFile = latestCaptureFileByCertificateId.get(certificate.id);
+        const masterReadiness = authoritativeCaptureReadinessByCertificateId.get(certificate.id) || getCaptureMasterReadiness({ certificate, equipment: item, captureFile });
+        const canApprove = ['ready_for_quality', 'quality_review'].includes(certificate.status) && masterReadiness.ready;
+        const canAuthenticate = ['quality_approved', 'approved'].includes(certificate.status);
         return (
           <div className="modal-backdrop" role="presentation">
             <section aria-modal="true" className="client-modal field-sheet-modal" role="dialog">
@@ -4395,27 +4393,26 @@ function ServiceOrdersPage({ user = null }) {
                 <article><span>Equipo</span><strong>{item?.name || '-'}</strong></article>
                 <article><span>Serie</span><strong>{item?.serial_number || '-'}</strong></article>
                 <article><span>Hoja vinculada</span><strong>{sheet ? `Hoja ${sheet.id} · ${fieldSheetStatusLabels[sheet.status] ?? sheet.status}` : '-'}</strong></article>
-                <article><span>PDF original</span><strong>{certificate.final_pdf_original_filename || (certificate.final_pdf_path ? 'Cargado' : 'Pendiente')}</strong></article>
-                <article><span>Match</span><strong>{certificate.match_status || '-'}</strong></article>
+                <article><span>Master XLSX</span><strong>{captureFile?.filename || 'Pendiente'}</strong></article>
+                <article><span>Advertencias</span><strong>{masterReadiness.warnings.length}</strong></article>
+                <article><span>Diferencias bloqueantes</span><strong>{masterReadiness.mismatches.length}</strong></article>
                 <article><span>Estado</span><strong>{certificateStatusLabels[certificate.status] ?? certificate.status}</strong></article>
                 <article><span>Autenticacion</span><strong>{certificate.authentication_code || '-'}</strong></article>
               </div>
               <div className="quality-action-ribbon">
-                <button className="table-button" disabled={!certificate.final_pdf_path} onClick={() => openOriginalCertificatePdf(certificate)} type="button">1. Ver PDF original</button>
-                <button className="table-button" disabled={!canReview || !certificate.final_pdf_path || isSaving} onClick={() => handleCertificateMatchValidation(certificate)} type="button">2. Validar match</button>
-                <button className="table-button" disabled={certificate.status !== 'match_validated' || !['mismatch', 'warning'].includes(certificate.match_status) || isSaving} onClick={() => handleCertificateMatchAcceptance(certificate)} type="button">3. Aceptar match manual</button>
-                <button className="table-button" disabled={!canApprove || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'quality-approve', `Certificado ${certificate.folio} aprobado`)} type="button">4. Aprobar</button>
-                <button className="table-button" disabled={!['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved'].includes(certificate.status) || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'request-correction', `Certificado ${certificate.folio} regresado a Captura`)} type="button">5. Regresar a Captura</button>
-                <button className="table-button" disabled={!canAuthenticate || isSaving} onClick={() => handleCertificateAuthentication(certificate)} type="button">6. Autenticar</button>
+                <button className="table-button" disabled={!captureFile} onClick={() => handleDownloadCaptureMaster(certificate)} type="button">1. Descargar Master XLSX</button>
+                <button className="table-button" disabled={!canApprove || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'quality-approve', `Master de ${certificate.folio} aprobado`)} type="button">2. Aprobar Master</button>
+                <button className="table-button" disabled={!['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved'].includes(certificate.status) || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'request-correction', `Certificado ${certificate.folio} regresado a Captura`)} type="button">3. Rechazar / regresar a Captura</button>
+                <button className="table-button table-button--primary" disabled={!canAuthenticate || isSaving} onClick={() => handleCertificateAuthentication(certificate)} type="button">4. Autenticar</button>
               </div>
               <div className="quotation-history-list">
                 <article><strong>Creado</strong><span>{certificate.created_at ? new Date(certificate.created_at).toLocaleString('es-MX') : '-'}</span></article>
-                <article><strong>PDF subido</strong><span>{certificate.final_pdf_uploaded_at ? new Date(certificate.final_pdf_uploaded_at).toLocaleString('es-MX') : '-'}</span></article>
+                <article><strong>Master recibido</strong><span>{captureFile?.created_at ? new Date(captureFile.created_at).toLocaleString('es-MX') : '-'}</span></article>
                 <article><strong>Enviado a calidad</strong><span>{certificate.sent_to_quality_at ? new Date(certificate.sent_to_quality_at).toLocaleString('es-MX') : '-'}</span></article>
                 <article><strong>Revision calidad</strong><span>{certificate.quality_reviewed_at ? new Date(certificate.quality_reviewed_at).toLocaleString('es-MX') : '-'}</span></article>
                 <article><strong>Autenticado</strong><span>{certificate.authenticated_pdf_generated_at ? new Date(certificate.authenticated_pdf_generated_at).toLocaleString('es-MX') : '-'}</span></article>
               </div>
-              <pre className="match-details-panel">{JSON.stringify(certificate.match_details || {}, null, 2)}</pre>
+              <pre className="match-details-panel">{JSON.stringify(captureFile?.validation || {}, null, 2)}</pre>
             </section>
           </div>
         );
@@ -4433,12 +4430,12 @@ function ServiceOrdersPage({ user = null }) {
               </div>
             </div>
             <div className="confirm-dialog__body">
-              <p>Describe los errores encontrados en el PDF. El certificado regresará a Captura, la hoja conservará su estado y quedará evidencia en auditoría.</p>
+              <p>Describe los errores encontrados en el Master XLSX. El certificado regresará a Captura, la hoja conservará su estado y quedará evidencia en auditoría.</p>
               <textarea
                 autoFocus
                 className="form-textarea"
                 onChange={(event) => setReturnToTechnicianReason(event.target.value)}
-                placeholder="Marca los errores y la corrección requerida en el PDF"
+                placeholder="Marca los errores y la corrección requerida en el Master XLSX"
                 rows={4}
                 value={returnToTechnicianReason}
               />

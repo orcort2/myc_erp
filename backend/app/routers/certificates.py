@@ -12,6 +12,7 @@ from app.schemas.certificate import (
     CertificateUpdate,
 )
 from app.services.certificates import (
+    capture_master_readiness,
     manual_accept_match,
     change_status,
     create_certificate,
@@ -19,6 +20,7 @@ from app.services.certificates import (
     get_certificate,
     get_service_order_release_readiness,
     list_certificates,
+    list_capture_master_readiness,
     quality_approve,
     quality_reject,
     release_to_client,
@@ -72,6 +74,15 @@ def certificate_release_readiness(
     current_user: User = Depends(require_permission("certificates.read")),
 ) -> dict:
     return get_service_order_release_readiness(db, service_order_id)
+
+
+@router.get("/capture-master-readiness")
+def get_capture_master_readiness_list(
+    service_order_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
+) -> list[dict]:
+    return list_capture_master_readiness(db, service_order_id=service_order_id)
 
 
 @router.get("/{certificate_id}", response_model=CertificateRead)
@@ -129,6 +140,26 @@ def send_certificate_to_quality(
     current_user: User = Depends(require_permission("certificates.capture")),
 ) -> CertificateRead:
     return send_to_quality(db, certificate_id, payload, user_id=current_user.id)
+
+
+@router.get("/{certificate_id}/capture-master")
+def download_certificate_capture_master(
+    certificate_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("certificates.read")),
+) -> FileResponse:
+    readiness = capture_master_readiness(db, certificate_id)
+    master = readiness["master"]
+    if master is None or not master["stored_path"]:
+        raise HTTPException(status_code=404, detail="El certificado no tiene un Master identificado")
+    path = resolve_storage_path(master["stored_path"])
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="El archivo Master identificado no está disponible")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=master["filename"],
+    )
 
 
 @router.post("/{certificate_id}/quality-approve", response_model=CertificateRead)

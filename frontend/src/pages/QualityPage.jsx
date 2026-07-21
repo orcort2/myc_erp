@@ -1,5 +1,5 @@
 import { ShieldCheck } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
@@ -12,19 +12,20 @@ import {
 import {
   authenticateCertificate,
   changeCertificateStatus,
-  downloadOriginalCertificatePdf,
+  downloadCaptureMaster,
   getCertificate,
   listAuditLogs,
   listCertificates,
+  listCaptureMasterReadiness,
   listClients,
   listEquipment,
   listFieldSheets,
-  listServiceOrders,
-  manualAcceptCertificateMatch,
-  validateCertificatePdfMatch
+  listServiceOrders
 } from '../services/api.js';
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
+import { getSequentialNavigationState } from '../utils/sequentialNavigation.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
+import { itemBelongsToWorkOrder } from '../utils/workOrderGroups.js';
 
 function getTechnicianLabel(order) {
   return order?.technician_id ? `#${order.technician_id}` : 'Por asignar';
@@ -50,8 +51,13 @@ function QualityPage() {
   const [fieldSheets, setFieldSheets] = useState([]);
   const [clients, setClients] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [masterReadiness, setMasterReadiness] = useState([]);
   const [activeTab, setActiveTab] = useState('pending');
   const [selectedCertificate, setSelectedCertificate] = useState(null);
+  const [detailNavigationIds, setDetailNavigationIds] = useState([]);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [detailLoadError, setDetailLoadError] = useState('');
+  const [failedNavigationId, setFailedNavigationId] = useState(null);
   const [detailTab, setDetailTab] = useState('certificate');
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -60,6 +66,8 @@ function QualityPage() {
   const [notice, setNotice] = useState('');
   const [correctionRequest, setCorrectionRequest] = useState(null);
   const [correctionReason, setCorrectionReason] = useState('');
+  const detailRequestIdRef = useRef(0);
+  const detailLoadingRef = useRef(false);
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
 
   const clientsById = useMemo(
@@ -82,8 +90,13 @@ function QualityPage() {
     [fieldSheets]
   );
 
+  const readinessByCertificateId = useMemo(
+    () => new Map(masterReadiness.map((item) => [item.certificate_id, item])),
+    [masterReadiness]
+  );
+
   const displayedCertificates = useMemo(() => {
-    const qualityFlowCertificates = certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved'].includes(certificate.status));
+    const qualityFlowCertificates = certificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved', 'approved'].includes(certificate.status));
     if (activeTab === 'pending') {
       return qualityFlowCertificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated'].includes(certificate.status));
     }
@@ -91,7 +104,7 @@ function QualityPage() {
       return qualityFlowCertificates.filter((certificate) => ['ready_for_quality', 'quality_review', 'match_validated'].includes(certificate.status));
     }
     if (activeTab === 'approved') {
-      return qualityFlowCertificates.filter((certificate) => certificate.status === 'quality_approved');
+      return qualityFlowCertificates.filter((certificate) => ['quality_approved', 'approved'].includes(certificate.status));
     }
     return qualityFlowCertificates;
   }, [activeTab, certificates]);
@@ -106,18 +119,20 @@ function QualityPage() {
     setError('');
     setIsLoading(true);
     try {
-      const [certificatesResult, ordersResult, equipmentResult, fieldSheetsResult, clientsResult] = await Promise.all([
+      const [certificatesResult, ordersResult, equipmentResult, fieldSheetsResult, clientsResult, readinessResult] = await Promise.all([
         listCertificates(),
         listServiceOrders(),
         listEquipment(),
         listFieldSheets(),
-        listClients()
+        listClients(),
+        listCaptureMasterReadiness()
       ]);
       setCertificates(Array.isArray(certificatesResult) ? certificatesResult : []);
       setServiceOrders(Array.isArray(ordersResult) ? ordersResult : []);
       setEquipment(Array.isArray(equipmentResult) ? equipmentResult : []);
       setFieldSheets(Array.isArray(fieldSheetsResult) ? fieldSheetsResult : []);
       setClients(Array.isArray(clientsResult) ? clientsResult : []);
+      setMasterReadiness(Array.isArray(readinessResult) ? readinessResult : []);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -137,26 +152,72 @@ function QualityPage() {
     return { client, item, order, sheet };
   }
 
-  async function openQualityDetail(certificate) {
-    setError('');
-    setNotice('');
+  async function loadCertificateDetail(certificateId, { openModal = false, resetTab = false } = {}) {
+    if (detailLoadingRef.current) return false;
+    const requestId = detailRequestIdRef.current + 1;
+    detailRequestIdRef.current = requestId;
+    detailLoadingRef.current = true;
+    setIsDetailLoading(true);
+    setDetailLoadError('');
+    setFailedNavigationId(null);
     try {
       const [freshCertificate, logs] = await Promise.all([
-        getCertificate(certificate.id),
-        listAuditLogs({ entity: 'certificates', entity_id: certificate.id, limit: 100 })
+        getCertificate(certificateId),
+        listAuditLogs({ entity: 'certificates', entity_id: certificateId, limit: 100 })
       ]);
+      if (detailRequestIdRef.current !== requestId) return false;
       setSelectedCertificate(freshCertificate);
       setAuditLogs(Array.isArray(logs) ? logs : []);
-      setDetailTab('certificate');
-      setIsDetailOpen(true);
+      if (resetTab) setDetailTab('certificate');
+      if (openModal) setIsDetailOpen(true);
+      return true;
     } catch (requestError) {
-      setError(requestError.message);
+      if (detailRequestIdRef.current !== requestId) return false;
+      if (openModal) {
+        setError(requestError.message);
+      } else {
+        setDetailLoadError('No fue posible cargar el certificado.');
+        setFailedNavigationId(certificateId);
+      }
+      return false;
+    } finally {
+      if (detailRequestIdRef.current === requestId) {
+        detailLoadingRef.current = false;
+        setIsDetailLoading(false);
+      }
     }
   }
 
+  async function openQualityDetail(certificate, groupContext = {}) {
+    setError('');
+    setNotice('');
+    const workOrder = groupContext.workOrder;
+    const sameWorkOrder = workOrder
+      ? displayedCertificates.filter((candidate) => itemBelongsToWorkOrder(candidate, workOrder, equipmentById))
+      : [];
+    const sameOrder = displayedCertificates.filter((candidate) => Number(candidate.service_order_id) === Number(certificate.service_order_id));
+    const contextualCertificates = sameWorkOrder.length ? sameWorkOrder : sameOrder.length ? sameOrder : displayedCertificates;
+    setDetailNavigationIds(contextualCertificates.map((candidate) => candidate.id));
+    await loadCertificateDetail(certificate.id, { openModal: true, resetTab: true });
+  }
+
+  async function navigateCertificate(direction) {
+    if (!selectedCertificate || detailLoadingRef.current || isDetailLoading || loadingAction) return;
+    const navigation = getSequentialNavigationState(detailNavigationIds, selectedCertificate.id);
+    const targetId = direction === 'next' ? navigation.nextId : navigation.previousId;
+    if (targetId == null) return;
+    await loadCertificateDetail(targetId);
+  }
+
   function closeQualityDetail() {
+    detailRequestIdRef.current += 1;
+    detailLoadingRef.current = false;
     setSelectedCertificate(null);
+    setDetailNavigationIds([]);
     setAuditLogs([]);
+    setIsDetailLoading(false);
+    setDetailLoadError('');
+    setFailedNavigationId(null);
     setDetailTab('certificate');
     setIsDetailOpen(false);
     setError('');
@@ -187,6 +248,7 @@ function QualityPage() {
           );
           setNotice(`Certificado ${updated.folio} actualizado a ${certificateStatusLabels[updated.status] ?? updated.status}`);
           await loadQualityData();
+          await loadCertificateDetail(updated.id);
         } catch (requestError) {
           setError(requestError.message);
         } finally {
@@ -196,7 +258,7 @@ function QualityPage() {
     });
   }
 
-  async function runQualityOperation(actionKey, operation, successMessage, { closeAfter = false } = {}) {
+  async function runQualityOperation(actionKey, operation, successMessage) {
     if (!selectedCertificate) return;
     setLoadingAction(actionKey);
     setError('');
@@ -205,9 +267,9 @@ function QualityPage() {
       const updated = await operation();
       setCertificates((current) => current.map((item) => item.id === updated.id ? updated : item));
       setNotice(successMessage);
-      if (closeAfter) closeQualityDetail();
-      else setSelectedCertificate(updated);
+      setSelectedCertificate(updated);
       await loadQualityData();
+      await loadCertificateDetail(updated.id);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -228,9 +290,9 @@ function QualityPage() {
       setCertificates((current) => current.map((item) => item.id === updated.id ? updated : item));
       setCorrectionRequest(null);
       setCorrectionReason('');
-      closeQualityDetail();
       setNotice(`Certificado ${updated.folio} regresado a Captura para corrección`);
       await loadQualityData();
+      await loadCertificateDetail(updated.id);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -238,19 +300,21 @@ function QualityPage() {
     }
   }
 
-  async function openOriginalPdf(certificate) {
-    const pdfWindow = window.open('', '_blank');
-    if (!pdfWindow) {
-      setError('El navegador bloqueó la vista del PDF. Permite ventanas emergentes.');
-      return;
-    }
+  async function handleDownloadMaster(certificate) {
+    setError('');
     try {
-      const { blob } = await downloadOriginalCertificatePdf(certificate.id, certificate.final_pdf_original_filename);
+      const readiness = readinessByCertificateId.get(certificate.id);
+      const { blob, filename } = await downloadCaptureMaster(certificate.id, readiness?.master?.filename);
       const url = URL.createObjectURL(blob);
-      pdfWindow.location.replace(url);
-      window.setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+      setNotice(`Master ${filename} descargado para revisión.`);
     } catch (requestError) {
-      pdfWindow.close();
       setError(requestError.message);
     }
   }
@@ -259,6 +323,12 @@ function QualityPage() {
   const selectedOrder = selectedContext.order;
   const selectedEquipment = selectedContext.item;
   const selectedFieldSheet = selectedContext.sheet;
+  const selectedWorkOrder = selectedOrder?.work_orders?.find((workOrder) => Number(workOrder.id) === Number(selectedEquipment?.work_order_id));
+  const selectedWorkOrderNumber = selectedWorkOrder?.work_order_number ?? selectedEquipment?.work_order_number ?? selectedOrder?.work_order_number;
+  const selectedMasterReadiness = selectedCertificate ? readinessByCertificateId.get(selectedCertificate.id) : null;
+  const selectedNavigation = getSequentialNavigationState(detailNavigationIds, selectedCertificate?.id);
+  const previousCertificateDisabled = isDetailLoading || Boolean(loadingAction) || selectedNavigation.previousId == null;
+  const nextCertificateDisabled = isDetailLoading || Boolean(loadingAction) || selectedNavigation.nextId == null;
 
   return (
     <section className="module-workspace quality-workspace">
@@ -269,7 +339,7 @@ function QualityPage() {
         <div>
           <p>Supervision transversal</p>
           <h1>Calidad</h1>
-          <span>Revisión del PDF, validación, aprobación y autenticación de certificados.</span>
+          <span>Revisión de Masters XLSX identificados, advertencias y diferencias antes de aprobar.</span>
         </div>
       </div>
 
@@ -282,7 +352,7 @@ function QualityPage() {
           <span>Pendientes calidad</span>
         </div>
         <div className="operations-band__metric">
-          <strong>{isLoading ? '-' : certificates.filter((certificate) => certificate.status === 'quality_approved').length}</strong>
+          <strong>{isLoading ? '-' : certificates.filter((certificate) => ['quality_approved', 'approved'].includes(certificate.status)).length}</strong>
           <span>Aprobados</span>
         </div>
         <div className="operations-band__metric">
@@ -316,12 +386,13 @@ function QualityPage() {
           <WorkOrderFlowGroups
             emptyMessage="No hay certificados en esta vista de Calidad."
             equipmentById={equipmentById}
-            getGroupState={(items) => items.every((item) => item.status === 'quality_approved') ? { label: 'APROBADA', tone: 'approved' } : { label: 'EN REVISIÓN', tone: 'quality_review' }}
+            getGroupState={(items) => items.every((item) => ['quality_approved', 'approved'].includes(item.status)) ? { label: 'APROBADA', tone: 'approved' } : { label: 'EN REVISIÓN', tone: 'quality_review' }}
             items={displayedCertificates}
             orders={serviceOrders}
-            renderItem={(certificate) => {
+            renderItem={(certificate, groupContext) => {
               const context = getCertificateContext(certificate);
-              return <button className="flow-certificate-card flow-certificate-card--button" key={certificate.id} onClick={() => openQualityDetail(certificate)} type="button"><div className="flow-certificate-card__title"><div><span>Certificado</span><strong>{certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark></div><dl><div><dt>Cliente</dt><dd>{getClientDisplayName(context.client)}</dd></div><div><dt>Equipo</dt><dd>{context.item?.name || '-'}</dd></div><div><dt>Técnico</dt><dd>{getTechnicianLabel(context.order)}</dd></div><div><dt>Fecha</dt><dd>{formatDate(certificate.issued_on) !== '-' ? formatDate(certificate.issued_on) : formatDateTime(certificate.created_at)}</dd></div><div><dt>PDF</dt><dd>{certificate.final_pdf_original_filename || 'Pendiente'}</dd></div><div><dt>Match</dt><dd>{certificate.match_status || 'pending'}</dd></div></dl></button>;
+              const readiness = readinessByCertificateId.get(certificate.id);
+              return <button className="flow-certificate-card flow-certificate-card--button" key={certificate.id} onClick={() => openQualityDetail(certificate, groupContext)} type="button"><div className="flow-certificate-card__title"><div><span>Certificado</span><strong>{certificate.folio}</strong></div><mark className={`quotation-status status-${certificate.status}`}>{certificateStatusLabels[certificate.status] ?? certificate.status}</mark></div><dl><div><dt>Cliente</dt><dd>{getClientDisplayName(context.client)}</dd></div><div><dt>Equipo</dt><dd>{context.item?.name || '-'}</dd></div><div><dt>Técnico</dt><dd>{getTechnicianLabel(context.order)}</dd></div><div><dt>Fecha</dt><dd>{formatDate(certificate.issued_on) !== '-' ? formatDate(certificate.issued_on) : formatDateTime(certificate.created_at)}</dd></div><div><dt>Master</dt><dd>{readiness?.identified ? 'Identificado' : 'Pendiente'}</dd></div><div><dt>Alertas</dt><dd>{readiness?.warnings?.length || 0}</dd></div><div><dt>Diferencias</dt><dd>{readiness?.mismatches?.length || 0}</dd></div></dl></button>;
             }}
           />
         )}
@@ -330,19 +401,25 @@ function QualityPage() {
       {isDetailOpen && selectedCertificate ? (
         <div className="modal-backdrop" role="presentation">
           <section className="client-modal quotation-detail-modal field-sheet-modal certificate-detail-modal" aria-modal="true" role="dialog">
-            <div className="quotation-detail-header">
+            <div className="client-modal-header">
               <div>
                 <p>Revision de Calidad</p>
-                <h2 className="certificate-folio-heading">{selectedCertificate.folio}</h2>
-                <span>{getClientDisplayName(selectedContext.client)} · {selectedOrder?.folio || '-'}</span>
+                <h2>{isDetailLoading ? 'Cargando certificado...' : 'Revisión de certificado'}</h2>
+                {!isDetailLoading ? <span>{getClientDisplayName(selectedContext.client)} · {selectedOrder?.folio || '-'} · {selectedWorkOrderNumber ? `OT-${selectedWorkOrderNumber}` : 'OT sin asignar'}</span> : null}
               </div>
-              <mark className={`quotation-status quotation-status--large status-${selectedCertificate.status}`}>
-                {certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status}
-              </mark>
-              <button className="icon-text-button" onClick={closeQualityDetail} type="button">
-                Cerrar
-              </button>
+              {!isDetailLoading ? <mark className={`quotation-status quotation-status--large status-${selectedCertificate.status}`}>{certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status}</mark> : null}
+              <div className="client-modal-navigator">
+                <button aria-label="Certificado anterior" disabled={previousCertificateDisabled} onClick={() => navigateCertificate('previous')} type="button">◀</button>
+                <strong>{isDetailLoading ? 'Cargando…' : selectedCertificate.folio}</strong>
+                <button aria-label="Certificado siguiente" disabled={nextCertificateDisabled} onClick={() => navigateCertificate('next')} type="button">▶</button>
+                <button aria-label="Cerrar modal" disabled={isDetailLoading || Boolean(loadingAction)} onClick={closeQualityDetail} type="button">✕</button>
+              </div>
             </div>
+
+            {detailLoadError ? <div className="form-error dashboard-error" role="alert"><span>{detailLoadError}</span>{failedNavigationId ? <button className="table-button" disabled={isDetailLoading} onClick={() => loadCertificateDetail(failedNavigationId)} type="button">Reintentar</button> : null}</div> : null}
+
+            {isDetailLoading ? <div className="clients-empty" role="status">Cargando datos del certificado...</div> : (
+              <>
 
             <div className="client-modal-tabs quotation-detail-tabs" role="tablist" aria-label="Ficha de calidad">
               {[
@@ -384,18 +461,44 @@ function QualityPage() {
                       <strong>{certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status}</strong>
                     </article>
                     <article>
-                      <span>PDF</span>
-                      <strong>{selectedCertificate.final_pdf_original_filename || 'Pendiente'}</strong>
+                      <span>ETS</span>
+                      <strong>{selectedOrder?.folio || '-'}</strong>
                     </article>
                     <article>
-                      <span>Matching</span>
-                      <strong>{selectedCertificate.match_status || 'pending'}</strong>
+                      <span>Orden de Trabajo</span>
+                      <strong>{selectedWorkOrderNumber ? `OT-${selectedWorkOrderNumber}` : '-'}</strong>
+                    </article>
+                    <article>
+                      <span>Master XLSX</span>
+                      <strong>{selectedMasterReadiness?.master?.filename || 'Pendiente'}</strong>
+                    </article>
+                    <article>
+                      <span>Advertencias</span>
+                      <strong>{selectedMasterReadiness?.warnings?.length || 0}</strong>
+                    </article>
+                    <article>
+                      <span>Diferencias bloqueantes</span>
+                      <strong>{selectedMasterReadiness?.mismatches?.length || 0}</strong>
+                    </article>
+                    <article>
+                      <span>Enviado a Calidad</span>
+                      <strong>{formatDateTime(selectedCertificate.sent_to_quality_at)} · {selectedCertificate.sent_to_quality_by_id ? `#${selectedCertificate.sent_to_quality_by_id}` : 'Sistema'}</strong>
+                    </article>
+                    <article>
+                      <span>Revisión de Calidad</span>
+                      <strong>{formatDateTime(selectedCertificate.quality_reviewed_at)} · {selectedCertificate.quality_reviewed_by_id ? `#${selectedCertificate.quality_reviewed_by_id}` : 'Pendiente'}</strong>
+                    </article>
+                    <article>
+                      <span>Autenticación</span>
+                      <strong>{formatDateTime(selectedCertificate.authenticated_pdf_generated_at)} · {selectedCertificate.authenticated_by_id ? `#${selectedCertificate.authenticated_by_id}` : 'Pendiente'}</strong>
                     </article>
                     <article className="form-field--wide">
                       <span>Notas</span>
                       <strong>{selectedCertificate.notes || '-'}</strong>
                     </article>
                   </div>
+                  {selectedMasterReadiness?.warnings?.length ? <div className="match-details-panel"><strong>Advertencias no bloqueantes</strong><ul>{selectedMasterReadiness.warnings.map((item) => <li key={item.field}>{item.field}: {item.status}</li>)}</ul></div> : null}
+                  {selectedMasterReadiness?.mismatches?.length ? <div className="form-error"><strong>Diferencias bloqueantes</strong><ul>{selectedMasterReadiness.mismatches.map((item) => <li key={item.field}>{item.field}: {item.status}</li>)}</ul></div> : null}
                 </section>
 
                 <section className="quotation-section">
@@ -404,16 +507,14 @@ function QualityPage() {
                     <h3>Control de aprobacion</h3>
                   </div>
                   <div className="toolbar-actions quality-actions">
-                    <button className="table-button table-button--primary" disabled={!selectedCertificate.final_pdf_path} onClick={() => openOriginalPdf(selectedCertificate)} type="button">Revisar PDF</button>
-                    <button className="table-button" disabled={Boolean(loadingAction) || !['ready_for_quality', 'quality_review'].includes(selectedCertificate.status)} onClick={() => runQualityOperation('validate-match', () => validateCertificatePdfMatch(selectedCertificate.id), 'Match validado por Calidad')} type="button">{loadingAction === 'validate-match' ? 'Validando...' : 'Validar match'}</button>
-                    <button className="table-button" disabled={Boolean(loadingAction) || selectedCertificate.status !== 'match_validated' || !['mismatch', 'warning'].includes(selectedCertificate.match_status)} onClick={() => runQualityOperation('manual-match', () => manualAcceptCertificateMatch(selectedCertificate.id, 'Aceptado manualmente por Calidad'), 'Match aceptado manualmente')} type="button">Aceptar match manual</button>
+                    <button className="table-button table-button--primary" disabled={!selectedMasterReadiness?.identified} onClick={() => handleDownloadMaster(selectedCertificate)} type="button">Descargar Master XLSX</button>
                     <button
                       className="table-button table-button--primary"
-                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'quality_approved') || !['matched', 'warning', 'manual_accepted'].includes(selectedCertificate.match_status)}
-                      onClick={() => handleQualityAction('quality-approve', 'Aprobar calidad')}
+                      disabled={Boolean(loadingAction) || !canTransition(selectedCertificate, 'quality_approved') || !selectedMasterReadiness?.ready}
+                      onClick={() => handleQualityAction('quality-approve', 'Aprobar Master')}
                       type="button"
                     >
-                      {loadingAction === 'quality-approveAprobar calidad' ? 'Procesando...' : 'Aprobar calidad'}
+                      {loadingAction === 'quality-approveAprobar Master' ? 'Procesando...' : 'Aprobar Master'}
                     </button>
                     <button
                       className="table-button"
@@ -421,12 +522,12 @@ function QualityPage() {
                       onClick={() => { setCorrectionRequest(selectedCertificate); setCorrectionReason(''); }}
                       type="button"
                     >
-                      Regresar a Captura
+                      Rechazar / regresar a Captura
                     </button>
                     <button
                       className="table-button table-button--primary"
-                      disabled={Boolean(loadingAction) || selectedCertificate.status !== 'quality_approved' || !selectedCertificate.final_pdf_path || !['matched', 'warning', 'manual_accepted'].includes(selectedCertificate.match_status)}
-                      onClick={() => runQualityOperation('authenticate', () => authenticateCertificate(selectedCertificate.id), 'Certificado autenticado y enviado a Certificados', { closeAfter: true })}
+                      disabled={Boolean(loadingAction) || !['quality_approved', 'approved'].includes(selectedCertificate.status)}
+                      onClick={() => runQualityOperation('authenticate', () => authenticateCertificate(selectedCertificate.id), 'Certificado autenticado y enviado a Certificados')}
                       type="button"
                     >
                       {loadingAction === 'authenticate' ? 'Autenticando...' : 'Autenticar / Sellar'}
@@ -544,6 +645,8 @@ function QualityPage() {
                 )}
               </section>
             ) : null}
+              </>
+            )}
           </section>
         </div>
       ) : null}
@@ -551,7 +654,7 @@ function QualityPage() {
       {correctionRequest ? (
         <div className="modal-backdrop" role="presentation">
           <section aria-modal="true" className="client-modal confirm-dialog" role="dialog">
-            <div className="section-heading confirm-dialog__header"><div><p>Corrección requerida</p><h2>Marca los errores del PDF</h2></div></div>
+            <div className="section-heading confirm-dialog__header"><div><p>Corrección requerida</p><h2>Describe las correcciones del Master XLSX</h2></div></div>
             <div className="confirm-dialog__body">
               <p>El comentario se conservará en el historial. La hoja vinculada no cambiará de estado.</p>
               <textarea autoFocus className="form-textarea" onChange={(event) => setCorrectionReason(event.target.value)} placeholder="Describe los errores y la corrección requerida" rows={5} value={correctionReason} />

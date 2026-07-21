@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   FileText,
   LayoutDashboard,
@@ -8,25 +8,13 @@ import {
 } from 'lucide-react';
 
 import InvoiceWorkbenchDialog from '../components/invoice-workbench/InvoiceWorkbenchDialog.jsx';
-import { buildInvoiceWorkbenchDraft } from '../components/invoice-workbench/invoiceWorkbenchDraft.js';
-
+import useInvoiceWorkbenchController, {
+  findOrderForQuotation,
+} from '../components/invoice-workbench/useInvoiceWorkbenchController.js';
 import {
-  createInvoice,
-  downloadInstitutionalInvoicePdf,
-  downloadInvoiceFiscalXml,
-  getFacturamaStatus,
-  getInvoice,
-  getInvoiceDashboard,
-  getInvoiceSettings,
-  listClients,
-  listInvoices,
-  listQuotations,
-  listSatCatalogs,
-  listServiceOrders,
-  updateInvoice,
-  updateInvoiceSettings,
-  issueInvoice,
-} from '../services/api.js';
+  clearInvoiceWorkbenchContext,
+  readInvoiceWorkbenchContext,
+} from '../utils/invoiceWorkbenchContext.js';
 import { formatMoney } from '../utils/formatters.js';
 
 const MAIN_VIEWS = [
@@ -90,16 +78,6 @@ function isQuotationApproved(quotation) {
   );
 }
 
-function findOrderForQuotation(serviceOrders, quotationId) {
-  return (
-    serviceOrders.find(
-      (order) =>
-        order.is_active !== false &&
-        String(order.quotation_id) === String(quotationId)
-    ) || null
-  );
-}
-
 function resolveInvoiceQuotationId(invoice, ordersById) {
   if (invoice?.quotation_id) return invoice.quotation_id;
 
@@ -123,37 +101,6 @@ function invoicePriority(invoice) {
   return priorities[invoice?.status] || 0;
 }
 
-function quotationItemsToInvoiceItems(quotation, draft) {
-  return (quotation?.items || [])
-    .filter((item) => item.is_active !== false)
-    .map((item) => {
-      const fiscal = draft?.concepts?.[item.id] || {};
-      const rateCode = fiscal.taxRate?.code;
-      const taxRate = rateCode
-        ? Number(rateCode) * 100
-        : Number(item.tax_rate || 16);
-
-      return {
-        quotation_item_id: item.id,
-        description:
-          item.description ||
-          item.service_name ||
-          'Servicio de calibración',
-        quantity: Number(item.quantity || 1),
-        unit: item.unit || 'Servicio',
-        sat_unit: fiscal.unit?.code || item.sat_unit || 'E48',
-        sat_key:
-          fiscal.productService?.code || item.sat_key || '81141504',
-        unit_price: Number(item.unit_price || 0),
-        discount_total: Number(item.discount_total || 0),
-        tax_rate: taxRate,
-        notes: item.notes || null,
-        service_type: item.service_type || item.service_name || null,
-        source_type: 'quotation',
-      };
-    });
-}
-
 function resolveWorkspaceStatus(invoice) {
   if (!invoice || invoice.status === 'cancelled') {
     return INVOICE_STATUS.ready;
@@ -171,44 +118,49 @@ function resolveWorkspaceStatus(invoice) {
 
 function BillingPage() {
   const [activeView, setActiveView] = useState('center');
-  const [dashboard, setDashboard] = useState(null);
-  const [invoices, setInvoices] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [serviceOrders, setServiceOrders] = useState([]);
-  const [quotations, setQuotations] = useState([]);
-  const [satCatalogs, setSatCatalogs] = useState([]);
-  const [settings, setSettings] = useState(null);
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
-  const [workspaceOriginElement, setWorkspaceOriginElement] = useState(null);
-  const [selectedQuotation, setSelectedQuotation] = useState(null);
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [workspaceDraft, setWorkspaceDraft] = useState({});
-  const [facturamaStatus, setFacturamaStatus] = useState(null);
-
-  const clientsById = useMemo(
-    () => new Map(clients.map((item) => [item.id, item])),
-    [clients]
+  const initialContext = useMemo(
+    () => readInvoiceWorkbenchContext(window.location),
+    []
   );
-  const ordersById = useMemo(
-    () => new Map(serviceOrders.map((item) => [item.id, item])),
-    [serviceOrders]
-  );
-  const quotationsById = useMemo(
-    () => new Map(quotations.map((item) => [item.id, item])),
-    [quotations]
-  );
-  const catalogByCode = useMemo(
-    () => new Map(satCatalogs.map((item) => [item.code, item])),
-    [satCatalogs]
-  );
+  const {
+    catalogByCode,
+    clientsById,
+    closeWorkspace,
+    dashboard,
+    downloadFiscalXml: handleDownloadFiscalXml,
+    downloadInstitutionalPdf: handleDownloadInstitutionalPdf,
+    error,
+    facturamaStatus,
+    invoices,
+    isLoading,
+    isSaving,
+    issueWorkspaceInvoice: handleIssueInvoice,
+    loadBillingData,
+    notice,
+    openWorkspace,
+    ordersById,
+    quotations,
+    quotationsById,
+    refreshFacturamaStatus,
+    saveSettings,
+    saveWorkspaceDraft: handleSaveWorkspaceDraft,
+    selectedClient,
+    selectedInvoice,
+    selectedQuotation,
+    serviceOrders,
+    setSettings,
+    settings,
+    updateWorkspaceConcept,
+    updateWorkspaceDraft,
+    workspaceDraft,
+    workspaceOpen,
+    workspaceOriginElement,
+  } = useInvoiceWorkbenchController({
+    initialContext,
+    onIssuerConfigurationRequired: () => setActiveView('settings'),
+  });
 
   const invoiceByQuotationId = useMemo(() => {
     const result = new Map();
@@ -347,334 +299,14 @@ function BillingPage() {
     };
   }, [workspaceRows]);
 
-  useEffect(() => {
-    loadBillingData();
-    refreshFacturamaStatus();
-  }, []);
-
-  async function refreshFacturamaStatus() {
-    try {
-      setFacturamaStatus(null);
-      setFacturamaStatus(await getFacturamaStatus());
-    } catch {
-      setFacturamaStatus({ connected: false, status: 'network_error' });
-    }
+  function handleCloseWorkspace() {
+    clearInvoiceWorkbenchContext();
+    closeWorkspace();
   }
 
-  async function loadBillingData() {
-    setIsLoading(true);
-    setError('');
-
-    try {
-      const [
-        dashboardResult,
-        invoicesResult,
-        clientsResult,
-        ordersResult,
-        quotationsResult,
-        catalogsResult,
-        settingsResult,
-      ] = await Promise.all([
-        getInvoiceDashboard(),
-        listInvoices(),
-        listClients(),
-        listServiceOrders(),
-        listQuotations(),
-        listSatCatalogs(),
-        getInvoiceSettings(),
-      ]);
-
-      setDashboard(dashboardResult);
-      setInvoices(invoicesResult);
-      setClients(clientsResult);
-      setServiceOrders(ordersResult);
-      setQuotations(quotationsResult);
-      setSatCatalogs(catalogsResult);
-      setSettings(settingsResult);
-
-      const storedOrderId = window.localStorage.getItem(
-        'myc_billing_order_id'
-      );
-
-      if (storedOrderId) {
-        const order = ordersResult.find(
-          (item) => String(item.id) === String(storedOrderId)
-        );
-        const quotation = order
-          ? quotationsResult.find(
-              (item) => String(item.id) === String(order.quotation_id)
-            )
-          : null;
-
-        if (quotation) {
-          const invoice = invoicesResult.find(
-            (item) =>
-              String(item.quotation_id) === String(quotation.id) ||
-              String(item.service_order_id) === String(order.id)
-          );
-          const client = clientsResult.find(
-            (item) => item.id === quotation.client_id
-          );
-
-          setSelectedQuotation(quotation);
-          setSelectedInvoice(invoice || null);
-          setWorkspaceDraft(
-            await buildInvoiceWorkbenchDraft(
-              quotation,
-              client,
-              invoice || null
-            )
-          );
-          setWorkspaceOpen(true);
-        }
-
-        window.localStorage.removeItem('myc_billing_order_id');
-        setActiveView('center');
-      }
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  function updateWorkspaceDraft(key, value) {
-    setWorkspaceDraft((current) => ({ ...current, [key]: value }));
-  }
-
-  function updateWorkspaceConcept(conceptId, key, value) {
-    setWorkspaceDraft((current) => ({
-      ...current,
-      concepts: {
-        ...(current.concepts || {}),
-        [conceptId]: {
-          ...(current.concepts?.[conceptId] || {}),
-          [key]: value,
-        },
-      },
-    }));
-  }
-
-  function closeWorkspace() {
-    setWorkspaceOpen(false);
-    setSelectedQuotation(null);
-    setSelectedInvoice(null);
-    setWorkspaceDraft({});
-    setWorkspaceOriginElement(null);
-  }
-
-  async function openWorkspace(row, originElement = null) {
-    setWorkspaceOriginElement(originElement);
-    setError('');
-    setNotice('');
-    setIsSaving(true);
-
-    try {
-      let invoice = row.invoice || null;
-      let quotation = row.quotation || null;
-
-      if (invoice) {
-        invoice = await getInvoice(invoice.id);
-        const serviceOrder =
-          ordersById.get(invoice.service_order_id) || row.serviceOrder;
-        const quotationId =
-          invoice.quotation_id || serviceOrder?.quotation_id;
-        quotation = quotationsById.get(quotationId) || quotation;
-      }
-
-      if (!quotation) {
-        throw new Error(
-          'No fue posible localizar la cotización de origen del expediente.'
-        );
-      }
-
-      const client =
-        clientsById.get(invoice?.client_id || quotation.client_id) || null;
-
-      setSelectedInvoice(invoice);
-      setSelectedQuotation(quotation);
-      setWorkspaceDraft(
-        await buildInvoiceWorkbenchDraft(quotation, client, invoice)
-      );
-      setWorkspaceOpen(true);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleSaveWorkspaceDraft() {
-    if (!selectedQuotation) {
-      setError('El expediente debe estar vinculado a una cotización aprobada.');
-      return;
-    }
-
-    const serviceOrder = selectedInvoice?.service_order_id
-      ? ordersById.get(selectedInvoice.service_order_id)
-      : findOrderForQuotation(serviceOrders, selectedQuotation.id);
-
-    if (!serviceOrder) {
-      setError(
-        'La cotización todavía no tiene una orden de servicio vinculada.'
-      );
-      return;
-    }
-
-    const client = clientsById.get(selectedQuotation.client_id);
-    const payload = {
-      client_id: selectedQuotation.client_id,
-      fiscal_client_id:
-        selectedInvoice?.fiscal_client_id || selectedQuotation.client_id,
-      service_order_id: serviceOrder.id,
-      quotation_id: selectedQuotation.id,
-      issued_on:
-        selectedInvoice?.issued_on ||
-        new Date().toISOString().slice(0, 10),
-      due_on: selectedInvoice?.due_on || null,
-      status: 'draft',
-      payment_method: workspaceDraft.paymentMethod?.code || 'PUE',
-      payment_form: workspaceDraft.paymentForm?.code || '03',
-      usage_cfdi:
-        workspaceDraft.cfdiUse?.code || client?.cfdi_use || 'G03',
-      currency:
-        workspaceDraft.currency?.code || selectedQuotation.currency || 'MXN',
-      credit_days: selectedInvoice?.credit_days || 0,
-      observations: selectedInvoice?.observations || null,
-      internal_comments: selectedInvoice?.internal_comments || null,
-      items: quotationItemsToInvoiceItems(
-        selectedQuotation,
-        workspaceDraft
-      ),
-    };
-
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-
-    try {
-      const savedInvoice = selectedInvoice
-        ? await updateInvoice(selectedInvoice.id, payload)
-        : await createInvoice(payload);
-
-      setSelectedInvoice(savedInvoice);
-      setNotice('Borrador guardado correctamente.');
-      await loadBillingData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleIssueInvoice(invoice) {
-    if (!invoice) return;
-
-    const issuerError = getIssuerValidationError();
-    if (issuerError) {
-      setError(issuerError);
-      setActiveView('settings');
-      return;
-    }
-
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-
-    try {
-      const issued = await issueInvoice(invoice.id);
-
-      setSelectedInvoice(issued);
-
-      setInvoices((current) =>
-        current.map((item) =>
-          item.id === issued.id ? issued : item
-        )
-      );
-
-      setNotice(
-        issued.cfdi_uuid
-          ? `CFDI emitido correctamente · UUID ${issued.cfdi_uuid}`
-          : 'CFDI emitido correctamente.'
-      );
-
-      await refreshFacturamaStatus();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  function getIssuerValidationError() {
-    const emitter = settings?.emitter_data || {};
-    if (!String(emitter.rfc || '').trim()) return 'Configura el RFC del emisor antes de emitir.';
-    if (!/^\d{5}$/.test(String(emitter.expedition_place || '').trim())) return 'Configura un lugar de expedición válido de 5 dígitos.';
-    return '';
-  }
-
-  function saveDownloadedFile({ blob, filename }, fallbackFilename) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename || fallbackFilename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  async function handleDownloadInstitutionalPdf(invoice) {
-    if (!invoice) return;
-
-    setIsSaving(true);
-    setError('');
-    try {
-      const document = await downloadInstitutionalInvoicePdf(invoice.id);
-      saveDownloadedFile(
-        document,
-        `Factura_MYC_${invoice.series}-${invoice.folio}.pdf`
-      );
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleDownloadFiscalXml(invoice) {
-    if (!invoice) return;
-
-    setIsSaving(true);
-    setError('');
-    try {
-      const document = await downloadInvoiceFiscalXml(invoice.id);
-      saveDownloadedFile(
-        document,
-        `Factura_MYC_${invoice.series}-${invoice.folio}.xml`
-      );
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
-  async function handleSaveSettings(event) {
+  function handleSaveSettings(event) {
     event.preventDefault();
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-
-    try {
-      await updateInvoiceSettings(settings);
-      setNotice('Configuración guardada.');
-      await loadBillingData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
+    saveSettings();
   }
 
   return (
@@ -1160,13 +792,7 @@ function BillingPage() {
 
       <InvoiceWorkbenchDialog
         catalogByCode={catalogByCode}
-        client={
-          selectedQuotation
-            ? clientsById.get(selectedQuotation.client_id)
-            : selectedInvoice
-              ? clientsById.get(selectedInvoice.client_id)
-              : null
-        }
+        client={selectedClient}
         draft={workspaceDraft}
         invoice={selectedInvoice}
         isSaving={isSaving}
@@ -1180,7 +806,7 @@ function BillingPage() {
             ? ''
             : 'No es posible emitir porque el servicio de timbrado no está conectado.'
         }
-        onClose={closeWorkspace}
+        onClose={handleCloseWorkspace}
         onConceptChange={updateWorkspaceConcept}
         onDraftChange={updateWorkspaceDraft}
         onDownloadFiscalXml={handleDownloadFiscalXml}

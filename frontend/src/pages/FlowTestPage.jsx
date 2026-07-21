@@ -85,9 +85,9 @@ export default function FlowTestPage() {
     if (!selectedCertificate) messages.push('No existe certificado esperado para esta hoja/equipo.');
     if (selectedCertificate && !selectedCertificate.expected_folio) messages.push('El certificado no tiene folio esperado.');
     if (selectedCertificate && ['expected', 'field_sheet_ready', 'capture_pending'].includes(selectedCertificate.status)) messages.push('Captura aun no inicia o no termina.');
-    if (selectedCertificate && !['ready_for_quality', 'quality_review', 'quality_approved', 'pdf_pending', 'pdf_uploaded', 'released_to_client'].includes(selectedCertificate.status)) messages.push('Calidad aun no recibe/aprueba el certificado.');
-    if (selectedCertificate && !selectedCertificate.final_pdf_path) messages.push('No hay PDF final subido.');
-    if (selectedCertificate && !['matched', 'warning', 'manual_accepted'].includes(selectedCertificate.match_status)) messages.push('El PDF no tiene match aceptado.');
+    if (selectedCertificate && !['ready_for_quality', 'quality_review', 'quality_approved', 'approved', 'authenticated', 'released_to_client'].includes(selectedCertificate.status)) messages.push('Calidad aun no recibe/aprueba el certificado.');
+    if (selectedCertificate && ['quality_approved', 'approved'].includes(selectedCertificate.status)) messages.push('El Master esta aprobado y pendiente de autenticacion.');
+    if (selectedCertificate && ['authenticated', 'released_to_client'].includes(selectedCertificate.status) && !selectedCertificate.authenticated_pdf_path) messages.push('La autenticacion no conserva un PDF accesible.');
     if (selectedCertificate && !selectedCertificate.client_visible) messages.push('El certificado no esta liberado al cliente.');
     return [...new Set(messages)];
   }, [selectedCertificate, selectedClient, selectedEquipment, selectedFieldSheet, selectedOrder, selectedQuotation]);
@@ -186,8 +186,8 @@ export default function FlowTestPage() {
         <FlowItem title="Folio esperado" value={label(selectedCertificate?.expected_folio ?? selectedCertificate?.folio)} missing={!selectedCertificate ? 'Sin certificado esperado' : ''} />
         <FlowItem title="Captura" value={selectedCertificate ? certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status : 'Sin certificado'} missing={selectedCertificate && ['expected', 'field_sheet_ready', 'capture_pending'].includes(selectedCertificate.status) ? 'Pendiente captura' : ''} />
         <FlowItem title="Calidad" value={selectedCertificate ? certificateStatusLabels[selectedCertificate.status] ?? selectedCertificate.status : 'Sin certificado'} detail={selectedCertificate?.quality_rejection_reason} missing={selectedCertificate && selectedCertificate.status === 'quality_rejected' ? 'Rechazado' : ''} />
-        <FlowItem title="PDF subido" value={label(selectedCertificate?.final_pdf_original_filename)} missing={selectedCertificate && !selectedCertificate.final_pdf_path ? 'Sin PDF' : ''} />
-        <FlowItem title="Match" value={label(selectedCertificate?.match_status, 'pending')} detail={selectedCertificate?.match_details?.score !== undefined ? `Score ${selectedCertificate.match_details.score}` : ''} missing={selectedCertificate && !['matched', 'warning', 'manual_accepted'].includes(selectedCertificate.match_status) ? 'Sin match aceptado' : ''} />
+        <FlowItem title="Master aprobado" value={selectedCertificate && ['quality_approved', 'approved', 'authenticated', 'released_to_client'].includes(selectedCertificate.status) ? 'Sí' : 'Pendiente'} detail="Compuerta de autenticación" missing={selectedCertificate && !['quality_approved', 'approved', 'authenticated', 'released_to_client'].includes(selectedCertificate.status) ? 'Sin aprobación' : ''} />
+        <FlowItem title="PDF autenticado" value={label(selectedCertificate?.authenticated_pdf_original_filename)} detail={selectedCertificate?.authenticated_at} missing={selectedCertificate && ['authenticated', 'released_to_client'].includes(selectedCertificate.status) && !selectedCertificate.authenticated_pdf_path ? 'Sin archivo' : ''} />
         <FlowItem title="Liberado cliente" value={selectedCertificate?.client_visible ? 'Visible' : 'No visible'} detail={selectedCertificate?.released_to_client_at} missing={selectedCertificate && !selectedCertificate.client_visible ? 'No liberado' : ''} />
         <FlowItem title="Incertidumbre" value="Experimental / no bloqueante" detail="El flujo principal no depende del motor." />
       </div>

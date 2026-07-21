@@ -56,14 +56,49 @@ export function getQualityStageStatus({ certificates = [] }) {
   return stage(sent ? 'active' : 'pending', sent ? 'EN PROCESO' : 'PENDIENTE', sent ? 'Hay certificados pendientes de revisión, aprobación o autenticación.' : 'Captura aún no ha enviado certificados a Calidad.', { expected: certificates.length, authenticated, sent });
 }
 
+export function getCertificateReleasePresentation({ released = false, releaseReadiness = null } = {}) {
+  if (released) {
+    return {
+      canRelease: false,
+      label: 'Liberado',
+      message: 'Certificado liberado al cliente.',
+      status: 'done',
+      tone: 'released',
+    };
+  }
+  if (!releaseReadiness) {
+    return {
+      canRelease: false,
+      label: 'Validando pago',
+      message: 'Validando la condición financiera del ETS.',
+      status: 'pending',
+      tone: 'pending',
+    };
+  }
+  if (!releaseReadiness.release_allowed) {
+    return {
+      canRelease: false,
+      label: 'Pendiente de pago',
+      message: 'Certificado autenticado. Pendiente de liberación por pago.',
+      status: 'blocked',
+      tone: 'pending',
+    };
+  }
+  return {
+    canRelease: true,
+    label: 'Listo para liberar',
+    message: 'Certificado autenticado y listo para liberar.',
+    status: 'available',
+    tone: 'authenticated',
+  };
+}
+
 export function getCertificateStageStatus({ certificates = [], releaseReadiness = null }) {
   if (!certificates.length) return stage('pending', 'PENDIENTE', 'No existen certificados para liberar.', { expected: 0, released: 0 });
   const released = certificates.filter((certificate) => certificate.status === 'released_to_client' || certificate.client_visible).length;
-  if (released === certificates.length) return stage('done', 'LISTA', 'Todos los certificados fueron liberados al cliente.', { expected: certificates.length, released });
+  if (released === certificates.length) return stage('done', 'Liberado', 'Todos los certificados fueron liberados al cliente.', { expected: certificates.length, released });
   const authenticated = certificates.every((certificate) => qualityFinishedStatuses.has(certificate.status));
   if (!authenticated) return stage('pending', 'PENDIENTE', 'Falta autenticar uno o más certificados.', { expected: certificates.length, released });
-  if (releaseReadiness && !releaseReadiness.release_allowed) {
-    return stage('blocked', 'PENDIENTE DE LIBERACIÓN', releaseReadiness.reason, { expected: certificates.length, released, payment: releaseReadiness.payment_status });
-  }
-  return stage('available', 'DISPONIBLE', releaseReadiness?.reason || 'Certificados autenticados listos para liberación.', { expected: certificates.length, released, payment: releaseReadiness?.payment_status || 'pending_check' });
+  const presentation = getCertificateReleasePresentation({ releaseReadiness });
+  return stage(presentation.status, presentation.label, presentation.message, { expected: certificates.length, released, payment: releaseReadiness?.payment_status || 'pending_check' });
 }

@@ -316,7 +316,7 @@ def _sync_invoice_items_from_quotation(invoice: Invoice, quotation: Quotation) -
     _recalculate_invoice(invoice)
 
 
-def list_invoices(db: Session) -> list[Invoice]:
+def list_invoices(db: Session, *, service_order_id: int | None = None) -> list[Invoice]:
     query = (
         select(Invoice)
         .where(Invoice.is_active.is_(True))
@@ -330,6 +330,8 @@ def list_invoices(db: Session) -> list[Invoice]:
         )
         .order_by(Invoice.created_at.desc())
     )
+    if service_order_id is not None:
+        query = query.where(Invoice.service_order_id == service_order_id)
     return list(db.scalars(query).all())
 
 

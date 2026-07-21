@@ -25,6 +25,12 @@ EXCLUDED_NAMES = {
 }
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
+FORCE_RECLASSIFY = {
+    "AGENTS.md",
+    "docs/BACKUP_ESTADO_ACTUAL.md",
+    "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md",
+    "scripts/generate_project_file_registry.py",
+}
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
     "Documentación", "Pruebas",
@@ -97,6 +103,16 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
 
     if "/migrations/versions/" in value:
         return ("Migración Alembic", f"Aplica la revisión {subject} del esquema y conserva la evolución reproducible de PostgreSQL.", "Alembic, modelos ORM y base de datos", "Alembic durante upgrade/downgrade y despliegues", "Crítico")
+    if value == "AGENTS.md":
+        return ("Normas del repositorio", "Define las reglas persistentes de cierre, respaldo, inventario, reset, auditoría integral y actualización documental obligatoria en cada tarea.", "Procesos de desarrollo, auditoría y jerarquía documental", "Agentes Codex y mantenedores del ERP", "Crítico")
+    if value == "docs/BACKUP_ESTADO_ACTUAL.md":
+        return ("Estado operativo vigente", "Resume exclusivamente el estado verificable actual, migraciones, validaciones y pendientes operativos, con enlaces al canon especializado.", "PROJECT_STATUS, TECHNICAL_DEBT, validaciones y migraciones vigentes", "Agentes Codex, desarrollo y operación", "Alto")
+    if value == "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md":
+        return ("Bitácora histórica", "Conserva íntegra la cronología de entregas, respaldos, cierres y validaciones anterior a la separación del estado operativo vigente.", "Cortes y cambios históricos del ERP", "Auditorías forenses y mantenedores", "Medio")
+    if value == "scripts/generate_project_file_registry.py":
+        return ("Generador de inventario", "Regenera el inventario desde rutas existentes, excluye artefactos y conserva las filas previamente auditadas para no perder la revisión humana.", "Git, árbol del repositorio y PROJECT_FILE_REGISTRY", "Agentes Codex y mantenedores", "Alto")
+    if value == "docs/audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md":
+        return ("Auditoría integral de avance", "Consolida el estado verificable de todos los módulos, sus validaciones, observaciones históricas, pendientes, riesgos, sellos y orden de cierre hacia la versión 1.0.", "Frontend, backend, base de datos, pruebas, scripts y documentación histórica", "Dirección, desarrollo, calidad, operación y futuras auditorías", "Alto")
     if name == "__init__.py":
         return ("Inicializador de paquete", f"Declara el paquete {path.parent.name} y expone las importaciones públicas que necesita su módulo.", "Módulos del mismo paquete", "Python y módulos que importan el paquete", "Medio")
     if "/models/" in value and path.suffix == ".py":
@@ -168,14 +184,38 @@ def markdown_cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
 
 
-def render(paths: list[Path]) -> str:
+def reviewed_rows() -> dict[str, str]:
+    """Conserva filas revisadas manualmente mientras la ruta siga existiendo."""
+    if not TARGET.exists():
+        return {}
+    rows: dict[str, str] = {}
+    for line in TARGET.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("| ") or line.startswith("| ---"):
+            continue
+        path_value = line[2:].split(" |", 1)[0]
+        if path_value and path_value not in {"Ruta", "Sección"}:
+            rows[path_value] = line
+    return rows
+
+
+def render(paths: list[Path], preserved: dict[str, str]) -> str:
     grouped: dict[str, list[Path]] = defaultdict(list)
     for path in paths:
         grouped[section(path)].append(path)
     lines = [
+        "> Estado: VIGENTE",
+        ">",
+        "> Tipo: Vigente (canónico)",
+        ">",
+        "> Autoridad: Alta para inventario de archivos; no determina alcance, pendientes ni avance",
+        ">",
+        "> Prevalece sobre: inventarios manuales o listados de archivos anteriores",
+        ">",
+        "> Entrada documental: `project/DOCUMENTATION_INDEX.md`",
+        "",
         "# Registro maestro de archivos funcionales",
         "",
-        "Fecha de inventario: 2026-07-15.",
+        "Fecha de inventario: 2026-07-21.",
         "",
         "Este es el inventario oficial de archivos funcionales del ERP MYC. Incluye únicamente archivos fuente, configuración, migraciones, recursos oficiales, scripts, pruebas y documentación relevante. Las filas describen responsabilidad verificable; los estados reflejan el estado actual observable del repositorio.",
         "",
@@ -196,6 +236,10 @@ def render(paths: list[Path]) -> str:
     for key in SECTION_ORDER:
         lines.extend([f"## {key}", "", "| Ruta | Módulo | Función | Responsabilidad detallada | Dependencias principales | Quién utiliza el archivo | Criticidad | Estado |", "| --- | --- | --- | --- | --- | --- | --- | --- |"])
         for path in grouped[key]:
+            value = path.as_posix()
+            if value in preserved and value not in FORCE_RECLASSIFY:
+                lines.append(preserved[value])
+                continue
             function, responsibility, dependencies, consumers, criticality = classify(path)
             cells = (path.as_posix(), module(path), function, responsibility, dependencies, consumers, criticality, "Experimental" if "/labs/" in path.as_posix() or "Lab" in path.name else ("En desarrollo" if "facturama" in path.as_posix().lower() or path.name == "integrations.py" else ("Obsoleto" if "/legacy/" in path.as_posix() or ".pre-toolkit" in path.name else "Estable")))
             lines.append("| " + " | ".join(markdown_cell(cell) for cell in cells) + " |")
@@ -205,4 +249,4 @@ def render(paths: list[Path]) -> str:
 
 
 if __name__ == "__main__":
-    TARGET.write_text(render(tracked_and_visible_files()), encoding="utf-8")
+    TARGET.write_text(render(tracked_and_visible_files(), reviewed_rows()), encoding="utf-8")

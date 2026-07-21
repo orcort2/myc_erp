@@ -77,10 +77,11 @@ def released_uninvoiced(
 
 @router.get("/invoices", response_model=list[InvoiceRead])
 def read_invoices(
+    service_order_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("invoices.read")),
 ):
-    return list_invoices(db)
+    return list_invoices(db, service_order_id=service_order_id)
 
 
 @router.get("/invoices/{invoice_id}", response_model=InvoiceRead)

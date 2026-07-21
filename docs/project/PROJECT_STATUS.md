@@ -1,0 +1,77 @@
+> Estado: VIGENTE
+>
+> Tipo: Vigente (canónico)
+>
+> Autoridad: Máxima para determinar el avance actual del ERP
+>
+> Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
+>
+> Corte verificado: 2026-07-21
+
+# Estado actual del ERP MYC
+
+Este documento contiene sólo el estado vigente. Es la única fuente documental autorizada para responder qué módulos están sellados, casi sellados, en desarrollo, pendientes o no iniciados. La evidencia detallada del corte está en [`../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md`](../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md).
+
+## Resumen
+
+| Estado | Módulos o capacidades |
+| --- | --- |
+| **SELLADO** | Control Documental V1 |
+| **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
+| **EN DESARROLLO** | Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
+| **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
+
+## Módulos sellados
+
+### Control Documental V1
+
+El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, historial derivado, publicación/activación, obsolescencia y la integración de Plantillas Maestras. El diseñador permanece deshabilitado por decisión expresa y no forma parte del cierre V1. No hay pendientes funcionales o de UX dentro de ese alcance congelado.
+
+## Módulos casi sellados
+
+| Módulo | Pendiente real de cierre |
+| --- | --- |
+| Dashboard | Visibilidad por permisos y E2E autenticado con datos representativos. |
+| Clientes | Proteger todas las rutas y ejecutar el ciclo autenticado completo. |
+| Cotizaciones | Completar la restauración de partidas desde snapshots o reducir formalmente ese contrato; asegurar rutas; E2E hasta ETS. |
+| Órdenes de Trabajo | E2E multi-OT, permisos y encapsulado del número legacy. |
+| Equipos | Proteger el router y validar snapshots dentro del ciclo multi-OT. |
+| Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada; falta retirar la superficie autenticadora duplicada de ETS y completar E2E de verificación pública. |
+| Plantillas Maestras | Descarga, carga, identificación, detección semántica por fingerprint, readiness y generación del PDF autenticado desde el Master quedaron validados; falta automatizar el E2E autenticado completo del retorno. |
+| Catálogos SAT | Blindar la fuente oficial y validar permisos de todos los consumidores. |
+| Base de datos y migraciones | Plan de retiro legacy, comparación metadata↔BD y prueba de upgrade desde respaldo. |
+
+## Módulos en desarrollo
+
+Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
+
+1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
+2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
+3. Hojas de Campo sin cierre semántico, automatizaciones metrológicas y E2E de las 23 plantillas.
+4. Facturación con borrador no autosalvado, vistas placeholder y flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
+5. Administración y roles sin gestión dinámica ni filtrado visual por permisos.
+6. Toolkit, infraestructura y UX con diagnósticos, puertos, pruebas de despliegue, páginas monolíticas y bundle pendientes.
+
+## Módulos pendientes o no iniciados
+
+- **Contactos, Agenda y Llamados:** existen piezas absorbidas por Cliente o ETS, pero no los módulos autónomos acordados. Se requiere decisión formal de absorción o implementación.
+- **Catálogo MYC:** existe backend y consumo embebido, pero no una experiencia oficial cerrada y sus endpoints están abiertos.
+- **CRM/Leads, Encuestas y reporte final:** no se encontró implementación funcional.
+- **Google Drive:** no existe integración.
+
+## Deuda técnica vigente prioritaria
+
+| Prioridad | Deuda |
+| --- | --- |
+| P0 | Cerrar escalación por registro, separar access/refresh, aplicar autorización deny-by-default, aislar portal por cliente y exigir secreto JWT seguro. |
+| P0 | Eliminar lógica duplicada y ruta `confirm-signatures` repetida en ETS. |
+| P0 | Dejar a Calidad como único autenticador de certificados. |
+| P1 | Cerrar Hojas de Campo/Captura y su E2E operativo. |
+| P1 | Completar la persistencia y el flujo fiscal de Facturación. |
+| P1 | Alinear permisos, roles y navegación. |
+| P2 | Retirar compatibilidad legacy verificada y reducir deuda de UX, bundle, scripts e infraestructura. |
+
+## Regla de mantenimiento
+
+Toda auditoría posterior debe actualizar este archivo sólo con conclusiones verificadas. Las auditorías conservan la evidencia y la fecha del corte, pero dejan de ser autoridad de avance en cuanto este documento incorpora un corte posterior.

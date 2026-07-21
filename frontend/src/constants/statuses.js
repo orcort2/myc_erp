@@ -6,7 +6,7 @@ export const serviceOrderStatusLabels = {
   technical_review: 'Revision tecnica',
   capture: 'Captura',
   quality_review: 'Revision calidad',
-  pending_payment: 'Pendiente pago',
+  pending_payment: 'Pendiente de pago',
   released: 'Liberada',
   closed: 'Cerrada',
   cancelled: 'Cancelada'
@@ -128,7 +128,7 @@ export const certificateTabs = [
 ];
 
 export const certificateActions = [
-  { key: 'send-to-quality', nextStatus: 'ready_for_quality', label: 'Enviar a calidad' },
+  { key: 'send-to-quality', nextStatus: 'quality_review', label: 'Enviar a calidad' },
   { key: 'request-correction', nextStatus: 'correction_requested', label: 'Regresar a Captura' },
   { key: 'quality-approve', nextStatus: 'quality_approved', label: 'Aprobar calidad' },
   { key: 'release-to-client', nextStatus: 'released_to_client', label: 'Liberar cliente' }
@@ -139,10 +139,10 @@ export const certificateTransitions = {
   expected: new Set(['field_sheet_ready', 'capture_pending', 'capture_in_progress', 'suspended']),
   field_sheet_ready: new Set(['capture_pending', 'capture_in_progress', 'suspended']),
   capture_pending: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
-  capture_in_progress: new Set(['ready_for_quality', 'quality_rejected', 'suspended']),
-  ready_for_quality: new Set(['quality_review', 'match_validated', 'correction_requested', 'suspended']),
+  capture_in_progress: new Set(['quality_review', 'quality_rejected', 'suspended']),
+  ready_for_quality: new Set(['quality_review', 'quality_approved', 'match_validated', 'correction_requested', 'suspended']),
   generated: new Set(['quality_review', 'quality_rejected', 'suspended']),
-  quality_review: new Set(['match_validated', 'correction_requested', 'suspended']),
+  quality_review: new Set(['quality_approved', 'match_validated', 'correction_requested', 'suspended']),
   match_validated: new Set(['quality_approved', 'correction_requested', 'suspended']),
   quality_rejected: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),
   returned_to_technician: new Set(['capture_in_progress', 'ready_for_quality', 'suspended']),

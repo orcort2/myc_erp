@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 CatalogItemType = Literal["product", "service"]
 CatalogCommodity = Literal["calibration", "maintenance", "repair", "sale", "general_service"]
 CalibrationScope = Literal[
-    "accredited_iso_17025",
+    "Certificado / Certificate: L25-313",
     "traceable",
     "accredited_linked_lab",
     "preventive",
@@ -49,7 +49,7 @@ TAX_RATE_BY_OBJECT = {
 
 
 LEGENDS_BY_SCOPE = {
-    "accredited_iso_17025": "Servicio acreditado ISO/IEC 17025:2017",
+    "Certificado / Certificate: L25-313": "Servicio acreditado ISO/IEC 17025:2017",
     "traceable": "Servicio trazable",
     "accredited_linked_lab": "Servicio acreditado ISO/IEC 17025:2017, laboratorio vinculado",
     "preventive": "Mantenimiento preventivo",

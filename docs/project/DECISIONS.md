@@ -1,0 +1,52 @@
+> Estado: VIGENTE
+>
+> Tipo: Vigente (canónico)
+>
+> Autoridad: Alta
+>
+> Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
+>
+> Corte verificado: 2026-07-21
+
+# Registro de decisiones vigentes
+
+| ID | Fecha aproximada | Decisión vigente | Documento origen / evidencia | Consecuencia |
+| --- | --- | --- | --- | --- |
+| ADR-001 | 2026-06, V3 | `service_orders` es la entidad raíz operativa. | `archive/architecture/SISTEMA_ERP_MYC_V3.md`, confirmada por modelos vigentes | Equipos, hojas, certificados, facturas y documentos se navegan desde ETS. |
+| ADR-002 | 2026-06/07 | PostgreSQL + SQLAlchemy + Alembic son la persistencia principal; no se simulan datos persistentes en frontend. | V3, código y migraciones | Los labs en memoria no acreditan cierre operativo. |
+| ADR-003 | 2026-07 | Agenda y Llamado permanecen actualmente como datos/hitos dentro de ETS, no como módulos completos. | implementación y auditoría 2026-07-21 | La especificación antigua no determina el flujo actual; su cierre requiere decisión futura de absorción o implementación. |
+| ADR-004 | 2026-07-10 | Las OT se agrupan en bloques de máximo 10 equipos y las firmas se capturan por ciclos de OT pendientes. | `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`, modelos y servicios vigentes | Una OT posterior no invalida firmas anteriores y requiere ciclo nuevo. |
+| ADR-005 | 2026-07-13 | Hojas de Campo usa definiciones declarativas y snapshots inmutables de plantilla/identidad. | análisis, cierre de fase 1 e implementación actual | Cambios de plantilla no alteran documentos históricos. |
+| ADR-006 | 2026-07-13 | El catálogo maestro de campos define conceptos canónicos; plantillas no deben inventar nuevas identidades de campo. | [`../architecture/FIELD_SHEET_FIELD_REGISTRY.md`](../architecture/FIELD_SHEET_FIELD_REGISTRY.md) | Captura, filtros, PDF y futuros motores deben converger en claves comunes. |
+| ADR-007 | 2026-07-13 | Sin coincidencia segura de plantilla, la selección es manual; no hay fallback silencioso a General. | auditoría de integración de Hojas de Campo | Evita capturar con semántica incorrecta. |
+| ADR-008 | 2026-07-17 | Plantillas Maestras reutiliza `ControlledDocument`/versiones y congela el archivo esperado en el equipo. | `modules/control-documental/PLANTILLAS_MAESTRAS.md` | No se crea un segundo sistema documental ni se cambian históricos por actualización del Master. |
+| ADR-009 | 2026-07 | Calidad debe ser el único autenticador de certificados. | decisiones funcionales consolidadas y auditoría 2026-07-21 | Las acciones duplicadas en ETS son deuda a retirar. |
+| ADR-010 | 2026-07 | Certificados es un expediente de documentos autenticados, no otra bandeja de aprobación. | implementación de Certificados/Calidad | La vista filtra PDFs autenticados; aprobación ocurre en Calidad. |
+| ADR-011 | 2026-07 | La liberación documental se rige por `requires_payment`; con pago requerido exige factura pagada y saldo cero. | servicio de certificados | Evita usar una regla histórica absoluta que no contempla servicios sin pago requerido. |
+| ADR-012 | 2026-07 | Facturación usa un workbench compartido y snapshots fiscales; el PDF institucional MYC se genera desde datos persistidos y XML cuando existe. | auditorías de Facturación y código vigente | Mesa de trabajo y vista de Facturas deben conservar el mismo contrato. |
+| ADR-013 | 2026-07-15 | Una emisión Facturama ambigua no se reintenta automáticamente; primero se concilia. | actualizaciones operativas y servicio Facturama | Reduce doble timbrado. Producción continúa fuera del cierre actual. |
+| ADR-014 | 2026-07-14/17 | Catálogos SAT se importan y versionan localmente; no hay consulta remota en ejecución. | [`../architecture/CATALOGOS_SAT.md`](../architecture/CATALOGOS_SAT.md) | Facturación y Cotizaciones consumen una fuente local reproducible. |
+| ADR-015 | 2026-07-10 | Control Documental V1 queda sellado con el diseñador deshabilitado. | cierre V1 en `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`, auditoría 2026-07-21 | El diseñador general no es pendiente de V1. |
+| ADR-016 | 2026-07 | Liquid Glass y componentes compartidos son el lenguaje UX vigente. | implementación frontend y cierres visuales | Modales y workbenches nuevos deben reutilizar componentes; alertas nativas son deuda. |
+| ADR-017 | 2026-07 | Los documentos internos de Facturación se ocultan de la vista ordinaria, pero se conservan para soporte/auditoría protegida. | auditoría de Facturación y UI vigente | No se eliminan archivos fiscales ni trazabilidad. |
+| ADR-018 | 2026-07 | El reset de desarrollo tiene una única implementación y exige frase de confirmación. | `AGENTS.md` y Toolkit vigente | No se duplican rutas destructivas. |
+| ADR-019 | 2026-07-21 | [`DOCUMENTATION_INDEX.md`](DOCUMENTATION_INDEX.md) es la entrada única; [`PROJECT_STATUS.md`](PROJECT_STATUS.md) es la única autoridad de avance. | reorganización documental | Auditorías, cierres y archivos no pueden volver a declarar el estado actual. |
+| ADR-020 | 2026-07 | MDE permanece como Diseño futuro. | `architecture/future/MDE_SPEC.md` | No genera pendientes actuales ni sustituye renderizadores existentes hasta decisión posterior. |
+| ADR-021 | 2026-07-21 | La documentación es parte obligatoria de cada cambio y se actualiza en el mismo trabajo sin requerir solicitud adicional. | `AGENTS.md` y `DOCUMENTATION_INDEX.md` | Cada tarea enruta sus impactos al canon, arquitectura, módulo, auditoría o cierre correspondiente y reporta `## Documentación actualizada`. |
+| ADR-022 | 2026-07-21 | Paquete de Captura consume hojas técnicamente terminadas (`completed`, `under_review`, `approved`) y organiza entregables por ETS/OT/certificado. | diagnóstico real del ETS 1 y `modules/captura/PAQUETE_CAPTURA.md` | Enviar a Captura no vuelve inelegible la hoja y el ZIP mantiene una jerarquía institucional estable. |
+| ADR-023 | 2026-07-21 | La carga del Master persiste su diagnóstico y activa `capture_in_progress`; no modifica el `match_status` legacy y el frontend debe refrescar y mostrar la respuesta inmediatamente. | diagnóstico del POST `/service-orders/{id}/capture-files` y módulo de Captura | Se evita confundir identificación del Excel con estados documentales legacy y se elimina la dependencia de recargar la página. |
+| ADR-024 | 2026-07-21 | El documento revisado en Captura→Calidad es el Master XLSX identificado; el PDF final se genera posteriormente durante la autenticación, no se carga manualmente antes de Calidad. | decisión funcional y validación real del Master | Captura elimina carga/indicadores PDF, Calidad descarga el XLSX y warnings no bloquean mientras diferencias explícitas sí. |
+| ADR-025 | 2026-07-21 | El tipo acreditado/trazable se detecta identificando la plantilla contra el snapshot Master registrado, no comparando claves internas con texto documental. | corrección semántica y pruebas del fingerprint | Cada nueva plantilla se incorpora vinculando su snapshot al alcance de calibración; el parser reutiliza el mismo extractor y umbral sin duplicar reglas por archivo. |
+| ADR-026 | 2026-07-21 | Aprobar y autenticar son operaciones separadas: Calidad aprueba el Master y, sólo desde `quality_approved`/`approved`, Autenticar convierte ese XLSX a PDF, aplica el sello vigente y persiste `authenticated`. La aprobación es la única compuerta; no se consulta PDF previo ni matching PDF–Excel. | corrección Calidad→Autenticación y validación HTTP reversible del certificado `1` | Se conserva el Master como fuente aprobada y su referencia en auditoría; los contadores y tarjetas se refrescan desde el estado persistido. |
+| ADR-027 | 2026-07-21 | La dependencia LibreOffice se resuelve de forma multiplataforma mediante `LIBREOFFICE_EXECUTABLE`, comandos `soffice`/`libreoffice` en `PATH` y rutas comunes de macOS, Windows o Linux; el alias `OFFICE_CONVERTER_BINARY` se conserva. | diagnóstico macOS, servicio central y Doctor | Ningún despliegue depende de una ruta única y la ausencia del convertidor se detecta al arrancar o ejecutar Doctor, antes de autenticar. |
+| ADR-028 | 2026-07-21 | `match_status` deja de ser compuerta de Certificados/Liberación. `authenticated` más PDF autenticado existente constituye readiness documental; la regla financiera vigente decide si Liberar está habilitado. | corrección Certificados→Liberación y pruebas con `match_status=pending` | Los históricos autenticados no requieren backfill; “Listo para liberar”, “Pendiente de pago” y “Liberado” son estados derivados distintos. |
+| ADR-029 | 2026-07-21 | El Workbench de Facturación tiene un único controlador frontend reutilizable; `BillingPage` compone la vista global y los consumidores abren por contexto explícito `invoice_id`/`service_order_id`, sin `localStorage` ni controladores paralelos. | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) y Sprint 1 de Facturación | La futura pestaña ETS debe reutilizar el hook, `Invoice`, el endpoint filtrable y `InvoiceWorkbenchDialog`; no debe duplicar payload, emisión, descargas ni refresco. |
+
+## Decisiones expresamente no confirmadas
+
+- Implementar CRM/Leads, Agenda y Llamados autónomos dentro de 1.0.
+- Incluir Google Drive en 1.0.
+- Habilitar el diseñador MDE o sustituir todos los PDFs existentes.
+- Retirar modelos metrológicos ocultos o declararlos obsoletos sólo porque hoy no tienen datos.
+
+Estas cuestiones deben resolverse modificando [`CURRENT_SCOPE.md`](CURRENT_SCOPE.md); ningún documento histórico puede resolverlas por inferencia.

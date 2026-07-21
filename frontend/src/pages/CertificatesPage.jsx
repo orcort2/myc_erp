@@ -16,6 +16,7 @@ import {
   listServiceOrders
 } from '../services/api.js';
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
+import { getCertificateReleasePresentation } from '../utils/etsStages.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 
 function triggerDownload(blob, filename) {
@@ -95,6 +96,14 @@ export default function CertificatesPage() {
     };
   }
 
+  function releaseGroupState(items) {
+    const readiness = readinessByOrderId.get(items[0]?.service_order_id);
+    return getCertificateReleasePresentation({
+      released: items.every((item) => ['released_to_client', 'released'].includes(item.status)),
+      releaseReadiness: readiness,
+    });
+  }
+
   async function openAuthenticatedPdf(certificate) {
     const pdfWindow = window.open('', '_blank');
     if (!pdfWindow) {
@@ -147,13 +156,9 @@ export default function CertificatesPage() {
   }
 
   function releaseCertificate(certificate) {
-    if (!['matched', 'warning', 'manual_accepted'].includes(certificate.match_status)) {
-      setError('No se puede liberar: el certificado no tiene un match aceptado por Calidad.');
-      return;
-    }
     const readiness = readinessByOrderId.get(certificate.service_order_id);
-    if (readiness && !readiness.release_allowed) {
-      setError(readiness.reason);
+    if (!readiness?.release_allowed) {
+      setError(readiness?.reason || 'Aún se está validando la condición financiera del ETS.');
       return;
     }
     openConfirm({
@@ -180,9 +185,7 @@ export default function CertificatesPage() {
     const { client, item } = context(certificate);
     const released = ['released_to_client', 'released'].includes(certificate.status);
     const readiness = readinessByOrderId.get(certificate.service_order_id);
-    const blockedReason = !released && !['matched', 'warning', 'manual_accepted'].includes(certificate.match_status)
-      ? 'No se puede liberar: el match no fue aceptado por Calidad.'
-      : !released && readiness && !readiness.release_allowed ? readiness.reason : '';
+    const releasePresentation = getCertificateReleasePresentation({ released, releaseReadiness: readiness });
     return (
       <article className="flow-certificate-card" key={certificate.id}>
         <button className="flow-certificate-card__primary" onClick={() => openAuthenticatedPdf(certificate)} type="button">
@@ -190,11 +193,11 @@ export default function CertificatesPage() {
           <dl><div><dt>Cliente</dt><dd>{getClientDisplayName(client)}</dd></div><div><dt>Equipo</dt><dd>{item?.name || '-'}</dd></div><div><dt>Serie</dt><dd>{item?.serial_number || item?.internal_id || '-'}</dd></div><div><dt>Tipo</dt><dd>{certificateTypeLabels[certificate.certificate_type] ?? certificate.certificate_type}</dd></div><div><dt>Autenticación</dt><dd>{certificate.authentication_code || '-'}</dd></div><div><dt>Fecha</dt><dd>{formatDateTime(certificate.authenticated_pdf_generated_at)}</dd></div></dl>
           <span className="flow-primary-hint"><Eye size={15} /> Ver PDF autenticado</span>
         </button>
-        {blockedReason ? <div className="flow-release-blocked">{blockedReason}</div> : null}
+        <div className={releasePresentation.status === 'blocked' ? 'flow-release-blocked' : 'flow-release-ready'}>{releasePresentation.message}</div>
         <div className="toolbar-actions">
           <button className="table-button" disabled={Boolean(loadingAction)} onClick={() => downloadAuthenticated(certificate)} type="button"><Download size={14} /> Descargar</button>
           <button className="table-button" onClick={() => openAuthentication(certificate)} type="button"><ShieldCheck size={14} /> Ver autenticación</button>
-          {released ? <span className="flow-action-complete">Liberado</span> : <button className="table-button table-button--primary" disabled={Boolean(loadingAction) || Boolean(blockedReason)} onClick={() => releaseCertificate(certificate)} title={blockedReason || undefined} type="button">Liberar</button>}
+          {released ? <span className="flow-action-complete">Liberado</span> : <button className="table-button table-button--primary" disabled={Boolean(loadingAction) || !releasePresentation.canRelease} onClick={() => releaseCertificate(certificate)} title={releasePresentation.canRelease ? 'Liberar al cliente' : releasePresentation.message} type="button">Liberar</button>}
         </div>
       </article>
     );
@@ -206,14 +209,14 @@ export default function CertificatesPage() {
       {error ? <div className="form-error dashboard-error">{error}</div> : null}
       {notice ? <div className="form-notice dashboard-error">{notice}</div> : null}
       <section className="operations-band certificates-summary">
-        <div className="operations-band__metric"><strong>{isLoading ? '-' : authenticatedCertificates.filter((item) => item.status === 'authenticated').length}</strong><span>Disponibles</span></div>
+        <div className="operations-band__metric"><strong>{isLoading ? '-' : authenticatedCertificates.filter((item) => item.status === 'authenticated').length}</strong><span>Listos para liberar</span></div>
         <div className="operations-band__metric"><strong>{isLoading ? '-' : authenticatedCertificates.filter((item) => ['released_to_client', 'released'].includes(item.status)).length}</strong><span>Liberados</span></div>
         <div className="operations-band__metric"><strong>{isLoading ? '-' : authenticatedCertificates.length}</strong><span>Total autenticados</span></div>
       </section>
-      <div className="module-tabs" role="tablist"><button className={activeTab === 'available' ? 'module-tab is-active' : 'module-tab'} onClick={() => setActiveTab('available')} type="button">Disponibles</button><button className={activeTab === 'released' ? 'module-tab is-active' : 'module-tab'} onClick={() => setActiveTab('released')} type="button">Liberados</button></div>
+      <div className="module-tabs" role="tablist"><button className={activeTab === 'available' ? 'module-tab is-active' : 'module-tab'} onClick={() => setActiveTab('available')} type="button">Listos para liberar</button><button className={activeTab === 'released' ? 'module-tab is-active' : 'module-tab'} onClick={() => setActiveTab('released')} type="button">Liberados</button></div>
       <section className="clients-list-panel">
-        <div className="section-heading"><div><p>ETS y Órdenes de Trabajo</p><h2>{displayedCertificates.length} certificados {activeTab === 'released' ? 'liberados' : 'disponibles'}</h2></div></div>
-        {isLoading ? <div className="clients-empty">Cargando certificados autenticados...</div> : <WorkOrderFlowGroups emptyMessage="No hay certificados autenticados en esta vista." equipmentById={equipmentById} getGroupState={(items) => items.every((item) => ['released_to_client', 'released'].includes(item.status)) ? { label: 'LISTA', tone: 'released' } : { label: 'DISPONIBLE', tone: 'authenticated' }} items={displayedCertificates} orders={orders} renderItem={renderCertificate} />}
+        <div className="section-heading"><div><p>ETS y Órdenes de Trabajo</p><h2>{displayedCertificates.length} certificados {activeTab === 'released' ? 'liberados' : 'listos para liberar'}</h2></div></div>
+        {isLoading ? <div className="clients-empty">Cargando certificados autenticados...</div> : <WorkOrderFlowGroups emptyMessage="No hay certificados autenticados en esta vista." equipmentById={equipmentById} getGroupState={releaseGroupState} items={displayedCertificates} orders={orders} renderItem={renderCertificate} />}
       </section>
 
       {selectedCertificate ? (

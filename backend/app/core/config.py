@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,11 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5174",
     ]
     storage_root: str = "storage"
+    libreoffice_executable: str = Field(
+        default="",
+        validation_alias=AliasChoices("LIBREOFFICE_EXECUTABLE", "OFFICE_CONVERTER_BINARY"),
+    )
+    office_converter_timeout_seconds: float = Field(default=60, gt=0)
     public_verify_base_url: str = "https://api-erp.mycmetrology.com.mx"
     facturama_enabled: bool = False
     facturama_environment: Literal["sandbox", "production"] = "sandbox"
