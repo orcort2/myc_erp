@@ -10,6 +10,7 @@ import {
   emptyEquipmentForm,
   emptyFieldSheetForm
 } from '../constants/forms.js';
+import { calibrationScopeOptions } from '../constants/catalog.js';
 import {
   serviceOrderStatusLabels,
   equipmentStatusLabels,
@@ -69,7 +70,6 @@ import {
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { getCaptureMasterReadiness } from '../utils/captureMasters.js';
-import { buildInvoiceWorkbenchPath } from '../utils/invoiceWorkbenchContext.js';
 import { navigate } from '../utils/routing.js';
 import {
   getFieldSheetTemplate,
@@ -98,6 +98,7 @@ import { suggestOfficialFieldSheetTemplate } from '../utils/fieldSheetTemplateRe
 import { formatDate, formatDateTime, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
+import EtsBillingTab from '../components/ets-billing/EtsBillingTab.jsx';
 
 function safeNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -153,11 +154,9 @@ function stageFromPaymentReadiness(readiness, isPaid) {
 }
 
 
-const calibrationScopeLabels = {
-  traceable: 'Trazable',
-  accredited_iso_17025: 'Acreditado ISO/IEC 17025',
-  accredited_linked_lab: 'Vinculado',
-};
+const calibrationScopeLabels = Object.fromEntries(
+  calibrationScopeOptions.map(({ value, label }) => [value, label]),
+);
 
 const calibrationScopeBadgeLabels = {
   traceable: 'Trazables',
@@ -201,6 +200,7 @@ function ServiceOrdersPage({ user = null }) {
   const [exceptionReason, setExceptionReason] = useState('');
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [activeTab, setActiveTab] = useState('info');
+  const [isBillingTabMounted, setIsBillingTabMounted] = useState(false);
   const [fieldSheetTab, setFieldSheetTab] = useState('info');
   const [orderFilter, setOrderFilter] = useState('all');
   const [etsSearch, setEtsSearch] = useState('');
@@ -924,6 +924,12 @@ function ServiceOrdersPage({ user = null }) {
     setActiveTab(tab);
   }
 
+  useEffect(() => {
+    if (activeTab === 'billing') {
+      setIsBillingTabMounted(true);
+    }
+  }, [activeTab]);
+
   function clearWorkOrderContext() {
     setSelectedWorkOrderContext(null);
   }
@@ -1181,6 +1187,7 @@ function ServiceOrdersPage({ user = null }) {
       clientAcceptanceSignature: order.client_acceptance_signature_data_url ?? '',
     });
     setActiveTab('info');
+    setIsBillingTabMounted(false);
     setFieldSheetWorkspaceView('capture');
     setExpandedFieldSheetWorkOrders(new Set());
     setEtsSearch('');
@@ -1213,6 +1220,7 @@ function ServiceOrdersPage({ user = null }) {
     setFieldSheetForm(emptyFieldSheetForm);
     setEditingEquipmentId(null);
     setActiveTab('info');
+    setIsBillingTabMounted(false);
     setEtsSearch('');
     setSelectedWorkOrderContext(null);
     setExitingEquipmentIds([]);
@@ -3457,40 +3465,13 @@ function ServiceOrdersPage({ user = null }) {
               </section>
             ) : null}
 
-            {activeTab === 'billing' ? (
-              <section className="quotation-section">
-                <div className="quotation-section__title">
-                  <p>Facturacion</p>
-                  <h3>Control administrativo del ETS</h3>
-                </div>
-                <div className="quotation-commercial-grid service-order-info-grid">
-                  <article>
-                    <span>Requiere pago</span>
-                    <strong>{selectedOrder.requires_payment ? 'Si' : 'No'}</strong>
-                  </article>
-                  <article>
-                    <span>Estado administrativo</span>
-                    <strong>{selectedOrder.status === 'pending_payment' ? 'Facturacion pendiente' : 'Sin bloqueo administrativo'}</strong>
-                  </article>
-                  <article>
-                    <span>Certificados liberados</span>
-                    <strong>{selectedCertificates.filter((certificate) => certificate.status === 'released_to_client').length}</strong>
-                  </article>
-                </div>
-                <div className="settings-filters__actions">
-                  <button
-                    className="primary-button"
-                    onClick={() => {
-                      navigate(buildInvoiceWorkbenchPath({
-                        service_order_id: selectedOrder.id,
-                      }));
-                    }}
-                    type="button"
-                  >
-                    Crear factura
-                  </button>
-                </div>
-              </section>
+            {activeTab === 'billing' || isBillingTabMounted ? (
+              <div
+                className="ets-billing-tab-slot"
+                hidden={activeTab !== 'billing'}
+              >
+                <EtsBillingTab serviceOrderId={selectedOrder.id} />
+              </div>
             ) : null}
           </section>
         </div>

@@ -21,7 +21,7 @@ from app.services.certificates import (
 from app.services.service_orders import (
     change_status,
     close_service_order,
-    create_service_order,
+    create_service_order as create_service_order_service,
     deactivate_service_order,
     get_service_order,
     list_service_orders,
@@ -579,7 +579,7 @@ def post_service_order(
     payload: ServiceOrderCreate,
     db: Session = Depends(get_db),
 ) -> ServiceOrderRead:
-    return create_service_order(db, payload)
+    return create_service_order_service(db, payload)
 
 
 @router.get("/{service_order_id}", response_model=ServiceOrderRead)

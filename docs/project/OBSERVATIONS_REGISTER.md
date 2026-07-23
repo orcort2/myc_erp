@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de pendientes en auditorías, cierres, bitácoras y documentos archivados
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Registro consolidado de observaciones
 
@@ -60,6 +60,7 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-042 | Integraciones | Google Drive no existe y Facturama se limita a Sandbox. | pendiente | Auditoría integral 2026-07-21 |
 | OBS-043 | ETS/Calidad/Certificados UX | Se implementaron y verificaron por estructura/build el orden de pestañas, el flujo vertical del aviso financiero, la presentación única `Pendiente de pago`/`Listo para liberar` y el estilo compartido de Autenticar. Falta únicamente la comprobación visual autenticada en varios anchos: la sesión local disponible sólo mostró Login y no existen credenciales de prueba documentadas. | parcial | Correcciones UX y consistencia de estados 2026-07-21 |
 | OBS-044 | Calidad/UX | Navegación Anterior/Siguiente implementada con el patrón de Clientes, contexto OT→ETS→lista visible, carga protegida, reintento y refresco sin cerrar después de acciones. El recorrido unitario `1→2→3→2`, límites y build quedaron verificados; falta E2E autenticado porque la base actual no contiene certificados visibles en Calidad y el navegador local sólo presenta Login. | parcial | Navegación consecutiva de Calidad 2026-07-21 |
+| OBS-045 | Excepciones transversales | La auditoría de 60 escenarios confirmó que la acción denominada excepción ETS ejecuta cambio de etapa y resincronización en la solicitud, sin estados independientes de aprobación y ejecución. También faltan excepciones coordinadas de alcance/firma/equipo, corrección de pago y liberación financiera; cancelación/sustitución CFDI deben permanecer como flujos fiscales propios y no como bypass genérico. | pendiente | `../auditorias/AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md` 2026-07-22 |
 
 ## Observaciones resueltas que deben conservar trazabilidad
 
@@ -86,6 +87,10 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R19 | Infraestructura/Calidad | El conversor sólo se resolvía desde un valor `soffice`/PATH y fallaba fuera del runtime que lo aportaba. Ahora acepta configuración explícita, PATH y rutas comunes de macOS/Windows/Linux; Doctor y startup informan ruta/versión, y un fallo no muta el certificado. | resuelta | Corrección multiplataforma de LibreOffice 2026-07-21 |
 | OBS-R20 | Certificados/Liberación | Certificados autenticados con `match_status=pending` quedaban bloqueados en backend, Certificados y ETS. La liberación ahora exige sólo estado/archivo autenticado y compuerta financiera; la UI distingue Listo para liberar, Pendiente de pago y Liberado. | resuelta | Corrección de readiness documental 2026-07-21 |
 | OBS-R21 | Facturación/Arquitectura | `BillingPage.jsx` era el único propietario de apertura, borrador, emisión, documentos y refresco, y la navegación contextual dependía de `localStorage`. El Sprint 1 extrajo un controlador único reutilizable, contexto explícito por factura/ETS y filtro opcional del listado existente, sin cambiar reglas ni UI. | resuelta | Sprint 1 del Workbench y arquitectura vigente 2026-07-21 |
+| OBS-R22 | ETS/Facturación | El placeholder administrativo del ETS fue sustituido por un resumen contextual de `Invoice` que cubre ausencia, borrador, timbrada y cancelada; creación, edición, guardado, emisión, PDF y XML reutilizan el controlador y diálogo únicos del Sprint 1. | resuelta | Sprint 2A de Facturación contextual 2026-07-22 |
+| OBS-R23 | ETS/Facturación UX | `contextInvoice=null` se interpretaba como “Sin factura” durante la ventana entre carga de dependencias y resolución contextual, y el bloque provisional tenía menor altura. Ahora `contextLoading/contextResolved` separan los tres estados, un bloque estable evita el salto y la pestaña permanece montada al alternar carpetas del mismo ETS. | resuelta | Corrección de parpadeo Sprint 2A 2026-07-22 |
+| OBS-R24 | Catálogo/ETS/Certificados | El schema de respuesta sustituyó `accredited_iso_17025` por el texto documental `Certificado / Certificate: L25-313`, mientras la base conservó la clave canónica, causando HTTP 500 en `GET /api/catalog-items`. Se centralizaron las tres modalidades, se alinearon schemas/capacidad/frontend/datos y se añadió normalización defensiva. | resuelta | Corrección del contrato `calibration_scope` 2026-07-22 |
+| OBS-R25 | Catálogo/Cotizaciones/ETS | Servicios Simples y Compuestos usan `service_kind` y una relación padre-hijo normalizada. La cotización conserva el padre único y la creación del ETS expande hojas, cantidades y OTs sin duplicar lógica downstream; autorreferencia, ciclos, mínimos y compatibilidad simple quedaron cubiertos por pruebas. | resuelta | Servicios Compuestos y arquitectura vigente 2026-07-22 |
 
 ## Regla de cierre
 

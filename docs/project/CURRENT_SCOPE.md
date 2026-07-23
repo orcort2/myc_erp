@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Alcance actual del ERP MYC
 
@@ -19,12 +19,12 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Autenticación, usuarios, roles estáticos y auditoría.
 - Dashboard y navegación principal.
 - Clientes, contactos dependientes, datos fiscales, constancias e importación/exportación.
-- Cotizaciones, catálogo de conceptos embebido, snapshots y PDF.
+- Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
 - ETS/Servicios, hitos de agenda/llamado, equipos, Órdenes de Trabajo y firmas por ciclo.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad, revisión consecutiva de certificados por contexto OT/ETS, autenticación, verificación pública y liberación.
 - Control Documental V1 y Plantillas Maestras de Certificado.
-- Facturación, cobranza administrativa, Facturama Sandbox, XML y PDF institucional.
+- Facturación, resumen contextual dentro del ETS, Workbench compartido, cobranza administrativa, Facturama Sandbox, XML y PDF institucional.
 - Catálogos SAT locales versionados.
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
@@ -37,7 +37,7 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - **Contactos:** relación dependiente de Cliente; no hay agenda autónoma de contactos.
 - **Agenda:** fecha e información dentro del ETS; no hay entidad/calendario/folio propio.
 - **Llamados:** hito y transición dentro del ETS; no hay módulo ni bitácora autónoma.
-- **Catálogo MYC:** backend y consumo desde Cotizaciones/Facturación; navegación independiente no vigente.
+- **Catálogo MYC:** backend y editor embebido desde Cotizaciones, incluido el modelo normalizado de Servicios Compuestos; navegación independiente y autorización uniforme todavía no vigentes.
 - **Portal de cliente:** backend sin aislamiento por tenant ni experiencia visible.
 - **Google Drive:** mencionado como integración objetivo, sin implementación.
 

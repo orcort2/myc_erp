@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.folios import FolioRequest, generate_folio
 from app.models.client import Client
+from app.models.catalog_item import CatalogItem
 from app.models.quotation import Quotation
 from app.models.service_order import (
     ServiceOrder,
@@ -23,6 +24,7 @@ from app.schemas.service_order import (
     ServiceOrderUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.catalog_items import expand_catalog_item_for_operations
 
 
 
@@ -154,6 +156,124 @@ def _build_work_orders_for_service_order(db: Session, service_order: ServiceOrde
     ]
 
 
+def _service_order_items_from_quotation(
+    db: Session,
+    quotation: Quotation,
+) -> tuple[list[ServiceOrderItem], list[dict]]:
+    operational_items: list[ServiceOrderItem] = []
+    expansion_log: list[dict] = []
+
+    for quotation_item in quotation.items:
+        if not quotation_item.is_active:
+            continue
+
+        snapshot = quotation_item.operational_snapshot or {}
+        snapshot_items = snapshot.get("operational_items") or []
+
+        if snapshot_items:
+            expanded_items: list[dict] = []
+
+            for snapshot_item in snapshot_items:
+                quantity_per_commercial_unit = int(
+                    snapshot_item.get("quantity", 1)
+                )
+                operational_quantity = (
+                    quantity_per_commercial_unit
+                    * int(quotation_item.quantity)
+                )
+
+                item_values = {
+                    "catalog_item_id": snapshot_item.get("catalog_item_id"),
+                    "service_name": (
+                        snapshot_item.get("service_name")
+                        or quotation_item.service_name
+                    ),
+                    "calibration_scope": snapshot_item.get(
+                        "calibration_scope"
+                    ),
+                    "quantity": operational_quantity,
+                    "status": snapshot_item.get("status", "pending"),
+                }
+
+                operational_items.append(
+                    ServiceOrderItem(
+                        quotation_item_id=quotation_item.id,
+                        **item_values,
+                    )
+                )
+                expanded_items.append(item_values)
+
+            if snapshot.get("service_kind") == "composite":
+                expansion_log.append(
+                    {
+                        "quotation_item_id": quotation_item.id,
+                        "commercial_catalog_item_id": snapshot.get(
+                            "commercial_catalog_item_id"
+                        ),
+                        "commercial_service_name": (
+                            snapshot.get("commercial_service_name")
+                            or quotation_item.service_name
+                        ),
+                        "commercial_quantity": quotation_item.quantity,
+                        "snapshot_schema_version": snapshot.get(
+                            "schema_version"
+                        ),
+                        "operational_items": expanded_items,
+                    }
+                )
+
+            continue
+
+        # Compatibilidad temporal para partidas creadas antes de incorporar
+        # operational_snapshot. Las partidas manuales también entran aquí.
+        catalog_item = (
+            db.get(CatalogItem, quotation_item.catalog_item_id)
+            if quotation_item.catalog_item_id is not None
+            else None
+        )
+
+        if catalog_item is None or catalog_item.service_kind == "simple":
+            operational_items.append(
+                ServiceOrderItem(
+                    quotation_item_id=quotation_item.id,
+                    catalog_item_id=quotation_item.catalog_item_id,
+                    service_name=quotation_item.service_name,
+                    calibration_scope=quotation_item.calibration_scope,
+                    quantity=quotation_item.quantity,
+                    status="pending",
+                )
+            )
+            continue
+
+        legacy_expanded = expand_catalog_item_for_operations(
+            db,
+            catalog_item.id,
+            quotation_item.quantity,
+        )
+
+        for item_values in legacy_expanded:
+            operational_items.append(
+                ServiceOrderItem(
+                    quotation_item_id=quotation_item.id,
+                    **item_values,
+                )
+            )
+
+        expansion_log.append(
+            {
+                "quotation_item_id": quotation_item.id,
+                "commercial_catalog_item_id": catalog_item.id,
+                "commercial_service_name": quotation_item.service_name,
+                "commercial_quantity": quotation_item.quantity,
+                "snapshot_schema_version": None,
+                "legacy_catalog_expansion": True,
+                "operational_items": legacy_expanded,
+            }
+        )
+
+    return operational_items, expansion_log
+
+
 def list_service_orders(
     db: Session, *, include_inactive: bool = False
 ) -> list[ServiceOrder]:
@@ -232,22 +352,15 @@ def create_service_order(
         status="scheduled",
     )
 
+    expansion_log: list[dict] = []
     if payload.items:
         service_order.items = [
             ServiceOrderItem(**item.model_dump()) for item in payload.items
         ]
     elif quotation is not None:
-        service_order.items = [
-            ServiceOrderItem(
-                quotation_item_id=item.id,
-                service_name=item.service_name,
-                calibration_scope=item.calibration_scope,
-                quantity=item.quantity,
-                status="pending",
-            )
-            for item in quotation.items
-            if item.is_active
-        ]
+        service_order.items, expansion_log = _service_order_items_from_quotation(
+            db, quotation
+        )
 
     db.add(service_order)
     db.flush()
@@ -276,6 +389,7 @@ def create_service_order(
             "client_id": service_order.client_id,
             "quotation_id": service_order.quotation_id,
             "status": service_order.status,
+            "composite_service_expansions": expansion_log,
         },
     )
     db.commit()

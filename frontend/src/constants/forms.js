@@ -61,6 +61,8 @@ export const emptyProductForm = {
   internalKey: '',
   name: '',
   type: 'Servicio',
+  serviceKind: 'simple',
+  components: [],
   calibrationScope: 'traceable',
   quotationLegend: '',
   satKey: '',

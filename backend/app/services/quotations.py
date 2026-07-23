@@ -16,6 +16,7 @@ from app.schemas.quotation import (
     QuotationUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.catalog_items import expand_catalog_item_for_operations
 
 TERMINAL_STATUSES = {"accepted", "rejected", "expired", "cancelled"}
 ALLOWED_TRANSITIONS = {
@@ -71,6 +72,35 @@ def _get_catalog_item(db: Session, catalog_item_id: int | None) -> CatalogItem |
         )
     return item
 
+def _build_operational_snapshot(
+    db: Session,
+    catalog_item: CatalogItem,
+) -> dict:
+    if catalog_item.service_kind == "composite":
+        operational_items = expand_catalog_item_for_operations(
+            db,
+            catalog_item.id,
+            1,
+        )
+    else:
+        operational_items = [
+            {
+                "catalog_item_id": catalog_item.id,
+                "service_name": catalog_item.name,
+                "calibration_scope": catalog_item.calibration_scope,
+                "quantity": 1,
+                "status": "pending",
+            }
+        ]
+
+    return {
+        "schema_version": 1,
+        "service_kind": catalog_item.service_kind,
+        "commercial_catalog_item_id": catalog_item.id,
+        "commercial_service_name": catalog_item.name,
+        "operational_items": operational_items,
+    }
+
 
 def _quotation_item_values(
     db: Session,
@@ -81,6 +111,10 @@ def _quotation_item_values(
     values = payload.model_dump(exclude_unset=True)
     catalog_item = _get_catalog_item(db, values.get("catalog_item_id"))
     if catalog_item is not None:
+        values["operational_snapshot"] = _build_operational_snapshot(
+            db,
+            catalog_item,
+        )    
         values.setdefault("service_name", catalog_item.name)
         values.setdefault("description", catalog_item.description)
         values.setdefault(
@@ -107,13 +141,18 @@ def _quotation_item_values(
         values["tax_rate"] = Decimal("16.00")
     if existing_item is None and values.get("discount_percent") is None:
         values["discount_percent"] = Decimal("0.00")
-    if existing_item is not None and "catalog_item_id" in values and values["catalog_item_id"] is None:
+    if (
+        existing_item is not None
+        and "catalog_item_id" in values
+        and values["catalog_item_id"] is None
+    ):
         values["commodity"] = None
         values["calibration_scope"] = None
         values["quotation_legend"] = None
         values["sat_key"] = None
         values["sat_unit"] = None
         values["internal_unit"] = None
+        values["operational_snapshot"] = None        
     if existing_item is None and not values.get("service_name"):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -153,6 +192,7 @@ def _quotation_snapshot_data(quotation: Quotation) -> dict:
                 {
                     "id": item.id,
                     "catalog_item_id": item.catalog_item_id,
+                    "operational_snapshot": item.operational_snapshot,
                     "service_name": item.service_name,
                     "description": item.description,
                     "quantity": item.quantity,

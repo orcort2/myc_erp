@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.service_scope import ServiceScope
+
 
 EquipmentStatus = Literal[
     "registered",
@@ -18,7 +20,7 @@ class EquipmentBase(BaseModel):
     service_order_id: int
     work_order_id: int | None = None
     service_order_item_id: int | None = None
-    calibration_scope: str | None = Field(default=None, max_length=60)
+    calibration_scope: ServiceScope | None = None
     certificate_master_document_id: int | None = None
     name: str = Field(min_length=1, max_length=180)
     brand: str | None = Field(default=None, max_length=120)
@@ -37,7 +39,7 @@ class EquipmentCreate(EquipmentBase):
 class EquipmentUpdate(BaseModel):
     work_order_id: int | None = None
     service_order_item_id: int | None = None
-    calibration_scope: str | None = Field(default=None, max_length=60)
+    calibration_scope: ServiceScope | None = None
     certificate_master_document_id: int | None = None
     name: str | None = Field(default=None, min_length=1, max_length=180)
     brand: str | None = Field(default=None, max_length=120)

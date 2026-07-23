@@ -10,7 +10,7 @@
 >
 > Historial anterior: `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte actualizado: 2026-07-21
+> Corte actualizado: 2026-07-22
 
 # Estado operativo actual del ERP MYC
 
@@ -27,20 +27,22 @@ Este archivo contiene únicamente el corte verificable vigente requerido por las
 ## Persistencia y migraciones
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y head verificados en la última auditoría integral: `fd5e6f7a8b9c`.
+- Revisión aplicada y head verificados: `ff7a8b9c0d1e`.
 - Cadena Alembic: un único head; no se identificó migración pendiente en el corte auditado.
 - Tablas verificadas: 55.
 - Catálogos SAT: 16 versiones activas y 151,229 registros en el corte auditado.
-- Último respaldo SQL operativo documentado: `backup_erp_myc_antes_prueba.sql`, alineado entonces con `fd5e6f7a8b9c`.
+- Último respaldo SQL operativo documentado: `backup_erp_myc_antes_prueba.sql`, regenerado y alineado con `ff7a8b9c0d1e`.
 
-Esta actualización de gobernanza documental no modificó esquema ni datos. No corresponde regenerar el respaldo SQL.
+La migración `fe6f7a8b9c0d` normalizó `calibration_scope` en catálogo, partidas de cotización/ETS, equipos, interpretaciones y perfiles técnicos. La base local no contenía el texto documental ni `special`; el perfil técnico legacy `accredited` quedó como `accredited_iso_17025`. El respaldo SQL fue regenerado después de aplicar la revisión.
+
+La migración `ff7a8b9c0d1e` agregó `catalog_items.service_kind`, la relación normalizada `catalog_item_components` y el vínculo operativo `service_order_items.catalog_item_id`. Todos los conceptos existentes quedaron como `simple` mediante `server_default`; no se reescribieron cotizaciones ni ETS históricos.
 
 ## Validaciones vigentes conocidas
 
 - Suite backend de este corte: 102 pruebas correctas y 7 subpruebas parametrizadas.
 - Build frontend de este corte: correcto; permanece advertencia de chunk principal de 859.65 kB.
-- `alembic current`: `fd5e6f7a8b9c (head)` en la última verificación documentada.
-- Gobernanza documental actual: 38 documentos Markdown clasificados; el contrato de autenticación de Calidad quedó incorporado al índice único.
+- `alembic current`: `ff7a8b9c0d1e (head)` verificado el 2026-07-22.
+- Gobernanza documental actual: 43 documentos clasificados en la sección Documentación del inventario; los contratos de Calidad, Workbench contextual, acreditación y Servicios Compuestos están incorporados al índice único.
 - El generador del inventario fue ejecutado dos veces y produjo el mismo checksum, confirmando regeneración idempotente con preservación de filas revisadas.
 - `git diff --check`: correcto.
 
@@ -65,6 +67,34 @@ Estas validaciones tienen fecha de corte 2026-07-21 y no deben presentarse como 
 - Bitácora histórica completa: [`archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`](archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md).
 
 ## Actualización de esta tarea
+
+- Servicios Compuestos implementados con tabla padre-hijo normalizada, cantidades enteras y validaciones de servicio activo, mínimo, duplicado, autorreferencia y ciclos. No se usaron JSON ni componentes duplicados en la cotización.
+- Cotización y Facturación conservan un único concepto comercial. La creación canónica del ETS expande recursivamente sólo las hojas simples, conserva `quotation_item_id`, registra el `catalog_item_id` operativo y reutiliza el conteo vigente de OTs, Equipos, Hojas y Certificados.
+- El Catálogo embebido permite seleccionar Servicio Simple/Compuesto, administrar componentes y cantidades y visualizar la composición; la importación existente continúa creando conceptos simples.
+- Migración aplicada: `ff7a8b9c0d1e (head)`. Respaldo `backup_erp_myc_antes_prueba.sql` regenerado, 74,039,801 bytes, SHA-256 `165687bd0be9a6276494f8c395ebe4714b139d4f9528b7c9a9b2f9df9a286600`; su `alembic_version` es `ff7a8b9c0d1e`.
+- Validaciones: 14 pruebas focalizadas correctas; suite `unittest discover` completa de 88 pruebas correcta; build Vite correcto con 1,664 módulos. Permanece la advertencia conocida por chunk principal de 871.51 kB.
+- `alembic check` confirmó que las tablas y columnas de Servicios Compuestos están aplicadas, pero continúa fallando por deriva histórica ajena a esta migración en índices, constraints y columnas legacy. Se registró como `TD-021`; no se generó una migración masiva automática.
+
+- Se completó una auditoría estática y no mutante de 60 escenarios de excepción en todos los módulos solicitados. El entregable está en `docs/auditorias/AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md` y contiene matriz de 25 columnas, catálogo, dependencias, diseño futuro, preguntas, fases y archivos revisados.
+- Hallazgo central: `register_service_order_exception` no representa todavía una aprobación controlada; modifica el estado ETS y resincroniza borradores durante la solicitud. Se documentó como P0 la separación obligatoria entre `requested`, `approved` y `executed`, sin implementar motor ni cambiar estados.
+- Esta tarea sólo modificó documentación e inventario. No cambió código, esquema, configuración, pruebas ni datos; no se ejecutaron migraciones y no corresponde regenerar `backup_erp_myc_antes_prueba.sql`. El head operativo permanece `fe6f7a8b9c0d` según el corte superior vigente.
+- Validación documental: 60 filas y 25 columnas funcionales verificadas; clasificación total reconciliada; evidencias principales contrastadas con rutas existentes; generador del registro y `git diff --check` ejecutados al cierre.
+
+- Se corrigió el HTTP 500 de `GET /api/catalog-items?is_active=true`: el schema esperaba por error el texto documental `Certificado / Certificate: L25-313` mientras PostgreSQL conservaba `accredited_iso_17025`.
+- `backend/app/schemas/service_scope.py` centraliza `accredited_iso_17025`, `traceable` y `accredited_linked_lab`; catálogo, cotización, ETS, equipos, perfiles técnicos e interpretaciones consumen el mismo contrato. La validación del catálogo además restringe cada alcance a su categoría de servicio.
+- La capacidad y creación de equipos conservan la detección automática vigente. El mapeo certificado es `accredited_iso_17025→acreditado`, `traceable→trazable` y `accredited_linked_lab→vinculado`; no se añadió una selección manual libre.
+- La migración `fe6f7a8b9c0d` normaliza alias legacy y contenido documental en seis tablas. Si encuentra `special`, falla expresamente para impedir una reclasificación de negocio inventada.
+- Validación focalizada: 14 pruebas y 19 subpruebas correctas; el endpoint real mediante `TestClient` respondió `200` con un registro; las seis tablas quedaron sin alias documentales/legacy y `technical_profiles` conserva un registro como `accredited_iso_17025`.
+- Suite backend completa: 110 pruebas correctas y 19 subpruebas; sólo fallaron las dos pruebas de conversión real ya conocidas por `LibreOffice returncode=-6`, sin relación con `calibration_scope`. Build Vite final correcto con 1,664 módulos y la advertencia conocida del chunk principal de 867.49 kB.
+- Alembic quedó en un único head `fe6f7a8b9c0d`; `backup_erp_myc_antes_prueba.sql` se regeneró después de la migración y fue validado con tamaño no vacío de 71 MB.
+
+- Sprint 2A de Facturación implementado: la pestaña del ETS muestra el `Invoice` contextual para ausencia, borrador, timbrada y cancelada, con folio, UUID, fecha e importe sólo cuando existen.
+- Corrección UX de Sprint 2A: `contextLoading/contextResolved` distinguen contexto pendiente, ausencia resuelta y factura real; durante la consulta sólo existe un bloque estable de carga, sin badge ni acciones provisionales. La pestaña permanece montada al alternar carpetas del mismo ETS y reinicia el contexto únicamente al abrir otro expediente.
+- `EtsBillingTab.jsx` consume `useInvoiceWorkbenchController` con carga contextual sin overview y monta el mismo `InvoiceWorkbenchDialog`; cerrar conserva el mismo ETS y guardar/emitir actualiza inmediatamente la tarjeta con la respuesta persistida.
+- Crear/continuar/ver, PDF MYC y XML reutilizan el controlador del Sprint 1. No se agregaron endpoints, reglas, estados, agregado, modal, pantalla ni controlador paralelo.
+- Pagos, cuentas por cobrar, notas de crédito, historial/documentos y liberación financiera permanecen fuera de Sprint 2A y sólo muestran “Disponible en la siguiente fase”.
+- Validación: build Vite correcto con 1,664 módulos; 11 pruebas Node correctas para carga no resuelta, ausencia, borrador, timbrada, cancelada y navegación; render SSR inicial sin “Sin factura”/“Crear factura”/badge; y 8 pruebas backend focalizadas correctas para listado filtrado y documentos. Continúa la advertencia conocida por chunk principal de 867.50 kB. La sesión local de navegador sólo presentó Login, por lo que no se usaron credenciales ni se alteraron datos para fabricar escenarios visuales.
+- No hubo migración ni cambio de datos; no corresponde regenerar `backup_erp_myc_antes_prueba.sql`. Alembic permanece documentado en `fd5e6f7a8b9c` como último head verificado.
 
 - El Paquete de Captura acepta hojas `completed`, `under_review` y `approved`; el ZIP conserva `FOLIO_ETS/OT-####/FOLIO_CERTIFICADO/` y nombres institucionales por folio.
 - La carga asigna ruta única, persiste validaciones, inicia `capture_in_progress` con actor/auditoría, ignora auxiliares macOS y refresca ETS, archivos, contadores y tarjetas sin recarga manual.

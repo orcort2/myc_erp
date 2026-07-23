@@ -1,7 +1,7 @@
 from decimal import Decimal
 
-from sqlalchemy import ForeignKey, Numeric, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
@@ -9,8 +9,17 @@ from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 
 class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "catalog_items"
+    __table_args__ = (
+        CheckConstraint(
+            "service_kind IN ('simple', 'composite')",
+            name="ck_catalog_items_service_kind",
+        ),
+    )
 
     item_type: Mapped[str] = mapped_column(String(20), index=True)
+    service_kind: Mapped[str] = mapped_column(
+        String(20), default="simple", server_default="simple", nullable=False, index=True
+    )
     commodity: Mapped[str] = mapped_column(String(40), index=True)
     category: Mapped[str] = mapped_column(String(120), index=True)
     internal_key: Mapped[str | None] = mapped_column(String(80), index=True)
@@ -37,3 +46,57 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     quotation_legend: Mapped[str | None] = mapped_column(Text)
     tax_object: Mapped[str] = mapped_column(String(20), default="iva_16", index=True)
     tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=16)
+
+    components: Mapped[list["CatalogItemComponent"]] = relationship(
+        back_populates="parent_item",
+        foreign_keys="CatalogItemComponent.parent_catalog_item_id",
+        cascade="all, delete-orphan",
+        order_by="CatalogItemComponent.id",
+    )
+    used_as_component_in: Mapped[list["CatalogItemComponent"]] = relationship(
+        back_populates="component_item",
+        foreign_keys="CatalogItemComponent.component_catalog_item_id",
+    )
+
+
+class CatalogItemComponent(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
+    __tablename__ = "catalog_item_components"
+    __table_args__ = (
+        UniqueConstraint(
+            "parent_catalog_item_id",
+            "component_catalog_item_id",
+            name="uq_catalog_item_component_parent_child",
+        ),
+        CheckConstraint("quantity >= 1", name="ck_catalog_item_component_quantity_positive"),
+        CheckConstraint(
+            "parent_catalog_item_id <> component_catalog_item_id",
+            name="ck_catalog_item_component_not_self",
+        ),
+    )
+
+    parent_catalog_item_id: Mapped[int] = mapped_column(
+        ForeignKey("catalog_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    component_catalog_item_id: Mapped[int] = mapped_column(
+        ForeignKey("catalog_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    quantity: Mapped[int] = mapped_column(default=1, nullable=False)
+
+    parent_item: Mapped[CatalogItem] = relationship(
+        back_populates="components", foreign_keys=[parent_catalog_item_id]
+    )
+    component_item: Mapped[CatalogItem] = relationship(
+        back_populates="used_as_component_in", foreign_keys=[component_catalog_item_id]
+    )
+
+    @property
+    def component_name(self) -> str:
+        return self.component_item.name
+
+    @property
+    def component_internal_key(self) -> str | None:
+        return self.component_item.internal_key
+
+    @property
+    def component_service_kind(self) -> str:
+        return self.component_item.service_kind

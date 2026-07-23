@@ -3,13 +3,14 @@ from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
-from app.models.catalog_item import CatalogItem
+from app.models.catalog_item import CatalogItem, CatalogItemComponent
 from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.services.storage_service import resolve_storage_path
 from datetime import date
 from app.schemas.catalog_item import (
+    CatalogItemComponentCreate,
     CatalogItemCreate,
     CatalogItemUpdate,
     CATEGORY_LEGENDS,
@@ -28,6 +29,8 @@ def _json_safe(value):
         return value.isoformat()
     if isinstance(value, dict):
         return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
     return value
 
 
@@ -115,6 +118,7 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
 
     values["quotation_legend"] = _quotation_legend(values)
     if values.get("item_type") == "product":
+        values["service_kind"] = "simple"
         values["calibration_scope"] = None
         values["expected_certificate_master_id"] = None
     if values.get("category") != "Calibracion":
@@ -165,7 +169,15 @@ def list_catalog_items(
     is_active: bool | None = True,
     search: str | None = None,
 ) -> list[CatalogItem]:
-    query = select(CatalogItem).order_by(CatalogItem.name)
+    query = (
+        select(CatalogItem)
+        .options(
+            selectinload(CatalogItem.components).selectinload(
+                CatalogItemComponent.component_item
+            )
+        )
+        .order_by(CatalogItem.name)
+    )
     if is_active is not None:
         query = query.where(CatalogItem.is_active.is_(is_active))
     if item_type:
@@ -194,7 +206,15 @@ def list_catalog_items(
 
 
 def get_catalog_item(db: Session, catalog_item_id: int) -> CatalogItem:
-    item = db.get(CatalogItem, catalog_item_id)
+    item = db.scalar(
+        select(CatalogItem)
+        .where(CatalogItem.id == catalog_item_id)
+        .options(
+            selectinload(CatalogItem.components).selectinload(
+                CatalogItemComponent.component_item
+            )
+        )
+    )
     if item is None or not item.is_active:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -203,18 +223,181 @@ def get_catalog_item(db: Session, catalog_item_id: int) -> CatalogItem:
     return item
 
 
+def _component_ids(components) -> list[int]:
+    return [component.component_catalog_item_id for component in components]
+
+
+def _ensure_valid_components(
+    db: Session,
+    *,
+    parent_id: int | None,
+    service_kind: str,
+    components,
+) -> None:
+    if service_kind == "simple":
+        if components:
+            raise HTTPException(status_code=422, detail="Un servicio simple no puede tener componentes")
+        return
+    if not components:
+        raise HTTPException(
+            status_code=422,
+            detail="Un servicio compuesto debe tener al menos un componente",
+        )
+
+    component_ids = _component_ids(components)
+    if len(component_ids) != len(set(component_ids)):
+        raise HTTPException(status_code=422, detail="No se puede repetir un componente")
+    if parent_id is not None and parent_id in component_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="Un servicio no puede agregarse a sí mismo como componente",
+        )
+
+    resolved = list(
+        db.scalars(
+            select(CatalogItem).where(
+                CatalogItem.id.in_(component_ids),
+                CatalogItem.is_active.is_(True),
+                CatalogItem.item_type == "service",
+            )
+        ).all()
+    )
+    if {item.id for item in resolved} != set(component_ids):
+        raise HTTPException(
+            status_code=422,
+            detail="Todos los componentes deben ser servicios activos existentes del catálogo",
+        )
+
+    if parent_id is None:
+        return
+
+    proposed_children = set(component_ids)
+
+    def descendants(node_id: int, visited: set[int]) -> set[int]:
+        if node_id in visited:
+            return set()
+        visited.add(node_id)
+        if node_id == parent_id:
+            children = proposed_children
+        else:
+            children = set(
+                db.scalars(
+                    select(CatalogItemComponent.component_catalog_item_id).where(
+                        CatalogItemComponent.parent_catalog_item_id == node_id,
+                        CatalogItemComponent.is_active.is_(True),
+                    )
+                ).all()
+            )
+        result = set(children)
+        for child_id in children:
+            result.update(descendants(child_id, visited))
+        return result
+
+    for child_id in component_ids:
+        if parent_id in descendants(child_id, set()):
+            raise HTTPException(
+                status_code=422,
+                detail="La composición genera una referencia circular",
+            )
+
+
+def _replace_components(item: CatalogItem, components) -> None:
+    existing = {
+        component.component_catalog_item_id: component
+        for component in item.components
+        if component.is_active
+    }
+    synchronized = []
+    for component in components:
+        link = existing.pop(component.component_catalog_item_id, None)
+        if link is None:
+            link = CatalogItemComponent(
+                component_catalog_item_id=component.component_catalog_item_id
+            )
+        link.quantity = component.quantity
+        synchronized.append(link)
+    item.components = synchronized
+
+
+def expand_catalog_item_for_operations(
+    db: Session,
+    catalog_item_id: int,
+    quantity: int,
+) -> list[dict]:
+    """Expand a commercial catalog concept into simple operational leaves."""
+    aggregated: dict[int, dict] = {}
+
+    def walk(item_id: int, multiplier: int, path: tuple[int, ...]) -> None:
+        if item_id in path:
+            raise HTTPException(status_code=409, detail="El servicio compuesto contiene un ciclo")
+        item = db.scalar(
+            select(CatalogItem)
+            .where(CatalogItem.id == item_id)
+            .options(
+                selectinload(CatalogItem.components).selectinload(
+                    CatalogItemComponent.component_item
+                )
+            )
+        )
+        if item is None:
+            raise HTTPException(status_code=409, detail="El concepto de catálogo ya no existe")
+        if item.service_kind == "simple":
+            current = aggregated.setdefault(
+                item.id,
+                {
+                    "catalog_item_id": item.id,
+                    "service_name": item.name,
+                    "calibration_scope": item.calibration_scope,
+                    "quantity": 0,
+                    "status": "pending",
+                },
+            )
+            current["quantity"] += multiplier
+            return
+        active_components = [component for component in item.components if component.is_active]
+        if not active_components:
+            raise HTTPException(
+                status_code=409,
+                detail=f"El servicio compuesto {item.name} no tiene componentes activos",
+            )
+        for component in active_components:
+            if not component.component_item.is_active:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"El componente {component.component_item.name} está inactivo",
+                )
+            walk(
+                component.component_catalog_item_id,
+                multiplier * component.quantity,
+                (*path, item_id),
+            )
+
+    walk(catalog_item_id, quantity, tuple())
+    return list(aggregated.values())
+
+
 def create_catalog_item(
     db: Session,
     payload: CatalogItemCreate,
     *,
     user_id: int | None = None,
 ) -> CatalogItem:
-    values = _prepare_values(payload.model_dump())
+    raw_values = payload.model_dump()
+    components = payload.components
+    raw_values.pop("components", None)
+    values = _prepare_values(raw_values)
+    _ensure_valid_components(
+        db,
+        parent_id=None,
+        service_kind=values["service_kind"],
+        components=components,
+    )
     _ensure_certificate_master(db, values.get("expected_certificate_master_id"))
     values["internal_key"] = _generate_internal_key(
         db, values["item_type"], values["category"], values["commodity"]
     )
     item = CatalogItem(**values)
+    _replace_components(item, components)
     db.add(item)
     db.flush()
     write_audit_log(
@@ -223,7 +406,12 @@ def create_catalog_item(
         entity="catalog_items",
         entity_id=item.id,
         user_id=user_id,
-        new_values=_json_safe({"name": item.name, "internal_key": item.internal_key}),
+        new_values=_json_safe({
+            "name": item.name,
+            "internal_key": item.internal_key,
+            "service_kind": item.service_kind,
+            "components": [component.model_dump() for component in components],
+        }),
     )
     db.commit()
     db.refresh(item)
@@ -239,9 +427,22 @@ def update_catalog_item(
 ) -> CatalogItem:
     item = get_catalog_item(db, catalog_item_id)
     updates = payload.model_dump(exclude_unset=True)
+    components_provided = "components" in updates
+    requested_components = payload.components if components_provided else None
+    updates.pop("components", None)
     previous_values = {key: getattr(item, key) for key in updates}
+    if components_provided or "service_kind" in updates:
+        previous_values["components"] = [
+            {
+                "component_catalog_item_id": component.component_catalog_item_id,
+                "quantity": component.quantity,
+            }
+            for component in item.components
+            if component.is_active
+        ]
     merged = {
         "item_type": item.item_type,
+        "service_kind": item.service_kind,
         "commodity": item.commodity,
         "category": item.category,
         "name": item.name,
@@ -266,7 +467,25 @@ def update_catalog_item(
     should_recalculate = bool({"origin_price", "exchange_rate", "margin_percent"} & set(updates))
     prepared = _prepare_values(merged, recalculate_price=should_recalculate)
     _ensure_certificate_master(db, prepared.get("expected_certificate_master_id"))
-    CatalogItemCreate(**prepared)
+    if prepared["service_kind"] == "simple":
+        effective_components = []
+    elif components_provided:
+        effective_components = requested_components or []
+    else:
+        effective_components = [
+            CatalogItemComponentCreate(
+                component_catalog_item_id=component.component_catalog_item_id,
+                quantity=component.quantity,
+            )
+            for component in item.components
+            if component.is_active
+        ]
+    _ensure_valid_components(
+        db,
+        parent_id=item.id,
+        service_kind=prepared["service_kind"],
+        components=effective_components,
+    )
     if {"item_type", "category"} & set(updates):
         prepared["internal_key"] = _generate_internal_key(
             db, prepared["item_type"], prepared["category"], prepared["commodity"]
@@ -275,6 +494,7 @@ def update_catalog_item(
         prepared["internal_key"] = item.internal_key
 
     keys_to_apply = set(updates) | {
+        "service_kind",
         "calibration_scope",
         "custom_internal_unit",
         "final_price_mxn",
@@ -284,6 +504,8 @@ def update_catalog_item(
     }
     for key in keys_to_apply:
         setattr(item, key, prepared[key])
+    if components_provided or prepared["service_kind"] == "simple":
+        _replace_components(item, effective_components)
 
     write_audit_log(
         db,
@@ -292,7 +514,9 @@ def update_catalog_item(
         entity_id=item.id,
         user_id=user_id,
         previous_values=_json_safe(previous_values),
-        new_values=_json_safe(updates),
+        new_values=_json_safe(updates | {
+            "components": [component.model_dump() for component in effective_components]
+        }),
     )
     db.commit()
     db.refresh(item)
@@ -306,6 +530,17 @@ def delete_catalog_item(
     user_id: int | None = None,
 ) -> CatalogItem:
     item = get_catalog_item(db, catalog_item_id)
+    referenced_by = db.scalar(
+        select(CatalogItemComponent.id).where(
+            CatalogItemComponent.component_catalog_item_id == catalog_item_id,
+            CatalogItemComponent.is_active.is_(True),
+        )
+    )
+    if referenced_by is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="El servicio no puede desactivarse porque forma parte de un servicio compuesto",
+        )
     item.is_active = False
     item.deleted_at = datetime.now(timezone.utc)
     item.deleted_by = user_id

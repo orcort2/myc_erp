@@ -8,11 +8,12 @@ from sqlalchemy.orm import Session
 
 from app.models.certificate import Certificate
 from app.models.service_order import ServiceOrderItem
+from app.schemas.service_scope import ACCREDITATION_SCOPE_VALUES
 
 
 CALIBRATION_SCOPE_TO_CERTIFICATE_TYPE = {
     "traceable": "trazable",
-    "Certificado / Certificate: L25-313": "acreditado",
+    "accredited_iso_17025": "acreditado",
     "accredited_linked_lab": "vinculado",
 }
 
@@ -22,11 +23,11 @@ CERTIFICATE_TYPE_TO_CALIBRATION_SCOPE = {
 
 CALIBRATION_SCOPE_LABELS = {
     "traceable": "trazables",
-    "Certificado / Certificate: L25-313": "acreditados",
+    "accredited_iso_17025": "acreditados",
     "accredited_linked_lab": "vinculados",
 }
 
-SUPPORTED_CALIBRATION_SCOPES = tuple(CALIBRATION_SCOPE_TO_CERTIFICATE_TYPE.keys())
+SUPPORTED_CALIBRATION_SCOPES = ACCREDITATION_SCOPE_VALUES
 
 
 @dataclass(frozen=True)

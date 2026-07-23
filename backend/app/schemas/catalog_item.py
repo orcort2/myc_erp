@@ -4,27 +4,16 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.service_scope import (
+    SERVICE_SCOPE_LEGENDS,
+    SERVICE_SCOPE_VALUES_BY_CATEGORY,
+    ServiceScope,
+)
+
 
 CatalogItemType = Literal["product", "service"]
+CatalogServiceKind = Literal["simple", "composite"]
 CatalogCommodity = Literal["calibration", "maintenance", "repair", "sale", "general_service"]
-CalibrationScope = Literal[
-    "Certificado / Certificate: L25-313",
-    "traceable",
-    "accredited_linked_lab",
-    "preventive",
-    "corrective",
-    "onsite",
-    "online",
-    "hybrid",
-    "documentary",
-    "protocol",
-    "installation",
-    "operation",
-    "performance",
-    "technical",
-    "regulatory",
-    "implementation",
-]
 InternalUnit = Literal[
     "service",
     "piece",
@@ -48,24 +37,7 @@ TAX_RATE_BY_OBJECT = {
 }
 
 
-LEGENDS_BY_SCOPE = {
-    "Certificado / Certificate: L25-313": "Servicio acreditado ISO/IEC 17025:2017",
-    "traceable": "Servicio trazable",
-    "accredited_linked_lab": "Servicio acreditado ISO/IEC 17025:2017, laboratorio vinculado",
-    "preventive": "Mantenimiento preventivo",
-    "corrective": "Mantenimiento correctivo",
-    "onsite": "Servicio presencial",
-    "online": "Servicio en linea",
-    "hybrid": "Servicio mixto",
-    "documentary": "Validacion documental",
-    "protocol": "Validacion de protocolo",
-    "installation": "Calificacion de instalacion",
-    "operation": "Calificacion de operacion",
-    "performance": "Calificacion de desempeno",
-    "technical": "Consultoria tecnica",
-    "regulatory": "Consultoria normativa",
-    "implementation": "Consultoria de implementacion",
-}
+LEGENDS_BY_SCOPE = SERVICE_SCOPE_LEGENDS
 
 CATEGORY_TO_COMMODITY = {
     "calibracion": "calibration",
@@ -82,14 +54,21 @@ CATEGORY_LEGENDS = {
     "Servicio general": "Servicio general",
 }
 
-CATEGORIES_REQUIRING_SCOPE = {
-    "Calibracion",
-    "Mantenimiento",
-    "Capacitacion",
-    "Validacion",
-    "Calificacion",
-    "Consultoria",
-}
+CATEGORIES_REQUIRING_SCOPE = frozenset(SERVICE_SCOPE_VALUES_BY_CATEGORY)
+
+
+class CatalogItemComponentCreate(BaseModel):
+    component_catalog_item_id: int = Field(gt=0)
+    quantity: int = Field(default=1, ge=1)
+
+
+class CatalogItemComponentOut(CatalogItemComponentCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    component_name: str
+    component_internal_key: str | None = None
+    component_service_kind: CatalogServiceKind
 
 
 def calculate_final_price_mxn(
@@ -103,6 +82,7 @@ def calculate_final_price_mxn(
 
 class CatalogItemBase(BaseModel):
     item_type: CatalogItemType
+    service_kind: CatalogServiceKind = "simple"
     commodity: CatalogCommodity
     category: str = Field(min_length=1, max_length=120)
     name: str = Field(min_length=1, max_length=180)
@@ -118,7 +98,7 @@ class CatalogItemBase(BaseModel):
     final_price_mxn: Decimal | None = Field(default=None, ge=0)
     internal_cost: Decimal | None = Field(default=None, ge=0)
     cost_currency: str | None = Field(default=None, min_length=3, max_length=3)
-    calibration_scope: CalibrationScope | None = None
+    calibration_scope: ServiceScope | None = None
     expected_certificate_master_id: int | None = None
     quotation_legend: str | None = None
     tax_object: TaxObject = "iva_16"
@@ -128,8 +108,17 @@ class CatalogItemBase(BaseModel):
     def validate_business_rules(self):
         if self.item_type == "service" and self.category == "Venta":
             raise ValueError("La categoria Venta debe capturarse como producto")
-        if self.category in CATEGORIES_REQUIRING_SCOPE and self.calibration_scope is None:
+        if self.item_type == "product" and self.service_kind != "simple":
+            raise ValueError("Los productos no pueden configurarse como servicios compuestos")
+        allowed_scopes = SERVICE_SCOPE_VALUES_BY_CATEGORY.get(self.category)
+        if allowed_scopes and self.calibration_scope is None:
             raise ValueError("calibration_scope es obligatorio para categorias con alcance")
+        if allowed_scopes and self.calibration_scope not in allowed_scopes:
+            raise ValueError(
+                f"calibration_scope no corresponde a la categoria {self.category}"
+            )
+        if not allowed_scopes and self.calibration_scope is not None:
+            raise ValueError("calibration_scope debe ser null para categorias sin alcance")
         if self.item_type == "product" and self.calibration_scope is not None:
             raise ValueError("calibration_scope debe ser null para productos")
         if self.internal_unit == "other" and not self.custom_internal_unit:
@@ -138,11 +127,24 @@ class CatalogItemBase(BaseModel):
 
 
 class CatalogItemCreate(CatalogItemBase):
-    pass
+    components: list[CatalogItemComponentCreate] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_components(self):
+        if self.service_kind == "composite" and not self.components:
+            raise ValueError("Un servicio compuesto debe tener al menos un componente")
+        if self.service_kind == "simple" and self.components:
+            raise ValueError("Un servicio simple no puede tener componentes")
+        component_ids = [item.component_catalog_item_id for item in self.components]
+        if len(component_ids) != len(set(component_ids)):
+            raise ValueError("No se puede repetir un componente dentro del mismo servicio")
+        return self
 
 
 class CatalogItemUpdate(BaseModel):
     item_type: CatalogItemType | None = None
+    service_kind: CatalogServiceKind | None = None
+    components: list[CatalogItemComponentCreate] | None = None
     commodity: CatalogCommodity | None = None
     category: str | None = Field(default=None, min_length=1, max_length=120)
     name: str | None = Field(default=None, min_length=1, max_length=180)
@@ -158,7 +160,7 @@ class CatalogItemUpdate(BaseModel):
     final_price_mxn: Decimal | None = Field(default=None, ge=0)
     internal_cost: Decimal | None = Field(default=None, ge=0)
     cost_currency: str | None = Field(default=None, min_length=3, max_length=3)
-    calibration_scope: CalibrationScope | None = None
+    calibration_scope: ServiceScope | None = None
     expected_certificate_master_id: int | None = None
     quotation_legend: str | None = None
     tax_object: TaxObject | None = None
@@ -169,6 +171,7 @@ class CatalogItemOut(CatalogItemBase):
 
     id: int
     internal_key: str | None
+    components: list[CatalogItemComponentOut] = Field(default_factory=list)
     is_active: bool
     created_at: datetime
     updated_at: datetime

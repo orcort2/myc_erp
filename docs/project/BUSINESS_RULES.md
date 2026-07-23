@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Reglas de negocio vigentes
 
@@ -43,12 +43,14 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-027 | Captura | Un Master devuelto e identificado persiste su archivo/validaciones e inicia el certificado en `capture_in_progress` con actor y auditoría; Captura no altera el `match_status` legacy y éste no es compuerta de autenticación. Los auxiliares macOS no se procesan ni cuentan. | servicio y prueba reversible de carga de Captura | 2026-07-21 |
 | BR-028 | Captura/Calidad | El envío individual a Calidad exige Master esperado e identificado y cero `mismatch`/`no_coincide`; `no_encontrado` es advertencia permitida. La transición es `capture_in_progress → quality_review`, audita actor/fecha/Master y no exige PDF ni modifica `match_status`. | readiness, transición y pruebas del flujo Master | 2026-07-21 |
 | BR-029 | Captura | El tipo de servicio del Master se valida como `accredited` o `traceable` mediante similitud estructural con el snapshot asignado: hojas, dimensiones, fusiones, estilos, fórmulas, etiquetas posicionadas, imágenes y área de impresión. La leyenda o número de acreditación no son identificadores del dominio. | `master_template_fingerprints.py`, parser de paquetes y pruebas | 2026-07-21 |
+| BR-030 | Catálogo/ETS/Certificados | Las modalidades canónicas de acreditación son `accredited_iso_17025`, `traceable` y `accredited_linked_lab`. Se configuran en el servicio, se propagan automáticamente por cotización→ETS→equipo y se mapean a certificado `acreditado`, `trazable` o `vinculado`; una leyenda documental nunca sustituye la clave de negocio. | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md), schemas y servicio de capacidad | 2026-07-22 |
 
 ## Reglas históricas no vigentes como obligación actual
 
 - Los seguimientos automáticos de Cotización en días 2/4/6 no están implementados y no se consideran regla activa.
 - Los folios autónomos de Agenda (`AMYC`) y Llamado (`SMYC`) existen en el generador, pero no hay módulos que los consuman.
 - La secuencia histórica estricta `Cotización aceptada → Agenda → Llamado → OT` fue reemplazada en la implementación por hitos y fechas dentro del ETS.
+- Un Servicio Compuesto es exclusivamente un concepto comercial: Cotización, PDF e Invoice muestran sólo el padre. Al crear el ETS se expande recursivamente en servicios simples operativos, multiplicando cantidades; éstos alimentan OT, Equipos, Hojas y Certificados. La composición debe usar servicios existentes, cantidad mínima 1, al menos un componente y ningún ciclo o autorreferencia. Evidencia: [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md), migración `ff7a8b9c0d1e` y pruebas de integración.
 - “Factura timbrada antes de liberar” no describe todos los casos: la regla real depende de `requires_payment` y del estado pagado/saldo.
 
 ## Mantenimiento

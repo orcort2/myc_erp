@@ -53,3 +53,13 @@ Toda respuesta final de una tarea debe incluir un apartado `## Documentación ac
 ## Arquitectura obligatoria del Workbench de Facturación
 
 Toda apertura, creación/actualización de borrador, emisión, descarga o refresco del Workbench debe reutilizar `frontend/src/components/invoice-workbench/useInvoiceWorkbenchController.js` y el agregado backend `Invoice`. Los contextos se transportan mediante `frontend/src/utils/invoiceWorkbenchContext.js` con `invoice_id` o `service_order_id`. No reintroducir `localStorage`, payloads fiscales duplicados, controladores paralelos, otra máquina de estados ni otro flujo de emisión. El contrato completo está en `docs/architecture/INVOICE_WORKBENCH_CONTROLLER.md`.
+
+La pestaña Facturación del ETS se compone exclusivamente con `frontend/src/components/ets-billing/EtsBillingTab.jsx`. Debe permanecer como consumidor contextual de `useInvoiceWorkbenchController` y `InvoiceWorkbenchDialog`; no puede incorporar llamadas directas a APIs de facturas, payloads fiscales, reglas de estados, descargas ni un modal alternativo.
+
+## Contrato obligatorio de acreditación de calibración
+
+`backend/app/schemas/service_scope.py` es la única fuente de claves de `calibration_scope`. Las modalidades de acreditación son `accredited_iso_17025`, `traceable` y `accredited_linked_lab`; deben propagarse desde la configuración del servicio y resolverse mediante el mecanismo automático vigente. No crear enums paralelos, no convertirlo en una selección manual libre y no usar leyendas, folios, números o textos extraídos de documentos como valores del dominio. El contrato completo está en `docs/architecture/CALIBRATION_SCOPE_CONTRACT.md`.
+
+## Arquitectura obligatoria de Servicios Compuestos
+
+Los Servicios Compuestos se modelan exclusivamente con `catalog_items.service_kind` y la relación normalizada `catalog_item_components`. La cotización y Facturación conservan sólo el concepto comercial padre. La expansión recursiva ocurre una sola vez al crear el ETS mediante `backend/app/services/service_orders.py`; sus hojas simples alimentan las partidas operativas, el cálculo de OT, Equipos, Hojas de Campo y Certificados. No duplicar la expansión en frontend, routers, Facturación u otros servicios, no persistir componentes en JSON y no mostrar componentes al cliente. El contrato completo está en `docs/architecture/COMPOSITE_CATALOG_SERVICES.md`.

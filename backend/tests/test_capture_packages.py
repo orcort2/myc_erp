@@ -41,7 +41,7 @@ def build_case(status, template_path):
     field_sheet = SimpleNamespace(id=1, is_active=True, status=status, next_calibration_date=date(2027, 9, 28))
     equipment = SimpleNamespace(
         id=1,
-        calibration_scope="Certificado / Certificate: L25-313",
+        calibration_scope="accredited_iso_17025",
         field_sheets=[field_sheet],
         certificates=[certificate],
         name="TERMÓMETRO",

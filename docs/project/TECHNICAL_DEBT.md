@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: propuestas de refactorización o riesgos contenidos en auditorías y documentos históricos
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Deuda técnica vigente
 
@@ -27,13 +27,14 @@ No incluye funcionalidades futuras. Cada elemento corresponde a una condición p
 | TD-011 | P1 | Cerrar borrador fiscal puede perder cambios y varias pestañas son placeholders; el controlador ya está desacoplado pero estas capacidades funcionales no cambiaron. | `useInvoiceWorkbenchController.js`, `frontend/src/components/invoice-workbench/*` | Autosave/confirmación de descarte; implementar vistas reales o retirar pestañas hasta estar disponibles reutilizando el controlador único. |
 | TD-012 | P1 | Producción, cancelación/sustitución, PPD y notas fiscales no cierran el ciclo fiscal existente. | servicios Facturama, invoices, modelos y UI | Diseñar estados idempotentes sobre el agregado actual, persistir respuestas/documentos y cubrir Sandbox antes de habilitar Producción. |
 | TD-013 | P1 | Roles/permisos documentados pueden divergir del código y la UI muestra módulos no autorizados. | `backend/app/core/permissions.py`, `frontend/src/config/navigation.js`, Settings | Generar matriz desde código, filtrar navegación por capacidad y decidir CRUD o congelamiento formal de roles. |
-| TD-014 | P1 | Excepciones ETS y actor opcional reducen trazabilidad. | modelos/schemas/servicios ETS, routers | Persistir excepción con estado, solicitante, autorizador, motivo y auditoría; exigir actor en mutaciones protegidas. |
+| TD-014 | P0 | La “excepción” ETS ejecuta cambio de etapa y resincronización al solicitarla; no separa `requested`, `approved` y `executed`, y admite actor opcional. Un motor genérico sin precondiciones podría amplificar mutaciones sensibles abiertas. | modelos/schemas/servicios ETS, routers, permisos e Invoice | Primero cerrar autorización/actor y consolidar el servicio ETS; después persistir solicitud, resolución y ejecución idempotente como estados independientes, delegando siempre en servicios canónicos y conservando error/efectos de ejecución. |
 | TD-015 | P1 | Compatibilidad de OT/firmas y catálogos fiscales mantiene fuentes conceptuales dobles. | modelos `service_order.py`, `invoice.py`, migraciones y consumidores | Medir uso, migrar históricos, encapsular lectura legacy y retirar columnas sólo con migración reversible. |
 | TD-016 | P2 | Páginas monolíticas, componentes duplicados, alerta nativa y bundle grande elevan regresiones/tiempo de carga. El controlador del Workbench ya fue extraído de `BillingPage`, pero permanecen los demás focos. | `ServiceOrdersPage.jsx`, `QuotationsPage.jsx`, `ClientsPage.jsx`, `ServiceOrderSignatureMorph.jsx`, labs/workbench, Vite | Continuar extrayendo dominios, usar `ConfirmDialog`, consolidar componentes y aplicar lazy loading/code splitting con pruebas visuales; no revertir el controlador compartido de Facturación. |
 | TD-017 | P2 | Los puertos no tienen una fuente única y pueden divergir entre Toolkit, frontend y documentación. | `scripts/config.sh`, scripts status/start y documentación | Centralizar puertos y probar comandos no destructivos; el forwarding de Doctor ya fue corregido y tiene diagnóstico LibreOffice verificable. |
 | TD-018 | P2 | CORS duplicado y storage local dificultan despliegue reproducible. | `backend/app/main.py`, config, `storage_service.py`, scripts de despliegue | Consumir una sola configuración CORS, validar entorno y definir persistencia/backup de archivos para despliegue. |
 | TD-019 | P2 | No hay pipeline reproducible de validación/despliegue ni cobertura suficiente de seguridad y flujos críticos. | configuración del repositorio y suites backend/frontend | Añadir CI con build, pruebas, `alembic heads/current`, auditoría de rutas y E2E autenticados no destructivos. |
 | TD-020 | P2 | Registro de campos de Hojas de Campo refiere al MDE futuro y puede confundirse con implementación. | `docs/architecture/FIELD_SHEET_FIELD_REGISTRY.md`, definiciones frontend/backend | Mantener el registro como contrato vigente independiente y marcar MDE sólo como consumidor futuro opcional. |
+| TD-021 | P1 | `alembic check` detecta deriva histórica entre metadatos ORM y PostgreSQL (índices, constraints y columnas legacy ajenas a Servicios Compuestos), aunque la cadena conserva un único head. | modelos SQLAlchemy y migraciones Alembic anteriores a `ff7a8b9c0d1e` | Auditar cada diferencia contra su migración de origen, clasificar falsos positivos de autogenerate y crear migraciones correctivas acotadas; no generar una migración masiva automática. |
 
 ## Criterio de retiro
 

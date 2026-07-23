@@ -1,7 +1,7 @@
 export const calibrationScopeOptions = [
-  { value: 'accredited_iso_17025', label: 'Acreditado ISO/IEC 17025' },
-  { value: 'traceable', label: 'Trazable' },
-  { value: 'accredited_linked_lab', label: 'Laboratorio vinculado' }
+  { value: 'accredited_iso_17025', label: 'Acreditación propia ISO/IEC 17025' },
+  { value: 'traceable', label: 'Trazable / no acreditado' },
+  { value: 'accredited_linked_lab', label: 'Acreditación por laboratorio vinculado' }
 ];
 
 export const scopeOptionsByCategory = {

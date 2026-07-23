@@ -1,7 +1,7 @@
 from app.models.audit_log import AuditLog
 from app.models.calibration_procedure import CalibrationProcedure
 from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
-from app.models.catalog_item import CatalogItem
+from app.models.catalog_item import CatalogItem, CatalogItemComponent
 from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
 from app.models.client import Client, ClientCertificateProfile, ClientContact
 from app.models.document_template import DocumentTemplate
@@ -47,6 +47,7 @@ __all__ = [
     "AuditLog",
     "CalibrationProcedure",
     "CatalogItem",
+    "CatalogItemComponent",
     "Certificate",
     "CertificateCaptureFile",
     "CertificatePdfVersion",

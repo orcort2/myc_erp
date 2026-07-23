@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.service_scope import ServiceScope
+
 
 QuotationStatus = Literal[
     "draft",
@@ -29,7 +31,7 @@ class QuotationItemBase(BaseModel):
     discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     commodity: str | None = Field(default=None, max_length=40)
-    calibration_scope: str | None = Field(default=None, max_length=60)
+    calibration_scope: ServiceScope | None = None
     quotation_legend: str | None = None
     tax_object: str | None = Field(default=None, max_length=20)
     tax_rate: Decimal = Field(default=Decimal("16.00"), ge=0)
@@ -52,7 +54,7 @@ class QuotationItemUpdate(BaseModel):
     discount_percent: Decimal | None = Field(default=None, ge=0)
     currency: str | None = Field(default=None, min_length=3, max_length=3)
     commodity: str | None = Field(default=None, max_length=40)
-    calibration_scope: str | None = Field(default=None, max_length=60)
+    calibration_scope: ServiceScope | None = None
     quotation_legend: str | None = None
     tax_object: str | None = Field(default=None, max_length=20)
     tax_rate: Decimal | None = Field(default=None, ge=0)
@@ -62,12 +64,12 @@ class QuotationItemRead(QuotationItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    operational_snapshot: dict | None = None
     tax_total: Decimal
     total: Decimal
     is_active: bool
     created_at: datetime
     updated_at: datetime
-
 
 class QuotationBase(BaseModel):
     client_id: int

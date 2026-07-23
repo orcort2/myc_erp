@@ -28,10 +28,10 @@ export function formatDateTime(value) {
   }).format(date);
 }
 
-export function formatMoney(value) {
+export function formatMoney(value, currency = 'MXN') {
   const amount = Number(value ?? 0);
   return new Intl.NumberFormat('es-MX', {
-    currency: 'MXN',
+    currency,
     style: 'currency'
   }).format(amount);
 }

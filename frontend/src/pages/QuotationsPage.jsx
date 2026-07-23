@@ -117,6 +117,17 @@ function mapCatalogItemFromApi(item) {
     id: item.id,
     type: catalogTypeFromApi[item.item_type] ?? item.item_type,
     itemType: item.item_type,
+    serviceKind: item.service_kind ?? 'simple',
+    components: Array.isArray(item.components)
+      ? item.components.map((component) => ({
+          id: component.id,
+          componentCatalogItemId: String(component.component_catalog_item_id),
+          quantity: String(component.quantity ?? 1),
+          componentName: component.component_name,
+          componentInternalKey: component.component_internal_key,
+          componentServiceKind: component.component_service_kind
+        }))
+      : [],
     commodity: item.commodity,
     calibrationScope: item.calibration_scope ?? '',
     expectedCertificateMasterId: item.expected_certificate_master_id ? String(item.expected_certificate_master_id) : '',
@@ -147,6 +158,13 @@ function mapCatalogPayloadFromForm(form) {
   const calibrationScope = scopeOptions.length ? form.calibrationScope || scopeOptions[0].value : null;
   return {
     item_type: catalogTypeToApi[form.type] ?? form.type,
+    service_kind: form.type === 'Servicio' ? form.serviceKind : 'simple',
+    components: form.type === 'Servicio' && form.serviceKind === 'composite'
+      ? form.components.map((component) => ({
+          component_catalog_item_id: Number(component.componentCatalogItemId),
+          quantity: Number(component.quantity || 1)
+        }))
+      : [],
     commodity,
     category: form.category.trim(),
     name: form.name.trim(),
@@ -531,9 +549,51 @@ function QuotationsPage() {
         const options = getCategoryScopeOptions(category);
         next.category = category;
         next.calibrationScope = options[0]?.value ?? '';
+        if (value === 'Producto') {
+          next.serviceKind = 'simple';
+          next.components = [];
+        }
+      }
+      if (field === 'serviceKind' && value === 'simple') {
+        next.components = [];
       }
       return next;
     });
+  }
+
+  function addCompositeComponent() {
+    setProductForm((current) => {
+      const used = new Set(current.components.map((component) => component.componentCatalogItemId));
+      const available = catalogItems.find(
+        (item) => item.itemType === 'service'
+          && item.status === 'Activo'
+          && String(item.id) !== String(editingProductId || '')
+          && !used.has(String(item.id))
+      );
+      return {
+        ...current,
+        components: [
+          ...current.components,
+          { componentCatalogItemId: available ? String(available.id) : '', quantity: '1' }
+        ]
+      };
+    });
+  }
+
+  function updateCompositeComponent(index, field, value) {
+    setProductForm((current) => ({
+      ...current,
+      components: current.components.map((component, componentIndex) => (
+        componentIndex === index ? { ...component, [field]: value } : component
+      ))
+    }));
+  }
+
+  function removeCompositeComponent(index) {
+    setProductForm((current) => ({
+      ...current,
+      components: current.components.filter((_, componentIndex) => componentIndex !== index)
+    }));
   }
 
   function updateTemplateForm(field, value) {
@@ -892,6 +952,8 @@ function QuotationsPage() {
         internalKey: item.internalKey,
         name: item.name,
         type: item.type,
+        serviceKind: item.serviceKind || 'simple',
+        components: item.components || [],
         calibrationScope: item.calibrationScope || 'traceable',
         expectedCertificateMasterId: item.expectedCertificateMasterId || '',
         quotationLegend: item.quotationLegend,
@@ -950,6 +1012,25 @@ function QuotationsPage() {
     if (productForm.internalUnit === 'other' && !productForm.customInternalUnit.trim()) {
       setError('Captura la unidad interna personalizada.');
       return;
+    }
+    if (productForm.type === 'Servicio' && productForm.serviceKind === 'composite') {
+      if (!productForm.components.length) {
+        setError('Un servicio compuesto debe tener al menos un componente.');
+        return;
+      }
+      const componentIds = productForm.components.map((component) => component.componentCatalogItemId);
+      if (componentIds.some((componentId) => !componentId)) {
+        setError('Selecciona el servicio de cada componente.');
+        return;
+      }
+      if (new Set(componentIds).size !== componentIds.length) {
+        setError('No se puede repetir un componente dentro del servicio.');
+        return;
+      }
+      if (productForm.components.some((component) => Number(component.quantity) < 1)) {
+        setError('La cantidad mínima de cada componente es 1.');
+        return;
+      }
     }
 
     setIsSaving(true);
@@ -1632,7 +1713,16 @@ function QuotationsPage() {
                 <span>{item.type}</span>
                 <span>{item.category || '-'}</span>
                 <span>{item.internalKey || '-'}</span>
-                <span>{item.name}</span>
+                <span className="catalog-item-name-cell">
+                  <strong>{item.name}</strong>
+                  {item.itemType === 'service' ? (
+                    <small>
+                      {item.serviceKind === 'composite'
+                        ? `Servicio Compuesto · ${item.components.length} componentes`
+                        : 'Servicio Simple'}
+                    </small>
+                  ) : null}
+                </span>
                 <span>{item.satKey || '-'}</span>
                 <span>{formatMoney(item.basePrice)} {item.sourceCurrency}</span>
                 <span>{formatMoney(item.finalPriceMxn ?? calculateFinalPriceMxn(item))}</span>
@@ -2677,6 +2767,18 @@ function QuotationsPage() {
                   ))}
                 </select>
               </label>
+              {productForm.type === 'Servicio' ? (
+                <label>
+                  Tipo de servicio
+                  <select
+                    onChange={(event) => updateProductForm('serviceKind', event.target.value)}
+                    value={productForm.serviceKind}
+                  >
+                    <option value="simple">Servicio Simple</option>
+                    <option value="composite">Servicio Compuesto</option>
+                  </select>
+                </label>
+              ) : null}
               <label>
                 Clave interna generada
                 <input
@@ -2753,6 +2855,73 @@ function QuotationsPage() {
                     {certificateMasters.map((master) => <option key={master.id} value={master.id}>{master.code} · {master.name} · Rev. {master.current_revision || '-'}</option>)}
                   </select>
                 </label>
+              ) : null}
+              {productForm.type === 'Servicio' && productForm.serviceKind === 'composite' ? (
+                <section className="catalog-composite-editor">
+                  <div className="catalog-composite-editor__heading">
+                    <div>
+                      <span>Descomposición operativa</span>
+                      <strong>Componentes del servicio</strong>
+                    </div>
+                    <button className="table-button" onClick={addCompositeComponent} type="button">
+                      Agregar componente
+                    </button>
+                  </div>
+                  <p>La cotización conservará este concepto único. Los componentes se crearán únicamente al generar el ETS.</p>
+                  <div className="catalog-composite-editor__list">
+                    {productForm.components.length ? productForm.components.map((component, index) => {
+                      const selectedIds = new Set(
+                        productForm.components
+                          .filter((_, componentIndex) => componentIndex !== index)
+                          .map((item) => item.componentCatalogItemId)
+                      );
+                      return (
+                        <div className="catalog-composite-editor__row" key={`${component.id || 'new'}-${index}`}>
+                          <label>
+                            Servicio
+                            <select
+                              onChange={(event) => updateCompositeComponent(index, 'componentCatalogItemId', event.target.value)}
+                              value={component.componentCatalogItemId}
+                            >
+                              <option value="">Seleccionar servicio</option>
+                              {catalogItems
+                                .filter((item) => item.itemType === 'service'
+                                  && item.status === 'Activo'
+                                  && String(item.id) !== String(editingProductId || '')
+                                  && (!selectedIds.has(String(item.id)) || String(item.id) === component.componentCatalogItemId))
+                                .map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.internalKey || 'Sin clave'} · {item.name}
+                                    {item.serviceKind === 'composite' ? ' (Compuesto)' : ''}
+                                  </option>
+                                ))}
+                            </select>
+                          </label>
+                          <label>
+                            Cantidad
+                            <input
+                              min="1"
+                              onChange={(event) => updateCompositeComponent(index, 'quantity', event.target.value)}
+                              step="1"
+                              type="number"
+                              value={component.quantity}
+                            />
+                          </label>
+                          <button
+                            aria-label="Quitar componente"
+                            className="table-button table-button--danger"
+                            onClick={() => removeCompositeComponent(index)}
+                            type="button"
+                          >
+                            Quitar
+                          </button>
+                        </div>
+                      );
+                    }) : (
+                      <div className="clients-empty">Agrega al menos un servicio del catálogo.</div>
+                    )}
+                  </div>
+                </section>
               ) : null}
               <label>
                 Precio origen

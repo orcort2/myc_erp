@@ -22,13 +22,25 @@ EXCLUDED_PARTS = {
 EXCLUDED_NAMES = {
     ".DS_Store", "backup_erp_myc_antes_prueba.sql", "BytesIO",
     ".tmp_field_sheet_templates.json", "package-lock.json", "from", "import", "io",
+    "BACKUP_ESTADO_ACTUAL (1).md",
 }
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
 FORCE_RECLASSIFY = {
     "AGENTS.md",
+    "backend/app/schemas/catalog_item.py",
+    "backend/app/schemas/controlled_document.py",
+    "backend/app/schemas/equipment.py",
+    "backend/app/schemas/quotation.py",
+    "backend/app/schemas/service_order.py",
+    "backend/app/schemas/service_scope.py",
+    "backend/app/services/service_order_certificate_capacity.py",
+    "backend/migrations/versions/fe6f7a8b9c0d_normalize_operational_calibration_scope.py",
+    "backend/tests/test_service_scope_contract.py",
     "docs/BACKUP_ESTADO_ACTUAL.md",
+    "docs/architecture/CALIBRATION_SCOPE_CONTRACT.md",
     "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md",
+    "frontend/src/constants/catalog.js",
     "scripts/generate_project_file_registry.py",
 }
 SECTION_ORDER = (
@@ -104,13 +116,37 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if "/migrations/versions/" in value:
         return ("Migración Alembic", f"Aplica la revisión {subject} del esquema y conserva la evolución reproducible de PostgreSQL.", "Alembic, modelos ORM y base de datos", "Alembic durante upgrade/downgrade y despliegues", "Crítico")
     if value == "AGENTS.md":
-        return ("Normas del repositorio", "Define las reglas persistentes de cierre, respaldo, inventario, reset, auditoría integral y actualización documental obligatoria en cada tarea.", "Procesos de desarrollo, auditoría y jerarquía documental", "Agentes Codex y mantenedores del ERP", "Crítico")
+        return ("Normas del repositorio", "Define las reglas persistentes de cierre, respaldo, inventario, auditoría, documentación y los contratos únicos de Facturación, acreditación y Servicios Compuestos.", "Procesos de desarrollo, jerarquía documental y arquitecturas canónicas", "Agentes Codex y mantenedores del ERP", "Crítico")
     if value == "docs/BACKUP_ESTADO_ACTUAL.md":
         return ("Estado operativo vigente", "Resume exclusivamente el estado verificable actual, migraciones, validaciones y pendientes operativos, con enlaces al canon especializado.", "PROJECT_STATUS, TECHNICAL_DEBT, validaciones y migraciones vigentes", "Agentes Codex, desarrollo y operación", "Alto")
+    if value == "docs/architecture/CALIBRATION_SCOPE_CONTRACT.md":
+        return ("Contrato de alcance de calibración", "Define las tres claves canónicas de acreditación, su propagación automática, mapeo a certificado, validación por categoría y normalización de alias legacy.", "Schemas Pydantic, catálogo, ETS, equipos, certificados, frontend y migración", "Desarrollo de Catálogo, ETS, Captura, Calidad y Certificados", "Crítico")
+    if value == "backend/app/schemas/service_scope.py":
+        return ("Contrato Pydantic compartido", "Centraliza las claves de acreditación, los alcances de servicio por categoría y las leyendas persistentes sin aceptar texto documental como dominio.", "Pydantic y reglas canónicas de Catálogo/ETS", "Schemas operacionales, perfiles técnicos y servicios de certificados", "Crítico")
+    if value == "backend/tests/test_service_scope_contract.py":
+        return ("Prueba de contrato transversal", "Verifica las tres modalidades canónicas, rechazo de texto documental, categorías, respuestas del catálogo y mapeo bidireccional a certificados.", "Schemas de catálogo, cotización, ETS, equipo y control documental", "CI y desarrollo de la cadena de calibración", "Alto")
+    if value == "backend/app/schemas/catalog_item.py":
+        return ("Contrato Pydantic de Catálogo", "Valida partidas, restringe cada alcance a su categoría y consume las claves/leyendas compartidas sin aceptar contenido documental.", "service_scope.py, Pydantic y modelo CatalogItem", "Router, servicio de Catálogo, cotizaciones y frontend", "Crítico")
+    if value == "backend/app/schemas/controlled_document.py":
+        return ("Contrato Pydantic documental", "Valida documentos, interpretaciones y perfiles técnicos; reutiliza AccreditationScope para impedir una taxonomía paralela.", "service_scope.py, Pydantic y modelos documentales", "Control Documental, perfiles técnicos y motores operativos", "Alto")
+    if value in {"backend/app/schemas/quotation.py", "backend/app/schemas/service_order.py", "backend/app/schemas/equipment.py"}:
+        return ("Contrato Pydantic operacional", f"Valida payloads y respuestas de {subject}, propagando ServiceScope con las claves canónicas de acreditación.", "service_scope.py, Pydantic y modelo ORM", "Routers, servicios y cadena Catálogo→ETS→Certificado", "Alto")
+    if value == "backend/app/services/service_order_certificate_capacity.py":
+        return ("Capacidad automática por acreditación", "Calcula cupos del ETS, resuelve automáticamente el alcance del equipo y mapea las tres claves canónicas a tipos de certificado sin inferir desde documentos.", "Partidas ETS, equipos, certificados y service_scope.py", "Alta/edición de equipos y presentación de capacidad del ETS", "Crítico")
+    if value == "backend/migrations/versions/fe6f7a8b9c0d_normalize_operational_calibration_scope.py":
+        return ("Migración Alembic", "Normaliza alias legacy y texto documental a claves canónicas en seis tablas; bloquea special para evitar reclasificación silenciosa.", "Alembic, PostgreSQL y contrato calibration_scope", "Alembic durante despliegues y restauraciones", "Crítico")
+    if value == "frontend/src/constants/catalog.js":
+        return ("Catálogo frontend de alcances", "Expone las claves canónicas y etiquetas de acreditación propia, trazable/no acreditada y laboratorio vinculado, además de alcances por categoría.", "Contrato calibration_scope", "Catálogo y Cotizaciones", "Alto")
     if value == "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md":
         return ("Bitácora histórica", "Conserva íntegra la cronología de entregas, respaldos, cierres y validaciones anterior a la separación del estado operativo vigente.", "Cortes y cambios históricos del ERP", "Auditorías forenses y mantenedores", "Medio")
     if value == "scripts/generate_project_file_registry.py":
         return ("Generador de inventario", "Regenera el inventario desde rutas existentes, excluye artefactos y conserva las filas previamente auditadas para no perder la revisión humana.", "Git, árbol del repositorio y PROJECT_FILE_REGISTRY", "Agentes Codex y mantenedores", "Alto")
+    if value == "frontend/src/components/ets-billing/EtsBillingTab.jsx":
+        return ("Composición contextual ETS", "Distingue carga contextual, ausencia resuelta y factura real; presenta el Invoice asociado con bloque estable y monta controlador/diálogo compartidos sin duplicar reglas ni APIs.", "useInvoiceWorkbenchController, InvoiceWorkbenchDialog y presentación ETS", "Pestaña Facturación de ServiceOrdersPage", "Crítico")
+    if value == "frontend/src/components/ets-billing/etsInvoicePresentation.js":
+        return ("Presentación de factura ETS", "Deriva etiquetas y acciones visuales de ausencia, borrador, timbrada y cancelada sin definir transiciones ni reglas backend.", "Contrato de estados vigente de Invoice", "EtsBillingTab y sus pruebas", "Alto")
+    if value == "frontend/src/components/ets-billing/etsInvoicePresentation.test.js":
+        return ("Prueba de presentación ETS", "Verifica que un contexto no resuelto no tenga presentación y cubre ausencia resuelta, borrador, timbrada y cancelada.", "Node test y etsInvoicePresentation", "Desarrollo y CI frontend", "Medio")
     if value == "docs/audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md":
         return ("Auditoría integral de avance", "Consolida el estado verificable de todos los módulos, sus validaciones, observaciones históricas, pendientes, riesgos, sellos y orden de cierre hacia la versión 1.0.", "Frontend, backend, base de datos, pruebas, scripts y documentación histórica", "Dirección, desarrollo, calidad, operación y futuras auditorías", "Alto")
     if name == "__init__.py":
@@ -215,7 +251,7 @@ def render(paths: list[Path], preserved: dict[str, str]) -> str:
         "",
         "# Registro maestro de archivos funcionales",
         "",
-        "Fecha de inventario: 2026-07-21.",
+        "Fecha de inventario: 2026-07-22.",
         "",
         "Este es el inventario oficial de archivos funcionales del ERP MYC. Incluye únicamente archivos fuente, configuración, migraciones, recursos oficiales, scripts, pruebas y documentación relevante. Las filas describen responsabilidad verificable; los estados reflejan el estado actual observable del repositorio.",
         "",

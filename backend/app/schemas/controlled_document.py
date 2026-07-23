@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.service_scope import AccreditationScope
+
 
 DocumentType = Literal[
     "manual",
@@ -31,7 +33,6 @@ InterpretationType = Literal[
     "general",
 ]
 InterpretationStatus = Literal["draft", "in_review", "approved", "obsolete"]
-CalibrationScope = Literal["accredited", "traceable", "linked_lab", "special"]
 TechnicalProfileStatus = Literal["draft", "active", "obsolete", "suspended"]
 
 
@@ -123,7 +124,7 @@ class DocumentInterpretationBase(BaseModel):
     magnitude: str | None = Field(default=None, max_length=80)
     equipment_type: str | None = Field(default=None, max_length=120)
     service_type: str | None = Field(default=None, max_length=80)
-    calibration_scope: CalibrationScope | None = None
+    calibration_scope: AccreditationScope | None = None
     data: dict | None = None
     status: InterpretationStatus = "draft"
     version: int = Field(default=1, ge=1)
@@ -140,7 +141,7 @@ class DocumentInterpretationUpdate(BaseModel):
     magnitude: str | None = Field(default=None, max_length=80)
     equipment_type: str | None = Field(default=None, max_length=120)
     service_type: str | None = Field(default=None, max_length=80)
-    calibration_scope: CalibrationScope | None = None
+    calibration_scope: AccreditationScope | None = None
     data: dict | None = None
     status: InterpretationStatus | None = None
 
@@ -185,7 +186,7 @@ class TechnicalProfileBase(BaseModel):
     magnitude: str = Field(min_length=1, max_length=80)
     equipment_type: str = Field(min_length=1, max_length=120)
     service_type: str = Field(default="calibration", min_length=1, max_length=80)
-    calibration_scope: CalibrationScope
+    calibration_scope: AccreditationScope
     procedure_document_id: int | None = None
     procedure_interpretation_id: int | None = None
     field_sheet_template_document_id: int | None = None
@@ -207,7 +208,7 @@ class TechnicalProfileUpdate(BaseModel):
     magnitude: str | None = Field(default=None, min_length=1, max_length=80)
     equipment_type: str | None = Field(default=None, min_length=1, max_length=120)
     service_type: str | None = Field(default=None, min_length=1, max_length=80)
-    calibration_scope: CalibrationScope | None = None
+    calibration_scope: AccreditationScope | None = None
     procedure_document_id: int | None = None
     procedure_interpretation_id: int | None = None
     field_sheet_template_document_id: int | None = None

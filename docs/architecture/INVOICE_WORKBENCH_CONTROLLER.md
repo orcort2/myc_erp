@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: implementaciones que vuelvan a concentrar el flujo en una página o creen controladores paralelos
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Controlador reutilizable del Workbench de Facturación
 
@@ -31,7 +31,9 @@ El controlador vive en `frontend/src/components/invoice-workbench/useInvoiceWork
 - estado seleccionado, draft, loading, saving, error y aviso;
 - catálogos, configuración y mapas necesarios por los componentes actuales.
 
-Con `loadOverview=false`, un futuro consumidor contextual carga sólo configuración, catálogos y las entidades requeridas por `invoice_id`/`service_order_id`. La página global conserva `loadOverview=true` porque su tabla necesita las colecciones completas.
+Con `loadOverview=false`, un consumidor contextual carga sólo configuración, catálogos y las entidades requeridas por `invoice_id`/`service_order_id`. La página global conserva `loadOverview=true` porque su tabla necesita las colecciones completas.
+
+El controlador admite `openInitialContext=false` y expone `contextInvoice`, `contextLoading`, `contextResolved` y `loadContextSummary`. Esta modalidad resuelve el mismo contexto sin abrir todavía el modal y permite presentar un resumen de sólo lectura. `null` en `contextInvoice` no significa “sin factura” hasta que `contextResolved=true`; durante la consulta, `contextLoading=true` impide resolver cualquier presentación provisional. `resolveContextSelection` es la única resolución interna para resumen y Workbench, por lo que ambos recorridos no pueden seleccionar facturas distintas.
 
 ## Contexto explícito y navegación
 
@@ -44,7 +46,20 @@ Con `loadOverview=false`, un futuro consumidor contextual carga sólo configurac
 
 `invoice_id` tiene precedencia si ambos identificadores están presentes. Los valores deben ser enteros positivos. La apertura por factura usa `GET /invoices/{id}`; la apertura por ETS usa `GET /service-orders/{id}` y `GET /invoices?service_order_id={id}`. No se usa `localStorage` para transportar contexto.
 
-El botón histórico del ETS conserva su navegación al Centro de Facturación mediante este contrato; esto no implementa la futura pestaña contextual del ETS.
+## Pestaña Facturación del ETS
+
+`frontend/src/components/ets-billing/EtsBillingTab.jsx` es la composición exclusiva de esta pestaña. Monta el mismo hook con `loadOverview=false` y `openInitialContext=false`, muestra el `Invoice` contextual y abre el mismo `InvoiceWorkbenchDialog` mediante `service_order_id`. Al cerrar el diálogo no navega ni desmonta el expediente: el usuario regresa a la misma pestaña del mismo ETS.
+
+La tarjeta adapta únicamente su presentación:
+
+- sin factura: mensaje y acceso `Crear factura` al flujo existente de borrador;
+- borrador u otro estado preparatorio: `Continuar factura`;
+- emitida/timbrada y estados administrativos posteriores con CFDI: `Ver factura`, PDF MYC y XML mediante las funciones del controlador;
+- cancelada: `Ver detalle`, sin descargas desde la pestaña.
+
+Pagos, cuentas por cobrar, notas de crédito, historial/documentos y liberación financiera sólo aparecen como tarjetas de siguiente fase. La pestaña no contiene llamadas directas a `api.js`, payload fiscal, transición, emisión, descarga ni lógica backend.
+
+La carga contextual usa un bloque estático con altura mínima equivalente al contenido final, sin transición ni animación. La etiqueta de estado, el resumen y sus acciones sólo se montan después de resolver el contexto. `ServiceOrdersPage` conserva montada la pestaña después de su primera apertura y sólo la oculta al alternar carpetas del mismo ETS; así no reinicia la consulta ni reproduce el salto al regresar. Abrir otro ETS reinicia correctamente el contexto.
 
 ## Backend
 
@@ -58,6 +73,17 @@ El botón histórico del ETS conserva su navegación al Centro de Facturación m
 - `InvoiceWorkbenchDialog` sigue siendo el modal productivo compartido.
 - No deben recrearse en páginas consumidoras el payload fiscal, la validación del emisor, la descarga ni el refresco.
 - Un nuevo consumidor debe abrir por contexto explícito y, si no necesita el Centro completo, usar `loadOverview=false`.
+- El resumen contextual debe conservar `contextInvoice` al cerrar el diálogo y actualizarlo con la respuesta de guardar o emitir.
+- `contextInvoice=null` sólo puede presentarse como “Sin factura” con `contextResolved=true`; `isLoading` no sustituye este contrato porque también representa dependencias generales del Workbench.
+
+## Validación del Sprint 2A
+
+- Build Vite correcto: 1,664 módulos.
+- Pruebas Node: 11 correctas; cubren contexto no resuelto sin presentación, ausencia resuelta, borrador, timbrada, cancelada, navegación contextual y retorno.
+- Pruebas backend focalizadas del listado filtrado y documentos: 8 correctas.
+- No se modificaron backend, endpoints, reglas, estados, esquema ni datos.
+- `InvoiceWorkbenchDialog` continúa siendo la única interfaz productiva de edición y `useInvoiceWorkbenchController` la única ruta frontend de creación, guardado, emisión, refresco y descargas.
+- Corrección de estabilidad visual: el render SSR inicial contiene únicamente `ets-billing-tab__loading`, sin “Sin factura”, “Crear factura” ni badge; la auditoría CSS no encontró transiciones heredadas sobre el bloque y la animación de `InvoiceWorkbenchDialog` no fue modificada.
 
 ## Validación del Sprint 1
 

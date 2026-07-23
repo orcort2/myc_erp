@@ -78,6 +78,7 @@ function saveDownloadedFile({ blob, filename }, fallbackFilename) {
 export default function useInvoiceWorkbenchController({
   initialContext = null,
   loadOverview = true,
+  openInitialContext = true,
   onIssuerConfigurationRequired,
 } = {}) {
   const [dashboard, setDashboard] = useState(null);
@@ -97,6 +98,9 @@ export default function useInvoiceWorkbenchController({
   const [selectedServiceOrder, setSelectedServiceOrder] = useState(null);
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [contextInvoice, setContextInvoice] = useState(null);
+  const [contextLoading, setContextLoading] = useState(Boolean(initialContext));
+  const [contextResolved, setContextResolved] = useState(!initialContext);
   const [workspaceDraft, setWorkspaceDraft] = useState({});
   const [facturamaStatus, setFacturamaStatus] = useState(null);
 
@@ -125,7 +129,11 @@ export default function useInvoiceWorkbenchController({
         refreshFacturamaStatus(),
       ]);
       if (active && initialContext) {
-        await openWorkspaceByContext(initialContext);
+        if (openInitialContext) {
+          await openWorkspaceByContext(initialContext);
+        } else {
+          await loadContextSummary(initialContext);
+        }
       }
     }
     initialize();
@@ -236,6 +244,9 @@ export default function useInvoiceWorkbenchController({
       );
     }
     setSelectedInvoice(invoice || null);
+    setContextInvoice(invoice || null);
+    setContextLoading(false);
+    setContextResolved(true);
     setSelectedQuotation(quotation);
     setSelectedServiceOrder(serviceOrder || null);
     setSelectedClient(client || null);
@@ -243,6 +254,54 @@ export default function useInvoiceWorkbenchController({
       await buildInvoiceWorkbenchDraft(quotation, client || null, invoice || null)
     );
     setWorkspaceOpen(true);
+  }
+
+  async function resolveContextSelection(context) {
+    const normalized = normalizeInvoiceWorkbenchContext(context);
+    if (!normalized) {
+      throw new Error('No fue posible identificar el contexto de facturación.');
+    }
+
+    let invoice = null;
+    let serviceOrder = null;
+    if (normalized.invoice_id) {
+      invoice = await getInvoice(normalized.invoice_id);
+      if (invoice.service_order_id) {
+        serviceOrder = await getServiceOrder(invoice.service_order_id);
+      }
+    } else {
+      serviceOrder = await getServiceOrder(normalized.service_order_id);
+      const contextualInvoices = await listInvoices({
+        serviceOrderId: normalized.service_order_id,
+      });
+      invoice = contextualInvoices[0] || null;
+    }
+    const quotationId = invoice?.quotation_id || serviceOrder?.quotation_id;
+    const quotation = quotationId ? await getQuotation(quotationId) : null;
+    const clientId =
+      invoice?.client_id || quotation?.client_id || serviceOrder?.client_id;
+    const client = clientId ? await getClient(clientId) : null;
+
+    return { invoice, quotation, serviceOrder, client };
+  }
+
+  async function loadContextSummary(context) {
+    setError('');
+    setNotice('');
+    setContextLoading(true);
+    setContextResolved(false);
+    try {
+      const selection = await resolveContextSelection(context);
+      setContextInvoice(selection.invoice || null);
+      return selection;
+    } catch (requestError) {
+      setContextInvoice(null);
+      setError(requestError.message);
+      return null;
+    } finally {
+      setContextLoading(false);
+      setContextResolved(true);
+    }
   }
 
   async function openWorkspace(row, originElement = null) {
@@ -290,25 +349,7 @@ export default function useInvoiceWorkbenchController({
     setNotice('');
     setIsSaving(true);
     try {
-      let invoice = null;
-      let serviceOrder = null;
-      if (normalized.invoice_id) {
-        invoice = await getInvoice(normalized.invoice_id);
-        if (invoice.service_order_id) {
-          serviceOrder = await getServiceOrder(invoice.service_order_id);
-        }
-      } else {
-        serviceOrder = await getServiceOrder(normalized.service_order_id);
-        const contextualInvoices = await listInvoices({
-          serviceOrderId: normalized.service_order_id,
-        });
-        invoice = contextualInvoices[0] || null;
-      }
-      const quotationId = invoice?.quotation_id || serviceOrder?.quotation_id;
-      const quotation = quotationId ? await getQuotation(quotationId) : null;
-      const clientId = invoice?.client_id || quotation?.client_id || serviceOrder?.client_id;
-      const client = clientId ? await getClient(clientId) : null;
-      await setWorkspaceSelection({ invoice, quotation, serviceOrder, client });
+      await setWorkspaceSelection(await resolveContextSelection(normalized));
       return true;
     } catch (requestError) {
       setError(requestError.message);
@@ -363,8 +404,11 @@ export default function useInvoiceWorkbenchController({
         ? await updateInvoice(selectedInvoice.id, payload)
         : await createInvoice(payload);
       setSelectedInvoice(savedInvoice);
+      setContextInvoice(savedInvoice);
       setNotice('Borrador guardado correctamente.');
-      await loadBillingData();
+      if (loadOverview) {
+        await loadBillingData();
+      }
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -397,6 +441,7 @@ export default function useInvoiceWorkbenchController({
     try {
       const issued = await issueInvoice(invoice.id);
       setSelectedInvoice(issued);
+      setContextInvoice(issued);
       setInvoices((current) =>
         current.map((item) => (item.id === issued.id ? issued : item))
       );
@@ -467,6 +512,9 @@ export default function useInvoiceWorkbenchController({
     clients,
     clientsById,
     closeWorkspace,
+    contextInvoice,
+    contextLoading,
+    contextResolved,
     dashboard,
     downloadFiscalXml,
     downloadInstitutionalPdf,
@@ -476,6 +524,7 @@ export default function useInvoiceWorkbenchController({
     isLoading,
     isSaving,
     issueWorkspaceInvoice,
+    loadContextSummary,
     loadBillingData,
     notice,
     openWorkspace,

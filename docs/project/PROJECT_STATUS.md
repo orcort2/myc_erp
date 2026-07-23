@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Estado actual del ERP MYC
 
@@ -34,7 +34,7 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 | --- | --- |
 | Dashboard | Visibilidad por permisos y E2E autenticado con datos representativos. |
 | Clientes | Proteger todas las rutas y ejecutar el ciclo autenticado completo. |
-| Cotizaciones | Completar la restauración de partidas desde snapshots o reducir formalmente ese contrato; asegurar rutas; E2E hasta ETS. |
+| Cotizaciones | Servicios Compuestos ya conservan un concepto comercial y expanden el ETS con pruebas; falta completar restauración de partidas desde snapshots, asegurar rutas y ejecutar E2E autenticado hasta ETS. |
 | Órdenes de Trabajo | E2E multi-OT, permisos y encapsulado del número legacy. |
 | Equipos | Proteger el router y validar snapshots dentro del ciclo multi-OT. |
 | Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada; falta retirar la superficie autenticadora duplicada de ETS y completar E2E de verificación pública. |
@@ -49,14 +49,14 @@ Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](T
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
 3. Hojas de Campo sin cierre semántico, automatizaciones metrológicas y E2E de las 23 plantillas.
-4. Facturación con borrador no autosalvado, vistas placeholder y flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
+4. Facturación ya integra el resumen contextual del ETS sobre el Workbench único; permanecen el borrador no autosalvado, las vistas internas de siguiente fase y el flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
 5. Administración y roles sin gestión dinámica ni filtrado visual por permisos.
 6. Toolkit, infraestructura y UX con diagnósticos, puertos, pruebas de despliegue, páginas monolíticas y bundle pendientes.
 
 ## Módulos pendientes o no iniciados
 
 - **Contactos, Agenda y Llamados:** existen piezas absorbidas por Cliente o ETS, pero no los módulos autónomos acordados. Se requiere decisión formal de absorción o implementación.
-- **Catálogo MYC:** existe backend y consumo embebido, pero no una experiencia oficial cerrada y sus endpoints están abiertos.
+- **Catálogo MYC:** el editor embebido ya administra Servicios Simples/Compuestos mediante relación normalizada y expansión ETS; sigue pendiente una experiencia independiente cerrada y sus endpoints permanecen abiertos.
 - **CRM/Leads, Encuestas y reporte final:** no se encontró implementación funcional.
 - **Google Drive:** no existe integración.
 

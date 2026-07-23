@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Índice único de documentación
 
@@ -50,7 +50,9 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/CATALOGOS_SAT.md`](../architecture/CATALOGOS_SAT.md) | Fuente, importación, versionado y consumo de Catálogos SAT. |
 | [`../architecture/FIELD_SHEET_FIELD_REGISTRY.md`](../architecture/FIELD_SHEET_FIELD_REGISTRY.md) | Claves y semántica canónica de campos de Hojas de Campo. |
 | [`../architecture/PERMISSIONS_MATRIX.md`](../architecture/PERMISSIONS_MATRIX.md) | Roles/permisos declarados y brechas de aplicación. |
-| [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y reglas de reutilización del Workbench de Facturación. |
+| [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
+| [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
+| [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -70,6 +72,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 
 | Documento | Fecha / autoridad |
 | --- | --- |
+| [`../auditorias/AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md`](../auditorias/AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md) | Corte transversal de excepciones 2026-07-22; ubicación solicitada expresamente para este entregable, con la misma autoridad de fotografía que `audits/`. |
 | [`../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md`](../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md) | Corte integral 2026-07-21; evidencia base del canon actual. |
 | [`../audits/AUDITORIA_PAQUETE_CAPTURA_2026-07-17.md`](../audits/AUDITORIA_PAQUETE_CAPTURA_2026-07-17.md) | Diagnóstico puntual de Captura al 2026-07-17. |
 | [`../audits/AUDITORIA_TECNICA_FACTURACION_CFDI_4_0.md`](../audits/AUDITORIA_TECNICA_FACTURACION_CFDI_4_0.md) | Corte 2026-07-14 superado por integración posterior. |
@@ -124,7 +127,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 2. Consultar `PROJECT_STATUS.md` antes de buscar pendientes en auditorías o cierres.
 3. No convertir un límite histórico, diseño futuro o propuesta en pendiente vigente si no aparece en `OBSERVATIONS_REGISTER.md`, `TECHNICAL_DEBT.md` o `CURRENT_SCOPE.md`.
 4. No declarar un módulo sellado desde un cierre técnico; sólo `PROJECT_STATUS.md` puede hacerlo.
-5. Toda nueva auditoría debe quedar en `audits/`, incluir fecha y declarar que es una fotografía.
+5. Toda nueva auditoría debe quedar en `audits/`, incluir fecha y declarar que es una fotografía. La carpeta `auditorias/` se reconoce sólo para `AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md`, porque su ruta fue un entregable explícito; no crea una segunda jerarquía ni autoriza nuevos documentos allí por defecto.
 6. Todo documento sustituido debe moverse a `archive/` o conservar clasificación histórica, sin borrar su contenido.
 7. Toda contradicción nueva debe resolverse actualizando este índice y la relación `prevalece/reemplazado por` de ambos documentos.
 

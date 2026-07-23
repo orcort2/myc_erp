@@ -1188,6 +1188,8 @@ button {
   font-size: 14px;
   font-weight: 800;
   gap: 7px;
+  min-width: 0;
+  min-inline-size: 0;
 }
 
 .client-tax-regime-select {
@@ -1207,6 +1209,12 @@ button {
   color: var(--myc-navy);
   outline: none;
   padding: 0 12px;
+
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  box-sizing: border-box;
 }
 
 .client-form input,
@@ -1425,6 +1433,22 @@ button {
 
 .client-form--modal {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+#catalog-item-form > label,
+#catalog-item-form > div {
+  min-width: 0;
+  min-inline-size: 0;
+}
+
+#catalog-item-form input,
+#catalog-item-form select,
+#catalog-item-form textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-inline-size: 0;
+  box-sizing: border-box;
 }
 
 .client-form__actions--modal {
@@ -2343,6 +2367,179 @@ button {
 
 .service-order-info-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.ets-billing-tab {
+  display: grid;
+  gap: 16px;
+  min-height: 500px;
+  transition: none;
+}
+
+.ets-billing-tab > .quotation-section__title {
+  margin-bottom: 0;
+}
+
+.ets-billing-tab-slot,
+.ets-billing-tab__context {
+  min-height: 420px;
+  transition: none;
+}
+
+.ets-billing-tab__context {
+  display: grid;
+  gap: 16px;
+}
+
+.ets-billing-tab__loading {
+  align-content: center;
+  color: var(--myc-muted);
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  min-height: 420px;
+  text-align: center;
+  transition: none;
+}
+
+.ets-billing-tab__loading svg {
+  color: var(--myc-primary);
+}
+
+.ets-invoice-summary {
+  background: rgba(255, 255, 255, 0.38);
+  border: 1px solid rgba(201, 255, 247, 0.48);
+  border-left: 4px solid var(--myc-primary);
+  border-radius: 8px;
+  display: grid;
+  gap: 18px;
+  padding: 18px;
+}
+
+.ets-invoice-summary.is-cancelled {
+  border-left-color: var(--myc-danger);
+}
+
+.ets-invoice-summary__heading,
+.ets-invoice-summary__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ets-invoice-summary__heading {
+  gap: 12px;
+}
+
+.ets-invoice-summary__heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.ets-invoice-summary__heading span,
+.ets-invoice-summary__details dt,
+.ets-billing-next-phase span {
+  color: var(--myc-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ets-invoice-summary__heading strong {
+  color: var(--myc-navy);
+  font-size: 18px;
+}
+
+.ets-invoice-summary__icon {
+  align-items: center;
+  background: rgba(26, 161, 145, 0.12);
+  border-radius: 8px;
+  color: var(--myc-primary-dark);
+  display: inline-flex;
+  justify-content: center;
+  padding: 10px;
+}
+
+.ets-invoice-summary__details {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.ets-invoice-summary__details div {
+  display: grid;
+  gap: 4px;
+}
+
+.ets-invoice-summary__details .is-wide {
+  grid-column: 1 / -1;
+}
+
+.ets-invoice-summary__details dd {
+  color: var(--myc-navy);
+  font-weight: 800;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.ets-billing-next-phase {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.ets-billing-next-phase article {
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px dashed rgba(40, 109, 102, 0.3);
+  border-radius: 8px;
+  display: grid;
+  gap: 4px;
+  padding: 13px;
+}
+
+.invoice-billing-status.is-empty,
+.invoice-billing-status.is-draft,
+.invoice-billing-status.is-stamped,
+.invoice-billing-status.is-cancelled {
+  align-items: center;
+  display: inline-flex;
+  gap: 7px;
+}
+
+.invoice-billing-status.is-empty i,
+.invoice-billing-status.is-draft i,
+.invoice-billing-status.is-stamped i,
+.invoice-billing-status.is-cancelled i {
+  background: currentColor;
+  border-radius: 999px;
+  height: 7px;
+  width: 7px;
+}
+
+.invoice-billing-status.is-draft {
+  color: var(--myc-info);
+}
+
+.invoice-billing-status.is-stamped {
+  color: var(--myc-success);
+}
+
+.invoice-billing-status.is-cancelled {
+  color: var(--myc-danger);
+}
+
+@media (max-width: 680px) {
+  .ets-billing-tab,
+  .ets-billing-tab-slot,
+  .ets-billing-tab__context,
+  .ets-billing-tab__loading {
+    min-height: 620px;
+  }
+
+  .ets-invoice-summary__details {
+    grid-template-columns: 1fr;
+  }
 }
 
 .ets-equipment-card-grid {
@@ -7679,4 +7876,59 @@ body[data-theme="dark"] .workspace-header > div:first-child > span:not(.workspac
 .dark-theme .workspace-header > div:first-child > span:not(.workspace-header__welcome),
 .theme-dark .workspace-header > div:first-child > span:not(.workspace-header__welcome) {
   color: var(--myc-on-dark-muted);
+}
+
+.catalog-composite-editor {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(73, 101, 124, 0.2);
+  border-radius: 16px;
+  background: rgba(246, 249, 251, 0.88);
+}
+
+.catalog-item-name-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.catalog-composite-editor__heading,
+.catalog-composite-editor__row {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.catalog-composite-editor__heading {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.catalog-composite-editor__heading > div,
+.catalog-composite-editor__list {
+  display: grid;
+  gap: 8px;
+}
+
+.catalog-composite-editor__row label:first-child {
+  flex: 1 1 360px;
+}
+
+.catalog-composite-editor__row label:nth-child(2) {
+  flex: 0 0 120px;
+}
+
+@media (max-width: 760px) {
+  .catalog-composite-editor__heading,
+  .catalog-composite-editor__row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .catalog-composite-editor__row label:first-child,
+  .catalog-composite-editor__row label:nth-child(2) {
+    flex-basis: auto;
+    width: 100%;
+  }
 }

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Registro de decisiones vigentes
 
@@ -41,6 +41,7 @@
 | ADR-027 | 2026-07-21 | La dependencia LibreOffice se resuelve de forma multiplataforma mediante `LIBREOFFICE_EXECUTABLE`, comandos `soffice`/`libreoffice` en `PATH` y rutas comunes de macOS, Windows o Linux; el alias `OFFICE_CONVERTER_BINARY` se conserva. | diagnóstico macOS, servicio central y Doctor | Ningún despliegue depende de una ruta única y la ausencia del convertidor se detecta al arrancar o ejecutar Doctor, antes de autenticar. |
 | ADR-028 | 2026-07-21 | `match_status` deja de ser compuerta de Certificados/Liberación. `authenticated` más PDF autenticado existente constituye readiness documental; la regla financiera vigente decide si Liberar está habilitado. | corrección Certificados→Liberación y pruebas con `match_status=pending` | Los históricos autenticados no requieren backfill; “Listo para liberar”, “Pendiente de pago” y “Liberado” son estados derivados distintos. |
 | ADR-029 | 2026-07-21 | El Workbench de Facturación tiene un único controlador frontend reutilizable; `BillingPage` compone la vista global y los consumidores abren por contexto explícito `invoice_id`/`service_order_id`, sin `localStorage` ni controladores paralelos. | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) y Sprint 1 de Facturación | La futura pestaña ETS debe reutilizar el hook, `Invoice`, el endpoint filtrable y `InvoiceWorkbenchDialog`; no debe duplicar payload, emisión, descargas ni refresco. |
+| ADR-030 | 2026-07-22 | Los Servicios Compuestos se representan con una relación normalizada padre-hijo y se expanden únicamente al crear el ETS. | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Cotización/Facturación conservan el padre comercial; las hojas simples se vuelven partidas operativas y reutilizan sin cambios OT, Equipos, Hojas y Certificados. |
 
 ## Decisiones expresamente no confirmadas
 

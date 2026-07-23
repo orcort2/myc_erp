@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-07-22
 
 # Flujo operativo actual
 
@@ -18,6 +18,7 @@ Este documento describe el flujo que existe en el sistema, no el flujo ideal ni 
 Autenticación
   → Cliente y datos fiscales
   → Cotización y partidas
+  → Expansión de Servicios Compuestos en partidas operativas del ETS
   → ETS/Servicio vinculado a cliente y opcionalmente a cotización
   → Órdenes de Trabajo (máximo 10 equipos por OT)
   → Equipos y snapshot de Plantilla Maestra
@@ -40,6 +41,10 @@ El usuario inicia sesión y recibe access/refresh JWT. La navegación autenticad
 El cliente conserva identidad, datos fiscales, contactos dependientes, constancia y perfiles de certificado. La cotización se crea con partidas propias o provenientes del Catálogo MYC, calcula importes, guarda snapshots y puede transitar entre `draft`, `sent`, `waiting` y estados terminales.
 
 La aceptación de una cotización no crea automáticamente Agenda ni ETS en todos los recorridos. Un ETS puede vincularse a cliente y cotización; esa vinculación debe conservar coherencia entre ambos.
+
+Un Servicio Compuesto aparece una sola vez en la cotización y en sus documentos comerciales. Al crear el ETS, el backend recorre su composición normalizada, multiplica las cantidades y genera partidas operativas únicamente para los servicios simples hoja. Esas partidas alimentan sin lógica paralela el conteo de OT, Equipos, Hojas de Campo y Certificados. Servicios simples, conceptos libres y cotizaciones existentes conservan el comportamiento anterior.
+
+En calibración, la partida del catálogo conserva una de tres modalidades canónicas: acreditación propia, trazable/no acreditada o acreditación por laboratorio vinculado. La clave se propaga a la partida cotizada y al ETS. Al registrar equipos, la capacidad configurada resuelve el alcance automáticamente cuando sólo hay una alternativa; si hay varias con cupo, se solicita desambiguar entre ellas. No se deriva la modalidad desde una leyenda o número impreso en el Master.
 
 ## 3. Agenda y Llamado dentro de ETS
 
@@ -90,7 +95,7 @@ La vista de Certificados muestra únicamente documentos con PDF autenticado y es
 
 La Mesa de trabajo puede originar borradores desde ETS/cotización, congelar snapshots fiscales y emitir en Facturama Sandbox. El sistema conserva intentos, identificadores, XML/PDF del PAC y genera PDF institucional MYC. Los pagos actualizan saldo y estado administrativo.
 
-El Workbench conserva este mismo flujo mediante un controlador frontend único. Puede abrirse con contexto explícito `invoice_id` o `service_order_id`; el contexto ETS consulta el listado existente filtrado y ya no se transporta por `localStorage`. La futura pestaña Facturación del ETS aún no está implementada.
+El Workbench conserva este mismo flujo mediante un controlador frontend único. Puede abrirse con contexto explícito `invoice_id` o `service_order_id`; el contexto ETS consulta el listado existente filtrado y ya no se transporta por `localStorage`. La pestaña Facturación del ETS muestra el `Invoice` asociado, abre el mismo `InvoiceWorkbenchDialog`, actualiza el resumen con la respuesta de guardar/emitir y regresa al mismo ETS al cerrar. No implementa pagos, cuentas por cobrar, notas de crédito, historial/documentos ni liberación financiera; esas tarjetas permanecen informativas para una fase posterior.
 
 El circuito fiscal no está cerrado para Producción, cancelación/sustitución, complementos PPD y notas de egreso. Cerrar el modal sin guardar tampoco conserva automáticamente el estado React actual.
 
