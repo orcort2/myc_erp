@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-07-24
 
 # Alcance actual del ERP MYC
 
@@ -29,6 +29,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
+- Motor de Resoluciones en Fase 0: arquitectura ratificada y matriz de implementación vigente; todavía no existen núcleo, persistencia, API ni flujos operativos del Motor.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-07-24
 
 # Índice único de documentación
 
@@ -53,6 +53,8 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
+| [`../architecture/resolution-engine/README.MD`](../architecture/resolution-engine/README.MD) | Entrada normativa del Motor de Resoluciones; ordena la lectura de visión, principios, arquitectura, datos, flujos, API, casos, seguridad y Roadmap. |
+| [`../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md`](../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md) | Orden técnico aprobado, dependencias, deuda bloqueante, gates y protocolo de revisión fase por fase del Motor de Resoluciones. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -67,6 +69,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/IMPLEMENTACION_MOTOR_HOJAS_CAMPO_FASE_1.md`](../closures/IMPLEMENTACION_MOTOR_HOJAS_CAMPO_FASE_1.md) | Entrega de fase 1 del motor base de Hojas de Campo. |
 | [`../closures/REPORTE_CARGA_INICIAL_CATALOGOS_SAT.md`](../closures/REPORTE_CARGA_INICIAL_CATALOGOS_SAT.md) | Evidencia de carga inicial SAT. |
 | [`../closures/DOCUMENT_REORGANIZATION_REPORT_2026-07-21.md`](../closures/DOCUMENT_REORGANIZATION_REPORT_2026-07-21.md) | Cierre de esta reorganización y matriz de movimientos/conflictos. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_0.md`](../closures/RESOLUTION_ENGINE_PHASE_0.md) | Ratificación, matriz, gates, validaciones y condición de aprobación de la Fase 0 del Motor de Resoluciones. |
 
 ## Auditorías
 
