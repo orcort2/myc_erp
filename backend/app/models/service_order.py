@@ -362,6 +362,10 @@ class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     catalog_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("catalog_items.id"), index=True
     )
+    expected_certificate_master_id: Mapped[int | None] = mapped_column(
+        ForeignKey("controlled_documents.id"),
+        index=True,
+    )
     service_name: Mapped[str] = mapped_column(String(180))
     calibration_scope: Mapped[str | None] = mapped_column(String(60))
     quantity: Mapped[int] = mapped_column(default=1)

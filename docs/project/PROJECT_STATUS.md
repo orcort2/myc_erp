@@ -36,7 +36,7 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 | Clientes | Proteger todas las rutas y ejecutar el ciclo autenticado completo. |
 | Cotizaciones | Servicios Compuestos ya conservan un concepto comercial y expanden el ETS con pruebas; falta completar restauración de partidas desde snapshots, asegurar rutas y ejecutar E2E autenticado hasta ETS. |
 | Órdenes de Trabajo | E2E multi-OT, permisos y encapsulado del número legacy. |
-| Equipos | Proteger el router y validar snapshots dentro del ciclo multi-OT. |
+| Equipos | La independencia del catálogo vivo y el snapshot operativo quedaron validados; falta proteger el router y completar el E2E autenticado dentro del ciclo multi-OT. |
 | Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada; falta retirar la superficie autenticadora duplicada de ETS y completar E2E de verificación pública. |
 | Plantillas Maestras | Descarga, carga, identificación, detección semántica por fingerprint, readiness y generación del PDF autenticado desde el Master quedaron validados; falta automatizar el E2E autenticado completo del retorno. |
 | Catálogos SAT | Blindar la fuente oficial y validar permisos de todos los consumidores. |

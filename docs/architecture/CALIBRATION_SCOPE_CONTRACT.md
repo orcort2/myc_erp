@@ -24,10 +24,12 @@ La clave se configura en la partida del Catálogo MYC y se conserva en la cadena
 
 ```text
 Catálogo → partida de Cotización → partida del ETS → capacidad por alcance
-         → Equipo → tipo y folio de Certificado → snapshot del Master
+         → Equipo → tipo y folio de Certificado → snapshot del Master y contexto
 ```
 
 El alta de equipo reutiliza `resolve_equipment_calibration_scope`: si sólo existe una modalidad con cupo, se asigna automáticamente; si existen varias, la interfaz solicita únicamente la desambiguación necesaria entre modalidades ya configuradas. No existe una selección libre, no se infiere desde texto documental y no se duplica el cálculo de capacidad.
+
+El ETS congela también `expected_certificate_master_id` en la partida operativa. Equipos deriva de esa misma partida el Master y guarda un contexto versionado con `calibration_scope`, tipo de certificado, identificador del Master y referencias de origen. El catálogo no participa nuevamente en el alta del equipo y `service_name` nunca es llave de resolución.
 
 Perfiles técnicos e interpretaciones documentales consumen el mismo `AccreditationScope`; no mantienen un enum paralelo. `special` no es una modalidad de acreditación y queda fuera del contrato. La migración se niega a reinterpretarlo silenciosamente si aparece en una instalación.
 

@@ -156,6 +156,20 @@ def _build_work_orders_for_service_order(db: Session, service_order: ServiceOrde
     ]
 
 
+def _expected_certificate_master_id(
+    db: Session,
+    catalog_item_id: int | None,
+) -> int | None:
+    """Resolve a Master by immutable catalog identity while the ETS is created."""
+    if catalog_item_id is None:
+        return None
+    return db.scalar(
+        select(CatalogItem.expected_certificate_master_id).where(
+            CatalogItem.id == catalog_item_id
+        )
+    )
+
+
 def _service_order_items_from_quotation(
     db: Session,
     quotation: Quotation,
@@ -190,6 +204,10 @@ def _service_order_items_from_quotation(
                     ),
                     "calibration_scope": snapshot_item.get(
                         "calibration_scope"
+                    ),
+                    "expected_certificate_master_id": _expected_certificate_master_id(
+                        db,
+                        snapshot_item.get("catalog_item_id"),
                     ),
                     "quantity": operational_quantity,
                     "status": snapshot_item.get("status", "pending"),
@@ -239,6 +257,11 @@ def _service_order_items_from_quotation(
                     catalog_item_id=quotation_item.catalog_item_id,
                     service_name=quotation_item.service_name,
                     calibration_scope=quotation_item.calibration_scope,
+                    expected_certificate_master_id=(
+                        catalog_item.expected_certificate_master_id
+                        if catalog_item is not None
+                        else None
+                    ),
                     quantity=quotation_item.quantity,
                     status="pending",
                 )
@@ -355,7 +378,14 @@ def create_service_order(
     expansion_log: list[dict] = []
     if payload.items:
         service_order.items = [
-            ServiceOrderItem(**item.model_dump()) for item in payload.items
+            ServiceOrderItem(
+                **item.model_dump(),
+                expected_certificate_master_id=_expected_certificate_master_id(
+                    db,
+                    item.catalog_item_id,
+                ),
+            )
+            for item in payload.items
         ]
     elif quotation is not None:
         service_order.items, expansion_log = _service_order_items_from_quotation(

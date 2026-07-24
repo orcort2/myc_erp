@@ -14,7 +14,9 @@ El submódulo vive en **Control Documental → Plantillas Maestras** y reutiliza
 
 Una alta recibe un XLSX, valida extensión y ZIP interno de Office (`[Content_Types].xml` y `xl/workbook.xml`), limita el archivo a 20 MB, calcula SHA-256 y lo guarda en `storage/certificate-masters/{document_id}/`. Se conserva nombre original, ruta controlada, MIME, hash, tamaño, fecha y usuario. Una versión activa requiere XLSX no caducado.
 
-El selector de catálogo conserva `catalog_items.expected_certificate_master_id`. Al crear un equipo desde una partida cuyo servicio de Calibración coincide con el catálogo, se congela documento, versión, ruta, nombre, hash y vigencia en `equipment`; no existe backfill automático para equipos históricos.
+El selector de catálogo conserva `catalog_items.expected_certificate_master_id`. La creación del ETS copia ese ID a `service_order_items.expected_certificate_master_id` mediante la identidad persistente del concepto, incluida cada hoja operativa de un Servicio Compuesto. Al crear el equipo, Equipos consume únicamente la partida congelada: no busca por nombre ni vuelve a resolver el Master en el catálogo vivo.
+
+`equipment` congela documento, versión, ruta, nombre, hash y vigencia, además de `certificate_operational_context_snapshot` con versión de esquema, alcance, tipo de certificado, Master esperado, partida ETS y concepto de origen. La migración `8c2d4e6f7a9b` recupera históricos mediante `catalog_item_id`, `quotation_item_id` o el Master ya guardado; nunca usa `service_name`.
 
 La elegibilidad de Captura comprueba Master activo, versión activa/vigente, XLSX existente y hash del snapshot antes de producir un paquete. Aún no incluye mapeo de celdas, patrones, macros ni interpretación metrológica.
 

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-07-23
 
 # Reglas de negocio vigentes
 
@@ -22,7 +22,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-006 | OT/Equipos | Una OT agrupa como máximo 10 equipos; las OT usan consecutivo numérico único. | `WORK_ORDER_EQUIPMENT_LIMIT`, `ServiceWorkOrder` | 2026-07 |
 | BR-007 | Firmas ETS | Una captura de firmas cubre las OT activas pendientes del ciclo; una OT posterior requiere otro ciclo. | modelos/servicios de ciclos de firma; cierre ETS 2026-07-10 | 2026-07-10 |
 | BR-008 | Equipos | Los equipos adicionales fuera de capacidad requieren el tratamiento de excepción definido; los no realizados deben conservar motivo cuando ese estado se use. | servicios ETS/equipos y cierre ETS | 2026-07 |
-| BR-009 | Plantillas Maestras | El equipo congela documento, versión, ruta, nombre, hash y vigencia del Master esperado; no hay backfill automático de históricos. | `backend/app/services/controlled_documents.py`, modelos de equipo | 2026-07-17 |
+| BR-009 | Plantillas Maestras/Equipos | Al crear el ETS, cada partida congela el identificador del Master esperado. Al dar de alta el equipo, éste congela documento, versión, ruta, nombre, hash, vigencia y el contexto operativo —alcance, tipo de certificado, Master y partida/origen— sin resolver por nombre ni volver a consultar el catálogo. | modelos/servicios de ETS y Equipos; migración `8c2d4e6f7a9b` | 2026-07-23 |
 | BR-010 | Hojas de Campo | La hoja conserva snapshot de plantilla e identidad; una plantilla no debe cambiar retroactivamente una hoja creada. | modelos/servicios de Hojas de Campo | 2026-07-13 |
 | BR-011 | Hojas de Campo | No hay fallback silencioso a plantilla General cuando no existe coincidencia segura; la selección debe ser explícita. | integración operativa auditada 2026-07-13 | 2026-07-13 |
 | BR-012 | Certificados | Cada certificado se vincula a un equipo y un ETS; su folio depende del tipo: `MYCA`, `MYCV` o `MYCT`. | `backend/app/services/certificates.py`, `backend/app/core/folios.py` | 2026-06/07 |

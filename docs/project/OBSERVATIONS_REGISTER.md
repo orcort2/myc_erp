@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de pendientes en auditorías, cierres, bitácoras y documentos archivados
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-07-23
 
 # Registro consolidado de observaciones
 
@@ -91,6 +91,7 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R23 | ETS/Facturación UX | `contextInvoice=null` se interpretaba como “Sin factura” durante la ventana entre carga de dependencias y resolución contextual, y el bloque provisional tenía menor altura. Ahora `contextLoading/contextResolved` separan los tres estados, un bloque estable evita el salto y la pestaña permanece montada al alternar carpetas del mismo ETS. | resuelta | Corrección de parpadeo Sprint 2A 2026-07-22 |
 | OBS-R24 | Catálogo/ETS/Certificados | El schema de respuesta sustituyó `accredited_iso_17025` por el texto documental `Certificado / Certificate: L25-313`, mientras la base conservó la clave canónica, causando HTTP 500 en `GET /api/catalog-items`. Se centralizaron las tres modalidades, se alinearon schemas/capacidad/frontend/datos y se añadió normalización defensiva. | resuelta | Corrección del contrato `calibration_scope` 2026-07-22 |
 | OBS-R25 | Catálogo/Cotizaciones/ETS | Servicios Simples y Compuestos usan `service_kind` y una relación padre-hijo normalizada. La cotización conserva el padre único y la creación del ETS expande hojas, cantidades y OTs sin duplicar lógica downstream; autorreferencia, ciclos, mínimos y compatibilidad simple quedaron cubiertos por pruebas. | resuelta | Servicios Compuestos y arquitectura vigente 2026-07-22 |
+| OBS-R26 | Equipos/Plantillas Maestras | Equipos resolvía el Master mediante `CatalogItem.name == ServiceOrderItem.service_name`. El ETS ahora congela `expected_certificate_master_id`, el equipo consume sólo esa partida y conserva un snapshot versionado del contexto operativo; la migración histórica usa exclusivamente IDs persistentes. | resuelta | Corrección de trazabilidad de Equipos 2026-07-23; migración `8c2d4e6f7a9b` |
 
 ## Regla de cierre
 

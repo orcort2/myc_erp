@@ -5,7 +5,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.certificate import Certificate
-from app.models.catalog_item import CatalogItem
 from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
@@ -24,7 +23,7 @@ from app.services.service_order_certificate_capacity import (
 )
 
 
-COMPLETED_STATUSES = {"calibrated", "labeled", "not_done"}
+FINISHED_STATUSES = {"calibrated", "labeled", "not_done"}
 TERMINAL_STATUSES = {"labeled", "not_done", "cancelled"}
 MAX_EQUIPMENT_PER_WORK_ORDER = 10
 
@@ -158,7 +157,7 @@ def sync_service_order_equipment_counts(db: Session, service_order_id: int) -> N
         select(func.count(Equipment.id)).where(
             Equipment.service_order_id == service_order_id,
             Equipment.is_active.is_(True),
-            Equipment.status.in_(COMPLETED_STATUSES),
+            Equipment.status.in_(FINISHED_STATUSES),
         )
     )
 
@@ -263,18 +262,32 @@ def _snapshot_certificate_master(db: Session, equipment: Equipment, document_id:
     equipment.certificate_template_expires_on_snapshot = version.expires_on
 
 
-def _master_from_service_catalog(db: Session, equipment: Equipment) -> int | None:
-    """Resolve the master selected on the calibration service without touching history."""
-    if equipment.certificate_master_document_id:
-        return equipment.certificate_master_document_id
-    item = db.get(ServiceOrderItem, equipment.service_order_item_id) if equipment.service_order_item_id else None
-    if item is None:
-        return None
-    return db.scalar(select(CatalogItem.expected_certificate_master_id).where(
-        CatalogItem.is_active.is_(True), CatalogItem.item_type == "service",
-        CatalogItem.category == "Calibracion", CatalogItem.name == item.service_name,
-        CatalogItem.expected_certificate_master_id.is_not(None),
-    ).limit(1))
+def _freeze_certificate_operational_context(
+    db: Session,
+    equipment: Equipment,
+) -> int | None:
+    """Freeze certificate inputs from the ETS item; never consult the live catalog."""
+    item = (
+        db.get(ServiceOrderItem, equipment.service_order_item_id)
+        if equipment.service_order_item_id
+        else None
+    )
+    expected_master_id = (
+        item.expected_certificate_master_id
+        if item is not None
+        else None
+    )
+    equipment.certificate_operational_context_snapshot = {
+        "schema_version": 1,
+        "calibration_scope": equipment.calibration_scope,
+        "certificate_type": certificate_type_from_scope(
+            equipment.calibration_scope
+        ),
+        "expected_certificate_master_id": expected_master_id,
+        "service_order_item_id": equipment.service_order_item_id,
+        "source_catalog_item_id": item.catalog_item_id if item is not None else None,
+    }
+    return expected_master_id
 
 
 def create_equipment(
@@ -322,7 +335,8 @@ def create_equipment(
     equipment = Equipment(**data, status="registered")
     db.add(equipment)
     db.flush()
-    _snapshot_certificate_master(db, equipment, _master_from_service_catalog(db, equipment))
+    expected_master_id = _freeze_certificate_operational_context(db, equipment)
+    _snapshot_certificate_master(db, equipment, expected_master_id)
 
     certificate_type = certificate_type_from_scope(equipment.calibration_scope)
     if certificate_type:
@@ -352,6 +366,7 @@ def create_equipment(
             "work_order_number": selected_work_order.work_order_number,
             "calibration_scope": equipment.calibration_scope,
             "service_order_item_id": equipment.service_order_item_id,
+            "expected_certificate_master_id": expected_master_id,
             "name": equipment.name,
             "status": equipment.status,
         },

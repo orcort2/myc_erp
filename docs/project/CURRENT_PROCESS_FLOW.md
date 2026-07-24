@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-07-23
 
 # Flujo operativo actual
 
@@ -21,7 +21,7 @@ Autenticación
   → Expansión de Servicios Compuestos en partidas operativas del ETS
   → ETS/Servicio vinculado a cliente y opcionalmente a cotización
   → Órdenes de Trabajo (máximo 10 equipos por OT)
-  → Equipos y snapshot de Plantilla Maestra
+  → Equipos y snapshot de Plantilla Maestra/contexto operativo
   → Hoja de Campo por equipo
   → Captura y preparación documental
   → Calidad: revisión y aprobación del Master XLSX
@@ -45,6 +45,8 @@ La aceptación de una cotización no crea automáticamente Agenda ni ETS en todo
 Un Servicio Compuesto aparece una sola vez en la cotización y en sus documentos comerciales. Al crear el ETS, el backend recorre su composición normalizada, multiplica las cantidades y genera partidas operativas únicamente para los servicios simples hoja. Esas partidas alimentan sin lógica paralela el conteo de OT, Equipos, Hojas de Campo y Certificados. Servicios simples, conceptos libres y cotizaciones existentes conservan el comportamiento anterior.
 
 En calibración, la partida del catálogo conserva una de tres modalidades canónicas: acreditación propia, trazable/no acreditada o acreditación por laboratorio vinculado. La clave se propaga a la partida cotizada y al ETS. Al registrar equipos, la capacidad configurada resuelve el alcance automáticamente cuando sólo hay una alternativa; si hay varias con cupo, se solicita desambiguar entre ellas. No se deriva la modalidad desde una leyenda o número impreso en el Master.
+
+Al crear el ETS, cada `ServiceOrderItem` congela el identificador del Master esperado mediante el ID estable del concepto operativo. Al registrar el equipo, Equipos lee exclusivamente esa partida y congela alcance, tipo de certificado, Master esperado, partida y origen de catálogo junto con la versión/archivo del Master. Cambiar después el nombre o la selección del catálogo no modifica el expediente; no existe resolución por `service_name`.
 
 ## 3. Agenda y Llamado dentro de ETS
 

@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Date, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -40,6 +40,7 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     certificate_template_checksum_snapshot: Mapped[str | None] = mapped_column(String(128))
     certificate_template_effective_date_snapshot: Mapped[date | None] = mapped_column(Date)
     certificate_template_expires_on_snapshot: Mapped[date | None] = mapped_column(Date)
+    certificate_operational_context_snapshot: Mapped[dict | None] = mapped_column(JSON)
 
     status: Mapped[str] = mapped_column(
         String(60),

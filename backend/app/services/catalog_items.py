@@ -348,6 +348,9 @@ def expand_catalog_item_for_operations(
                     "catalog_item_id": item.id,
                     "service_name": item.name,
                     "calibration_scope": item.calibration_scope,
+                    "expected_certificate_master_id": (
+                        item.expected_certificate_master_id
+                    ),
                     "quantity": 0,
                     "status": "pending",
                 },
