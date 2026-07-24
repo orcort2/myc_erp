@@ -29,7 +29,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones en Fase 0: arquitectura ratificada y matriz de implementación vigente; todavía no existen núcleo, persistencia, API ni flujos operativos del Motor.
+- Motor de Resoluciones en Fase 1: fundación Python aislada con contratos
+  tipados, catálogos, errores, serialización/hash canónicos, reloj,
+  identificadores opacos y registro de definiciones versionadas. Todavía no
+  existen persistencia, lifecycle, seguridad, gateways, API ni flujos
+  operativos del Motor.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

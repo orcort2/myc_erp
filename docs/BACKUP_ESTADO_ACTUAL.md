@@ -124,18 +124,20 @@ Estas validaciones tienen fecha de corte 2026-07-21 y no deben presentarse como 
 - El contexto de apertura dejó de usar `myc_billing_order_id` en `localStorage`. `invoiceWorkbenchContext.js` admite `invoice_id` o `service_order_id` en URL, el listado existente acepta filtro opcional por ETS y el botón histórico del ETS conserva su navegación sin implementar todavía la nueva pestaña.
 - Validación del Sprint 1: build Vite correcto con 1,662 módulos; 3 pruebas Node correctas para el contrato de contexto y 2 recorridos adicionales de navegación secuencial; apertura contextual revisada bajo el doble ciclo de efectos de `React.StrictMode`; 10 pruebas backend focalizadas correctas para filtro de facturas, mapper Facturama y documentos. La suite completa obtuvo 102 correctas y 2 fallos ajenos al Sprint porque LibreOffice terminó con `returncode=-6` en las dos pruebas que ejecutan conversión real; no falló ninguna prueba de Facturación. Permanece la advertencia conocida del chunk principal (862.88 kB). No hubo migración ni cambio de datos, por lo que no corresponde regenerar el respaldo SQL.
 
-## Motor de Resoluciones — Fase 0
+## Motor de Resoluciones — Fase 1
 
-- La arquitectura completa quedó ratificada mediante
-  [`architecture/resolution-engine/README.MD`](architecture/resolution-engine/README.MD).
-- La secuencia obligatoria, dependencias, bloqueadores y gates están en
-  [`architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md`](architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md).
-- Estado: Fase 0 `EN REVISIÓN`; Fase 1 `NO INICIADA`.
-- No se modificó código, esquema, configuración ni comportamiento funcional del
-  ERP por esta fase.
-- Validaciones de cierre: 120 pruebas backend, 11 pruebas frontend y build Vite
-  correctos; único head/current `8c2d4e6f7a9b`.
-- `alembic check` conserva la deriva histórica `TD-021`, ajena y no bloqueante
-  para Fase 0.
+- Estado: Fase 0 `APROBADA`; Fase 1 `EN REVISIÓN`; Fase 2 `NO INICIADA`.
+- La fundación reside en `backend/app/resolution_engine/` y no importa modelos,
+  schemas, servicios, routers, FastAPI ni SQLAlchemy.
+- `ResolutionDefinition` conserva tipo, versión y referencias versionadas a los
+  componentes requeridos. `ResolutionRegistry` admite varias versiones, una
+  activa por tipo, resolución histórica exacta y congelamiento.
+- La serialización/hash canónicos rechaza datos ambiguos; reloj e IDs técnicos
+  son inyectables. Los UUID no generan ni sustituyen folios institucionales.
+- No se incorporaron persistencia, lifecycle, seguridad, gateways, API,
+  workers, resoluciones concretas ni ejecución.
+- Validaciones: 171 pruebas backend y 19 subpruebas correctas; 11 pruebas
+  frontend correctas; build Vite correcto; importación con `app.main` correcta;
+  único head/current `8c2d4e6f7a9b`.
 - Cierre detallado:
-  [`closures/RESOLUTION_ENGINE_PHASE_0.md`](closures/RESOLUTION_ENGINE_PHASE_0.md).
+  [`closures/RESOLUTION_ENGINE_PHASE_1.md`](closures/RESOLUTION_ENGINE_PHASE_1.md).

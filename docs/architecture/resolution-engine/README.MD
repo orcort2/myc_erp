@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 0 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 1 EN REVISIÓN
 >
-> Fase vigente: Fase 0 — Preparación arquitectónica, cerrada técnicamente
+> Fase vigente: Fase 1 — Contratos y núcleo (cierre técnico)
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -50,6 +50,12 @@ dependencia de seguridad e integridad más restrictiva.
 
 ## Estado actual
 
-La Fase 0 formalizó la arquitectura, su matriz de implementación y sus gates. No
-incorporó modelos, APIs, ejecución, autorización ni cambios funcionales del ERP.
-La Fase 1 permanece `NO INICIADA` hasta recibir aprobación expresa.
+La Fase 0 fue aprobada. La Fase 1 implementó exclusivamente organización de
+paquetes, contratos tipados, catálogos controlados, errores, serialización y
+hashing canónicos, reloj, identificadores, `ResolutionRegistry` y pruebas
+arquitectónicas. Su cierre está en
+[`../../closures/RESOLUTION_ENGINE_PHASE_1.md`](../../closures/RESOLUTION_ENGINE_PHASE_1.md).
+
+Persistencia, ciclo de vida, seguridad, gateways, API y ejecución permanecen
+fuera de alcance. La Fase 2 no puede comenzar sin aprobación expresa posterior
+al commit de Fase 1.

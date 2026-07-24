@@ -52,8 +52,8 @@ dominio.
 
 | Fase | Estado inicial | Componentes autorizados | Dependencias obligatorias | Bloqueadores corregibles en la fase | Gate de salida |
 | --- | --- | --- | --- | --- | --- |
-| 0. Preparación arquitectónica | `EN REVISIÓN` | Canon documental, README, matriz, gates, inventario y línea base | Especificación completa y reglas del repositorio | Especificación fuera del índice, ausencia de matriz y contradicciones de precedencia documental | Arquitectura ratificada, matriz registrada, validaciones completas y commit de Fase 0 |
-| 1. Contratos y núcleo | `NO INICIADA` | Organización de paquetes, contratos tipados, enumeraciones, errores, hashes, reloj, identificadores, `ResolutionRegistry` y pruebas arquitectónicas | Fase 0 aprobada | Sólo dependencias o acoplamientos que impidan aislar el núcleo; no seguridad, persistencia ni gateways todavía | Definiciones registrables sin modificar el núcleo y dependencias prohibidas cubiertas por pruebas |
+| 0. Preparación arquitectónica | `APROBADA` | Canon documental, README, matriz, gates, inventario y línea base | Especificación completa y reglas del repositorio | Especificación fuera del índice, ausencia de matriz y contradicciones de precedencia documental | Arquitectura ratificada, matriz registrada, validaciones completas y commit de Fase 0 |
+| 1. Contratos y núcleo | `EN REVISIÓN` | Organización de paquetes, contratos tipados, enumeraciones, errores, hashes, reloj, identificadores, `ResolutionRegistry` y pruebas arquitectónicas | Fase 0 aprobada | Sólo dependencias o acoplamientos que impidan aislar el núcleo; no seguridad, persistencia ni gateways todavía | Definiciones registrables sin modificar el núcleo y dependencias prohibidas cubiertas por pruebas |
 | 2. Persistencia completa | `NO INICIADA` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
 | 3. Seguridad, identidad y evidencia | `NO INICIADA` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
 | 4. Ciclo de decisión sin efectos | `NO INICIADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
@@ -149,3 +149,27 @@ La Fase 0 se considera lista para revisión cuando:
 - Próxima fase autorizable: Fase 1, sólo después de aprobación expresa.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_0.md`](../../closures/RESOLUTION_ENGINE_PHASE_0.md).
+
+## Apertura de Fase 1
+
+- Estado: `ACTIVA`.
+- Autorización: aprobación expresa posterior al commit `4d66089`.
+- Componentes autorizados: paquete fundacional, contratos tipados, catálogos,
+  errores, hashing/serialización, reloj, identificadores, Registry y pruebas.
+- Bloqueadores directos detectados al abrir: ninguno.
+- Deuda general excluida: seguridad, ETS, excepciones, certificados, Alembic y
+  demás condiciones asignadas a fases posteriores.
+
+## Resultado de Fase 1
+
+- Estado: `EN REVISIÓN`.
+- Gate: cumplido; una definición nueva se registra mediante manifiesto sin
+  condicionales ni cambios en el núcleo.
+- Aislamiento: cubierto por pruebas AST contra ORM, servicios, routers,
+  schemas, FastAPI, SQLAlchemy y paquetes de fases posteriores.
+- Bloqueadores corregidos: ninguno; no se detectó contradicción directa que
+  impidiera aislar la fundación.
+- Componentes adelantados: ninguno.
+- Próxima fase autorizable: Fase 2, sólo después de aprobación expresa.
+- Evidencia detallada:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_1.md`](../../closures/RESOLUTION_ENGINE_PHASE_1.md).
