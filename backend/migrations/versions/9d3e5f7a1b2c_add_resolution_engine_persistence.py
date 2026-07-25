@@ -1,0 +1,875 @@
+"""add resolution engine persistence
+
+Revision ID: 9d3e5f7a1b2c
+Revises: 8c2d4e6f7a9b
+Create Date: 2026-07-24 17:54:51.413436
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+revision: str = '9d3e5f7a1b2c'
+down_revision: Union[str, None] = '8c2d4e6f7a9b'
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+IMMUTABLE_TABLES = (
+    "resolution_problems",
+    "resolution_context_snapshots",
+    "resolution_analyses",
+    "resolution_simulations",
+    "resolution_authorization_decisions",
+    "resolution_revalidations",
+    "resolution_entity_references",
+    "resolution_results",
+    "resolution_audit_events",
+    "resolution_evidence_references",
+)
+
+DELETE_PROTECTED_TABLES = (
+    "resolutions",
+    "resolution_strategy_selections",
+    "resolution_plans",
+    "resolution_authorization_requests",
+    "resolution_executions",
+    "resolution_step_executions",
+    "resolution_idempotency_records",
+    "resolution_locks",
+    "resolution_outbox_events",
+)
+
+PLAN_CHILD_TABLES = (
+    "resolution_plan_steps",
+    "resolution_plan_step_dependencies",
+)
+
+
+def _install_integrity_triggers() -> None:
+    op.execute(
+        """
+        CREATE FUNCTION resolution_engine_prevent_mutation()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            RAISE EXCEPTION '% is append-only', TG_TABLE_NAME
+                USING ERRCODE = '55000';
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE FUNCTION resolution_engine_prevent_delete()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            RAISE EXCEPTION '% preserves historical evidence', TG_TABLE_NAME
+                USING ERRCODE = '55000';
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE FUNCTION resolution_engine_guard_plan_update()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF OLD.status <> 'draft' THEN
+                RAISE EXCEPTION 'plan % is immutable after draft', OLD.id
+                    USING ERRCODE = '55000';
+            END IF;
+            IF NEW.id IS DISTINCT FROM OLD.id
+               OR NEW.resolution_id IS DISTINCT FROM OLD.resolution_id
+               OR NEW.version IS DISTINCT FROM OLD.version THEN
+                RAISE EXCEPTION 'plan identity and version are immutable'
+                    USING ERRCODE = '55000';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
+        CREATE FUNCTION resolution_engine_guard_plan_child()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            target_plan_id bigint;
+            target_plan_status varchar;
+        BEGIN
+            target_plan_id := CASE
+                WHEN TG_OP = 'DELETE' THEN OLD.plan_id
+                ELSE NEW.plan_id
+            END;
+            IF TG_OP = 'UPDATE' AND NEW.plan_id IS DISTINCT FROM OLD.plan_id THEN
+                RAISE EXCEPTION 'plan child cannot move between plans'
+                    USING ERRCODE = '55000';
+            END IF;
+            SELECT status
+              INTO target_plan_status
+              FROM resolution_plans
+             WHERE id = target_plan_id;
+            IF target_plan_status IS DISTINCT FROM 'draft' THEN
+                RAISE EXCEPTION 'children of plan % are immutable', target_plan_id
+                    USING ERRCODE = '55000';
+            END IF;
+            RETURN CASE WHEN TG_OP = 'DELETE' THEN OLD ELSE NEW END;
+        END;
+        $$
+        """
+    )
+
+    for table_name in IMMUTABLE_TABLES:
+        op.execute(
+            f"""
+            CREATE TRIGGER trg_{table_name}_immutable
+            BEFORE UPDATE OR DELETE ON {table_name}
+            FOR EACH ROW EXECUTE FUNCTION resolution_engine_prevent_mutation()
+            """
+        )
+    for table_name in DELETE_PROTECTED_TABLES:
+        op.execute(
+            f"""
+            CREATE TRIGGER trg_{table_name}_prevent_delete
+            BEFORE DELETE ON {table_name}
+            FOR EACH ROW EXECUTE FUNCTION resolution_engine_prevent_delete()
+            """
+        )
+    op.execute(
+        """
+        CREATE TRIGGER trg_resolution_plans_guard_update
+        BEFORE UPDATE ON resolution_plans
+        FOR EACH ROW EXECUTE FUNCTION resolution_engine_guard_plan_update()
+        """
+    )
+    for table_name in PLAN_CHILD_TABLES:
+        op.execute(
+            f"""
+            CREATE TRIGGER trg_{table_name}_guard_draft
+            BEFORE INSERT OR UPDATE OR DELETE ON {table_name}
+            FOR EACH ROW EXECUTE FUNCTION resolution_engine_guard_plan_child()
+            """
+        )
+
+
+def upgrade() -> None:
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.create_table('resolutions',
+    sa.Column('public_id', sa.String(length=64), nullable=False),
+    sa.Column('resolution_type', sa.String(length=160), nullable=False),
+    sa.Column('definition_version', sa.String(length=32), nullable=False),
+    sa.Column('status', sa.String(length=40), server_default='draft', nullable=False),
+    sa.Column('priority', sa.String(length=20), server_default='normal', nullable=False),
+    sa.Column('source', sa.String(length=32), nullable=False),
+    sa.Column('subject_type', sa.String(length=100), nullable=False),
+    sa.Column('subject_id', sa.String(length=160), nullable=False),
+    sa.Column('parent_resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('superseded_by_resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('requested_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('assigned_to_user_id', sa.Integer(), nullable=True),
+    sa.Column('assigned_role', sa.String(length=100), nullable=True),
+    sa.Column('organization_id', sa.String(length=160), nullable=True),
+    sa.Column('branch_id', sa.String(length=160), nullable=True),
+    sa.Column('correlation_id', sa.String(length=120), nullable=True),
+    sa.Column('request_key', sa.String(length=200), nullable=True),
+    sa.Column('title', sa.String(length=240), nullable=False),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('reason', sa.Text(), nullable=True),
+    sa.Column('current_plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('current_context_snapshot_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('current_strategy_selection_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('risk_level', sa.String(length=30), nullable=True),
+    sa.Column('requires_authorization', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('cancelled_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('rejected_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('version', sa.Integer(), server_default='1', nullable=False),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("priority IN ('low','normal','high','critical')", name='ck_resolutions_priority'),
+    sa.CheckConstraint("source IN ('user','module','system','sync','mobile_app','scheduled_process','administrator')", name='ck_resolutions_source'),
+    sa.CheckConstraint("status IN ('draft','context_ready','analyzed','plan_ready','simulated','pending_authorization','authorized','revalidating','ready_for_execution','executing','completed','partially_completed','failed','blocked','rejected','cancelled','superseded','no_action_required')", name='ck_resolutions_status'),
+    sa.CheckConstraint('parent_resolution_id IS NULL OR parent_resolution_id <> id', name='ck_resolutions_parent_not_self'),
+    sa.CheckConstraint('superseded_by_resolution_id IS NULL OR superseded_by_resolution_id <> id', name='ck_resolutions_superseded_not_self'),
+    sa.CheckConstraint('version >= 1', name='ck_resolutions_version_positive'),
+    sa.ForeignKeyConstraint(['assigned_to_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['current_context_snapshot_id', 'id'], ['resolution_context_snapshots.id', 'resolution_context_snapshots.resolution_id'], name='fk_resolutions_current_context_same_resolution', ondelete='RESTRICT', use_alter=True),
+    sa.ForeignKeyConstraint(['current_plan_id', 'id'], ['resolution_plans.id', 'resolution_plans.resolution_id'], name='fk_resolutions_current_plan_same_resolution', ondelete='RESTRICT', use_alter=True),
+    sa.ForeignKeyConstraint(['current_strategy_selection_id', 'id'], ['resolution_strategy_selections.id', 'resolution_strategy_selections.resolution_id'], name='fk_resolutions_current_strategy_same_resolution', ondelete='RESTRICT', use_alter=True),
+    sa.ForeignKeyConstraint(['parent_resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['requested_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['superseded_by_resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('public_id'),
+    sa.UniqueConstraint('request_key')
+    )
+    op.create_index(op.f('ix_resolutions_assigned_to_user_id'), 'resolutions', ['assigned_to_user_id'], unique=False)
+    op.create_index(op.f('ix_resolutions_branch_id'), 'resolutions', ['branch_id'], unique=False)
+    op.create_index(op.f('ix_resolutions_correlation_id'), 'resolutions', ['correlation_id'], unique=False)
+    op.create_index(op.f('ix_resolutions_organization_id'), 'resolutions', ['organization_id'], unique=False)
+    op.create_index(op.f('ix_resolutions_parent_resolution_id'), 'resolutions', ['parent_resolution_id'], unique=False)
+    op.create_index(op.f('ix_resolutions_requested_by_user_id'), 'resolutions', ['requested_by_user_id'], unique=False)
+    op.create_index(op.f('ix_resolutions_resolution_type'), 'resolutions', ['resolution_type'], unique=False)
+    op.create_index(op.f('ix_resolutions_status'), 'resolutions', ['status'], unique=False)
+    op.create_index('ix_resolutions_subject', 'resolutions', ['subject_type', 'subject_id'], unique=False)
+    op.create_index(op.f('ix_resolutions_superseded_by_resolution_id'), 'resolutions', ['superseded_by_resolution_id'], unique=False)
+    op.create_index('ix_resolutions_type_status_created', 'resolutions', ['resolution_type', 'status', 'created_at'], unique=False)
+    op.create_table('resolution_context_snapshots',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('snapshot_type', sa.String(length=32), nullable=False),
+    sa.Column('sequence', sa.Integer(), nullable=False),
+    sa.Column('context_version', sa.String(length=32), nullable=False),
+    sa.Column('context_hash', sa.String(length=64), nullable=False),
+    sa.Column('schema_version', sa.String(length=32), nullable=False),
+    sa.Column('captured_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('captured_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('captured_by_actor', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('facts', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
+    sa.Column('entity_versions', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('missing_facts', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('warnings', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('source_references', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint("snapshot_type IN ('initial','analysis','simulation','authorization','revalidation','pre_execution','post_execution','final')", name='ck_resolution_context_snapshots_type'),
+    sa.CheckConstraint('length(context_hash) = 64', name='ck_resolution_context_snapshots_hash_length'),
+    sa.CheckConstraint('sequence >= 1', name='ck_resolution_context_snapshots_sequence_positive'),
+    sa.ForeignKeyConstraint(['captured_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_context_snapshots_id_resolution'),
+    sa.UniqueConstraint('resolution_id', 'sequence', name='uq_resolution_context_snapshots_sequence')
+    )
+    op.create_index(op.f('ix_resolution_context_snapshots_context_hash'), 'resolution_context_snapshots', ['context_hash'], unique=False)
+    op.create_index('ix_resolution_context_snapshots_resolution_captured', 'resolution_context_snapshots', ['resolution_id', 'captured_at'], unique=False)
+    op.create_table('resolution_evidence_references',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('evidence_type', sa.String(length=100), nullable=False),
+    sa.Column('controlled_document_id', sa.Integer(), nullable=True),
+    sa.Column('storage_reference', sa.String(length=500), nullable=True),
+    sa.Column('checksum', sa.String(length=64), nullable=True),
+    sa.Column('uploaded_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('uploaded_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint('checksum IS NULL OR length(checksum) = 64', name='ck_resolution_evidence_references_checksum'),
+    sa.ForeignKeyConstraint(['controlled_document_id'], ['controlled_documents.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['uploaded_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('ix_resolution_evidence_references_resolution_type', 'resolution_evidence_references', ['resolution_id', 'evidence_type'], unique=False)
+    op.create_table('resolution_locks',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('lock_type', sa.String(length=32), nullable=False),
+    sa.Column('lock_key', sa.String(length=240), nullable=False),
+    sa.Column('owner', sa.String(length=200), nullable=False),
+    sa.Column('token', sa.String(length=160), nullable=False),
+    sa.Column('acquired_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('released_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint("lock_type IN ('planning','authorization','execution','compensation','subject_entity')", name='ck_resolution_locks_type'),
+    sa.CheckConstraint('expires_at > acquired_at', name='ck_resolution_locks_expiration'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('token', name='uq_resolution_locks_token')
+    )
+    op.create_index('ix_resolution_locks_expiration', 'resolution_locks', ['expires_at'], unique=False)
+    op.create_index('uq_resolution_locks_active_key', 'resolution_locks', ['lock_type', 'lock_key'], unique=True, postgresql_where=sa.text('released_at IS NULL'), sqlite_where=sa.text('released_at IS NULL'))
+    op.create_table('resolution_outbox_events',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('event_key', sa.String(length=200), nullable=False),
+    sa.Column('event_type', sa.String(length=160), nullable=False),
+    sa.Column('aggregate_type', sa.String(length=100), nullable=False),
+    sa.Column('aggregate_id', sa.String(length=160), nullable=False),
+    sa.Column('payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
+    sa.Column('payload_hash', sa.String(length=64), nullable=False),
+    sa.Column('status', sa.String(length=24), server_default='pending', nullable=False),
+    sa.Column('occurred_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('available_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('published_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('attempts', sa.Integer(), server_default='0', nullable=False),
+    sa.Column('last_error', sa.Text(), nullable=True),
+    sa.Column('correlation_id', sa.String(length=120), nullable=True),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("status IN ('pending','published','failed')", name='ck_resolution_outbox_events_status'),
+    sa.CheckConstraint('attempts >= 0', name='ck_resolution_outbox_events_attempts'),
+    sa.CheckConstraint('length(payload_hash) = 64', name='ck_resolution_outbox_events_hash_length'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('event_key', name='uq_resolution_outbox_events_key')
+    )
+    op.create_index(op.f('ix_resolution_outbox_events_correlation_id'), 'resolution_outbox_events', ['correlation_id'], unique=False)
+    op.create_index('ix_resolution_outbox_events_dispatch', 'resolution_outbox_events', ['status', 'available_at', 'id'], unique=False)
+    op.create_table('resolution_problems',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('problem_code', sa.String(length=160), nullable=False),
+    sa.Column('summary', sa.String(length=500), nullable=False),
+    sa.Column('description', sa.Text(), nullable=True),
+    sa.Column('detected_by', sa.String(length=100), nullable=False),
+    sa.Column('detected_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('reported_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('source_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('external_reference', sa.String(length=240), nullable=True),
+    sa.Column('severity', sa.String(length=20), server_default='normal', nullable=False),
+    sa.Column('observed_state', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('evidence', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("severity IN ('low','normal','high','critical')", name='ck_resolution_problems_severity'),
+    sa.ForeignKeyConstraint(['reported_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('resolution_id')
+    )
+    op.create_index(op.f('ix_resolution_problems_problem_code'), 'resolution_problems', ['problem_code'], unique=False)
+    op.create_table('resolution_analyses',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('context_snapshot_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('analysis_version', sa.Integer(), nullable=False),
+    sa.Column('is_resolvable', sa.Boolean(), nullable=False),
+    sa.Column('status', sa.String(length=32), nullable=False),
+    sa.Column('findings', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('constraints', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('blockers', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('warnings', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('missing_information', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('immutable_entities', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('available_strategies', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('analyzed_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('analyzed_by', sa.String(length=200), nullable=False),
+    sa.Column('analysis_hash', sa.String(length=64), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint("status IN ('resolvable','not_resolvable','requires_information','blocked','already_resolved')", name='ck_resolution_analyses_status'),
+    sa.CheckConstraint('analysis_version >= 1', name='ck_resolution_analyses_version_positive'),
+    sa.CheckConstraint('length(analysis_hash) = 64', name='ck_resolution_analyses_hash_length'),
+    sa.ForeignKeyConstraint(['context_snapshot_id', 'resolution_id'], ['resolution_context_snapshots.id', 'resolution_context_snapshots.resolution_id'], name='fk_resolution_analyses_context_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_analyses_id_resolution'),
+    sa.UniqueConstraint('resolution_id', 'analysis_version', name='uq_resolution_analyses_version')
+    )
+    op.create_table('resolution_strategy_selections',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('analysis_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('strategy_key', sa.String(length=200), nullable=False),
+    sa.Column('strategy_version', sa.String(length=32), nullable=False),
+    sa.Column('selection_mode', sa.String(length=32), nullable=False),
+    sa.Column('selected_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('selected_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('justification', sa.Text(), nullable=True),
+    sa.Column('alternatives', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('is_active', sa.Boolean(), server_default=sa.text('true'), nullable=False),
+    sa.Column('superseded_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("selection_mode IN ('automatic','user_selected','policy_selected','system_recommended')", name='ck_resolution_strategy_selections_mode'),
+    sa.ForeignKeyConstraint(['analysis_id', 'resolution_id'], ['resolution_analyses.id', 'resolution_analyses.resolution_id'], name='fk_resolution_strategies_analysis_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['selected_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_strategy_selections_id_resolution')
+    )
+    op.create_index('uq_resolution_strategy_selections_active', 'resolution_strategy_selections', ['resolution_id'], unique=True, postgresql_where=sa.text('is_active'), sqlite_where=sa.text('is_active = 1'))
+    op.create_table('resolution_plans',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('strategy_selection_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('context_snapshot_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('version', sa.Integer(), nullable=False),
+    sa.Column('schema_version', sa.String(length=32), nullable=False),
+    sa.Column('status', sa.String(length=32), server_default='draft', nullable=False),
+    sa.Column('summary', sa.String(length=500), nullable=False),
+    sa.Column('rationale', sa.Text(), nullable=True),
+    sa.Column('expected_impact', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('preserved_entities', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('warnings', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('blockers', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('authorization_requirements', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('plan_hash', sa.String(length=64), nullable=False),
+    sa.Column('created_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('activated_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('invalidated_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('invalidation_reason', sa.Text(), nullable=True),
+    sa.Column('is_active', sa.Boolean(), server_default=sa.text('true'), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("status IN ('draft','ready','simulated','pending_authorization','authorized','invalidated','executing','executed','failed','superseded','cancelled')", name='ck_resolution_plans_status'),
+    sa.CheckConstraint('length(plan_hash) = 64', name='ck_resolution_plans_hash_length'),
+    sa.CheckConstraint('version >= 1', name='ck_resolution_plans_version_positive'),
+    sa.ForeignKeyConstraint(['context_snapshot_id', 'resolution_id'], ['resolution_context_snapshots.id', 'resolution_context_snapshots.resolution_id'], name='fk_resolution_plans_context_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['created_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['strategy_selection_id', 'resolution_id'], ['resolution_strategy_selections.id', 'resolution_strategy_selections.resolution_id'], name='fk_resolution_plans_strategy_same_resolution', ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'resolution_id', 'plan_hash', name='uq_resolution_plans_id_resolution_hash'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_plans_id_resolution'),
+    sa.UniqueConstraint('resolution_id', 'version', name='uq_resolution_plans_version')
+    )
+    op.create_index('ix_resolution_plans_status', 'resolution_plans', ['status'], unique=False)
+    op.create_index('uq_resolution_plans_active', 'resolution_plans', ['resolution_id'], unique=True, postgresql_where=sa.text('is_active'), sqlite_where=sa.text('is_active = 1'))
+    op.create_table('resolution_plan_steps',
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('step_key', sa.String(length=160), nullable=False),
+    sa.Column('sequence', sa.Integer(), nullable=False),
+    sa.Column('operation_key', sa.String(length=200), nullable=False),
+    sa.Column('owner_module', sa.String(length=100), nullable=False),
+    sa.Column('description', sa.String(length=500), nullable=False),
+    sa.Column('input_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('expected_output', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('preconditions', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('criticality', sa.String(length=20), server_default='normal', nullable=False),
+    sa.Column('retry_policy', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('timeout_policy', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('is_compensable', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('compensation_operation_key', sa.String(length=200), nullable=True),
+    sa.Column('compensation_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('point_of_no_return', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('requires_separate_authorization', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('step_hash', sa.String(length=64), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("criticality IN ('low','normal','high','irreversible')", name='ck_resolution_plan_steps_criticality'),
+    sa.CheckConstraint('is_compensable OR compensation_operation_key IS NULL', name='ck_resolution_plan_steps_compensation_operation'),
+    sa.CheckConstraint('length(step_hash) = 64', name='ck_resolution_plan_steps_hash_length'),
+    sa.CheckConstraint('sequence >= 1', name='ck_resolution_plan_steps_sequence_positive'),
+    sa.ForeignKeyConstraint(['plan_id'], ['resolution_plans.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'plan_id', name='uq_resolution_plan_steps_id_plan'),
+    sa.UniqueConstraint('plan_id', 'sequence', name='uq_resolution_plan_steps_sequence'),
+    sa.UniqueConstraint('plan_id', 'step_key', name='uq_resolution_plan_steps_key')
+    )
+    op.create_index('ix_resolution_plan_steps_operation', 'resolution_plan_steps', ['operation_key'], unique=False)
+    op.create_table('resolution_revalidations',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('previous_context_snapshot_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('current_context_snapshot_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('status', sa.String(length=32), nullable=False),
+    sa.Column('changed_facts', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('ignored_changes', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('invalidating_changes', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('warnings', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('result', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
+    sa.Column('revalidated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('revalidated_by', sa.String(length=200), nullable=False),
+    sa.Column('validator_version', sa.String(length=32), nullable=False),
+    sa.Column('revalidation_hash', sa.String(length=64), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint("status IN ('valid','valid_with_warnings','requires_new_plan','no_longer_resolvable','blocked')", name='ck_resolution_revalidations_status'),
+    sa.CheckConstraint('length(revalidation_hash) = 64', name='ck_resolution_revalidations_hash_length'),
+    sa.ForeignKeyConstraint(['current_context_snapshot_id', 'resolution_id'], ['resolution_context_snapshots.id', 'resolution_context_snapshots.resolution_id'], name='fk_resolution_revalidations_current_context', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['plan_id', 'resolution_id'], ['resolution_plans.id', 'resolution_plans.resolution_id'], name='fk_resolution_revalidations_plan_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['previous_context_snapshot_id', 'resolution_id'], ['resolution_context_snapshots.id', 'resolution_context_snapshots.resolution_id'], name='fk_resolution_revalidations_previous_context', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'plan_id', 'resolution_id', name='uq_resolution_revalidations_id_plan_resolution'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_revalidations_id_resolution')
+    )
+    op.create_index('ix_resolution_revalidations_plan_time', 'resolution_revalidations', ['plan_id', 'revalidated_at'], unique=False)
+    op.create_table('resolution_simulations',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('context_snapshot_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('simulation_version', sa.Integer(), nullable=False),
+    sa.Column('status', sa.String(length=32), nullable=False),
+    sa.Column('is_valid', sa.Boolean(), nullable=False),
+    sa.Column('expected_actions', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('expected_creations', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('expected_changes', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('preserved_entities', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('warnings', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('blockers', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('required_authorizations', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('estimated_scope', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('simulation_hash', sa.String(length=64), nullable=False),
+    sa.Column('simulated_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('simulated_by', sa.String(length=200), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint("status IN ('valid','valid_with_warnings','invalid','blocked','expired')", name='ck_resolution_simulations_status'),
+    sa.CheckConstraint('length(simulation_hash) = 64', name='ck_resolution_simulations_hash_length'),
+    sa.CheckConstraint('simulation_version >= 1', name='ck_resolution_simulations_version_positive'),
+    sa.ForeignKeyConstraint(['context_snapshot_id', 'resolution_id'], ['resolution_context_snapshots.id', 'resolution_context_snapshots.resolution_id'], name='fk_resolution_simulations_context_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['plan_id', 'resolution_id'], ['resolution_plans.id', 'resolution_plans.resolution_id'], name='fk_resolution_simulations_plan_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'plan_id', 'resolution_id', name='uq_resolution_simulations_id_plan_resolution'),
+    sa.UniqueConstraint('id', 'resolution_id', 'simulation_hash', name='uq_resolution_simulations_id_resolution_hash'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_simulations_id_resolution'),
+    sa.UniqueConstraint('plan_id', 'simulation_version', name='uq_resolution_simulations_version')
+    )
+    op.create_index('ix_resolution_simulations_plan', 'resolution_simulations', ['plan_id'], unique=False)
+    op.create_table('resolution_authorization_requests',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('simulation_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('policy_key', sa.String(length=200), nullable=False),
+    sa.Column('policy_version', sa.String(length=32), nullable=False),
+    sa.Column('status', sa.String(length=32), server_default='pending', nullable=False),
+    sa.Column('requested_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('requested_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('required_approvals', sa.Integer(), nullable=False),
+    sa.Column('authorization_scope', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
+    sa.Column('plan_hash', sa.String(length=64), nullable=False),
+    sa.Column('simulation_hash', sa.String(length=64), nullable=False),
+    sa.Column('invalidated_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("status IN ('pending','partially_approved','approved','rejected','expired','cancelled','invalidated')", name='ck_resolution_authorization_requests_status'),
+    sa.CheckConstraint('length(plan_hash) = 64', name='ck_resolution_authorization_requests_plan_hash_length'),
+    sa.CheckConstraint('length(simulation_hash) = 64', name='ck_resolution_authorization_requests_sim_hash_length'),
+    sa.CheckConstraint('required_approvals >= 1', name='ck_resolution_authorization_requests_approvals_positive'),
+    sa.ForeignKeyConstraint(['plan_id', 'resolution_id', 'plan_hash'], ['resolution_plans.id', 'resolution_plans.resolution_id', 'resolution_plans.plan_hash'], name='fk_resolution_authorizations_exact_plan', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['requested_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['simulation_id', 'plan_id', 'resolution_id'], ['resolution_simulations.id', 'resolution_simulations.plan_id', 'resolution_simulations.resolution_id'], name='fk_resolution_authorizations_exact_simulation', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['simulation_id', 'resolution_id', 'simulation_hash'], ['resolution_simulations.id', 'resolution_simulations.resolution_id', 'resolution_simulations.simulation_hash'], name='fk_resolution_authorizations_simulation_hash', ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_authorization_requests_id_resolution')
+    )
+    op.create_index('ix_resolution_authorization_requests_status', 'resolution_authorization_requests', ['status'], unique=False)
+    op.create_table('resolution_executions',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('revalidation_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('attempt_number', sa.Integer(), nullable=False),
+    sa.Column('status', sa.String(length=32), server_default='pending', nullable=False),
+    sa.Column('execution_key', sa.String(length=200), nullable=False),
+    sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('executed_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('worker_id', sa.String(length=160), nullable=True),
+    sa.Column('lock_token', sa.String(length=160), nullable=True),
+    sa.Column('initial_context_hash', sa.String(length=64), nullable=True),
+    sa.Column('final_context_hash', sa.String(length=64), nullable=True),
+    sa.Column('error_code', sa.String(length=160), nullable=True),
+    sa.Column('error_message', sa.Text(), nullable=True),
+    sa.Column('error_details', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('retryable', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('retry_after', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('correlation_id', sa.String(length=120), nullable=True),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("status IN ('pending','running','completed','partially_completed','failed','blocked','cancelled','compensating','compensated')", name='ck_resolution_executions_status'),
+    sa.CheckConstraint('attempt_number >= 1', name='ck_resolution_executions_attempt_positive'),
+    sa.CheckConstraint('final_context_hash IS NULL OR length(final_context_hash) = 64', name='ck_resolution_executions_final_hash_length'),
+    sa.CheckConstraint('initial_context_hash IS NULL OR length(initial_context_hash) = 64', name='ck_resolution_executions_initial_hash_length'),
+    sa.ForeignKeyConstraint(['executed_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['plan_id', 'resolution_id'], ['resolution_plans.id', 'resolution_plans.resolution_id'], name='fk_resolution_executions_plan_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['revalidation_id', 'plan_id', 'resolution_id'], ['resolution_revalidations.id', 'resolution_revalidations.plan_id', 'resolution_revalidations.resolution_id'], name='fk_resolution_executions_exact_revalidation', ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('execution_key', name='uq_resolution_executions_key'),
+    sa.UniqueConstraint('id', 'plan_id', name='uq_resolution_executions_id_plan'),
+    sa.UniqueConstraint('id', 'resolution_id', name='uq_resolution_executions_id_resolution'),
+    sa.UniqueConstraint('resolution_id', 'attempt_number', name='uq_resolution_executions_attempt')
+    )
+    op.create_index(op.f('ix_resolution_executions_correlation_id'), 'resolution_executions', ['correlation_id'], unique=False)
+    op.create_index('ix_resolution_executions_status_retry', 'resolution_executions', ['status', 'retry_after'], unique=False)
+    op.create_table('resolution_plan_step_dependencies',
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('step_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('depends_on_step_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint('step_id <> depends_on_step_id', name='ck_resolution_plan_step_dependencies_not_self'),
+    sa.ForeignKeyConstraint(['depends_on_step_id', 'plan_id'], ['resolution_plan_steps.id', 'resolution_plan_steps.plan_id'], name='fk_resolution_step_dependencies_parent_same_plan', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['plan_id'], ['resolution_plans.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['step_id', 'plan_id'], ['resolution_plan_steps.id', 'resolution_plan_steps.plan_id'], name='fk_resolution_step_dependencies_step_same_plan', ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('plan_id', 'step_id', 'depends_on_step_id', name='uq_resolution_plan_step_dependencies_edge')
+    )
+    op.create_index('ix_resolution_plan_step_dependencies_parent', 'resolution_plan_step_dependencies', ['depends_on_step_id'], unique=False)
+    op.create_table('resolution_audit_events',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('sequence', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('event_type', sa.String(length=160), nullable=False),
+    sa.Column('actor_type', sa.String(length=40), nullable=False),
+    sa.Column('actor_id', sa.String(length=160), nullable=True),
+    sa.Column('actor_role', sa.String(length=100), nullable=True),
+    sa.Column('occurred_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('previous_state', sa.String(length=40), nullable=True),
+    sa.Column('new_state', sa.String(length=40), nullable=True),
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('plan_version', sa.Integer(), nullable=True),
+    sa.Column('execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('correlation_id', sa.String(length=120), nullable=True),
+    sa.Column('source', sa.String(length=40), nullable=False),
+    sa.Column('payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('payload_hash', sa.String(length=64), nullable=False),
+    sa.Column('actor_ip', sa.String(length=64), nullable=True),
+    sa.Column('actor_device', sa.String(length=240), nullable=True),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint('length(payload_hash) = 64', name='ck_resolution_audit_events_hash_length'),
+    sa.CheckConstraint('sequence >= 1', name='ck_resolution_audit_events_sequence_positive'),
+    sa.ForeignKeyConstraint(['execution_id', 'resolution_id'], ['resolution_executions.id', 'resolution_executions.resolution_id'], name='fk_resolution_audit_events_execution_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['plan_id', 'resolution_id'], ['resolution_plans.id', 'resolution_plans.resolution_id'], name='fk_resolution_audit_events_plan_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('resolution_id', 'sequence', name='uq_resolution_audit_events_sequence')
+    )
+    op.create_index(op.f('ix_resolution_audit_events_correlation_id'), 'resolution_audit_events', ['correlation_id'], unique=False)
+    op.create_index('ix_resolution_audit_events_resolution_time', 'resolution_audit_events', ['resolution_id', 'occurred_at'], unique=False)
+    op.create_index('ix_resolution_audit_events_type', 'resolution_audit_events', ['event_type'], unique=False)
+    op.create_table('resolution_authorization_decisions',
+    sa.Column('authorization_request_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('decision', sa.String(length=24), nullable=False),
+    sa.Column('approver_user_id', sa.Integer(), nullable=False),
+    sa.Column('approver_role', sa.String(length=100), nullable=False),
+    sa.Column('approver_area', sa.String(length=120), nullable=True),
+    sa.Column('decided_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('comment', sa.Text(), nullable=True),
+    sa.Column('reason_code', sa.String(length=160), nullable=True),
+    sa.Column('signature_reference', sa.String(length=500), nullable=True),
+    sa.Column('permission_snapshot', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=False),
+    sa.Column('actor_ip', sa.String(length=64), nullable=True),
+    sa.Column('actor_device', sa.String(length=240), nullable=True),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint("decision IN ('approved','rejected','abstained','revoked')", name='ck_resolution_authorization_decisions_decision'),
+    sa.ForeignKeyConstraint(['approver_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['authorization_request_id'], ['resolution_authorization_requests.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('ix_resolution_authorization_decisions_request_approver', 'resolution_authorization_decisions', ['authorization_request_id', 'approver_user_id'], unique=False)
+    op.create_table('resolution_results',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('status', sa.String(length=32), nullable=False),
+    sa.Column('summary', sa.Text(), nullable=False),
+    sa.Column('created_entities', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('modified_entities', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('preserved_entities', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('failed_steps', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('warnings', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('follow_up_actions', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'[]'"), nullable=False),
+    sa.Column('final_context_snapshot_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('completed_at', sa.DateTime(timezone=True), nullable=False),
+    sa.Column('completed_by_user_id', sa.Integer(), nullable=True),
+    sa.Column('result_hash', sa.String(length=64), nullable=False),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.CheckConstraint("status IN ('success','partial_success','failed','cancelled','superseded','no_action_required')", name='ck_resolution_results_status'),
+    sa.CheckConstraint('length(result_hash) = 64', name='ck_resolution_results_hash_length'),
+    sa.ForeignKeyConstraint(['completed_by_user_id'], ['users.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['execution_id', 'resolution_id'], ['resolution_executions.id', 'resolution_executions.resolution_id'], name='fk_resolution_results_execution_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['final_context_snapshot_id', 'resolution_id'], ['resolution_context_snapshots.id', 'resolution_context_snapshots.resolution_id'], name='fk_resolution_results_context_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('resolution_id')
+    )
+    op.create_table('resolution_step_executions',
+    sa.Column('execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('plan_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('plan_step_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('status', sa.String(length=32), server_default='pending', nullable=False),
+    sa.Column('attempt_number', sa.Integer(), nullable=False),
+    sa.Column('step_execution_key', sa.String(length=200), nullable=False),
+    sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('request_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('response_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('error_code', sa.String(length=160), nullable=True),
+    sa.Column('error_message', sa.Text(), nullable=True),
+    sa.Column('error_details', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('retryable', sa.Boolean(), server_default=sa.text('false'), nullable=False),
+    sa.Column('retry_count', sa.Integer(), server_default='0', nullable=False),
+    sa.Column('domain_transaction_reference', sa.String(length=240), nullable=True),
+    sa.Column('compensation_status', sa.String(length=32), nullable=True),
+    sa.Column('compensation_execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("status IN ('pending','running','completed','skipped','failed','blocked','compensating','compensated','compensation_failed')", name='ck_resolution_step_executions_status'),
+    sa.CheckConstraint('attempt_number >= 1', name='ck_resolution_step_executions_attempt_positive'),
+    sa.CheckConstraint('retry_count >= 0', name='ck_resolution_step_executions_retry_count'),
+    sa.ForeignKeyConstraint(['compensation_execution_id'], ['resolution_step_executions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['execution_id', 'plan_id'], ['resolution_executions.id', 'resolution_executions.plan_id'], name='fk_resolution_step_executions_execution_plan', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['plan_step_id', 'plan_id'], ['resolution_plan_steps.id', 'resolution_plan_steps.plan_id'], name='fk_resolution_step_executions_step_plan', ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('execution_id', 'plan_step_id', 'attempt_number', name='uq_resolution_step_executions_attempt'),
+    sa.UniqueConstraint('id', 'execution_id', name='uq_resolution_step_executions_id_execution'),
+    sa.UniqueConstraint('step_execution_key', name='uq_resolution_step_executions_key')
+    )
+    op.create_index('ix_resolution_step_executions_execution_status', 'resolution_step_executions', ['execution_id', 'status'], unique=False)
+    op.create_table('resolution_entity_references',
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=False),
+    sa.Column('execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('step_execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('relationship_type', sa.String(length=32), nullable=False),
+    sa.Column('entity_type', sa.String(length=100), nullable=False),
+    sa.Column('entity_id', sa.String(length=160), nullable=False),
+    sa.Column('public_identifier', sa.String(length=200), nullable=True),
+    sa.Column('module', sa.String(length=100), nullable=False),
+    sa.Column('before_snapshot', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
+    sa.Column('after_snapshot', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("relationship_type IN ('subject','input','created','modified','preserved','cancelled','superseded','linked','referenced')", name='ck_resolution_entity_references_relationship'),
+    sa.CheckConstraint('step_execution_id IS NULL OR execution_id IS NOT NULL', name='ck_resolution_entity_references_step_requires_execution'),
+    sa.ForeignKeyConstraint(['execution_id', 'resolution_id'], ['resolution_executions.id', 'resolution_executions.resolution_id'], name='fk_resolution_entity_refs_execution_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['step_execution_id', 'execution_id'], ['resolution_step_executions.id', 'resolution_step_executions.execution_id'], name='fk_resolution_entity_refs_step_same_execution', ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_index('ix_resolution_entity_references_entity', 'resolution_entity_references', ['entity_type', 'entity_id'], unique=False)
+    op.create_index('ix_resolution_entity_references_resolution_relationship', 'resolution_entity_references', ['resolution_id', 'relationship_type'], unique=False)
+    op.create_table('resolution_idempotency_records',
+    sa.Column('scope', sa.String(length=40), nullable=False),
+    sa.Column('idempotency_key', sa.String(length=240), nullable=False),
+    sa.Column('resolution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('step_execution_id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), nullable=True),
+    sa.Column('operation_key', sa.String(length=200), nullable=False),
+    sa.Column('status', sa.String(length=24), server_default='in_progress', nullable=False),
+    sa.Column('request_hash', sa.String(length=64), nullable=False),
+    sa.Column('response_payload', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), nullable=True),
+    sa.Column('completed_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('metadata', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default=sa.text("'{}'"), nullable=False),
+    sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.CheckConstraint("scope IN ('resolution_request','resolution_execution','step_execution','domain_operation','offline_sync')", name='ck_resolution_idempotency_records_scope'),
+    sa.CheckConstraint("status IN ('in_progress','completed','failed','expired')", name='ck_resolution_idempotency_records_status'),
+    sa.CheckConstraint('execution_id IS NULL OR resolution_id IS NOT NULL', name='ck_resolution_idempotency_execution_requires_resolution'),
+    sa.CheckConstraint('length(request_hash) = 64', name='ck_resolution_idempotency_records_hash_length'),
+    sa.CheckConstraint('step_execution_id IS NULL OR execution_id IS NOT NULL', name='ck_resolution_idempotency_step_requires_execution'),
+    sa.ForeignKeyConstraint(['execution_id', 'resolution_id'], ['resolution_executions.id', 'resolution_executions.resolution_id'], name='fk_resolution_idempotency_execution_same_resolution', ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['resolution_id'], ['resolutions.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['step_execution_id', 'execution_id'], ['resolution_step_executions.id', 'resolution_step_executions.execution_id'], name='fk_resolution_idempotency_step_same_execution', ondelete='RESTRICT'),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('scope', 'idempotency_key', name='uq_resolution_idempotency_scope_key')
+    )
+    op.create_index('ix_resolution_idempotency_records_expiration', 'resolution_idempotency_records', ['status', 'expires_at'], unique=False)
+    op.create_foreign_key(
+        "fk_resolutions_current_context_same_resolution",
+        "resolutions",
+        "resolution_context_snapshots",
+        ["current_context_snapshot_id", "id"],
+        ["id", "resolution_id"],
+        ondelete="RESTRICT",
+    )
+    op.create_foreign_key(
+        "fk_resolutions_current_plan_same_resolution",
+        "resolutions",
+        "resolution_plans",
+        ["current_plan_id", "id"],
+        ["id", "resolution_id"],
+        ondelete="RESTRICT",
+    )
+    op.create_foreign_key(
+        "fk_resolutions_current_strategy_same_resolution",
+        "resolutions",
+        "resolution_strategy_selections",
+        ["current_strategy_selection_id", "id"],
+        ["id", "resolution_id"],
+        ondelete="RESTRICT",
+    )
+    _install_integrity_triggers()
+    # ### end Alembic commands ###
+
+
+def downgrade() -> None:
+    # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_constraint(
+        "fk_resolutions_current_strategy_same_resolution",
+        "resolutions",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_resolutions_current_plan_same_resolution",
+        "resolutions",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_resolutions_current_context_same_resolution",
+        "resolutions",
+        type_="foreignkey",
+    )
+    op.drop_index('ix_resolution_idempotency_records_expiration', table_name='resolution_idempotency_records')
+    op.drop_table('resolution_idempotency_records')
+    op.drop_index('ix_resolution_entity_references_resolution_relationship', table_name='resolution_entity_references')
+    op.drop_index('ix_resolution_entity_references_entity', table_name='resolution_entity_references')
+    op.drop_table('resolution_entity_references')
+    op.drop_index('ix_resolution_step_executions_execution_status', table_name='resolution_step_executions')
+    op.drop_table('resolution_step_executions')
+    op.drop_table('resolution_results')
+    op.drop_index('ix_resolution_authorization_decisions_request_approver', table_name='resolution_authorization_decisions')
+    op.drop_table('resolution_authorization_decisions')
+    op.drop_index('ix_resolution_audit_events_type', table_name='resolution_audit_events')
+    op.drop_index('ix_resolution_audit_events_resolution_time', table_name='resolution_audit_events')
+    op.drop_index(op.f('ix_resolution_audit_events_correlation_id'), table_name='resolution_audit_events')
+    op.drop_table('resolution_audit_events')
+    op.drop_index('ix_resolution_plan_step_dependencies_parent', table_name='resolution_plan_step_dependencies')
+    op.drop_table('resolution_plan_step_dependencies')
+    op.drop_index('ix_resolution_executions_status_retry', table_name='resolution_executions')
+    op.drop_index(op.f('ix_resolution_executions_correlation_id'), table_name='resolution_executions')
+    op.drop_table('resolution_executions')
+    op.drop_index('ix_resolution_authorization_requests_status', table_name='resolution_authorization_requests')
+    op.drop_table('resolution_authorization_requests')
+    op.drop_index('ix_resolution_simulations_plan', table_name='resolution_simulations')
+    op.drop_table('resolution_simulations')
+    op.drop_index('ix_resolution_revalidations_plan_time', table_name='resolution_revalidations')
+    op.drop_table('resolution_revalidations')
+    op.drop_index('ix_resolution_plan_steps_operation', table_name='resolution_plan_steps')
+    op.drop_table('resolution_plan_steps')
+    op.drop_index('uq_resolution_plans_active', table_name='resolution_plans', postgresql_where=sa.text('is_active'), sqlite_where=sa.text('is_active = 1'))
+    op.drop_index('ix_resolution_plans_status', table_name='resolution_plans')
+    op.drop_table('resolution_plans')
+    op.drop_index('uq_resolution_strategy_selections_active', table_name='resolution_strategy_selections', postgresql_where=sa.text('is_active'), sqlite_where=sa.text('is_active = 1'))
+    op.drop_table('resolution_strategy_selections')
+    op.drop_table('resolution_analyses')
+    op.drop_index(op.f('ix_resolution_problems_problem_code'), table_name='resolution_problems')
+    op.drop_table('resolution_problems')
+    op.drop_index('ix_resolution_outbox_events_dispatch', table_name='resolution_outbox_events')
+    op.drop_index(op.f('ix_resolution_outbox_events_correlation_id'), table_name='resolution_outbox_events')
+    op.drop_table('resolution_outbox_events')
+    op.drop_index('uq_resolution_locks_active_key', table_name='resolution_locks', postgresql_where=sa.text('released_at IS NULL'), sqlite_where=sa.text('released_at IS NULL'))
+    op.drop_index('ix_resolution_locks_expiration', table_name='resolution_locks')
+    op.drop_table('resolution_locks')
+    op.drop_index('ix_resolution_evidence_references_resolution_type', table_name='resolution_evidence_references')
+    op.drop_table('resolution_evidence_references')
+    op.drop_index('ix_resolution_context_snapshots_resolution_captured', table_name='resolution_context_snapshots')
+    op.drop_index(op.f('ix_resolution_context_snapshots_context_hash'), table_name='resolution_context_snapshots')
+    op.drop_table('resolution_context_snapshots')
+    op.drop_index('ix_resolutions_type_status_created', table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_superseded_by_resolution_id'), table_name='resolutions')
+    op.drop_index('ix_resolutions_subject', table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_status'), table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_resolution_type'), table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_requested_by_user_id'), table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_parent_resolution_id'), table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_organization_id'), table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_correlation_id'), table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_branch_id'), table_name='resolutions')
+    op.drop_index(op.f('ix_resolutions_assigned_to_user_id'), table_name='resolutions')
+    op.drop_table('resolutions')
+    op.execute("DROP FUNCTION resolution_engine_guard_plan_child()")
+    op.execute("DROP FUNCTION resolution_engine_guard_plan_update()")
+    op.execute("DROP FUNCTION resolution_engine_prevent_delete()")
+    op.execute("DROP FUNCTION resolution_engine_prevent_mutation()")
+    # ### end Alembic commands ###

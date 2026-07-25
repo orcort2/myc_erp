@@ -33,15 +33,15 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "app.schemas",
     "app.services",
     "fastapi",
-    "sqlalchemy",
 )
+
+CORE_FORBIDDEN_IMPORT_PREFIXES = FORBIDDEN_IMPORT_PREFIXES + ("sqlalchemy",)
 
 FUTURE_PHASE_DIRECTORIES = {
     "api",
     "events",
     "gateways",
     "lifecycle",
-    "persistence",
     "repositories",
     "resolutions",
     "workers",
@@ -68,7 +68,12 @@ def test_layers_do_not_import_forbidden_erp_or_framework_dependencies(layer):
     violations: list[str] = []
     for path in python_files(layer):
         for module in imported_modules(path):
-            if module.startswith(FORBIDDEN_IMPORT_PREFIXES):
+            forbidden = (
+                FORBIDDEN_IMPORT_PREFIXES
+                if layer == "infrastructure"
+                else CORE_FORBIDDEN_IMPORT_PREFIXES
+            )
+            if module.startswith(forbidden):
                 violations.append(f"{path.relative_to(PACKAGE_ROOT)} -> {module}")
 
     assert violations == []
@@ -88,7 +93,7 @@ def test_layer_direction_is_enforced(layer):
     assert violations == []
 
 
-def test_phase_one_does_not_create_future_phase_packages():
+def test_current_phases_do_not_create_unapproved_packages():
     present = {
         path.name
         for path in PACKAGE_ROOT.iterdir()

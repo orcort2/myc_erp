@@ -25,13 +25,15 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `8c2d4e6f7a9b`.
-- `8c2d4e6f7a9b` agrega `service_order_items.expected_certificate_master_id` y `equipment.certificate_operational_context_snapshot`.
+- Revisión aplicada y único head verificado: `9d3e5f7a1b2c`.
+- `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
+  Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
+  padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,050,774 bytes.
-- SHA-256 verificado: `3f0b1df4ab00b8156a670277339f7efe01b16d322960a2dabf7dfcb2c3f61658`.
-- El respaldo contiene `alembic_version = 8c2d4e6f7a9b`.
+- Tamaño verificado: 74,166,303 bytes.
+- SHA-256 verificado: `b713d82da52e48d8c6e4672f1970ef540582e0d8d99cc982b3b44149b69d40c1`.
+- El respaldo contiene `alembic_version = 9d3e5f7a1b2c`.
 
 ## Equipos y contexto de certificado
 
@@ -70,20 +72,27 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 1
+## Motor de Resoluciones — Fase 2
 
-- Estado: Fase 0 `APROBADA`; Fase 1 `EN REVISIÓN`; Fase 2 `NO INICIADA`.
-- La fundación reside en `backend/app/resolution_engine/` y no importa modelos,
-  schemas, servicios, routers, FastAPI ni SQLAlchemy.
-- `ResolutionDefinition` conserva tipo, versión y referencias versionadas a los
-  componentes requeridos. `ResolutionRegistry` admite varias versiones, una
-  activa por tipo, resolución histórica exacta y congelamiento.
-- La serialización/hash canónicos rechaza datos ambiguos; reloj e IDs técnicos
-  son inyectables. Los UUID no generan ni sustituyen folios institucionales.
-- No se incorporaron persistencia, lifecycle, seguridad, gateways, API,
-  workers, resoluciones concretas ni ejecución.
-- Validaciones: 171 pruebas backend y 19 subpruebas correctas; 11 pruebas
-  frontend correctas; build Vite correcto; importación con `app.main` correcta;
-  único head/current `8c2d4e6f7a9b`.
+- Estado: Fases 0 y 1 `APROBADAS`; Fase 2 `EN REVISIÓN`; Fase 3 `NO INICIADA`.
+- La fundación de Fase 1 permanece aislada. La infraestructura de Fase 2 agrega
+  21 modelos persistentes generales, constraints, índices, repositorio de
+  reconstrucción, inmutabilidad y outbox estructural.
+- El esquema congela tipo/versión de definición, contexto, planes, hashes y
+  evidencia. No contiene columnas particulares de ETS, Equipos, Facturación ni
+  UC-001.
+- Las relaciones críticas son claves foráneas y las dependencias de pasos están
+  normalizadas. PostgreSQL protege evidencia append-only y restringe la edición
+  de planes/pasos a `draft`.
+- No se incorporaron lifecycle, lógica de negocio, seguridad del Motor,
+  gateways, API, workers, simulación operativa, autorización ni ejecución.
+- Validaciones: 184 pruebas backend y 19 subpruebas correctas; 64 pruebas del
+  Motor dentro de esa suite; 11 pruebas frontend correctas; build Vite y
+  compilación Python correctos.
+- PostgreSQL: 21 tablas, 22 triggers, prueba transaccional de inmutabilidad,
+  downgrade completo a `8c2d4e6f7a9b`, upgrade a head y único
+  head/current `9d3e5f7a1b2c`.
+- `alembic check` conserva exclusivamente la deriva histórica registrada como
+  `TD-021`; no propone operaciones sobre el esquema del Motor.
 - Cierre detallado:
-  [`closures/RESOLUTION_ENGINE_PHASE_1.md`](closures/RESOLUTION_ENGINE_PHASE_1.md).
+  [`closures/RESOLUTION_ENGINE_PHASE_2.md`](closures/RESOLUTION_ENGINE_PHASE_2.md).

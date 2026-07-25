@@ -53,8 +53,8 @@ dominio.
 | Fase | Estado inicial | Componentes autorizados | Dependencias obligatorias | Bloqueadores corregibles en la fase | Gate de salida |
 | --- | --- | --- | --- | --- | --- |
 | 0. Preparación arquitectónica | `APROBADA` | Canon documental, README, matriz, gates, inventario y línea base | Especificación completa y reglas del repositorio | Especificación fuera del índice, ausencia de matriz y contradicciones de precedencia documental | Arquitectura ratificada, matriz registrada, validaciones completas y commit de Fase 0 |
-| 1. Contratos y núcleo | `EN REVISIÓN` | Organización de paquetes, contratos tipados, enumeraciones, errores, hashes, reloj, identificadores, `ResolutionRegistry` y pruebas arquitectónicas | Fase 0 aprobada | Sólo dependencias o acoplamientos que impidan aislar el núcleo; no seguridad, persistencia ni gateways todavía | Definiciones registrables sin modificar el núcleo y dependencias prohibidas cubiertas por pruebas |
-| 2. Persistencia completa | `NO INICIADA` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
+| 1. Contratos y núcleo | `APROBADA` | Organización de paquetes, contratos tipados, enumeraciones, errores, hashes, reloj, identificadores, `ResolutionRegistry` y pruebas arquitectónicas | Fase 0 aprobada | Sólo dependencias o acoplamientos que impidan aislar el núcleo; no seguridad, persistencia ni gateways todavía | Definiciones registrables sin modificar el núcleo y dependencias prohibidas cubiertas por pruebas |
+| 2. Persistencia completa | `EN REVISIÓN` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
 | 3. Seguridad, identidad y evidencia | `NO INICIADA` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
 | 4. Ciclo de decisión sin efectos | `NO INICIADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
 | 5. Ejecución y recuperación | `NO INICIADA` | Saga, executor, idempotencia, concurrencia, locks, retries, reconciliación, compensación, outbox operativo y workers | Plan autorizado/revalidado de Fase 4 | Mutaciones duplicadas, servicios no canónicos, operaciones no idempotentes o ciclo de excepción que mezcle solicitud y ejecución | Caídas y respuestas inciertas recuperables sin duplicar efectos |
@@ -173,3 +173,37 @@ La Fase 0 se considera lista para revisión cuando:
 - Próxima fase autorizable: Fase 2, sólo después de aprobación expresa.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_1.md`](../../closures/RESOLUTION_ENGINE_PHASE_1.md).
+
+## Apertura de Fase 2
+
+- Estado: `ACTIVA`.
+- Autorización: aprobación expresa posterior al commit `b76391e`.
+- Componentes autorizados: modelo persistente completo, constraints, índices,
+  repositorios, migración reversible, inmutabilidad y outbox estructural.
+- Restricción adicional: el esquema debe ser general, versionado y reconstruible;
+  no puede especializarse para UC-001.
+- Bloqueador directo resuelto: la migración aplicada
+  `8c2d4e6f7a9b` se incorporó al historial Git mediante el commit `80f9d9f`
+  antes de crear la revisión del Motor.
+- Componentes excluidos: lifecycle, lógica de negocio, simulación,
+  autorización operativa, ejecución, API, workers y Domain Gateways.
+
+## Resultado de Fase 2
+
+- Estado: `EN REVISIÓN`.
+- Gate: cumplido; el expediente completo se reconstruye desde 21 tablas
+  generales y relaciones con integridad referencial.
+- Evolución: tipo y definición versionados, snapshots con hash, planes
+  versionados, referencias genéricas y evidencia append-only sin columnas
+  particulares de UC-001.
+- Migración: `9d3e5f7a1b2c`, upgrade/downgrade completos y único head
+  verificado en PostgreSQL.
+- Inmutabilidad: 22 triggers impiden mutar evidencia, borrar historial y editar
+  planes o pasos fuera de `draft`.
+- Bloqueadores corregidos: sólo la ausencia en Git de la revisión padre
+  `8c2d4e6f7a9b`, resuelta antes de la migración del Motor.
+- Componentes adelantados: ninguno; outbox, locks e idempotencia son únicamente
+  estructuras persistentes.
+- Próxima fase autorizable: Fase 3, sólo después de aprobación expresa.
+- Evidencia detallada:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_2.md`](../../closures/RESOLUTION_ENGINE_PHASE_2.md).

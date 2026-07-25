@@ -4,5 +4,14 @@ from app.resolution_engine.infrastructure.runtime import (
     SystemClock,
     UuidIdentifierFactory,
 )
+from app.resolution_engine.infrastructure.repositories import (
+    ResolutionRecord,
+    ResolutionRepository,
+)
 
-__all__ = ["SystemClock", "UuidIdentifierFactory"]
+__all__ = [
+    "ResolutionRecord",
+    "ResolutionRepository",
+    "SystemClock",
+    "UuidIdentifierFactory",
+]

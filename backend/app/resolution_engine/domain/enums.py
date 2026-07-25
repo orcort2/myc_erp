@@ -153,3 +153,55 @@ class ComponentKind(StrEnum):
     PERMISSION_POLICY = "permission_policy"
     REVALIDATOR = "revalidator"
     EXECUTOR = "executor"
+
+
+class ContextSnapshotType(StrEnum):
+    INITIAL = "initial"
+    ANALYSIS = "analysis"
+    SIMULATION = "simulation"
+    AUTHORIZATION = "authorization"
+    REVALIDATION = "revalidation"
+    PRE_EXECUTION = "pre_execution"
+    POST_EXECUTION = "post_execution"
+    FINAL = "final"
+
+
+class EntityRelationshipType(StrEnum):
+    SUBJECT = "subject"
+    INPUT = "input"
+    CREATED = "created"
+    MODIFIED = "modified"
+    PRESERVED = "preserved"
+    CANCELLED = "cancelled"
+    SUPERSEDED = "superseded"
+    LINKED = "linked"
+    REFERENCED = "referenced"
+
+
+class IdempotencyScope(StrEnum):
+    RESOLUTION_REQUEST = "resolution_request"
+    RESOLUTION_EXECUTION = "resolution_execution"
+    STEP_EXECUTION = "step_execution"
+    DOMAIN_OPERATION = "domain_operation"
+    OFFLINE_SYNC = "offline_sync"
+
+
+class IdempotencyStatus(StrEnum):
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+class ResolutionLockType(StrEnum):
+    PLANNING = "planning"
+    AUTHORIZATION = "authorization"
+    EXECUTION = "execution"
+    COMPENSATION = "compensation"
+    SUBJECT_ENTITY = "subject_entity"
+
+
+class OutboxStatus(StrEnum):
+    PENDING = "pending"
+    PUBLISHED = "published"
+    FAILED = "failed"

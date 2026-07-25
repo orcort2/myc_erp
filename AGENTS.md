@@ -63,3 +63,26 @@ La pestaña Facturación del ETS se compone exclusivamente con `frontend/src/com
 ## Arquitectura obligatoria de Servicios Compuestos
 
 Los Servicios Compuestos se modelan exclusivamente con `catalog_items.service_kind` y la relación normalizada `catalog_item_components`. La cotización y Facturación conservan sólo el concepto comercial padre. La expansión recursiva ocurre una sola vez al crear el ETS mediante `backend/app/services/service_orders.py`; sus hojas simples alimentan las partidas operativas, el cálculo de OT, Equipos, Hojas de Campo y Certificados. No duplicar la expansión en frontend, routers, Facturación u otros servicios, no persistir componentes en JSON y no mostrar componentes al cliente. El contrato completo está en `docs/architecture/COMPOSITE_CATALOG_SERVICES.md`.
+
+## Directriz permanente del Motor de Resoluciones
+
+El Motor de Resoluciones es infraestructura de largo plazo. En todas sus fases
+se debe priorizar, en este orden: correctitud arquitectónica, mantenibilidad,
+legibilidad, extensibilidad y rendimiento. No se debe optimizar prematuramente.
+
+Las soluciones deben ser simples, explícitas y fáciles de localizar, probar,
+depurar, documentar, modificar, reemplazar y eliminar. Cada componente debe
+tener una única responsabilidad. Se deben evitar interfaces o clases
+innecesarias, herencias profundas, acoplamiento, duplicación, utilidades
+genéricas difíciles de mantener, metaprogramación y optimizaciones prematuras.
+
+Cuando existan varias alternativas válidas, se debe elegir la más simple,
+mantenible y consistente con la especificación. Antes de cerrar una
+implementación del Motor se debe verificar expresamente que el diseño sea fácil
+de entender, probar, extender, reemplazar y eliminar; si alguna respuesta es
+negativa, el diseño debe reconsiderarse.
+
+El modelo persistente debe ser general para el Motor y no especializarse en el
+primer caso de uso. Debe preservar versionado, inmutabilidad histórica,
+integridad referencial, reconstrucción completa de una resolución y
+compatibilidad con las fases posteriores.

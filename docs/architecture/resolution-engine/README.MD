@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 1 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 2 EN REVISIÓN
 >
-> Fase vigente: Fase 1 — Contratos y núcleo (cierre técnico)
+> Fase vigente: Fase 2 — Persistencia completa, implementación cerrada
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -25,6 +25,7 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 11. [`11_MODELO_SEGURIDAD.md`](11_MODELO_SEGURIDAD.md)
 12. [`12_ROADMAP.md`](12_ROADMAP.md)
 13. [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
+14. [`14_PERSISTENCE_SCHEMA.md`](14_PERSISTENCE_SCHEMA.md)
 
 ## Regla de precedencia
 
@@ -50,12 +51,19 @@ dependencia de seguridad e integridad más restrictiva.
 
 ## Estado actual
 
-La Fase 0 fue aprobada. La Fase 1 implementó exclusivamente organización de
+Las Fases 0 y 1 fueron aprobadas. La Fase 1 implementó exclusivamente organización de
 paquetes, contratos tipados, catálogos controlados, errores, serialización y
 hashing canónicos, reloj, identificadores, `ResolutionRegistry` y pruebas
 arquitectónicas. Su cierre está en
 [`../../closures/RESOLUTION_ENGINE_PHASE_1.md`](../../closures/RESOLUTION_ENGINE_PHASE_1.md).
 
-Persistencia, ciclo de vida, seguridad, gateways, API y ejecución permanecen
-fuera de alcance. La Fase 2 no puede comenzar sin aprobación expresa posterior
-al commit de Fase 1.
+La Fase 2 quedó implementada y está `EN REVISIÓN`. Incorpora modelos
+persistentes, restricciones, índices, repositorio de reconstrucción, migración
+reversible, inmutabilidad y outbox estructural. Su contrato implementado está
+en [`14_PERSISTENCE_SCHEMA.md`](14_PERSISTENCE_SCHEMA.md) y el cierre técnico
+en
+[`../../closures/RESOLUTION_ENGINE_PHASE_2.md`](../../closures/RESOLUTION_ENGINE_PHASE_2.md).
+
+Ciclo de vida, seguridad, gateways, API, simulación, autorización operativa y
+ejecución permanecen fuera de alcance. La Fase 3 no puede iniciar sin aprobación
+expresa.
