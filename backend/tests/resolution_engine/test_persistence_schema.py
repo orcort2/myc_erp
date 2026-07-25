@@ -7,6 +7,7 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionAuthorizationRequest,
     ResolutionPlan,
     ResolutionPlanStepDependency,
+    ResolutionSecurityDecision,
 )
 
 EXPECTED_TABLES = {
@@ -26,6 +27,7 @@ EXPECTED_TABLES = {
     "resolution_step_executions",
     "resolution_entity_references",
     "resolution_results",
+    "resolution_security_decisions",
     "resolution_audit_events",
     "resolution_idempotency_records",
     "resolution_locks",
@@ -61,6 +63,19 @@ def test_schema_is_generic_and_does_not_embed_first_use_case():
     assert {"subject_type", "subject_id"}.issubset(Resolution.__table__.c.keys())
 
 
+def test_resolution_engine_does_not_reference_erp_user_table():
+    violations = []
+    for table in resolution_tables().values():
+        for constraint in table.foreign_key_constraints:
+            for element in constraint.elements:
+                if element.target_fullname.startswith("users."):
+                    violations.append(
+                        f"{table.name}.{element.parent.name}"
+                    )
+
+    assert violations == []
+
+
 def test_historical_tables_do_not_support_soft_delete():
     for table in resolution_tables().values():
         assert "deleted_at" not in table.c
@@ -90,6 +105,23 @@ def test_authorization_references_exact_plan_and_simulation_hashes():
         for constraint in constraints
     }
 
+    assert ("plan_id", "resolution_id", "plan_hash") in constrained_sets
+    assert ("simulation_id", "resolution_id", "simulation_hash") in constrained_sets
+    assert ("simulation_id", "plan_id", "resolution_id") in constrained_sets
+
+
+def test_security_decisions_reference_exact_authorization_evidence():
+    constraints = [
+        constraint
+        for constraint in ResolutionSecurityDecision.__table__.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    ]
+    constrained_sets = {
+        tuple(column.name for column in constraint.columns)
+        for constraint in constraints
+    }
+
+    assert ("authorization_request_id", "resolution_id") in constrained_sets
     assert ("plan_id", "resolution_id", "plan_hash") in constrained_sets
     assert ("simulation_id", "resolution_id", "simulation_hash") in constrained_sets
     assert ("simulation_id", "plan_id", "resolution_id") in constrained_sets

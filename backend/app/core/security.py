@@ -24,7 +24,11 @@ def create_access_token(subject: str, extra_claims: dict[str, Any] | None = None
     expires_at = datetime.now(timezone.utc) + timedelta(
         minutes=settings.access_token_expire_minutes
     )
-    payload: dict[str, Any] = {"sub": subject, "exp": expires_at}
+    payload: dict[str, Any] = {
+        "sub": subject,
+        "exp": expires_at,
+        "token_type": "access",
+    }
     if extra_claims:
         payload.update(extra_claims)
     return jwt.encode(payload, settings.secret_key, algorithm=ALGORITHM)

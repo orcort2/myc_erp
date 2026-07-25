@@ -123,10 +123,7 @@ class ResolutionPlan(ResolutionRecordMixin, MutableTimestampMixin, Base):
         JSON_DOCUMENT, server_default=text("'{}'"), nullable=False
     )
     plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    created_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-    )
+    created_by_actor_id: Mapped[str | None] = mapped_column(String(160))
     activated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )

@@ -47,6 +47,12 @@ FUTURE_PHASE_DIRECTORIES = {
     "workers",
 }
 
+FORBIDDEN_SECURITY_LITERALS = {
+    "Administrador",
+    "Cliente",
+    "users.id",
+}
+
 
 def python_files(layer: str) -> list[Path]:
     return sorted((PACKAGE_ROOT / layer).rglob("*.py"))
@@ -120,3 +126,19 @@ def test_registry_has_no_resolution_type_conditionals():
     }
 
     assert compared_literals == set()
+
+
+def test_security_core_does_not_embed_erp_roles_or_user_table():
+    violations = []
+    for layer in ("domain", "contracts", "application", "infrastructure"):
+        for path in python_files(layer):
+            if "security" not in path.name:
+                continue
+            source = path.read_text(encoding="utf-8")
+            for literal in FORBIDDEN_SECURITY_LITERALS:
+                if literal in source:
+                    violations.append(
+                        f"{path.relative_to(PACKAGE_ROOT)} -> {literal}"
+                    )
+
+    assert violations == []

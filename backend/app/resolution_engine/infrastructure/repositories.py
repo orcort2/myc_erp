@@ -21,6 +21,7 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionIdempotencyRecord,
     ResolutionLock,
     ResolutionOutboxEvent,
+    ResolutionSecurityDecision,
     ResolutionPlan,
     ResolutionPlanStep,
     ResolutionPlanStepDependency,
@@ -54,6 +55,7 @@ class ResolutionRecord:
     entity_references: tuple[ResolutionEntityReference, ...]
     result: ResolutionResult | None
     audit_events: tuple[ResolutionAuditEvent, ...]
+    security_decisions: tuple[ResolutionSecurityDecision, ...]
     idempotency_records: tuple[ResolutionIdempotencyRecord, ...]
     locks: tuple[ResolutionLock, ...]
     outbox_events: tuple[ResolutionOutboxEvent, ...]
@@ -195,6 +197,11 @@ class ResolutionRepository:
                 ResolutionAuditEvent,
                 ResolutionAuditEvent.resolution_id == resolution_id,
                 ResolutionAuditEvent.sequence,
+            ),
+            security_decisions=self._all(
+                ResolutionSecurityDecision,
+                ResolutionSecurityDecision.resolution_id == resolution_id,
+                ResolutionSecurityDecision.id,
             ),
             idempotency_records=self._all(
                 ResolutionIdempotencyRecord,

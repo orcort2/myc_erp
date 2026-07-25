@@ -13,6 +13,7 @@ from app.resolution_engine.infrastructure.persistence.evidence import (
     ResolutionIdempotencyRecord,
     ResolutionLock,
     ResolutionOutboxEvent,
+    ResolutionSecurityDecision,
 )
 from app.resolution_engine.infrastructure.persistence.execution import (
     ResolutionEntityReference,
@@ -45,6 +46,7 @@ __all__ = [
     "ResolutionIdempotencyRecord",
     "ResolutionLock",
     "ResolutionOutboxEvent",
+    "ResolutionSecurityDecision",
     "ResolutionPlan",
     "ResolutionPlanStep",
     "ResolutionPlanStepDependency",

@@ -13,8 +13,14 @@ from app.resolution_engine.contracts.components import (
     StrategySelector,
 )
 from app.resolution_engine.contracts.runtime import Clock, IdentifierFactory
+from app.resolution_engine.contracts.security import (
+    ActorContextProvider,
+    SecurityEvidenceStore,
+    SecurityResourceVerifier,
+)
 
 __all__ = [
+    "ActorContextProvider",
     "Analyzer",
     "AuthorizationPolicy",
     "Clock",
@@ -25,6 +31,8 @@ __all__ = [
     "PlanBuilder",
     "ResolutionComponent",
     "Revalidator",
+    "SecurityEvidenceStore",
+    "SecurityResourceVerifier",
     "Simulator",
     "StrategySelector",
 ]

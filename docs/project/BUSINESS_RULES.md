@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-07-23
+> Corte verificado: 2026-07-24
 
 # Reglas de negocio vigentes
 
@@ -44,6 +44,8 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-028 | Captura/Calidad | El envío individual a Calidad exige Master esperado e identificado y cero `mismatch`/`no_coincide`; `no_encontrado` es advertencia permitida. La transición es `capture_in_progress → quality_review`, audita actor/fecha/Master y no exige PDF ni modifica `match_status`. | readiness, transición y pruebas del flujo Master | 2026-07-21 |
 | BR-029 | Captura | El tipo de servicio del Master se valida como `accredited` o `traceable` mediante similitud estructural con el snapshot asignado: hojas, dimensiones, fusiones, estilos, fórmulas, etiquetas posicionadas, imágenes y área de impresión. La leyenda o número de acreditación no son identificadores del dominio. | `master_template_fingerprints.py`, parser de paquetes y pruebas | 2026-07-21 |
 | BR-030 | Catálogo/ETS/Certificados | Las modalidades canónicas de acreditación son `accredited_iso_17025`, `traceable` y `accredited_linked_lab`. Se configuran en el servicio, se propagan automáticamente por cotización→ETS→equipo y se mapean a certificado `acreditado`, `trazable` o `vinculado`; una leyenda documental nunca sustituye la clave de negocio. | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md), schemas y servicio de capacidad | 2026-07-22 |
+| BR-031 | Autenticación | Sólo un JWT con `token_type=access` autentica solicitudes; un refresh se acepta únicamente en el endpoint de renovación. El registro público no recibe ni decide roles solicitados por el cliente. | `backend/app/core/security.py`, `backend/app/services/auth.py`, schemas y pruebas de seguridad | 2026-07-24 |
+| BR-032 | Motor de Resoluciones | Toda operación protegida se deniega si falta identidad activa, autenticación vigente, política aplicable, permiso exacto o evidencia consistente. Una denegación explícita y una incompatibilidad de segregación prevalecen aun cuando existan permisos. | [`../architecture/resolution-engine/15_SECURITY_GOVERNANCE.md`](../architecture/resolution-engine/15_SECURITY_GOVERNANCE.md) y pruebas de Fase 3 | 2026-07-24 |
 
 ## Reglas históricas no vigentes como obligación actual
 

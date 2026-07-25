@@ -24,10 +24,11 @@ class UserRead(BaseModel):
 
 
 class UserRegister(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     email: EmailStr
     full_name: str = Field(min_length=1, max_length=180)
     password: str = Field(min_length=8, max_length=128)
-    role_names: list[str] | None = None
 
 
 class UserLogin(BaseModel):

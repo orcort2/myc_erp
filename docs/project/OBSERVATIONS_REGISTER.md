@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de pendientes en auditorías, cierres, bitácoras y documentos archivados
 >
-> Corte verificado: 2026-07-23
+> Corte verificado: 2026-07-24
 
 # Registro consolidado de observaciones
 
@@ -16,8 +16,6 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 
 | ID | Módulo | Descripción | Estado | Documento origen |
 | --- | --- | --- | --- | --- |
-| OBS-001 | Autenticación | El registro público permite solicitar `role_names`; debe impedir escalación de privilegios. | pendiente | Auditoría integral 2026-07-21 |
-| OBS-002 | Autenticación | Un refresh JWT puede aceptarse como bearer porque no se exige `token_type=access`. | pendiente | Auditoría integral 2026-07-21 |
 | OBS-003 | Autenticación | Tokens en `localStorage` mantienen exposición frente a XSS y no existe cierre demostrado de revocación/cambio de contraseña. | parcial | Auditoría integral 2026-07-21 |
 | OBS-004 | Dashboard | La navegación y accesos no se filtran por capacidades del usuario. | parcial | Auditoría integral 2026-07-21 |
 | OBS-005 | Clientes | Rutas de lectura, alta, edición, importación, exportación, constancia y perfiles no aplican autorización uniforme. | pendiente | Auditoría integral 2026-07-21 |
@@ -92,6 +90,8 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R24 | Catálogo/ETS/Certificados | El schema de respuesta sustituyó `accredited_iso_17025` por el texto documental `Certificado / Certificate: L25-313`, mientras la base conservó la clave canónica, causando HTTP 500 en `GET /api/catalog-items`. Se centralizaron las tres modalidades, se alinearon schemas/capacidad/frontend/datos y se añadió normalización defensiva. | resuelta | Corrección del contrato `calibration_scope` 2026-07-22 |
 | OBS-R25 | Catálogo/Cotizaciones/ETS | Servicios Simples y Compuestos usan `service_kind` y una relación padre-hijo normalizada. La cotización conserva el padre único y la creación del ETS expande hojas, cantidades y OTs sin duplicar lógica downstream; autorreferencia, ciclos, mínimos y compatibilidad simple quedaron cubiertos por pruebas. | resuelta | Servicios Compuestos y arquitectura vigente 2026-07-22 |
 | OBS-R26 | Equipos/Plantillas Maestras | Equipos resolvía el Master mediante `CatalogItem.name == ServiceOrderItem.service_name`. El ETS ahora congela `expected_certificate_master_id`, el equipo consume sólo esa partida y conserva un snapshot versionado del contexto operativo; la migración histórica usa exclusivamente IDs persistentes. | resuelta | Corrección de trazabilidad de Equipos 2026-07-23; migración `8c2d4e6f7a9b` |
+| OBS-R27 | Autenticación | El registro público aceptaba `role_names` y permitía solicitar autoridad. El contrato ahora prohíbe campos extra y la asignación bootstrap/base se decide exclusivamente en backend. | resuelta | Bloqueador directo de Fase 3 del Motor; pruebas de autenticación 2026-07-24 |
+| OBS-R28 | Autenticación | Un refresh JWT podía aceptarse como bearer de acceso. Ambos tokens llevan tipo explícito y las dependencias obligatoria/opcional sólo aceptan `token_type=access`. | resuelta | Bloqueador directo de Fase 3 del Motor; pruebas negativas 2026-07-24 |
 
 ## Regla de cierre
 

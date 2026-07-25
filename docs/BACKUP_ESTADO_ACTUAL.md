@@ -20,20 +20,26 @@
 - Estado de avance autorizado: [`project/PROJECT_STATUS.md`](project/PROJECT_STATUS.md).
 - Único módulo `SELLADO`: Control Documental V1.
 - Equipos permanece `CASI SELLADO`: la trazabilidad del Master quedó desacoplada del catálogo vivo; continúan pendientes la protección uniforme del router y el E2E autenticado multi-OT.
-- Riesgos prioritarios transversales: autorización de APIs/registro/tokens/portal, duplicación material en ETS y autenticación de certificados duplicada fuera de Calidad.
+- Riesgos prioritarios transversales: autorización general de APIs y portal,
+  secreto JWT de despliegue, duplicación material en ETS y autenticación de
+  certificados duplicada fuera de Calidad. La escalación por registro y el uso
+  de refresh como access quedaron corregidos.
 
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `9d3e5f7a1b2c`.
+- Revisión aplicada y único head verificado: `b4c6d8e0f2a3`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
+- `b4c6d8e0f2a3` agrega `resolution_security_decisions`, elimina once FKs del
+  Motor a `users.id` y migra identidad/autoridad a actor canónico, funciones y
+  snapshots.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,166,303 bytes.
-- SHA-256 verificado: `b713d82da52e48d8c6e4672f1970ef540582e0d8d99cc982b3b44149b69d40c1`.
-- El respaldo contiene `alembic_version = 9d3e5f7a1b2c`.
+- Tamaño verificado: 74,170,125 bytes.
+- SHA-256 verificado: `e97094f59a094023a39dfa89049cf49f9e4bf8625274f65265d42598779dcb9e`.
+- El respaldo contiene `alembic_version = b4c6d8e0f2a3`.
 
 ## Equipos y contexto de certificado
 
@@ -46,14 +52,21 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 90 pruebas correctas.
-- Dentro de la suite se ejecutaron 8 pruebas de Equipos/Servicios Compuestos y 26 pruebas focalizadas relacionadas con Captura, Calidad, certificados y contrato de alcance.
-- Prueba crítica verificada: crear ETS, cambiar después nombre y Master del catálogo, crear equipo y confirmar que conserva el Master congelado, snapshot completo y certificado esperado.
-- `alembic upgrade head`: correcto sobre la base local.
-- `alembic heads/current`: un único head `8c2d4e6f7a9b`.
-- `alembic check` continúa reportando la deriva histórica ya registrada como `TD-021`; no detectó ausencia de las dos columnas ni del índice/FK incorporados por esta migración.
-- Compilación de bytecode Python y `git diff --check`: correctos.
-- El respaldo SQL fue regenerado después de aplicar la migración.
+- Suite backend completa: 205 pruebas y 19 subpruebas correctas.
+- Suite específica del Motor: 81 pruebas correctas, incluidas concesiones,
+  denegaciones, segregación, evidencia exacta, arquitectura, esquema y
+  migraciones.
+- Frontend: 11 pruebas correctas y build Vite de producción correcto; permanece
+  la advertencia preexistente por tamaño del chunk principal.
+- Compilación de bytecode Python: correcta.
+- PostgreSQL: `b4c6d8e0f2a3` aplicó, revirtió a `9d3e5f7a1b2c` y reaplicó a
+  head; `resolution_security_decisions` rechazó mutación con SQLSTATE `55000`.
+- `alembic heads/current`: único head `b4c6d8e0f2a3`.
+- `alembic check` continúa reportando sólo la deriva histórica ajena registrada
+  como `TD-021`; no propone operaciones sobre el esquema del Motor.
+- `git diff --check`: correcto.
+- El respaldo SQL fue regenerado después de aplicar la migración y su
+  `alembic_version` coincide con head.
 
 ## Pendientes vigentes
 
@@ -72,27 +85,26 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 2
+## Motor de Resoluciones — Fase 3
 
-- Estado: Fases 0 y 1 `APROBADAS`; Fase 2 `EN REVISIÓN`; Fase 3 `NO INICIADA`.
-- La fundación de Fase 1 permanece aislada. La infraestructura de Fase 2 agrega
-  21 modelos persistentes generales, constraints, índices, repositorio de
-  reconstrucción, inmutabilidad y outbox estructural.
-- El esquema congela tipo/versión de definición, contexto, planes, hashes y
-  evidencia. No contiene columnas particulares de ETS, Equipos, Facturación ni
-  UC-001.
-- Las relaciones críticas son claves foráneas y las dependencias de pasos están
-  normalizadas. PostgreSQL protege evidencia append-only y restringe la edición
-  de planes/pasos a `draft`.
-- No se incorporaron lifecycle, lógica de negocio, seguridad del Motor,
-  gateways, API, workers, simulación operativa, autorización ni ejecución.
-- Validaciones: 184 pruebas backend y 19 subpruebas correctas; 64 pruebas del
-  Motor dentro de esa suite; 11 pruebas frontend correctas; build Vite y
-  compilación Python correctos.
-- PostgreSQL: 21 tablas, 22 triggers, prueba transaccional de inmutabilidad,
-  downgrade completo a `8c2d4e6f7a9b`, upgrade a head y único
-  head/current `9d3e5f7a1b2c`.
-- `alembic check` conserva exclusivamente la deriva histórica registrada como
-  `TD-021`; no propone operaciones sobre el esquema del Motor.
-- Cierre detallado:
-  [`closures/RESOLUTION_ENGINE_PHASE_2.md`](closures/RESOLUTION_ENGINE_PHASE_2.md).
+- Estado: Fases 0, 1 y 2 `APROBADAS`; Fase 3 `EN REVISIÓN`; Fase 4
+  `NO INICIADA`.
+- El Motor conserva 22 modelos persistentes generales y agrega identidad
+  canónica, contexto de autenticación, permisos atómicos, políticas versionadas,
+  deny-by-default, límite organizacional, segregación configurable y
+  autorización base.
+- Toda concesión o denegación conserva actor, autenticación, permisos, políticas
+  y versiones, condiciones, correlación, códigos de razón y hash reproducible.
+- Plan, versión/hash, simulación/hash y solicitud de autorización se validan
+  contra la misma resolución. Una discordancia se deniega antes de evaluar
+  permisos.
+- El núcleo no importa usuarios, roles, routers, schemas, FastAPI ni servicios
+  propietarios. La integración futura se realiza por tres puertos explícitos.
+- Registro público ya no acepta roles solicitados y un refresh JWT ya no puede
+  autenticar como bearer de acceso.
+- No se incorporaron lifecycle, contexto vivo, análisis, construcción de plan,
+  simulación real, revalidación, gateways, API, ejecución ni workers.
+- Contrato:
+  [`architecture/resolution-engine/15_SECURITY_GOVERNANCE.md`](architecture/resolution-engine/15_SECURITY_GOVERNANCE.md).
+- Cierre:
+  [`closures/RESOLUTION_ENGINE_PHASE_3.md`](closures/RESOLUTION_ENGINE_PHASE_3.md).

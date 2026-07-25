@@ -54,8 +54,8 @@ dominio.
 | --- | --- | --- | --- | --- | --- |
 | 0. Preparación arquitectónica | `APROBADA` | Canon documental, README, matriz, gates, inventario y línea base | Especificación completa y reglas del repositorio | Especificación fuera del índice, ausencia de matriz y contradicciones de precedencia documental | Arquitectura ratificada, matriz registrada, validaciones completas y commit de Fase 0 |
 | 1. Contratos y núcleo | `APROBADA` | Organización de paquetes, contratos tipados, enumeraciones, errores, hashes, reloj, identificadores, `ResolutionRegistry` y pruebas arquitectónicas | Fase 0 aprobada | Sólo dependencias o acoplamientos que impidan aislar el núcleo; no seguridad, persistencia ni gateways todavía | Definiciones registrables sin modificar el núcleo y dependencias prohibidas cubiertas por pruebas |
-| 2. Persistencia completa | `EN REVISIÓN` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
-| 3. Seguridad, identidad y evidencia | `NO INICIADA` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
+| 2. Persistencia completa | `APROBADA` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
+| 3. Seguridad, identidad y evidencia | `EN REVISIÓN` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
 | 4. Ciclo de decisión sin efectos | `NO INICIADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
 | 5. Ejecución y recuperación | `NO INICIADA` | Saga, executor, idempotencia, concurrencia, locks, retries, reconciliación, compensación, outbox operativo y workers | Plan autorizado/revalidado de Fase 4 | Mutaciones duplicadas, servicios no canónicos, operaciones no idempotentes o ciclo de excepción que mezcle solicitud y ejecución | Caídas y respuestas inciertas recuperables sin duplicar efectos |
 | 6. API institucional | `NO INICIADA` | `/api/v1/resolutions`, comandos, consultas, errores, idempotency key, ETag/versión, filtros y paginación | Servicios de aplicación de Fases 1 a 5 | Infraestructura HTTP que impida autenticación, autorización, concurrencia o errores contractuales | Contrato HTTP completo con pruebas 401/403/409/412/422/423 |
@@ -90,9 +90,9 @@ corrección anticipada.
 
 | Condición actual conocida | Primera fase que puede bloquear | Tratamiento |
 | --- | --- | --- |
-| Roles solicitables desde registro público | Fase 3 | Corregir antes de confiar en permisos o autorización del Motor. |
-| Refresh token aceptable como bearer de acceso | Fase 3 | Separar tipos de token antes de construir `ActorContext`. |
-| Ausencia de deny-by-default uniforme | Fase 3 para superficies del Motor | Proteger únicamente las rutas y dependencias necesarias para el Motor; la cobertura general seguirá su propio proyecto. |
+| Roles solicitables desde registro público | Fase 3 — resuelto | El contrato público prohíbe `role_names`; la autoridad se decide en backend. |
+| Refresh token aceptable como bearer de acceso | Fase 3 — resuelto | Access/refresh tienen tipo explícito y sólo access autentica requests. |
+| Ausencia de deny-by-default uniforme | Fase 3 para superficies del Motor — resuelto | El evaluador del Motor deniega sin política; la cobertura general del ERP sigue su propio proyecto. |
 | Actor opcional en la excepción ETS | Fase 7, o antes si un contrato de Fase 4 lo consume | No integrar ese flujo mientras el actor no sea obligatorio. |
 | Lógica y mutaciones ETS duplicadas | Fase 5/7 | Consolidar sólo las operaciones que serán invocadas por gateways. |
 | Solicitud de excepción que ejecuta inmediatamente | Fase 7 | Separar solicitud, autorización y ejecución antes de modelar la resolución correspondiente. |
@@ -207,3 +207,37 @@ La Fase 0 se considera lista para revisión cuando:
 - Próxima fase autorizable: Fase 3, sólo después de aprobación expresa.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_2.md`](../../closures/RESOLUTION_ENGINE_PHASE_2.md).
+
+## Apertura de Fase 3
+
+- Estado: `ACTIVA`.
+- Autorización: aprobación expresa posterior al commit `e3c9193`.
+- Componentes autorizados: identidad y autenticación canónicas, permisos
+  atómicos, políticas versionadas, segregación configurable, autorización base,
+  validación exacta de evidencia y auditoría append-only.
+- Bloqueadores directos corregibles: roles solicitables desde registro público,
+  refresh aceptado como access y acoplamiento persistente del Motor a
+  `users.id`.
+- Componentes excluidos: lifecycle, contexto vivo, análisis, construcción de
+  plan, simulación real, revalidación, ejecución, API, gateways y workers.
+
+## Resultado de Fase 3
+
+- Estado: `EN REVISIÓN`.
+- Gate: cumplido; cada concesión o denegación demuestra actor, autenticación,
+  permisos, políticas/versiones, condiciones, recurso, correlación y hash
+  reproducible.
+- Políticas base: permisos exactos, límite organizacional y segregación de
+  funciones; ausencia de política o denegación explícita produce `DENIED`.
+- Evidencia exacta: claves compuestas y un verificador impiden mezclar
+  resolución, plan, versión/hash, simulación/hash o solicitud.
+- Persistencia: migración reversible `b4c6d8e0f2a3`, tabla append-only
+  `resolution_security_decisions` y sustitución de once FKs a usuario por IDs
+  canónicos de actor.
+- Bloqueadores corregidos: registro ya no admite roles solicitados y un refresh
+  no autentica como bearer de acceso.
+- Componentes adelantados: ninguno; el servicio autoriza recursos existentes
+  pero no cambia lifecycle ni produce efectos.
+- Próxima fase autorizable: Fase 4, sólo después de aprobación expresa.
+- Evidencia detallada:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_3.md`](../../closures/RESOLUTION_ENGINE_PHASE_3.md).

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: propuestas de refactorización o riesgos contenidos en auditorías y documentos históricos
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-07-24
 
 # Deuda técnica vigente
 
@@ -14,8 +14,6 @@ No incluye funcionalidades futuras. Cada elemento corresponde a una condición p
 
 | ID | Prioridad | Impacto actual | Archivos afectados principales | Propuesta de solución |
 | --- | --- | --- | --- | --- |
-| TD-001 | P0 | Escalación de privilegios mediante registro público con roles solicitados. | `backend/app/routers/auth.py`, `backend/app/services/auth.py`, schemas auth | Ignorar roles del payload público; permitir asignación sólo a un administrador autorizado y cubrir con pruebas. |
-| TD-002 | P0 | Refresh token aceptable como bearer de acceso. | `backend/app/core/security.py`, dependencias auth | Exigir `token_type=access` en usuario actual y `refresh` sólo en refresh; agregar pruebas negativas. |
 | TD-003 | P0 | Routers completos permiten lectura/escritura sin autorización uniforme. | routers de Clientes, Cotizaciones, Equipos, Catálogo MYC, plantillas comerciales y motores operativos | Aplicar dependencia autenticada deny-by-default y permiso explícito por operación; matriz 401/403 automatizada. |
 | TD-004 | P0 | Portal backend sin aislamiento por tenant expone datos entre clientes. | `backend/app/routers/client_portal.py`, servicio y auth de portal | Derivar `client_id` de identidad autenticada, eliminar filtros suministrados por usuario y probar aislamiento. |
 | TD-005 | P0 | Secreto JWT de desarrollo puede llegar a un despliegue. | `backend/app/core/config.py`, configuración de arranque | Rechazar defaults inseguros fuera de desarrollo y documentar rotación. |

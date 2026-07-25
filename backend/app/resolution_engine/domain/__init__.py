@@ -9,6 +9,19 @@ from app.resolution_engine.domain.value_objects import (
     DefinitionVersion,
     ResolutionType,
 )
+from app.resolution_engine.domain.security import (
+    ActorContext,
+    ActorIdentity,
+    ActorStatus,
+    ActorType,
+    AuthenticationContext,
+    PermissionGrant,
+    PolicyResult,
+    SecurityDecision,
+    SecurityDecisionOutcome,
+    SecurityRequest,
+    SecurityResource,
+)
 
 __all__ = [
     "ComponentKey",
@@ -16,4 +29,15 @@ __all__ = [
     "DefinitionVersion",
     "ResolutionDefinition",
     "ResolutionType",
+    "ActorContext",
+    "ActorIdentity",
+    "ActorStatus",
+    "ActorType",
+    "AuthenticationContext",
+    "PermissionGrant",
+    "PolicyResult",
+    "SecurityDecision",
+    "SecurityDecisionOutcome",
+    "SecurityRequest",
+    "SecurityResource",
 ]

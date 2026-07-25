@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fase 2 en revisión); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fase 3 en revisión); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -46,12 +46,15 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
 
-El Motor de Resoluciones cerró técnicamente la Fase 2 y está `EN REVISIÓN`.
-Además de la fundación aprobada, existen 21 tablas generales, modelo ORM,
-repositorio de reconstrucción, constraints, índices, inmutabilidad, outbox
-estructural y migración reversible. No existen todavía lifecycle, seguridad del
-Motor, gateways, API, simulación, autorización operativa ni ejecución. La Fase
-3 no puede iniciarse sin aprobación posterior al commit de cierre.
+El Motor de Resoluciones cerró técnicamente la Fase 3 y está `EN REVISIÓN`.
+Además de la fundación y persistencia aprobadas, existen identidad canónica,
+contexto de autenticación, permisos atómicos, políticas versionadas,
+deny-by-default, segregación configurable, autorización base y evidencia
+append-only de concesiones y denegaciones. El expediente usa IDs de actor sin
+FK a usuarios del ERP y valida plan/simulación por versión y hash exactos. No
+existen todavía lifecycle, contexto vivo, análisis, simulación real,
+revalidación, gateways, API ni ejecución. La Fase 4 requiere aprobación expresa
+posterior al commit de cierre.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
@@ -71,7 +74,7 @@ Motor, gateways, API, simulación, autorización operativa ni ejecución. La Fas
 
 | Prioridad | Deuda |
 | --- | --- |
-| P0 | Cerrar escalación por registro, separar access/refresh, aplicar autorización deny-by-default, aislar portal por cliente y exigir secreto JWT seguro. |
+| P0 | Extender autorización deny-by-default a las superficies generales del ERP, aislar portal por cliente y exigir secreto JWT seguro; escalación por registro y separación access/refresh ya fueron corregidas para habilitar el Motor. |
 | P0 | Eliminar lógica duplicada y ruta `confirm-signatures` repetida en ETS. |
 | P0 | Dejar a Calidad como único autenticador de certificados. |
 | P1 | Cerrar Hojas de Campo/Captura y su E2E operativo. |

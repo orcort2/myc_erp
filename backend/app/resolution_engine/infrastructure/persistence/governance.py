@@ -104,9 +104,11 @@ class ResolutionAuthorizationRequest(
     status: Mapped[str] = mapped_column(
         String(32), server_default="pending", nullable=False
     )
-    requested_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
+    requested_by_actor_id: Mapped[str] = mapped_column(
+        String(160), nullable=False
+    )
+    requester_actor_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
     )
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -137,7 +139,7 @@ class ResolutionAuthorizationDecision(ResolutionRecordMixin, Base):
         Index(
             "ix_resolution_authorization_decisions_request_approver",
             "authorization_request_id",
-            "approver_user_id",
+            "approver_actor_id",
         ),
     )
 
@@ -150,12 +152,15 @@ class ResolutionAuthorizationDecision(ResolutionRecordMixin, Base):
         nullable=False,
     )
     decision: Mapped[str] = mapped_column(String(24), nullable=False)
-    approver_user_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-        nullable=False,
+    approver_actor_id: Mapped[str] = mapped_column(
+        String(160), nullable=False
     )
-    approver_role: Mapped[str] = mapped_column(String(100), nullable=False)
+    approver_actor_type: Mapped[str] = mapped_column(
+        String(40), nullable=False
+    )
+    approver_function: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )
     approver_area: Mapped[str | None] = mapped_column(String(120))
     decided_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
@@ -164,6 +169,9 @@ class ResolutionAuthorizationDecision(ResolutionRecordMixin, Base):
     reason_code: Mapped[str | None] = mapped_column(String(160))
     signature_reference: Mapped[str | None] = mapped_column(String(500))
     permission_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
+    actor_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSON_DOCUMENT, nullable=False
     )
     actor_ip: Mapped[str | None] = mapped_column(String(64))

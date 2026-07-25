@@ -117,10 +117,7 @@ class ResolutionExecution(
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
-    executed_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-    )
+    executed_by_actor_id: Mapped[str | None] = mapped_column(String(160))
     worker_id: Mapped[str | None] = mapped_column(String(160))
     lock_token: Mapped[str | None] = mapped_column(String(160))
     initial_context_hash: Mapped[str | None] = mapped_column(String(64))
@@ -375,10 +372,7 @@ class ResolutionResult(ResolutionRecordMixin, Base):
     completed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    completed_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-    )
+    completed_by_actor_id: Mapped[str | None] = mapped_column(String(160))
     result_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(
         "metadata",

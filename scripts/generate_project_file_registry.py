@@ -251,7 +251,7 @@ def render(paths: list[Path], preserved: dict[str, str]) -> str:
         "",
         "# Registro maestro de archivos funcionales",
         "",
-        "Fecha de inventario: 2026-07-22.",
+        "Fecha de inventario: 2026-07-24.",
         "",
         "Este es el inventario oficial de archivos funcionales del ERP MYC. Incluye únicamente archivos fuente, configuración, migraciones, recursos oficiales, scripts, pruebas y documentación relevante. Las filas describen responsabilidad verificable; los estados reflejan el estado actual observable del repositorio.",
         "",

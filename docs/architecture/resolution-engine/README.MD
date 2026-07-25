@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 2 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 3 EN REVISIÓN
 >
-> Fase vigente: Fase 2 — Persistencia completa, implementación cerrada
+> Fase vigente: Fase 3 — Seguridad, identidad y evidencia, implementación cerrada
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -26,6 +26,7 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 12. [`12_ROADMAP.md`](12_ROADMAP.md)
 13. [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 14. [`14_PERSISTENCE_SCHEMA.md`](14_PERSISTENCE_SCHEMA.md)
+15. [`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md)
 
 ## Regla de precedencia
 
@@ -51,19 +52,26 @@ dependencia de seguridad e integridad más restrictiva.
 
 ## Estado actual
 
-Las Fases 0 y 1 fueron aprobadas. La Fase 1 implementó exclusivamente organización de
+Las Fases 0, 1 y 2 fueron aprobadas. La Fase 1 implementó exclusivamente organización de
 paquetes, contratos tipados, catálogos controlados, errores, serialización y
 hashing canónicos, reloj, identificadores, `ResolutionRegistry` y pruebas
 arquitectónicas. Su cierre está en
 [`../../closures/RESOLUTION_ENGINE_PHASE_1.md`](../../closures/RESOLUTION_ENGINE_PHASE_1.md).
 
-La Fase 2 quedó implementada y está `EN REVISIÓN`. Incorpora modelos
+La Fase 2 quedó implementada y aprobada. Incorpora modelos
 persistentes, restricciones, índices, repositorio de reconstrucción, migración
 reversible, inmutabilidad y outbox estructural. Su contrato implementado está
 en [`14_PERSISTENCE_SCHEMA.md`](14_PERSISTENCE_SCHEMA.md) y el cierre técnico
 en
 [`../../closures/RESOLUTION_ENGINE_PHASE_2.md`](../../closures/RESOLUTION_ENGINE_PHASE_2.md).
 
-Ciclo de vida, seguridad, gateways, API, simulación, autorización operativa y
-ejecución permanecen fuera de alcance. La Fase 3 no puede iniciar sin aprobación
-expresa.
+La Fase 3 quedó implementada y está `EN REVISIÓN`. Incorpora identidad canónica,
+contexto de autenticación, permisos atómicos, políticas deterministas,
+deny-by-default, segregación, autorización base y evidencia append-only de
+concesiones y denegaciones. Su contrato está en
+[`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md) y su cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_3.md`](../../closures/RESOLUTION_ENGINE_PHASE_3.md).
+
+Lifecycle, construcción de contexto, análisis, simulación real, revalidación,
+gateways, API, ejecución y workers permanecen fuera de alcance. La Fase 4 no
+puede iniciar sin aprobación expresa.

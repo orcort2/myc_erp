@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-07-23
+> Corte verificado: 2026-07-24
 
 # Flujo operativo actual
 
@@ -34,7 +34,12 @@ Autenticación
 
 ## 1. Acceso
 
-El usuario inicia sesión y recibe access/refresh JWT. La navegación autenticada carga el usuario actual y sus roles. Existen brechas de autorización documentadas; el flujo no debe interpretarse como evidencia de que todos los endpoints están protegidos.
+El usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo
+access autentica solicitudes y refresh se utiliza únicamente para renovar el
+par. El registro público no acepta roles solicitados; el backend decide el rol
+bootstrap/base. La navegación autenticada carga el usuario actual y sus roles.
+Existen brechas de autorización documentadas fuera del Motor; este flujo no debe
+interpretarse como evidencia de que todos los endpoints están protegidos.
 
 ## 2. Cliente y Cotización
 

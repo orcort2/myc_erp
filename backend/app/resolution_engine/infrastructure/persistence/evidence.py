@@ -76,7 +76,7 @@ class ResolutionAuditEvent(ResolutionRecordMixin, Base):
     event_type: Mapped[str] = mapped_column(String(160), nullable=False)
     actor_type: Mapped[str] = mapped_column(String(40), nullable=False)
     actor_id: Mapped[str | None] = mapped_column(String(160))
-    actor_role: Mapped[str | None] = mapped_column(String(100))
+    actor_function: Mapped[str | None] = mapped_column(String(100))
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -101,6 +101,135 @@ class ResolutionAuditEvent(ResolutionRecordMixin, Base):
         server_default=text("'{}'"),
         nullable=False,
     )
+
+
+class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
+    """Concesión o denegación append-only con entradas reproducibles."""
+
+    __tablename__ = "resolution_security_decisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["authorization_request_id", "resolution_id"],
+            [
+                "resolution_authorization_requests.id",
+                "resolution_authorization_requests.resolution_id",
+            ],
+            name="fk_resolution_security_decisions_authorization",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["plan_id", "resolution_id", "plan_hash"],
+            [
+                "resolution_plans.id",
+                "resolution_plans.resolution_id",
+                "resolution_plans.plan_hash",
+            ],
+            name="fk_resolution_security_decisions_exact_plan",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["simulation_id", "plan_id", "resolution_id"],
+            [
+                "resolution_simulations.id",
+                "resolution_simulations.plan_id",
+                "resolution_simulations.resolution_id",
+            ],
+            name="fk_resolution_security_decisions_exact_simulation",
+            ondelete="RESTRICT",
+        ),
+        ForeignKeyConstraint(
+            ["simulation_id", "resolution_id", "simulation_hash"],
+            [
+                "resolution_simulations.id",
+                "resolution_simulations.resolution_id",
+                "resolution_simulations.simulation_hash",
+            ],
+            name="fk_resolution_security_decisions_simulation_hash",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "outcome IN ('allowed','denied')",
+            name="ck_resolution_security_decisions_outcome",
+        ),
+        CheckConstraint(
+            "actor_type IN ('human','service','worker','integration',"
+            "'mobile_app','system')",
+            name="ck_resolution_security_decisions_actor_type",
+        ),
+        CheckConstraint(
+            "length(evidence_hash) = 64",
+            name="ck_resolution_security_decisions_evidence_hash",
+        ),
+        CheckConstraint(
+            "(plan_id IS NULL AND plan_version IS NULL AND plan_hash IS NULL) "
+            "OR (plan_id IS NOT NULL AND plan_version IS NOT NULL "
+            "AND plan_hash IS NOT NULL)",
+            name="ck_resolution_security_decisions_plan_complete",
+        ),
+        CheckConstraint(
+            "(simulation_id IS NULL AND simulation_hash IS NULL) "
+            "OR (simulation_id IS NOT NULL AND simulation_hash IS NOT NULL "
+            "AND plan_id IS NOT NULL)",
+            name="ck_resolution_security_decisions_simulation_complete",
+        ),
+        Index(
+            "ix_resolution_security_decisions_resolution_time",
+            "resolution_id",
+            "evaluated_at",
+        ),
+        Index(
+            "ix_resolution_security_decisions_actor_time",
+            "actor_id",
+            "evaluated_at",
+        ),
+        Index(
+            "ix_resolution_security_decisions_outcome",
+            "outcome",
+        ),
+    )
+
+    resolution_id: Mapped[int | None] = mapped_column(
+        BIGINT_ID,
+        ForeignKey("resolutions.id", ondelete="RESTRICT"),
+    )
+    authorization_request_id: Mapped[int | None] = mapped_column(BIGINT_ID)
+    plan_id: Mapped[int | None] = mapped_column(BIGINT_ID)
+    plan_version: Mapped[int | None] = mapped_column(Integer)
+    plan_hash: Mapped[str | None] = mapped_column(String(64))
+    simulation_id: Mapped[int | None] = mapped_column(BIGINT_ID)
+    simulation_hash: Mapped[str | None] = mapped_column(String(64))
+    actor_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    organization_id: Mapped[str] = mapped_column(String(160), nullable=False)
+    action: Mapped[str] = mapped_column(String(200), nullable=False)
+    resource_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    policy_results: Mapped[list[Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
+    required_permissions: Mapped[list[Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
+    reason_codes: Mapped[list[Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
+    actor_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
+    authentication_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
+    context_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
+    evaluated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    correlation_id: Mapped[str] = mapped_column(
+        String(120), nullable=False, index=True
+    )
+    evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
 class ResolutionIdempotencyRecord(
@@ -334,10 +463,7 @@ class ResolutionEvidenceReference(
     )
     storage_reference: Mapped[str | None] = mapped_column(String(500))
     checksum: Mapped[str | None] = mapped_column(String(64))
-    uploaded_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-    )
+    uploaded_by_actor_id: Mapped[str | None] = mapped_column(String(160))
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

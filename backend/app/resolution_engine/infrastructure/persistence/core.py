@@ -126,17 +126,13 @@ class Resolution(ResolutionRecordMixin, MutableTimestampMixin, Base):
         ForeignKey("resolutions.id", ondelete="RESTRICT"),
         index=True,
     )
-    requested_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-        index=True,
+    requested_by_actor_id: Mapped[str | None] = mapped_column(
+        String(160), index=True
     )
-    assigned_to_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-        index=True,
+    assigned_to_actor_id: Mapped[str | None] = mapped_column(
+        String(160), index=True
     )
-    assigned_role: Mapped[str | None] = mapped_column(String(100))
+    assigned_function: Mapped[str | None] = mapped_column(String(100))
     organization_id: Mapped[str | None] = mapped_column(String(160), index=True)
     branch_id: Mapped[str | None] = mapped_column(String(160), index=True)
     correlation_id: Mapped[str | None] = mapped_column(
@@ -201,10 +197,7 @@ class ResolutionProblem(ResolutionRecordMixin, CreatedAtMixin, Base):
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    reported_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-    )
+    reported_by_actor_id: Mapped[str | None] = mapped_column(String(160))
     source_payload: Mapped[dict[str, Any]] = mapped_column(
         JSON_DOCUMENT, server_default=text("'{}'"), nullable=False
     )
@@ -269,10 +262,7 @@ class ResolutionContextSnapshot(ResolutionRecordMixin, Base):
     captured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    captured_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-    )
+    captured_by_actor_id: Mapped[str | None] = mapped_column(String(160))
     captured_by_actor: Mapped[dict[str, Any]] = mapped_column(
         JSON_DOCUMENT, server_default=text("'{}'"), nullable=False
     )
@@ -413,10 +403,7 @@ class ResolutionStrategySelection(
     strategy_key: Mapped[str] = mapped_column(String(200), nullable=False)
     strategy_version: Mapped[str] = mapped_column(String(32), nullable=False)
     selection_mode: Mapped[str] = mapped_column(String(32), nullable=False)
-    selected_by_user_id: Mapped[int | None] = mapped_column(
-        Integer,
-        ForeignKey("users.id", ondelete="RESTRICT"),
-    )
+    selected_by_actor_id: Mapped[str | None] = mapped_column(String(160))
     selected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

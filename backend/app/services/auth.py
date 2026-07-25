@@ -77,9 +77,7 @@ def register_user(db: Session, payload: UserRegister) -> dict:
         )
 
     user_count = db.scalar(select(func.count(User.id))) or 0
-    role_names = payload.role_names
-    if not role_names:
-        role_names = ["Administrador"] if user_count == 0 else ["Cliente"]
+    role_names = ["Administrador"] if user_count == 0 else ["Cliente"]
     roles = _get_roles_by_names(db, role_names)
     primary_role = roles[0] if roles else None
 
@@ -147,6 +145,8 @@ def get_current_user(
 ) -> User:
     try:
         payload = decode_token(token)
+        if payload.get("token_type") != "access":
+            raise ValueError("Token no es access")
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(
@@ -164,6 +164,8 @@ def get_optional_current_user(
         return None
     try:
         payload = decode_token(token)
+        if payload.get("token_type") != "access":
+            return None
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError):
         return None

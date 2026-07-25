@@ -15,7 +15,9 @@
 Este contrato describe la infraestructura persistente incorporada en la Fase 2.
 El esquema conserva la evidencia necesaria para reconstruir una resolución sin
 depender del estado vivo de un módulo propietario. No implementa lifecycle,
-decisiones, políticas, simulación, autorización operativa ni ejecución.
+simulación, lifecycle de autorización ni ejecución. La Fase 3 agregó la
+evidencia de evaluación de seguridad descrita en
+[`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md).
 
 ## Criterios de diseño
 
@@ -40,13 +42,18 @@ decisiones, políticas, simulación, autorización operativa ni ejecución.
 | --- | --- |
 | Identidad y decisión | `resolutions`, `resolution_problems`, `resolution_context_snapshots`, `resolution_analyses`, `resolution_strategy_selections` |
 | Planeación | `resolution_plans`, `resolution_plan_steps`, `resolution_plan_step_dependencies`, `resolution_simulations` |
-| Gobierno futuro | `resolution_authorization_requests`, `resolution_authorization_decisions`, `resolution_revalidations` |
+| Gobierno y seguridad | `resolution_authorization_requests`, `resolution_authorization_decisions`, `resolution_security_decisions`, `resolution_revalidations` |
 | Ejecución futura | `resolution_executions`, `resolution_step_executions`, `resolution_entity_references`, `resolution_results` |
 | Evidencia e infraestructura | `resolution_audit_events`, `resolution_idempotency_records`, `resolution_locks`, `resolution_outbox_events`, `resolution_evidence_references` |
 
 Las tablas de gobierno y ejecución sólo materializan el contrato de datos
 completo. Ningún servicio de esta fase crea decisiones, valida permisos,
 simula, ejecuta, publica eventos ni adquiere locks.
+
+Desde Fase 3, las referencias de identidad usan IDs canónicos de actor sin FK a
+`users.id`. `resolution_security_decisions` conserva evaluaciones reales de
+políticas; las solicitudes y decisiones de aprobación continúan sin lifecycle
+hasta Fase 4.
 
 ## Versionado y reconstrucción
 
@@ -58,8 +65,8 @@ Una reconstrucción carga la raíz y todas sus filas asociadas mediante
 3. todas las versiones de plan, pasos y dependencias;
 4. simulaciones, solicitudes y decisiones de autorización;
 5. revalidaciones, intentos y pasos de ejecución;
-6. referencias a entidades, resultado, auditoría, idempotencia, locks, outbox y
-   evidencia externa.
+6. referencias a entidades, resultado, auditoría, decisiones de seguridad,
+   idempotencia, locks, outbox y evidencia externa.
 
 Las autorizaciones apuntan al plan y simulación exactos junto con sus hashes.
 La ejecución apunta a la revalidación y plan exactos. Las claves foráneas
