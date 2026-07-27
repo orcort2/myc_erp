@@ -345,6 +345,9 @@ La Fase 0 se considera lista para revisión cuando:
   e incertidumbre bloqueante sin segunda invocación.
 - Idempotencia: una acción confirmada no puede planificarse dos veces; claves y
   hashes exactos gobiernan preparación, ejecución y replay autorizado.
+- Corrección de revisión: la selección parcial es cerrada sobre todos los
+  dependientes confirmados activos, incluidos los transitivos; efectos sin
+  confirmación o ya compensados no bloquean y un rechazo no persiste plan.
 - Migración: `d6e8f0a2b4c5`, reversible, amplía el estado raíz y crea cuatro
   tablas generales de compensación.
 - Componentes adelantados: ninguno; no existen workers, retries, recuperación,

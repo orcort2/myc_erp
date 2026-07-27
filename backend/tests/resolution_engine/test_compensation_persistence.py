@@ -43,8 +43,11 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionCompensationStepExecution,
     ResolutionExecution,
     ResolutionOutboxEvent,
+    ResolutionPlan,
     ResolutionPlanStep,
+    ResolutionPlanStepDependency,
     ResolutionSecurityDecision,
+    ResolutionStepExecution,
 )
 from app.resolution_engine.infrastructure.repositories import (
     ResolutionRepository,
@@ -125,6 +128,106 @@ def seed_completed_compensable_execution(factory):
         return resolution_id, execution.id, decision.id
 
 
+def seed_completed_dependency_chain(factory):
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+        plan = session.scalar(select(ResolutionPlan))
+        step_a = session.scalar(select(ResolutionPlanStep))
+        step_a.step_key = "A"
+        step_a.description = "Create A"
+        step_a.is_compensable = True
+        step_a.compensation_operation_key = "example.cancel"
+        step_a.compensation_payload = {"step": "A"}
+        step_b = ResolutionPlanStep(
+            plan_id=plan.id,
+            step_key="B",
+            sequence=2,
+            operation_key="example.create",
+            owner_module="example",
+            description="Use A to create B",
+            input_payload={"step": "B"},
+            is_compensable=True,
+            compensation_operation_key="example.cancel",
+            compensation_payload={"step": "B"},
+            step_hash="b" * 64,
+        )
+        step_c = ResolutionPlanStep(
+            plan_id=plan.id,
+            step_key="C",
+            sequence=3,
+            operation_key="example.create",
+            owner_module="example",
+            description="Use B to create C",
+            input_payload={"step": "C"},
+            is_compensable=True,
+            compensation_operation_key="example.cancel",
+            compensation_payload={"step": "C"},
+            step_hash="c" * 64,
+        )
+        session.add_all((step_b, step_c))
+        session.flush()
+        session.add_all(
+            (
+                ResolutionPlanStepDependency(
+                    plan_id=plan.id,
+                    step_id=step_b.id,
+                    depends_on_step_id=step_a.id,
+                ),
+                ResolutionPlanStepDependency(
+                    plan_id=plan.id,
+                    step_id=step_c.id,
+                    depends_on_step_id=step_b.id,
+                ),
+            )
+        )
+        session.commit()
+    build_executor(factory, ExecutionHandler()).execute(
+        command(resolution_id)
+    )
+    with factory() as session:
+        execution = session.scalar(select(ResolutionExecution))
+        step_execution_ids = {
+            step_key: step_execution_id
+            for step_key, step_execution_id in session.execute(
+                select(
+                    ResolutionPlanStep.step_key,
+                    ResolutionStepExecution.id,
+                ).join(
+                    ResolutionStepExecution,
+                    ResolutionStepExecution.plan_step_id
+                    == ResolutionPlanStep.id,
+                )
+            )
+        }
+        decision = ResolutionSecurityDecision(
+            resolution_id=resolution_id,
+            actor_id=actor().identity.actor_id,
+            actor_type=actor().identity.actor_type.value,
+            organization_id=actor().identity.organization_id,
+            action="resolution.compensate",
+            resource_type="resolution_execution",
+            resource_id=str(execution.id),
+            outcome="allowed",
+            policy_results=[],
+            required_permissions=["resolution.compensate"],
+            reason_codes=["allowed_for_dependency_test"],
+            actor_snapshot=actor().identity.snapshot(),
+            authentication_snapshot=actor().authentication.snapshot(),
+            context_snapshot={},
+            evaluated_at=NOW,
+            correlation_id=actor().authentication.correlation_id,
+            evidence_hash="8" * 64,
+        )
+        session.add(decision)
+        session.commit()
+        return (
+            resolution_id,
+            execution.id,
+            decision.id,
+            step_execution_ids,
+        )
+
+
 def prepare_command(resolution_id, execution_id, decision_id, *, key="plan-1"):
     return PrepareCompensationCommand(
         resolution_id=resolution_id,
@@ -134,6 +237,26 @@ def prepare_command(resolution_id, execution_id, decision_id, *, key="plan-1"):
         security_decision_id=decision_id,
         idempotency_key=key,
         actor=actor(),
+    )
+
+
+def prepare_partial_command(
+    resolution_id,
+    execution_id,
+    decision_id,
+    selected_ids,
+    *,
+    key,
+):
+    return PrepareCompensationCommand(
+        resolution_id=resolution_id,
+        source_execution_id=execution_id,
+        strategy=CompensationStrategy.PARTIAL,
+        reason="dependency-closed partial compensation",
+        security_decision_id=decision_id,
+        idempotency_key=key,
+        actor=actor(),
+        selected_step_execution_ids=tuple(selected_ids),
     )
 
 
@@ -451,3 +574,186 @@ def test_point_of_no_return_prevents_ordinary_compensation():
                 decision_id,
             )
         )
+
+
+@pytest.mark.parametrize(
+    "selected_keys",
+    [
+        ("A",),
+        ("A", "B"),
+    ],
+)
+def test_open_partial_dependency_selection_is_not_persisted(
+    selected_keys,
+):
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    (
+        resolution_id,
+        execution_id,
+        decision_id,
+        step_ids,
+    ) = seed_completed_dependency_chain(factory)
+    planner, _ = build_services(factory, CompensationHandler())
+
+    with pytest.raises(
+        InvalidCompensationPlanError,
+        match="dependency closure violated",
+    ):
+        planner.prepare(
+            prepare_partial_command(
+                resolution_id,
+                execution_id,
+                decision_id,
+                (step_ids[key] for key in selected_keys),
+                key=f"invalid-{'-'.join(selected_keys)}",
+            )
+        )
+
+    with factory() as session:
+        assert session.scalar(
+            select(func.count(ResolutionCompensationPlan.id))
+        ) == 0
+
+
+@pytest.mark.parametrize(
+    ("selected_keys", "expected_order"),
+    [
+        (("C",), ("C",)),
+        (("B", "C"), ("C", "B")),
+        (("A", "B", "C"), ("C", "B", "A")),
+    ],
+)
+def test_persisted_partial_selection_is_closed_and_reversed(
+    selected_keys,
+    expected_order,
+):
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    (
+        resolution_id,
+        execution_id,
+        decision_id,
+        step_ids,
+    ) = seed_completed_dependency_chain(factory)
+    planner, _ = build_services(factory, CompensationHandler())
+
+    plan = planner.prepare(
+        prepare_partial_command(
+            resolution_id,
+            execution_id,
+            decision_id,
+            (step_ids[key] for key in selected_keys),
+            key=f"valid-{'-'.join(selected_keys)}",
+        )
+    )
+
+    assert tuple(step.source_step_key for step in plan.steps) == (
+        expected_order
+    )
+
+
+def test_unconfirmed_dependent_does_not_block_persisted_plan():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    (
+        resolution_id,
+        execution_id,
+        decision_id,
+        step_ids,
+    ) = seed_completed_dependency_chain(factory)
+    with factory() as session:
+        step_c = session.get(
+            ResolutionStepExecution,
+            step_ids["C"],
+        )
+        step_c.status = "failed"
+        session.commit()
+    planner, _ = build_services(factory, CompensationHandler())
+
+    plan = planner.prepare(
+        prepare_partial_command(
+            resolution_id,
+            execution_id,
+            decision_id,
+            (step_ids["B"],),
+            key="unconfirmed-C",
+        )
+    )
+
+    assert tuple(step.source_step_key for step in plan.steps) == ("B",)
+
+
+def test_previously_compensated_dependent_does_not_block_new_plan():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    (
+        resolution_id,
+        execution_id,
+        decision_id,
+        step_ids,
+    ) = seed_completed_dependency_chain(factory)
+    handler = CompensationHandler()
+    planner, executor = build_services(factory, handler)
+    plan_c = planner.prepare(
+        prepare_partial_command(
+            resolution_id,
+            execution_id,
+            decision_id,
+            (step_ids["C"],),
+            key="prior-C-plan",
+        )
+    )
+    executor.execute(
+        ExecuteCompensationCommand(
+            compensation_plan_id=plan_c.id,
+            idempotency_key="prior-C-execution",
+            actor=actor(),
+            lock_owner="phase-6-dependency-test",
+        )
+    )
+    with factory() as session:
+        root = session.get(Resolution, resolution_id)
+        root.status = ResolutionStatus.COMPLETED.value
+        session.commit()
+
+    plan_b = planner.prepare(
+        prepare_partial_command(
+            resolution_id,
+            execution_id,
+            decision_id,
+            (step_ids["B"],),
+            key="after-C-plan",
+        )
+    )
+
+    assert tuple(step.source_step_key for step in plan_b.steps) == ("B",)
+
+
+def test_valid_partial_plan_replay_remains_idempotent():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    (
+        resolution_id,
+        execution_id,
+        decision_id,
+        step_ids,
+    ) = seed_completed_dependency_chain(factory)
+    planner, _ = build_services(factory, CompensationHandler())
+    command = prepare_partial_command(
+        resolution_id,
+        execution_id,
+        decision_id,
+        (step_ids["C"],),
+        key="valid-C-replay",
+    )
+
+    first = planner.prepare(command)
+    replay = planner.prepare(command)
+
+    assert replay.id == first.id
+    assert replay.plan_hash == first.plan_hash
+    with factory() as session:
+        assert session.scalar(
+            select(func.count(ResolutionCompensationPlan.id))
+        ) == 1

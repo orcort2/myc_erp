@@ -46,7 +46,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   revalidación, efectos/resultados y publica outbox únicamente por solicitud
   explícita con fecha de fallo. La compensación síncrona construye planes
   totales o parciales autorizados sobre checkpoints `completed`, invierte
-  orden/dependencias, impide duplicados y puntos de no retorno y conserva
+  orden/dependencias, exige clausura transitiva de dependientes activos,
+  impide duplicados y puntos de no retorno y conserva
   ejecución, actor, lock, auditoría y outbox sin reinterpretar el efecto
   original. Gateways concretos, API, workers, schedulers, recuperación,
   conciliación, retries y compensación automática continúan sin comportamiento.

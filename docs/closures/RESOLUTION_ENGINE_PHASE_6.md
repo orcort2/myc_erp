@@ -16,6 +16,7 @@ lock, checkpoints, idempotencia, auditoría y outbox. Queda `EN REVISIÓN`.
 ## Componentes incorporados
 
 - modelo puro de fuente, acción, plan, paso, reserva, resumen y resultado;
+- proyección explícita de efectos confirmados que continúan activos;
 - `CompensationEngine`, `CompensationPlanner`, `CompensationExecutor` y
   `CompensationRunner`;
 - contratos `CompensationHandler` y `CompensationStore`;
@@ -30,7 +31,8 @@ lock, checkpoints, idempotencia, auditoría y outbox. Queda `EN REVISIÓN`.
 1. Sólo se compensan pasos `completed` con contrato explícito.
 2. Un punto de no retorno impide la compensación ordinaria.
 3. La compensación total incluye todos los efectos confirmados; la parcial
-   exige selección explícita.
+   exige selección explícita cerrada sobre dependientes activos directos y
+   transitivos.
 4. Cada paso original puede pertenecer a un único plan compensatorio.
 5. La autorización debe ser `allowed` para la ejecución, resolución,
    organización y actor exactos; se vuelve a validar antes de cualquier replay
@@ -43,6 +45,21 @@ lock, checkpoints, idempotencia, auditoría y outbox. Queda `EN REVISIÓN`.
 11. El replay exige la misma clave y hash; una operación en curso no se repite.
 12. La ejecución original, auditoría y resultados nunca se eliminan ni
     reinterpretan.
+13. Un efecto sin resultado confirmado o ya compensado exitosamente no bloquea
+    una selección posterior.
+
+## Corrección de revisión
+
+La revisión del commit `74a3de5` detectó que invertir dependencias únicamente
+dentro del subconjunto no impedía retirar un efecto base mientras permanecían
+dependientes confirmados activos. La corrección:
+
+- reconstruye el grafo completo de efectos confirmados activos;
+- elimina de esa proyección sólo checkpoints compensatorios `compensated`;
+- recorre dependientes directos y transitivos antes de construir el plan;
+- devuelve `CompensationDependencyClosureError` con paso, dependientes y rutas;
+- garantiza mediante pruebas SQL que una selección inválida no persiste filas;
+- conserva el replay exacto de planes válidos.
 
 ## Estados y transiciones
 
@@ -57,9 +74,9 @@ Una compensación incierta termina con evidencia `blocked` y raíz
 
 ## Validaciones
 
-- pruebas específicas de compensación: **16 correctas**;
-- suite completa del Motor: **151 correctas**;
-- backend completo: **275 correctas**, **19 subpruebas** y dos warnings
+- pruebas específicas de compensación: **31 correctas**;
+- suite completa del Motor: **166 correctas**;
+- backend completo: **290 correctas**, **19 subpruebas** y dos warnings
   preexistentes;
 - frontend: **11 correctas**;
 - build Vite: correcto, con advertencia preexistente del chunk principal;

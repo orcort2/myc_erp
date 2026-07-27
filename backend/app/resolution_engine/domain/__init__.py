@@ -41,6 +41,7 @@ from app.resolution_engine.domain.execution import (
 )
 from app.resolution_engine.domain.compensation import (
     CompensableAction,
+    ConfirmedEffect,
     CompensationActionRequest,
     CompensationEngine,
     CompensationOutcome,
@@ -52,6 +53,7 @@ from app.resolution_engine.domain.compensation import (
 __all__ = [
     "ComponentKey",
     "CompensableAction",
+    "ConfirmedEffect",
     "CompensationActionRequest",
     "CompensationEngine",
     "CompensationOutcome",

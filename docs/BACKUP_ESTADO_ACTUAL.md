@@ -58,8 +58,8 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 275 pruebas y 19 subpruebas correctas.
-- Suite específica del Motor: 151 pruebas correctas, incluidas creación,
+- Suite backend completa: 290 pruebas y 19 subpruebas correctas.
+- Suite específica del Motor: 166 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
   revalidación, concurrencia, persistencia, ejecución, compensación,
   arquitectura, esquema y migraciones.
@@ -116,6 +116,9 @@
   sin confirmar ni reinvocar.
 - Plan hash, claves de preparación/ejecución/paso y unicidad del checkpoint
   fuente impiden conflicto, replay ajeno y compensación duplicada.
+- Una selección parcial debe incluir todos los dependientes confirmados activos,
+  directos o transitivos. La infracción se rechaza antes de persistir con error
+  estructurado; efectos sin confirmar o ya compensados no bloquean.
 - El outbox se publica sólo mediante una invocación explícita y un publicador
   idempotente por `event_key`; un fallo conserva `failed_at`, intentos y error,
   sin scheduler ni reintento.
@@ -125,7 +128,7 @@
 - No se incorporaron API, gateways concretos, integraciones propietarias,
   workers, schedulers, procesamiento masivo, recuperación, conciliación,
   retries ni compensación automática.
-- Validaciones: 151 pruebas del Motor; suite backend completa con 275 pruebas y
+- Validaciones: 166 pruebas del Motor; suite backend completa con 290 pruebas y
   19 subpruebas; 11 pruebas frontend; build Vite; compilación Python y
   arquitectura correctos.
 - La fase incorpora la migración reversible `d6e8f0a2b4c5`; la base y el

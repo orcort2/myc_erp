@@ -150,6 +150,38 @@ class InvalidCompensationPlanError(ResolutionEngineError):
     """La selección declarativa no forma un plan compensatorio válido."""
 
 
+class CompensationDependencyClosureError(InvalidCompensationPlanError):
+    """La selección dejaría activo un efecto que depende de otro retirado."""
+
+    error_code = "compensation_dependency_closure_violation"
+
+    def __init__(
+        self,
+        *,
+        selected_step_execution_id: int,
+        selected_step_key: str,
+        active_dependents: tuple[tuple[int, str], ...],
+        dependency_paths: tuple[tuple[int, ...], ...],
+    ) -> None:
+        dependent_text = ", ".join(
+            f"{step_key} ({step_id})"
+            for step_id, step_key in active_dependents
+        )
+        path_text = ", ".join(
+            " -> ".join(str(step_id) for step_id in path)
+            for path in dependency_paths
+        )
+        super().__init__(
+            "Compensation dependency closure violated for "
+            f"{selected_step_key} ({selected_step_execution_id}); "
+            f"active dependents: {dependent_text}; paths: {path_text}"
+        )
+        self.selected_step_execution_id = selected_step_execution_id
+        self.selected_step_key = selected_step_key
+        self.active_dependents = active_dependents
+        self.dependency_paths = dependency_paths
+
+
 class CompensationIdempotencyConflictError(ResolutionEngineError):
     """Una clave compensatoria existente representa otra solicitud."""
 

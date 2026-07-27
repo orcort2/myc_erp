@@ -4,6 +4,7 @@ import pytest
 
 from app.resolution_engine.domain.compensation import (
     CompensableAction,
+    ConfirmedEffect,
     CompensationEngine,
     CompensationSource,
 )
@@ -13,6 +14,7 @@ from app.resolution_engine.domain.enums import (
     ResolutionStatus,
 )
 from app.resolution_engine.domain.exceptions import (
+    CompensationDependencyClosureError,
     InvalidCompensationPlanError,
     LifecycleInvariantError,
 )
@@ -62,6 +64,71 @@ def source(*, non_compensable=()):
     )
 
 
+def dependency_chain_source(
+    *,
+    active_keys=("A", "B", "C"),
+):
+    definitions = (
+        (1, 11, "A", 1, ()),
+        (2, 12, "B", 2, (1,)),
+        (3, 13, "C", 3, (2,)),
+    )
+    active = {
+        step_key
+        for step_key in active_keys
+    }
+    actions = tuple(
+        CompensableAction(
+            plan_step_id=plan_step_id,
+            step_execution_id=step_execution_id,
+            step_key=step_key,
+            original_sequence=sequence,
+            operation_key=f"example.do_{step_key.lower()}",
+            compensation_operation_key=(
+                f"example.undo_{step_key.lower()}"
+            ),
+            owner_module="example",
+            compensation_payload={"step": step_key},
+            dependency_step_ids=dependencies,
+        )
+        for (
+            plan_step_id,
+            step_execution_id,
+            step_key,
+            sequence,
+            dependencies,
+        ) in definitions
+        if step_key in active
+    )
+    effects = tuple(
+        ConfirmedEffect(
+            plan_step_id=plan_step_id,
+            step_execution_id=step_execution_id,
+            step_key=step_key,
+            original_sequence=sequence,
+            dependency_step_ids=dependencies,
+        )
+        for (
+            plan_step_id,
+            step_execution_id,
+            step_key,
+            sequence,
+            dependencies,
+        ) in definitions
+        if step_key in active
+    )
+    return CompensationSource(
+        lifecycle=lifecycle(ResolutionStatus.PARTIALLY_COMPLETED),
+        execution_id=80,
+        actions=actions,
+        completed_step_execution_ids=tuple(
+            effect.step_execution_id for effect in effects
+        ),
+        non_compensable_step_execution_ids=(),
+        confirmed_effects=effects,
+    )
+
+
 def test_total_plan_reverses_actions_and_dependencies_deterministically():
     plan = CompensationEngine().build_plan(
         source(),
@@ -84,6 +151,97 @@ def test_partial_plan_selects_only_explicit_confirmed_actions():
 
     assert len(plan.steps) == 1
     assert plan.steps[0].operation_key == "example.cancel_child"
+
+
+@pytest.mark.parametrize(
+    ("selection", "dependents", "paths"),
+    [
+        (
+            (11,),
+            ((12, "B"), (13, "C")),
+            ((11, 12), (11, 12, 13)),
+        ),
+        (
+            (11, 12),
+            ((13, "C"),),
+            ((11, 12, 13),),
+        ),
+    ],
+)
+def test_partial_selection_requires_transitive_dependency_closure(
+    selection,
+    dependents,
+    paths,
+):
+    with pytest.raises(
+        CompensationDependencyClosureError,
+        match="Compensation dependency closure violated",
+    ) as captured:
+        CompensationEngine().build_plan(
+            dependency_chain_source(),
+            strategy=CompensationStrategy.PARTIAL,
+            reason="preserve active dependents",
+            selected_step_execution_ids=selection,
+        )
+
+    error = captured.value
+    assert error.error_code == (
+        "compensation_dependency_closure_violation"
+    )
+    assert error.selected_step_execution_id == 11
+    assert error.selected_step_key == "A"
+    assert error.active_dependents == dependents
+    assert error.dependency_paths == paths
+
+
+@pytest.mark.parametrize(
+    ("selection", "expected_order"),
+    [
+        ((13,), (13,)),
+        ((12, 13), (13, 12)),
+        ((11, 12, 13), (13, 12, 11)),
+    ],
+)
+def test_closed_partial_selection_is_valid_and_uses_inverse_order(
+    selection,
+    expected_order,
+):
+    plan = CompensationEngine().build_plan(
+        dependency_chain_source(),
+        strategy=CompensationStrategy.PARTIAL,
+        reason="closed partial compensation",
+        selected_step_execution_ids=selection,
+    )
+
+    assert tuple(
+        step.source_step_execution_id for step in plan.steps
+    ) == expected_order
+
+
+def test_dependent_without_confirmed_effect_does_not_block():
+    plan = CompensationEngine().build_plan(
+        dependency_chain_source(active_keys=("A", "B")),
+        strategy=CompensationStrategy.PARTIAL,
+        reason="C produced no confirmed effect",
+        selected_step_execution_ids=(12,),
+    )
+
+    assert tuple(
+        step.source_step_execution_id for step in plan.steps
+    ) == (12,)
+
+
+def test_previously_compensated_dependent_is_not_active():
+    plan = CompensationEngine().build_plan(
+        dependency_chain_source(active_keys=("A",)),
+        strategy=CompensationStrategy.PARTIAL,
+        reason="B and C were already compensated",
+        selected_step_execution_ids=(11,),
+    )
+
+    assert tuple(
+        step.source_step_execution_id for step in plan.steps
+    ) == (11,)
 
 
 def test_total_plan_rejects_non_compensable_completed_effects():

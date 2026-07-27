@@ -18,6 +18,7 @@ from app.resolution_engine.contracts.compensation import (
 from app.resolution_engine.domain.canonical import canonical_sha256
 from app.resolution_engine.domain.compensation import (
     CompensableAction,
+    ConfirmedEffect,
     CompensationOutcome,
     CompensationPlan,
     CompensationPlanStep,
@@ -114,8 +115,30 @@ class SqlAlchemyCompensationStore:
             )
             if not completed_rows:
                 return None
+            compensated_step_ids = set(
+                session.scalars(
+                    select(
+                        ResolutionCompensationStepExecution
+                        .source_step_execution_id
+                    ).where(
+                        ResolutionCompensationStepExecution
+                        .source_step_execution_id.in_(
+                            row.id for row in completed_rows
+                        ),
+                        ResolutionCompensationStepExecution.status
+                        == CompensationStatus.COMPENSATED.value,
+                    )
+                )
+            )
+            active_rows = tuple(
+                row
+                for row in completed_rows
+                if row.id not in compensated_step_ids
+            )
+            if not active_rows:
+                return None
             plan_step_ids = {
-                row.plan_step_id for row in completed_rows
+                row.plan_step_id for row in active_rows
             }
             plan_steps = {
                 row.id: row
@@ -125,21 +148,6 @@ class SqlAlchemyCompensationStore:
                     )
                 )
             }
-            if any(
-                plan_steps[row.plan_step_id].point_of_no_return
-                for row in completed_rows
-            ):
-                return CompensationSource(
-                    lifecycle=lifecycle,
-                    execution_id=execution.id,
-                    actions=(),
-                    completed_step_execution_ids=tuple(
-                        row.id for row in completed_rows
-                    ),
-                    non_compensable_step_execution_ids=tuple(
-                        row.id for row in completed_rows
-                    ),
-                )
             dependencies: dict[int, list[int]] = {}
             for edge in session.scalars(
                 select(ResolutionPlanStepDependency).where(
@@ -150,9 +158,44 @@ class SqlAlchemyCompensationStore:
                 dependencies.setdefault(edge.step_id, []).append(
                     edge.depends_on_step_id
                 )
+            confirmed_effects = tuple(
+                ConfirmedEffect(
+                    plan_step_id=plan_steps[row.plan_step_id].id,
+                    step_execution_id=row.id,
+                    step_key=plan_steps[row.plan_step_id].step_key,
+                    original_sequence=(
+                        plan_steps[row.plan_step_id].sequence
+                    ),
+                    dependency_step_ids=tuple(
+                        sorted(
+                            dependencies.get(
+                                plan_steps[row.plan_step_id].id,
+                                (),
+                            )
+                        )
+                    ),
+                )
+                for row in active_rows
+            )
+            if any(
+                plan_steps[row.plan_step_id].point_of_no_return
+                for row in active_rows
+            ):
+                return CompensationSource(
+                    lifecycle=lifecycle,
+                    execution_id=execution.id,
+                    actions=(),
+                    completed_step_execution_ids=tuple(
+                        row.id for row in active_rows
+                    ),
+                    non_compensable_step_execution_ids=tuple(
+                        row.id for row in active_rows
+                    ),
+                    confirmed_effects=confirmed_effects,
+                )
             actions = []
             non_compensable = []
-            for row in completed_rows:
+            for row in active_rows:
                 step = plan_steps[row.plan_step_id]
                 if (
                     not step.is_compensable
@@ -182,9 +225,10 @@ class SqlAlchemyCompensationStore:
                 execution_id=execution.id,
                 actions=tuple(actions),
                 completed_step_execution_ids=tuple(
-                    row.id for row in completed_rows
+                    row.id for row in active_rows
                 ),
                 non_compensable_step_execution_ids=tuple(non_compensable),
+                confirmed_effects=confirmed_effects,
             )
 
     def save_plan(

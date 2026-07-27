@@ -97,6 +97,7 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R31 | Motor de Resoluciones | `OutboxStore.mark_failed()` recibía `failed_at` pero el adaptador lo descartaba. La migración `c5d7e9f1a3b4` y el modelo conservan fecha, intentos y último error. | resuelta | Revisión arquitectónica de Fase 5; prueba persistente y de migración 2026-07-28 |
 | OBS-R32 | Motor de Resoluciones | La propiedad de `idempotency_key` no estaba declarada. El contrato la define global dentro del scope del Motor y obliga a la futura API a autorizar y namespaciar por cliente/organización antes de invocar. | resuelta | Revisión arquitectónica de Fase 5; contrato `17_EXECUTION_RUNTIME.md` 2026-07-28 |
 | OBS-R33 | Motor de Resoluciones | El dictamen de Fase 5 dejó compensaciones fuera de aquella fase, mientras el roadmap asignaba expresamente a Fase 6 el Motor de Compensación. La apertura oficial resolvió la contradicción haciendo prevalecer el roadmap, sin reinterpretar el alcance histórico de Fase 5. | resuelta | Apertura oficial de Fase 6 y matriz de implementación 2026-07-27 |
+| OBS-R34 | Motor de Resoluciones | La selección parcial invertía dependencias sólo dentro del subconjunto y podía dejar dependientes confirmados activos. Ahora valida clausura directa/transitiva antes de persistir, reporta paso/dependientes/rutas y excluye efectos sin confirmar o previamente compensados. | resuelta | Revisión arquitectónica de Fase 6; pruebas unitarias y persistentes de cadena A→B→C 2026-07-27 |
 
 ## Regla de cierre
 

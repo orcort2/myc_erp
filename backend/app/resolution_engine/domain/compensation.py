@@ -12,6 +12,7 @@ from app.resolution_engine.domain.enums import (
     CompensationStrategy,
 )
 from app.resolution_engine.domain.exceptions import (
+    CompensationDependencyClosureError,
     InvalidCompensationPlanError,
 )
 from app.resolution_engine.domain.execution import (
@@ -78,12 +79,73 @@ class CompensableAction:
 
 
 @dataclass(frozen=True, slots=True)
+class ConfirmedEffect:
+    """Efecto original confirmado que continúa activo."""
+
+    plan_step_id: int
+    step_execution_id: int
+    step_key: str
+    original_sequence: int
+    dependency_step_ids: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.plan_step_id <= 0 or self.step_execution_id <= 0:
+            raise InvalidCompensationPlanError(
+                "confirmed effect identifiers must be positive"
+            )
+        if self.original_sequence <= 0 or not self.step_key.strip():
+            raise InvalidCompensationPlanError(
+                "confirmed effect identity is invalid"
+            )
+        object.__setattr__(
+            self,
+            "dependency_step_ids",
+            tuple(self.dependency_step_ids),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CompensationSource:
     lifecycle: ResolutionLifecycle
     execution_id: int
     actions: tuple[CompensableAction, ...]
     completed_step_execution_ids: tuple[int, ...]
     non_compensable_step_execution_ids: tuple[int, ...]
+    confirmed_effects: tuple[ConfirmedEffect, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "actions", tuple(self.actions))
+        object.__setattr__(
+            self,
+            "completed_step_execution_ids",
+            tuple(self.completed_step_execution_ids),
+        )
+        object.__setattr__(
+            self,
+            "non_compensable_step_execution_ids",
+            tuple(self.non_compensable_step_execution_ids),
+        )
+        if not self.confirmed_effects:
+            object.__setattr__(
+                self,
+                "confirmed_effects",
+                tuple(
+                    ConfirmedEffect(
+                        plan_step_id=action.plan_step_id,
+                        step_execution_id=action.step_execution_id,
+                        step_key=action.step_key,
+                        original_sequence=action.original_sequence,
+                        dependency_step_ids=action.dependency_step_ids,
+                    )
+                    for action in self.actions
+                ),
+            )
+        else:
+            object.__setattr__(
+                self,
+                "confirmed_effects",
+                tuple(self.confirmed_effects),
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,6 +364,7 @@ class CompensationEngine:
                 raise InvalidCompensationPlanError(
                     "total compensation must include every completed step"
                 )
+        self._validate_dependency_closure(source, selected_ids)
 
         selected = [available[item] for item in selected_ids]
         selected.sort(
@@ -349,6 +412,98 @@ class CompensationEngine:
             steps=steps,
             plan_hash=canonical_sha256(payload),
         )
+
+    @staticmethod
+    def _validate_dependency_closure(
+        source: CompensationSource,
+        selected_ids: set[int],
+    ) -> None:
+        effects_by_plan_step = {
+            effect.plan_step_id: effect
+            for effect in source.confirmed_effects
+        }
+        selected_effects = sorted(
+            (
+                effect
+                for effect in source.confirmed_effects
+                if effect.step_execution_id in selected_ids
+            ),
+            key=lambda effect: (
+                effect.original_sequence,
+                effect.plan_step_id,
+            ),
+        )
+        dependents_by_plan_step: dict[int, list[ConfirmedEffect]] = {}
+        for effect in source.confirmed_effects:
+            for dependency_id in effect.dependency_step_ids:
+                if dependency_id in effects_by_plan_step:
+                    dependents_by_plan_step.setdefault(
+                        dependency_id,
+                        [],
+                    ).append(effect)
+        for dependents in dependents_by_plan_step.values():
+            dependents.sort(
+                key=lambda effect: (
+                    effect.original_sequence,
+                    effect.plan_step_id,
+                )
+            )
+
+        for selected in selected_effects:
+            paths: dict[int, tuple[int, ...]] = {}
+
+            def visit(
+                plan_step_id: int,
+                path: tuple[int, ...],
+            ) -> None:
+                for dependent in dependents_by_plan_step.get(
+                    plan_step_id,
+                    (),
+                ):
+                    if dependent.plan_step_id in path:
+                        continue
+                    next_path = path + (dependent.plan_step_id,)
+                    if dependent.step_execution_id not in selected_ids:
+                        paths.setdefault(
+                            dependent.step_execution_id,
+                            tuple(
+                                effects_by_plan_step[item].step_execution_id
+                                for item in next_path
+                            ),
+                        )
+                    visit(dependent.plan_step_id, next_path)
+
+            visit(selected.plan_step_id, (selected.plan_step_id,))
+            if paths:
+                active_dependents = tuple(
+                    (
+                        effect.step_execution_id,
+                        effect.step_key,
+                    )
+                    for effect in sorted(
+                        (
+                            effect
+                            for effect in source.confirmed_effects
+                            if effect.step_execution_id in paths
+                        ),
+                        key=lambda effect: (
+                            effect.original_sequence,
+                            effect.plan_step_id,
+                        ),
+                    )
+                )
+                dependency_paths = tuple(
+                    paths[step_id]
+                    for step_id, _ in active_dependents
+                )
+                raise CompensationDependencyClosureError(
+                    selected_step_execution_id=(
+                        selected.step_execution_id
+                    ),
+                    selected_step_key=selected.step_key,
+                    active_dependents=active_dependents,
+                    dependency_paths=dependency_paths,
+                )
 
     @staticmethod
     def summarize(

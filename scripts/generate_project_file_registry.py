@@ -254,7 +254,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/domain/compensation.py": (
             "Dominio de compensación",
-            "Modela fuente, plan, pasos, reserva, resultado y Engine determinista para inversión de orden, selección total/parcial y consolidación.",
+            "Modela efectos activos, plan, pasos, reserva y resultado; valida clausura transitiva antes de invertir orden/dependencias y consolidar.",
             "Canonical hashing, ejecución, Lifecycle y enums",
             "Planner, Executor, persistencia y pruebas",
             "Crítico",
@@ -275,7 +275,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/domain/exceptions.py": (
             "Jerarquía de errores",
-            "Distingue errores de definición, Lifecycle, seguridad, ejecución y compensación, incluidos handlers, idempotencia, locks e incertidumbre.",
+            "Distingue errores de definición, Lifecycle, seguridad, ejecución y compensación, incluida clausura con paso/dependientes/rutas estables.",
             "Excepciones estándar",
             "Todas las capas del Motor y mapeo API futuro",
             "Alto",
@@ -289,7 +289,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/compensation.py": (
             "Adaptador SQL de compensación",
-            "Revalida actor y autorización exactos, persiste planes y checkpoints, controla locks, aplica Lifecycle y agrega auditoría/outbox en transacciones cortas.",
+            "Reconstruye efectos confirmados activos excluyendo compensaciones exitosas, revalida autorización y persiste planes/checkpoints con Lifecycle, locks, auditoría y outbox.",
             "SQLAlchemy, modelos del Motor, Lifecycle y controles",
             "CompensationPlanner, CompensationExecutor y pruebas integrales",
             "Crítico",
@@ -352,7 +352,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/tests/resolution_engine/test_compensation.py": (
             "Pruebas de dominio compensatorio",
-            "Verifica orden/dependencias inversos, estrategias total/parcial, puntos no compensables, resúmenes e invariantes de Lifecycle.",
+            "Verifica clausura directa/transitiva A→B→C, error estructurado, orden inverso, efectos activos, estrategias, resúmenes e invariantes.",
             "Dominio de compensación, Lifecycle y pytest",
             "Gate funcional de Fase 6",
             "Crítico",
@@ -366,7 +366,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/tests/resolution_engine/test_compensation_persistence.py": (
             "Pruebas persistentes de compensación",
-            "Verifica autorización y actor exactos incluso en replay, vínculos, duplicados, locks, incertidumbre, auditoría, outbox y reconstrucción sobre SQL.",
+            "Verifica clausura A→B→C antes de persistir, efectos no confirmados/ya compensados, replay, autorización, vínculos, locks, auditoría y outbox sobre SQL.",
             "SQLAlchemy, esquema y servicios de compensación",
             "Gate de persistencia, seguridad y concurrencia de Fase 6",
             "Crítico",

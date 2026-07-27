@@ -78,6 +78,18 @@ inverso: compensar `B` antes de `A`. El contenido completo del plan produce un
 `plan_hash` canónico; la clave de preparación no puede reutilizarse con otro
 hash.
 
+Una selección parcial debe ser cerrada respecto de todos los efectos
+confirmados que continúan activos. Seleccionar un paso obliga a incluir cada
+dependiente activo directo o transitivo. Los pasos sin efecto `completed` y los
+checkpoints compensatorios con resultado `compensated` se excluyen del
+conjunto activo antes de validar.
+
+La clausura se comprueba en `CompensationEngine.build_plan()` antes de invocar
+la persistencia. Una infracción produce
+`CompensationDependencyClosureError`, con código estable, paso seleccionado,
+dependientes activos y rutas transitivas expresadas mediante IDs exactos de
+checkpoint. Ningún plan semánticamente abierto llega a la base.
+
 ## Seguridad
 
 Preparar un plan exige una `ResolutionSecurityDecision` persistida con:

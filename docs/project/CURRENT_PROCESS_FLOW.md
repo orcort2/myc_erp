@@ -38,10 +38,12 @@ sólo mediante una invocación explícita y conserva la fecha de fallo.
 La compensación es un flujo independiente y síncrono. Sólo parte de una
 ejecución terminada elegible, usa una decisión `resolution.compensate` para la
 ejecución y actor exactos, persiste un plan inmutable y ejecuta en orden inverso
-únicamente acciones declaradas reversibles. Punto de no retorno, duplicado,
-actor distinto, fallo o pérdida de lock se rechazan o quedan trazados sin
-reinvocación. No existen API, workers, schedulers, retries, recuperación,
-conciliación ni compensación automática.
+únicamente acciones declaradas reversibles. Una selección parcial se rechaza
+antes de persistir si deja activo cualquier dependiente confirmado directo o
+transitivo; un efecto no confirmado o ya compensado no bloquea. Punto de no
+retorno, duplicado, actor distinto, fallo o pérdida de lock se rechazan o
+quedan trazados sin reinvocación. No existen API, workers, schedulers, retries,
+recuperación, conciliación ni compensación automática.
 
 ## Flujo principal
 
