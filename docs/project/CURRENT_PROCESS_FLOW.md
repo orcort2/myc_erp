@@ -6,11 +6,31 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-07-24
+> Corte verificado: 2026-07-28
 
 # Flujo operativo actual
 
 Este documento describe el flujo que existe en el sistema, no el flujo ideal ni el diseño futuro.
+
+## Motor de Resoluciones
+
+El flujo interno implementado y todavía sin integración concreta con dominios
+del ERP es:
+
+```text
+draft → contexto → análisis → plan → simulación declarativa
+→ autorización exacta → revalidación → ready_for_execution
+→ reserva idempotente + lock → executing
+→ checkpoints y acciones por ActionRunner
+→ completed | partially_completed | failed | blocked
+```
+
+Un plan no autorizado o no revalidado no inicia. Cada acción se identifica por
+ejecución y paso, persiste su intención antes de invocar el adaptador y conserva
+resultado/efectos después. Un resultado incierto termina en `blocked` sin
+repetición automática. El outbox se publica sólo mediante una invocación
+explícita; no existen API, workers, schedulers, retries, recuperación ni
+compensación.
 
 ## Flujo principal
 

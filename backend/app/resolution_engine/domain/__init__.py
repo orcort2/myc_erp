@@ -1,4 +1,4 @@
-"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 4."""
+"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 5."""
 
 from app.resolution_engine.domain.definitions import (
     ComponentReference,
@@ -29,6 +29,16 @@ from app.resolution_engine.domain.lifecycle import (
     ResolutionLifecycle,
     ResolutionStateMachine,
 )
+from app.resolution_engine.domain.execution import (
+    ActionCertainty,
+    DomainActionRequest,
+    DomainActionResult,
+    ExecutionCandidate,
+    ExecutionEngine,
+    ExecutionEntityEffect,
+    ExecutionOutcome,
+    ExecutionPlanStep,
+)
 
 __all__ = [
     "ComponentKey",
@@ -42,10 +52,18 @@ __all__ = [
     "ResolutionStateMachine",
     "ResolutionType",
     "ActorContext",
+    "ActionCertainty",
     "ActorIdentity",
     "ActorStatus",
     "ActorType",
     "AuthenticationContext",
+    "DomainActionRequest",
+    "DomainActionResult",
+    "ExecutionCandidate",
+    "ExecutionEngine",
+    "ExecutionEntityEffect",
+    "ExecutionOutcome",
+    "ExecutionPlanStep",
     "PermissionGrant",
     "PolicyResult",
     "SecurityDecision",

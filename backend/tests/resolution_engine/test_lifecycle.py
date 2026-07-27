@@ -325,13 +325,15 @@ def test_terminal_states_have_no_outgoing_phase_4_transitions(terminal):
         )
 
 
-def test_execution_cannot_start_in_phase_4():
-    with pytest.raises(InvalidLifecycleTransitionError):
+def test_execution_requires_an_authorized_plan():
+    with pytest.raises(LifecycleInvariantError) as caught:
         transition(
             ResolutionStateMachine(),
             case(ResolutionStatus.READY_FOR_EXECUTION),
-            LifecycleAction.RECORD_CONTEXT,
+            LifecycleAction.START_EXECUTION,
         )
+
+    assert "plan_not_authorized" in caught.value.violations
 
 
 def test_governance_transitions_require_a_reason():
@@ -523,6 +525,26 @@ def test_every_undeclared_state_action_pair_is_rejected():
         (
             ResolutionStatus.REVALIDATING,
             LifecycleAction.MARK_NO_ACTION,
+        ),
+        (
+            ResolutionStatus.READY_FOR_EXECUTION,
+            LifecycleAction.START_EXECUTION,
+        ),
+        (
+            ResolutionStatus.EXECUTING,
+            LifecycleAction.COMPLETE_EXECUTION,
+        ),
+        (
+            ResolutionStatus.EXECUTING,
+            LifecycleAction.COMPLETE_PARTIAL_EXECUTION,
+        ),
+        (
+            ResolutionStatus.EXECUTING,
+            LifecycleAction.FAIL_EXECUTION,
+        ),
+        (
+            ResolutionStatus.EXECUTING,
+            LifecycleAction.BLOCK_EXECUTION,
         ),
     }
     expected.update(

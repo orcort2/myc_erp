@@ -56,8 +56,8 @@ dominio.
 | 1. Contratos y núcleo | `APROBADA` | Organización de paquetes, contratos tipados, enumeraciones, errores, hashes, reloj, identificadores, `ResolutionRegistry` y pruebas arquitectónicas | Fase 0 aprobada | Sólo dependencias o acoplamientos que impidan aislar el núcleo; no seguridad, persistencia ni gateways todavía | Definiciones registrables sin modificar el núcleo y dependencias prohibidas cubiertas por pruebas |
 | 2. Persistencia completa | `APROBADA` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
 | 3. Seguridad, identidad y evidencia | `APROBADA` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
-| 4. Ciclo de decisión sin efectos | `EN REVISIÓN` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
-| 5. Ejecución y recuperación | `NO INICIADA` | Saga, executor, idempotencia, concurrencia, locks, retries, reconciliación, compensación, outbox operativo y workers | Plan autorizado/revalidado de Fase 4 | Mutaciones duplicadas, servicios no canónicos, operaciones no idempotentes o ciclo de excepción que mezcle solicitud y ejecución | Caídas y respuestas inciertas recuperables sin duplicar efectos |
+| 4. Ciclo de decisión sin efectos | `APROBADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
+| 5. Ejecución controlada | `EN REVISIÓN` | Modelo y Engine de ejecución, Executor, Action Runner, contratos, checkpoints, idempotencia, locks, resultados, eventos y publicación explícita de outbox | Plan autorizado/revalidado de Fase 4 | Sólo contradicciones que impidan ejecutar mediante contratos generales; no se integran módulos propietarios | Plan exacto ejecutado una vez, concurrencia inválida rechazada y cada efecto confirmado o incierto preservado |
 | 6. API institucional | `NO INICIADA` | `/api/v1/resolutions`, comandos, consultas, errores, idempotency key, ETag/versión, filtros y paginación | Servicios de aplicación de Fases 1 a 5 | Infraestructura HTTP que impida autenticación, autorización, concurrencia o errores contractuales | Contrato HTTP completo con pruebas 401/403/409/412/422/423 |
 | 7. UC-001 vertical | `NO INICIADA` | `service_order.add_additional_equipment`, providers, estrategias, planes, policies, revalidator y gateways concretos | API y ejecución completas; servicios canónicos de dominios participantes | Duplicidad ETS/Facturación/Equipos, excepción ETS sin `requested/approved/executed` u operación participante no idempotente | UC-001 completo, recuperable y sin acceso directo del Motor a tablas de dominio |
 | 8. Frontend operativo | `NO INICIADA` | Bandeja, detalle, timeline, simulación, autorizaciones, ejecución, recuperación y cliente API | API institucional estabilizada | Navegación o cliente API que obligue a duplicar estado, permisos o reglas del backend | UI sin segunda máquina de estados ni lógica de dominio |
@@ -81,7 +81,7 @@ dominio.
 | Executor | Plan autorizado/revalidado, idempotencia y locks | Solicitud original o lógica improvisada |
 | Domain Gateway | Servicio canónico del módulo propietario | ORM directo de otro dominio |
 | Audit service | Actor, correlación, hashes y eventos | Registros editables o borrado operativo |
-| Recovery worker | Persistencia, idempotencia y evidencia | Memoria del proceso interrumpido |
+| Recovery worker futuro | Persistencia, idempotencia y evidencia | Memoria del proceso interrumpido |
 
 ## Matriz de deuda bloqueante
 
@@ -94,7 +94,7 @@ corrección anticipada.
 | Refresh token aceptable como bearer de acceso | Fase 3 — resuelto | Access/refresh tienen tipo explícito y sólo access autentica requests. |
 | Ausencia de deny-by-default uniforme | Fase 3 para superficies del Motor — resuelto | El evaluador del Motor deniega sin política; la cobertura general del ERP sigue su propio proyecto. |
 | Actor opcional en la excepción ETS | Fase 7, o antes si un contrato de Fase 4 lo consume | No integrar ese flujo mientras el actor no sea obligatorio. |
-| Lógica y mutaciones ETS duplicadas | Fase 5/7 | Consolidar sólo las operaciones que serán invocadas por gateways. |
+| Lógica y mutaciones ETS duplicadas | Fase 7 | Consolidar sólo las operaciones que serán invocadas por gateways concretos. |
 | Solicitud de excepción que ejecuta inmediatamente | Fase 7 | Separar solicitud, autorización y ejecución antes de modelar la resolución correspondiente. |
 | Autenticación de certificados desde superficies duplicadas | Fase 9 al incorporar ese grupo | Mantener Calidad como mutador canónico antes de su gateway. |
 | Deriva histórica de metadatos Alembic | Fase 2 sólo si interfiere con tablas, constraints o head del Motor | No corregir deriva ajena; aislar y validar la migración del Motor. |
@@ -257,7 +257,7 @@ La Fase 0 se considera lista para revisión cuando:
 
 ## Resultado de Fase 4
 
-- Estado: `EN REVISIÓN`.
+- Estado: `APROBADA`; commit exclusivo `fd65ef1`.
 - Gate: cumplido; el flujo determinista se valida desde `draft` hasta
   `ready_for_execution`, incluida autorización exacta y revalidación, sin
   efectos sobre dominios.
@@ -270,6 +270,41 @@ La Fase 0 se considera lista para revisión cuando:
   autorización y revalidación sin condicionales por tipo.
 - Componentes adelantados: ninguno; no existe método de ejecución ni uso de
   executor, workers, gateways u outbox operativo.
-- Próxima fase autorizable: Fase 5, sólo después de aprobación expresa.
+- Continuación autorizada: Fase 5, aprobada expresamente sobre `fd65ef1`.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_4.md`](../../closures/RESOLUTION_ENGINE_PHASE_4.md).
+
+## Apertura de Fase 5
+
+- Estado: `ACTIVA`.
+- Autorización: aprobación expresa posterior al commit `fd65ef1`.
+- Componentes autorizados: modelo/Engine de ejecución, Executor, Action Runner,
+  contratos de acciones, checkpoints persistentes, idempotencia, locks,
+  resultados, eventos y publicación explícita del outbox.
+- Ajuste de alcance expreso: la autorización de apertura excluye compensación,
+  reintentos, recuperación automática, schedulers, workers distribuidos,
+  procesamiento masivo, gateways concretos e integración con el ERP; esta
+  delimitación prevalece para Fase 5 sobre la agrupación original
+  “ejecución y recuperación”.
+- Bloqueadores directos corregibles: ninguno detectado; el esquema general de
+  Fase 2 ya contiene las relaciones requeridas.
+
+## Resultado de Fase 5
+
+- Estado: `EN REVISIÓN`.
+- Gate: cumplido; sólo un expediente `ready_for_execution` con plan autorizado
+  y revalidación exacta puede iniciar, cada acción tiene identidad/checkpoint y
+  las repeticiones se resuelven por hash o se rechazan.
+- Concurrencia: lock exclusivo por resolución, token renovable y liberación
+  explícita; una reserva activa impide iniciar otro intento.
+- Incertidumbre: bloquea y conserva evidencia sin repetir acciones. No se
+  implementaron retries, recuperación ni compensación.
+- Persistencia: reutiliza el esquema aprobado de Fase 2; no fue necesaria una
+  migración.
+- Publicación: outbox explícito por lote y publicador idempotente; los fallos se
+  conservan sin scheduler ni reintento.
+- Componentes adelantados: ninguno; no existen API, workers, gateways concretos
+  ni integraciones propietarias.
+- Próxima fase autorizable: Fase 6, sólo después de aprobación expresa.
+- Evidencia detallada:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_5.md`](../../closures/RESOLUTION_ENGINE_PHASE_5.md).

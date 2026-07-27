@@ -24,7 +24,7 @@ from app.resolution_engine.domain.exceptions import (
 
 
 class LifecycleAction(StrEnum):
-    """Acciones explícitas que pueden cambiar el estado raíz en Fase 4."""
+    """Acciones explícitas que pueden cambiar el estado raíz hasta Fase 5."""
 
     RECORD_CONTEXT = "record_context"
     RECORD_ANALYSIS = "record_analysis"
@@ -40,6 +40,11 @@ class LifecycleAction(StrEnum):
     REJECT = "reject"
     CANCEL = "cancel"
     SUPERSEDE = "supersede"
+    START_EXECUTION = "start_execution"
+    COMPLETE_EXECUTION = "complete_execution"
+    COMPLETE_PARTIAL_EXECUTION = "complete_partial_execution"
+    FAIL_EXECUTION = "fail_execution"
+    BLOCK_EXECUTION = "block_execution"
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +122,18 @@ class RevalidationEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutionEvidence:
+    id: int
+    plan_id: int
+    revalidation_id: int
+    status: str
+    total_steps: int
+    completed_steps: int
+    failed_steps: int
+    blocked_steps: int
+
+
+@dataclass(frozen=True, slots=True)
 class LifecycleEvidence:
     """Referencias exactas reconstruidas desde el expediente persistido."""
 
@@ -128,6 +145,7 @@ class LifecycleEvidence:
     authorization: AuthorizationEvidence | None = None
     policy_authorization: PolicyAuthorizationEvidence | None = None
     revalidation: RevalidationEvidence | None = None
+    execution: ExecutionEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +257,18 @@ _LINEAR_TRANSITIONS = {
         ResolutionStatus.NO_ACTION_REQUIRED,
     (ResolutionStatus.REVALIDATING, LifecycleAction.MARK_NO_ACTION):
         ResolutionStatus.NO_ACTION_REQUIRED,
+    (ResolutionStatus.READY_FOR_EXECUTION, LifecycleAction.START_EXECUTION):
+        ResolutionStatus.EXECUTING,
+    (ResolutionStatus.EXECUTING, LifecycleAction.COMPLETE_EXECUTION):
+        ResolutionStatus.COMPLETED,
+    (
+        ResolutionStatus.EXECUTING,
+        LifecycleAction.COMPLETE_PARTIAL_EXECUTION,
+    ): ResolutionStatus.PARTIALLY_COMPLETED,
+    (ResolutionStatus.EXECUTING, LifecycleAction.FAIL_EXECUTION):
+        ResolutionStatus.FAILED,
+    (ResolutionStatus.EXECUTING, LifecycleAction.BLOCK_EXECUTION):
+        ResolutionStatus.BLOCKED,
 }
 
 _CANCELLABLE_STATES = frozenset(
@@ -404,6 +434,16 @@ class ResolutionStateMachine:
                 self._no_action_violations,
             LifecycleAction.REJECT:
                 self._rejection_violations,
+            LifecycleAction.START_EXECUTION:
+                self._start_execution_violations,
+            LifecycleAction.COMPLETE_EXECUTION:
+                self._completed_execution_violations,
+            LifecycleAction.COMPLETE_PARTIAL_EXECUTION:
+                self._partial_execution_violations,
+            LifecycleAction.FAIL_EXECUTION:
+                self._failed_execution_violations,
+            LifecycleAction.BLOCK_EXECUTION:
+                self._blocked_execution_violations,
         }
         check = checks.get(action)
         violations = list(check(lifecycle) if check is not None else ())
@@ -412,6 +452,7 @@ class ResolutionStateMachine:
             LifecycleAction.CONFIRM_AUTHORIZATION,
             LifecycleAction.BEGIN_REVALIDATION,
             LifecycleAction.ACCEPT_REVALIDATION,
+            LifecycleAction.START_EXECUTION,
         }:
             authorization = lifecycle.evidence.authorization
             if (
@@ -650,3 +691,103 @@ class ResolutionStateMachine:
         ):
             return ()
         return ("authorization_rejection_missing",)
+
+    @staticmethod
+    def _start_execution_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        violations = list(
+            ResolutionStateMachine._accepted_revalidation_violations(case)
+        )
+        plan = case.evidence.plan
+        if plan is None or plan.status is not PlanStatus.AUTHORIZED:
+            violations.append("plan_not_authorized")
+        if case.evidence.execution is not None:
+            violations.append("execution_already_exists")
+        return tuple(dict.fromkeys(violations))
+
+    @staticmethod
+    def _execution_violations(
+        case: ResolutionLifecycle,
+        *,
+        expected_status: str,
+    ) -> list[str]:
+        execution = case.evidence.execution
+        violations: list[str] = []
+        if execution is None:
+            return ["execution_missing"]
+        plan = case.evidence.plan
+        revalidation = case.evidence.revalidation
+        if plan is None or execution.plan_id != plan.id:
+            violations.append("execution_plan_mismatch")
+        if revalidation is None or execution.revalidation_id != revalidation.id:
+            violations.append("execution_revalidation_mismatch")
+        if execution.status != expected_status:
+            violations.append("execution_status_mismatch")
+        if execution.total_steps <= 0:
+            violations.append("execution_has_no_steps")
+        return violations
+
+    @staticmethod
+    def _completed_execution_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        violations = ResolutionStateMachine._execution_violations(
+            case,
+            expected_status="completed",
+        )
+        execution = case.evidence.execution
+        if execution and (
+            execution.completed_steps != execution.total_steps
+            or execution.failed_steps
+            or execution.blocked_steps
+        ):
+            violations.append("execution_not_fully_completed")
+        return tuple(violations)
+
+    @staticmethod
+    def _partial_execution_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        violations = ResolutionStateMachine._execution_violations(
+            case,
+            expected_status="partially_completed",
+        )
+        execution = case.evidence.execution
+        if execution and (
+            execution.completed_steps <= 0
+            or execution.failed_steps <= 0
+            or execution.blocked_steps
+        ):
+            violations.append("execution_not_partial")
+        return tuple(violations)
+
+    @staticmethod
+    def _failed_execution_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        violations = ResolutionStateMachine._execution_violations(
+            case,
+            expected_status="failed",
+        )
+        execution = case.evidence.execution
+        if execution and (
+            execution.completed_steps
+            or execution.failed_steps <= 0
+            or execution.blocked_steps
+        ):
+            violations.append("execution_not_failed")
+        return tuple(violations)
+
+    @staticmethod
+    def _blocked_execution_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        violations = ResolutionStateMachine._execution_violations(
+            case,
+            expected_status="blocked",
+        )
+        execution = case.evidence.execution
+        if execution and execution.blocked_steps <= 0:
+            violations.append("execution_not_blocked")
+        return tuple(violations)

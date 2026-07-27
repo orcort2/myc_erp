@@ -132,7 +132,7 @@ a FastAPI, ORM propietario o transacciones de módulos del ERP.
 
 ## Evolución
 
-Fase 5 podrá consumir únicamente resoluciones `ready_for_execution` y deberá
-agregar su propia máquina de ejecución, idempotencia, locks, retries,
-reconciliación, compensación y publicación de outbox. No podrá debilitar ni
-evitar las invariantes de Fase 4.
+La Fase 5 consume únicamente resoluciones `ready_for_execution` e incorpora
+ejecución controlada, idempotencia, locks y publicación explícita de outbox,
+sin debilitar ni evitar estas invariantes. Recuperación, retries, conciliación,
+compensación y workers permanecen fuera de esa fase.

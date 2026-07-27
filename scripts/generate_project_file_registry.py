@@ -42,6 +42,28 @@ FORCE_RECLASSIFY = {
     "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md",
     "frontend/src/constants/catalog.js",
     "scripts/generate_project_file_registry.py",
+    "backend/app/resolution_engine/__init__.py",
+    "backend/app/resolution_engine/application/__init__.py",
+    "backend/app/resolution_engine/application/action_runner.py",
+    "backend/app/resolution_engine/application/execution.py",
+    "backend/app/resolution_engine/application/outbox.py",
+    "backend/app/resolution_engine/contracts/__init__.py",
+    "backend/app/resolution_engine/contracts/execution.py",
+    "backend/app/resolution_engine/domain/__init__.py",
+    "backend/app/resolution_engine/domain/exceptions.py",
+    "backend/app/resolution_engine/domain/execution.py",
+    "backend/app/resolution_engine/domain/lifecycle.py",
+    "backend/app/resolution_engine/infrastructure/__init__.py",
+    "backend/app/resolution_engine/infrastructure/execution.py",
+    "backend/app/resolution_engine/infrastructure/execution_control.py",
+    "backend/app/resolution_engine/infrastructure/lifecycle.py",
+    "backend/app/resolution_engine/infrastructure/outbox.py",
+    "backend/tests/resolution_engine/test_architecture.py",
+    "backend/tests/resolution_engine/test_execution.py",
+    "backend/tests/resolution_engine/test_execution_persistence.py",
+    "backend/tests/resolution_engine/test_lifecycle.py",
+    "docs/architecture/resolution-engine/17_EXECUTION_RUNTIME.md",
+    "docs/closures/RESOLUTION_ENGINE_PHASE_5.md",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -114,13 +136,6 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "Obsoleto"
 
     phase_4_files = {
-        "backend/app/resolution_engine/domain/lifecycle.py": (
-            "Dominio de Lifecycle",
-            "Define acciones, proyección, evidencias exactas, eventos, transiciones, grafo e invariantes puras hasta ready_for_execution.",
-            "Enums, canonical hashing y errores del Motor",
-            "Servicio de Lifecycle, adaptador SQL y pruebas de Fase 4",
-            "Crítico",
-        ),
         "backend/app/resolution_engine/contracts/lifecycle.py": (
             "Contratos de Lifecycle",
             "Declara comandos de creación y puertos explícitos para persistencia del ciclo y resolución de componentes sin acoplar el núcleo.",
@@ -140,20 +155,6 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
             "Selecciona la definición exacta y coordina componentes puros de contexto a revalidación sin ejecutar ni publicar efectos.",
             "ResolutionRegistry, ComponentResolver y referencias versionadas",
             "Flujos internos futuros y pruebas de Fase 4",
-            "Crítico",
-        ),
-        "backend/app/resolution_engine/infrastructure/lifecycle.py": (
-            "Persistencia de Lifecycle",
-            "Crea y reconstruye el expediente, aplica transiciones validadas con control optimista y agrega auditoría sin administrar transacciones.",
-            "SQLAlchemy, modelos persistentes y repositorio del Motor",
-            "ResolutionLifecycleService y pruebas de persistencia",
-            "Crítico",
-        ),
-        "backend/tests/resolution_engine/test_lifecycle.py": (
-            "Pruebas de Lifecycle",
-            "Cubre flujo principal, alternativas, estados terminales, transiciones inválidas e invariantes exactas de autorización y revalidación.",
-            "Dominio de Lifecycle y pytest",
-            "Gate funcional y arquitectónico de Fase 4",
             "Crítico",
         ),
         "backend/tests/resolution_engine/test_lifecycle_persistence.py": (
@@ -187,6 +188,165 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     }
     if value in phase_4_files:
         return phase_4_files[value]
+
+    phase_5_files = {
+        "backend/app/resolution_engine/__init__.py": (
+            "API Python del Motor",
+            "Expone Lifecycle y ejecución controlada aprobados hasta Fase 5 sin acoplar transporte, ERP ni adaptadores concretos.",
+            "Aplicación, contratos y dominio del Motor",
+            "Bootstrap futuro e integraciones registradas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/application/__init__.py": (
+            "API de aplicación",
+            "Publica seguridad, Lifecycle, orquestación, Executor, Action Runner y publicación explícita de outbox.",
+            "Servicios de aplicación del Motor",
+            "Composición backend futura y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/application/action_runner.py": (
+            "Action Runner",
+            "Selecciona por operation_key y constituye el único punto que invoca un ActionHandler, convirtiendo excepciones o respuestas inválidas en incertidumbre explícita.",
+            "Contratos y dominio de ejecución",
+            "ResolutionExecutor y adaptadores futuros",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/execution.py": (
+            "Executor de resoluciones",
+            "Coordina plan autorizado, Lifecycle, idempotencia, lock, checkpoints, acciones y cierre sin contener reglas propietarias ni infraestructura.",
+            "ExecutionEngine, ActionRunner, ExecutionStore, Clock y state machine",
+            "Composición futura del Motor y pruebas de Fase 5",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/outbox.py": (
+            "Publicación explícita de outbox",
+            "Publica un lote solicitado y registra éxito o fallo sin scheduler, worker ni reintento.",
+            "OutboxStore, EventPublisher y Clock",
+            "Composición operativa futura y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/contracts/__init__.py": (
+            "API de contratos",
+            "Expone puertos de componentes, runtime, seguridad, Lifecycle, ejecución, acciones y outbox sin filtrar infraestructura.",
+            "Protocols y comandos del Motor",
+            "Aplicación, adaptadores y definiciones",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/contracts/execution.py": (
+            "Contratos de ejecución",
+            "Declara comando, handler, store transaccional, mensajes/publicador outbox y resultados de checkpoints desacoplados de SQL y ERP.",
+            "Dominio de ejecución, ActorContext y runtime",
+            "Executor y adaptadores de Fase 5/futuros",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/domain/__init__.py": (
+            "API de dominio",
+            "Publica manifiestos, seguridad, Lifecycle y tipos/Engine de ejecución inmutables aprobados hasta Fase 5.",
+            "Módulos puros del dominio",
+            "Aplicación, contratos, adaptadores y consumidores",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/domain/exceptions.py": (
+            "Jerarquía de errores",
+            "Distingue errores de definición, Lifecycle, seguridad, planes, handlers, idempotencia, locks e incertidumbre sin códigos HTTP.",
+            "Excepciones estándar",
+            "Todas las capas del Motor y mapeo API futuro",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/domain/execution.py": (
+            "Engine y modelo de ejecución",
+            "Modela candidatos, pasos, acciones, certeza, efectos, reservas, resultados y consolidación determinista sin infraestructura ni ERP.",
+            "Canonical hashing, enums y Lifecycle",
+            "ResolutionExecutor, adaptadores y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/domain/lifecycle.py": (
+            "Dominio de Lifecycle",
+            "Define el grafo completo hasta cierres de ejecución e invariantes exactas de plan, autorización, revalidación y conteos de pasos.",
+            "Enums, canonical hashing y errores del Motor",
+            "Servicios, Executor, adaptador SQL y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/__init__.py": (
+            "API de infraestructura",
+            "Publica runtime, repositorio y adaptadores SQL de Lifecycle, ejecución, controles y outbox autorizados hasta Fase 5.",
+            "Infraestructura del Motor",
+            "Bootstrap futuro y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/infrastructure/execution.py": (
+            "Adaptador SQL de ejecución",
+            "Reconstruye el candidato y persiste checkpoints, pasos, efectos, resultados, auditoría, Lifecycle, idempotencia, lock y outbox en transacciones cortas.",
+            "SQLAlchemy, persistencia del Motor, Lifecycle y controles",
+            "ResolutionExecutor y pruebas integrales",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/execution_control.py": (
+            "Controles SQL de ejecución",
+            "Adquiere, renueva y libera locks; crea, valida y finaliza registros idempotentes dentro de una transacción recibida.",
+            "SQLAlchemy, locks e idempotencia persistentes",
+            "SqlAlchemyExecutionStore",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/lifecycle.py": (
+            "Persistencia de Lifecycle",
+            "Reconstruye evidencia hasta ejecución y aplica transiciones validadas con control optimista, timestamps terminales y auditoría.",
+            "SQLAlchemy, modelos persistentes y repositorio",
+            "Servicios Lifecycle, Executor y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/outbox.py": (
+            "Adaptador SQL de outbox",
+            "Agrega eventos en la transacción fuente y persiste publicación o fallo por invocación explícita, sin proceso automático.",
+            "SQLAlchemy, modelo outbox y canonical hashing",
+            "ExecutionStore y OutboxPublicationService",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_architecture.py": (
+            "Pruebas de arquitectura",
+            "Inspecciona aislamiento, dirección de capas, autoridad del Lifecycle, invocación exclusiva de handlers y ausencia de workers/gateways/schedulers.",
+            "ast, pathlib y paquete resolution_engine",
+            "Gates arquitectónicos de Fases 1 a 5",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_execution.py": (
+            "Pruebas de ejecución",
+            "Verifica Engine, orden, autorización, acciones únicas, resultados completos/parciales/fallidos/bloqueados e idempotencia.",
+            "Dominio/aplicación de ejecución, fakes y pytest",
+            "Gate funcional de Fase 5",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_execution_persistence.py": (
+            "Pruebas persistentes de ejecución",
+            "Verifica sobre SQL el vínculo exacto, checkpoints, efectos, resultado, actor, idempotencia, locks, auditoría y outbox sin retry.",
+            "SQLAlchemy, esquema y servicios de ejecución",
+            "Gate de persistencia/concurrencia de Fase 5",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_lifecycle.py": (
+            "Pruebas de Lifecycle",
+            "Cubre transiciones e invariantes desde creación hasta los cuatro cierres explícitos de ejecución.",
+            "Dominio de Lifecycle y pytest",
+            "Gate funcional y arquitectónico de Fases 4 y 5",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/17_EXECUTION_RUNTIME.md": (
+            "Contrato de ejecución",
+            "Documenta Executor, acciones, checkpoints, idempotencia, locks, resultados, auditoría, outbox explícito y límites de Fase 5.",
+            "Especificación, matriz y código de Fase 5",
+            "Arquitectura, desarrollo, QA y fases posteriores",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_5.md": (
+            "Cierre técnico de Fase 5",
+            "Registra componentes, arquitectura, pruebas, deuda, archivos clave y condición EN REVISIÓN antes de Fase 6.",
+            "Implementación, arquitectura y validaciones de Fase 5",
+            "Arquitectura, desarrollo, QA, dirección y auditoría",
+            "Alto",
+        ),
+    }
+    if value in phase_5_files:
+        return phase_5_files[value]
 
     if "/migrations/versions/" in value:
         return ("Migración Alembic", f"Aplica la revisión {subject} del esquema y conserva la evolución reproducible de PostgreSQL.", "Alembic, modelos ORM y base de datos", "Alembic durante upgrade/downgrade y despliegues", "Crítico")
@@ -326,7 +486,7 @@ def render(paths: list[Path], preserved: dict[str, str]) -> str:
         "",
         "# Registro maestro de archivos funcionales",
         "",
-        "Fecha de inventario: 2026-07-27.",
+        "Fecha de inventario: 2026-07-28.",
         "",
         "Este es el inventario oficial de archivos funcionales del ERP MYC. Incluye únicamente archivos fuente, configuración, migraciones, recursos oficiales, scripts, pruebas y documentación relevante. Las filas describen responsabilidad verificable; los estados reflejan el estado actual observable del repositorio.",
         "",

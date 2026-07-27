@@ -24,9 +24,17 @@ from app.resolution_engine.contracts.security import (
     SecurityEvidenceStore,
     SecurityResourceVerifier,
 )
+from app.resolution_engine.contracts.execution import (
+    ActionHandler,
+    EventPublisher,
+    ExecuteResolutionCommand,
+    ExecutionStore,
+    OutboxStore,
+)
 
 __all__ = [
     "ActorContextProvider",
+    "ActionHandler",
     "Analyzer",
     "AuthorizationPolicy",
     "Clock",
@@ -34,9 +42,13 @@ __all__ = [
     "ContextProvider",
     "CreateResolutionCommand",
     "Executor",
+    "EventPublisher",
+    "ExecuteResolutionCommand",
+    "ExecutionStore",
     "IdentifierFactory",
     "LifecycleStore",
     "PermissionPolicy",
+    "OutboxStore",
     "PlanBuilder",
     "ResolutionComponent",
     "ResolutionProblemInput",

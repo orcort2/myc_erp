@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-07-24
+> Corte verificado: 2026-07-28
 
 # Alcance actual del ERP MYC
 
@@ -29,7 +29,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones en Fase 4: además de la fundación, persistencia y
+- Motor de Resoluciones en Fase 5: además de la fundación, persistencia y
   seguridad aprobadas, existen 22 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
   repositorio de reconstrucción, migración reversible, identidad canónica,
@@ -38,9 +38,13 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   append-only de concesiones/denegaciones, creación, Lifecycle, máquina de
   estados, invariantes sobre evidencia reconstruida, auditoría de transiciones,
   control optimista y orquestación versionada de componentes puros hasta
-  revalidación. La simulación implementada es declarativa y sin efectos.
-  Ejecución, locks, idempotencia, outbox operativo, gateways, API y workers
-  continúan sin comportamiento.
+  revalidación. La simulación implementada es declarativa y sin efectos. La
+  ejecución síncrona controlada consume sólo planes autorizados/revalidados,
+  persiste ejecución y pasos, invoca acciones exclusivamente por `ActionRunner`,
+  controla idempotencia y lock exclusivo, conserva efectos/resultados y publica
+  outbox únicamente por solicitud explícita. Gateways concretos, API, workers,
+  schedulers, recuperación automática, retries y compensaciones continúan sin
+  comportamiento.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

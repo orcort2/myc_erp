@@ -104,3 +104,39 @@ class ResolutionNotFoundError(ResolutionEngineError, LookupError):
 
 class ComponentBindingError(ResolutionEngineError):
     """Una referencia registrada no tiene una implementación compatible."""
+
+
+class ExecutionNotReadyError(ResolutionEngineError):
+    """La resolución o el plan no satisfacen el gate de ejecución."""
+
+
+class InvalidExecutionPlanError(ResolutionEngineError):
+    """Los pasos o dependencias del plan no forman una ejecución válida."""
+
+
+class ExecutionIdempotencyConflictError(ResolutionEngineError):
+    """Una clave existente fue utilizada para otra solicitud."""
+
+
+class ExecutionAlreadyInProgressError(ResolutionEngineError):
+    """La misma ejecución ya está en curso y no debe duplicarse."""
+
+
+class ExecutionLockUnavailableError(ResolutionEngineError):
+    """Otro propietario conserva el lock exclusivo requerido."""
+
+
+class ExecutionLockLostError(ResolutionEngineError):
+    """El lock expiró, fue liberado o pertenece a otro propietario."""
+
+
+class DuplicateActionHandlerError(ResolutionEngineError):
+    """Más de un handler pretende ejecutar la misma operación."""
+
+
+class ActionHandlerNotFoundError(ResolutionEngineError):
+    """No existe un handler explícito para la operación del paso."""
+
+
+class ActionInvocationUncertainError(ResolutionEngineError):
+    """El handler falló sin confirmar si la operación produjo efectos."""

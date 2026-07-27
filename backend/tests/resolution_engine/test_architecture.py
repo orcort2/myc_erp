@@ -156,6 +156,11 @@ def test_phase_4_orchestrator_does_not_cross_into_execution_or_outbox():
 
 def test_lifecycle_state_changes_are_confined_to_its_sql_adapter():
     assignments: list[str] = []
+    owned_record_updates = {
+        (Path("infrastructure/execution.py"), "execution"),
+        (Path("infrastructure/execution.py"), "row"),
+        (Path("infrastructure/execution_control.py"), "record"),
+    }
     for layer in ("domain", "contracts", "application", "infrastructure"):
         for path in python_files(layer):
             relative = path.relative_to(PACKAGE_ROOT)
@@ -176,11 +181,58 @@ def test_lifecycle_state_changes_are_confined_to_its_sql_adapter():
                     if isinstance(node, ast.Assign)
                     else [node.target]
                 )
-                if any(
-                    isinstance(target, ast.Attribute)
-                    and target.attr == "status"
-                    for target in targets
-                ):
-                    assignments.append(str(relative))
+                for target in targets:
+                    if not (
+                        isinstance(target, ast.Attribute)
+                        and target.attr == "status"
+                    ):
+                        continue
+                    owner = (
+                        target.value.id
+                        if isinstance(target.value, ast.Name)
+                        else ""
+                    )
+                    if (relative, owner) not in owned_record_updates:
+                        assignments.append(f"{relative}:{owner}")
 
     assert assignments == []
+
+
+def test_phase_5_execution_has_no_future_recovery_or_worker_dependencies():
+    execution_paths = [
+        PACKAGE_ROOT / "application" / "execution.py",
+        PACKAGE_ROOT / "application" / "action_runner.py",
+        PACKAGE_ROOT / "application" / "outbox.py",
+        PACKAGE_ROOT / "infrastructure" / "execution.py",
+        PACKAGE_ROOT / "infrastructure" / "execution_control.py",
+        PACKAGE_ROOT / "infrastructure" / "outbox.py",
+    ]
+    forbidden_modules = ("celery", "rq", "apscheduler")
+    violations = []
+    for path in execution_paths:
+        for module in imported_modules(path):
+            if module.startswith(forbidden_modules):
+                violations.append(f"{path.name} -> {module}")
+
+    assert violations == []
+    assert not (PACKAGE_ROOT / "workers").exists()
+    assert not (PACKAGE_ROOT / "gateways").exists()
+
+
+def test_action_handlers_are_invoked_only_by_action_runner():
+    violations = []
+    for path in python_files("application"):
+        if path.name == "action_runner.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "execute"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "handler"
+            ):
+                violations.append(str(path.relative_to(PACKAGE_ROOT)))
+
+    assert violations == []

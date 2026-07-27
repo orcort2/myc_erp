@@ -86,26 +86,33 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 4
+## Motor de Resoluciones — Fase 5
 
-- Estado: Fases 0, 1, 2 y 3 `APROBADAS`; Fase 4 `EN REVISIÓN`; Fase 5
+- Estado: Fases 0 a 4 `APROBADAS`; Fase 5 `EN REVISIÓN`; Fase 6
   `NO INICIADA`.
-- El Motor conserva el expediente y seguridad aprobados e incorpora creación,
-  Lifecycle, máquina estado/acción, evidencias tipadas, eventos internos,
-  auditoría append-only y control optimista.
-- El flujo principal llega de `draft` a `ready_for_execution`; autorización y
-  revalidación exigen resolución, IDs, versiones y hashes exactos.
-- `ResolutionOrchestrator` selecciona la definición registrada exacta y
-  coordina contexto, análisis, estrategia, plan, simulación declarativa,
-  requisitos de autorización y revalidación sin efectos.
-- Una transición inválida, evidencia discordante, razón de gobierno ausente o
-  versión obsoleta se rechaza explícitamente.
-- No se incorporaron ejecución externa, gateways, API, workers, publicación
-  outbox, retries, compensaciones ni integraciones específicas del ERP.
-- No existe migración de Fase 4. La base y el respaldo conservan
-  `alembic_version = b4c6d8e0f2a3`; `alembic check` sólo muestra `TD-021` y
-  ninguna deriva del Motor.
+- El Motor conserva expediente, seguridad y Lifecycle aprobados e incorpora
+  modelo/Engine de ejecución, `ResolutionExecutor`, `ActionRunner`, contratos,
+  checkpoints, idempotencia, locks, efectos, resultado y outbox explícito.
+- Sólo inicia desde `ready_for_execution` con plan activo `authorized`,
+  autorización y revalidación exactas. Los cierres posibles son `completed`,
+  `partially_completed`, `failed` y `blocked`.
+- Cada acción persiste intención antes del handler y resultado después. Una
+  respuesta incierta bloquea sin retry; no se interpreta como ausencia de
+  efecto.
+- Replay exacto devuelve el resultado durable; clave con otro hash, operación
+  en curso o lock activo se rechazan.
+- El outbox se publica sólo mediante una invocación explícita y un publicador
+  idempotente por `event_key`; un fallo se conserva sin scheduler ni reintento.
+- No se incorporaron API, gateways concretos, integraciones propietarias,
+  workers, schedulers, procesamiento masivo, recuperación, retries ni
+  compensaciones.
+- Validaciones: 127 pruebas del Motor; suite backend completa con 251 pruebas y
+  19 subpruebas; 11 pruebas frontend; build Vite; compilación Python y
+  arquitectura correctos.
+- No existe migración de Fase 5. La base y el respaldo conservan
+  `alembic_version = b4c6d8e0f2a3`; `alembic check` sólo muestra la deriva
+  histórica `TD-021` y ninguna operación `resolution_*` atribuible a la fase.
 - Contrato:
-  [`architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md`](architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md).
+  [`architecture/resolution-engine/17_EXECUTION_RUNTIME.md`](architecture/resolution-engine/17_EXECUTION_RUNTIME.md).
 - Cierre:
-  [`closures/RESOLUTION_ENGINE_PHASE_4.md`](closures/RESOLUTION_ENGINE_PHASE_4.md).
+  [`closures/RESOLUTION_ENGINE_PHASE_5.md`](closures/RESOLUTION_ENGINE_PHASE_5.md).

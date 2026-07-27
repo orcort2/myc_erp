@@ -23,6 +23,7 @@ from app.resolution_engine.domain.lifecycle import (
     AnalysisEvidence,
     AuthorizationEvidence,
     ContextEvidence,
+    ExecutionEvidence,
     LifecycleEvidence,
     LifecycleTransition,
     PlanEvidence,
@@ -148,6 +149,12 @@ class SqlAlchemyLifecycleStore:
             values["cancelled_at"] = transition.event.occurred_at
         elif transition.new_state is ResolutionStatus.REJECTED:
             values["rejected_at"] = transition.event.occurred_at
+        elif transition.new_state in {
+            ResolutionStatus.COMPLETED,
+            ResolutionStatus.PARTIALLY_COMPLETED,
+            ResolutionStatus.FAILED,
+        }:
+            values["completed_at"] = transition.event.occurred_at
         elif transition.new_state is ResolutionStatus.SUPERSEDED:
             values["superseded_by_resolution_id"] = (
                 transition.event.payload["metadata"][
@@ -180,6 +187,7 @@ class SqlAlchemyLifecycleStore:
             self._required_record(transition.resolution_id)
         )
         plan = lifecycle.evidence.plan
+        execution = lifecycle.evidence.execution
         self._repository.add(
             ResolutionAuditEvent(
                 resolution_id=transition.resolution_id,
@@ -193,6 +201,7 @@ class SqlAlchemyLifecycleStore:
                 new_state=transition.new_state.value,
                 plan_id=plan.id if plan else None,
                 plan_version=plan.version if plan else None,
+                execution_id=execution.id if execution else None,
                 correlation_id=transition.event.correlation_id,
                 source=transition.event.source,
                 payload=dict(transition.event.payload),
@@ -285,6 +294,12 @@ class SqlAlchemyLifecycleStore:
             if plan is not None and item.plan_id == plan.id
         ]
         revalidation = revalidations[-1] if revalidations else None
+        execution = record.executions[-1] if record.executions else None
+        execution_steps = [
+            item
+            for item in record.step_executions
+            if execution is not None and item.execution_id == execution.id
+        ]
 
         evidence = LifecycleEvidence(
             context=(
@@ -387,6 +402,29 @@ class SqlAlchemyLifecycleStore:
                     status=RevalidationStatus(revalidation.status),
                 )
                 if revalidation
+                else None
+            ),
+            execution=(
+                ExecutionEvidence(
+                    id=execution.id,
+                    plan_id=execution.plan_id,
+                    revalidation_id=execution.revalidation_id,
+                    status=execution.status,
+                    total_steps=len(execution_steps),
+                    completed_steps=sum(
+                        item.status == "completed"
+                        for item in execution_steps
+                    ),
+                    failed_steps=sum(
+                        item.status == "failed"
+                        for item in execution_steps
+                    ),
+                    blocked_steps=sum(
+                        item.status == "blocked"
+                        for item in execution_steps
+                    ),
+                )
+                if execution
                 else None
             ),
         )
