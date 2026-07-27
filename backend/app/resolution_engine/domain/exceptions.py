@@ -196,3 +196,34 @@ class CompensationHandlerNotFoundError(ResolutionEngineError):
 
 class CompensationInvocationUncertainError(ResolutionEngineError):
     """La compensación pudo producir efectos, pero no confirmó resultado."""
+
+
+class InvalidAuditEvidenceError(ResolutionEngineError, ValueError):
+    """Una proyección de auditoría viola su contrato estable."""
+
+
+class AuditRecordNotFoundError(ResolutionEngineError, LookupError):
+    """No existe expediente auditable para la resolución solicitada."""
+
+    def __init__(self, *, resolution_id: int) -> None:
+        super().__init__(f"Audit record not found: {resolution_id}")
+        self.resolution_id = resolution_id
+
+
+class AuditAccessDeniedError(ResolutionEngineError):
+    """La consulta no presenta una concesión exacta, vigente y trazable."""
+
+    error_code = "audit_access_denied"
+
+    def __init__(
+        self,
+        *,
+        resolution_id: int,
+        reasons: tuple[str, ...],
+    ) -> None:
+        super().__init__(
+            f"Audit access denied for {resolution_id}: "
+            + ", ".join(reasons)
+        )
+        self.resolution_id = resolution_id
+        self.reasons = reasons

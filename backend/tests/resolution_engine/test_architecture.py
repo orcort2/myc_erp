@@ -221,6 +221,44 @@ def test_phase_5_execution_has_no_future_recovery_or_worker_dependencies():
     assert not (PACKAGE_ROOT / "gateways").exists()
 
 
+def test_phase_7_audit_adapter_is_read_only_and_has_no_future_dependencies():
+    mutating_calls = []
+    paths = (
+        PACKAGE_ROOT / "infrastructure" / "audit.py",
+        PACKAGE_ROOT / "infrastructure" / "audit_projection.py",
+    )
+    forbidden_modules = ("celery", "rq", "apscheduler", "fastapi")
+    imported = []
+    for path in paths:
+        imported.extend(imported_modules(path))
+        tree = ast.parse(
+            path.read_text(encoding="utf-8"),
+            filename=str(path),
+        )
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            if (
+                isinstance(function, ast.Attribute)
+                and function.attr
+                in {
+                    "add",
+                    "delete",
+                    "flush",
+                    "commit",
+                    "rollback",
+                    "execute",
+                }
+            ):
+                mutating_calls.append(function.attr)
+
+    assert mutating_calls == []
+    assert not any(
+        module.startswith(forbidden_modules) for module in imported
+    )
+
+
 def test_action_handlers_are_invoked_only_by_action_runner():
     violations = []
     for path in python_files("application"):

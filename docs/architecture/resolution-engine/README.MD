@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 6 APROBADA
+> Estado: ARQUITECTURA VIGENTE — FASE 7 EN REVISIÓN
 >
-> Próxima fase: Fase 7 — Auditoría y Evidencia, apertura pendiente
+> Próxima fase: Fase 8 no iniciada
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -31,6 +31,7 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 17. [`17_EXECUTION_RUNTIME.md`](17_EXECUTION_RUNTIME.md)
 18. [`18_COMPENSATION_ENGINE.md`](18_COMPENSATION_ENGINE.md)
 19. [`19_PHASE_7_OPENING.md`](19_PHASE_7_OPENING.md)
+20. [`20_AUDIT_EVIDENCE.md`](20_AUDIT_EVIDENCE.md)
 
 ## Regla de precedencia
 
@@ -98,8 +99,13 @@ idempotencia, lock, auditoría y outbox. Su contrato está en
 [`18_COMPENSATION_ENGINE.md`](18_COMPENSATION_ENGINE.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_6.md`](../../closures/RESOLUTION_ENGINE_PHASE_6.md).
 
+La Fase 7 fue implementada y queda `EN REVISIÓN`. Incorpora un modelo puro de
+evidencia, `AuditEngine`, `EvidenceRegistry`, `ResolutionTimeline`, consultas
+autorizadas, correlación y un adaptador SQL read-only. Reutiliza el esquema
+general y no requiere migración. Su contrato está en
+[`20_AUDIT_EVIDENCE.md`](20_AUDIT_EVIDENCE.md) y su cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_7.md`](../../closures/RESOLUTION_ENGINE_PHASE_7.md).
+
 API, gateways concretos, integraciones propietarias, workers, schedulers,
 recuperación, reintentos, conciliación y compensación automática permanecen
-fuera de alcance. La propuesta formal de Fase 7 — Auditoría y Evidencia está en
-[`19_PHASE_7_OPENING.md`](19_PHASE_7_OPENING.md), con estado `NO INICIADA`
-hasta aprobación expresa.
+fuera de alcance. La Fase 8 no fue iniciada.

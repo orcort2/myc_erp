@@ -51,8 +51,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   ejecución, actor, lock, auditoría y outbox sin reinterpretar el efecto
   original. Gateways concretos, API, workers, schedulers, recuperación,
   conciliación, retries y compensación automática continúan sin comportamiento.
-  Fase 7 — Auditoría y Evidencia continúa `NO INICIADA`; existe sólo su
-  propuesta formal de apertura pendiente de aprobación.
+  Fase 7 — Auditoría y Evidencia está implementada `EN REVISIÓN`: añade modelo
+  puro, registro de evidencia, verificación de integridad, timeline,
+  reconstrucción y consultas autorizadas sobre el expediente general sin
+  persistir una fuente paralela. Fase 8 continúa `NO INICIADA`.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

@@ -1,12 +1,12 @@
-> Estado: PROPUESTA FORMAL — PENDIENTE DE APROBACIÓN
+> Estado: APERTURA APROBADA — IMPLEMENTACIÓN CERRADA EN REVISIÓN
 >
 > Fase: 7 — Auditoría y Evidencia
 >
 > Autoridad de nombre y capacidad: `12_ROADMAP.md`
 >
-> No autoriza implementación
+> Autorización: dictamen expreso de apertura de Fase 7
 
-# Apertura formal propuesta de la Fase 7
+# Apertura formal de la Fase 7
 
 ## Nombre oficial
 
@@ -79,15 +79,14 @@ servicios de dominio/aplicación verificables y proyecciones deterministas.
 ## Consistencia documental verificada
 
 - `12_ROADMAP.md` define Fase 7 como **Auditoría y Evidencia**.
-- `13_IMPLEMENTATION_MATRIX.md` fue alineada con ese nombre y deja la fase
-  `NO INICIADA`.
+- `13_IMPLEMENTATION_MATRIX.md` fue alineada con ese nombre; tras el dictamen
+  de apertura registra la implementación como `EN REVISIÓN`.
 - Las Fases 2, 3, 4, 5 y 6 ya producen auditoría/evidencia base. Fase 7 debe
   formalizar verificación, correlación, timeline y consultabilidad; no duplicar
   tablas o eventos existentes.
 - API pública corresponde a una fase posterior del roadmap; UC-001 y gateways
   concretos corresponden a Integración con ERP MYC, también posterior.
-- No existe autorización para escribir código de Fase 7 hasta la aprobación
-  expresa de esta apertura.
+- La autorización expresa fue recibida antes de escribir código de Fase 7.
 
 ## Gate propuesto
 
@@ -100,6 +99,6 @@ tablas vivas de módulos propietarios.
 
 ```text
 FASE 7
-NO INICIADA
-APERTURA PENDIENTE DE APROBACIÓN EXPRESA
+EN REVISIÓN
+IMPLEMENTACIÓN: 20_AUDIT_EVIDENCE.md
 ```

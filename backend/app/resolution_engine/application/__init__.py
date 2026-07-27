@@ -1,4 +1,6 @@
-"""Servicios de aplicación del Motor de Resoluciones hasta Fase 6."""
+"""Servicios de aplicación del Motor de Resoluciones hasta Fase 7."""
+
+from app.resolution_engine.application.audit import AuditQueryService
 
 from app.resolution_engine.application.action_runner import ActionRunner
 from app.resolution_engine.application.execution import ResolutionExecutor
@@ -29,6 +31,7 @@ from app.resolution_engine.application.compensation_runner import (
 )
 
 __all__ = [
+    "AuditQueryService",
     "LifecycleActor",
     "ActionRunner",
     "CompensationExecutor",

@@ -60,7 +60,8 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md`](../architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md) | Contrato implementado de creación, máquina de estados, invariantes, auditoría y orquestación interna sin efectos de la Fase 4. |
 | [`../architecture/resolution-engine/17_EXECUTION_RUNTIME.md`](../architecture/resolution-engine/17_EXECUTION_RUNTIME.md) | Contrato implementado de ejecución controlada, acciones, checkpoints, idempotencia, locks y publicación explícita de outbox de la Fase 5. |
 | [`../architecture/resolution-engine/18_COMPENSATION_ENGINE.md`](../architecture/resolution-engine/18_COMPENSATION_ENGINE.md) | Contrato implementado de planificación y ejecución compensatoria síncrona, Lifecycle, autorización exacta, checkpoints, idempotencia, locks, auditoría y outbox de la Fase 6. |
-| [`../architecture/resolution-engine/19_PHASE_7_OPENING.md`](../architecture/resolution-engine/19_PHASE_7_OPENING.md) | Propuesta formal, todavía no aprobada, de objetivo, alcance, exclusiones, entregables, invariantes y gate de Fase 7 — Auditoría y Evidencia. |
+| [`../architecture/resolution-engine/19_PHASE_7_OPENING.md`](../architecture/resolution-engine/19_PHASE_7_OPENING.md) | Apertura aprobada, objetivo, alcance, exclusiones, entregables, invariantes y gate de Fase 7 — Auditoría y Evidencia. |
+| [`../architecture/resolution-engine/20_AUDIT_EVIDENCE.md`](../architecture/resolution-engine/20_AUDIT_EVIDENCE.md) | Contrato implementado de reconstrucción, evidencia verificable, autorización de consultas, timeline y diagnósticos de integridad de Fase 7. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -82,6 +83,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/RESOLUTION_ENGINE_PHASE_4.md`](../closures/RESOLUTION_ENGINE_PHASE_4.md) | Creación, Lifecycle, transiciones, invariantes, control optimista, orquestación pura y validaciones de la Fase 4. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_5.md`](../closures/RESOLUTION_ENGINE_PHASE_5.md) | Ejecución controlada, acciones, persistencia, idempotencia, locks, outbox, límites y validaciones de la Fase 5. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_6.md`](../closures/RESOLUTION_ENGINE_PHASE_6.md) | Dominio, contratos, persistencia, Lifecycle, ejecución síncrona, invariantes, límites y validaciones del Motor de Compensación de la Fase 6. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_7.md`](../closures/RESOLUTION_ENGINE_PHASE_7.md) | Modelo de auditoría/evidencia, consultas autorizadas, reconstrucción, integridad, pruebas y límites de la Fase 7. |
 
 ## Auditorías
 

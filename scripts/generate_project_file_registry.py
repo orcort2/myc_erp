@@ -85,6 +85,16 @@ FORCE_RECLASSIFY = {
     "docs/architecture/resolution-engine/18_COMPENSATION_ENGINE.md",
     "docs/architecture/resolution-engine/19_PHASE_7_OPENING.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_6.md",
+    "backend/app/resolution_engine/application/audit.py",
+    "backend/app/resolution_engine/contracts/audit.py",
+    "backend/app/resolution_engine/domain/audit.py",
+    "backend/app/resolution_engine/infrastructure/audit.py",
+    "backend/app/resolution_engine/infrastructure/audit_projection.py",
+    "backend/app/resolution_engine/infrastructure/security.py",
+    "backend/tests/resolution_engine/test_audit.py",
+    "backend/tests/resolution_engine/test_audit_persistence.py",
+    "docs/architecture/resolution-engine/20_AUDIT_EVIDENCE.md",
+    "docs/closures/RESOLUTION_ENGINE_PHASE_7.md",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -209,6 +219,130 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     }
     if value in phase_4_files:
         return phase_4_files[value]
+
+    phase_7_files = {
+        "backend/app/resolution_engine/application/__init__.py": (
+            "API de aplicación",
+            "Publica servicios aprobados de seguridad, Lifecycle, ejecución, compensación y consultas de auditoría hasta Fase 7.",
+            "Servicios de aplicación del Motor",
+            "Composición backend futura y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/application/audit.py": (
+            "Consultas de auditoría",
+            "Autoriza y construye reportes, timelines y consultas de evidencia sin mutar el expediente.",
+            "AuditRecordStore, AuditAccessVerifier y AuditEngine",
+            "Composición interna futura y pruebas de Fase 7",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/contracts/__init__.py": (
+            "API de contratos",
+            "Expone puertos de runtime, seguridad, Lifecycle, ejecución, compensación y auditoría sin filtrar infraestructura.",
+            "Protocols y comandos del Motor",
+            "Aplicación, adaptadores y definiciones",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/contracts/audit.py": (
+            "Contratos de auditoría",
+            "Declara AuditQuery y puertos read-only de expediente y autorización sin filtrar ORM o transporte.",
+            "Dominio puro de auditoría y Protocol",
+            "Aplicación, adaptadores y pruebas de Fase 7",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/domain/audit.py": (
+            "Dominio de auditoría y evidencia",
+            "Modela nodos, vínculos, registro, timeline y reporte; verifica hashes, alcance, secuencia y correlaciones con diagnósticos estables.",
+            "Canonical hashing y errores del Motor",
+            "Servicio de auditoría, adaptador SQL y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/domain/__init__.py": (
+            "API de dominio",
+            "Publica tipos inmutables de seguridad, Lifecycle, ejecución, compensación, auditoría y evidencia aprobados hasta Fase 7.",
+            "Módulos puros del dominio",
+            "Aplicación, contratos, adaptadores y consumidores",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/domain/exceptions.py": (
+            "Jerarquía de errores",
+            "Distingue errores de definición, Lifecycle, seguridad, ejecución, compensación y auditoría con códigos y contexto estables.",
+            "Excepciones estándar",
+            "Todas las capas del Motor y mapeo API futuro",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/infrastructure/__init__.py": (
+            "API de infraestructura",
+            "Publica runtime, repositorios y adaptadores SQL de Lifecycle, ejecución, compensación, outbox y auditoría hasta Fase 7.",
+            "Infraestructura del Motor",
+            "Bootstrap futuro y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/infrastructure/audit.py": (
+            "Adaptador SQL de auditoría",
+            "Carga el expediente, valida acceso exacto y delega su proyección read-only sin modificar Lifecycle.",
+            "SQLAlchemy, ResolutionRepository, AuditProjector y contratos",
+            "AuditQueryService y pruebas persistentes",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/audit_projection.py": (
+            "Proyector SQL de evidencia",
+            "Traduce explícitamente las 26 tablas generales a nodos y vínculos puros agrupados por planificación, gobierno, ejecución, seguridad y compensación.",
+            "SQLAlchemy inspection, ResolutionRecord y dominio de auditoría",
+            "SqlAlchemyAuditRecordStore y pruebas persistentes",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/security.py": (
+            "Persistencia de evidencia de seguridad",
+            "Conserva decisiones append-only y añade la base canónica completa dentro del context_snapshot para verificación futura exacta.",
+            "SQLAlchemy, dominio de seguridad y modelos generales",
+            "Autorización, auditoría y pruebas",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_audit.py": (
+            "Pruebas de dominio de auditoría",
+            "Cubre hashes, replay, timeline, filtros, huecos, duplicados, evidencia ajena, referencias y acceso denegado.",
+            "AuditEngine, AuditQueryService y pytest",
+            "Gate funcional de Fase 7",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_audit_persistence.py": (
+            "Pruebas persistentes de auditoría",
+            "Reconstruye Lifecycle, seguridad, ejecución y compensación; verifica alteraciones, autorización exacta y ausencia de efectos.",
+            "SQLAlchemy, servicios y expediente completo del Motor",
+            "Gate de integración de Fase 7",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_architecture.py": (
+            "Pruebas de arquitectura",
+            "Inspecciona capas, autoridad de Lifecycle y que auditoría sea read-only sin ERP, transporte, workers o fases posteriores.",
+            "ast, pathlib y paquete resolution_engine",
+            "Gates arquitectónicos de Fases 1 a 7",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/19_PHASE_7_OPENING.md": (
+            "Apertura aprobada de Fase 7",
+            "Registra autorización, objetivo, alcance, exclusiones, entregables, invariantes y gate de Auditoría y Evidencia.",
+            "Roadmap, matriz y capacidades aprobadas de Fases 1 a 6",
+            "Arquitectura, dirección, desarrollo y revisión de Fase 7",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/20_AUDIT_EVIDENCE.md": (
+            "Contrato de Auditoría y Evidencia",
+            "Documenta modelo, autorización, reconstrucción, hashes, timeline, persistencia reutilizada, invariantes y límites de Fase 7.",
+            "Especificación, matriz y código de Fase 7",
+            "Arquitectura, desarrollo, QA y fases posteriores",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_7.md": (
+            "Cierre técnico de Fase 7",
+            "Registra componentes, integridad, autorización, pruebas, ausencia de migración, deuda y estado EN REVISIÓN.",
+            "Implementación, arquitectura y validaciones de Fase 7",
+            "Arquitectura, desarrollo, QA, dirección y auditoría",
+            "Alto",
+        ),
+    }
+    if value in phase_7_files:
+        return phase_7_files[value]
 
     phase_6_files = {
         "backend/app/resolution_engine/__init__.py": (

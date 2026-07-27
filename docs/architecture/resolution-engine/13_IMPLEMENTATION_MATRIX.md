@@ -59,7 +59,7 @@ dominio.
 | 4. Ciclo de decisión sin efectos | `APROBADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
 | 5. Ejecución controlada | `APROBADA` | Modelo y Engine de ejecución, Executor, Action Runner, contratos, checkpoints, idempotencia, locks, resultados, eventos y publicación explícita de outbox | Plan autorizado/revalidado de Fase 4 | Sólo contradicciones que impidan ejecutar mediante contratos generales; no se integran módulos propietarios | Cumplido en `ca5fdda`: ejecución exacta, lock posterior al handler, incertidumbre preservada y outbox trazable |
 | 6. Motor de Compensación | `APROBADA` | Modelo declarativo, planes total/parcial, clausura transitiva, Runner, contratos, persistencia, Lifecycle, checkpoints, idempotencia, locks, auditoría y outbox | Ejecución controlada y seguridad exacta de Fases 3 a 5 | Sólo contradicciones que impidan vincular efectos reversibles confirmados; no automatización ni gateways | Cumplido en `74a3de5` + `e1d373e`: compensación reconstruible, segura, cerrada sobre dependientes y sin duplicados |
-| 7. Auditoría y Evidencia | `NO INICIADA` | Audit Engine, Evidence Registry, Resolution Timeline, Evidence Store y servicios de trazabilidad/reconstrucción | Expediente, seguridad, Lifecycle, ejecución y compensación aprobados | Sólo carencias que impidan verificar o reconstruir evidencia general; no integración ERP | Expediente completo reconstruible, correlacionado y verificable con diagnósticos explícitos |
+| 7. Auditoría y Evidencia | `EN REVISIÓN` | Audit Engine, Evidence Registry, Resolution Timeline, Evidence Store y servicios de trazabilidad/reconstrucción | Expediente, seguridad, Lifecycle, ejecución y compensación aprobados | Sólo carencias que impidan verificar o reconstruir evidencia general; no integración ERP | Cumplido: expediente reconstruible, consulta autorizada, correlación, timeline y diagnósticos de integridad explícitos |
 | 8. Seguridad integral | `NO INICIADA` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Protección de extremo a extremo sin evaluadores paralelos ni debilitamiento de Fase 3 |
 | 9. Integración con ERP MYC | `NO INICIADA` | Definiciones verticales, UC-001 y siguientes, providers y Domain Gateways concretos | Núcleo y auditoría aprobados; servicios canónicos de dominios participantes | Actor opcional, duplicidad o mutación inmediata únicamente del caso incorporado | Primeros casos completos sin acceso directo del Motor a tablas propietarias |
 | 10. SDK y API Pública | `NO INICIADA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Motor institucional e integraciones estabilizadas | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Contratos públicos completos sin filtrar internals ni duplicar reglas |
@@ -354,15 +354,15 @@ La Fase 0 se considera lista para revisión cuando:
   tablas generales de compensación.
 - Componentes adelantados: ninguno; no existen workers, retries, recuperación,
   conciliación, API, gateways o adaptadores concretos del ERP.
-- Continuación autorizable: apertura formal de Fase 7; su implementación sigue
-  prohibida hasta que esa apertura sea aprobada expresamente.
+- Continuación cumplida: la apertura formal de Fase 7 fue aprobada
+  expresamente antes de iniciar su implementación.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_6.md`](../../closures/RESOLUTION_ENGINE_PHASE_6.md).
 
 ## Preparación de apertura de Fase 7
 
 - Nombre oficial: **Auditoría y Evidencia**, conforme al roadmap.
-- Estado: `NO INICIADA`; propuesta de apertura pendiente de aprobación.
+- Estado de apertura: `APROBADA`; implementación cerrada `EN REVISIÓN`.
 - Objetivo: formalizar verificación, correlación, timeline, consultabilidad y
   reconstrucción sobre la evidencia ya producida por las Fases 1 a 6.
 - Consistencia: la tabla maestra fue corregida porque su secuencia antigua
@@ -370,5 +370,22 @@ La Fase 0 se considera lista para revisión cuando:
   integración ERP permanecen en fases posteriores.
 - Contrato propuesto:
   [`19_PHASE_7_OPENING.md`](19_PHASE_7_OPENING.md).
-- Prohibición vigente: no escribir código, esquema ni pruebas funcionales de
-  Fase 7 hasta aprobación expresa de la apertura.
+- Contrato implementado:
+  [`20_AUDIT_EVIDENCE.md`](20_AUDIT_EVIDENCE.md).
+
+## Resultado de Fase 7
+
+- Estado: `EN REVISIÓN`; Fase 8 `NO INICIADA`.
+- Modelo: evidencia normalizada, registro por identidad, timeline determinista,
+  reporte reproducible y errores estables de integridad.
+- Seguridad: toda consulta exige una decisión `resolution.audit.inspect`
+  `allowed` ligada a resolución, actor, correlación, recurso y organización.
+- Integridad: verifica hashes reproducibles, vínculos exactos, pertenencia al
+  expediente y secuencia continua de auditoría.
+- Persistencia: reutiliza el esquema general de Fase 2; no existe migración.
+- Lectura: el adaptador SQL no escribe, no controla Lifecycle y no filtra ORM
+  hacia dominio/aplicación.
+- Alcance: no se incorporaron API, SDK, ERP, gateways, workers, recuperación,
+  conciliación, retries ni distribución.
+- Evidencia detallada:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_7.md`](../../closures/RESOLUTION_ENGINE_PHASE_7.md).

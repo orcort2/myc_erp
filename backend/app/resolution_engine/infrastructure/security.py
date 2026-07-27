@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timezone
 from typing import Mapping
 
 from sqlalchemy import select
@@ -35,6 +36,27 @@ class SqlAlchemySecurityEvidenceStore:
     ) -> None:
         resource = decision.resource
         invalid_scope = "evidence_scope_invalid" in decision.reason_codes
+        evidence_payload = {
+            "outcome": decision.outcome.value,
+            "actor": decision.actor.snapshot(),
+            "action": str(decision.action),
+            "resource": resource.snapshot(),
+            "evaluated_at": (
+                decision.evaluated_at.astimezone(timezone.utc).isoformat()
+            ),
+            "policy_results": [
+                result.snapshot() for result in decision.policy_results
+            ],
+            "reason_codes": list(decision.reason_codes),
+            "required_permissions": [
+                str(permission)
+                for permission in decision.required_permissions
+            ],
+            "occurred_functions": dict(
+                context_snapshot.get("occurred_functions", {})
+            ),
+            "context": dict(context_snapshot.get("context", {})),
+        }
         self._session.add(
             ResolutionSecurityDecision(
                 resolution_id=resource.resolution_id,
@@ -72,6 +94,7 @@ class SqlAlchemySecurityEvidenceStore:
                 context_snapshot={
                     **dict(context_snapshot),
                     "attempted_resource": resource.snapshot(),
+                    "evidence_payload": evidence_payload,
                 },
                 evaluated_at=decision.evaluated_at,
                 correlation_id=(

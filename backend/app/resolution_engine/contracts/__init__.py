@@ -1,5 +1,11 @@
 """Contratos tipados y libres de infraestructura del Motor."""
 
+from app.resolution_engine.contracts.audit import (
+    AuditAccessVerifier,
+    AuditQuery,
+    AuditRecordStore,
+)
+
 from app.resolution_engine.contracts.components import (
     Analyzer,
     AuthorizationPolicy,
@@ -39,6 +45,9 @@ from app.resolution_engine.contracts.compensation import (
 )
 
 __all__ = [
+    "AuditRecordStore",
+    "AuditAccessVerifier",
+    "AuditQuery",
     "ActorContextProvider",
     "ActionHandler",
     "Analyzer",

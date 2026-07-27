@@ -92,10 +92,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 6
+## Motor de Resoluciones — Fase 7
 
 - Estado: Fases 0 a 6 `APROBADAS`; Fase 7 — Auditoría y Evidencia
-  `NO INICIADA`, con apertura formal propuesta y pendiente de aprobación.
+  `EN REVISIÓN`; Fase 8 `NO INICIADA`.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -128,16 +128,22 @@
 - No se incorporaron API, gateways concretos, integraciones propietarias,
   workers, schedulers, procesamiento masivo, recuperación, conciliación,
   retries ni compensación automática.
-- Validaciones: 166 pruebas del Motor; suite backend completa con 290 pruebas y
-  19 subpruebas; 11 pruebas frontend; build Vite; compilación Python y
-  arquitectura correctos.
-- La fase incorpora la migración reversible `d6e8f0a2b4c5`; la base y el
-  respaldo conservan ese `alembic_version`. `alembic check` sólo muestra la
-  deriva histórica `TD-021` y ninguna operación `resolution_*` atribuible a la
-  fase.
-- Contrato:
-  [`architecture/resolution-engine/18_COMPENSATION_ENGINE.md`](architecture/resolution-engine/18_COMPENSATION_ENGINE.md).
-- Cierre:
-  [`closures/RESOLUTION_ENGINE_PHASE_6.md`](closures/RESOLUTION_ENGINE_PHASE_6.md).
-- Apertura propuesta de Fase 7, sin autorización de implementación:
+- La Fase 7 incorpora modelo puro, `AuditEngine`, `EvidenceRegistry`,
+  `ResolutionTimeline`, consultas autorizadas y adaptador SQL read-only.
+  Verifica pertenencia, hashes reproducibles, vínculos exactos y secuencia; no
+  cambia Lifecycle, ejecución, compensación ni outbox.
+- Validaciones: 31 pruebas específicas/arquitectónicas; 182 pruebas del Motor;
+  backend completo con 306 pruebas y 19 subpruebas; 11 pruebas frontend; build
+  Vite y compilación Python correctos.
+- Fase 7 no incorpora migración. La base y el respaldo conservan
+  `d6e8f0a2b4c5 (head)`, procedente de Fase 6. `alembic check` sólo muestra la
+  deriva histórica `TD-021` y ninguna operación `resolution_*` atribuible a
+  esta fase.
+- `backup_erp_myc_antes_prueba.sql` no se regeneró porque la fase no modificó
+  esquema ni datos locales.
+- Apertura aprobada de Fase 7:
   [`architecture/resolution-engine/19_PHASE_7_OPENING.md`](architecture/resolution-engine/19_PHASE_7_OPENING.md).
+- Contrato:
+  [`architecture/resolution-engine/20_AUDIT_EVIDENCE.md`](architecture/resolution-engine/20_AUDIT_EVIDENCE.md).
+- Cierre:
+  [`closures/RESOLUTION_ENGINE_PHASE_7.md`](closures/RESOLUTION_ENGINE_PHASE_7.md).

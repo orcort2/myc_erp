@@ -1,5 +1,9 @@
-"""Adaptadores de persistencia y runtime autorizados hasta Fase 6."""
+"""Adaptadores de persistencia y runtime autorizados hasta Fase 7."""
 
+from app.resolution_engine.infrastructure.audit import (
+    SqlAlchemyAuditAccessVerifier,
+    SqlAlchemyAuditRecordStore,
+)
 from app.resolution_engine.infrastructure.execution import (
     SqlAlchemyExecutionStore,
 )
@@ -25,6 +29,8 @@ from app.resolution_engine.infrastructure.compensation import (
 )
 
 __all__ = [
+    "SqlAlchemyAuditAccessVerifier",
+    "SqlAlchemyAuditRecordStore",
     "ResolutionRecord",
     "ResolutionRepository",
     "SqlAlchemyExecutionControl",

@@ -26,6 +26,8 @@ draft → contexto → análisis → plan → simulación declarativa
 [si existe plan compensatorio autorizado y elegible]
 → compensating
 → compensated | partially_compensated | compensation_failed
+[consulta de auditoría autorizada]
+→ reconstrucción → verificación → timeline/reporte
 ```
 
 Un plan no autorizado o no revalidado no inicia. Cada acción se identifica por
@@ -44,6 +46,14 @@ transitivo; un efecto no confirmado o ya compensado no bloquea. Punto de no
 retorno, duplicado, actor distinto, fallo o pérdida de lock se rechazan o
 quedan trazados sin reinvocación. No existen API, workers, schedulers, retries,
 recuperación, conciliación ni compensación automática.
+
+La auditoría es un flujo read-only separado. Exige una decisión
+`resolution.audit.inspect` concedida para la resolución, actor, correlación,
+recurso y organización exactos. Después carga el expediente completo, proyecta
+su evidencia sin exponer ORM, verifica hashes, referencias, pertenencia y
+secuencia, y genera una línea de tiempo y un hash deterministas del corte. Los
+filtros se aplican sólo después de verificar el conjunto completo. La consulta
+no transita Lifecycle, no ejecuta handlers y no publica outbox.
 
 ## Flujo principal
 

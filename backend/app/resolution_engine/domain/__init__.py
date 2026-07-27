@@ -1,4 +1,16 @@
-"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 6."""
+"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 7."""
+
+from app.resolution_engine.domain.audit import (
+    AuditEngine,
+    AuditReport,
+    EvidenceIntegrity,
+    EvidenceLink,
+    EvidenceNode,
+    EvidenceRegistry,
+    ResolutionAuditSnapshot,
+    ResolutionTimeline,
+    TimelineEntry,
+)
 
 from app.resolution_engine.domain.definitions import (
     ComponentReference,
@@ -51,6 +63,15 @@ from app.resolution_engine.domain.compensation import (
 )
 
 __all__ = [
+    "AuditEngine",
+    "AuditReport",
+    "EvidenceIntegrity",
+    "EvidenceLink",
+    "EvidenceNode",
+    "EvidenceRegistry",
+    "ResolutionAuditSnapshot",
+    "ResolutionTimeline",
+    "TimelineEntry",
     "ComponentKey",
     "CompensableAction",
     "ConfirmedEffect",
