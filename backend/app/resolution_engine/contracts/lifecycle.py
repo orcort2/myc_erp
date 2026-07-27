@@ -60,6 +60,7 @@ class CreateResolutionCommand:
     title: str
     problem: ResolutionProblemInput
     actor: ActorContext
+    security_decision_id: int
     definition_version: str | None = None
     priority: ResolutionPriority = ResolutionPriority.NORMAL
     description: str | None = None
@@ -70,6 +71,8 @@ class CreateResolutionCommand:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.security_decision_id <= 0:
+            raise ValueError("security_decision_id must be positive")
         object.__setattr__(self, "source", ResolutionSource(self.source))
         object.__setattr__(
             self,
@@ -98,6 +101,17 @@ class LifecycleStore(Protocol):
 
     def load(self, resolution_id: int, /) -> ResolutionLifecycle | None:
         """Reconstruye la proyección y su evidencia vigente."""
+
+    def verify_transition_security(
+        self,
+        *,
+        resolution_id: int,
+        action: str,
+        security_decision_id: int,
+        actor: ActorContext,
+        occurred_at: datetime,
+    ) -> None:
+        """Deniega antes de reconstruir o cambiar el estado raíz."""
 
     def apply(self, transition: LifecycleTransition, /) -> ResolutionLifecycle:
         """Aplica transición y evento con versión esperada."""

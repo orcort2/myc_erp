@@ -142,6 +142,7 @@ class ExecutionCandidate:
     plan_version: int
     plan_hash: str
     revalidation_id: int
+    revalidation_hash: str
     initial_context_hash: str
     steps: tuple[ExecutionPlanStep, ...]
 
@@ -280,6 +281,8 @@ class ExecutionReservation:
     plan_version: int
     plan_hash: str
     revalidation_id: int
+    revalidation_hash: str
+    security_decision_id: int
     execution_key: str
     lock_token: str
     actor_id: str

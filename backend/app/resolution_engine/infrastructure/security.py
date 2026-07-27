@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from datetime import timezone
-from typing import Mapping
+from typing import Any, Mapping
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.resolution_engine.domain.security import SecurityDecision
 from app.resolution_engine.infrastructure.persistence import (
+    Resolution,
+    ResolutionExecution,
+    ResolutionRevalidation,
     ResolutionSecurityDecision,
 )
 from app.resolution_engine.infrastructure.persistence.governance import (
@@ -72,6 +75,12 @@ class SqlAlchemySecurityEvidenceStore:
                 simulation_hash=(
                     None if invalid_scope else resource.simulation_hash
                 ),
+                revalidation_id=(
+                    None if invalid_scope else resource.revalidation_id
+                ),
+                revalidation_hash=(
+                    None if invalid_scope else resource.revalidation_hash
+                ),
                 actor_id=decision.actor.identity.actor_id,
                 actor_type=decision.actor.identity.actor_type.value,
                 organization_id=decision.actor.identity.organization_id,
@@ -113,6 +122,31 @@ class SqlAlchemySecurityResourceVerifier:
 
     def verify(self, resource, /) -> tuple[str, ...]:
         reasons: list[str] = []
+        if resource.resolution_id is not None:
+            resolution = self._session.get(
+                Resolution,
+                resource.resolution_id,
+            )
+            if resolution is None:
+                reasons.append("resolution_missing")
+            else:
+                if resolution.organization_id != resource.organization_id:
+                    reasons.append("resolution_organization_mismatch")
+                if (
+                    resource.resolution_public_id is not None
+                    and resolution.public_id
+                    != resource.resolution_public_id
+                ):
+                    reasons.append("resolution_public_id_mismatch")
+                if (
+                    resource.resource_type == "resolution"
+                    and resource.resource_id
+                    not in {
+                        str(resolution.id),
+                        resolution.public_id,
+                    }
+                ):
+                    reasons.append("resolution_resource_id_mismatch")
         if resource.plan_id is not None:
             plan = self._session.scalar(
                 select(ResolutionPlan).where(
@@ -124,6 +158,11 @@ class SqlAlchemySecurityResourceVerifier:
             )
             if plan is None:
                 reasons.append("plan_resolution_version_hash_mismatch")
+            elif (
+                resource.resource_type == "resolution_plan"
+                and resource.resource_id != str(plan.id)
+            ):
+                reasons.append("plan_resource_id_mismatch")
         if resource.simulation_id is not None:
             simulation = self._session.scalar(
                 select(ResolutionSimulation).where(
@@ -136,6 +175,40 @@ class SqlAlchemySecurityResourceVerifier:
             )
             if simulation is None:
                 reasons.append("simulation_resolution_plan_hash_mismatch")
+        if resource.revalidation_id is not None:
+            revalidation = self._session.scalar(
+                select(ResolutionRevalidation).where(
+                    ResolutionRevalidation.id
+                    == resource.revalidation_id,
+                    ResolutionRevalidation.resolution_id
+                    == resource.resolution_id,
+                    ResolutionRevalidation.plan_id == resource.plan_id,
+                    ResolutionRevalidation.revalidation_hash
+                    == resource.revalidation_hash,
+                )
+            )
+            if revalidation is None:
+                reasons.append(
+                    "revalidation_resolution_plan_hash_mismatch"
+                )
+        if resource.resource_type == "resolution_execution":
+            try:
+                execution_id = int(resource.resource_id)
+            except (TypeError, ValueError):
+                execution_id = None
+            execution = (
+                self._session.scalar(
+                    select(ResolutionExecution).where(
+                        ResolutionExecution.id == execution_id,
+                        ResolutionExecution.resolution_id
+                        == resource.resolution_id,
+                    )
+                )
+                if execution_id is not None
+                else None
+            )
+            if execution is None:
+                reasons.append("execution_resolution_mismatch")
         if resource.authorization_request_id is not None:
             authorization = self._session.scalar(
                 select(ResolutionAuthorizationRequest).where(

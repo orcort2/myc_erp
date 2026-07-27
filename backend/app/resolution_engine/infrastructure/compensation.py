@@ -44,6 +44,7 @@ from app.resolution_engine.domain.lifecycle import (
     LifecycleTransition,
 )
 from app.resolution_engine.domain.security import ActorContext
+from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.execution_control import (
     SqlAlchemyExecutionControl,
 )
@@ -51,6 +52,10 @@ from app.resolution_engine.infrastructure.lifecycle import (
     SqlAlchemyLifecycleStore,
 )
 from app.resolution_engine.infrastructure.outbox import enqueue_outbox_event
+from app.resolution_engine.infrastructure.security_decisions import (
+    SecurityDecisionExpectation,
+    SqlAlchemySecurityDecisionVerifier,
+)
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
     ResolutionAuditEvent,
@@ -72,6 +77,7 @@ class SqlAlchemyCompensationStore:
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._session_factory = session_factory
         self._control = SqlAlchemyExecutionControl()
+        self._security = SqlAlchemySecurityDecisionVerifier()
 
     def load_source(
         self,
@@ -241,7 +247,11 @@ class SqlAlchemyCompensationStore:
         try:
             with self._session_factory() as session:
                 with session.begin():
-                    self._validate_security_decision(session, command)
+                    self._validate_security_decision(
+                        session,
+                        command,
+                        occurred_at=created_at,
+                    )
                     existing = session.scalar(
                         select(ResolutionCompensationPlan).where(
                             ResolutionCompensationPlan.plan_key
@@ -421,6 +431,7 @@ class SqlAlchemyCompensationStore:
                         session,
                         plan=current,
                         actor=command.actor,
+                        occurred_at=occurred_at,
                     )
                     self._control.acquire_lock(
                         session,
@@ -815,36 +826,38 @@ class SqlAlchemyCompensationStore:
         self,
         session: Session,
         command: PrepareCompensationCommand,
+        *,
+        occurred_at: datetime,
     ) -> None:
-        root = session.get(Resolution, command.resolution_id)
-        decision = session.get(
-            ResolutionSecurityDecision,
-            command.security_decision_id,
+        reasons = self._security.verify(
+            session,
+            SecurityDecisionExpectation(
+                decision_id=command.security_decision_id,
+                action="resolution.compensate",
+                resource_type="resolution_execution",
+                resource_id=str(command.source_execution_id),
+                actor=command.actor,
+                required_permissions=(
+                    ComponentKey("resolution.compensate"),
+                ),
+                occurred_at=occurred_at,
+                resolution_id=command.resolution_id,
+                context={},
+            ),
         )
-        if (
-            root is None
-            or decision is None
-            or decision.resolution_id != command.resolution_id
-            or decision.outcome != "allowed"
-            or decision.action != "resolution.compensate"
-            or decision.resource_type != "resolution_execution"
-            or decision.resource_id != str(command.source_execution_id)
-            or decision.actor_id != command.actor.identity.actor_id
-            or decision.organization_id
-            != command.actor.identity.organization_id
-            or root.organization_id
-            != command.actor.identity.organization_id
-        ):
+        if reasons:
             raise CompensationNotAllowedError(
-                "exact compensation authorization is missing"
+                "exact compensation authorization is invalid: "
+                + ", ".join(reasons)
             )
 
-    @staticmethod
     def _validate_execution_actor(
+        self,
         session: Session,
         *,
         plan: ResolutionCompensationPlan,
         actor: ActorContext,
+        occurred_at: datetime | None = None,
     ) -> None:
         root = session.get(Resolution, plan.resolution_id)
         decision = session.get(
@@ -868,6 +881,28 @@ class SqlAlchemyCompensationStore:
             raise CompensationNotAllowedError(
                 "compensation execution actor is not authorized"
             )
+        if occurred_at is not None:
+            reasons = self._security.verify(
+                session,
+                SecurityDecisionExpectation(
+                    decision_id=plan.security_decision_id,
+                    action="resolution.compensate",
+                    resource_type="resolution_execution",
+                    resource_id=str(plan.source_execution_id),
+                    actor=actor,
+                    required_permissions=(
+                        ComponentKey("resolution.compensate"),
+                    ),
+                    occurred_at=occurred_at,
+                    resolution_id=plan.resolution_id,
+                    context={},
+                ),
+            )
+            if reasons:
+                raise CompensationNotAllowedError(
+                    "compensation execution authorization is invalid: "
+                    + ", ".join(reasons)
+                )
 
     @staticmethod
     def _domain_plan(

@@ -10,10 +10,18 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.resolution_engine.contracts.execution import OutboxMessage
+from app.resolution_engine.contracts.execution import PublishOutboxCommand
 from app.resolution_engine.domain.canonical import canonical_sha256
 from app.resolution_engine.domain.enums import OutboxStatus
+from app.resolution_engine.domain.exceptions import ExecutionNotReadyError
+from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.persistence import (
+    Resolution,
     ResolutionOutboxEvent,
+)
+from app.resolution_engine.infrastructure.security_decisions import (
+    SecurityDecisionExpectation,
+    SqlAlchemySecurityDecisionVerifier,
 )
 
 
@@ -54,10 +62,40 @@ class SqlAlchemyOutboxStore:
 
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._session_factory = session_factory
+        self._security = SqlAlchemySecurityDecisionVerifier()
+
+    def verify_publication(
+        self,
+        command: PublishOutboxCommand,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        with self._session_factory() as session:
+            reasons = self._security.verify(
+                session,
+                SecurityDecisionExpectation(
+                    decision_id=command.security_decision_id,
+                    action="resolution.outbox.publish",
+                    resource_type="resolution_outbox",
+                    resource_id=command.organization_id,
+                    actor=command.actor,
+                    required_permissions=(
+                        ComponentKey("resolution.outbox.publish"),
+                    ),
+                    occurred_at=occurred_at,
+                    context={"limit": command.limit},
+                ),
+            )
+        if reasons:
+            raise ExecutionNotReadyError(
+                "exact outbox publication authorization is invalid: "
+                + ", ".join(reasons)
+            )
 
     def pending(
         self,
         *,
+        organization_id: str,
         available_at: datetime,
         limit: int,
     ) -> tuple[OutboxMessage, ...]:
@@ -65,7 +103,13 @@ class SqlAlchemyOutboxStore:
             rows = tuple(
                 session.scalars(
                     select(ResolutionOutboxEvent)
+                    .join(
+                        Resolution,
+                        Resolution.id
+                        == ResolutionOutboxEvent.resolution_id,
+                    )
                     .where(
+                        Resolution.organization_id == organization_id,
                         ResolutionOutboxEvent.status
                         == OutboxStatus.PENDING.value,
                         ResolutionOutboxEvent.available_at <= available_at,

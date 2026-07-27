@@ -189,6 +189,7 @@ def candidate():
         plan_version=1,
         plan_hash=PLAN_HASH,
         revalidation_id=70,
+        revalidation_hash="d" * 64,
         initial_context_hash="c" * 64,
         steps=steps(),
     )
@@ -227,6 +228,9 @@ class FakeStore:
         assert resolution_id == self.candidate.lifecycle.resolution_id
         return self.candidate
 
+    def verify_security(self, command, candidate, *, occurred_at):
+        assert candidate is self.candidate
+
     def find_outcome(self, **values):
         return self.previous
 
@@ -260,6 +264,8 @@ class FakeStore:
                 plan_version=1,
                 plan_hash=PLAN_HASH,
                 revalidation_id=70,
+                revalidation_hash="d" * 64,
+                security_decision_id=80,
                 execution_key=values["execution_key"],
                 lock_token=values["lock_token"],
                 actor_id="actor-1",
@@ -329,6 +335,7 @@ def command():
     return ExecuteResolutionCommand(
         resolution_id=1,
         idempotency_key="request-1",
+        security_decision_id=80,
         actor=actor(),
         lock_owner="test",
     )

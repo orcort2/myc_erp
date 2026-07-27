@@ -9,6 +9,12 @@ from sqlalchemy.orm import Session
 import app.models  # noqa: F401
 from app.core.db import Base
 from app.resolution_engine.application.audit import AuditQueryService
+from app.resolution_engine.application.security import (
+    OrganizationBoundaryPolicy,
+    PermissionPolicy,
+    ResolutionAuthorizationService,
+    SecurityPolicyEvaluator,
+)
 from app.resolution_engine.application.lifecycle import (
     LifecycleActor,
     ResolutionLifecycleService,
@@ -38,6 +44,7 @@ from app.resolution_engine.domain.security import (
     ActorIdentity,
     ActorType,
     AuthenticationContext,
+    PermissionGrant,
     SecurityDecision,
     SecurityDecisionOutcome,
     SecurityRequest,
@@ -57,6 +64,7 @@ from app.resolution_engine.infrastructure.lifecycle import (
 )
 from app.resolution_engine.infrastructure.security import (
     SqlAlchemySecurityEvidenceStore,
+    SqlAlchemySecurityResourceVerifier,
 )
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
@@ -141,6 +149,19 @@ def actor():
             source="test",
             correlation_id="correlation-audit",
         ),
+        permissions=(
+            PermissionGrant(
+                permission=ComponentKey("resolution.create"),
+            ),
+            PermissionGrant(
+                permission=ComponentKey(
+                    "resolution.lifecycle.transition"
+                ),
+            ),
+            PermissionGrant(
+                permission=ComponentKey("resolution.audit.inspect"),
+            ),
+        ),
     )
 
 
@@ -175,6 +196,13 @@ def lifecycle_service(session):
 
 def create_resolution(session):
     service = lifecycle_service(session)
+    security_decision_id = authorize_action(
+        session,
+        action="resolution.create",
+        resource_type="resolution_definition",
+        resource_id="audit.resolve@1.0",
+        context={"source": ResolutionSource.SYSTEM.value},
+    )
     created = service.create(
         CreateResolutionCommand(
             resolution_type="audit.resolve",
@@ -183,6 +211,7 @@ def create_resolution(session):
             subject_id="42",
             title="Auditable",
             actor=actor(),
+            security_decision_id=security_decision_id,
             problem=ResolutionProblemInput(
                 problem_code="audit.problem",
                 summary="Evidence required",
@@ -219,13 +248,64 @@ def create_auditable_resolution(session):
         resolution_id,
         LifecycleAction.RECORD_CONTEXT,
         actor=LifecycleActor(
-            actor_id="auditor-1",
-            actor_type="human",
-            correlation_id="correlation-audit",
+            context=actor(),
+            security_decision_id=authorize_action(
+                session,
+                action="resolution.lifecycle.transition",
+                resource_type="resolution",
+                resource_id=str(resolution_id),
+                resolution_id=resolution_id,
+                context={
+                    "lifecycle_action": (
+                        LifecycleAction.RECORD_CONTEXT.value
+                    )
+                },
+            ),
         ),
     )
     session.commit()
     return resolution_id
+
+
+def authorize_action(
+    session,
+    *,
+    action,
+    resource_type,
+    resource_id,
+    context,
+    resolution_id=None,
+):
+    request = SecurityRequest(
+        actor=actor(),
+        action=ComponentKey(action),
+        resource=SecurityResource(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            organization_id="organization-1",
+            resolution_id=resolution_id,
+        ),
+        required_permissions=(ComponentKey(action),),
+        context=context,
+    )
+    decision = ResolutionAuthorizationService(
+        evaluator=SecurityPolicyEvaluator(
+            (PermissionPolicy(), OrganizationBoundaryPolicy())
+        ),
+        evidence_store=SqlAlchemySecurityEvidenceStore(session),
+        resource_verifier=SqlAlchemySecurityResourceVerifier(session),
+        clock=FixedClock(),
+    ).authorize(request)
+    assert decision.outcome is SecurityDecisionOutcome.ALLOWED
+    session.flush()
+    return session.scalar(
+        select(ResolutionSecurityDecision.id)
+        .where(
+            ResolutionSecurityDecision.action == action,
+            ResolutionSecurityDecision.resource_id == resource_id,
+        )
+        .order_by(ResolutionSecurityDecision.id.desc())
+    )
 
 
 def authorize_audit_query(session, resolution_id):
@@ -238,24 +318,21 @@ def authorize_audit_query(session, resolution_id):
             organization_id="organization-1",
             resolution_id=resolution_id,
         ),
-        required_permissions=(),
+        required_permissions=(
+            ComponentKey("resolution.audit.inspect"),
+        ),
         occurred_functions={"requester": ("auditor-1",)},
         context={"purpose": "phase-7-test"},
     )
-    decision = SecurityDecision.build(
-        outcome=SecurityDecisionOutcome.ALLOWED,
-        request=request,
-        evaluated_at=NOW,
-        policy_results=(),
-        reason_codes=("audit_test_allowed",),
-    )
-    SqlAlchemySecurityEvidenceStore(session).append(
-        decision,
-        context_snapshot={
-            "occurred_functions": dict(request.occurred_functions),
-            "context": dict(request.context),
-        },
-    )
+    decision = ResolutionAuthorizationService(
+        evaluator=SecurityPolicyEvaluator(
+            (PermissionPolicy(), OrganizationBoundaryPolicy())
+        ),
+        evidence_store=SqlAlchemySecurityEvidenceStore(session),
+        resource_verifier=SqlAlchemySecurityResourceVerifier(session),
+        clock=FixedClock(),
+    ).authorize(request)
+    assert decision.outcome is SecurityDecisionOutcome.ALLOWED
     session.flush()
     persisted = session.scalar(
         select(ResolutionSecurityDecision)
@@ -269,9 +346,10 @@ def authorize_audit_query(session, resolution_id):
     return (
         AuditQuery(
             resolution_id=resolution_id,
-            actor_id="auditor-1",
-            correlation_id="correlation-audit",
             security_decision_id=persisted.id,
+            actor=actor(),
+            requested_at=NOW,
+            context={"purpose": "phase-7-test"},
         ),
         persisted,
     )
@@ -371,9 +449,21 @@ def test_sql_audit_uses_one_snapshot_during_concurrent_transition(tmp_path):
                     resolution_id,
                     LifecycleAction.RECORD_CONTEXT,
                     actor=LifecycleActor(
-                        actor_id="auditor-1",
-                        actor_type="human",
-                        correlation_id="correlation-audit",
+                        context=actor(),
+                        security_decision_id=authorize_action(
+                            writer,
+                            action=(
+                                "resolution.lifecycle.transition"
+                            ),
+                            resource_type="resolution",
+                            resource_id=str(resolution_id),
+                            resolution_id=resolution_id,
+                            context={
+                                "lifecycle_action": (
+                                    LifecycleAction.RECORD_CONTEXT.value
+                                )
+                            },
+                        ),
                     ),
                 )
                 writer.commit()
@@ -468,15 +558,39 @@ def test_sql_audit_access_is_bound_to_exact_actor_and_correlation():
         verifier = SqlAlchemyAuditAccessVerifier(session)
 
         assert verifier.verify(query) == ()
-        assert verifier.verify(
-            replace(query, actor_id="another-actor")
-        ) == ("security_actor_mismatch",)
-        assert verifier.verify(
-            replace(query, correlation_id="another-correlation")
-        ) == ("security_correlation_mismatch",)
+        assert set(verifier.verify(
+            replace(
+                query,
+                actor=replace(
+                    query.actor,
+                    identity=replace(
+                        query.actor.identity,
+                        actor_id="another-actor",
+                    ),
+                ),
+            )
+        )) == {
+            "security_actor_mismatch",
+            "security_actor_snapshot_mismatch",
+        }
+        assert set(verifier.verify(
+            replace(
+                query,
+                actor=replace(
+                    query.actor,
+                    authentication=replace(
+                        query.actor.authentication,
+                        correlation_id="another-correlation",
+                    ),
+                ),
+            )
+        )) == {
+            "security_correlation_mismatch",
+            "security_authentication_snapshot_mismatch",
+        }
         assert verifier.verify(
             replace(query, security_decision_id=999999)
-        ) == ("security_decision_missing_or_foreign",)
+        ) == ("security_decision_missing",)
 
 
 def test_completed_compensation_is_reconstructed_without_side_effects():

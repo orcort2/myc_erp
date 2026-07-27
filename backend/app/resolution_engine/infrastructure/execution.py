@@ -36,6 +36,7 @@ from app.resolution_engine.domain.execution import (
 )
 from app.resolution_engine.domain.lifecycle import LifecycleTransition
 from app.resolution_engine.domain.security import ActorContext
+from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.execution_control import (
     SqlAlchemyExecutionControl,
 )
@@ -51,10 +52,16 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionEntityReference,
     ResolutionExecution,
     ResolutionIdempotencyRecord,
+    ResolutionPlan,
     ResolutionPlanStep,
     ResolutionPlanStepDependency,
+    ResolutionRevalidation,
     ResolutionResult as ResolutionResultModel,
     ResolutionStepExecution,
+)
+from app.resolution_engine.infrastructure.security_decisions import (
+    SecurityDecisionExpectation,
+    SqlAlchemySecurityDecisionVerifier,
 )
 from app.resolution_engine.infrastructure.repositories import (
     ResolutionRepository,
@@ -67,6 +74,7 @@ class SqlAlchemyExecutionStore:
     def __init__(self, session_factory: Callable[[], Session]) -> None:
         self._session_factory = session_factory
         self._control = SqlAlchemyExecutionControl()
+        self._security = SqlAlchemySecurityDecisionVerifier()
 
     def load_candidate(
         self,
@@ -131,8 +139,25 @@ class SqlAlchemyExecutionStore:
                 plan_version=plan.version,
                 plan_hash=plan.plan_hash,
                 revalidation_id=revalidation.id,
+                revalidation_hash=revalidation.revalidation_hash,
                 initial_context_hash=context.context_hash,
                 steps=steps,
+            )
+
+    def verify_security(
+        self,
+        command: ExecuteResolutionCommand,
+        candidate: ExecutionCandidate,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        with self._session_factory() as session:
+            self._validate_execution_security(
+                session,
+                command=command,
+                plan_id=candidate.plan_id,
+                revalidation_id=candidate.revalidation_id,
+                occurred_at=occurred_at,
             )
 
     def find_outcome(
@@ -160,6 +185,19 @@ class SqlAlchemyExecutionStore:
         try:
             with self._session_factory() as session:
                 with session.begin():
+                    prepared_plan_id, prepared_revalidation_id = (
+                        self._validate_prepared_evidence(
+                            session,
+                            transition=transition,
+                        )
+                    )
+                    self._validate_execution_security(
+                        session,
+                        command=command,
+                        plan_id=prepared_plan_id,
+                        revalidation_id=prepared_revalidation_id,
+                        occurred_at=occurred_at,
+                    )
                     previous = self._existing_execution(
                         session,
                         key=command.idempotency_key,
@@ -169,12 +207,6 @@ class SqlAlchemyExecutionStore:
                         return StartExecutionResult(
                             previous_outcome=previous
                         )
-                    prepared_plan_id, prepared_revalidation_id = (
-                        self._validate_prepared_evidence(
-                            session,
-                            transition=transition,
-                        )
-                    )
                     lock_key = f"resolution:{command.resolution_id}"
                     self._control.acquire_lock(
                         session,
@@ -189,6 +221,9 @@ class SqlAlchemyExecutionStore:
                         resolution_id=command.resolution_id,
                         plan_id=prepared_plan_id,
                         revalidation_id=prepared_revalidation_id,
+                        security_decision_id=(
+                            command.security_decision_id
+                        ),
                         attempt_number=1,
                         status=ExecutionStatus.RUNNING.value,
                         execution_key=execution_key,
@@ -256,6 +291,15 @@ class SqlAlchemyExecutionStore:
                             else ""
                         ),
                         revalidation_id=execution.revalidation_id,
+                        revalidation_hash=(
+                            self._required_revalidation_hash(
+                                session,
+                                execution.revalidation_id,
+                            )
+                        ),
+                        security_decision_id=(
+                            command.security_decision_id
+                        ),
                         execution_key=execution.execution_key,
                         lock_token=lock_token,
                         actor_id=command.actor.identity.actor_id,
@@ -803,6 +847,71 @@ class SqlAlchemyExecutionStore:
         if evidence is None:
             raise ExecutionNotReadyError("context evidence is missing")
         return evidence.context_hash
+
+    @staticmethod
+    def _required_revalidation_hash(
+        session: Session,
+        revalidation_id: int,
+    ) -> str:
+        value = session.scalar(
+            select(ResolutionRevalidation.revalidation_hash).where(
+                ResolutionRevalidation.id == revalidation_id
+            )
+        )
+        if value is None:
+            raise ExecutionNotReadyError(
+                "revalidation evidence is missing"
+            )
+        return value
+
+    def _validate_execution_security(
+        self,
+        session: Session,
+        *,
+        command: ExecuteResolutionCommand,
+        plan_id: int,
+        revalidation_id: int,
+        occurred_at: datetime,
+    ) -> None:
+        plan = session.get(ResolutionPlan, plan_id)
+        revalidation = session.get(
+            ResolutionRevalidation,
+            revalidation_id,
+        )
+        if plan is None or revalidation is None:
+            raise ExecutionNotReadyError(
+                "execution authorization evidence is incomplete"
+            )
+        reasons = self._security.verify(
+            session,
+            SecurityDecisionExpectation(
+                decision_id=command.security_decision_id,
+                action="resolution.execute",
+                resource_type="resolution_plan",
+                resource_id=str(plan.id),
+                actor=command.actor,
+                required_permissions=(
+                    ComponentKey("resolution.execute"),
+                ),
+                occurred_at=occurred_at,
+                resolution_id=command.resolution_id,
+                plan_id=plan.id,
+                plan_version=plan.version,
+                plan_hash=plan.plan_hash,
+                revalidation_id=revalidation.id,
+                revalidation_hash=revalidation.revalidation_hash,
+                context={
+                    "resolution_status": (
+                        ResolutionStatus.READY_FOR_EXECUTION.value
+                    ),
+                },
+            ),
+        )
+        if reasons:
+            raise ExecutionNotReadyError(
+                "exact execution authorization is invalid: "
+                + ", ".join(reasons)
+            )
 
     @staticmethod
     def _step_key(execution_key: str, step_key: str) -> str:

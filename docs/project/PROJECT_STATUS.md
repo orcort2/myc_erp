@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fase 7 en revisión; Fase 8 no iniciada); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fase 8 en revisión; Fase 9 no iniciada); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -46,7 +46,7 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
 
-El Motor de Resoluciones tiene aprobadas las Fases 0 a 6 y la Fase 7 está
+El Motor de Resoluciones tiene aprobadas las Fases 0 a 7 y la Fase 8 está
 `EN REVISIÓN`. Además de fundación, persistencia, seguridad,
 Lifecycle y ejecución, existe compensación total/parcial síncrona de efectos
 confirmados declarados reversibles. Plan, autorización, ejecución original,
@@ -57,7 +57,10 @@ recuperación, conciliación, retries ni compensación automática. Auditoría y
 Evidencia reconstruye el expediente completo mediante un adaptador read-only,
 abre un snapshot transaccional consistente, verifica hashes, secuencia y
 vínculos, exige autorización exacta y produce timeline/reporte deterministas
-sin mezclar confirmaciones concurrentes. La Fase 8 permanece `NO INICIADA`.
+sin mezclar confirmaciones concurrentes. Seguridad integral añade un catálogo
+canónico de controles y exige evidencia exacta en Lifecycle, ejecución,
+compensación, consultas y outbox antes de leer replays o producir efectos. La
+Fase 9 permanece `NO INICIADA`.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.

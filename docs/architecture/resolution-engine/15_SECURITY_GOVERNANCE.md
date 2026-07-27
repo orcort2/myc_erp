@@ -140,8 +140,10 @@ transformar roles en condicionales distribuidos.
 
 ## Evolución
 
-Fases posteriores pueden registrar políticas concretas, adaptar la identidad del
-ERP y consumir el servicio desde lifecycle o API. No deben crear evaluadores
+Fase 8 consume este servicio desde Lifecycle y los demás límites críticos,
+agrega el catálogo integral dentro del mismo evaluador y verifica decisiones
+persistidas sin reevaluar políticas. La futura integración podrá adaptar la identidad del
+ERP y consumir el servicio desde API. No debe crear evaluadores
 paralelos, permisos codificados en servicios, booleanos de aprobación ni
 accesos directos desde el Motor a `User`, `Role` o módulos propietarios.
 
@@ -150,3 +152,6 @@ Desde Fase 6, preparar o ejecutar una compensación consume una decisión
 organización y actor exactos. La evidencia se vuelve a comprobar antes de
 resolver idempotencia o replay; conocer una clave no entrega resultados a otro
 actor ni sustituye autorización.
+
+El endurecimiento transversal vigente y la lista completa de capacidades se
+definen en [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md).

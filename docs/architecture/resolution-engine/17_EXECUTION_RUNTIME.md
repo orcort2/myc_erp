@@ -157,7 +157,9 @@ fuente y poseen `event_key` y `payload_hash` estables.
 ## Publicación de outbox
 
 La publicación es una llamada síncrona y explícita; no existe proceso
-automático. El publicador externo debe ser idempotente por `event_key`. Un éxito
+automático. Desde Fase 8 exige una decisión `resolution.outbox.publish`
+ligada a actor, organización y límite del lote, y el store sólo selecciona
+eventos de esa organización. El publicador externo debe ser idempotente por `event_key`. Un éxito
 marca `published`; una excepción marca `failed`, conserva `failed_at`,
 `attempts` y `last_error`, y no agenda otro intento. Claims distribuidos,
 backoff, recuperación y workers pertenecen a una fase posterior expresamente
@@ -182,3 +184,8 @@ Recuperación, conciliación de resultados inciertos, reintentos, compensaciones
 workers, gateways concretos, API y ejecución distribuida continúan fuera de
 alcance. Incorporarlos exigirá fase aprobada, políticas explícitas y pruebas que
 preserven las claves y evidencia histórica de este contrato.
+
+Desde Fase 8, `ExecuteResolutionCommand` incluye la decisión
+`resolution.execute` ligada a plan y revalidación exactos. Se verifica antes
+de consultar replay y otra vez dentro de la reserva transaccional; conocer una
+clave idempotente no permite recuperar el resultado de otro actor.

@@ -22,7 +22,7 @@ EXCLUDED_PARTS = {
 EXCLUDED_NAMES = {
     ".DS_Store", "backup_erp_myc_antes_prueba.sql", "BytesIO",
     ".tmp_field_sheet_templates.json", "package-lock.json", "from", "import", "io",
-    "BACKUP_ESTADO_ACTUAL (1).md",
+    "BACKUP_ESTADO_ACTUAL (1).md", "resolution_engine.zip",
 }
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
@@ -95,6 +95,18 @@ FORCE_RECLASSIFY = {
     "backend/tests/resolution_engine/test_audit_persistence.py",
     "docs/architecture/resolution-engine/20_AUDIT_EVIDENCE.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_7.md",
+    "backend/app/resolution_engine/application/security.py",
+    "backend/app/resolution_engine/contracts/lifecycle.py",
+    "backend/app/resolution_engine/domain/security.py",
+    "backend/app/resolution_engine/infrastructure/security_decisions.py",
+    "backend/migrations/versions/e7f9a1b3c5d7_resolution_engine_phase_8_security.py",
+    "backend/tests/resolution_engine/test_phase_8_security.py",
+    "docs/architecture/resolution-engine/21_PHASE_8_OPENING.md",
+    "docs/architecture/resolution-engine/22_INTEGRAL_SECURITY.md",
+    "docs/closures/RESOLUTION_ENGINE_PHASE_8.md",
+    "backend/app/resolution_engine/contracts/audit.py",
+    "backend/app/resolution_engine/infrastructure/audit.py",
+    "backend/app/resolution_engine/infrastructure/persistence/execution.py",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -166,6 +178,179 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
 
+    phase_8_files = {
+        "backend/app/resolution_engine/__init__.py": (
+            "API interna estable del Motor",
+            "Expone Lifecycle, ejecución, compensación y comando de outbox autorizados hasta Fase 8 sin incorporar transporte ni ERP.",
+            "Aplicación, contratos y dominio del Motor",
+            "Bootstrap futuro e integraciones registradas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/application/__init__.py": (
+            "API de aplicación",
+            "Publica catálogo/evaluador integral, Lifecycle, ejecución, compensación, auditoría y outbox protegidos hasta Fase 8.",
+            "Servicios de aplicación del Motor",
+            "Composición interna y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/contracts/__init__.py": (
+            "API de contratos",
+            "Expone comandos y puertos protegidos de Lifecycle, ejecución, compensación, auditoría y outbox sin filtrar infraestructura.",
+            "Protocols y comandos del Motor",
+            "Aplicación, adaptadores y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/contracts/audit.py": (
+            "Contratos de auditoría protegida",
+            "Declara AuditQuery con ActorContext, instante, contexto y decisión exactos, además de puertos read-only.",
+            "Dominio de auditoría y seguridad",
+            "AuditQueryService, adaptador SQL y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/contracts/execution.py": (
+            "Contratos de ejecución protegida",
+            "Declara comandos con decisión exacta, verificación pre-replay y publicación outbox autorizada por organización.",
+            "ActorContext, dominio de ejecución y Lifecycle",
+            "Executor, stores, publicador y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/execution.py": (
+            "Executor protegido",
+            "Valida actor/comando, exige seguridad antes del replay y coordina Lifecycle, idempotencia, locks, handlers y checkpoints.",
+            "ExecutionStore, Engine, ActionRunner y state machine",
+            "Composición interna y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/outbox.py": (
+            "Publicación outbox protegida",
+            "Verifica la decisión institucional antes de leer y publica explícitamente el lote autorizado sin scheduler ni retry.",
+            "PublishOutboxCommand, OutboxStore, Publisher y Clock",
+            "Composición operativa futura y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/audit.py": (
+            "Adaptador SQL de auditoría",
+            "Verifica actor/contexto exactos y materializa el expediente read-only dentro de un snapshot estable.",
+            "Verificador integral, SQLAlchemy, Repository y Projector",
+            "AuditQueryService y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/compensation.py": (
+            "Adaptador SQL de compensación",
+            "Revalida la misma evidencia integral en preparación/inicio y persiste planes/checkpoints con Lifecycle, locks, auditoría y outbox.",
+            "SQLAlchemy, verificador integral y modelos del Motor",
+            "Planner, Executor y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/execution.py": (
+            "Adaptador SQL de ejecución",
+            "Verifica autorización antes de replay y dentro de la reserva, vinculando ejecución con plan, revalidación y decisión exactos.",
+            "SQLAlchemy, verificador integral, Lifecycle y controles",
+            "ResolutionExecutor y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/lifecycle.py": (
+            "Persistencia protegida de Lifecycle",
+            "Verifica creación/transición exactas, conserva sus IDs de decisión y aplica únicamente transiciones calculadas por la máquina.",
+            "SQLAlchemy, verificador integral, modelos y Repository",
+            "ResolutionLifecycleService, executors y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/outbox.py": (
+            "Store de outbox protegido",
+            "Verifica publicación exacta y selecciona sólo eventos pendientes de la organización autorizada antes de marcar resultados.",
+            "SQLAlchemy, verificador integral y modelos outbox",
+            "OutboxPublicationService y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/security.py": (
+            "Evidencia y recursos de seguridad",
+            "Persiste decisiones con base canónica/revalidación y comprueba raíces, planes, simulaciones, revalidaciones y ejecuciones exactas.",
+            "SQLAlchemy, dominio de seguridad y modelos del Motor",
+            "AuthorizationService, verificador común y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/persistence/evidence.py": (
+            "Modelo ORM de evidencia integral",
+            "Define decisiones append-only vinculables a plan, simulación, autorización y revalidación exactos, además del outbox.",
+            "SQLAlchemy Base y modelos del Motor",
+            "Seguridad, auditoría, Alembic y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/persistence/execution.py": (
+            "Modelo ORM de ejecución protegida",
+            "Vincula cada ejecución nueva con plan, revalidación y decisión de seguridad exactos y conserva checkpoints/resultados.",
+            "SQLAlchemy Base y modelos de evidencia",
+            "ExecutionStore, Repository, Alembic y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/security.py": (
+            "Autorización integral",
+            "Mantiene el único evaluador de políticas e incorpora el catálogo versionado de acción, permiso, recurso y riesgo con deny-by-default.",
+            "Dominio de seguridad, Clock y puertos de evidencia",
+            "Lifecycle, ejecución, compensación, auditoría, outbox y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/contracts/lifecycle.py": (
+            "Contratos protegidos de Lifecycle",
+            "Declara creación con decisión exacta y el puerto que verifica seguridad antes de reconstruir o transitar la raíz.",
+            "ActorContext, definiciones y dominio Lifecycle",
+            "Servicio, adaptador SQL y pruebas de Fases 4 y 8",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/domain/security.py": (
+            "Dominio de seguridad integral",
+            "Modela identidad, autenticación, permisos contextuales, recursos exactos, catálogo de controles y decisiones canónicas inmutables.",
+            "Canonical hashing y value objects",
+            "Evaluador, verificadores, persistencia y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/security_decisions.py": (
+            "Verificador de decisiones persistidas",
+            "Comprueba una concesión append-only exacta sin reevaluar políticas: actor, autenticación, permisos, contexto, recurso, plan, revalidación y hash.",
+            "SQLAlchemy, modelos del Motor y dominio de seguridad",
+            "Lifecycle, ejecución, compensación, auditoría y outbox",
+            "Crítico",
+        ),
+        "backend/migrations/versions/e7f9a1b3c5d7_resolution_engine_phase_8_security.py": (
+            "Migración de Fase 8",
+            "Vincula decisiones con revalidación y ejecuciones con autorización exacta mediante columnas compatibles, FKs, constraint e índice reversibles.",
+            "Alembic, Fase 6 y modelos de seguridad/ejecución",
+            "Despliegues, restauraciones y auditoría del Motor",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_phase_8_security.py": (
+            "Suite de seguridad integral",
+            "Cubre catálogo completo, downgrade, recursos falsos, permisos contextuales, autenticación futura, tampering, replay ajeno, migración y verificador único.",
+            "Dominio, aplicación, adaptadores SQL y migración de Fase 8",
+            "Gate específico de Fase 8",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/21_PHASE_8_OPENING.md": (
+            "Apertura oficial de Fase 8",
+            "Registra autorización, alcance, exclusiones, dependencias, invariantes, validaciones y prohibición de iniciar Fase 9.",
+            "Aprobación de Fase 7, roadmap y matriz",
+            "Arquitectura, dirección, desarrollo y revisión",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/22_INTEGRAL_SECURITY.md": (
+            "Contrato de seguridad integral",
+            "Documenta autoridad única, catálogo, reglas reforzadas y protección de Lifecycle, ejecución, compensación, auditoría y outbox.",
+            "Fases 1 a 7, código, migración y suite de Fase 8",
+            "Arquitectura, desarrollo, QA y fases posteriores",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_8.md": (
+            "Cierre técnico de Fase 8",
+            "Consolida componentes, invariantes, migración, validaciones, exclusiones y estado EN REVISIÓN antes de Fase 9.",
+            "Implementación, arquitectura y validaciones de Fase 8",
+            "Arquitectura, desarrollo, QA, dirección y auditoría",
+            "Alto",
+        ),
+    }
+    if value in phase_8_files:
+        return phase_8_files[value]
+
     phase_4_files = {
         "backend/app/resolution_engine/contracts/lifecycle.py": (
             "Contratos de Lifecycle",
@@ -223,7 +408,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     phase_7_files = {
         "backend/app/resolution_engine/application/__init__.py": (
             "API de aplicación",
-            "Publica servicios aprobados de seguridad, Lifecycle, ejecución, compensación y consultas de auditoría hasta Fase 7.",
+            "Publica servicios aprobados de seguridad integral, Lifecycle, ejecución, compensación, outbox y consultas de auditoría hasta Fase 8.",
             "Servicios de aplicación del Motor",
             "Composición backend futura y pruebas",
             "Alto",
@@ -258,7 +443,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/domain/__init__.py": (
             "API de dominio",
-            "Publica tipos inmutables de seguridad, Lifecycle, ejecución, compensación, auditoría y evidencia aprobados hasta Fase 7.",
+            "Publica tipos inmutables de seguridad integral, Lifecycle, ejecución, compensación, auditoría y evidencia aprobados hasta Fase 8.",
             "Módulos puros del dominio",
             "Aplicación, contratos, adaptadores y consumidores",
             "Alto",
@@ -272,14 +457,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/__init__.py": (
             "API de infraestructura",
-            "Publica runtime, repositorios y adaptadores SQL de Lifecycle, ejecución, compensación, outbox y auditoría hasta Fase 7.",
+            "Publica runtime, repositorios, verificador integral y adaptadores SQL de Lifecycle, ejecución, compensación, outbox y auditoría hasta Fase 8.",
             "Infraestructura del Motor",
             "Bootstrap futuro y pruebas",
             "Alto",
         ),
         "backend/app/resolution_engine/infrastructure/audit.py": (
             "Adaptador SQL de auditoría",
-            "Valida acceso exacto y materializa el expediente y su proyección read-only dentro de un snapshot REPEATABLE READ/SERIALIZABLE sin modificar Lifecycle.",
+            "Valida actor, contexto y decisión integral exactos y materializa el expediente read-only dentro de un snapshot REPEATABLE READ/SERIALIZABLE sin modificar Lifecycle.",
             "SQLAlchemy, ResolutionRepository, AuditProjector y contratos",
             "AuditQueryService y pruebas persistentes",
             "Crítico",
@@ -293,7 +478,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/security.py": (
             "Persistencia de evidencia de seguridad",
-            "Conserva decisiones append-only y añade la base canónica completa dentro del context_snapshot para verificación futura exacta.",
+            "Conserva decisiones append-only, revalidación exacta y base canónica completa dentro del context_snapshot para verificación integral.",
             "SQLAlchemy, dominio de seguridad y modelos generales",
             "Autorización, auditoría y pruebas",
             "Crítico",
@@ -307,16 +492,16 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/tests/resolution_engine/test_audit_persistence.py": (
             "Pruebas persistentes de auditoría",
-            "Reconstruye Lifecycle, seguridad, ejecución y compensación; intercala una transición concurrente y verifica snapshot íntegro, alteraciones, autorización exacta y ausencia de efectos.",
+            "Reconstruye Lifecycle, seguridad, ejecución y compensación; intercala una transición concurrente y verifica snapshot íntegro, autorización integral y ausencia de efectos.",
             "SQLAlchemy, servicios y expediente completo del Motor",
             "Gate de integración de Fase 7",
             "Crítico",
         ),
         "backend/tests/resolution_engine/test_architecture.py": (
             "Pruebas de arquitectura",
-            "Inspecciona capas, autoridad de Lifecycle, frontera de snapshot y que auditoría sea read-only sin ERP, transporte, workers o fases posteriores.",
+            "Inspecciona capas, autoridad de Lifecycle, verificador único, frontera de snapshot y ausencia de ERP, transporte, workers o fases posteriores.",
             "ast, pathlib y paquete resolution_engine",
-            "Gates arquitectónicos de Fases 1 a 7",
+            "Gates arquitectónicos de Fases 1 a 8",
             "Crítico",
         ),
         "docs/architecture/resolution-engine/19_PHASE_7_OPENING.md": (
@@ -335,7 +520,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/closures/RESOLUTION_ENGINE_PHASE_7.md": (
             "Cierre técnico de Fase 7",
-            "Registra componentes, integridad, autorización, pruebas, ausencia de migración, deuda y estado EN REVISIÓN.",
+            "Registra componentes, integridad, autorización, pruebas, ausencia de migración y aprobación formal mediante los commits aceptados.",
             "Implementación, arquitectura y validaciones de Fase 7",
             "Arquitectura, desarrollo, QA, dirección y auditoría",
             "Alto",

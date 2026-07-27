@@ -62,6 +62,8 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/resolution-engine/18_COMPENSATION_ENGINE.md`](../architecture/resolution-engine/18_COMPENSATION_ENGINE.md) | Contrato implementado de planificación y ejecución compensatoria síncrona, Lifecycle, autorización exacta, checkpoints, idempotencia, locks, auditoría y outbox de la Fase 6. |
 | [`../architecture/resolution-engine/19_PHASE_7_OPENING.md`](../architecture/resolution-engine/19_PHASE_7_OPENING.md) | Apertura aprobada, objetivo, alcance, exclusiones, entregables, invariantes y gate de Fase 7 — Auditoría y Evidencia. |
 | [`../architecture/resolution-engine/20_AUDIT_EVIDENCE.md`](../architecture/resolution-engine/20_AUDIT_EVIDENCE.md) | Contrato implementado de reconstrucción, evidencia verificable, autorización de consultas, timeline y diagnósticos de integridad de Fase 7. |
+| [`../architecture/resolution-engine/21_PHASE_8_OPENING.md`](../architecture/resolution-engine/21_PHASE_8_OPENING.md) | Apertura oficial, alcance, exclusiones, invariantes y gate de Fase 8 — Seguridad integral. |
+| [`../architecture/resolution-engine/22_INTEGRAL_SECURITY.md`](../architecture/resolution-engine/22_INTEGRAL_SECURITY.md) | Contrato implementado de controles canónicos, verificación común y protección de límites críticos del Motor en Fase 8. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -84,6 +86,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/RESOLUTION_ENGINE_PHASE_5.md`](../closures/RESOLUTION_ENGINE_PHASE_5.md) | Ejecución controlada, acciones, persistencia, idempotencia, locks, outbox, límites y validaciones de la Fase 5. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_6.md`](../closures/RESOLUTION_ENGINE_PHASE_6.md) | Dominio, contratos, persistencia, Lifecycle, ejecución síncrona, invariantes, límites y validaciones del Motor de Compensación de la Fase 6. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_7.md`](../closures/RESOLUTION_ENGINE_PHASE_7.md) | Modelo de auditoría/evidencia, consultas autorizadas, reconstrucción, integridad, pruebas y límites de la Fase 7. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_8.md`](../closures/RESOLUTION_ENGINE_PHASE_8.md) | Catálogo integral, autorización exacta, límites protegidos, migración, pruebas y exclusiones de la Fase 8. |
 
 ## Auditorías
 

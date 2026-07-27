@@ -38,6 +38,17 @@ class SecurityDecisionOutcome(StrEnum):
     DENIED = "denied"
 
 
+class SecurityRiskLevel(StrEnum):
+    LOW = "low"
+    MODERATE = "moderate"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+INTEGRAL_SECURITY_POLICY_KEY = "security.integral_control_catalog"
+INTEGRAL_SECURITY_POLICY_VERSION = "1.0"
+
+
 def _non_empty(value: str, field_name: str, *, maximum: int = 200) -> str:
     normalized = value.strip() if isinstance(value, str) else ""
     if not normalized or len(normalized) > maximum:
@@ -136,8 +147,18 @@ class AuthenticationContext:
                 )
         object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
+    def validity_reasons(self, instant: datetime) -> tuple[str, ...]:
+        if instant.tzinfo is None:
+            return ("authentication_validation_time_invalid",)
+        reasons: list[str] = []
+        if instant < self.authenticated_at:
+            reasons.append("authentication_not_yet_valid")
+        if self.expires_at is not None and instant >= self.expires_at:
+            reasons.append("authentication_expired")
+        return tuple(reasons)
+
     def is_valid_at(self, instant: datetime) -> bool:
-        return self.expires_at is None or instant < self.expires_at
+        return not self.validity_reasons(instant)
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -201,7 +222,9 @@ class PermissionGrant:
         resource_type: str,
         resource_id: str,
         instant: datetime,
+        context: Mapping[str, Any] | None = None,
     ) -> bool:
+        operation_context = context or {}
         return (
             self.permission == permission
             and (self.valid_from is None or self.valid_from <= instant)
@@ -212,6 +235,10 @@ class PermissionGrant:
                     self.resource_type == resource_type
                     and self.resource_id == resource_id
                 )
+            )
+            and all(
+                operation_context.get(key) == value
+                for key, value in self.constraints.items()
             )
         )
 
@@ -240,8 +267,7 @@ class ActorContext:
         reasons: list[str] = []
         if self.identity.status is not ActorStatus.ACTIVE:
             reasons.append("actor_not_active")
-        if not self.authentication.is_valid_at(instant):
-            reasons.append("authentication_expired")
+        reasons.extend(self.authentication.validity_reasons(instant))
         return tuple(reasons)
 
     def snapshot(self) -> dict[str, Any]:
@@ -264,6 +290,8 @@ class SecurityResource:
     plan_hash: str | None = None
     simulation_id: int | None = None
     simulation_hash: str | None = None
+    revalidation_id: int | None = None
+    revalidation_hash: str | None = None
     authorization_request_id: int | None = None
     attributes: Mapping[str, Any] = field(default_factory=dict)
 
@@ -275,17 +303,53 @@ class SecurityResource:
                 raise InvalidResolutionValueError(
                     "plan_id requires plan_version and plan_hash"
                 )
+            if self.plan_id <= 0 or self.plan_version <= 0:
+                raise InvalidResolutionValueError(
+                    "plan identifiers and version must be positive"
+                )
             if len(self.plan_hash) != 64:
                 raise InvalidResolutionValueError("plan_hash must be SHA-256")
+        elif self.plan_version is not None or self.plan_hash is not None:
+            raise InvalidResolutionValueError(
+                "plan_version and plan_hash require plan_id"
+            )
         if self.simulation_id is not None:
             if self.plan_id is None or self.simulation_hash is None:
                 raise InvalidResolutionValueError(
                     "simulation_id requires plan and simulation_hash"
                 )
+            if self.simulation_id <= 0:
+                raise InvalidResolutionValueError(
+                    "simulation_id must be positive"
+                )
             if len(self.simulation_hash) != 64:
                 raise InvalidResolutionValueError(
                     "simulation_hash must be SHA-256"
                 )
+        elif self.simulation_hash is not None:
+            raise InvalidResolutionValueError(
+                "simulation_hash requires simulation_id"
+            )
+        if (self.revalidation_id is None) != (
+            self.revalidation_hash is None
+        ):
+            raise InvalidResolutionValueError(
+                "revalidation_id and revalidation_hash must be provided together"
+            )
+        if self.revalidation_hash is not None and len(
+            self.revalidation_hash
+        ) != 64:
+            raise InvalidResolutionValueError(
+                "revalidation_hash must be SHA-256"
+            )
+        if self.revalidation_id is not None and self.plan_id is None:
+            raise InvalidResolutionValueError(
+                "revalidation requires an exact plan"
+            )
+        if self.revalidation_id is not None and self.revalidation_id <= 0:
+            raise InvalidResolutionValueError(
+                "revalidation_id must be positive"
+            )
         object.__setattr__(self, "attributes", MappingProxyType(dict(self.attributes)))
 
     def snapshot(self) -> dict[str, Any]:
@@ -300,9 +364,66 @@ class SecurityResource:
             "plan_hash": self.plan_hash,
             "simulation_id": self.simulation_id,
             "simulation_hash": self.simulation_hash,
+            "revalidation_id": self.revalidation_id,
+            "revalidation_hash": self.revalidation_hash,
             "authorization_request_id": self.authorization_request_id,
             "attributes": dict(self.attributes),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class SecurityControl:
+    """Control institucional canónico para una capacidad protegida."""
+
+    action: ComponentKey
+    required_permissions: tuple[ComponentKey, ...]
+    resource_types: tuple[str, ...]
+    risk_level: SecurityRiskLevel
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "action", ComponentKey.parse(self.action))
+        object.__setattr__(
+            self,
+            "required_permissions",
+            tuple(
+                ComponentKey.parse(permission)
+                for permission in self.required_permissions
+            ),
+        )
+        object.__setattr__(
+            self,
+            "risk_level",
+            SecurityRiskLevel(self.risk_level),
+        )
+        if not self.required_permissions:
+            raise InvalidResolutionValueError(
+                "security control requires at least one permission"
+            )
+        if len(set(self.required_permissions)) != len(
+            self.required_permissions
+        ):
+            raise InvalidResolutionValueError(
+                "security control permissions must be unique"
+            )
+        normalized_resource_types = tuple(
+            _non_empty(value, "resource_type")
+            for value in self.resource_types
+        )
+        if not normalized_resource_types:
+            raise InvalidResolutionValueError(
+                "security control requires resource types"
+            )
+        if len(set(normalized_resource_types)) != len(
+            normalized_resource_types
+        ):
+            raise InvalidResolutionValueError(
+                "security control resource types must be unique"
+            )
+        object.__setattr__(
+            self,
+            "resource_types",
+            normalized_resource_types,
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -28,7 +28,7 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `d6e8f0a2b4c5`.
+- Revisión aplicada y único head verificado: `e7f9a1b3c5d7`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -41,11 +41,14 @@
 - `d6e8f0a2b4c5` amplía los estados raíz y agrega cuatro tablas generales de
   compensación con FKs exactas, unicidad de efecto, índices y protección
   histórica.
+- `e7f9a1b3c5d7` vincula decisiones de seguridad con revalidación exacta y
+  ejecuciones con su decisión institucional mediante FKs compuestas,
+  constraint de completitud e índice; las columnas son nulas para históricos.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,190,864 bytes.
-- SHA-256 verificado: `655b81f54b8bff277bb5dd7d7f95074f910b74894f99bcb49fd3aa3db44fda4b`.
-- El respaldo contiene `alembic_version = d6e8f0a2b4c5`.
+- Tamaño verificado: 74,192,563 bytes.
+- SHA-256 verificado: `7afc23f7996cbea6aaf70870fac0fa1c7649891220aee9917bc7503d545fe6d0`.
+- El respaldo contiene `alembic_version = e7f9a1b3c5d7`.
 
 ## Equipos y contexto de certificado
 
@@ -58,17 +61,19 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 290 pruebas y 19 subpruebas correctas.
-- Suite específica del Motor: 166 pruebas correctas, incluidas creación,
+- Suite backend completa: 319 pruebas y 19 subpruebas correctas; dos
+  advertencias conocidas de dependencias.
+- Suite específica de Fase 8: 11 pruebas correctas.
+- Suite completa del Motor: 195 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
   revalidación, concurrencia, persistencia, ejecución, compensación,
   arquitectura, esquema y migraciones.
 - Frontend: 11 pruebas correctas y build Vite de producción correcto; permanece
   la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL: `d6e8f0a2b4c5` aplicó, revirtió a `c5d7e9f1a3b4` y reaplicó a
-  head; la fase agregó exclusivamente estados y tablas `resolution_compensation_*`.
-- `alembic heads/current`: único head `d6e8f0a2b4c5`.
+- PostgreSQL: `e7f9a1b3c5d7` aplicó, revirtió a `d6e8f0a2b4c5` y reaplicó a
+  head correctamente.
+- `alembic heads/current`: único head `e7f9a1b3c5d7`.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
   como `TD-021`; no propone operaciones sobre el esquema del Motor.
 - `git diff --check`: correcto.
@@ -92,10 +97,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 7
+## Motor de Resoluciones — Fase 8
 
-- Estado: Fases 0 a 6 `APROBADAS`; Fase 7 — Auditoría y Evidencia
-  `EN REVISIÓN`; Fase 8 `NO INICIADA`.
+- Estado: Fases 0 a 7 `APROBADAS`; Fase 8 — Seguridad integral
+  `EN REVISIÓN`; Fase 9 `NO INICIADA`.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -119,9 +124,9 @@
 - Una selección parcial debe incluir todos los dependientes confirmados activos,
   directos o transitivos. La infracción se rechaza antes de persistir con error
   estructurado; efectos sin confirmar o ya compensados no bloquean.
-- El outbox se publica sólo mediante una invocación explícita y un publicador
-  idempotente por `event_key`; un fallo conserva `failed_at`, intentos y error,
-  sin scheduler ni reintento.
+- El outbox se publica sólo mediante una invocación explícita autorizada,
+  aislada por organización y un publicador idempotente por `event_key`; un
+  fallo conserva `failed_at`, intentos y error, sin scheduler ni reintento.
 - La clave idempotente interna tiene namespace global por scope. Una futura API
   deberá autorizarla y namespaciarla por cliente/organización antes de construir
   el comando interno.
@@ -136,18 +141,21 @@
   `REPEATABLE READ` en PostgreSQL y `SERIALIZABLE` explícito en SQLite. La
   prueba concurrente confirma que una transición intercalada nunca produce un
   expediente híbrido.
-- Validaciones: 33 pruebas específicas/arquitectónicas; 184 pruebas del Motor;
-  backend completo con 308 pruebas y 19 subpruebas; 11 pruebas frontend; build
-  Vite y compilación Python correctos.
-- Fase 7 no incorpora migración. La base y el respaldo conservan
-  `d6e8f0a2b4c5 (head)`, procedente de Fase 6. `alembic check` sólo muestra la
-  deriva histórica `TD-021` y ninguna operación `resolution_*` atribuible a
-  esta fase.
-- `backup_erp_myc_antes_prueba.sql` no se regeneró porque la fase no modificó
-  esquema ni datos locales.
-- Apertura aprobada de Fase 7:
-  [`architecture/resolution-engine/19_PHASE_7_OPENING.md`](architecture/resolution-engine/19_PHASE_7_OPENING.md).
+- Fase 8 agrega el catálogo integral dentro del evaluador de Fase 3. Lifecycle,
+  ejecución, compensación, auditoría y outbox comparten un único verificador de
+  decisiones persistidas y deniegan antes de replay, lectura o efecto.
+- La autenticación futura/expirada, permisos fuera de contexto, downgrade de
+  permiso, recursos falsos y evidencia/hash alterados se rechazan.
+- Validaciones: 11 pruebas específicas; 40 pruebas específicas/arquitectónicas;
+  195 pruebas del Motor; backend completo con 319 pruebas y 19 subpruebas; 11
+  pruebas frontend; build Vite y compilación Python correctos.
+- La migración reversible `e7f9a1b3c5d7` fue probada en
+  upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva histórica
+  `TD-021` y ninguna operación `resolution_*` adicional atribuible a Fase 8.
+- El respaldo SQL fue regenerado y coincide con el head.
+- Apertura aprobada de Fase 8:
+  [`architecture/resolution-engine/21_PHASE_8_OPENING.md`](architecture/resolution-engine/21_PHASE_8_OPENING.md).
 - Contrato:
-  [`architecture/resolution-engine/20_AUDIT_EVIDENCE.md`](architecture/resolution-engine/20_AUDIT_EVIDENCE.md).
+  [`architecture/resolution-engine/22_INTEGRAL_SECURITY.md`](architecture/resolution-engine/22_INTEGRAL_SECURITY.md).
 - Cierre:
-  [`closures/RESOLUTION_ENGINE_PHASE_7.md`](closures/RESOLUTION_ENGINE_PHASE_7.md).
+  [`closures/RESOLUTION_ENGINE_PHASE_8.md`](closures/RESOLUTION_ENGINE_PHASE_8.md).

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
@@ -11,15 +10,19 @@ from app.resolution_engine.contracts.audit import (
     AuditQuery,
 )
 from app.resolution_engine.domain.audit import ResolutionAuditSnapshot
+from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.audit_projection import (
     AuditProjector,
 )
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
-    ResolutionSecurityDecision,
 )
 from app.resolution_engine.infrastructure.repositories import (
     ResolutionRepository,
+)
+from app.resolution_engine.infrastructure.security_decisions import (
+    SecurityDecisionExpectation,
+    SqlAlchemySecurityDecisionVerifier,
 )
 
 
@@ -57,44 +60,28 @@ class SqlAlchemyAuditAccessVerifier:
 
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._security = SqlAlchemySecurityDecisionVerifier()
 
     def verify(self, query: AuditQuery, /) -> tuple[str, ...]:
-        reasons: list[str] = []
-        decision = self._session.scalar(
-            select(ResolutionSecurityDecision).where(
-                ResolutionSecurityDecision.id
-                == query.security_decision_id,
-                ResolutionSecurityDecision.resolution_id
-                == query.resolution_id,
-            )
-        )
-        if decision is None:
-            return ("security_decision_missing_or_foreign",)
-        if decision.outcome != "allowed":
-            reasons.append("security_decision_denied")
-        if decision.action != AUDIT_READ_ACTION:
-            reasons.append("security_action_mismatch")
-        if decision.actor_id != query.actor_id:
-            reasons.append("security_actor_mismatch")
-        if decision.correlation_id != query.correlation_id:
-            reasons.append("security_correlation_mismatch")
-        if decision.resource_type != "resolution":
-            reasons.append("security_resource_type_mismatch")
         resolution = self._session.get(Resolution, query.resolution_id)
         if resolution is None:
-            reasons.append("resolution_missing")
-        elif decision.resource_id not in {
-            str(query.resolution_id),
-            resolution.public_id,
-        }:
-            reasons.append("security_resource_id_mismatch")
-        if (
-            resolution is not None
-            and resolution.organization_id is not None
-            and decision.organization_id != resolution.organization_id
-        ):
-            reasons.append("security_organization_mismatch")
-        return tuple(reasons)
+            return ("resolution_missing",)
+        return self._security.verify(
+            self._session,
+            SecurityDecisionExpectation(
+                decision_id=query.security_decision_id,
+                action=AUDIT_READ_ACTION,
+                resource_type="resolution",
+                resource_id=str(query.resolution_id),
+                actor=query.actor,
+                required_permissions=(
+                    ComponentKey(AUDIT_READ_ACTION),
+                ),
+                occurred_at=query.requested_at,
+                resolution_id=query.resolution_id,
+                context=query.context,
+            ),
+        )
 
 
 def _audit_snapshot_isolation(engine: Engine) -> str:

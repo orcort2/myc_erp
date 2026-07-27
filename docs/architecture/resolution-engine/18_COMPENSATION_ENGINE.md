@@ -105,6 +105,10 @@ actor que inicia o consulta el replay de ejecución debe ser el actor exacto del
 plan autorizado. Los adaptadores futuros deberán solicitar esta decisión
 mediante las políticas de Fase 3; el Motor no conoce roles ni tablas del ERP.
 
+Desde Fase 8, preparación e inicio reutilizan el verificador integral y además
+exigen permiso todavía vigente, snapshots exactos de actor/autenticación,
+contexto, política integral y hash canónico reproducible.
+
 ## Lifecycle
 
 Transiciones nuevas:

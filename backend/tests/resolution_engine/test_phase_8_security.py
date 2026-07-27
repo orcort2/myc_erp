@@ -1,0 +1,281 @@
+"""Suite específica de Fase 8: seguridad integral del Motor."""
+
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker
+
+from app.resolution_engine.application.security import (
+    INTEGRAL_SECURITY_CONTROLS,
+    OrganizationBoundaryPolicy,
+    PermissionPolicy,
+    SecurityPolicyEvaluator,
+)
+from app.resolution_engine.domain.enums import ResolutionStatus
+from app.resolution_engine.domain.exceptions import ExecutionNotReadyError
+from app.resolution_engine.domain.security import (
+    ActorContext,
+    ActorIdentity,
+    ActorType,
+    AuthenticationContext,
+    PermissionGrant,
+    SecurityDecisionOutcome,
+    SecurityRequest,
+    SecurityResource,
+)
+from app.resolution_engine.domain.value_objects import ComponentKey
+from app.resolution_engine.infrastructure.persistence import (
+    ResolutionExecution,
+    ResolutionSecurityDecision,
+)
+from tests.resolution_engine.test_execution_persistence import (
+    Handler,
+    NOW,
+    actor,
+    build_executor,
+    command,
+    seed_ready_resolution,
+    sqlite_engine,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def request(
+    *,
+    action: str = "resolution.execute",
+    permission: str = "resolution.execute",
+    resource_type: str = "resolution_plan",
+    context=None,
+    grant_constraints=None,
+    authenticated_at=NOW - timedelta(minutes=1),
+):
+    operation_context = (
+        {"resolution_status": ResolutionStatus.READY_FOR_EXECUTION.value}
+        if context is None
+        else context
+    )
+    return SecurityRequest(
+        actor=ActorContext(
+            identity=ActorIdentity(
+                actor_id="phase-8-actor",
+                actor_type=ActorType.HUMAN,
+                principal="phase8@example.test",
+                organization_id="organization-1",
+            ),
+            authentication=AuthenticationContext(
+                authenticated_at=authenticated_at,
+                method="test",
+                session_id="phase-8-session",
+                assurance_level="high",
+                source="phase-8-test",
+                correlation_id="phase-8-correlation",
+            ),
+            permissions=(
+                PermissionGrant(
+                    permission=ComponentKey(permission),
+                    constraints=grant_constraints or {},
+                ),
+            ),
+        ),
+        action=ComponentKey(action),
+        resource=SecurityResource(
+            resource_type=resource_type,
+            resource_id="10",
+            organization_id="organization-1",
+            resolution_id=1,
+            plan_id=10 if resource_type == "resolution_plan" else None,
+            plan_version=1 if resource_type == "resolution_plan" else None,
+            plan_hash="a" * 64 if resource_type == "resolution_plan" else None,
+            revalidation_id=20
+            if resource_type == "resolution_plan"
+            else None,
+            revalidation_hash="b" * 64
+            if resource_type == "resolution_plan"
+            else None,
+        ),
+        required_permissions=(ComponentKey(permission),),
+        context=operation_context,
+    )
+
+
+def evaluator():
+    return SecurityPolicyEvaluator(
+        (PermissionPolicy(), OrganizationBoundaryPolicy())
+    )
+
+
+def test_integral_catalog_covers_every_phase_1_to_7_capability_once():
+    actions = tuple(str(control.action) for control in INTEGRAL_SECURITY_CONTROLS)
+
+    assert len(actions) == len(set(actions))
+    assert set(actions) == {
+        "resolution.create",
+        "resolution.lifecycle.transition",
+        "resolution.context.build",
+        "resolution.analyze",
+        "resolution.strategy.select",
+        "resolution.plan.build",
+        "resolution.simulate",
+        "resolution.plan.authorize",
+        "resolution.revalidate",
+        "resolution.execute",
+        "resolution.compensate",
+        "resolution.audit.inspect",
+        "resolution.outbox.publish",
+    }
+
+
+@pytest.mark.parametrize(
+    ("security_request", "reason"),
+    (
+        (
+            request(action="resolution.unknown", permission="resolution.unknown"),
+            "unregistered_protected_action",
+        ),
+        (
+            request(permission="resolution.audit.inspect"),
+            "required_permissions_downgrade",
+        ),
+        (
+            request(resource_type="resolution"),
+            "protected_resource_type_mismatch",
+        ),
+    ),
+)
+def test_integral_catalog_denies_unknown_downgraded_or_mistyped_requests(
+    security_request,
+    reason,
+):
+    decision = evaluator().evaluate(
+        security_request,
+        evaluated_at=NOW,
+    )
+
+    assert decision.outcome is SecurityDecisionOutcome.DENIED
+    assert reason in decision.reason_codes
+    assert len(decision.policy_results) == 1
+
+
+def test_contextual_permission_cannot_be_reused_outside_its_constraints():
+    constrained = request(
+        context={"resolution_status": "draft"},
+        grant_constraints={
+            "resolution_status": ResolutionStatus.READY_FOR_EXECUTION.value,
+        },
+    )
+
+    decision = evaluator().evaluate(constrained, evaluated_at=NOW)
+
+    assert decision.outcome is SecurityDecisionOutcome.DENIED
+    assert "missing_required_permissions" in decision.reason_codes
+
+
+def test_baseline_policies_cannot_be_removed_by_composition():
+    security_request = request()
+    security_request = replace(
+        security_request,
+        actor=replace(security_request.actor, permissions=()),
+    )
+
+    decision = SecurityPolicyEvaluator(()).evaluate(
+        security_request,
+        evaluated_at=NOW,
+    )
+
+    assert decision.outcome is SecurityDecisionOutcome.DENIED
+    assert "missing_required_permissions" in decision.reason_codes
+
+
+def test_authentication_is_rejected_before_its_validity_window():
+    decision = evaluator().evaluate(
+        request(authenticated_at=NOW + timedelta(minutes=1)),
+        evaluated_at=NOW,
+    )
+
+    assert decision.outcome is SecurityDecisionOutcome.DENIED
+    assert "authentication_not_yet_valid" in decision.reason_codes
+
+
+def test_execution_rejects_tampered_security_evidence_before_any_effect():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+        decision = session.scalar(select(ResolutionSecurityDecision))
+        decision.context_snapshot = {
+            **decision.context_snapshot,
+            "context": {"resolution_status": "draft"},
+        }
+        session.commit()
+    handler = Handler()
+
+    with pytest.raises(
+        ExecutionNotReadyError,
+        match="exact execution authorization is invalid",
+    ):
+        build_executor(factory, handler).execute(command(resolution_id))
+
+    assert handler.calls == []
+    with factory() as session:
+        assert session.scalar(select(ResolutionExecution)) is None
+
+
+def test_idempotency_replay_does_not_disclose_another_actors_outcome():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+    handler = Handler()
+    service = build_executor(factory, handler)
+    service.execute(command(resolution_id))
+    foreign_actor = replace(
+        actor(),
+        identity=replace(actor().identity, actor_id="foreign-actor"),
+    )
+
+    with pytest.raises(
+        ExecutionNotReadyError,
+        match="exact execution authorization is invalid",
+    ):
+        service.execute(
+            replace(command(resolution_id), actor=foreign_actor)
+        )
+
+    assert len(handler.calls) == 1
+
+
+def test_phase_8_migration_preserves_historical_rows_and_exact_links():
+    source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "e7f9a1b3c5d7_resolution_engine_phase_8_security.py"
+    ).read_text()
+
+    assert 'down_revision: str | None = "d6e8f0a2b4c5"' in source
+    assert "fk_resolution_executions_security_decision" in source
+    assert "fk_resolution_security_decisions_revalidation" in source
+    assert "ck_resolution_security_decisions_revalidation_complete" in source
+    assert 'sa.Column("security_decision_id", BIGINT_ID)' in source
+
+
+def test_critical_consumers_share_one_persisted_decision_verifier():
+    infrastructure = ROOT / "app" / "resolution_engine" / "infrastructure"
+    for filename in (
+        "execution.py",
+        "compensation.py",
+        "audit.py",
+        "lifecycle.py",
+        "outbox.py",
+    ):
+        source = (infrastructure / filename).read_text()
+        assert "SqlAlchemySecurityDecisionVerifier" in source
+    evaluator_definitions = sum(
+        path.read_text().count("class SecurityPolicyEvaluator")
+        for path in (ROOT / "app" / "resolution_engine").rglob("*.py")
+    )
+    assert evaluator_definitions == 1

@@ -59,8 +59,8 @@ dominio.
 | 4. Ciclo de decisión sin efectos | `APROBADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
 | 5. Ejecución controlada | `APROBADA` | Modelo y Engine de ejecución, Executor, Action Runner, contratos, checkpoints, idempotencia, locks, resultados, eventos y publicación explícita de outbox | Plan autorizado/revalidado de Fase 4 | Sólo contradicciones que impidan ejecutar mediante contratos generales; no se integran módulos propietarios | Cumplido en `ca5fdda`: ejecución exacta, lock posterior al handler, incertidumbre preservada y outbox trazable |
 | 6. Motor de Compensación | `APROBADA` | Modelo declarativo, planes total/parcial, clausura transitiva, Runner, contratos, persistencia, Lifecycle, checkpoints, idempotencia, locks, auditoría y outbox | Ejecución controlada y seguridad exacta de Fases 3 a 5 | Sólo contradicciones que impidan vincular efectos reversibles confirmados; no automatización ni gateways | Cumplido en `74a3de5` + `e1d373e`: compensación reconstruible, segura, cerrada sobre dependientes y sin duplicados |
-| 7. Auditoría y Evidencia | `EN REVISIÓN` | Audit Engine, Evidence Registry, Resolution Timeline, Evidence Store y servicios de trazabilidad/reconstrucción | Expediente, seguridad, Lifecycle, ejecución y compensación aprobados | Sólo carencias que impidan verificar o reconstruir evidencia general; no integración ERP | Cumplido: expediente reconstruible, consulta autorizada, correlación, timeline y diagnósticos de integridad explícitos |
-| 8. Seguridad integral | `NO INICIADA` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Protección de extremo a extremo sin evaluadores paralelos ni debilitamiento de Fase 3 |
+| 7. Auditoría y Evidencia | `APROBADA` | Audit Engine, Evidence Registry, Resolution Timeline, Evidence Store y servicios de trazabilidad/reconstrucción | Expediente, seguridad, Lifecycle, ejecución y compensación aprobados | Sólo carencias que impidan verificar o reconstruir evidencia general; no integración ERP | Cumplido en `4ae25ea` + `768ef6e`: expediente reconstruible, consulta autorizada, snapshot consistente, timeline y diagnósticos explícitos |
+| 8. Seguridad integral | `EN REVISIÓN` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Cumplido técnicamente: catálogo central, decisiones exactas y límites críticos protegidos sin evaluadores paralelos |
 | 9. Integración con ERP MYC | `NO INICIADA` | Definiciones verticales, UC-001 y siguientes, providers y Domain Gateways concretos | Núcleo y auditoría aprobados; servicios canónicos de dominios participantes | Actor opcional, duplicidad o mutación inmediata únicamente del caso incorporado | Primeros casos completos sin acceso directo del Motor a tablas propietarias |
 | 10. SDK y API Pública | `NO INICIADA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Motor institucional e integraciones estabilizadas | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Contratos públicos completos sin filtrar internals ni duplicar reglas |
 | 11. Motor Distribuido | `NO INICIADA` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Contratos públicos estables, evidencia y operación verificables | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Distribución sin reinterpretar históricos ni confirmar efectos inciertos |
@@ -375,7 +375,7 @@ La Fase 0 se considera lista para revisión cuando:
 
 ## Resultado de Fase 7
 
-- Estado: `EN REVISIÓN`; Fase 8 `NO INICIADA`.
+- Estado: `APROBADA`; commits `4ae25ea` y `768ef6e`.
 - Modelo: evidencia normalizada, registro por identidad, timeline determinista,
   reporte reproducible y errores estables de integridad.
 - Seguridad: toda consulta exige una decisión `resolution.audit.inspect`
@@ -392,3 +392,21 @@ La Fase 0 se considera lista para revisión cuando:
   conciliación, retries ni distribución.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_7.md`](../../closures/RESOLUTION_ENGINE_PHASE_7.md).
+
+## Apertura y resultado técnico de Fase 8
+
+- Apertura: aprobada expresamente el 2026-07-27; contrato
+  [`21_PHASE_8_OPENING.md`](21_PHASE_8_OPENING.md).
+- Estado: `EN REVISIÓN`; Fase 9 `NO INICIADA`.
+- Gobierno: catálogo único de acción, permiso, recurso y riesgo integrado al
+  evaluador de Fase 3.
+- Consumo: Lifecycle, ejecución, compensación, auditoría y outbox verifican la
+  misma decisión persistida exacta antes de exponer datos o producir efectos.
+- Persistencia: `e7f9a1b3c5d7` conserva históricos y vincula nuevas
+  autorizaciones con revalidación y ejecución exactas.
+- Alcance: no se incorporaron ERP, UC-001, gateways, API, SDK, FastAPI,
+  routers, workers, distribución, IA, automatizaciones, UI o integraciones.
+- Contrato:
+  [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md).
+- Evidencia:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).

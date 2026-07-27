@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Mapping, Protocol
 
 from app.resolution_engine.domain.audit import ResolutionAuditSnapshot
 from app.resolution_engine.domain.exceptions import InvalidAuditEvidenceError
+from app.resolution_engine.domain.security import ActorContext
 
 AUDIT_READ_ACTION = "resolution.audit.inspect"
 
@@ -16,18 +18,19 @@ class AuditQuery:
     """Identidad y autorización exactas requeridas para leer evidencia."""
 
     resolution_id: int
-    actor_id: str
-    correlation_id: str
     security_decision_id: int
+    actor: ActorContext
+    requested_at: datetime
+    context: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.resolution_id <= 0 or self.security_decision_id <= 0:
             raise InvalidAuditEvidenceError(
                 "audit query identifiers must be positive"
             )
-        if not self.actor_id.strip() or not self.correlation_id.strip():
+        if self.requested_at.tzinfo is None:
             raise InvalidAuditEvidenceError(
-                "audit query requires actor and correlation"
+                "audit query time must include timezone"
             )
 
 

@@ -18,9 +18,12 @@ El flujo interno implementado y todavía sin integración concreta con dominios
 del ERP es:
 
 ```text
-draft → contexto → análisis → plan → simulación declarativa
+[decisión resolution.create exacta] → draft
+→ [decisiones de transición y capacidad exactas]
+→ contexto → análisis → plan → simulación declarativa
 → autorización exacta → revalidación → ready_for_execution
-→ reserva idempotente + lock → executing
+→ verificación pre-replay y transaccional → reserva idempotente + lock
+→ executing
 → checkpoints y acciones por ActionRunner
 → completed | partially_completed | failed | blocked
 [si existe plan compensatorio autorizado y elegible]
@@ -30,12 +33,18 @@ draft → contexto → análisis → plan → simulación declarativa
 → reconstrucción → verificación → timeline/reporte
 ```
 
-Un plan no autorizado o no revalidado no inicia. Cada acción se identifica por
+El catálogo integral deniega acciones, recursos o permisos no registrados.
+Crear y transitar Lifecycle exige una decisión exacta y sólo la máquina de
+estados calcula el estado. Un plan no autorizado o no revalidado no inicia.
+Cada acción se identifica por
 ejecución y paso, persiste su intención antes de invocar el adaptador y conserva
 resultado/efectos después. Al regresar del handler, el token/TTL se valida y el
-checkpoint lo vuelve a validar atómicamente. Una pérdida de lock o resultado
+checkpoint lo vuelve a validar atómicamente. La decisión de ejecución se
+comprueba antes de consultar un replay y dentro de la reserva transaccional.
+Una pérdida de lock o resultado
 incierto termina en `blocked` sin repetición automática. El outbox se publica
-sólo mediante una invocación explícita y conserva la fecha de fallo.
+sólo mediante una invocación explícita autorizada, aislada por organización y
+conserva la fecha de fallo.
 
 La compensación es un flujo independiente y síncrono. Sólo parte de una
 ejecución terminada elegible, usa una decisión `resolution.compensate` para la
@@ -48,8 +57,8 @@ quedan trazados sin reinvocación. No existen API, workers, schedulers, retries,
 recuperación, conciliación ni compensación automática.
 
 La auditoría es un flujo read-only separado. Exige una decisión
-`resolution.audit.inspect` concedida para la resolución, actor, correlación,
-recurso y organización exactos. Después abre un snapshot consistente, carga el
+`resolution.audit.inspect` concedida para la resolución, actor, autenticación,
+correlación, contexto, recurso y organización exactos. Después abre un snapshot consistente, carga el
 expediente completo y proyecta su evidencia antes de cerrar la transacción, sin
 exponer ORM. Verifica hashes, referencias, pertenencia y secuencia, y genera una
 línea de tiempo y un hash deterministas del corte. Una confirmación concurrente

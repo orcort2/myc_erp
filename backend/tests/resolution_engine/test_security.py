@@ -157,13 +157,20 @@ def test_public_contract_api_preserves_foundation_and_security_ports():
     assert contracts.SecurityResourceVerifier is not None
 
 
-def test_no_applicable_policy_is_denied_and_evidenced():
+def test_baseline_permission_and_organization_policies_cannot_be_omitted():
     authorization, store = service(())
 
     decision = authorization.authorize(request())
 
-    assert decision.outcome is SecurityDecisionOutcome.DENIED
-    assert decision.reason_codes == ("no_applicable_policy",)
+    assert decision.outcome is SecurityDecisionOutcome.ALLOWED
+    assert {
+        str(result.policy_key)
+        for result in decision.policy_results
+    } == {
+        "security.integral_control_catalog",
+        "security.require_permissions",
+        "security.same_organization",
+    }
     assert store.items[0][0] is decision
 
 

@@ -45,15 +45,16 @@ reconstruidas desde las tablas del Motor.
 ## Creación
 
 `CreateResolutionCommand` recibe sujeto genérico, problema original, actor,
-origen, prioridad y metadatos. `ResolutionLifecycleService`:
+decisión `resolution.create` exacta, origen, prioridad y metadatos.
+`ResolutionLifecycleService`:
 
-1. valida identidad activa, autenticación vigente, campos obligatorios y fecha
+1. valida identidad activa, autenticación vigente, decisión exacta, campos obligatorios y fecha
    consciente de zona;
 2. resuelve la versión solicitada o activa en `ResolutionRegistry`;
 3. genera un ID técnico opaco;
 4. persiste raíz y problema con la versión exacta de definición;
-5. agrega `resolution.lifecycle.created` con actor, correlación, fingerprint de
-   definición y hash canónico;
+5. agrega `resolution.lifecycle.created` con actor, correlación, decisión de
+   seguridad, fingerprint de definición y hash canónico;
 6. devuelve el estado reconstruido `draft`, versión `1`.
 
 No crea folios institucionales ni consulta tablas de dominios propietarios.
@@ -121,7 +122,9 @@ la máquina ni agrega condicionales al núcleo.
 ## Seguridad y transacciones
 
 La autorización protegida se obtiene mediante los servicios de Fase 3 y se
-persiste antes de avanzar el Lifecycle. La máquina no reevalúa roles ni permisos:
+persiste antes de avanzar el Lifecycle. Desde Fase 8, cada transición pública
+exige `resolution.lifecycle.transition` ligada a actor, resolución y acción
+exactos antes de reconstruir la raíz. La máquina no reevalúa roles ni permisos:
 valida la evidencia exacta resultante. El futuro adaptador de API compondrá la
 evaluación de seguridad y el servicio de Lifecycle dentro del backend; el
 frontend nunca será autoridad.

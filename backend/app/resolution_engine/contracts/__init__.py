@@ -36,6 +36,7 @@ from app.resolution_engine.contracts.execution import (
     ExecuteResolutionCommand,
     ExecutionStore,
     OutboxStore,
+    PublishOutboxCommand,
 )
 from app.resolution_engine.contracts.compensation import (
     CompensationHandler,
@@ -69,6 +70,7 @@ __all__ = [
     "OutboxStore",
     "PlanBuilder",
     "PrepareCompensationCommand",
+    "PublishOutboxCommand",
     "ResolutionComponent",
     "ResolutionProblemInput",
     "Revalidator",

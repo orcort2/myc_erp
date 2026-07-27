@@ -26,6 +26,7 @@ class ExecuteResolutionCommand:
 
     resolution_id: int
     idempotency_key: str
+    security_decision_id: int
     actor: ActorContext
     lock_owner: str
     lock_ttl: timedelta = timedelta(minutes=5)
@@ -68,6 +69,14 @@ class OutboxPublicationReport:
     failed: int
 
 
+@dataclass(frozen=True, slots=True)
+class PublishOutboxCommand:
+    security_decision_id: int
+    actor: ActorContext
+    organization_id: str
+    limit: int = 100
+
+
 class ActionHandler(Protocol):
     """Adaptador de una operación propietaria; debe honrar idempotency_key."""
 
@@ -98,6 +107,15 @@ class ExecutionStore(Protocol):
         /,
     ) -> ExecutionCandidate | None:
         """Reconstruye plan, revalidación y pasos exactos."""
+
+    def verify_security(
+        self,
+        command: ExecuteResolutionCommand,
+        candidate: ExecutionCandidate,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        """Deniega antes de consultar replay o exponer resultados."""
 
     def start(
         self,
@@ -175,9 +193,18 @@ class ExecutionStore(Protocol):
 class OutboxStore(Protocol):
     """Persistencia de publicación explícita, sin scheduler ni worker."""
 
+    def verify_publication(
+        self,
+        command: PublishOutboxCommand,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        """Valida una decisión institucional antes de leer el outbox."""
+
     def pending(
         self,
         *,
+        organization_id: str,
         available_at: datetime,
         limit: int,
     ) -> tuple[OutboxMessage, ...]:

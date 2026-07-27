@@ -1,4 +1,4 @@
-> Estado: CIERRE TÉCNICO EN REVISIÓN
+> Estado: APROBADA
 >
 > Fecha: 2026-07-27
 >
@@ -114,12 +114,14 @@ decisiones, deuda, índice, respaldo operativo e inventario oficial.
 
 La implementación original permanece en `4ae25ea`. Esta corrección se agrupa en
 un commit posterior y exclusivo cuyo hash se reporta en el cierre operativo.
-La fase permanece `EN REVISIÓN` y no autoriza Fase 8.
+La implementación quedó identificada en `4ae25ea` y su corrección de
+consistencia transaccional en `768ef6e`. La aprobación formal fue recibida el
+2026-07-27 y autorizó la apertura de Fase 8.
 
 ## Estado
 
 ```text
 FASE 7
-EN REVISIÓN
-FASE 8 NO INICIADA
+APROBADA
+FASE 8 AUTORIZADA
 ```

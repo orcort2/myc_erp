@@ -108,6 +108,11 @@ class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
 
     __tablename__ = "resolution_security_decisions"
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "resolution_id",
+            name="uq_resolution_security_decisions_id_resolution",
+        ),
         ForeignKeyConstraint(
             ["authorization_request_id", "resolution_id"],
             [
@@ -147,6 +152,16 @@ class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
             name="fk_resolution_security_decisions_simulation_hash",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["revalidation_id", "plan_id", "resolution_id"],
+            [
+                "resolution_revalidations.id",
+                "resolution_revalidations.plan_id",
+                "resolution_revalidations.resolution_id",
+            ],
+            name="fk_resolution_security_decisions_revalidation",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(
             "outcome IN ('allowed','denied')",
             name="ck_resolution_security_decisions_outcome",
@@ -171,6 +186,12 @@ class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
             "OR (simulation_id IS NOT NULL AND simulation_hash IS NOT NULL "
             "AND plan_id IS NOT NULL)",
             name="ck_resolution_security_decisions_simulation_complete",
+        ),
+        CheckConstraint(
+            "(revalidation_id IS NULL AND revalidation_hash IS NULL) "
+            "OR (revalidation_id IS NOT NULL "
+            "AND revalidation_hash IS NOT NULL AND plan_id IS NOT NULL)",
+            name="ck_resolution_security_decisions_revalidation_complete",
         ),
         Index(
             "ix_resolution_security_decisions_resolution_time",
@@ -198,6 +219,8 @@ class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
     plan_hash: Mapped[str | None] = mapped_column(String(64))
     simulation_id: Mapped[int | None] = mapped_column(BIGINT_ID)
     simulation_hash: Mapped[str | None] = mapped_column(String(64))
+    revalidation_id: Mapped[int | None] = mapped_column(BIGINT_ID)
+    revalidation_hash: Mapped[str | None] = mapped_column(String(64))
     actor_id: Mapped[str] = mapped_column(String(160), nullable=False)
     actor_type: Mapped[str] = mapped_column(String(40), nullable=False)
     organization_id: Mapped[str] = mapped_column(String(160), nullable=False)

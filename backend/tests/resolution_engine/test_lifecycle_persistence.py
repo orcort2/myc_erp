@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401
@@ -11,6 +11,12 @@ from app.resolution_engine.application.lifecycle import (
     ResolutionLifecycleService,
 )
 from app.resolution_engine.application.registry import ResolutionRegistry
+from app.resolution_engine.application.security import (
+    OrganizationBoundaryPolicy,
+    PermissionPolicy,
+    ResolutionAuthorizationService,
+    SecurityPolicyEvaluator,
+)
 from app.resolution_engine.contracts.lifecycle import (
     CreateResolutionCommand,
     ResolutionProblemInput,
@@ -36,6 +42,9 @@ from app.resolution_engine.domain.security import (
     ActorIdentity,
     ActorType,
     AuthenticationContext,
+    PermissionGrant,
+    SecurityRequest,
+    SecurityResource,
 )
 from app.resolution_engine.domain.value_objects import (
     ComponentKey,
@@ -45,10 +54,15 @@ from app.resolution_engine.domain.value_objects import (
 from app.resolution_engine.infrastructure.lifecycle import (
     SqlAlchemyLifecycleStore,
 )
+from app.resolution_engine.infrastructure.security import (
+    SqlAlchemySecurityEvidenceStore,
+    SqlAlchemySecurityResourceVerifier,
+)
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
     ResolutionAuditEvent,
     ResolutionContextSnapshot,
+    ResolutionSecurityDecision,
 )
 
 NOW = datetime(2026, 7, 27, 12, tzinfo=timezone.utc)
@@ -103,6 +117,14 @@ def actor():
             source="test",
             correlation_id="correlation-1",
         ),
+        permissions=(
+            PermissionGrant(permission=ComponentKey("resolution.create")),
+            PermissionGrant(
+                permission=ComponentKey(
+                    "resolution.lifecycle.transition"
+                )
+            ),
+        ),
     )
 
 
@@ -125,7 +147,41 @@ def registry():
     return value
 
 
-def command():
+def authorize(
+    session,
+    *,
+    action,
+    resource_type,
+    resource_id,
+    context,
+    resolution_id=None,
+):
+    request = SecurityRequest(
+        actor=actor(),
+        action=ComponentKey(action),
+        resource=SecurityResource(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            organization_id="organization-1",
+            resolution_id=resolution_id,
+        ),
+        required_permissions=(ComponentKey(action),),
+        context=context,
+    )
+    decision = ResolutionAuthorizationService(
+        evaluator=SecurityPolicyEvaluator(
+            (PermissionPolicy(), OrganizationBoundaryPolicy())
+        ),
+        evidence_store=SqlAlchemySecurityEvidenceStore(session),
+        resource_verifier=SqlAlchemySecurityResourceVerifier(session),
+        clock=FixedClock(),
+    ).authorize(request)
+    assert decision.outcome.value == "allowed"
+    session.flush()
+    return session.scalar(select(func.max(ResolutionSecurityDecision.id)))
+
+
+def command(session):
     return CreateResolutionCommand(
         resolution_type="example.resolve",
         source=ResolutionSource.USER,
@@ -133,6 +189,13 @@ def command():
         subject_id="42",
         title="Resolver caso",
         actor=actor(),
+        security_decision_id=authorize(
+            session,
+            action="resolution.create",
+            resource_type="resolution_definition",
+            resource_id="example.resolve@1.0",
+            context={"source": ResolutionSource.USER.value},
+        ),
         priority=ResolutionPriority.HIGH,
         problem=ResolutionProblemInput(
             problem_code="example.problem",
@@ -154,7 +217,7 @@ def test_creation_and_transition_are_reconstructible_and_audited():
             clock=FixedClock(),
             identifiers=FixedIdentifiers(),
         )
-        created = service.create(command())
+        created = service.create(command(session))
         snapshot = ResolutionContextSnapshot(
             resolution_id=created.resolution_id,
             snapshot_type=ContextSnapshotType.INITIAL.value,
@@ -176,9 +239,19 @@ def test_creation_and_transition_are_reconstructible_and_audited():
             created.resolution_id,
             LifecycleAction.RECORD_CONTEXT,
             actor=LifecycleActor(
-                actor_id="actor-1",
-                actor_type="human",
-                correlation_id="correlation-1",
+                context=actor(),
+                security_decision_id=authorize(
+                    session,
+                    action="resolution.lifecycle.transition",
+                    resource_type="resolution",
+                    resource_id=str(created.resolution_id),
+                    resolution_id=created.resolution_id,
+                    context={
+                        "lifecycle_action": (
+                            LifecycleAction.RECORD_CONTEXT.value
+                        )
+                    },
+                ),
             ),
         )
         session.commit()
@@ -213,7 +286,7 @@ def test_store_rejects_a_transition_calculated_from_a_stale_version():
             clock=FixedClock(),
             identifiers=FixedIdentifiers(),
         )
-        created = service.create(command())
+        created = service.create(command(session))
         snapshot = ResolutionContextSnapshot(
             resolution_id=created.resolution_id,
             snapshot_type=ContextSnapshotType.INITIAL.value,

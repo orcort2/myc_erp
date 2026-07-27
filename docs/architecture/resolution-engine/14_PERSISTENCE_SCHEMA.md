@@ -126,3 +126,9 @@ para conservar la fecha exacta de una publicación fallida sin introducir
 reintentos. La migración `d6e8f0a2b4c5` agrega evidencia compensatoria
 inmutable y estados raíz de compensación; su ejecución permanece síncrona y
 gobernada por Lifecycle.
+
+La migración de Fase 8 `e7f9a1b3c5d7` no agrega tablas: relaciona las
+decisiones de seguridad con la revalidación exacta y cada nueva ejecución con
+su decisión autorizante mediante FKs compuestas, constraint de completitud e
+índice. Las columnas permanecen nulas para históricos y no se inventa
+autoridad retrospectiva.

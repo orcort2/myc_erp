@@ -9,7 +9,16 @@ from app.core.db import Base
 from app.resolution_engine.application.action_runner import ActionRunner
 from app.resolution_engine.application.execution import ResolutionExecutor
 from app.resolution_engine.application.outbox import OutboxPublicationService
-from app.resolution_engine.contracts.execution import ExecuteResolutionCommand
+from app.resolution_engine.application.security import (
+    OrganizationBoundaryPolicy,
+    PermissionPolicy,
+    ResolutionAuthorizationService,
+    SecurityPolicyEvaluator,
+)
+from app.resolution_engine.contracts.execution import (
+    ExecuteResolutionCommand,
+    PublishOutboxCommand,
+)
 from app.resolution_engine.domain.enums import (
     EntityRelationshipType,
     ExecutionStatus,
@@ -33,6 +42,9 @@ from app.resolution_engine.domain.security import (
     ActorIdentity,
     ActorType,
     AuthenticationContext,
+    PermissionGrant,
+    SecurityRequest,
+    SecurityResource,
 )
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.execution import (
@@ -43,6 +55,10 @@ from app.resolution_engine.infrastructure.execution_control import (
 )
 from app.resolution_engine.infrastructure.outbox import (
     SqlAlchemyOutboxStore,
+)
+from app.resolution_engine.infrastructure.security import (
+    SqlAlchemySecurityEvidenceStore,
+    SqlAlchemySecurityResourceVerifier,
 )
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
@@ -60,6 +76,7 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionPlanStep,
     ResolutionResult,
     ResolutionRevalidation,
+    ResolutionSecurityDecision,
     ResolutionSimulation,
     ResolutionStepExecution,
     ResolutionStrategySelection,
@@ -162,13 +179,30 @@ def actor():
             source="phase-5-test",
             correlation_id="correlation-1",
         ),
+        permissions=(
+            PermissionGrant(
+                permission=ComponentKey("resolution.execute"),
+            ),
+            PermissionGrant(
+                permission=ComponentKey("resolution.compensate"),
+            ),
+            PermissionGrant(
+                permission=ComponentKey("resolution.outbox.publish"),
+            ),
+        ),
     )
 
 
-def command(resolution_id, *, key="execution-request-1"):
+def command(
+    resolution_id,
+    *,
+    key="execution-request-1",
+    security_decision_id=1,
+):
     return ExecuteResolutionCommand(
         resolution_id=resolution_id,
         idempotency_key=key,
+        security_decision_id=security_decision_id,
         actor=actor(),
         lock_owner="phase-5-test",
         lock_ttl=timedelta(minutes=5),
@@ -311,6 +345,7 @@ def seed_ready_resolution(session):
     root.current_context_snapshot_id = context.id
     root.current_strategy_selection_id = strategy.id
     root.current_plan_id = plan.id
+    authorize_execution(session, root.id, revalidation)
     session.commit()
     return root.id
 
@@ -332,6 +367,78 @@ def add_revalidation(session, resolution_id, *, marker, revalidated_at):
     session.add(revalidation)
     session.flush()
     return revalidation.id
+
+
+def authorize_execution(session, resolution_id, revalidation):
+    root = session.get(Resolution, resolution_id)
+    plan = session.get(ResolutionPlan, root.current_plan_id)
+    request = SecurityRequest(
+        actor=actor(),
+        action=ComponentKey("resolution.execute"),
+        resource=SecurityResource(
+            resource_type="resolution_plan",
+            resource_id=str(plan.id),
+            organization_id=root.organization_id,
+            resolution_id=root.id,
+            resolution_public_id=root.public_id,
+            plan_id=plan.id,
+            plan_version=plan.version,
+            plan_hash=plan.plan_hash,
+            revalidation_id=revalidation.id,
+            revalidation_hash=revalidation.revalidation_hash,
+        ),
+        required_permissions=(
+            ComponentKey("resolution.execute"),
+        ),
+        context={
+            "resolution_status": (
+                ResolutionStatus.READY_FOR_EXECUTION.value
+            ),
+        },
+    )
+    service = ResolutionAuthorizationService(
+        evaluator=SecurityPolicyEvaluator(
+            (PermissionPolicy(), OrganizationBoundaryPolicy())
+        ),
+        evidence_store=SqlAlchemySecurityEvidenceStore(session),
+        resource_verifier=SqlAlchemySecurityResourceVerifier(session),
+        clock=AdvancingClock(NOW),
+    )
+    decision = service.authorize(request)
+    assert decision.outcome.value == "allowed"
+    session.flush()
+    return session.scalar(
+        select(func.max(ResolutionSecurityDecision.id))
+    )
+
+
+def authorize_outbox(session, *, limit=100):
+    request = SecurityRequest(
+        actor=actor(),
+        action=ComponentKey("resolution.outbox.publish"),
+        resource=SecurityResource(
+            resource_type="resolution_outbox",
+            resource_id=actor().identity.organization_id,
+            organization_id=actor().identity.organization_id,
+        ),
+        required_permissions=(
+            ComponentKey("resolution.outbox.publish"),
+        ),
+        context={"limit": limit},
+    )
+    decision = ResolutionAuthorizationService(
+        evaluator=SecurityPolicyEvaluator(
+            (PermissionPolicy(), OrganizationBoundaryPolicy())
+        ),
+        evidence_store=SqlAlchemySecurityEvidenceStore(session),
+        resource_verifier=SqlAlchemySecurityResourceVerifier(session),
+        clock=AdvancingClock(NOW + timedelta(hours=1)),
+    ).authorize(request)
+    assert decision.outcome.value == "allowed"
+    session.flush()
+    return session.scalar(
+        select(func.max(ResolutionSecurityDecision.id))
+    )
 
 
 def build_executor(factory, handler, *, clock=None, store=None):
@@ -566,6 +673,12 @@ def test_execution_preserves_the_latest_exact_revalidation_identity():
             marker="9",
             revalidated_at=NOW + timedelta(minutes=1),
         )
+        latest = session.get(ResolutionRevalidation, latest_id)
+        security_decision_id = authorize_execution(
+            session,
+            resolution_id,
+            latest,
+        )
         session.commit()
     store = SqlAlchemyExecutionStore(factory)
 
@@ -574,7 +687,12 @@ def test_execution_preserves_the_latest_exact_revalidation_identity():
         factory,
         Handler(),
         store=store,
-    ).execute(command(resolution_id))
+    ).execute(
+        command(
+            resolution_id,
+            security_decision_id=security_decision_id,
+        )
+    )
 
     assert candidate.revalidation_id == latest_id
     assert outcome.execution_status is ExecutionStatus.COMPLETED
@@ -640,6 +758,9 @@ def test_outbox_publication_is_explicit_and_does_not_retry_failures():
     with factory() as session:
         resolution_id = seed_ready_resolution(session)
     build_executor(factory, Handler()).execute(command(resolution_id))
+    with factory() as session:
+        security_decision_id = authorize_outbox(session)
+        session.commit()
     publisher = Publisher(fail=True)
     publication = OutboxPublicationService(
         store=SqlAlchemyOutboxStore(factory),
@@ -647,8 +768,13 @@ def test_outbox_publication_is_explicit_and_does_not_retry_failures():
         clock=AdvancingClock(NOW + timedelta(hours=1)),
     )
 
-    first = publication.publish_available()
-    second = publication.publish_available()
+    publication_command = PublishOutboxCommand(
+        security_decision_id=security_decision_id,
+        actor=actor(),
+        organization_id="organization-1",
+    )
+    first = publication.publish_available(publication_command)
+    second = publication.publish_available(publication_command)
 
     assert first.failed == 3
     assert second.failed == second.published == 0
@@ -675,6 +801,9 @@ def test_outbox_publication_marks_each_event_published_once():
     with factory() as session:
         resolution_id = seed_ready_resolution(session)
     build_executor(factory, Handler()).execute(command(resolution_id))
+    with factory() as session:
+        security_decision_id = authorize_outbox(session)
+        session.commit()
     publisher = Publisher()
     publication = OutboxPublicationService(
         store=SqlAlchemyOutboxStore(factory),
@@ -682,7 +811,13 @@ def test_outbox_publication_marks_each_event_published_once():
         clock=AdvancingClock(NOW + timedelta(hours=1)),
     )
 
-    report = publication.publish_available()
+    report = publication.publish_available(
+        PublishOutboxCommand(
+            security_decision_id=security_decision_id,
+            actor=actor(),
+            organization_id="organization-1",
+        )
+    )
 
     assert report.published == 3
     assert report.failed == 0

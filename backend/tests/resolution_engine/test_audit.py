@@ -18,6 +18,12 @@ from app.resolution_engine.domain.exceptions import (
     AuditRecordNotFoundError,
     InvalidAuditEvidenceError,
 )
+from app.resolution_engine.domain.security import (
+    ActorContext,
+    ActorIdentity,
+    ActorType,
+    AuthenticationContext,
+)
 
 NOW = datetime(2026, 7, 27, 16, tzinfo=timezone.utc)
 
@@ -277,9 +283,24 @@ class MemoryAccessVerifier:
 def query(resolution_id=1):
     return AuditQuery(
         resolution_id=resolution_id,
-        actor_id="auditor-1",
-        correlation_id="correlation-1",
         security_decision_id=10,
+        actor=ActorContext(
+            identity=ActorIdentity(
+                actor_id="auditor-1",
+                actor_type=ActorType.HUMAN,
+                principal="auditor@example.test",
+                organization_id="organization-1",
+            ),
+            authentication=AuthenticationContext(
+                authenticated_at=NOW - timedelta(minutes=1),
+                method="test",
+                session_id="audit-session",
+                assurance_level="high",
+                source="test",
+                correlation_id="correlation-1",
+            ),
+        ),
+        requested_at=NOW,
     )
 
 
@@ -314,11 +335,11 @@ def test_query_service_denies_before_loading_evidence():
     assert caught.value.reasons == ("security_actor_mismatch",)
 
 
-def test_audit_query_requires_exact_identity_fields():
+def test_audit_query_requires_timezone_aware_request_time():
     with pytest.raises(InvalidAuditEvidenceError):
         AuditQuery(
             resolution_id=1,
-            actor_id="",
-            correlation_id="correlation-1",
             security_decision_id=10,
+            actor=query().actor,
+            requested_at=NOW.replace(tzinfo=None),
         )

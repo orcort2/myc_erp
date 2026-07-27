@@ -74,6 +74,15 @@ class ResolutionExecution(
             name="fk_resolution_executions_exact_revalidation",
             ondelete="RESTRICT",
         ),
+        ForeignKeyConstraint(
+            ["security_decision_id", "resolution_id"],
+            [
+                "resolution_security_decisions.id",
+                "resolution_security_decisions.resolution_id",
+            ],
+            name="fk_resolution_executions_security_decision",
+            ondelete="RESTRICT",
+        ),
         CheckConstraint(
             "status IN ('pending','running','completed','partially_completed',"
             "'failed','blocked','cancelled','compensating','compensated')",
@@ -106,6 +115,10 @@ class ResolutionExecution(
     )
     plan_id: Mapped[int] = mapped_column(BIGINT_ID, nullable=False)
     revalidation_id: Mapped[int] = mapped_column(BIGINT_ID, nullable=False)
+    security_decision_id: Mapped[int | None] = mapped_column(
+        BIGINT_ID,
+        index=True,
+    )
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), server_default="pending", nullable=False

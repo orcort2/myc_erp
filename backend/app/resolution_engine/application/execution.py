@@ -71,6 +71,11 @@ class ResolutionExecutor:
                 f"Resolution not found: {command.resolution_id}"
             )
         ordered_steps = self._engine.ordered_steps(candidate)
+        self._store.verify_security(
+            command,
+            candidate,
+            occurred_at=started_at,
+        )
         execution_key = self._execution_key(command.idempotency_key)
         request_hash = canonical_sha256(
             {
@@ -79,6 +84,12 @@ class ResolutionExecutor:
                 "plan_version": candidate.plan_version,
                 "plan_hash": candidate.plan_hash,
                 "revalidation_id": candidate.revalidation_id,
+                "revalidation_hash": candidate.revalidation_hash,
+                "security_decision_id": command.security_decision_id,
+                "actor_id": command.actor.identity.actor_id,
+                "organization_id": (
+                    command.actor.identity.organization_id
+                ),
                 "steps": [
                     step.request_snapshot() for step in ordered_steps
                 ],
@@ -300,6 +311,10 @@ class ResolutionExecutor:
             )
         if command.resolution_id <= 0:
             raise ExecutionNotReadyError("resolution_id must be positive")
+        if command.security_decision_id <= 0:
+            raise ExecutionNotReadyError(
+                "security_decision_id must be positive"
+            )
         if not command.idempotency_key.strip():
             raise ExecutionNotReadyError("idempotency_key is required")
         if not command.lock_owner.strip():
@@ -312,12 +327,7 @@ class ResolutionExecutor:
         command: ExecuteResolutionCommand,
     ) -> LifecycleActor:
         return LifecycleActor(
-            actor_id=command.actor.identity.actor_id,
-            actor_type=command.actor.identity.actor_type.value,
-            source=command.actor.authentication.source,
-            correlation_id=(
-                command.actor.authentication.correlation_id
-            ),
+            context=command.actor,
         )
 
     @staticmethod

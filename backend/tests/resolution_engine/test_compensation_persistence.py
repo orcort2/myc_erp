@@ -12,6 +12,12 @@ from app.resolution_engine.application.compensation import (
 from app.resolution_engine.application.compensation_runner import (
     CompensationRunner,
 )
+from app.resolution_engine.application.security import (
+    OrganizationBoundaryPolicy,
+    PermissionPolicy,
+    ResolutionAuthorizationService,
+    SecurityPolicyEvaluator,
+)
 from app.resolution_engine.contracts.compensation import (
     ExecuteCompensationCommand,
     PrepareCompensationCommand,
@@ -31,6 +37,11 @@ from app.resolution_engine.domain.execution import (
     DomainActionResult,
 )
 from app.resolution_engine.domain.lifecycle import ResolutionStateMachine
+from app.resolution_engine.domain.security import (
+    SecurityDecisionOutcome,
+    SecurityRequest,
+    SecurityResource,
+)
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.compensation import (
     SqlAlchemyCompensationStore,
@@ -51,6 +62,10 @@ from app.resolution_engine.infrastructure.persistence import (
 )
 from app.resolution_engine.infrastructure.repositories import (
     ResolutionRepository,
+)
+from app.resolution_engine.infrastructure.security import (
+    SqlAlchemySecurityEvidenceStore,
+    SqlAlchemySecurityResourceVerifier,
 )
 from tests.resolution_engine.test_execution_persistence import (
     AdvancingClock,
@@ -104,28 +119,13 @@ def seed_completed_compensable_execution(factory):
     )
     with factory() as session:
         execution = session.scalar(select(ResolutionExecution))
-        decision = ResolutionSecurityDecision(
-            resolution_id=resolution_id,
-            actor_id=actor().identity.actor_id,
-            actor_type=actor().identity.actor_type.value,
-            organization_id=actor().identity.organization_id,
-            action="resolution.compensate",
-            resource_type="resolution_execution",
-            resource_id=str(execution.id),
-            outcome="allowed",
-            policy_results=[],
-            required_permissions=["resolution.compensate"],
-            reason_codes=["allowed_for_test"],
-            actor_snapshot=actor().identity.snapshot(),
-            authentication_snapshot=actor().authentication.snapshot(),
-            context_snapshot={},
-            evaluated_at=NOW,
-            correlation_id=actor().authentication.correlation_id,
-            evidence_hash="9" * 64,
+        decision_id = authorize_compensation(
+            session,
+            resolution_id,
+            execution.id,
         )
-        session.add(decision)
         session.commit()
-        return resolution_id, execution.id, decision.id
+        return resolution_id, execution.id, decision_id
 
 
 def seed_completed_dependency_chain(factory):
@@ -199,33 +199,48 @@ def seed_completed_dependency_chain(factory):
                 )
             )
         }
-        decision = ResolutionSecurityDecision(
-            resolution_id=resolution_id,
-            actor_id=actor().identity.actor_id,
-            actor_type=actor().identity.actor_type.value,
-            organization_id=actor().identity.organization_id,
-            action="resolution.compensate",
-            resource_type="resolution_execution",
-            resource_id=str(execution.id),
-            outcome="allowed",
-            policy_results=[],
-            required_permissions=["resolution.compensate"],
-            reason_codes=["allowed_for_dependency_test"],
-            actor_snapshot=actor().identity.snapshot(),
-            authentication_snapshot=actor().authentication.snapshot(),
-            context_snapshot={},
-            evaluated_at=NOW,
-            correlation_id=actor().authentication.correlation_id,
-            evidence_hash="8" * 64,
+        decision_id = authorize_compensation(
+            session,
+            resolution_id,
+            execution.id,
         )
-        session.add(decision)
         session.commit()
         return (
             resolution_id,
             execution.id,
-            decision.id,
+            decision_id,
             step_execution_ids,
         )
+
+
+def authorize_compensation(session, resolution_id, execution_id):
+    request = SecurityRequest(
+        actor=actor(),
+        action=ComponentKey("resolution.compensate"),
+        resource=SecurityResource(
+            resource_type="resolution_execution",
+            resource_id=str(execution_id),
+            organization_id=actor().identity.organization_id,
+            resolution_id=resolution_id,
+        ),
+        required_permissions=(
+            ComponentKey("resolution.compensate"),
+        ),
+        context={},
+    )
+    decision = ResolutionAuthorizationService(
+        evaluator=SecurityPolicyEvaluator(
+            (PermissionPolicy(), OrganizationBoundaryPolicy())
+        ),
+        evidence_store=SqlAlchemySecurityEvidenceStore(session),
+        resource_verifier=SqlAlchemySecurityResourceVerifier(session),
+        clock=AdvancingClock(NOW),
+    ).authorize(request)
+    assert decision.outcome is SecurityDecisionOutcome.ALLOWED
+    session.flush()
+    return session.scalar(
+        select(func.max(ResolutionSecurityDecision.id))
+    )
 
 
 def prepare_command(resolution_id, execution_id, decision_id, *, key="plan-1"):

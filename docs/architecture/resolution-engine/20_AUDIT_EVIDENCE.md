@@ -111,6 +111,10 @@ Toda consulta exige una `ResolutionSecurityDecision`:
 - recurso `resolution` con ID interno o público exacto;
 - misma organización cuando la raíz la define.
 
+Desde Fase 8, `AuditQuery` transporta el `ActorContext`, instante y contexto
+exactos; la autenticación y permisos deben seguir vigentes y la evidencia debe
+contener la política integral y un hash reproducible.
+
 El servicio no codifica roles ni consulta tablas propietarias. La decisión se
 produce mediante las políticas generales de seguridad aprobadas.
 

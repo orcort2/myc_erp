@@ -1,4 +1,4 @@
-"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 7."""
+"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 8."""
 
 from app.resolution_engine.domain.audit import (
     AuditEngine,
@@ -29,10 +29,12 @@ from app.resolution_engine.domain.security import (
     AuthenticationContext,
     PermissionGrant,
     PolicyResult,
+    SecurityControl,
     SecurityDecision,
     SecurityDecisionOutcome,
     SecurityRequest,
     SecurityResource,
+    SecurityRiskLevel,
 )
 from app.resolution_engine.domain.lifecycle import (
     LifecycleAction,
@@ -105,8 +107,10 @@ __all__ = [
     "ExecutionPlanStep",
     "PermissionGrant",
     "PolicyResult",
+    "SecurityControl",
     "SecurityDecision",
     "SecurityDecisionOutcome",
     "SecurityRequest",
     "SecurityResource",
+    "SecurityRiskLevel",
 ]

@@ -18,7 +18,10 @@ from app.resolution_engine.domain.enums import (
     RevalidationStatus,
     SimulationStatus,
 )
-from app.resolution_engine.domain.exceptions import LifecycleConcurrencyError
+from app.resolution_engine.domain.exceptions import (
+    LifecycleConcurrencyError,
+    LifecycleInvariantError,
+)
 from app.resolution_engine.domain.lifecycle import (
     AnalysisEvidence,
     AuthorizationEvidence,
@@ -34,6 +37,8 @@ from app.resolution_engine.domain.lifecycle import (
     SimulationEvidence,
     StrategyEvidence,
 )
+from app.resolution_engine.domain.security import ActorContext
+from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
     ResolutionAuditEvent,
@@ -42,6 +47,10 @@ from app.resolution_engine.infrastructure.persistence import (
 from app.resolution_engine.infrastructure.repositories import (
     ResolutionRecord,
     ResolutionRepository,
+)
+from app.resolution_engine.infrastructure.security_decisions import (
+    SecurityDecisionExpectation,
+    SqlAlchemySecurityDecisionVerifier,
 )
 
 _PLAN_AUTHORIZATION_ACTION = "resolution.plan.authorize"
@@ -53,6 +62,7 @@ class SqlAlchemyLifecycleStore:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._repository = ResolutionRepository(session)
+        self._security = SqlAlchemySecurityDecisionVerifier()
 
     def create(
         self,
@@ -62,6 +72,11 @@ class SqlAlchemyLifecycleStore:
         public_id: str,
         occurred_at: datetime,
     ) -> ResolutionLifecycle:
+        self._verify_creation_security(
+            command,
+            definition=definition,
+            occurred_at=occurred_at,
+        )
         identity = command.actor.identity
         authentication = command.actor.authentication
         resolution = Resolution(
@@ -108,6 +123,7 @@ class SqlAlchemyLifecycleStore:
         payload = {
             "definition_fingerprint": definition.fingerprint,
             "definition_version": str(definition.version),
+            "security_decision_id": command.security_decision_id,
             "problem_code": problem.problem_code,
             "subject": {
                 "type": command.subject_type,
@@ -139,6 +155,37 @@ class SqlAlchemyLifecycleStore:
     def load(self, resolution_id: int, /) -> ResolutionLifecycle | None:
         record = self._repository.load_record(resolution_id)
         return self._from_record(record) if record is not None else None
+
+    def verify_transition_security(
+        self,
+        *,
+        resolution_id: int,
+        action: str,
+        security_decision_id: int,
+        actor: ActorContext,
+        occurred_at: datetime,
+    ) -> None:
+        reasons = self._security.verify(
+            self._session,
+            SecurityDecisionExpectation(
+                decision_id=security_decision_id,
+                action="resolution.lifecycle.transition",
+                resource_type="resolution",
+                resource_id=str(resolution_id),
+                actor=actor,
+                required_permissions=(
+                    ComponentKey("resolution.lifecycle.transition"),
+                ),
+                occurred_at=occurred_at,
+                resolution_id=resolution_id,
+                context={"lifecycle_action": action},
+            ),
+        )
+        if reasons:
+            raise LifecycleInvariantError(
+                action=action,
+                violations=reasons,
+            )
 
     def apply(self, transition: LifecycleTransition, /) -> ResolutionLifecycle:
         values: dict[str, object] = {
@@ -217,6 +264,36 @@ class SqlAlchemyLifecycleStore:
         return self._from_record(
             self._required_record(transition.resolution_id)
         )
+
+    def _verify_creation_security(
+        self,
+        command: CreateResolutionCommand,
+        *,
+        definition: ResolutionDefinition,
+        occurred_at: datetime,
+    ) -> None:
+        reasons = self._security.verify(
+            self._session,
+            SecurityDecisionExpectation(
+                decision_id=command.security_decision_id,
+                action="resolution.create",
+                resource_type="resolution_definition",
+                resource_id=(
+                    f"{definition.resolution_type}@{definition.version}"
+                ),
+                actor=command.actor,
+                required_permissions=(
+                    ComponentKey("resolution.create"),
+                ),
+                occurred_at=occurred_at,
+                context={"source": command.source.value},
+            ),
+        )
+        if reasons:
+            raise LifecycleInvariantError(
+                action="create",
+                violations=reasons,
+            )
 
     def _required_record(self, resolution_id: int) -> ResolutionRecord:
         record = self._repository.load_record(resolution_id)

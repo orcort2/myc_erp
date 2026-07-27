@@ -1,4 +1,4 @@
-"""Servicios de aplicación del Motor de Resoluciones hasta Fase 7."""
+"""Servicios de aplicación del Motor de Resoluciones hasta Fase 8."""
 
 from app.resolution_engine.application.audit import AuditQueryService
 
@@ -14,6 +14,8 @@ from app.resolution_engine.application.orchestration import (
 )
 from app.resolution_engine.application.registry import ResolutionRegistry
 from app.resolution_engine.application.security import (
+    INTEGRAL_SECURITY_CONTROLS,
+    IntegralSecurityControlPolicy,
     OrganizationBoundaryPolicy,
     PermissionPolicy,
     ResolutionAuthorizationService,
@@ -37,6 +39,8 @@ __all__ = [
     "CompensationExecutor",
     "CompensationPlanner",
     "CompensationRunner",
+    "INTEGRAL_SECURITY_CONTROLS",
+    "IntegralSecurityControlPolicy",
     "OrganizationBoundaryPolicy",
     "PermissionPolicy",
     "OutboxPublicationService",

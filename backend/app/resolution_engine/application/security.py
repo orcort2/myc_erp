@@ -12,10 +12,14 @@ from app.resolution_engine.contracts.security import (
     SecurityResourceVerifier,
 )
 from app.resolution_engine.domain.security import (
+    INTEGRAL_SECURITY_POLICY_KEY,
+    INTEGRAL_SECURITY_POLICY_VERSION,
     PolicyResult,
+    SecurityControl,
     SecurityDecision,
     SecurityDecisionOutcome,
     SecurityRequest,
+    SecurityRiskLevel,
 )
 from app.resolution_engine.domain.value_objects import (
     ComponentKey,
@@ -40,6 +44,175 @@ class SecurityPolicy(Protocol):
         evaluated_at: datetime,
     ) -> PolicyResult:
         """Produce siempre el mismo resultado para las mismas entradas."""
+
+
+INTEGRAL_SECURITY_CONTROLS = (
+    SecurityControl(
+        action=ComponentKey("resolution.create"),
+        required_permissions=(ComponentKey("resolution.create"),),
+        resource_types=("resolution_definition",),
+        risk_level=SecurityRiskLevel.MODERATE,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.lifecycle.transition"),
+        required_permissions=(
+            ComponentKey("resolution.lifecycle.transition"),
+        ),
+        resource_types=("resolution",),
+        risk_level=SecurityRiskLevel.HIGH,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.context.build"),
+        required_permissions=(ComponentKey("resolution.context.build"),),
+        resource_types=("resolution",),
+        risk_level=SecurityRiskLevel.MODERATE,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.analyze"),
+        required_permissions=(ComponentKey("resolution.analyze"),),
+        resource_types=("resolution",),
+        risk_level=SecurityRiskLevel.MODERATE,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.strategy.select"),
+        required_permissions=(ComponentKey("resolution.strategy.select"),),
+        resource_types=("resolution",),
+        risk_level=SecurityRiskLevel.HIGH,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.plan.build"),
+        required_permissions=(ComponentKey("resolution.plan.build"),),
+        resource_types=("resolution",),
+        risk_level=SecurityRiskLevel.HIGH,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.simulate"),
+        required_permissions=(ComponentKey("resolution.simulate"),),
+        resource_types=("resolution_plan",),
+        risk_level=SecurityRiskLevel.HIGH,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.plan.authorize"),
+        required_permissions=(ComponentKey("resolution.plan.authorize"),),
+        resource_types=("resolution_plan",),
+        risk_level=SecurityRiskLevel.CRITICAL,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.revalidate"),
+        required_permissions=(ComponentKey("resolution.revalidate"),),
+        resource_types=("resolution_plan",),
+        risk_level=SecurityRiskLevel.HIGH,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.execute"),
+        required_permissions=(ComponentKey("resolution.execute"),),
+        resource_types=("resolution_plan",),
+        risk_level=SecurityRiskLevel.CRITICAL,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.compensate"),
+        required_permissions=(ComponentKey("resolution.compensate"),),
+        resource_types=("resolution_execution",),
+        risk_level=SecurityRiskLevel.CRITICAL,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.audit.inspect"),
+        required_permissions=(ComponentKey("resolution.audit.inspect"),),
+        resource_types=("resolution",),
+        risk_level=SecurityRiskLevel.HIGH,
+    ),
+    SecurityControl(
+        action=ComponentKey("resolution.outbox.publish"),
+        required_permissions=(ComponentKey("resolution.outbox.publish"),),
+        resource_types=("resolution_outbox",),
+        risk_level=SecurityRiskLevel.CRITICAL,
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class IntegralSecurityControlPolicy:
+    """Impide acciones desconocidas, recursos falsos y downgrade de permisos."""
+
+    controls: tuple[SecurityControl, ...] = INTEGRAL_SECURITY_CONTROLS
+    policy_key = ComponentKey(INTEGRAL_SECURITY_POLICY_KEY)
+    policy_version = DefinitionVersion(INTEGRAL_SECURITY_POLICY_VERSION)
+
+    def __post_init__(self) -> None:
+        actions = tuple(control.action for control in self.controls)
+        if len(set(actions)) != len(actions):
+            raise ValueError("security control actions must be unique")
+
+    def applies_to(self, request: SecurityRequest, /) -> bool:
+        return True
+
+    def evaluate(
+        self,
+        request: SecurityRequest,
+        /,
+        *,
+        evaluated_at: datetime,
+    ) -> PolicyResult:
+        control = next(
+            (
+                item
+                for item in self.controls
+                if item.action == request.action
+            ),
+            None,
+        )
+        reasons: list[str] = []
+        if control is None:
+            reasons.append("unregistered_protected_action")
+        else:
+            if request.resource.resource_type not in control.resource_types:
+                reasons.append("protected_resource_type_mismatch")
+            if (
+                request.required_permissions
+                != control.required_permissions
+            ):
+                reasons.append("required_permissions_downgrade")
+            if (
+                request.resource.resource_type
+                not in {"resolution_definition", "resolution_outbox"}
+                and request.resource.resolution_id is None
+            ):
+                reasons.append("protected_resolution_scope_missing")
+        allowed = not reasons
+        return PolicyResult(
+            policy_key=self.policy_key,
+            policy_version=self.policy_version,
+            outcome=(
+                SecurityDecisionOutcome.ALLOWED
+                if allowed
+                else SecurityDecisionOutcome.DENIED
+            ),
+            reason_codes=(
+                ("integral_control_satisfied",)
+                if allowed
+                else tuple(reasons)
+            ),
+            conditions={
+                "action": str(request.action),
+                "resource_type": request.resource.resource_type,
+                "required_permissions": [
+                    str(permission)
+                    for permission in request.required_permissions
+                ],
+                "control": (
+                    {
+                        "risk_level": control.risk_level.value,
+                        "resource_types": list(control.resource_types),
+                        "required_permissions": [
+                            str(permission)
+                            for permission in control.required_permissions
+                        ],
+                    }
+                    if control is not None
+                    else None
+                ),
+            },
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +241,7 @@ class PermissionPolicy:
                     resource_type=request.resource.resource_type,
                     resource_id=request.resource.resource_id,
                     instant=evaluated_at,
+                    context=request.context,
                 )
                 for grant in request.actor.permissions
             )
@@ -207,8 +381,27 @@ class SegregationOfDutiesPolicy:
 class SecurityPolicyEvaluator:
     """Combina políticas con deny explícito y deny-by-default."""
 
-    def __init__(self, policies: tuple[SecurityPolicy, ...]) -> None:
-        self._policies = policies
+    def __init__(
+        self,
+        policies: tuple[SecurityPolicy, ...],
+        *,
+        control_policy: IntegralSecurityControlPolicy | None = None,
+    ) -> None:
+        baseline_keys = {
+            PermissionPolicy.policy_key,
+            OrganizationBoundaryPolicy.policy_key,
+        }
+        self._policies = (
+            PermissionPolicy(),
+            OrganizationBoundaryPolicy(),
+        ) + tuple(
+            policy
+            for policy in policies
+            if policy.policy_key not in baseline_keys
+        )
+        self._control_policy = (
+            control_policy or IntegralSecurityControlPolicy()
+        )
 
     def evaluate(
         self,
@@ -217,6 +410,18 @@ class SecurityPolicyEvaluator:
         *,
         evaluated_at: datetime,
     ) -> SecurityDecision:
+        control_result = self._control_policy.evaluate(
+            request,
+            evaluated_at=evaluated_at,
+        )
+        if control_result.outcome is SecurityDecisionOutcome.DENIED:
+            return SecurityDecision.build(
+                outcome=SecurityDecisionOutcome.DENIED,
+                request=request,
+                evaluated_at=evaluated_at,
+                policy_results=(control_result,),
+                reason_codes=control_result.reason_codes,
+            )
         applicable = tuple(
             policy for policy in self._policies if policy.applies_to(request)
         )
@@ -226,11 +431,11 @@ class SecurityPolicyEvaluator:
                 outcome=SecurityDecisionOutcome.DENIED,
                 request=request,
                 evaluated_at=evaluated_at,
-                policy_results=(),
+                policy_results=(control_result,),
                 reason_codes=("no_applicable_policy",),
             )
 
-        results = tuple(
+        results = (control_result,) + tuple(
             policy.evaluate(request, evaluated_at=evaluated_at)
             for policy in applicable
         )

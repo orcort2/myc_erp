@@ -6,6 +6,7 @@ from app.resolution_engine.contracts.execution import (
     EventPublisher,
     OutboxPublicationReport,
     OutboxStore,
+    PublishOutboxCommand,
 )
 from app.resolution_engine.contracts.runtime import Clock
 
@@ -24,12 +25,22 @@ class OutboxPublicationService:
         self._publisher = publisher
         self._clock = clock
 
-    def publish_available(self, *, limit: int = 100) -> OutboxPublicationReport:
-        if limit <= 0:
+    def publish_available(
+        self,
+        command: PublishOutboxCommand,
+        /,
+    ) -> OutboxPublicationReport:
+        if command.limit <= 0:
             raise ValueError("limit must be positive")
+        requested_at = self._clock.now()
+        self._store.verify_publication(
+            command,
+            occurred_at=requested_at,
+        )
         messages = self._store.pending(
-            available_at=self._clock.now(),
-            limit=limit,
+            organization_id=command.organization_id,
+            available_at=requested_at,
+            limit=command.limit,
         )
         published = 0
         failed = 0

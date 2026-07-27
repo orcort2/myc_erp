@@ -29,7 +29,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fase 6 aprobada: además de la fundación, persistencia y
+- Motor de Resoluciones con Fases 0 a 7 aprobadas y Fase 8 en revisión: además de la fundación, persistencia y
   seguridad aprobadas, existen 26 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
   repositorio de reconstrucción, migración reversible, identidad canónica,
@@ -51,11 +51,14 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   ejecución, actor, lock, auditoría y outbox sin reinterpretar el efecto
   original. Gateways concretos, API, workers, schedulers, recuperación,
   conciliación, retries y compensación automática continúan sin comportamiento.
-  Fase 7 — Auditoría y Evidencia está implementada `EN REVISIÓN`: añade modelo
+  Fase 7 — Auditoría y Evidencia está aprobada: añade modelo
   puro, registro de evidencia, verificación de integridad, timeline,
   reconstrucción sobre snapshot transaccional consistente y consultas
   autorizadas sobre el expediente general sin persistir una fuente paralela.
-  Fase 8 continúa `NO INICIADA`.
+  Fase 8 — Seguridad integral está implementada `EN REVISIÓN`: centraliza el
+  catálogo de controles en el evaluador vigente y protege creación/transición,
+  ejecución, compensación, consultas y outbox mediante decisiones append-only
+  exactas. Fase 9 continúa `NO INICIADA`.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

@@ -1,4 +1,4 @@
-"""API pública del núcleo del Motor de Resoluciones hasta Fase 6."""
+"""Superficie interna estable del Motor de Resoluciones hasta Fase 8."""
 
 from app.resolution_engine.application.action_runner import ActionRunner
 from app.resolution_engine.application.execution import ResolutionExecutor
@@ -30,7 +30,10 @@ from app.resolution_engine.domain.lifecycle import (
     LifecycleAction,
     ResolutionStateMachine,
 )
-from app.resolution_engine.contracts.execution import ExecuteResolutionCommand
+from app.resolution_engine.contracts.execution import (
+    ExecuteResolutionCommand,
+    PublishOutboxCommand,
+)
 from app.resolution_engine.contracts.compensation import (
     ExecuteCompensationCommand,
     PrepareCompensationCommand,
@@ -70,4 +73,5 @@ __all__ = [
     "ResolutionStateMachine",
     "ResolutionType",
     "PrepareCompensationCommand",
+    "PublishOutboxCommand",
 ]

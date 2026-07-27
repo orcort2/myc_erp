@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 7 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 8 EN REVISIÓN
 >
-> Próxima fase: Fase 8 no iniciada
+> Próxima fase: Fase 9 no iniciada
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -32,6 +32,8 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 18. [`18_COMPENSATION_ENGINE.md`](18_COMPENSATION_ENGINE.md)
 19. [`19_PHASE_7_OPENING.md`](19_PHASE_7_OPENING.md)
 20. [`20_AUDIT_EVIDENCE.md`](20_AUDIT_EVIDENCE.md)
+21. [`21_PHASE_8_OPENING.md`](21_PHASE_8_OPENING.md)
+22. [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md)
 
 ## Regla de precedencia
 
@@ -99,13 +101,21 @@ idempotencia, lock, auditoría y outbox. Su contrato está en
 [`18_COMPENSATION_ENGINE.md`](18_COMPENSATION_ENGINE.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_6.md`](../../closures/RESOLUTION_ENGINE_PHASE_6.md).
 
-La Fase 7 fue implementada y queda `EN REVISIÓN`. Incorpora un modelo puro de
+La Fase 7 fue implementada y aprobada mediante `4ae25ea` y `768ef6e`. Incorpora un modelo puro de
 evidencia, `AuditEngine`, `EvidenceRegistry`, `ResolutionTimeline`, consultas
 autorizadas, correlación y un adaptador SQL read-only. Reutiliza el esquema
 general y no requiere migración. Su contrato está en
 [`20_AUDIT_EVIDENCE.md`](20_AUDIT_EVIDENCE.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_7.md`](../../closures/RESOLUTION_ENGINE_PHASE_7.md).
 
+La Fase 8 está implementada y `EN REVISIÓN`. Consolida el catálogo de
+controles dentro del evaluador de Fase 3 y exige decisiones persistidas exactas
+en Lifecycle, ejecución, compensación, consultas de auditoría y publicación de
+outbox. Su apertura está en
+[`21_PHASE_8_OPENING.md`](21_PHASE_8_OPENING.md), su contrato en
+[`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md) y su cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).
+
 API, gateways concretos, integraciones propietarias, workers, schedulers,
 recuperación, reintentos, conciliación y compensación automática permanecen
-fuera de alcance. La Fase 8 no fue iniciada.
+fuera de alcance. La Fase 9 no fue iniciada.
