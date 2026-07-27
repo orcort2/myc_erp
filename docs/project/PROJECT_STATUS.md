@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fase 6 en revisión); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fase 6 aprobada; Fase 7 no iniciada); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -46,15 +46,16 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
 
-El Motor de Resoluciones cerró técnicamente la Fase 6 y está `EN REVISIÓN`.
-Las Fases 0 a 5 están aprobadas. Además de fundación, persistencia, seguridad,
+El Motor de Resoluciones tiene aprobadas las Fases 0 a 6. Además de fundación,
+persistencia, seguridad,
 Lifecycle y ejecución, existe compensación total/parcial síncrona de efectos
 confirmados declarados reversibles. Plan, autorización, ejecución original,
 checkpoints y resultado quedan vinculados y reconstruibles; Lifecycle conserva
 la autoridad, la pérdida de lock bloquea sin repetir y todo replay exige actor,
 clave y hash exactos. No existen gateways concretos, API, workers, schedulers,
-recuperación, conciliación, retries ni compensación automática. La Fase 7
-requiere aprobación expresa posterior al commit de cierre.
+recuperación, conciliación, retries ni compensación automática. La Fase 7 —
+Auditoría y Evidencia permanece `NO INICIADA`; su propuesta de apertura requiere
+aprobación expresa antes de cualquier implementación.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.

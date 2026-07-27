@@ -1,4 +1,4 @@
-> Estado: CIERRE TÉCNICO EN REVISIÓN
+> Estado: APROBADA
 >
 > Fecha: 2026-07-27
 >
@@ -11,7 +11,9 @@
 La Fase 6 incorpora planificación y ejecución compensatoria total o parcial
 sobre efectos confirmados y declarados como reversibles. Conserva intacta la
 ejecución original, exige una decisión de seguridad exacta, aplica Lifecycle,
-lock, checkpoints, idempotencia, auditoría y outbox. Queda `EN REVISIÓN`.
+lock, checkpoints, idempotencia, auditoría y outbox. El dictamen final aceptó
+la implementación y su corrección de clausura, por lo que la fase queda
+formalmente `APROBADA`.
 
 ## Componentes incorporados
 
@@ -126,5 +128,6 @@ dependencias.
 
 ## Condición para continuar
 
-La Fase 6 queda `EN REVISIÓN`. No se inicia la Fase 7 hasta recibir aprobación
-expresa del commit exclusivo.
+La condición de revisión quedó satisfecha mediante el dictamen final que aceptó
+los commits `74a3de5` y `e1d373e`. La Fase 7 permanece `NO INICIADA`: sólo se
+preparó su apertura formal y requiere aprobación expresa independiente.

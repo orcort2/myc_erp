@@ -83,6 +83,7 @@ FORCE_RECLASSIFY = {
     "backend/tests/resolution_engine/test_compensation_persistence.py",
     "backend/tests/resolution_engine/test_phase_6_migration.py",
     "docs/architecture/resolution-engine/18_COMPENSATION_ENGINE.md",
+    "docs/architecture/resolution-engine/19_PHASE_7_OPENING.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_6.md",
 }
 SECTION_ORDER = (
@@ -401,10 +402,17 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/closures/RESOLUTION_ENGINE_PHASE_6.md": (
             "Cierre técnico de Fase 6",
-            "Registra componentes, estados, invariantes, pruebas, migración, deuda, archivos clave y condición EN REVISIÓN antes de Fase 7.",
+            "Registra componentes, invariantes, corrección de clausura, validaciones, migración y aprobación final mediante los dos commits aceptados.",
             "Implementación, arquitectura y validaciones de Fase 6",
             "Arquitectura, desarrollo, QA, dirección y auditoría",
             "Alto",
+        ),
+        "docs/architecture/resolution-engine/19_PHASE_7_OPENING.md": (
+            "Apertura propuesta de Fase 7",
+            "Define nombre, objetivo, alcance, exclusiones, entregables, invariantes, consistencia y gate de Auditoría y Evidencia sin autorizar implementación.",
+            "Roadmap, matriz y capacidades aprobadas de Fases 1 a 6",
+            "Arquitectura, dirección, desarrollo y revisión previa a Fase 7",
+            "Crítico",
         ),
     }
     if value in phase_6_files:

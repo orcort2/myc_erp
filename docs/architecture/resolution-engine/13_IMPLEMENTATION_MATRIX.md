@@ -6,7 +6,7 @@
 >
 > Complementa a: `01_VISION.md` a `12_ROADMAP.md`
 >
-> Corte verificado: 2026-07-24
+> Corte verificado: 2026-07-27
 
 # Matriz de implementación del Motor de Resoluciones
 
@@ -57,13 +57,14 @@ dominio.
 | 2. Persistencia completa | `APROBADA` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
 | 3. Seguridad, identidad y evidencia | `APROBADA` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
 | 4. Ciclo de decisión sin efectos | `APROBADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
-| 5. Ejecución controlada | `EN REVISIÓN` | Modelo y Engine de ejecución, Executor, Action Runner, contratos, checkpoints, idempotencia, locks, resultados, eventos y publicación explícita de outbox | Plan autorizado/revalidado de Fase 4 | Sólo contradicciones que impidan ejecutar mediante contratos generales; no se integran módulos propietarios | Plan exacto ejecutado una vez, concurrencia inválida rechazada y cada efecto confirmado o incierto preservado |
-| 6. API institucional | `NO INICIADA` | `/api/v1/resolutions`, comandos, consultas, errores, idempotency key, ETag/versión, filtros y paginación | Servicios de aplicación de Fases 1 a 5 | Infraestructura HTTP que impida autenticación, autorización, concurrencia o errores contractuales | Contrato HTTP completo con pruebas 401/403/409/412/422/423 |
-| 7. UC-001 vertical | `NO INICIADA` | `service_order.add_additional_equipment`, providers, estrategias, planes, policies, revalidator y gateways concretos | API y ejecución completas; servicios canónicos de dominios participantes | Duplicidad ETS/Facturación/Equipos, excepción ETS sin `requested/approved/executed` u operación participante no idempotente | UC-001 completo, recuperable y sin acceso directo del Motor a tablas de dominio |
-| 8. Frontend operativo | `NO INICIADA` | Bandeja, detalle, timeline, simulación, autorizaciones, ejecución, recuperación y cliente API | API institucional estabilizada | Navegación o cliente API que obligue a duplicar estado, permisos o reglas del backend | UI sin segunda máquina de estados ni lógica de dominio |
-| 9. Expansión UC-002 a UC-040 | `NO INICIADA` | Nuevas definiciones y componentes especializados por grupos de dominio | UC-001 aprobado y núcleo estable | Sólo contradicciones del dominio incorporado en el grupo vigente | Matriz de casos con evidencia completa, sin condicionales nuevos en el núcleo |
-| 10. Operación y gobierno | `NO INICIADA` | Métricas, trazas, alertas, panel de recuperación, retención, runbooks, restauración y gobierno de definiciones/políticas | Motor funcional e integrado | Ausencia de observabilidad o recuperación verificable para operar el Motor | Operación reproducible, alertada, restaurable y gobernada |
-| 11. Evolución de plataforma | `NO INICIADA` | SDK/API pública, offline completo, ejecución multinodo, alta disponibilidad e IA asistida | Motor institucional estabilizado y evidencia histórica suficiente | Contradicciones que impidan distribución, compatibilidad o explicabilidad | Capacidades evolucionadas sin alterar contratos ni reinterpretar históricos |
+| 5. Ejecución controlada | `APROBADA` | Modelo y Engine de ejecución, Executor, Action Runner, contratos, checkpoints, idempotencia, locks, resultados, eventos y publicación explícita de outbox | Plan autorizado/revalidado de Fase 4 | Sólo contradicciones que impidan ejecutar mediante contratos generales; no se integran módulos propietarios | Cumplido en `ca5fdda`: ejecución exacta, lock posterior al handler, incertidumbre preservada y outbox trazable |
+| 6. Motor de Compensación | `APROBADA` | Modelo declarativo, planes total/parcial, clausura transitiva, Runner, contratos, persistencia, Lifecycle, checkpoints, idempotencia, locks, auditoría y outbox | Ejecución controlada y seguridad exacta de Fases 3 a 5 | Sólo contradicciones que impidan vincular efectos reversibles confirmados; no automatización ni gateways | Cumplido en `74a3de5` + `e1d373e`: compensación reconstruible, segura, cerrada sobre dependientes y sin duplicados |
+| 7. Auditoría y Evidencia | `NO INICIADA` | Audit Engine, Evidence Registry, Resolution Timeline, Evidence Store y servicios de trazabilidad/reconstrucción | Expediente, seguridad, Lifecycle, ejecución y compensación aprobados | Sólo carencias que impidan verificar o reconstruir evidencia general; no integración ERP | Expediente completo reconstruible, correlacionado y verificable con diagnósticos explícitos |
+| 8. Seguridad integral | `NO INICIADA` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Protección de extremo a extremo sin evaluadores paralelos ni debilitamiento de Fase 3 |
+| 9. Integración con ERP MYC | `NO INICIADA` | Definiciones verticales, UC-001 y siguientes, providers y Domain Gateways concretos | Núcleo y auditoría aprobados; servicios canónicos de dominios participantes | Actor opcional, duplicidad o mutación inmediata únicamente del caso incorporado | Primeros casos completos sin acceso directo del Motor a tablas propietarias |
+| 10. SDK y API Pública | `NO INICIADA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Motor institucional e integraciones estabilizadas | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Contratos públicos completos sin filtrar internals ni duplicar reglas |
+| 11. Motor Distribuido | `NO INICIADA` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Contratos públicos estables, evidencia y operación verificables | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Distribución sin reinterpretar históricos ni confirmar efectos inciertos |
+| 12. IA y Resoluciones Asistidas | `NO INICIADA` | Asistencia, recomendaciones y aprendizaje explicable sobre evidencia histórica | Historial institucional suficiente y Motor distribuido estabilizado | Evidencia insuficiente, sesgo o decisiones no explicables | Asistencia gobernada sin sustituir políticas, autorización o decisión institucional |
 
 ## Dependencias entre componentes
 
@@ -93,9 +94,9 @@ corrección anticipada.
 | Roles solicitables desde registro público | Fase 3 — resuelto | El contrato público prohíbe `role_names`; la autoridad se decide en backend. |
 | Refresh token aceptable como bearer de acceso | Fase 3 — resuelto | Access/refresh tienen tipo explícito y sólo access autentica requests. |
 | Ausencia de deny-by-default uniforme | Fase 3 para superficies del Motor — resuelto | El evaluador del Motor deniega sin política; la cobertura general del ERP sigue su propio proyecto. |
-| Actor opcional en la excepción ETS | Fase 7, o antes si un contrato de Fase 4 lo consume | No integrar ese flujo mientras el actor no sea obligatorio. |
-| Lógica y mutaciones ETS duplicadas | Fase 7 | Consolidar sólo las operaciones que serán invocadas por gateways concretos. |
-| Solicitud de excepción que ejecuta inmediatamente | Fase 7 | Separar solicitud, autorización y ejecución antes de modelar la resolución correspondiente. |
+| Actor opcional en la excepción ETS | Fase 9, o antes si un contrato previo lo consume | No integrar ese flujo mientras el actor no sea obligatorio. |
+| Lógica y mutaciones ETS duplicadas | Fase 9 | Consolidar sólo las operaciones que serán invocadas por gateways concretos. |
+| Solicitud de excepción que ejecuta inmediatamente | Fase 9 | Separar solicitud, autorización y ejecución antes de modelar la resolución correspondiente. |
 | Autenticación de certificados desde superficies duplicadas | Fase 9 al incorporar ese grupo | Mantener Calidad como mutador canónico antes de su gateway. |
 | Deriva histórica de metadatos Alembic | Fase 2 sólo si interfiere con tablas, constraints o head del Motor | No corregir deriva ajena; aislar y validar la migración del Motor. |
 | Falta de CI general | No bloquea Fases 0–9 por sí sola | Ejecutar localmente todas las validaciones requeridas; atenderla únicamente si impide evidencia reproducible de una fase. |
@@ -332,7 +333,8 @@ La Fase 0 se considera lista para revisión cuando:
 
 ## Resultado de Fase 6
 
-- Estado: `EN REVISIÓN`.
+- Estado: `APROBADA`.
+- Commits aceptados: `74a3de5` y corrección `e1d373e`.
 - Gate: cumplido; sólo efectos confirmados y declarados reversibles pueden
   formar un plan total o parcial autorizado.
 - Vinculación: plan, pasos y ejecución compensatoria conservan FKs y hashes
@@ -352,6 +354,21 @@ La Fase 0 se considera lista para revisión cuando:
   tablas generales de compensación.
 - Componentes adelantados: ninguno; no existen workers, retries, recuperación,
   conciliación, API, gateways o adaptadores concretos del ERP.
-- Próxima fase autorizable: Fase 7, sólo después de aprobación expresa.
+- Continuación autorizable: apertura formal de Fase 7; su implementación sigue
+  prohibida hasta que esa apertura sea aprobada expresamente.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_6.md`](../../closures/RESOLUTION_ENGINE_PHASE_6.md).
+
+## Preparación de apertura de Fase 7
+
+- Nombre oficial: **Auditoría y Evidencia**, conforme al roadmap.
+- Estado: `NO INICIADA`; propuesta de apertura pendiente de aprobación.
+- Objetivo: formalizar verificación, correlación, timeline, consultabilidad y
+  reconstrucción sobre la evidencia ya producida por las Fases 1 a 6.
+- Consistencia: la tabla maestra fue corregida porque su secuencia antigua
+  asignaba Fase 6 a API y Fase 7 a UC-001. Prevalece el roadmap; API/SDK e
+  integración ERP permanecen en fases posteriores.
+- Contrato propuesto:
+  [`19_PHASE_7_OPENING.md`](19_PHASE_7_OPENING.md).
+- Prohibición vigente: no escribir código, esquema ni pruebas funcionales de
+  Fase 7 hasta aprobación expresa de la apertura.

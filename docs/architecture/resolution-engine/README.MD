@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 6 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 6 APROBADA
 >
-> Fase vigente: Fase 6 — Motor de Compensación, implementación cerrada
+> Próxima fase: Fase 7 — Auditoría y Evidencia, apertura pendiente
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -30,6 +30,7 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 16. [`16_LIFECYCLE_ORCHESTRATION.md`](16_LIFECYCLE_ORCHESTRATION.md)
 17. [`17_EXECUTION_RUNTIME.md`](17_EXECUTION_RUNTIME.md)
 18. [`18_COMPENSATION_ENGINE.md`](18_COMPENSATION_ENGINE.md)
+19. [`19_PHASE_7_OPENING.md`](19_PHASE_7_OPENING.md)
 
 ## Regla de precedencia
 
@@ -89,7 +90,8 @@ outbox. Su contrato está en
 [`17_EXECUTION_RUNTIME.md`](17_EXECUTION_RUNTIME.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_5.md`](../../closures/RESOLUTION_ENGINE_PHASE_5.md).
 
-La Fase 6 quedó implementada y está `EN REVISIÓN`. Incorpora definición
+La Fase 6 quedó implementada y aprobada mediante `74a3de5` y `e1d373e`.
+Incorpora definición
 declarativa, planificación total/parcial, relación exacta con efectos
 confirmados, ejecución compensatoria síncrona, Lifecycle, checkpoints,
 idempotencia, lock, auditoría y outbox. Su contrato está en
@@ -98,4 +100,6 @@ idempotencia, lock, auditoría y outbox. Su contrato está en
 
 API, gateways concretos, integraciones propietarias, workers, schedulers,
 recuperación, reintentos, conciliación y compensación automática permanecen
-fuera de alcance. La Fase 7 no puede iniciar sin aprobación expresa.
+fuera de alcance. La propuesta formal de Fase 7 — Auditoría y Evidencia está en
+[`19_PHASE_7_OPENING.md`](19_PHASE_7_OPENING.md), con estado `NO INICIADA`
+hasta aprobación expresa.

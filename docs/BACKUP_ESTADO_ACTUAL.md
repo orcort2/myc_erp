@@ -94,8 +94,8 @@
 
 ## Motor de Resoluciones — Fase 6
 
-- Estado: Fases 0 a 5 `APROBADAS`; Fase 6 `EN REVISIÓN`; Fase 7
-  `NO INICIADA`.
+- Estado: Fases 0 a 6 `APROBADAS`; Fase 7 — Auditoría y Evidencia
+  `NO INICIADA`, con apertura formal propuesta y pendiente de aprobación.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -139,3 +139,5 @@
   [`architecture/resolution-engine/18_COMPENSATION_ENGINE.md`](architecture/resolution-engine/18_COMPENSATION_ENGINE.md).
 - Cierre:
   [`closures/RESOLUTION_ENGINE_PHASE_6.md`](closures/RESOLUTION_ENGINE_PHASE_6.md).
+- Apertura propuesta de Fase 7, sin autorización de implementación:
+  [`architecture/resolution-engine/19_PHASE_7_OPENING.md`](architecture/resolution-engine/19_PHASE_7_OPENING.md).
