@@ -10,7 +10,7 @@
 >
 > Historial anterior: `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte actualizado: 2026-07-24
+> Corte actualizado: 2026-07-27
 
 # Estado operativo actual del ERP MYC
 
@@ -52,10 +52,11 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 205 pruebas y 19 subpruebas correctas.
-- Suite específica del Motor: 81 pruebas correctas, incluidas concesiones,
-  denegaciones, segregación, evidencia exacta, arquitectura, esquema y
-  migraciones.
+- Suite backend completa: 233 pruebas y 19 subpruebas correctas.
+- Suite específica del Motor: 109 pruebas correctas, incluidas creación,
+  transiciones válidas/inválidas, invariantes, autorización exacta,
+  revalidación, concurrencia, persistencia, orquestación, arquitectura, esquema
+  y migraciones.
 - Frontend: 11 pruebas correctas y build Vite de producción correcto; permanece
   la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
@@ -85,26 +86,26 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 3
+## Motor de Resoluciones — Fase 4
 
-- Estado: Fases 0, 1 y 2 `APROBADAS`; Fase 3 `EN REVISIÓN`; Fase 4
+- Estado: Fases 0, 1, 2 y 3 `APROBADAS`; Fase 4 `EN REVISIÓN`; Fase 5
   `NO INICIADA`.
-- El Motor conserva 22 modelos persistentes generales y agrega identidad
-  canónica, contexto de autenticación, permisos atómicos, políticas versionadas,
-  deny-by-default, límite organizacional, segregación configurable y
-  autorización base.
-- Toda concesión o denegación conserva actor, autenticación, permisos, políticas
-  y versiones, condiciones, correlación, códigos de razón y hash reproducible.
-- Plan, versión/hash, simulación/hash y solicitud de autorización se validan
-  contra la misma resolución. Una discordancia se deniega antes de evaluar
-  permisos.
-- El núcleo no importa usuarios, roles, routers, schemas, FastAPI ni servicios
-  propietarios. La integración futura se realiza por tres puertos explícitos.
-- Registro público ya no acepta roles solicitados y un refresh JWT ya no puede
-  autenticar como bearer de acceso.
-- No se incorporaron lifecycle, contexto vivo, análisis, construcción de plan,
-  simulación real, revalidación, gateways, API, ejecución ni workers.
+- El Motor conserva el expediente y seguridad aprobados e incorpora creación,
+  Lifecycle, máquina estado/acción, evidencias tipadas, eventos internos,
+  auditoría append-only y control optimista.
+- El flujo principal llega de `draft` a `ready_for_execution`; autorización y
+  revalidación exigen resolución, IDs, versiones y hashes exactos.
+- `ResolutionOrchestrator` selecciona la definición registrada exacta y
+  coordina contexto, análisis, estrategia, plan, simulación declarativa,
+  requisitos de autorización y revalidación sin efectos.
+- Una transición inválida, evidencia discordante, razón de gobierno ausente o
+  versión obsoleta se rechaza explícitamente.
+- No se incorporaron ejecución externa, gateways, API, workers, publicación
+  outbox, retries, compensaciones ni integraciones específicas del ERP.
+- No existe migración de Fase 4. La base y el respaldo conservan
+  `alembic_version = b4c6d8e0f2a3`; `alembic check` sólo muestra `TD-021` y
+  ninguna deriva del Motor.
 - Contrato:
-  [`architecture/resolution-engine/15_SECURITY_GOVERNANCE.md`](architecture/resolution-engine/15_SECURITY_GOVERNANCE.md).
+  [`architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md`](architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md).
 - Cierre:
-  [`closures/RESOLUTION_ENGINE_PHASE_3.md`](closures/RESOLUTION_ENGINE_PHASE_3.md).
+  [`closures/RESOLUTION_ENGINE_PHASE_4.md`](closures/RESOLUTION_ENGINE_PHASE_4.md).

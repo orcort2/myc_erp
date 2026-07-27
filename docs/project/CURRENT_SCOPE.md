@@ -29,16 +29,18 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones en Fase 3: además de la fundación y persistencia
-  aprobadas, existen 22 modelos persistentes generales, relaciones normalizadas,
+- Motor de Resoluciones en Fase 4: además de la fundación, persistencia y
+  seguridad aprobadas, existen 22 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
   repositorio de reconstrucción, migración reversible, identidad canónica,
   autenticación tipada, permisos atómicos, políticas versionadas,
   deny-by-default, segregación configurable, autorización base y auditoría
-  append-only de concesiones/denegaciones. Simulación, ejecución, locks e
-  idempotencia continúan como contratos de datos; todavía no existen lifecycle,
-  contexto vivo, análisis, simulación real, revalidación, gateways, API ni
-  comportamiento operativo.
+  append-only de concesiones/denegaciones, creación, Lifecycle, máquina de
+  estados, invariantes sobre evidencia reconstruida, auditoría de transiciones,
+  control optimista y orquestación versionada de componentes puros hasta
+  revalidación. La simulación implementada es declarativa y sin efectos.
+  Ejecución, locks, idempotencia, outbox operativo, gateways, API y workers
+  continúan sin comportamiento.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

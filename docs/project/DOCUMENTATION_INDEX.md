@@ -57,6 +57,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md`](../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md) | Orden técnico aprobado, dependencias, deuda bloqueante, gates y protocolo de revisión fase por fase del Motor de Resoluciones. |
 | [`../architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md`](../architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md) | Contrato implementado del esquema general, versionado, reconstruible e históricamente inmutable de la Fase 2. |
 | [`../architecture/resolution-engine/15_SECURITY_GOVERNANCE.md`](../architecture/resolution-engine/15_SECURITY_GOVERNANCE.md) | Contrato implementado de identidad, permisos, políticas, segregación, autorización base y evidencia de seguridad de la Fase 3. |
+| [`../architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md`](../architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md) | Contrato implementado de creación, máquina de estados, invariantes, auditoría y orquestación interna sin efectos de la Fase 4. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -75,6 +76,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/RESOLUTION_ENGINE_PHASE_1.md`](../closures/RESOLUTION_ENGINE_PHASE_1.md) | Contratos, catálogos, serialización canónica, runtime, registro versionado, aislamiento y validaciones de la Fase 1 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_2.md`](../closures/RESOLUTION_ENGINE_PHASE_2.md) | Modelo ORM, integridad, reconstrucción, inmutabilidad, migración reversible y validaciones de la Fase 2 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_3.md`](../closures/RESOLUTION_ENGINE_PHASE_3.md) | Identidad, permisos, políticas, segregación, autorización base, evidencia append-only, bloqueadores de autenticación y validaciones de la Fase 3. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_4.md`](../closures/RESOLUTION_ENGINE_PHASE_4.md) | Creación, Lifecycle, transiciones, invariantes, control optimista, orquestación pura y validaciones de la Fase 4. |
 
 ## Auditorías
 

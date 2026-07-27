@@ -1,9 +1,12 @@
-"""Fundación del Motor de Resoluciones.
+"""API pública del núcleo del Motor de Resoluciones hasta Fase 4."""
 
-La Fase 1 expone únicamente contratos, tipos de dominio y el registro de
-definiciones. No contiene persistencia, ciclo de vida ni ejecución.
-"""
-
+from app.resolution_engine.application.lifecycle import (
+    LifecycleActor,
+    ResolutionLifecycleService,
+)
+from app.resolution_engine.application.orchestration import (
+    ResolutionOrchestrator,
+)
 from app.resolution_engine.application.registry import ResolutionRegistry
 from app.resolution_engine.domain.definitions import (
     ComponentReference,
@@ -14,12 +17,21 @@ from app.resolution_engine.domain.value_objects import (
     DefinitionVersion,
     ResolutionType,
 )
+from app.resolution_engine.domain.lifecycle import (
+    LifecycleAction,
+    ResolutionStateMachine,
+)
 
 __all__ = [
     "ComponentKey",
     "ComponentReference",
     "DefinitionVersion",
+    "LifecycleAction",
+    "LifecycleActor",
     "ResolutionDefinition",
+    "ResolutionLifecycleService",
+    "ResolutionOrchestrator",
     "ResolutionRegistry",
+    "ResolutionStateMachine",
     "ResolutionType",
 ]

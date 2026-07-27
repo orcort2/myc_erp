@@ -57,3 +57,50 @@ class ResolutionRegistryFrozenError(ResolutionEngineError):
 
     def __init__(self) -> None:
         super().__init__("Resolution registry is frozen")
+
+
+class InvalidLifecycleTransitionError(ResolutionEngineError):
+    """La transición solicitada no pertenece al grafo vigente."""
+
+    def __init__(self, *, current_state: str, action: str) -> None:
+        super().__init__(
+            f"Invalid lifecycle transition: {current_state} + {action}"
+        )
+        self.current_state = current_state
+        self.action = action
+
+
+class LifecycleInvariantError(ResolutionEngineError):
+    """La evidencia persistida no satisface una precondición del Lifecycle."""
+
+    def __init__(self, *, action: str, violations: tuple[str, ...]) -> None:
+        super().__init__(
+            f"Lifecycle invariants failed for {action}: "
+            + ", ".join(violations)
+        )
+        self.action = action
+        self.violations = violations
+
+
+class LifecycleConcurrencyError(ResolutionEngineError):
+    """El expediente cambió después de calcular la transición."""
+
+    def __init__(self, *, resolution_id: int, expected_version: int) -> None:
+        super().__init__(
+            f"Resolution {resolution_id} no longer has version "
+            f"{expected_version}"
+        )
+        self.resolution_id = resolution_id
+        self.expected_version = expected_version
+
+
+class ResolutionNotFoundError(ResolutionEngineError, LookupError):
+    """No existe la resolución solicitada."""
+
+    def __init__(self, *, resolution_id: int) -> None:
+        super().__init__(f"Resolution not found: {resolution_id}")
+        self.resolution_id = resolution_id
+
+
+class ComponentBindingError(ResolutionEngineError):
+    """Una referencia registrada no tiene una implementación compatible."""

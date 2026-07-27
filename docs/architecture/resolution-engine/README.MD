@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 3 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 4 EN REVISIÓN
 >
-> Fase vigente: Fase 3 — Seguridad, identidad y evidencia, implementación cerrada
+> Fase vigente: Fase 4 — Lifecycle y orquestación interna, implementación cerrada
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -27,6 +27,7 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 13. [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 14. [`14_PERSISTENCE_SCHEMA.md`](14_PERSISTENCE_SCHEMA.md)
 15. [`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md)
+16. [`16_LIFECYCLE_ORCHESTRATION.md`](16_LIFECYCLE_ORCHESTRATION.md)
 
 ## Regla de precedencia
 
@@ -65,13 +66,20 @@ en [`14_PERSISTENCE_SCHEMA.md`](14_PERSISTENCE_SCHEMA.md) y el cierre técnico
 en
 [`../../closures/RESOLUTION_ENGINE_PHASE_2.md`](../../closures/RESOLUTION_ENGINE_PHASE_2.md).
 
-La Fase 3 quedó implementada y está `EN REVISIÓN`. Incorpora identidad canónica,
+La Fase 3 quedó implementada y aprobada. Incorpora identidad canónica,
 contexto de autenticación, permisos atómicos, políticas deterministas,
 deny-by-default, segregación, autorización base y evidencia append-only de
 concesiones y denegaciones. Su contrato está en
 [`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_3.md`](../../closures/RESOLUTION_ENGINE_PHASE_3.md).
 
-Lifecycle, construcción de contexto, análisis, simulación real, revalidación,
-gateways, API, ejecución y workers permanecen fuera de alcance. La Fase 4 no
-puede iniciar sin aprobación expresa.
+La Fase 4 quedó implementada y está `EN REVISIÓN`. Incorpora creación,
+Lifecycle, máquina de estados, invariantes sobre evidencia reconstruida,
+auditoría de transiciones, control optimista y orquestación versionada de
+componentes puros hasta revalidación. Su contrato está en
+[`16_LIFECYCLE_ORCHESTRATION.md`](16_LIFECYCLE_ORCHESTRATION.md) y su cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_4.md`](../../closures/RESOLUTION_ENGINE_PHASE_4.md).
+
+Ejecución, gateways, API, publicación outbox, workers, reintentos y
+compensaciones permanecen fuera de alcance. La Fase 5 no puede iniciar sin
+aprobación expresa.

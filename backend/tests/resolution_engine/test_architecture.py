@@ -142,3 +142,45 @@ def test_security_core_does_not_embed_erp_roles_or_user_table():
                     )
 
     assert violations == []
+
+
+def test_phase_4_orchestrator_does_not_cross_into_execution_or_outbox():
+    path = PACKAGE_ROOT / "application" / "orchestration.py"
+    source = path.read_text(encoding="utf-8")
+
+    assert "ComponentKind.EXECUTOR" not in source
+    assert "execute(" not in source
+    assert "ResolutionExecution" not in source
+    assert "ResolutionOutboxEvent" not in source
+
+
+def test_lifecycle_state_changes_are_confined_to_its_sql_adapter():
+    assignments: list[str] = []
+    for layer in ("domain", "contracts", "application", "infrastructure"):
+        for path in python_files(layer):
+            relative = path.relative_to(PACKAGE_ROOT)
+            if relative in {
+                Path("infrastructure/lifecycle.py"),
+                Path("infrastructure/persistence/core.py"),
+            }:
+                continue
+            tree = ast.parse(
+                path.read_text(encoding="utf-8"),
+                filename=str(path),
+            )
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                    continue
+                targets = (
+                    node.targets
+                    if isinstance(node, ast.Assign)
+                    else [node.target]
+                )
+                if any(
+                    isinstance(target, ast.Attribute)
+                    and target.attr == "status"
+                    for target in targets
+                ):
+                    assignments.append(str(relative))
+
+    assert assignments == []

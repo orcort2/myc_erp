@@ -1,4 +1,4 @@
-> Estado: CIERRE TÉCNICO EN REVISIÓN
+> Estado: APROBADA
 >
 > Fecha: 2026-07-24
 >
@@ -12,7 +12,8 @@ La Fase 3 incorpora la capa central de seguridad y gobierno del Motor. Toda
 decisión protegida parte de un actor autenticado, evalúa permisos y políticas
 versionadas, aplica segregación configurable, valida la pertenencia exacta de la
 evidencia y conserva concesiones o denegaciones como registros append-only. La
-fase queda `EN REVISIÓN`; no se inicia Fase 4.
+fase fue aprobada expresamente el 2026-07-27 sobre el commit exclusivo
+`a9794b3`.
 
 ## Componentes incorporados
 
@@ -109,7 +110,6 @@ Motor.
 - Operación/documentación: respaldo SQL, matriz, contratos de arquitectura,
   canon de proyecto, inventario y este cierre.
 
-## Condición para continuar
+## Aprobación
 
-La Fase 3 queda `EN REVISIÓN`. La Fase 4 sólo puede iniciar después de la
-aprobación expresa del commit exclusivo de esta fase.
+La Fase 3 quedó `APROBADA` y habilitó exclusivamente la apertura de Fase 4.

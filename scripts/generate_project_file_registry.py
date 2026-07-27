@@ -113,6 +113,81 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
 
+    phase_4_files = {
+        "backend/app/resolution_engine/domain/lifecycle.py": (
+            "Dominio de Lifecycle",
+            "Define acciones, proyección, evidencias exactas, eventos, transiciones, grafo e invariantes puras hasta ready_for_execution.",
+            "Enums, canonical hashing y errores del Motor",
+            "Servicio de Lifecycle, adaptador SQL y pruebas de Fase 4",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/contracts/lifecycle.py": (
+            "Contratos de Lifecycle",
+            "Declara comandos de creación y puertos explícitos para persistencia del ciclo y resolución de componentes sin acoplar el núcleo.",
+            "Definiciones, ActorContext y dominio de Lifecycle",
+            "Servicios de aplicación, adaptadores futuros y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/lifecycle.py": (
+            "Servicio de Lifecycle",
+            "Valida y crea resoluciones, reconstruye su estado y obliga a que toda transición pase por la máquina central.",
+            "Registry, Clock, IdentifierFactory, LifecycleStore y state machine",
+            "Composición backend futura y pruebas de Fase 4",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/orchestration.py": (
+            "Orquestación interna",
+            "Selecciona la definición exacta y coordina componentes puros de contexto a revalidación sin ejecutar ni publicar efectos.",
+            "ResolutionRegistry, ComponentResolver y referencias versionadas",
+            "Flujos internos futuros y pruebas de Fase 4",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/lifecycle.py": (
+            "Persistencia de Lifecycle",
+            "Crea y reconstruye el expediente, aplica transiciones validadas con control optimista y agrega auditoría sin administrar transacciones.",
+            "SQLAlchemy, modelos persistentes y repositorio del Motor",
+            "ResolutionLifecycleService y pruebas de persistencia",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_lifecycle.py": (
+            "Pruebas de Lifecycle",
+            "Cubre flujo principal, alternativas, estados terminales, transiciones inválidas e invariantes exactas de autorización y revalidación.",
+            "Dominio de Lifecycle y pytest",
+            "Gate funcional y arquitectónico de Fase 4",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_lifecycle_persistence.py": (
+            "Pruebas de persistencia Lifecycle",
+            "Verifica creación reconstruible, auditoría ordenada, incremento de versión y rechazo de escrituras obsoletas sobre SQL real en memoria.",
+            "SQLAlchemy, esquema del Motor y servicio de Lifecycle",
+            "Gate de persistencia y concurrencia de Fase 4",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_orchestration.py": (
+            "Pruebas de orquestación",
+            "Verifica selección exacta por tipo/versión y coordinación pura hasta revalidación sin exponer ejecución.",
+            "Registry, componentes fake y ResolutionOrchestrator",
+            "Gate de orquestación y aislamiento de Fase 4",
+            "Alto",
+        ),
+        "docs/architecture/resolution-engine/16_LIFECYCLE_ORCHESTRATION.md": (
+            "Contrato de Lifecycle",
+            "Documenta creación, estados, transiciones, invariantes, orquestación versionada, persistencia auditada y frontera previa a ejecución.",
+            "Especificación, matriz y código de Fase 4",
+            "Arquitectura, desarrollo, QA y fases posteriores",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_4.md": (
+            "Cierre técnico de Fase 4",
+            "Registra componentes, transiciones, invariantes, exclusiones, validaciones, deuda y condición EN REVISIÓN antes de Fase 5.",
+            "Implementación, arquitectura y pruebas de Fase 4",
+            "Arquitectura, desarrollo, QA, dirección y auditoría",
+            "Alto",
+        ),
+    }
+    if value in phase_4_files:
+        return phase_4_files[value]
+
     if "/migrations/versions/" in value:
         return ("Migración Alembic", f"Aplica la revisión {subject} del esquema y conserva la evolución reproducible de PostgreSQL.", "Alembic, modelos ORM y base de datos", "Alembic durante upgrade/downgrade y despliegues", "Crítico")
     if value == "AGENTS.md":
@@ -251,7 +326,7 @@ def render(paths: list[Path], preserved: dict[str, str]) -> str:
         "",
         "# Registro maestro de archivos funcionales",
         "",
-        "Fecha de inventario: 2026-07-24.",
+        "Fecha de inventario: 2026-07-27.",
         "",
         "Este es el inventario oficial de archivos funcionales del ERP MYC. Incluye únicamente archivos fuente, configuración, migraciones, recursos oficiales, scripts, pruebas y documentación relevante. Las filas describen responsabilidad verificable; los estados reflejan el estado actual observable del repositorio.",
         "",

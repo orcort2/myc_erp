@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fase 3 en revisión); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fase 4 en revisión); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -46,15 +46,13 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
 
-El Motor de Resoluciones cerró técnicamente la Fase 3 y está `EN REVISIÓN`.
-Además de la fundación y persistencia aprobadas, existen identidad canónica,
-contexto de autenticación, permisos atómicos, políticas versionadas,
-deny-by-default, segregación configurable, autorización base y evidencia
-append-only de concesiones y denegaciones. El expediente usa IDs de actor sin
-FK a usuarios del ERP y valida plan/simulación por versión y hash exactos. No
-existen todavía lifecycle, contexto vivo, análisis, simulación real,
-revalidación, gateways, API ni ejecución. La Fase 4 requiere aprobación expresa
-posterior al commit de cierre.
+El Motor de Resoluciones cerró técnicamente la Fase 4 y está `EN REVISIÓN`.
+Las Fases 0 a 3 están aprobadas. Además de la fundación, persistencia y
+seguridad, existen creación, Lifecycle, máquina de estados, invariantes de
+evidencia exacta, auditoría de transiciones, control optimista y orquestación
+versionada de componentes puros hasta revalidación. No existen ejecución,
+gateways, API, publicación outbox, workers, retries ni compensaciones. La Fase 5
+requiere aprobación expresa posterior al commit de cierre.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.

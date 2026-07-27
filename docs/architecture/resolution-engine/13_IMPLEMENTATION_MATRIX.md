@@ -55,8 +55,8 @@ dominio.
 | 0. Preparación arquitectónica | `APROBADA` | Canon documental, README, matriz, gates, inventario y línea base | Especificación completa y reglas del repositorio | Especificación fuera del índice, ausencia de matriz y contradicciones de precedencia documental | Arquitectura ratificada, matriz registrada, validaciones completas y commit de Fase 0 |
 | 1. Contratos y núcleo | `APROBADA` | Organización de paquetes, contratos tipados, enumeraciones, errores, hashes, reloj, identificadores, `ResolutionRegistry` y pruebas arquitectónicas | Fase 0 aprobada | Sólo dependencias o acoplamientos que impidan aislar el núcleo; no seguridad, persistencia ni gateways todavía | Definiciones registrables sin modificar el núcleo y dependencias prohibidas cubiertas por pruebas |
 | 2. Persistencia completa | `APROBADA` | Modelos del Motor, restricciones, índices, repositorios, migraciones, inmutabilidad y outbox estructural | Contratos de Fase 1 estables; cadena Alembic coherente | Deriva o convenciones que impidan migrar exclusivamente las tablas del Motor | Ciclo reconstruible desde persistencia, upgrade/downgrade verificados y único head |
-| 3. Seguridad, identidad y evidencia | `EN REVISIÓN` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
-| 4. Ciclo de decisión sin efectos | `NO INICIADA` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
+| 3. Seguridad, identidad y evidencia | `APROBADA` | `ActorContext`, autenticación aplicable, permisos atómicos, políticas, segregación, autorización base, auditoría append-only y protección de datos | Persistencia de Fase 2 | Registro con escalación, refresh aceptado como access, actor opcional, rutas del Motor sin deny-by-default o identidad insuficiente | Cada decisión demuestra actor, autoridad, política y evidencia inmutable |
+| 4. Ciclo de decisión sin efectos | `EN REVISIÓN` | State machine, lifecycle, context builder, fact providers, análisis, estrategia, plan, simulación, autorización y revalidación sin mutaciones | Seguridad y evidencia de Fase 3 | Cualquier fuente viva o servicio no canónico que impida snapshots confiables de sólo lectura | Flujo completo hasta revalidación sin efectos sobre dominios |
 | 5. Ejecución y recuperación | `NO INICIADA` | Saga, executor, idempotencia, concurrencia, locks, retries, reconciliación, compensación, outbox operativo y workers | Plan autorizado/revalidado de Fase 4 | Mutaciones duplicadas, servicios no canónicos, operaciones no idempotentes o ciclo de excepción que mezcle solicitud y ejecución | Caídas y respuestas inciertas recuperables sin duplicar efectos |
 | 6. API institucional | `NO INICIADA` | `/api/v1/resolutions`, comandos, consultas, errores, idempotency key, ETag/versión, filtros y paginación | Servicios de aplicación de Fases 1 a 5 | Infraestructura HTTP que impida autenticación, autorización, concurrencia o errores contractuales | Contrato HTTP completo con pruebas 401/403/409/412/422/423 |
 | 7. UC-001 vertical | `NO INICIADA` | `service_order.add_additional_equipment`, providers, estrategias, planes, policies, revalidator y gateways concretos | API y ejecución completas; servicios canónicos de dominios participantes | Duplicidad ETS/Facturación/Equipos, excepción ETS sin `requested/approved/executed` u operación participante no idempotente | UC-001 completo, recuperable y sin acceso directo del Motor a tablas de dominio |
@@ -223,7 +223,7 @@ La Fase 0 se considera lista para revisión cuando:
 
 ## Resultado de Fase 3
 
-- Estado: `EN REVISIÓN`.
+- Estado: `APROBADA`; commit exclusivo `a9794b3`.
 - Gate: cumplido; cada concesión o denegación demuestra actor, autenticación,
   permisos, políticas/versiones, condiciones, recurso, correlación y hash
   reproducible.
@@ -238,6 +238,38 @@ La Fase 0 se considera lista para revisión cuando:
   no autentica como bearer de acceso.
 - Componentes adelantados: ninguno; el servicio autoriza recursos existentes
   pero no cambia lifecycle ni produce efectos.
-- Próxima fase autorizable: Fase 4, sólo después de aprobación expresa.
+- Continuación autorizada: Fase 4, aprobada expresamente sobre `a9794b3`.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_3.md`](../../closures/RESOLUTION_ENGINE_PHASE_3.md).
+
+## Apertura de Fase 4
+
+- Estado: `ACTIVA`.
+- Autorización: aprobación expresa posterior al commit `a9794b3`.
+- Componentes autorizados: creación, state machine, Lifecycle, invariantes,
+  selección por definición, coordinación pura hasta revalidación, eventos
+  internos y persistencia auditada de transiciones.
+- Bloqueadores directos corregibles: sólo fuentes o servicios que impidieran
+  reconstruir evidencia exacta de sólo lectura; no se detectó ninguno.
+- Componentes excluidos: ejecución externa, workers, procesamiento asíncrono,
+  publicación outbox, reintentos, compensación, simulación operativa, gateways,
+  API e integraciones concretas del ERP.
+
+## Resultado de Fase 4
+
+- Estado: `EN REVISIÓN`.
+- Gate: cumplido; el flujo determinista se valida desde `draft` hasta
+  `ready_for_execution`, incluida autorización exacta y revalidación, sin
+  efectos sobre dominios.
+- Lifecycle: tabla explícita estado/acción, invariantes centralizadas, estados
+  terminales protegidos y rechazo por construcción de transiciones inválidas.
+- Persistencia: creación, reconstrucción de evidencia, control optimista de
+  versión y auditoría append-only; no fue necesaria una migración.
+- Orquestación: resolución por tipo/versión y fingerprint; componentes puros
+  de contexto, análisis, estrategia, plan, simulación declarativa,
+  autorización y revalidación sin condicionales por tipo.
+- Componentes adelantados: ninguno; no existe método de ejecución ni uso de
+  executor, workers, gateways u outbox operativo.
+- Próxima fase autorizable: Fase 5, sólo después de aprobación expresa.
+- Evidencia detallada:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_4.md`](../../closures/RESOLUTION_ENGINE_PHASE_4.md).
