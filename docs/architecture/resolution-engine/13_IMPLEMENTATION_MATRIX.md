@@ -384,7 +384,10 @@ La Fase 0 se considera lista para revisión cuando:
   expediente y secuencia continua de auditoría.
 - Persistencia: reutiliza el esquema general de Fase 2; no existe migración.
 - Lectura: el adaptador SQL no escribe, no controla Lifecycle y no filtra ORM
-  hacia dominio/aplicación.
+  hacia dominio/aplicación. Reconstruye y proyecta dentro de un único snapshot:
+  `REPEATABLE READ` en PostgreSQL y `SERIALIZABLE` explícito en SQLite.
+- Corrección de revisión: la prueba concurrente confirma que una transición
+  intercalada produce un corte enteramente anterior o posterior, nunca híbrido.
 - Alcance: no se incorporaron API, SDK, ERP, gateways, workers, recuperación,
   conciliación, retries ni distribución.
 - Evidencia detallada:

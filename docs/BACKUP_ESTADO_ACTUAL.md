@@ -132,8 +132,12 @@
   `ResolutionTimeline`, consultas autorizadas y adaptador SQL read-only.
   Verifica pertenencia, hashes reproducibles, vínculos exactos y secuencia; no
   cambia Lifecycle, ejecución, compensación ni outbox.
-- Validaciones: 31 pruebas específicas/arquitectónicas; 182 pruebas del Motor;
-  backend completo con 306 pruebas y 19 subpruebas; 11 pruebas frontend; build
+- La reconstrucción completa se materializa en un único snapshot transaccional:
+  `REPEATABLE READ` en PostgreSQL y `SERIALIZABLE` explícito en SQLite. La
+  prueba concurrente confirma que una transición intercalada nunca produce un
+  expediente híbrido.
+- Validaciones: 33 pruebas específicas/arquitectónicas; 184 pruebas del Motor;
+  backend completo con 308 pruebas y 19 subpruebas; 11 pruebas frontend; build
   Vite y compilación Python correctos.
 - Fase 7 no incorpora migración. La base y el respaldo conservan
   `d6e8f0a2b4c5 (head)`, procedente de Fase 6. `alembic check` sólo muestra la

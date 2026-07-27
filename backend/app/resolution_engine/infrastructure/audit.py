@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.orm import Session
 
 from app.resolution_engine.contracts.audit import (
@@ -23,20 +24,32 @@ from app.resolution_engine.infrastructure.repositories import (
 
 
 class SqlAlchemyAuditRecordStore:
-    """Carga y proyecta el expediente sin alterar filas."""
+    """Carga y proyecta el expediente sobre un único snapshot SQL."""
 
     def __init__(self, session: Session) -> None:
-        self._repository = ResolutionRepository(session)
+        bind = session.get_bind()
+        self._engine = bind.engine if isinstance(bind, Connection) else bind
 
     def load_audit_snapshot(
         self,
         resolution_id: int,
         /,
     ) -> ResolutionAuditSnapshot | None:
-        record = self._repository.load_record(resolution_id)
-        if record is None:
-            return None
-        return AuditProjector(record).project()
+        isolation_level = _audit_snapshot_isolation(self._engine)
+        with self._engine.connect().execution_options(
+            isolation_level=isolation_level,
+            resolution_audit_snapshot=True,
+        ) as connection:
+            with connection.begin():
+                if connection.dialect.name == "sqlite":
+                    connection.exec_driver_sql("BEGIN")
+                with Session(bind=connection) as snapshot_session:
+                    record = ResolutionRepository(
+                        snapshot_session
+                    ).load_record(resolution_id)
+                    if record is None:
+                        return None
+                    return AuditProjector(record).project()
 
 
 class SqlAlchemyAuditAccessVerifier:
@@ -82,3 +95,16 @@ class SqlAlchemyAuditAccessVerifier:
         ):
             reasons.append("security_organization_mismatch")
         return tuple(reasons)
+
+
+def _audit_snapshot_isolation(engine: Engine) -> str:
+    """Selecciona un aislamiento que conserve el corte entre consultas."""
+
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        return "REPEATABLE READ"
+    if dialect == "sqlite":
+        return "SERIALIZABLE"
+    raise RuntimeError(
+        f"audit snapshots are not configured for dialect {dialect!r}"
+    )

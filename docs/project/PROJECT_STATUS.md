@@ -55,8 +55,9 @@ la autoridad, la pérdida de lock bloquea sin repetir y todo replay exige actor,
 clave y hash exactos. No existen gateways concretos, API, workers, schedulers,
 recuperación, conciliación, retries ni compensación automática. Auditoría y
 Evidencia reconstruye el expediente completo mediante un adaptador read-only,
-verifica hashes, secuencia y vínculos, exige autorización exacta y produce
-timeline/reporte deterministas. La Fase 8 permanece `NO INICIADA`.
+abre un snapshot transaccional consistente, verifica hashes, secuencia y
+vínculos, exige autorización exacta y produce timeline/reporte deterministas
+sin mezclar confirmaciones concurrentes. La Fase 8 permanece `NO INICIADA`.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.

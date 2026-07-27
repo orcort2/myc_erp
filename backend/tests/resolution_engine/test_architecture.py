@@ -259,6 +259,19 @@ def test_phase_7_audit_adapter_is_read_only_and_has_no_future_dependencies():
     )
 
 
+def test_phase_7_audit_reconstruction_owns_a_consistent_snapshot():
+    path = PACKAGE_ROOT / "infrastructure" / "audit.py"
+    source = path.read_text(encoding="utf-8")
+
+    assert '"REPEATABLE READ"' in source
+    assert '"SERIALIZABLE"' in source
+    assert "resolution_audit_snapshot=True" in source
+    assert "with connection.begin()" in source
+    assert source.index("AuditProjector(record).project()") < source.index(
+        "class SqlAlchemyAuditAccessVerifier"
+    )
+
+
 def test_action_handlers_are_invoked_only_by_action_runner():
     violations = []
     for path in python_files("application"):

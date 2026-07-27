@@ -33,8 +33,9 @@ verifica sus relaciones y hashes, y produce un reporte determinista.
 ```text
 AuditQuery + security_decision_id
   → validar allowed + acción + resolución + actor + correlación + organización
-  → cargar ResolutionRecord completo
-  → proyectar filas ORM a EvidenceNode
+  → abrir transacción read-only con snapshot consistente
+  → cargar ResolutionRecord completo dentro del snapshot
+  → proyectar filas ORM a EvidenceNode antes de cerrar la transacción
   → construir EvidenceRegistry
   → verificar alcance, hashes, vínculos y secuencia
   → construir ResolutionTimeline
@@ -44,6 +45,23 @@ AuditQuery + security_decision_id
 
 Filtrar por tipo o correlación ocurre después de verificar el expediente
 completo. Una consulta parcial no puede ocultar una inconsistencia.
+
+## Consistencia del corte
+
+Cada `AuditReport` representa un único snapshot lógico. El adaptador abre una
+conexión y transacción propias para reconstruir el expediente completo:
+
+- PostgreSQL usa aislamiento `REPEATABLE READ`;
+- SQLite, usado por las pruebas persistentes, usa `SERIALIZABLE` y un
+  `BEGIN` explícito para evitar el modo transaccional legacy del driver.
+
+La raíz, colecciones relacionadas y proyección se leen y materializan antes de
+cerrar esa transacción. Una confirmación concurrente puede quedar completamente
+fuera o completamente dentro del corte, pero nunca aportar sólo una parte. El
+aislamiento pertenece al adaptador SQL; el dominio no conoce conexiones ni
+reintenta consultas. La autorización exacta se verifica antes de abrir el
+snapshot; su decisión persistida también se reconstruye como evidencia cuando
+pertenece al corte.
 
 ## Verificaciones
 
@@ -103,7 +121,8 @@ auditoría, seguridad, evidencia, outbox, ejecución y compensación. El adaptad
 
 - sólo lee;
 - no abre gateways;
-- no confirma transacciones;
+- delimita y cierra su transacción read-only sin confirmar la unidad de trabajo
+  del llamador;
 - no modifica Lifecycle;
 - no persiste proyecciones o timelines derivados.
 
@@ -117,6 +136,7 @@ firmas externas.
 - La consulta nunca invoca handlers, compensaciones ni publicación outbox.
 - Evidencia de otra resolución se rechaza.
 - Los vínculos exactos de plan/simulación se validan contra sus hashes.
+- Un reporte nunca combina raíz, eventos o evidencia de commits distintos.
 - La cronología es estable para el mismo expediente.
 - El dominio y la aplicación no importan SQLAlchemy, FastAPI ni ERP.
 - API, frontend, gateways, workers, retries y recuperación siguen fuera.

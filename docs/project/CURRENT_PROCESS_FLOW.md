@@ -49,11 +49,13 @@ recuperación, conciliación ni compensación automática.
 
 La auditoría es un flujo read-only separado. Exige una decisión
 `resolution.audit.inspect` concedida para la resolución, actor, correlación,
-recurso y organización exactos. Después carga el expediente completo, proyecta
-su evidencia sin exponer ORM, verifica hashes, referencias, pertenencia y
-secuencia, y genera una línea de tiempo y un hash deterministas del corte. Los
-filtros se aplican sólo después de verificar el conjunto completo. La consulta
-no transita Lifecycle, no ejecuta handlers y no publica outbox.
+recurso y organización exactos. Después abre un snapshot consistente, carga el
+expediente completo y proyecta su evidencia antes de cerrar la transacción, sin
+exponer ORM. Verifica hashes, referencias, pertenencia y secuencia, y genera una
+línea de tiempo y un hash deterministas del corte. Una confirmación concurrente
+queda enteramente antes o después del reporte, nunca mezclada. Los filtros se
+aplican sólo después de verificar el conjunto completo. La consulta no transita
+Lifecycle, no ejecuta handlers y no publica outbox.
 
 ## Flujo principal
 

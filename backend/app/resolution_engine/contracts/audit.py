@@ -32,14 +32,14 @@ class AuditQuery:
 
 
 class AuditRecordStore(Protocol):
-    """Expone un expediente normalizado sin filtrar ORM al núcleo."""
+    """Expone un expediente normalizado desde un único snapshot lógico."""
 
     def load_audit_snapshot(
         self,
         resolution_id: int,
         /,
     ) -> ResolutionAuditSnapshot | None:
-        """Carga toda la evidencia necesaria en un corte consistente."""
+        """Carga y proyecta toda la evidencia en una misma transacción."""
 
 
 class AuditAccessVerifier(Protocol):

@@ -1,5 +1,7 @@
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from threading import Event
 
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
@@ -99,6 +101,30 @@ def sqlite_engine():
     return engine
 
 
+def concurrent_sqlite_engine(tmp_path):
+    engine = create_engine(
+        f"sqlite+pysqlite:///{tmp_path / 'audit-snapshot.db'}",
+        connect_args={"check_same_thread": False},
+    )
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    with engine.connect() as connection:
+        connection.exec_driver_sql("PRAGMA journal_mode=WAL")
+
+    tables = [
+        table
+        for name, table in Base.metadata.tables.items()
+        if name == "resolutions"
+        or name.startswith("resolution_")
+        or name in {"users", "controlled_documents"}
+    ]
+    Base.metadata.create_all(engine, tables=tables)
+    return engine
+
+
 def actor():
     return ActorContext(
         identity=ActorIdentity(
@@ -137,15 +163,18 @@ def registry():
     return value
 
 
-def create_auditable_resolution(session):
-    lifecycle_store = SqlAlchemyLifecycleStore(session)
-    service = ResolutionLifecycleService(
+def lifecycle_service(session):
+    return ResolutionLifecycleService(
         registry=registry(),
-        store=lifecycle_store,
+        store=SqlAlchemyLifecycleStore(session),
         state_machine=ResolutionStateMachine(),
         clock=FixedClock(),
         identifiers=FixedIdentifiers(),
     )
+
+
+def create_resolution(session):
+    service = lifecycle_service(session)
     created = service.create(
         CreateResolutionCommand(
             resolution_type="audit.resolve",
@@ -162,8 +191,15 @@ def create_auditable_resolution(session):
             ),
         )
     )
+    session.commit()
+    return created.resolution_id
+
+
+def create_auditable_resolution(session):
+    resolution_id = create_resolution(session)
+    service = lifecycle_service(session)
     context = ResolutionContextSnapshot(
-        resolution_id=created.resolution_id,
+        resolution_id=resolution_id,
         snapshot_type=ContextSnapshotType.INITIAL.value,
         sequence=1,
         context_version="1.0",
@@ -175,12 +211,12 @@ def create_auditable_resolution(session):
     )
     session.add(context)
     session.flush()
-    session.get(Resolution, created.resolution_id).current_context_snapshot_id = (
+    session.get(Resolution, resolution_id).current_context_snapshot_id = (
         context.id
     )
     session.flush()
     service.transition(
-        created.resolution_id,
+        resolution_id,
         LifecycleAction.RECORD_CONTEXT,
         actor=LifecycleActor(
             actor_id="auditor-1",
@@ -189,7 +225,7 @@ def create_auditable_resolution(session):
         ),
     )
     session.commit()
-    return created.resolution_id
+    return resolution_id
 
 
 def authorize_audit_query(session, resolution_id):
@@ -267,6 +303,114 @@ def test_sql_audit_reconstructs_and_verifies_persisted_history():
             query,
             kinds=("audit_event",),
         )) == 2
+
+
+def test_sql_audit_uses_one_snapshot_during_concurrent_transition(tmp_path):
+    engine = concurrent_sqlite_engine(tmp_path)
+    with Session(engine) as session:
+        resolution_id = create_resolution(session)
+        query, _ = authorize_audit_query(session, resolution_id)
+        session.commit()
+        prior = AuditQueryService(
+            store=SqlAlchemyAuditRecordStore(session),
+            access_verifier=SqlAlchemyAuditAccessVerifier(session),
+        ).inspect(query)
+
+    root_loaded = Event()
+    writer_committed = Event()
+
+    def pause_snapshot_after_root(
+        _connection,
+        _cursor,
+        statement,
+        _parameters,
+        context,
+        _executemany,
+    ):
+        if (
+            context.execution_options.get("resolution_audit_snapshot")
+            and "from resolutions" in statement.lower()
+            and not root_loaded.is_set()
+        ):
+            root_loaded.set()
+            assert writer_committed.wait(timeout=5)
+
+    event.listen(engine, "after_cursor_execute", pause_snapshot_after_root)
+
+    def reconstruct():
+        with Session(engine) as session:
+            return AuditQueryService(
+                store=SqlAlchemyAuditRecordStore(session),
+                access_verifier=SqlAlchemyAuditAccessVerifier(session),
+            ).inspect(query)
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(reconstruct)
+            assert root_loaded.wait(timeout=5)
+            with Session(engine) as writer:
+                context = ResolutionContextSnapshot(
+                    resolution_id=resolution_id,
+                    snapshot_type=ContextSnapshotType.INITIAL.value,
+                    sequence=1,
+                    context_version="1.0",
+                    context_hash="d" * 64,
+                    schema_version="1.0",
+                    captured_at=NOW,
+                    captured_by_actor_id="auditor-1",
+                    facts={"concurrent": True},
+                )
+                writer.add(context)
+                writer.flush()
+                writer.get(
+                    Resolution,
+                    resolution_id,
+                ).current_context_snapshot_id = context.id
+                writer.flush()
+                lifecycle_service(writer).transition(
+                    resolution_id,
+                    LifecycleAction.RECORD_CONTEXT,
+                    actor=LifecycleActor(
+                        actor_id="auditor-1",
+                        actor_type="human",
+                        correlation_id="correlation-audit",
+                    ),
+                )
+                writer.commit()
+            writer_committed.set()
+            concurrent = future.result(timeout=5)
+    finally:
+        writer_committed.set()
+        event.remove(
+            engine,
+            "after_cursor_execute",
+            pause_snapshot_after_root,
+        )
+
+    with Session(engine) as session:
+        posterior = AuditQueryService(
+            store=SqlAlchemyAuditRecordStore(session),
+            access_verifier=SqlAlchemyAuditAccessVerifier(session),
+        ).inspect(query)
+
+    assert concurrent.is_valid
+    assert concurrent.status == "draft"
+    assert concurrent.version == 1
+    assert concurrent.record_hash == prior.record_hash
+    assert concurrent.issues == prior.issues == ()
+    assert concurrent.verifications == prior.verifications
+    assert concurrent.timeline == prior.timeline
+    assert {
+        node.kind for node in concurrent.nodes
+    }.isdisjoint({"context_snapshot"})
+    assert posterior.is_valid
+    assert posterior.status == "context_ready"
+    assert posterior.version == 2
+    assert posterior.record_hash != prior.record_hash
+    assert "context_snapshot" in {node.kind for node in posterior.nodes}
+    assert [entry.kind for entry in posterior.timeline].count(
+        "audit_event"
+    ) == 2
 
 
 def test_sql_audit_detects_tampered_persisted_payload():

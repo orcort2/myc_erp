@@ -244,7 +244,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/contracts/audit.py": (
             "Contratos de auditoría",
-            "Declara AuditQuery y puertos read-only de expediente y autorización sin filtrar ORM o transporte.",
+            "Declara AuditQuery y puertos read-only de expediente consistente y autorización sin filtrar ORM o transporte.",
             "Dominio puro de auditoría y Protocol",
             "Aplicación, adaptadores y pruebas de Fase 7",
             "Crítico",
@@ -279,7 +279,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/audit.py": (
             "Adaptador SQL de auditoría",
-            "Carga el expediente, valida acceso exacto y delega su proyección read-only sin modificar Lifecycle.",
+            "Valida acceso exacto y materializa el expediente y su proyección read-only dentro de un snapshot REPEATABLE READ/SERIALIZABLE sin modificar Lifecycle.",
             "SQLAlchemy, ResolutionRepository, AuditProjector y contratos",
             "AuditQueryService y pruebas persistentes",
             "Crítico",
@@ -307,14 +307,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/tests/resolution_engine/test_audit_persistence.py": (
             "Pruebas persistentes de auditoría",
-            "Reconstruye Lifecycle, seguridad, ejecución y compensación; verifica alteraciones, autorización exacta y ausencia de efectos.",
+            "Reconstruye Lifecycle, seguridad, ejecución y compensación; intercala una transición concurrente y verifica snapshot íntegro, alteraciones, autorización exacta y ausencia de efectos.",
             "SQLAlchemy, servicios y expediente completo del Motor",
             "Gate de integración de Fase 7",
             "Crítico",
         ),
         "backend/tests/resolution_engine/test_architecture.py": (
             "Pruebas de arquitectura",
-            "Inspecciona capas, autoridad de Lifecycle y que auditoría sea read-only sin ERP, transporte, workers o fases posteriores.",
+            "Inspecciona capas, autoridad de Lifecycle, frontera de snapshot y que auditoría sea read-only sin ERP, transporte, workers o fases posteriores.",
             "ast, pathlib y paquete resolution_engine",
             "Gates arquitectónicos de Fases 1 a 7",
             "Crítico",

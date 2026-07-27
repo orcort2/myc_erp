@@ -38,8 +38,24 @@ frontend, gateways, workers o integraciones ERP.
 - las relaciones y hashes incompatibles generan diagnósticos estables;
 - los filtros se aplican después de verificar el expediente completo;
 - el mismo corte produce timeline y `record_hash` idénticos;
+- todas las consultas que forman un corte comparten el mismo snapshot SQL;
 - las bases históricas ausentes no se inventan ni se presentan como
   verificadas.
+
+## Corrección de consistencia transaccional
+
+La observación bloqueante sobre expedientes híbridos quedó corregida en la
+frontera SQL. `SqlAlchemyAuditRecordStore` abre una conexión y transacción
+propias, aplica `REPEATABLE READ` en PostgreSQL o `SERIALIZABLE` con `BEGIN`
+explícito en SQLite, carga todas las filas y termina la proyección antes de
+cerrar el snapshot.
+
+La prueba persistente concurrente pausa la lectura tras cargar la raíz,
+confirma una transición desde otra sesión y reanuda la reconstrucción. El
+reporte en curso coincide por completo con el corte anterior —estado, versión,
+nodos, verificaciones, timeline y `record_hash`— y una consulta posterior
+coincide por completo con el nuevo estado. Nunca se persiste información ni se
+reintenta la reconstrucción.
 
 ## Persistencia y migraciones
 
@@ -50,19 +66,19 @@ contrato histórico.
 
 ## Validaciones
 
-- Fase 7 + arquitectura: **31 passed**.
-- Suite completa del Motor: **182 passed**.
-- Backend completo: **306 passed**, **19 subtests passed**, dos advertencias
+- Fase 7 + arquitectura: **33 passed**.
+- Suite completa del Motor: **184 passed**.
+- Backend completo: **308 passed**, **19 subtests passed**, dos advertencias
   conocidas de dependencias.
 - Frontend: **11 passed**.
 - Build Vite: correcto; permanece el aviso conocido de chunk superior a 500 kB.
 - Compilación Python: correcta para `app` y `tests`.
 - Alembic `current` y `heads`: `d6e8f0a2b4c5 (head)`.
 - `alembic check`: conserva exclusivamente la deriva histórica `TD-021`; no
-  propone operación sobre `resolution_*` atribuible a esta fase.
-- Arquitectura: capas, adaptador read-only, autoridad de Lifecycle y ausencia
-  de dependencias posteriores verificadas.
-- Inventario: regenerado mediante el script oficial.
+  propone operación sobre `resolution_*` atribuible a esta corrección.
+- Arquitectura: capas, aislamiento del snapshot, adaptador read-only, autoridad
+  de Lifecycle y ausencia de dependencias posteriores verificadas.
+- Inventario: regenerado mediante el script oficial y rutas verificadas.
 - `git diff --check`: correcto.
 
 ## Contradicciones
@@ -96,9 +112,9 @@ decisiones, deuda, índice, respaldo operativo e inventario oficial.
 
 ## Commit
 
-La entrega completa se agrupa en un único commit exclusivo de Fase 7; su hash
-se reporta en el cierre operativo. La fase permanece `EN REVISIÓN` y no
-autoriza Fase 8.
+La implementación original permanece en `4ae25ea`. Esta corrección se agrupa en
+un commit posterior y exclusivo cuyo hash se reporta en el cierre operativo.
+La fase permanece `EN REVISIÓN` y no autoriza Fase 8.
 
 ## Estado
 
