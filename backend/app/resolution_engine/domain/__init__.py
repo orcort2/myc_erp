@@ -1,4 +1,4 @@
-"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 5."""
+"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 6."""
 
 from app.resolution_engine.domain.definitions import (
     ComponentReference,
@@ -39,9 +39,25 @@ from app.resolution_engine.domain.execution import (
     ExecutionOutcome,
     ExecutionPlanStep,
 )
+from app.resolution_engine.domain.compensation import (
+    CompensableAction,
+    CompensationActionRequest,
+    CompensationEngine,
+    CompensationOutcome,
+    CompensationPlan,
+    CompensationPlanStep,
+    CompensationSource,
+)
 
 __all__ = [
     "ComponentKey",
+    "CompensableAction",
+    "CompensationActionRequest",
+    "CompensationEngine",
+    "CompensationOutcome",
+    "CompensationPlan",
+    "CompensationPlanStep",
+    "CompensationSource",
     "ComponentReference",
     "DefinitionVersion",
     "LifecycleAction",

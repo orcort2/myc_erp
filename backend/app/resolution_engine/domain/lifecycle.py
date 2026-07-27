@@ -24,7 +24,7 @@ from app.resolution_engine.domain.exceptions import (
 
 
 class LifecycleAction(StrEnum):
-    """Acciones explícitas que pueden cambiar el estado raíz hasta Fase 5."""
+    """Acciones explícitas que pueden cambiar el estado raíz."""
 
     RECORD_CONTEXT = "record_context"
     RECORD_ANALYSIS = "record_analysis"
@@ -45,6 +45,10 @@ class LifecycleAction(StrEnum):
     COMPLETE_PARTIAL_EXECUTION = "complete_partial_execution"
     FAIL_EXECUTION = "fail_execution"
     BLOCK_EXECUTION = "block_execution"
+    START_COMPENSATION = "start_compensation"
+    COMPLETE_COMPENSATION = "complete_compensation"
+    COMPLETE_PARTIAL_COMPENSATION = "complete_partial_compensation"
+    FAIL_COMPENSATION = "fail_compensation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +138,18 @@ class ExecutionEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class CompensationEvidence:
+    plan_id: int
+    execution_id: int | None
+    source_execution_id: int
+    status: str
+    total_steps: int
+    compensated_steps: int
+    failed_steps: int
+    blocked_steps: int
+
+
+@dataclass(frozen=True, slots=True)
 class LifecycleEvidence:
     """Referencias exactas reconstruidas desde el expediente persistido."""
 
@@ -146,6 +162,7 @@ class LifecycleEvidence:
     policy_authorization: PolicyAuthorizationEvidence | None = None
     revalidation: RevalidationEvidence | None = None
     execution: ExecutionEvidence | None = None
+    compensation: CompensationEvidence | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,6 +286,26 @@ _LINEAR_TRANSITIONS = {
         ResolutionStatus.FAILED,
     (ResolutionStatus.EXECUTING, LifecycleAction.BLOCK_EXECUTION):
         ResolutionStatus.BLOCKED,
+    (ResolutionStatus.COMPLETED, LifecycleAction.START_COMPENSATION):
+        ResolutionStatus.COMPENSATING,
+    (
+        ResolutionStatus.PARTIALLY_COMPLETED,
+        LifecycleAction.START_COMPENSATION,
+    ): ResolutionStatus.COMPENSATING,
+    (ResolutionStatus.FAILED, LifecycleAction.START_COMPENSATION):
+        ResolutionStatus.COMPENSATING,
+    (
+        ResolutionStatus.COMPENSATING,
+        LifecycleAction.COMPLETE_COMPENSATION,
+    ): ResolutionStatus.COMPENSATED,
+    (
+        ResolutionStatus.COMPENSATING,
+        LifecycleAction.COMPLETE_PARTIAL_COMPENSATION,
+    ): ResolutionStatus.PARTIALLY_COMPENSATED,
+    (
+        ResolutionStatus.COMPENSATING,
+        LifecycleAction.FAIL_COMPENSATION,
+    ): ResolutionStatus.COMPENSATION_FAILED,
 }
 
 _CANCELLABLE_STATES = frozenset(
@@ -320,7 +357,7 @@ _SUPERSEDEABLE_STATES = frozenset(
 
 
 class ResolutionStateMachine:
-    """Única autoridad de transiciones de la raíz durante Fase 4."""
+    """Única autoridad de transiciones de la raíz."""
 
     def transition(
         self,
@@ -444,6 +481,14 @@ class ResolutionStateMachine:
                 self._failed_execution_violations,
             LifecycleAction.BLOCK_EXECUTION:
                 self._blocked_execution_violations,
+            LifecycleAction.START_COMPENSATION:
+                self._start_compensation_violations,
+            LifecycleAction.COMPLETE_COMPENSATION:
+                self._completed_compensation_violations,
+            LifecycleAction.COMPLETE_PARTIAL_COMPENSATION:
+                self._partial_compensation_violations,
+            LifecycleAction.FAIL_COMPENSATION:
+                self._failed_compensation_violations,
         }
         check = checks.get(action)
         violations = list(check(lifecycle) if check is not None else ())
@@ -790,4 +835,102 @@ class ResolutionStateMachine:
         execution = case.evidence.execution
         if execution and execution.blocked_steps <= 0:
             violations.append("execution_not_blocked")
+        return tuple(violations)
+
+    @staticmethod
+    def _start_compensation_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        compensation = case.evidence.compensation
+        execution = case.evidence.execution
+        violations: list[str] = []
+        if execution is None:
+            violations.append("execution_missing")
+        if compensation is None:
+            violations.append("compensation_plan_missing")
+            return tuple(violations)
+        if compensation.status != "prepared":
+            violations.append("compensation_plan_not_prepared")
+        if compensation.total_steps <= 0:
+            violations.append("compensation_plan_has_no_steps")
+        if (
+            execution is not None
+            and compensation.source_execution_id != execution.id
+        ):
+            violations.append("compensation_source_execution_mismatch")
+        if compensation.execution_id is not None:
+            violations.append("compensation_execution_already_exists")
+        return tuple(violations)
+
+    @staticmethod
+    def _compensation_violations(
+        case: ResolutionLifecycle,
+        *,
+        expected_status: str,
+    ) -> list[str]:
+        compensation = case.evidence.compensation
+        if compensation is None:
+            return ["compensation_evidence_missing"]
+        violations: list[str] = []
+        if compensation.execution_id is None:
+            violations.append("compensation_execution_missing")
+        if compensation.status != expected_status:
+            violations.append("compensation_status_mismatch")
+        if compensation.total_steps <= 0:
+            violations.append("compensation_has_no_steps")
+        return violations
+
+    @staticmethod
+    def _completed_compensation_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        violations = ResolutionStateMachine._compensation_violations(
+            case,
+            expected_status="compensated",
+        )
+        compensation = case.evidence.compensation
+        if compensation and (
+            compensation.compensated_steps != compensation.total_steps
+            or compensation.failed_steps
+            or compensation.blocked_steps
+        ):
+            violations.append("compensation_not_complete")
+        return tuple(violations)
+
+    @staticmethod
+    def _partial_compensation_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        violations = ResolutionStateMachine._compensation_violations(
+            case,
+            expected_status="partially_compensated",
+        )
+        compensation = case.evidence.compensation
+        if compensation and (
+            compensation.compensated_steps <= 0
+            or compensation.failed_steps <= 0
+            or compensation.blocked_steps
+        ):
+            violations.append("compensation_not_partial")
+        return tuple(violations)
+
+    @staticmethod
+    def _failed_compensation_violations(
+        case: ResolutionLifecycle,
+    ) -> tuple[str, ...]:
+        compensation = case.evidence.compensation
+        if compensation is None:
+            return ("compensation_evidence_missing",)
+        if compensation.status not in {"failed", "blocked"}:
+            return ("compensation_status_mismatch",)
+        violations = []
+        if compensation.execution_id is None:
+            violations.append("compensation_execution_missing")
+        if compensation.status == "failed" and compensation.failed_steps <= 0:
+            violations.append("compensation_has_no_failed_step")
+        if (
+            compensation.status == "blocked"
+            and compensation.blocked_steps <= 0
+        ):
+            violations.append("compensation_has_no_blocked_step")
         return tuple(violations)

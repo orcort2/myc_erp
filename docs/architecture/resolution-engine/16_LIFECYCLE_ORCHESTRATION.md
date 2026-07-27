@@ -2,7 +2,7 @@
 >
 > Tipo: Contrato técnico implementado
 >
-> Autoridad: Lifecycle y orquestación interna de la Fase 4
+> Autoridad: Lifecycle y orquestación interna; contrato extendido hasta Fase 6
 >
 > Complementa a: `05_ARQUITECTURA.md`, `08_FLUJOS.md`,
 > `13_IMPLEMENTATION_MATRIX.md`, `14_PERSISTENCE_SCHEMA.md` y
@@ -79,10 +79,11 @@ declarados por la tabla interna y requieren razón. `supersede` exige además el
 ID de la nueva resolución. No existe transición implícita, wildcard ni
 condicional por tipo de resolución.
 
-`completed`, `rejected`, `cancelled`, `superseded` y `no_action_required` no
-tienen transiciones salientes en esta fase. `blocked` sólo puede cancelarse o
-ser sustituido; una reapertura futura requerirá una política explícita, no una
-mutación manual.
+En el alcance original de Fase 4, `completed`, `rejected`, `cancelled`,
+`superseded` y `no_action_required` no tenían transiciones salientes. Fase 6
+autoriza exclusivamente las salidas compensatorias descritas al final de este
+contrato. `blocked` sólo puede cancelarse o ser sustituido; una reapertura
+requiere una política explícita, no una mutación manual.
 
 ## Invariantes
 
@@ -136,3 +137,19 @@ La Fase 5 consume únicamente resoluciones `ready_for_execution` e incorpora
 ejecución controlada, idempotencia, locks y publicación explícita de outbox,
 sin debilitar ni evitar estas invariantes. Recuperación, retries, conciliación,
 compensación y workers permanecen fuera de esa fase.
+
+## Extensión de Fase 6
+
+Lifecycle continúa como única autoridad para la compensación:
+
+| Estado origen | Acción | Estado destino | Precondición principal |
+| --- | --- | --- | --- |
+| `completed` / `partially_completed` / `failed` | `start_compensation` | `compensating` | Plan compensatorio preparado, autorizado y vinculado a la ejecución exacta. |
+| `compensating` | `complete_compensation` | `compensated` | Todos los pasos del plan terminaron confirmados. |
+| `compensating` | `complete_partial_compensation` | `partially_compensated` | Plan parcial terminado y al menos un paso confirmado. |
+| `compensating` | `fail_compensation` | `compensation_failed` | Fallo confirmado o resultado incierto/bloqueado conservado. |
+
+`blocked` original no es elegible porque exige conciliación previa, fuera de
+Fase 6. La evidencia valida IDs exactos de plan, ejecución compensatoria y
+ejecución original, además de los conteos coherentes del resultado. No existe
+mutación directa del estado raíz desde handlers o adaptadores.

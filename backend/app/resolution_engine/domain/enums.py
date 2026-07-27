@@ -22,6 +22,10 @@ class ResolutionStatus(StrEnum):
     CANCELLED = "cancelled"
     SUPERSEDED = "superseded"
     NO_ACTION_REQUIRED = "no_action_required"
+    COMPENSATING = "compensating"
+    COMPENSATED = "compensated"
+    PARTIALLY_COMPENSATED = "partially_compensated"
+    COMPENSATION_FAILED = "compensation_failed"
 
 
 class ResolutionPriority(StrEnum):
@@ -205,3 +209,17 @@ class OutboxStatus(StrEnum):
     PENDING = "pending"
     PUBLISHED = "published"
     FAILED = "failed"
+
+
+class CompensationStrategy(StrEnum):
+    TOTAL = "total"
+    PARTIAL = "partial"
+
+
+class CompensationStatus(StrEnum):
+    PREPARED = "prepared"
+    RUNNING = "running"
+    COMPENSATED = "compensated"
+    PARTIALLY_COMPENSATED = "partially_compensated"
+    FAILED = "failed"
+    BLOCKED = "blocked"

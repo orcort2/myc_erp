@@ -1,4 +1,4 @@
-"""Servicios de aplicación del Motor de Resoluciones hasta Fase 5."""
+"""Servicios de aplicación del Motor de Resoluciones hasta Fase 6."""
 
 from app.resolution_engine.application.action_runner import ActionRunner
 from app.resolution_engine.application.execution import ResolutionExecutor
@@ -20,10 +20,20 @@ from app.resolution_engine.application.security import (
     SegregationRule,
 )
 from app.resolution_engine.application.outbox import OutboxPublicationService
+from app.resolution_engine.application.compensation import (
+    CompensationExecutor,
+    CompensationPlanner,
+)
+from app.resolution_engine.application.compensation_runner import (
+    CompensationRunner,
+)
 
 __all__ = [
     "LifecycleActor",
     "ActionRunner",
+    "CompensationExecutor",
+    "CompensationPlanner",
+    "CompensationRunner",
     "OrganizationBoundaryPolicy",
     "PermissionPolicy",
     "OutboxPublicationService",

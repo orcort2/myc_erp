@@ -291,7 +291,7 @@ La Fase 0 se considera lista para revisión cuando:
 
 ## Resultado de Fase 5
 
-- Estado: `EN REVISIÓN`.
+- Estado: `APROBADA`; commit correctivo exclusivo `ca5fdda`.
 - Gate: cumplido; sólo un expediente `ready_for_execution` con plan autorizado
   y revalidación exacta puede iniciar, cada acción tiene identidad/checkpoint y
   las repeticiones se resuelven por hash o se rechazan.
@@ -311,6 +311,44 @@ La Fase 0 se considera lista para revisión cuando:
   `resolution_outbox_events.failed_at`.
 - Componentes adelantados: ninguno; no existen API, workers, gateways concretos
   ni integraciones propietarias.
-- Próxima fase autorizable: Fase 6, sólo después de aprobación expresa.
+- Continuación autorizada: Fase 6, aprobada expresamente tras la revisión
+  correctiva.
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_5.md`](../../closures/RESOLUTION_ENGINE_PHASE_5.md).
+
+## Apertura de Fase 6
+
+- Estado: `ACTIVA`.
+- Autorización: aprobación expresa de Fase 5 y confirmación de que el roadmap
+  arquitectónico prevalece sobre la exclusión histórica de compensaciones del
+  cierre de esa fase.
+- Componentes autorizados: dominio declarativo de compensación, contratos,
+  persistencia, integración con Lifecycle, orquestación síncrona, checkpoints,
+  idempotencia, lock, auditoría append-only y outbox.
+- Componentes excluidos: workers, colas, procesos automáticos, recuperación,
+  retries, compensación automática, orquestadores externos, API e
+  infraestructura propietaria del ERP.
+- Bloqueadores directos corregibles: ninguno detectado.
+
+## Resultado de Fase 6
+
+- Estado: `EN REVISIÓN`.
+- Gate: cumplido; sólo efectos confirmados y declarados reversibles pueden
+  formar un plan total o parcial autorizado.
+- Vinculación: plan, pasos y ejecución compensatoria conservan FKs y hashes
+  exactos hacia resolución, ejecución y checkpoints originales, además de la
+  decisión de seguridad.
+- Lifecycle: sólo la máquina transita desde resultados elegibles a
+  `compensating` y después a `compensated`, `partially_compensated` o
+  `compensation_failed`.
+- Concurrencia: lock compensatorio, checkpoints previos/posteriores al handler
+  e incertidumbre bloqueante sin segunda invocación.
+- Idempotencia: una acción confirmada no puede planificarse dos veces; claves y
+  hashes exactos gobiernan preparación, ejecución y replay autorizado.
+- Migración: `d6e8f0a2b4c5`, reversible, amplía el estado raíz y crea cuatro
+  tablas generales de compensación.
+- Componentes adelantados: ninguno; no existen workers, retries, recuperación,
+  conciliación, API, gateways o adaptadores concretos del ERP.
+- Próxima fase autorizable: Fase 7, sólo después de aprobación expresa.
+- Evidencia detallada:
+  [`../../closures/RESOLUTION_ENGINE_PHASE_6.md`](../../closures/RESOLUTION_ENGINE_PHASE_6.md).

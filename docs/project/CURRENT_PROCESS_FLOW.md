@@ -23,6 +23,9 @@ draft → contexto → análisis → plan → simulación declarativa
 → reserva idempotente + lock → executing
 → checkpoints y acciones por ActionRunner
 → completed | partially_completed | failed | blocked
+[si existe plan compensatorio autorizado y elegible]
+→ compensating
+→ compensated | partially_compensated | compensation_failed
 ```
 
 Un plan no autorizado o no revalidado no inicia. Cada acción se identifica por
@@ -30,8 +33,15 @@ ejecución y paso, persiste su intención antes de invocar el adaptador y conser
 resultado/efectos después. Al regresar del handler, el token/TTL se valida y el
 checkpoint lo vuelve a validar atómicamente. Una pérdida de lock o resultado
 incierto termina en `blocked` sin repetición automática. El outbox se publica
-sólo mediante una invocación explícita y conserva la fecha de fallo; no existen
-API, workers, schedulers, retries, recuperación ni compensación.
+sólo mediante una invocación explícita y conserva la fecha de fallo.
+
+La compensación es un flujo independiente y síncrono. Sólo parte de una
+ejecución terminada elegible, usa una decisión `resolution.compensate` para la
+ejecución y actor exactos, persiste un plan inmutable y ejecuta en orden inverso
+únicamente acciones declaradas reversibles. Punto de no retorno, duplicado,
+actor distinto, fallo o pérdida de lock se rechazan o quedan trazados sin
+reinvocación. No existen API, workers, schedulers, retries, recuperación,
+conciliación ni compensación automática.
 
 ## Flujo principal
 

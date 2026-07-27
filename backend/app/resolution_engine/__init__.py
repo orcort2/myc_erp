@@ -1,7 +1,14 @@
-"""API pública del núcleo del Motor de Resoluciones hasta Fase 5."""
+"""API pública del núcleo del Motor de Resoluciones hasta Fase 6."""
 
 from app.resolution_engine.application.action_runner import ActionRunner
 from app.resolution_engine.application.execution import ResolutionExecutor
+from app.resolution_engine.application.compensation import (
+    CompensationExecutor,
+    CompensationPlanner,
+)
+from app.resolution_engine.application.compensation_runner import (
+    CompensationRunner,
+)
 from app.resolution_engine.application.lifecycle import (
     LifecycleActor,
     ResolutionLifecycleService,
@@ -24,6 +31,14 @@ from app.resolution_engine.domain.lifecycle import (
     ResolutionStateMachine,
 )
 from app.resolution_engine.contracts.execution import ExecuteResolutionCommand
+from app.resolution_engine.contracts.compensation import (
+    ExecuteCompensationCommand,
+    PrepareCompensationCommand,
+)
+from app.resolution_engine.domain.compensation import (
+    CompensationEngine,
+    CompensationOutcome,
+)
 from app.resolution_engine.domain.execution import (
     DomainActionRequest,
     DomainActionResult,
@@ -34,12 +49,18 @@ __all__ = [
     "ComponentKey",
     "ActionRunner",
     "ComponentReference",
+    "CompensationEngine",
+    "CompensationExecutor",
+    "CompensationOutcome",
+    "CompensationPlanner",
+    "CompensationRunner",
     "DefinitionVersion",
     "LifecycleAction",
     "LifecycleActor",
     "DomainActionRequest",
     "DomainActionResult",
     "ExecuteResolutionCommand",
+    "ExecuteCompensationCommand",
     "ExecutionOutcome",
     "ResolutionDefinition",
     "ResolutionExecutor",
@@ -48,4 +69,5 @@ __all__ = [
     "ResolutionRegistry",
     "ResolutionStateMachine",
     "ResolutionType",
+    "PrepareCompensationCommand",
 ]

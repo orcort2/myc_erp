@@ -145,3 +145,8 @@ ERP y consumir el servicio desde lifecycle o API. No deben crear evaluadores
 paralelos, permisos codificados en servicios, booleanos de aprobación ni
 accesos directos desde el Motor a `User`, `Role` o módulos propietarios.
 
+Desde Fase 6, preparar o ejecutar una compensación consume una decisión
+`resolution.compensate` `allowed` vinculada a la resolución, ejecución fuente,
+organización y actor exactos. La evidencia se vuelve a comprobar antes de
+resolver idempotencia o replay; conocer una clave no entrega resultados a otro
+actor ni sustituye autorización.

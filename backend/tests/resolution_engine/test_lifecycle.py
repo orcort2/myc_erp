@@ -546,6 +546,30 @@ def test_every_undeclared_state_action_pair_is_rejected():
             ResolutionStatus.EXECUTING,
             LifecycleAction.BLOCK_EXECUTION,
         ),
+        (
+            ResolutionStatus.COMPLETED,
+            LifecycleAction.START_COMPENSATION,
+        ),
+        (
+            ResolutionStatus.PARTIALLY_COMPLETED,
+            LifecycleAction.START_COMPENSATION,
+        ),
+        (
+            ResolutionStatus.FAILED,
+            LifecycleAction.START_COMPENSATION,
+        ),
+        (
+            ResolutionStatus.COMPENSATING,
+            LifecycleAction.COMPLETE_COMPENSATION,
+        ),
+        (
+            ResolutionStatus.COMPENSATING,
+            LifecycleAction.COMPLETE_PARTIAL_COMPENSATION,
+        ),
+        (
+            ResolutionStatus.COMPENSATING,
+            LifecycleAction.FAIL_COMPENSATION,
+        ),
     }
     expected.update(
         (state, LifecycleAction.CANCEL)

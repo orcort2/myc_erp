@@ -40,7 +40,8 @@ class Resolution(ResolutionRecordMixin, MutableTimestampMixin, Base):
             "'simulated','pending_authorization','authorized','revalidating',"
             "'ready_for_execution','executing','completed',"
             "'partially_completed','failed','blocked','rejected','cancelled',"
-            "'superseded','no_action_required')",
+            "'superseded','no_action_required','compensating','compensated',"
+            "'partially_compensated','compensation_failed')",
             name="ck_resolutions_status",
         ),
         CheckConstraint(

@@ -7,6 +7,12 @@ from app.resolution_engine.infrastructure.persistence.core import (
     ResolutionProblem,
     ResolutionStrategySelection,
 )
+from app.resolution_engine.infrastructure.persistence.compensation import (
+    ResolutionCompensationExecution,
+    ResolutionCompensationPlan,
+    ResolutionCompensationPlanStep,
+    ResolutionCompensationStepExecution,
+)
 from app.resolution_engine.infrastructure.persistence.evidence import (
     ResolutionAuditEvent,
     ResolutionEvidenceReference,
@@ -40,6 +46,10 @@ __all__ = [
     "ResolutionAuthorizationDecision",
     "ResolutionAuthorizationRequest",
     "ResolutionContextSnapshot",
+    "ResolutionCompensationExecution",
+    "ResolutionCompensationPlan",
+    "ResolutionCompensationPlanStep",
+    "ResolutionCompensationStepExecution",
     "ResolutionEntityReference",
     "ResolutionEvidenceReference",
     "ResolutionExecution",

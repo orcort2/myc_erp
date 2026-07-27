@@ -15,6 +15,10 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionAuthorizationDecision,
     ResolutionAuthorizationRequest,
     ResolutionContextSnapshot,
+    ResolutionCompensationExecution,
+    ResolutionCompensationPlan,
+    ResolutionCompensationPlanStep,
+    ResolutionCompensationStepExecution,
     ResolutionEntityReference,
     ResolutionEvidenceReference,
     ResolutionExecution,
@@ -60,6 +64,12 @@ class ResolutionRecord:
     locks: tuple[ResolutionLock, ...]
     outbox_events: tuple[ResolutionOutboxEvent, ...]
     evidence_references: tuple[ResolutionEvidenceReference, ...]
+    compensation_plans: tuple[ResolutionCompensationPlan, ...]
+    compensation_plan_steps: tuple[ResolutionCompensationPlanStep, ...]
+    compensation_executions: tuple[ResolutionCompensationExecution, ...]
+    compensation_step_executions: tuple[
+        ResolutionCompensationStepExecution, ...
+    ]
 
 
 class ResolutionRepository:
@@ -128,6 +138,22 @@ class ResolutionRepository:
             ResolutionExecution.attempt_number,
         )
         execution_ids = [execution.id for execution in executions]
+        compensation_plans = self._all(
+            ResolutionCompensationPlan,
+            ResolutionCompensationPlan.resolution_id == resolution_id,
+            ResolutionCompensationPlan.id,
+        )
+        compensation_plan_ids = [
+            plan.id for plan in compensation_plans
+        ]
+        compensation_executions = self._all(
+            ResolutionCompensationExecution,
+            ResolutionCompensationExecution.resolution_id == resolution_id,
+            ResolutionCompensationExecution.id,
+        )
+        compensation_execution_ids = [
+            execution.id for execution in compensation_executions
+        ]
 
         return ResolutionRecord(
             resolution=resolution,
@@ -222,6 +248,20 @@ class ResolutionRepository:
                 ResolutionEvidenceReference,
                 ResolutionEvidenceReference.resolution_id == resolution_id,
                 ResolutionEvidenceReference.id,
+            ),
+            compensation_plans=compensation_plans,
+            compensation_plan_steps=self._all_for_ids(
+                ResolutionCompensationPlanStep,
+                ResolutionCompensationPlanStep.plan_id,
+                compensation_plan_ids,
+                ResolutionCompensationPlanStep.sequence,
+            ),
+            compensation_executions=compensation_executions,
+            compensation_step_executions=self._all_for_ids(
+                ResolutionCompensationStepExecution,
+                ResolutionCompensationStepExecution.execution_id,
+                compensation_execution_ids,
+                ResolutionCompensationStepExecution.id,
             ),
         )
 

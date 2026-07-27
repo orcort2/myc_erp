@@ -1,4 +1,4 @@
-"""Adaptadores de persistencia y runtime autorizados hasta Fase 5."""
+"""Adaptadores de persistencia y runtime autorizados hasta Fase 6."""
 
 from app.resolution_engine.infrastructure.execution import (
     SqlAlchemyExecutionStore,
@@ -20,11 +20,15 @@ from app.resolution_engine.infrastructure.repositories import (
 from app.resolution_engine.infrastructure.outbox import (
     SqlAlchemyOutboxStore,
 )
+from app.resolution_engine.infrastructure.compensation import (
+    SqlAlchemyCompensationStore,
+)
 
 __all__ = [
     "ResolutionRecord",
     "ResolutionRepository",
     "SqlAlchemyExecutionControl",
+    "SqlAlchemyCompensationStore",
     "SqlAlchemyExecutionStore",
     "SqlAlchemyLifecycleStore",
     "SqlAlchemyOutboxStore",

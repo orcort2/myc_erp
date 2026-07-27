@@ -140,3 +140,27 @@ class ActionHandlerNotFoundError(ResolutionEngineError):
 
 class ActionInvocationUncertainError(ResolutionEngineError):
     """El handler falló sin confirmar si la operación produjo efectos."""
+
+
+class CompensationNotAllowedError(ResolutionEngineError):
+    """La ejecución o su evidencia no permiten iniciar una compensación."""
+
+
+class InvalidCompensationPlanError(ResolutionEngineError):
+    """La selección declarativa no forma un plan compensatorio válido."""
+
+
+class CompensationIdempotencyConflictError(ResolutionEngineError):
+    """Una clave compensatoria existente representa otra solicitud."""
+
+
+class DuplicateCompensationHandlerError(ResolutionEngineError):
+    """Más de un handler pretende compensar la misma operación."""
+
+
+class CompensationHandlerNotFoundError(ResolutionEngineError):
+    """No existe adaptador compensatorio para la operación declarada."""
+
+
+class CompensationInvocationUncertainError(ResolutionEngineError):
+    """La compensación pudo producir efectos, pero no confirmó resultado."""

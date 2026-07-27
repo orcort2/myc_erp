@@ -10,7 +10,7 @@
 >
 > Historial anterior: `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte actualizado: 2026-07-28
+> Corte actualizado: 2026-07-27
 
 # Estado operativo actual del ERP MYC
 
@@ -28,7 +28,7 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `c5d7e9f1a3b4`.
+- Revisión aplicada y único head verificado: `d6e8f0a2b4c5`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -38,11 +38,14 @@
 - `c5d7e9f1a3b4` agrega exclusivamente
   `resolution_outbox_events.failed_at` para conservar evidencia temporal de
   fallos de publicación.
+- `d6e8f0a2b4c5` amplía los estados raíz y agrega cuatro tablas generales de
+  compensación con FKs exactas, unicidad de efecto, índices y protección
+  histórica.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,170,176 bytes.
-- SHA-256 verificado: `a979ca85f8a73f12e6b4f12c7af71806c98a2c7ca115420d58397d96fccac54d`.
-- El respaldo contiene `alembic_version = c5d7e9f1a3b4`.
+- Tamaño verificado: 74,190,864 bytes.
+- SHA-256 verificado: `655b81f54b8bff277bb5dd7d7f95074f910b74894f99bcb49fd3aa3db44fda4b`.
+- El respaldo contiene `alembic_version = d6e8f0a2b4c5`.
 
 ## Equipos y contexto de certificado
 
@@ -55,17 +58,17 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 233 pruebas y 19 subpruebas correctas.
-- Suite específica del Motor: 109 pruebas correctas, incluidas creación,
+- Suite backend completa: 275 pruebas y 19 subpruebas correctas.
+- Suite específica del Motor: 151 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
-  revalidación, concurrencia, persistencia, orquestación, arquitectura, esquema
-  y migraciones.
+  revalidación, concurrencia, persistencia, ejecución, compensación,
+  arquitectura, esquema y migraciones.
 - Frontend: 11 pruebas correctas y build Vite de producción correcto; permanece
   la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL: `c5d7e9f1a3b4` aplicó, revirtió a `b4c6d8e0f2a3` y reaplicó a
-  head; la revisión sólo agregó `resolution_outbox_events.failed_at`.
-- `alembic heads/current`: único head `c5d7e9f1a3b4`.
+- PostgreSQL: `d6e8f0a2b4c5` aplicó, revirtió a `c5d7e9f1a3b4` y reaplicó a
+  head; la fase agregó exclusivamente estados y tablas `resolution_compensation_*`.
+- `alembic heads/current`: único head `d6e8f0a2b4c5`.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
   como `TD-021`; no propone operaciones sobre el esquema del Motor.
 - `git diff --check`: correcto.
@@ -89,26 +92,30 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 5
+## Motor de Resoluciones — Fase 6
 
-- Estado: Fases 0 a 4 `APROBADAS`; Fase 5 `EN REVISIÓN`; Fase 6
+- Estado: Fases 0 a 5 `APROBADAS`; Fase 6 `EN REVISIÓN`; Fase 7
   `NO INICIADA`.
-- El Motor conserva expediente, seguridad y Lifecycle aprobados e incorpora
-  modelo/Engine de ejecución, `ResolutionExecutor`, `ActionRunner`, contratos,
-  checkpoints, idempotencia, locks, efectos, resultado y outbox explícito.
+- El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
+  incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
+  y evidencia de compensación total/parcial síncrona.
 - Sólo inicia desde `ready_for_execution` con plan activo `authorized`,
   autorización y revalidación exactas. Los cierres posibles son `completed`,
   `partially_completed`, `failed` y `blocked`.
-- Cada acción persiste intención antes del handler y resultado después. Una
-  respuesta incierta bloquea sin retry; no se interpreta como ausencia de
-  efecto.
-- El token y TTL del lock se comprueban al volver del handler y atómicamente
-  dentro del checkpoint. Su pérdida bloquea como incierta, no confirma efectos
-  ni reinvoca el handler; un token sustituto permanece intacto.
-- El inicio conserva la identidad exacta del plan y de la revalidación preparada
-  y rechaza cualquier cambio concurrente antes de ejecutar una acción.
-- Replay exacto devuelve el resultado durable; clave con otro hash, operación
-  en curso o lock activo se rechazan.
+- Sólo checkpoints originales `completed` y declarados compensables forman un
+  plan. La estrategia total cubre todos; la parcial exige selección explícita;
+  un punto de no retorno impide el flujo ordinario.
+- La decisión `resolution.compensate` debe pertenecer a ejecución, resolución,
+  organización y actor exactos. Se comprueba también antes de preparación,
+  ejecución y replay.
+- Lifecycle transita `completed|partially_completed|failed → compensating →
+  compensated|partially_compensated|compensation_failed`; ningún handler
+  modifica la raíz.
+- Cada acción persiste intención antes del handler y resultado después. El lock
+  se comprueba al volver y en el checkpoint; pérdida o incertidumbre bloquean
+  sin confirmar ni reinvocar.
+- Plan hash, claves de preparación/ejecución/paso y unicidad del checkpoint
+  fuente impiden conflicto, replay ajeno y compensación duplicada.
 - El outbox se publica sólo mediante una invocación explícita y un publicador
   idempotente por `event_key`; un fallo conserva `failed_at`, intentos y error,
   sin scheduler ni reintento.
@@ -116,16 +123,16 @@
   deberá autorizarla y namespaciarla por cliente/organización antes de construir
   el comando interno.
 - No se incorporaron API, gateways concretos, integraciones propietarias,
-  workers, schedulers, procesamiento masivo, recuperación, retries ni
-  compensaciones.
-- Validaciones: 134 pruebas del Motor; suite backend completa con 258 pruebas y
+  workers, schedulers, procesamiento masivo, recuperación, conciliación,
+  retries ni compensación automática.
+- Validaciones: 151 pruebas del Motor; suite backend completa con 275 pruebas y
   19 subpruebas; 11 pruebas frontend; build Vite; compilación Python y
   arquitectura correctos.
-- La revisión incorpora la migración reversible `c5d7e9f1a3b4`; la base y el
+- La fase incorpora la migración reversible `d6e8f0a2b4c5`; la base y el
   respaldo conservan ese `alembic_version`. `alembic check` sólo muestra la
   deriva histórica `TD-021` y ninguna operación `resolution_*` atribuible a la
   fase.
 - Contrato:
-  [`architecture/resolution-engine/17_EXECUTION_RUNTIME.md`](architecture/resolution-engine/17_EXECUTION_RUNTIME.md).
+  [`architecture/resolution-engine/18_COMPENSATION_ENGINE.md`](architecture/resolution-engine/18_COMPENSATION_ENGINE.md).
 - Cierre:
-  [`closures/RESOLUTION_ENGINE_PHASE_5.md`](closures/RESOLUTION_ENGINE_PHASE_5.md).
+  [`closures/RESOLUTION_ENGINE_PHASE_6.md`](closures/RESOLUTION_ENGINE_PHASE_6.md).

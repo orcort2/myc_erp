@@ -17,7 +17,9 @@ El esquema conserva la evidencia necesaria para reconstruir una resolución sin
 depender del estado vivo de un módulo propietario. No implementa lifecycle,
 simulación, lifecycle de autorización ni ejecución. La Fase 3 agregó la
 evidencia de evaluación de seguridad descrita en
-[`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md).
+[`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md). Las fases 4 a 6
+activaron Lifecycle, ejecución y compensación sin alterar la generalidad del
+expediente.
 
 ## Criterios de diseño
 
@@ -43,12 +45,14 @@ evidencia de evaluación de seguridad descrita en
 | Identidad y decisión | `resolutions`, `resolution_problems`, `resolution_context_snapshots`, `resolution_analyses`, `resolution_strategy_selections` |
 | Planeación | `resolution_plans`, `resolution_plan_steps`, `resolution_plan_step_dependencies`, `resolution_simulations` |
 | Gobierno y seguridad | `resolution_authorization_requests`, `resolution_authorization_decisions`, `resolution_security_decisions`, `resolution_revalidations` |
-| Ejecución futura | `resolution_executions`, `resolution_step_executions`, `resolution_entity_references`, `resolution_results` |
+| Ejecución | `resolution_executions`, `resolution_step_executions`, `resolution_entity_references`, `resolution_results` |
+| Compensación | `resolution_compensation_plans`, `resolution_compensation_plan_steps`, `resolution_compensation_executions`, `resolution_compensation_step_executions` |
 | Evidencia e infraestructura | `resolution_audit_events`, `resolution_idempotency_records`, `resolution_locks`, `resolution_outbox_events`, `resolution_evidence_references` |
 
-Las tablas de gobierno y ejecución sólo materializan el contrato de datos
-completo. Ningún servicio de esta fase crea decisiones, valida permisos,
-simula, ejecuta, publica eventos ni adquiere locks.
+El esquema reúne 26 tablas generales. Su creación en Fase 2 no habilitó
+comportamiento: cada capacidad se activó únicamente en su fase aprobada. Las
+cuatro tablas compensatorias agregadas en Fase 6 son igualmente independientes
+de módulos propietarios.
 
 Desde Fase 3, las referencias de identidad usan IDs canónicos de actor sin FK a
 `users.id`. `resolution_security_decisions` conserva evaluaciones reales de
@@ -65,12 +69,15 @@ Una reconstrucción carga la raíz y todas sus filas asociadas mediante
 3. todas las versiones de plan, pasos y dependencias;
 4. simulaciones, solicitudes y decisiones de autorización;
 5. revalidaciones, intentos y pasos de ejecución;
-6. referencias a entidades, resultado, auditoría, decisiones de seguridad,
+6. planes, pasos, intentos y checkpoints de compensación;
+7. referencias a entidades, resultado, auditoría, decisiones de seguridad,
    idempotencia, locks, outbox y evidencia externa.
 
 Las autorizaciones apuntan al plan y simulación exactos junto con sus hashes.
 La ejecución apunta a la revalidación y plan exactos. Las claves foráneas
-compuestas impiden mezclar evidencia perteneciente a otra resolución.
+compuestas impiden mezclar evidencia perteneciente a otra resolución. Cada
+paso compensatorio apunta al checkpoint confirmado y al paso de plan que
+originaron el efecto; su unicidad impide volver a planificar el mismo efecto.
 
 ## Inmutabilidad
 
@@ -116,4 +123,6 @@ permanecen en snapshots o referencias tipadas. Desde Fase 5, el outbox, los
 locks y la idempotencia tienen comportamiento mediante adaptadores explícitos.
 La corrección de revisión `c5d7e9f1a3b4` agrega `failed_at` nullable al outbox
 para conservar la fecha exacta de una publicación fallida sin introducir
-reintentos.
+reintentos. La migración `d6e8f0a2b4c5` agrega evidencia compensatoria
+inmutable y estados raíz de compensación; su ejecución permanece síncrona y
+gobernada por Lifecycle.

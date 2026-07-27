@@ -1,4 +1,4 @@
-> Estado: CIERRE TÉCNICO EN REVISIÓN
+> Estado: APROBADA
 >
 > Fecha: 2026-07-28
 >
@@ -11,7 +11,8 @@
 La Fase 5 transforma un plan autorizado y revalidado en una ejecución
 controlada, durable, idempotente y auditada. Incorpora ejecución de acciones por
 contrato, lock exclusivo, checkpoints, efectos, resultado y publicación
-explícita de outbox. La fase queda `EN REVISIÓN`; no se inicia Fase 6.
+explícita de outbox. La revisión correctiva fue aprobada y habilitó la apertura
+formal de Fase 6.
 
 ## Componentes incorporados
 
@@ -184,5 +185,5 @@ El detalle de responsabilidad y dependencias de cada ruta está sincronizado en
 
 ## Condición para continuar
 
-La Fase 5 queda `EN REVISIÓN`. La Fase 6 sólo puede iniciar después de la
-aprobación expresa del commit exclusivo de esta fase.
+La condición quedó satisfecha mediante aprobación expresa del commit
+correctivo exclusivo `ca5fdda`. La Fase 6 se rige por su propio cierre técnico.

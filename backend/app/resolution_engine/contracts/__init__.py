@@ -31,6 +31,12 @@ from app.resolution_engine.contracts.execution import (
     ExecutionStore,
     OutboxStore,
 )
+from app.resolution_engine.contracts.compensation import (
+    CompensationHandler,
+    CompensationStore,
+    ExecuteCompensationCommand,
+    PrepareCompensationCommand,
+)
 
 __all__ = [
     "ActorContextProvider",
@@ -38,18 +44,22 @@ __all__ = [
     "Analyzer",
     "AuthorizationPolicy",
     "Clock",
+    "CompensationHandler",
+    "CompensationStore",
     "ComponentResolver",
     "ContextProvider",
     "CreateResolutionCommand",
     "Executor",
     "EventPublisher",
     "ExecuteResolutionCommand",
+    "ExecuteCompensationCommand",
     "ExecutionStore",
     "IdentifierFactory",
     "LifecycleStore",
     "PermissionPolicy",
     "OutboxStore",
     "PlanBuilder",
+    "PrepareCompensationCommand",
     "ResolutionComponent",
     "ResolutionProblemInput",
     "Revalidator",

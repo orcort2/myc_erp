@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 5 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 6 EN REVISIÓN
 >
-> Fase vigente: Fase 5 — ejecución controlada, implementación cerrada
+> Fase vigente: Fase 6 — Motor de Compensación, implementación cerrada
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -29,6 +29,7 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 15. [`15_SECURITY_GOVERNANCE.md`](15_SECURITY_GOVERNANCE.md)
 16. [`16_LIFECYCLE_ORCHESTRATION.md`](16_LIFECYCLE_ORCHESTRATION.md)
 17. [`17_EXECUTION_RUNTIME.md`](17_EXECUTION_RUNTIME.md)
+18. [`18_COMPENSATION_ENGINE.md`](18_COMPENSATION_ENGINE.md)
 
 ## Regla de precedencia
 
@@ -81,13 +82,20 @@ componentes puros hasta revalidación. Su contrato está en
 [`16_LIFECYCLE_ORCHESTRATION.md`](16_LIFECYCLE_ORCHESTRATION.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_4.md`](../../closures/RESOLUTION_ENGINE_PHASE_4.md).
 
-La Fase 5 quedó implementada y está `EN REVISIÓN`. Incorpora Engine y Executor
+La Fase 5 quedó implementada y aprobada. Incorpora Engine y Executor
 de ejecución, Action Runner, contratos de adaptadores, checkpoints durables,
 idempotencia, locks, efectos/resultado, auditoría y publicación explícita de
 outbox. Su contrato está en
 [`17_EXECUTION_RUNTIME.md`](17_EXECUTION_RUNTIME.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_5.md`](../../closures/RESOLUTION_ENGINE_PHASE_5.md).
 
+La Fase 6 quedó implementada y está `EN REVISIÓN`. Incorpora definición
+declarativa, planificación total/parcial, relación exacta con efectos
+confirmados, ejecución compensatoria síncrona, Lifecycle, checkpoints,
+idempotencia, lock, auditoría y outbox. Su contrato está en
+[`18_COMPENSATION_ENGINE.md`](18_COMPENSATION_ENGINE.md) y su cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_6.md`](../../closures/RESOLUTION_ENGINE_PHASE_6.md).
+
 API, gateways concretos, integraciones propietarias, workers, schedulers,
-recuperación, reintentos y compensaciones permanecen fuera de alcance. La Fase
-6 no puede iniciar sin aprobación expresa.
+recuperación, reintentos, conciliación y compensación automática permanecen
+fuera de alcance. La Fase 7 no puede iniciar sin aprobación expresa.

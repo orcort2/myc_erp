@@ -38,12 +38,12 @@ class SqlAlchemyExecutionControl:
         token: str,
         acquired_at: datetime,
         expires_at: datetime,
+        lock_type: ResolutionLockType = ResolutionLockType.EXECUTION,
     ) -> ResolutionLock:
         session.execute(
             update(ResolutionLock)
             .where(
-                ResolutionLock.lock_type
-                == ResolutionLockType.EXECUTION.value,
+                ResolutionLock.lock_type == lock_type.value,
                 ResolutionLock.lock_key == lock_key,
                 ResolutionLock.released_at.is_(None),
                 ResolutionLock.expires_at <= acquired_at,
@@ -52,8 +52,7 @@ class SqlAlchemyExecutionControl:
         )
         active = session.scalar(
             select(ResolutionLock).where(
-                ResolutionLock.lock_type
-                == ResolutionLockType.EXECUTION.value,
+                ResolutionLock.lock_type == lock_type.value,
                 ResolutionLock.lock_key == lock_key,
                 ResolutionLock.released_at.is_(None),
             )
@@ -64,7 +63,7 @@ class SqlAlchemyExecutionControl:
             )
         lock = ResolutionLock(
             resolution_id=resolution_id,
-            lock_type=ResolutionLockType.EXECUTION.value,
+            lock_type=lock_type.value,
             lock_key=lock_key,
             owner=owner,
             token=token,
@@ -84,11 +83,13 @@ class SqlAlchemyExecutionControl:
         token: str,
         occurred_at: datetime,
         expires_at: datetime,
+        lock_type: ResolutionLockType = ResolutionLockType.EXECUTION,
     ) -> None:
         result = session.execute(
             update(ResolutionLock)
             .where(
                 ResolutionLock.resolution_id == resolution_id,
+                ResolutionLock.lock_type == lock_type.value,
                 ResolutionLock.token == token,
                 ResolutionLock.released_at.is_(None),
                 ResolutionLock.expires_at > occurred_at,
@@ -108,11 +109,11 @@ class SqlAlchemyExecutionControl:
         token: str,
         occurred_at: datetime,
         for_update: bool = False,
+        lock_type: ResolutionLockType = ResolutionLockType.EXECUTION,
     ) -> ResolutionLock:
         query = select(ResolutionLock).where(
             ResolutionLock.resolution_id == resolution_id,
-            ResolutionLock.lock_type
-            == ResolutionLockType.EXECUTION.value,
+            ResolutionLock.lock_type == lock_type.value,
             ResolutionLock.token == token,
             ResolutionLock.released_at.is_(None),
             ResolutionLock.expires_at > occurred_at,
@@ -134,11 +135,13 @@ class SqlAlchemyExecutionControl:
         token: str,
         released_at: datetime,
         required: bool = True,
+        lock_type: ResolutionLockType = ResolutionLockType.EXECUTION,
     ) -> None:
         result = session.execute(
             update(ResolutionLock)
             .where(
                 ResolutionLock.resolution_id == resolution_id,
+                ResolutionLock.lock_type == lock_type.value,
                 ResolutionLock.token == token,
                 ResolutionLock.released_at.is_(None),
             )

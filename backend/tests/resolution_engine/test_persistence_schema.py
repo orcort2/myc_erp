@@ -5,6 +5,8 @@ from app.core.db import Base
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
     ResolutionAuthorizationRequest,
+    ResolutionCompensationPlan,
+    ResolutionCompensationPlanStep,
     ResolutionOutboxEvent,
     ResolutionPlan,
     ResolutionPlanStepDependency,
@@ -34,6 +36,10 @@ EXPECTED_TABLES = {
     "resolution_locks",
     "resolution_outbox_events",
     "resolution_evidence_references",
+    "resolution_compensation_plans",
+    "resolution_compensation_plan_steps",
+    "resolution_compensation_executions",
+    "resolution_compensation_step_executions",
 }
 
 
@@ -51,6 +57,24 @@ def test_complete_persistence_model_is_registered_in_metadata():
 
 def test_outbox_preserves_the_failure_timestamp():
     assert "failed_at" in ResolutionOutboxEvent.__table__.c
+
+
+def test_compensation_is_linked_to_exact_source_and_security_evidence():
+    plan_foreign_keys = {
+        constraint.name
+        for constraint in ResolutionCompensationPlan.__table__.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    }
+    step_constraints = {
+        constraint.name
+        for constraint in (
+            ResolutionCompensationPlanStep.__table__.constraints
+        )
+    }
+
+    assert "fk_resolution_compensation_plans_source" in plan_foreign_keys
+    assert "fk_resolution_compensation_steps_source" in step_constraints
+    assert "uq_resolution_compensation_source_step_once" in step_constraints
 
 
 def test_schema_is_generic_and_does_not_embed_first_use_case():

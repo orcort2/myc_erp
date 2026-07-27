@@ -160,6 +160,8 @@ def test_lifecycle_state_changes_are_confined_to_its_sql_adapter():
         (Path("infrastructure/execution.py"), "execution"),
         (Path("infrastructure/execution.py"), "row"),
         (Path("infrastructure/execution_control.py"), "record"),
+        (Path("infrastructure/compensation.py"), "row"),
+        (Path("infrastructure/compensation.py"), "execution"),
     }
     for layer in ("domain", "contracts", "application", "infrastructure"):
         for path in python_files(layer):
@@ -222,7 +224,10 @@ def test_phase_5_execution_has_no_future_recovery_or_worker_dependencies():
 def test_action_handlers_are_invoked_only_by_action_runner():
     violations = []
     for path in python_files("application"):
-        if path.name == "action_runner.py":
+        if path.name in {
+            "action_runner.py",
+            "compensation_runner.py",
+        }:
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):

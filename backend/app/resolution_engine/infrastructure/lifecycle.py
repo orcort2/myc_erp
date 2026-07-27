@@ -22,6 +22,7 @@ from app.resolution_engine.domain.exceptions import LifecycleConcurrencyError
 from app.resolution_engine.domain.lifecycle import (
     AnalysisEvidence,
     AuthorizationEvidence,
+    CompensationEvidence,
     ContextEvidence,
     ExecutionEvidence,
     LifecycleEvidence,
@@ -153,6 +154,9 @@ class SqlAlchemyLifecycleStore:
             ResolutionStatus.COMPLETED,
             ResolutionStatus.PARTIALLY_COMPLETED,
             ResolutionStatus.FAILED,
+            ResolutionStatus.COMPENSATED,
+            ResolutionStatus.PARTIALLY_COMPENSATED,
+            ResolutionStatus.COMPENSATION_FAILED,
         }:
             values["completed_at"] = transition.event.occurred_at
         elif transition.new_state is ResolutionStatus.SUPERSEDED:
@@ -300,6 +304,26 @@ class SqlAlchemyLifecycleStore:
             for item in record.step_executions
             if execution is not None and item.execution_id == execution.id
         ]
+        compensation_plan = (
+            record.compensation_plans[-1]
+            if record.compensation_plans
+            else None
+        )
+        compensation_execution = next(
+            (
+                item
+                for item in reversed(record.compensation_executions)
+                if compensation_plan is not None
+                and item.plan_id == compensation_plan.id
+            ),
+            None,
+        )
+        compensation_steps = [
+            item
+            for item in record.compensation_step_executions
+            if compensation_execution is not None
+            and item.execution_id == compensation_execution.id
+        ]
 
         evidence = LifecycleEvidence(
             context=(
@@ -425,6 +449,42 @@ class SqlAlchemyLifecycleStore:
                     ),
                 )
                 if execution
+                else None
+            ),
+            compensation=(
+                CompensationEvidence(
+                    plan_id=compensation_plan.id,
+                    execution_id=(
+                        compensation_execution.id
+                        if compensation_execution
+                        else None
+                    ),
+                    source_execution_id=(
+                        compensation_plan.source_execution_id
+                    ),
+                    status=(
+                        compensation_execution.status
+                        if compensation_execution
+                        else "prepared"
+                    ),
+                    total_steps=sum(
+                        item.plan_id == compensation_plan.id
+                        for item in record.compensation_plan_steps
+                    ),
+                    compensated_steps=sum(
+                        item.status == "compensated"
+                        for item in compensation_steps
+                    ),
+                    failed_steps=sum(
+                        item.status == "failed"
+                        for item in compensation_steps
+                    ),
+                    blocked_steps=sum(
+                        item.status == "blocked"
+                        for item in compensation_steps
+                    ),
+                )
+                if compensation_plan
                 else None
             ),
         )
