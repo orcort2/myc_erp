@@ -51,7 +51,9 @@ Las Fases 0 a 4 están aprobadas. Además de fundación, persistencia, seguridad
 Lifecycle, existen Engine/Executor de ejecución, Action Runner, checkpoints,
 idempotencia, locks, efectos/resultados, auditoría y publicación explícita de
 outbox. Sólo ejecuta planes autorizados y revalidados; una respuesta incierta
-bloquea sin repetir la acción. No existen gateways concretos, API, workers,
+o la pérdida del lock después del handler bloquean sin repetir la acción. La
+revalidación preparada se conserva por ID y el outbox registra fecha de fallo.
+No existen gateways concretos, API, workers,
 schedulers, recuperación automática, retries ni compensaciones. La Fase 6
 requiere aprobación expresa posterior al commit de cierre.
 

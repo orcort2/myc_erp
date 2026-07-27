@@ -302,7 +302,13 @@ La Fase 0 se considera lista para revisión cuando:
 - Persistencia: reutiliza el esquema aprobado de Fase 2; no fue necesaria una
   migración.
 - Publicación: outbox explícito por lote y publicador idempotente; los fallos se
-  conservan sin scheduler ni reintento.
+  conservan con fecha, intentos y error, sin scheduler ni reintento.
+- Correcciones de revisión: lock validado después del handler y atómicamente en
+  el checkpoint; pérdida posterior al posible efecto bloqueada como incierta;
+  revalidación preparada validada por identidad exacta; propiedad global por
+  scope de la clave idempotente documentada para la futura API.
+- Migración correctiva: `c5d7e9f1a3b4`, reversible y limitada a
+  `resolution_outbox_events.failed_at`.
 - Componentes adelantados: ninguno; no existen API, workers, gateways concretos
   ni integraciones propietarias.
 - Próxima fase autorizable: Fase 6, sólo después de aprobación expresa.

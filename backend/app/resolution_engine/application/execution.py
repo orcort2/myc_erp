@@ -19,6 +19,7 @@ from app.resolution_engine.domain.enums import (
 from app.resolution_engine.domain.exceptions import (
     ActionHandlerNotFoundError,
     ActionInvocationUncertainError,
+    ExecutionLockLostError,
     ExecutionNotReadyError,
 )
 from app.resolution_engine.domain.execution import (
@@ -27,6 +28,8 @@ from app.resolution_engine.domain.execution import (
     DomainActionResult,
     ExecutionEngine,
     ExecutionOutcome,
+    ExecutionPlanStep,
+    ExecutionReservation,
 )
 from app.resolution_engine.domain.lifecycle import (
     ExecutionEvidence,
@@ -152,11 +155,10 @@ class ResolutionExecutor:
                 result = step_start.previous_result
             else:
                 result = self._run_action(action_request)
-                self._store.record_step_result(
-                    reservation,
-                    step,
-                    result,
-                    occurred_at=self._clock.now(),
+                result = self._record_action_result(
+                    reservation=reservation,
+                    step=step,
+                    result=result,
                 )
             results[step.id] = result
             if not result.success:
@@ -227,6 +229,46 @@ class ResolutionExecutor:
             completed_at=completed_at,
             actor=command.actor,
         )
+
+    def _record_action_result(
+        self,
+        *,
+        reservation: ExecutionReservation,
+        step: ExecutionPlanStep,
+        result: DomainActionResult,
+    ) -> DomainActionResult:
+        validation_at = self._clock.now()
+        try:
+            self._store.assert_lock(
+                reservation,
+                occurred_at=validation_at,
+            )
+            checkpoint_at = self._clock.now()
+            self._store.record_step_result(
+                reservation,
+                step,
+                result,
+                occurred_at=checkpoint_at,
+            )
+            return result
+        except ExecutionLockLostError as exc:
+            uncertain_at = self._clock.now()
+            uncertain = DomainActionResult(
+                success=False,
+                certainty=ActionCertainty.UNCERTAIN,
+                error_code="execution_lock_lost_after_action",
+                error_message=str(exc),
+                error_details={
+                    "reported_action_result": result.snapshot(),
+                },
+            )
+            self._store.record_uncertain_lock_loss(
+                reservation,
+                step,
+                uncertain,
+                occurred_at=uncertain_at,
+            )
+            return uncertain
 
     def _run_action(
         self,

@@ -25,6 +25,7 @@ from app.resolution_engine.domain.exceptions import (
     DuplicateActionHandlerError,
     InvalidExecutionPlanError,
     LifecycleInvariantError,
+    ExecutionLockLostError,
 )
 from app.resolution_engine.domain.execution import (
     ActionCertainty,
@@ -207,13 +208,20 @@ class Handler:
 
 
 class FakeStore:
-    def __init__(self, current_candidate, previous=None):
+    def __init__(
+        self,
+        current_candidate,
+        previous=None,
+        *,
+        lose_lock_on_record=False,
+    ):
         self.candidate = current_candidate
         self.previous = previous
         self.results = {}
         self.started = False
         self.renewed = 0
         self.finished = None
+        self.lose_lock_on_record = lose_lock_on_record
 
     def load_candidate(self, resolution_id):
         assert resolution_id == self.candidate.lifecycle.resolution_id
@@ -267,12 +275,26 @@ class FakeStore:
     def renew_lock(self, reservation, **values):
         self.renewed += 1
 
+    def assert_lock(self, reservation, **values):
+        return None
+
     def start_step(self, reservation, step, **values):
         return StepStartResult(
             step_execution_id=reservation.step_execution_ids[step.id]
         )
 
     def record_step_result(
+        self,
+        reservation,
+        step,
+        result,
+        **values,
+    ):
+        if self.lose_lock_on_record:
+            raise ExecutionLockLostError("lock replaced before checkpoint")
+        self.results[step.id] = result
+
+    def record_uncertain_lock_loss(
         self,
         reservation,
         step,
@@ -455,6 +477,24 @@ def test_uncertain_handler_response_blocks_without_retry():
     assert outcome.resolution_status == ResolutionStatus.BLOCKED.value
     assert len(first.calls) == 1
     assert second.calls == []
+
+
+def test_lock_loss_between_validation_and_checkpoint_blocks_without_retry():
+    first = Handler("example.first", success_result("1"))
+    second = Handler("example.second", success_result("2"))
+    store = FakeStore(
+        candidate(),
+        lose_lock_on_record=True,
+    )
+
+    outcome = executor(store, (first, second)).execute(command())
+
+    assert outcome.execution_status is ExecutionStatus.BLOCKED
+    assert len(first.calls) == 1
+    assert second.calls == []
+    assert store.results[101].error_code == (
+        "execution_lock_lost_after_action"
+    )
 
 
 def test_execution_level_idempotency_returns_previous_outcome():

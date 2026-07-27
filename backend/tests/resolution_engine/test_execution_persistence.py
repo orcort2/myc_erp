@@ -19,6 +19,7 @@ from app.resolution_engine.domain.enums import (
 from app.resolution_engine.domain.exceptions import (
     ExecutionIdempotencyConflictError,
     ExecutionLockUnavailableError,
+    ExecutionNotReadyError,
 )
 from app.resolution_engine.domain.execution import (
     ActionCertainty,
@@ -36,6 +37,9 @@ from app.resolution_engine.domain.security import (
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.execution import (
     SqlAlchemyExecutionStore,
+)
+from app.resolution_engine.infrastructure.execution_control import (
+    SqlAlchemyExecutionControl,
 )
 from app.resolution_engine.infrastructure.outbox import (
     SqlAlchemyOutboxStore,
@@ -88,12 +92,13 @@ class Identifiers:
 class Handler:
     operation_key = ComponentKey("example.create")
 
-    def __init__(self):
+    def __init__(self, after_call=None):
         self.calls = []
+        self.after_call = after_call
 
     def execute(self, request):
         self.calls.append(request)
-        return DomainActionResult(
+        result = DomainActionResult(
             success=True,
             certainty=ActionCertainty.CONFIRMED,
             response_payload={"entity_id": "created-1"},
@@ -107,6 +112,9 @@ class Handler:
             ),
             domain_transaction_reference="example-tx-1",
         )
+        if self.after_call is not None:
+            self.after_call(request)
+        return result
 
 
 class Publisher:
@@ -307,13 +315,32 @@ def seed_ready_resolution(session):
     return root.id
 
 
-def build_executor(factory, handler):
+def add_revalidation(session, resolution_id, *, marker, revalidated_at):
+    root = session.get(Resolution, resolution_id)
+    revalidation = ResolutionRevalidation(
+        resolution_id=resolution_id,
+        plan_id=root.current_plan_id,
+        previous_context_snapshot_id=root.current_context_snapshot_id,
+        current_context_snapshot_id=root.current_context_snapshot_id,
+        status="valid",
+        result={"marker": marker},
+        revalidated_at=revalidated_at,
+        revalidated_by="test",
+        validator_version="1.0",
+        revalidation_hash=marker * 64,
+    )
+    session.add(revalidation)
+    session.flush()
+    return revalidation.id
+
+
+def build_executor(factory, handler, *, clock=None, store=None):
     return ResolutionExecutor(
-        store=SqlAlchemyExecutionStore(factory),
+        store=store or SqlAlchemyExecutionStore(factory),
         action_runner=ActionRunner((handler,)),
         engine=ExecutionEngine(),
         state_machine=ResolutionStateMachine(),
-        clock=AdvancingClock(),
+        clock=clock or AdvancingClock(),
         identifiers=Identifiers(),
     )
 
@@ -439,6 +466,80 @@ def test_execution_rejects_an_active_lock_before_invoking_actions():
         ) == 0
 
 
+def test_action_finishing_after_lock_ttl_is_blocked_without_reinvocation():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+    clock = AdvancingClock()
+    handler = Handler(
+        after_call=lambda _: setattr(
+            clock,
+            "current",
+            clock.current + timedelta(minutes=10),
+        )
+    )
+
+    outcome = build_executor(
+        factory,
+        handler,
+        clock=clock,
+    ).execute(command(resolution_id))
+
+    assert outcome.execution_status is ExecutionStatus.BLOCKED
+    assert len(handler.calls) == 1
+    with factory() as session:
+        step = session.scalar(select(ResolutionStepExecution))
+        assert step.status == "blocked"
+        assert step.error_code == "execution_lock_lost_after_action"
+        assert session.get(Resolution, resolution_id).status == "blocked"
+        assert session.scalar(
+            select(func.count(ResolutionEntityReference.id))
+        ) == 0
+
+
+def test_replaced_lock_token_cannot_confirm_the_first_executor_result():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+    clock = AdvancingClock()
+
+    def replace_lock(_):
+        clock.current += timedelta(minutes=10)
+        with factory() as session:
+            with session.begin():
+                SqlAlchemyExecutionControl.acquire_lock(
+                    session,
+                    resolution_id=resolution_id,
+                    lock_key=f"resolution:{resolution_id}",
+                    owner="replacement",
+                    token="replacement-token",
+                    acquired_at=clock.current,
+                    expires_at=clock.current + timedelta(minutes=5),
+                )
+
+    handler = Handler(after_call=replace_lock)
+
+    outcome = build_executor(
+        factory,
+        handler,
+        clock=clock,
+    ).execute(command(resolution_id))
+
+    assert outcome.execution_status is ExecutionStatus.BLOCKED
+    assert len(handler.calls) == 1
+    with factory() as session:
+        step = session.scalar(select(ResolutionStepExecution))
+        active_lock = session.scalar(
+            select(ResolutionLock).where(
+                ResolutionLock.released_at.is_(None)
+            )
+        )
+        assert step.status == "blocked"
+        assert active_lock.token == "replacement-token"
+
+
 def test_execution_idempotency_key_cannot_be_reused_for_another_request():
     engine = sqlite_engine()
     factory = sessionmaker(bind=engine, expire_on_commit=False)
@@ -452,6 +553,85 @@ def test_execution_idempotency_key_cannot_be_reused_for_another_request():
             idempotency_key="execution-request-1",
             request_hash="0" * 64,
         )
+
+
+def test_execution_preserves_the_latest_exact_revalidation_identity():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+        latest_id = add_revalidation(
+            session,
+            resolution_id,
+            marker="9",
+            revalidated_at=NOW + timedelta(minutes=1),
+        )
+        session.commit()
+    store = SqlAlchemyExecutionStore(factory)
+
+    candidate = store.load_candidate(resolution_id)
+    outcome = build_executor(
+        factory,
+        Handler(),
+        store=store,
+    ).execute(command(resolution_id))
+
+    assert candidate.revalidation_id == latest_id
+    assert outcome.execution_status is ExecutionStatus.COMPLETED
+    with factory() as session:
+        execution = session.scalar(select(ResolutionExecution))
+        started = session.scalar(
+            select(ResolutionAuditEvent).where(
+                ResolutionAuditEvent.event_type
+                == "resolution.lifecycle.start_execution"
+            )
+        )
+        assert execution.revalidation_id == latest_id
+        assert (
+            started.payload["metadata"]["revalidation_id"]
+            == latest_id
+        )
+
+
+def test_changed_revalidation_rejects_prepared_execution_before_action():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+
+    class ChangingStore(SqlAlchemyExecutionStore):
+        def load_candidate(self, resolution_id):
+            candidate = super().load_candidate(resolution_id)
+            with factory() as session:
+                add_revalidation(
+                    session,
+                    resolution_id,
+                    marker="8",
+                    revalidated_at=NOW + timedelta(minutes=2),
+                )
+                session.commit()
+            return candidate
+
+    handler = Handler()
+
+    with pytest.raises(
+        ExecutionNotReadyError,
+        match="prepared revalidation is no longer current",
+    ):
+        build_executor(
+            factory,
+            handler,
+            store=ChangingStore(factory),
+        ).execute(command(resolution_id))
+
+    assert handler.calls == []
+    with factory() as session:
+        assert session.get(Resolution, resolution_id).status == (
+            ResolutionStatus.READY_FOR_EXECUTION.value
+        )
+        assert session.scalar(
+            select(func.count(ResolutionExecution.id))
+        ) == 0
 
 
 def test_outbox_publication_is_explicit_and_does_not_retry_failures():
@@ -474,8 +654,19 @@ def test_outbox_publication_is_explicit_and_does_not_retry_failures():
     assert second.failed == second.published == 0
     assert len(publisher.messages) == 3
     with factory() as session:
-        statuses = set(session.scalars(select(ResolutionOutboxEvent.status)))
-        assert statuses == {"failed"}
+        rows = tuple(session.scalars(select(ResolutionOutboxEvent)))
+        assert {row.status for row in rows} == {"failed"}
+        assert {row.attempts for row in rows} == {1}
+        assert {row.last_error for row in rows} == {
+            "publisher unavailable"
+        }
+        assert [
+            row.failed_at.replace(tzinfo=timezone.utc)
+            for row in rows
+        ] == [
+            NOW + timedelta(hours=1, seconds=offset)
+            for offset in (2, 3, 4)
+        ]
 
 
 def test_outbox_publication_marks_each_event_published_once():

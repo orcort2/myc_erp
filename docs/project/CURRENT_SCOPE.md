@@ -41,8 +41,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   revalidación. La simulación implementada es declarativa y sin efectos. La
   ejecución síncrona controlada consume sólo planes autorizados/revalidados,
   persiste ejecución y pasos, invoca acciones exclusivamente por `ActionRunner`,
-  controla idempotencia y lock exclusivo, conserva efectos/resultados y publica
-  outbox únicamente por solicitud explícita. Gateways concretos, API, workers,
+  controla idempotencia y lock exclusivo con validación posterior al handler,
+  bloquea resultados si pierde exclusividad, conserva una única identidad de
+  revalidación, efectos/resultados y publica outbox únicamente por solicitud
+  explícita con fecha de fallo. Gateways concretos, API, workers,
   schedulers, recuperación automática, retries y compensaciones continúan sin
   comportamiento.
 

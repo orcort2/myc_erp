@@ -101,12 +101,39 @@ class SqlAlchemyExecutionControl:
             )
 
     @staticmethod
+    def assert_lock(
+        session: Session,
+        *,
+        resolution_id: int,
+        token: str,
+        occurred_at: datetime,
+        for_update: bool = False,
+    ) -> ResolutionLock:
+        query = select(ResolutionLock).where(
+            ResolutionLock.resolution_id == resolution_id,
+            ResolutionLock.lock_type
+            == ResolutionLockType.EXECUTION.value,
+            ResolutionLock.token == token,
+            ResolutionLock.released_at.is_(None),
+            ResolutionLock.expires_at > occurred_at,
+        )
+        if for_update:
+            query = query.with_for_update()
+        lock = session.scalar(query)
+        if lock is None:
+            raise ExecutionLockLostError(
+                f"Execution lock is no longer valid: {token}"
+            )
+        return lock
+
+    @staticmethod
     def release_lock(
         session: Session,
         *,
         resolution_id: int,
         token: str,
         released_at: datetime,
+        required: bool = True,
     ) -> None:
         result = session.execute(
             update(ResolutionLock)
@@ -117,7 +144,7 @@ class SqlAlchemyExecutionControl:
             )
             .values(released_at=released_at)
         )
-        if result.rowcount != 1:
+        if required and result.rowcount != 1:
             raise ExecutionLockLostError(
                 f"Execution lock cannot be released: {token}"
             )

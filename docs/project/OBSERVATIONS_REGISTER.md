@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de pendientes en auditorías, cierres, bitácoras y documentos archivados
 >
-> Corte verificado: 2026-07-24
+> Corte verificado: 2026-07-28
 
 # Registro consolidado de observaciones
 
@@ -92,6 +92,10 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R26 | Equipos/Plantillas Maestras | Equipos resolvía el Master mediante `CatalogItem.name == ServiceOrderItem.service_name`. El ETS ahora congela `expected_certificate_master_id`, el equipo consume sólo esa partida y conserva un snapshot versionado del contexto operativo; la migración histórica usa exclusivamente IDs persistentes. | resuelta | Corrección de trazabilidad de Equipos 2026-07-23; migración `8c2d4e6f7a9b` |
 | OBS-R27 | Autenticación | El registro público aceptaba `role_names` y permitía solicitar autoridad. El contrato ahora prohíbe campos extra y la asignación bootstrap/base se decide exclusivamente en backend. | resuelta | Bloqueador directo de Fase 3 del Motor; pruebas de autenticación 2026-07-24 |
 | OBS-R28 | Autenticación | Un refresh JWT podía aceptarse como bearer de acceso. Ambos tokens llevan tipo explícito y las dependencias obligatoria/opcional sólo aceptan `token_type=access`. | resuelta | Bloqueador directo de Fase 3 del Motor; pruebas negativas 2026-07-24 |
+| OBS-R29 | Motor de Resoluciones | El lock sólo se renovaba antes del handler y un resultado podía persistirse después de vencer o sustituirse el token. Ahora se valida tras el handler y atómicamente en el checkpoint; la pérdida posterior al posible efecto bloquea como incierta sin segunda invocación. | resuelta | Revisión arquitectónica de Fase 5; pruebas de expiración, sustitución y carrera 2026-07-28 |
+| OBS-R30 | Motor de Resoluciones | `start()` volvía a seleccionar la última revalidación en vez de conservar la preparada. Ahora candidato, metadata, ejecución y Lifecycle comparten el mismo ID y un cambio concurrente se rechaza antes de acciones. | resuelta | Revisión arquitectónica de Fase 5; prueba persistente con múltiples revalidaciones 2026-07-28 |
+| OBS-R31 | Motor de Resoluciones | `OutboxStore.mark_failed()` recibía `failed_at` pero el adaptador lo descartaba. La migración `c5d7e9f1a3b4` y el modelo conservan fecha, intentos y último error. | resuelta | Revisión arquitectónica de Fase 5; prueba persistente y de migración 2026-07-28 |
+| OBS-R32 | Motor de Resoluciones | La propiedad de `idempotency_key` no estaba declarada. El contrato la define global dentro del scope del Motor y obliga a la futura API a autorizar y namespaciar por cliente/organización antes de invocar. | resuelta | Revisión arquitectónica de Fase 5; contrato `17_EXECUTION_RUNTIME.md` 2026-07-28 |
 
 ## Regla de cierre
 

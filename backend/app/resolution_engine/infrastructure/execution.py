@@ -169,6 +169,12 @@ class SqlAlchemyExecutionStore:
                         return StartExecutionResult(
                             previous_outcome=previous
                         )
+                    prepared_plan_id, prepared_revalidation_id = (
+                        self._validate_prepared_evidence(
+                            session,
+                            transition=transition,
+                        )
+                    )
                     lock_key = f"resolution:{command.resolution_id}"
                     self._control.acquire_lock(
                         session,
@@ -181,11 +187,8 @@ class SqlAlchemyExecutionStore:
                     )
                     execution = ResolutionExecution(
                         resolution_id=command.resolution_id,
-                        plan_id=self._required_plan_id(transition),
-                        revalidation_id=self._required_revalidation_id(
-                            session,
-                            transition.resolution_id,
-                        ),
+                        plan_id=prepared_plan_id,
+                        revalidation_id=prepared_revalidation_id,
                         attempt_number=1,
                         status=ExecutionStatus.RUNNING.value,
                         execution_key=execution_key,
@@ -304,6 +307,20 @@ class SqlAlchemyExecutionStore:
                     expires_at=expires_at,
                 )
 
+    def assert_lock(
+        self,
+        reservation: ExecutionReservation,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        with self._session_factory() as session:
+            self._control.assert_lock(
+                session,
+                resolution_id=reservation.resolution_id,
+                token=reservation.lock_token,
+                occurred_at=occurred_at,
+            )
+
     def start_step(
         self,
         reservation: ExecutionReservation,
@@ -387,9 +404,54 @@ class SqlAlchemyExecutionStore:
         *,
         occurred_at: datetime,
     ) -> None:
+        self._record_step_result(
+            reservation,
+            step,
+            result,
+            occurred_at=occurred_at,
+            require_active_lock=True,
+        )
+
+    def record_uncertain_lock_loss(
+        self,
+        reservation: ExecutionReservation,
+        step: ExecutionPlanStep,
+        result: DomainActionResult,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        if result.success or result.step_status.value != "blocked":
+            raise ExecutionNotReadyError(
+                "lock loss requires an uncertain blocked result"
+            )
+        self._record_step_result(
+            reservation,
+            step,
+            result,
+            occurred_at=occurred_at,
+            require_active_lock=False,
+        )
+
+    def _record_step_result(
+        self,
+        reservation: ExecutionReservation,
+        step: ExecutionPlanStep,
+        result: DomainActionResult,
+        *,
+        occurred_at: datetime,
+        require_active_lock: bool,
+    ) -> None:
         key = self._step_key(reservation.execution_key, step.step_key)
         with self._session_factory() as session:
             with session.begin():
+                if require_active_lock:
+                    self._control.assert_lock(
+                        session,
+                        resolution_id=reservation.resolution_id,
+                        token=reservation.lock_token,
+                        occurred_at=occurred_at,
+                        for_update=True,
+                    )
                 step_execution_id = reservation.step_execution_ids[step.id]
                 row = session.get(
                     ResolutionStepExecution,
@@ -597,6 +659,10 @@ class SqlAlchemyExecutionStore:
                     resolution_id=reservation.resolution_id,
                     token=reservation.lock_token,
                     released_at=completed_at,
+                    required=(
+                        summary.execution_status
+                        is not ExecutionStatus.BLOCKED
+                    ),
                 )
                 event_type = {
                     ExecutionStatus.COMPLETED:
@@ -694,24 +760,38 @@ class SqlAlchemyExecutionStore:
         return rows
 
     @staticmethod
-    def _required_plan_id(transition: LifecycleTransition) -> int:
-        value = transition.event.payload["metadata"].get("plan_id")
-        if value is None:
-            raise ExecutionNotReadyError(
-                "start transition does not identify the plan"
-            )
-        return int(value)
-
-    @staticmethod
-    def _required_revalidation_id(
+    def _validate_prepared_evidence(
         session: Session,
-        resolution_id: int,
-    ) -> int:
-        lifecycle = SqlAlchemyLifecycleStore(session).load(resolution_id)
-        evidence = lifecycle.evidence.revalidation if lifecycle else None
-        if evidence is None:
-            raise ExecutionNotReadyError("revalidation evidence is missing")
-        return evidence.id
+        *,
+        transition: LifecycleTransition,
+    ) -> tuple[int, int]:
+        metadata = transition.event.payload["metadata"]
+        plan_id = metadata.get("plan_id")
+        revalidation_id = metadata.get("revalidation_id")
+        if plan_id is None or revalidation_id is None:
+            raise ExecutionNotReadyError(
+                "start transition does not identify exact evidence"
+            )
+        lifecycle = SqlAlchemyLifecycleStore(session).load(
+            transition.resolution_id
+        )
+        plan = lifecycle.evidence.plan if lifecycle else None
+        revalidation = (
+            lifecycle.evidence.revalidation if lifecycle else None
+        )
+        if plan is None or plan.id != int(plan_id):
+            raise ExecutionNotReadyError(
+                "prepared plan is no longer current"
+            )
+        if (
+            revalidation is None
+            or revalidation.id != int(revalidation_id)
+            or revalidation.plan_id != int(plan_id)
+        ):
+            raise ExecutionNotReadyError(
+                "prepared revalidation is no longer current"
+            )
+        return int(plan_id), int(revalidation_id)
 
     @staticmethod
     def _required_context_hash(

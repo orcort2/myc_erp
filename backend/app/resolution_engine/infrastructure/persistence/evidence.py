@@ -422,6 +422,9 @@ class ResolutionOutboxEvent(
     published_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     attempts: Mapped[int] = mapped_column(
         Integer, server_default="0", nullable=False
     )

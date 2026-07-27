@@ -89,6 +89,9 @@ optimista y agrega su evento de auditoría.
 
 - La idempotencia de resolución usa alcance `resolution_execution`, clave del
   solicitante y hash de resolución, plan/versión/hash, revalidación y pasos.
+  En el contrato interno vigente, la clave pertenece al namespace global del
+  Motor dentro de su `scope`: no pertenece por sí sola a un actor,
+  organización, resolución ni futuro cliente API.
 - Cada acción obtiene otra clave estable derivada de la ejecución y
   `step_key`; su request hash incluye ejecución, plan exacto y snapshot del
   paso.
@@ -97,7 +100,45 @@ optimista y agrega su evento de auditoría.
 - El lock `execution` es exclusivo por resolución. Sólo su token vigente puede
   renovarlo o liberarlo; un lock expirado puede marcarse liberado al iniciar una
   nueva reserva válida.
+- El lock se valida inmediatamente después de regresar del handler y se valida
+  otra vez con bloqueo de fila dentro de la transacción que persiste el
+  resultado. Una sustitución entre ambas comprobaciones tampoco confirma el
+  paso.
+- Si el TTL vence o el token fue sustituido después de invocar la acción, el
+  resultado reportado se conserva como evidencia anidada, pero el paso se marca
+  `blocked` con certeza `uncertain`. No se crean referencias de entidad
+  confirmadas ni se vuelve a invocar el handler.
 - Lock e idempotencia se persisten antes de cualquier efecto propietario.
+
+No existe heartbeat en Fase 5. El TTL debe dimensionarse al adaptador, pero no
+se usa para afirmar éxito: aun cuando la acción tarde más que el TTL, la pérdida
+se detecta y bloquea para conciliación posterior.
+
+### Requisito para la futura API
+
+Como la unicidad física actual es global por `scope + idempotency_key`, el
+adaptador HTTP futuro deberá autorizar primero el acceso a la resolución y
+derivar o namespaciar la clave con la identidad estable del cliente y la
+organización. Nunca podrá entregar un replay sólo porque un actor presentó una
+clave conocida. Cambiar esta propiedad requerirá un contrato/migración
+explícitos; no puede reinterpretarse el histórico.
+
+## Identidad exacta de revalidación
+
+El `revalidation_id` se selecciona una vez al preparar el candidato y se propaga
+en el evento de inicio. Dentro de la transacción de reserva se compara
+optimistamente contra la evidencia vigente antes de adquirir el lock o crear la
+ejecución. Debe cumplirse:
+
+```text
+candidate.revalidation_id
+== transition.metadata.revalidation_id
+== ResolutionExecution.revalidation_id
+== lifecycle.evidence.revalidation.id
+```
+
+Una revalidación append-only agregada entre preparación e inicio invalida el
+intento preparado; no se sustituye silenciosamente por la nueva.
 
 ## Evidencia y auditoría
 
@@ -117,9 +158,10 @@ fuente y poseen `event_key` y `payload_hash` estables.
 
 La publicación es una llamada síncrona y explícita; no existe proceso
 automático. El publicador externo debe ser idempotente por `event_key`. Un éxito
-marca `published`; una excepción marca `failed`, conserva el error y no agenda
-otro intento. Claims distribuidos, backoff, recuperación y workers pertenecen a
-una fase posterior expresamente autorizada.
+marca `published`; una excepción marca `failed`, conserva `failed_at`,
+`attempts` y `last_error`, y no agenda otro intento. Claims distribuidos,
+backoff, recuperación y workers pertenecen a una fase posterior expresamente
+autorizada.
 
 ## Transacciones y propiedad
 

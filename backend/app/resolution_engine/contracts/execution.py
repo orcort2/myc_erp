@@ -22,6 +22,8 @@ from app.resolution_engine.domain.value_objects import ComponentKey
 
 @dataclass(frozen=True, slots=True)
 class ExecuteResolutionCommand:
+    """Comando interno; la idempotency_key pertenece al namespace global."""
+
     resolution_id: int
     idempotency_key: str
     actor: ActorContext
@@ -119,6 +121,14 @@ class ExecutionStore(Protocol):
     ) -> None:
         """Extiende únicamente el lock vigente del mismo token."""
 
+    def assert_lock(
+        self,
+        reservation: ExecutionReservation,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        """Comprueba token y vigencia después de una acción propietaria."""
+
     def start_step(
         self,
         reservation: ExecutionReservation,
@@ -138,6 +148,16 @@ class ExecutionStore(Protocol):
         occurred_at: datetime,
     ) -> None:
         """Persiste resultado, entidades, auditoría y outbox del paso."""
+
+    def record_uncertain_lock_loss(
+        self,
+        reservation: ExecutionReservation,
+        step: ExecutionPlanStep,
+        result: DomainActionResult,
+        *,
+        occurred_at: datetime,
+    ) -> None:
+        """Bloquea el paso cuando ya no puede afirmarse exclusividad."""
 
     def finish(
         self,

@@ -106,7 +106,6 @@ class SqlAlchemyOutboxStore:
         error: str,
         failed_at: datetime,
     ) -> None:
-        del failed_at
         with self._session_factory() as session:
             with session.begin():
                 session.execute(
@@ -120,6 +119,7 @@ class SqlAlchemyOutboxStore:
                         status=OutboxStatus.FAILED.value,
                         attempts=ResolutionOutboxEvent.attempts + 1,
                         last_error=error[:2000],
+                        failed_at=failed_at,
                     )
                 )
 

@@ -5,6 +5,7 @@ from app.core.db import Base
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
     ResolutionAuthorizationRequest,
+    ResolutionOutboxEvent,
     ResolutionPlan,
     ResolutionPlanStepDependency,
     ResolutionSecurityDecision,
@@ -46,6 +47,10 @@ def resolution_tables():
 
 def test_complete_persistence_model_is_registered_in_metadata():
     assert set(resolution_tables()) == EXPECTED_TABLES
+
+
+def test_outbox_preserves_the_failure_timestamp():
+    assert "failed_at" in ResolutionOutboxEvent.__table__.c
 
 
 def test_schema_is_generic_and_does_not_embed_first_use_case():

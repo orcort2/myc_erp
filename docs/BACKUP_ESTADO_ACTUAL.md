@@ -10,7 +10,7 @@
 >
 > Historial anterior: `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte actualizado: 2026-07-27
+> Corte actualizado: 2026-07-28
 
 # Estado operativo actual del ERP MYC
 
@@ -28,18 +28,21 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `b4c6d8e0f2a3`.
+- Revisión aplicada y único head verificado: `c5d7e9f1a3b4`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
 - `b4c6d8e0f2a3` agrega `resolution_security_decisions`, elimina once FKs del
   Motor a `users.id` y migra identidad/autoridad a actor canónico, funciones y
   snapshots.
+- `c5d7e9f1a3b4` agrega exclusivamente
+  `resolution_outbox_events.failed_at` para conservar evidencia temporal de
+  fallos de publicación.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,170,125 bytes.
-- SHA-256 verificado: `e97094f59a094023a39dfa89049cf49f9e4bf8625274f65265d42598779dcb9e`.
-- El respaldo contiene `alembic_version = b4c6d8e0f2a3`.
+- Tamaño verificado: 74,170,176 bytes.
+- SHA-256 verificado: `a979ca85f8a73f12e6b4f12c7af71806c98a2c7ca115420d58397d96fccac54d`.
+- El respaldo contiene `alembic_version = c5d7e9f1a3b4`.
 
 ## Equipos y contexto de certificado
 
@@ -60,9 +63,9 @@
 - Frontend: 11 pruebas correctas y build Vite de producción correcto; permanece
   la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL: `b4c6d8e0f2a3` aplicó, revirtió a `9d3e5f7a1b2c` y reaplicó a
-  head; `resolution_security_decisions` rechazó mutación con SQLSTATE `55000`.
-- `alembic heads/current`: único head `b4c6d8e0f2a3`.
+- PostgreSQL: `c5d7e9f1a3b4` aplicó, revirtió a `b4c6d8e0f2a3` y reaplicó a
+  head; la revisión sólo agregó `resolution_outbox_events.failed_at`.
+- `alembic heads/current`: único head `c5d7e9f1a3b4`.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
   como `TD-021`; no propone operaciones sobre el esquema del Motor.
 - `git diff --check`: correcto.
@@ -99,19 +102,29 @@
 - Cada acción persiste intención antes del handler y resultado después. Una
   respuesta incierta bloquea sin retry; no se interpreta como ausencia de
   efecto.
+- El token y TTL del lock se comprueban al volver del handler y atómicamente
+  dentro del checkpoint. Su pérdida bloquea como incierta, no confirma efectos
+  ni reinvoca el handler; un token sustituto permanece intacto.
+- El inicio conserva la identidad exacta del plan y de la revalidación preparada
+  y rechaza cualquier cambio concurrente antes de ejecutar una acción.
 - Replay exacto devuelve el resultado durable; clave con otro hash, operación
   en curso o lock activo se rechazan.
 - El outbox se publica sólo mediante una invocación explícita y un publicador
-  idempotente por `event_key`; un fallo se conserva sin scheduler ni reintento.
+  idempotente por `event_key`; un fallo conserva `failed_at`, intentos y error,
+  sin scheduler ni reintento.
+- La clave idempotente interna tiene namespace global por scope. Una futura API
+  deberá autorizarla y namespaciarla por cliente/organización antes de construir
+  el comando interno.
 - No se incorporaron API, gateways concretos, integraciones propietarias,
   workers, schedulers, procesamiento masivo, recuperación, retries ni
   compensaciones.
-- Validaciones: 127 pruebas del Motor; suite backend completa con 251 pruebas y
+- Validaciones: 134 pruebas del Motor; suite backend completa con 258 pruebas y
   19 subpruebas; 11 pruebas frontend; build Vite; compilación Python y
   arquitectura correctos.
-- No existe migración de Fase 5. La base y el respaldo conservan
-  `alembic_version = b4c6d8e0f2a3`; `alembic check` sólo muestra la deriva
-  histórica `TD-021` y ninguna operación `resolution_*` atribuible a la fase.
+- La revisión incorpora la migración reversible `c5d7e9f1a3b4`; la base y el
+  respaldo conservan ese `alembic_version`. `alembic check` sólo muestra la
+  deriva histórica `TD-021` y ninguna operación `resolution_*` atribuible a la
+  fase.
 - Contrato:
   [`architecture/resolution-engine/17_EXECUTION_RUNTIME.md`](architecture/resolution-engine/17_EXECUTION_RUNTIME.md).
 - Cierre:

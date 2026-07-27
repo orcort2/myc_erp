@@ -6,7 +6,7 @@
 >
 > Complementa a: `07_MODELO_DE_DATOS.md` y `13_IMPLEMENTATION_MATRIX.md`
 >
-> Corte verificado: 2026-07-24
+> Corte verificado: 2026-07-28
 
 # Persistencia del Motor de Resoluciones
 
@@ -104,13 +104,16 @@ el ciclo de dependencias sin debilitar la integridad referencial.
 `ResolutionRepository` es deliberadamente pequeño: agrega filas a una sesión,
 consulta por ID público o request key y reconstruye el expediente completo. No
 inicia ni confirma transacciones, no cambia estados y no contiene reglas de
-negocio. La unidad de trabajo y el ciclo de vida pertenecen a fases posteriores.
+negocio. La unidad de trabajo y el ciclo de vida pertenecen a servicios
+especializados posteriores al esquema.
 
 ## Evolución compatible
 
 Nuevos tipos de resolución reutilizan el mismo esquema mediante definiciones y
 documentos versionados. Una relación nueva sólo debe convertirse en columna
 cuando sea una invariante transversal consultable; los datos especializados
-permanecen en snapshots o referencias tipadas. El outbox, los locks y la
-idempotencia son únicamente estructuras persistentes hasta que la Fase 5
-incorpore su comportamiento.
+permanecen en snapshots o referencias tipadas. Desde Fase 5, el outbox, los
+locks y la idempotencia tienen comportamiento mediante adaptadores explícitos.
+La corrección de revisión `c5d7e9f1a3b4` agrega `failed_at` nullable al outbox
+para conservar la fecha exacta de una publicación fallida sin introducir
+reintentos.

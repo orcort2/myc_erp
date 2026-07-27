@@ -46,6 +46,20 @@ blocked`.
 `blocked` representa una respuesta incierta. No afirma que el efecto no ocurrió
 y no vuelve a invocar la acción.
 
+## Correcciones derivadas de revisión
+
+La revisión del commit `65f9898` produjo cuatro observaciones, corregidas sin
+abrir Fase 6:
+
+1. el token/TTL del lock se comprueba al regresar del handler y nuevamente,
+   bajo lock de fila, en el checkpoint; una pérdida posterior al posible efecto
+   bloquea con certeza incierta y no repite el handler;
+2. `start()` conserva el `revalidation_id` preparado y rechaza optimistamente
+   una revalidación más reciente, en vez de seleccionarla de nuevo;
+3. el outbox persiste `failed_at` junto con estado, intentos y último error;
+4. la clave idempotente interna se declara global por scope y la futura API
+   deberá autorizar y namespaciarla por cliente/organización.
+
 ## Invariantes y decisiones relevantes
 
 1. Sólo inicia un plan activo `authorized`, con autorización y revalidación
@@ -55,21 +69,23 @@ y no vuelve a invocar la acción.
    persistida; otro payload con la misma clave se rechaza.
 3. Cada paso posee ID persistente, `step_execution_key` e idempotencia propia.
 4. El lock es exclusivo por resolución y sólo su token vigente puede renovarlo
-   o liberarlo.
+   o liberarlo. Perderlo después del handler nunca confirma el resultado:
+   conserva el reporte como evidencia, bloquea y no crea efectos confirmados.
 5. `ActionRunner` es el único punto de invocación de handlers; no existe acceso
    directo desde servicios, routers o infraestructura.
 6. Excepción o respuesta inválida del handler se trata como resultado incierto,
    se audita y bloquea sin retry.
 7. Los eventos outbox se agregan con el hecho fuente. La publicación exige
-   publicador idempotente por `event_key`; un fallo se conserva y no se agenda.
+   publicador idempotente por `event_key`; un fallo conserva también
+   `failed_at`, intentos y error, y no se agenda.
 8. La autorización de apertura excluyó expresamente recuperación, retries,
    compensaciones y workers. La matriz se precisó para no atribuirlos a esta
    fase.
 
 ## Pruebas ejecutadas y resultados
 
-- Suite específica del Motor: **127 correctas**.
-- Suite backend completa: **251 correctas**, **19 subpruebas correctas** y dos
+- Suite específica del Motor: **134 correctas**.
+- Suite backend completa: **258 correctas**, **19 subpruebas correctas** y dos
   warnings preexistentes de dependencias.
 - Frontend: **11 correctas**.
 - Build Vite: correcto; conserva la advertencia preexistente por chunk principal
@@ -82,11 +98,13 @@ y no vuelve a invocar la acción.
   acciones; resultados completo, parcial, fallido e incierto comprobados.
 - Idempotencia: replay exacto, conflicto de hash, bloqueo de operación en curso
   y claves de paso comprobados.
-- Locks: adquisición exclusiva, rechazo de lock activo, renovación por token y
-  liberación final comprobados.
+- Locks: adquisición exclusiva, rechazo de lock activo, renovación por token,
+  expiración durante el handler, sustitución de token, checkpoint incierto sin
+  efectos confirmados, liberación final y ausencia de reinvocación comprobados.
 - Persistencia: vínculo resolución/plan/revalidación/paso, actor, efectos,
   resultado, auditoría y outbox comprobados sobre SQL con FKs activas.
-- Alembic: `heads` y `current` coinciden en `b4c6d8e0f2a3`.
+- Alembic: `heads` y `current` coinciden en `c5d7e9f1a3b4`; la migración aplicó,
+  revirtió a `b4c6d8e0f2a3` y reaplicó correctamente.
 - `alembic check`: conserva exclusivamente la deriva histórica general ya
   registrada en `TD-021`; no detectó operaciones sobre tablas
   `resolution_*` atribuibles a Fase 5.
@@ -115,36 +133,35 @@ de la ejecución síncrona aprobada.
 
 ## Migraciones
 
-No existen migraciones de Fase 5. Se reutilizan las entidades, FKs, constraints,
-índices y protección histórica creados en Fases 2 y 3. La base local no fue
-modificada y conserva `alembic_version = b4c6d8e0f2a3`; no fue necesario
-regenerar el respaldo SQL.
+La corrección incorpora `c5d7e9f1a3b4`, revisión mínima y reversible sobre
+`b4c6d8e0f2a3`, que agrega exclusivamente
+`resolution_outbox_events.failed_at`. No modifica tablas propietarias del ERP.
 
 ## Archivos modificados
 
 ### Implementación
 
-- APIs de paquete:
-  `backend/app/resolution_engine/{__init__.py,application/__init__.py,contracts/__init__.py,domain/__init__.py,infrastructure/__init__.py}`;
-- dominio:
-  `domain/{exceptions.py,execution.py,lifecycle.py}`;
-- contratos y aplicación:
-  `contracts/execution.py`,
-  `application/{action_runner.py,execution.py,outbox.py}`;
+- contrato y aplicación:
+  `backend/app/resolution_engine/contracts/execution.py` y
+  `backend/app/resolution_engine/application/execution.py`;
 - infraestructura:
-  `infrastructure/{execution.py,execution_control.py,lifecycle.py,outbox.py}`;
+  `backend/app/resolution_engine/infrastructure/{execution.py,execution_control.py,outbox.py}`
+  y
+  `backend/app/resolution_engine/infrastructure/persistence/evidence.py`;
+- migración:
+  `backend/migrations/versions/c5d7e9f1a3b4_resolution_engine_phase_5_review.py`;
 - pruebas:
-  `test_architecture.py`, `test_execution.py`,
-  `test_execution_persistence.py` y `test_lifecycle.py`;
+  `backend/tests/resolution_engine/{test_execution.py,test_execution_persistence.py,test_persistence_schema.py,test_phase_5_review_migration.py}`;
 - inventario:
   `scripts/generate_project_file_registry.py`.
+- respaldo local:
+  `backup_erp_myc_antes_prueba.sql`.
 
 ### Documentación
 
-- matriz, README y contratos arquitectónicos `13`, `16` y nuevo `17`;
-- canon: índice, estado, alcance, flujo, reglas y decisiones;
-- estado operativo e inventario;
-- este cierre técnico.
+- matriz y contratos arquitectónicos `13`, `14` y `17`;
+- canon: estado, alcance, flujo, reglas, decisiones y observaciones;
+- estado operativo, inventario y este cierre técnico.
 
 El detalle de responsabilidad y dependencias de cada ruta está sincronizado en
 `docs/PROJECT_FILE_REGISTRY.md`.
@@ -161,6 +178,7 @@ El detalle de responsabilidad y dependencias de cada ruta está sincronizado en
 | `/Users/saulcortes/Desktop/myc_erp/backend/app/resolution_engine/infrastructure/execution_control.py` | Locks e idempotencia SQL. | Permite auditar exclusión mutua, tokens, hashes, replay y conflictos. |
 | `/Users/saulcortes/Desktop/myc_erp/backend/app/resolution_engine/application/outbox.py` | Servicio explícito de publicación outbox. | Verifica el límite sin scheduler, worker ni retry. |
 | `/Users/saulcortes/Desktop/myc_erp/backend/app/resolution_engine/infrastructure/outbox.py` | Persistencia y adaptador del outbox. | Permite revisar atomicidad del alta, identidad de eventos y estados de publicación. |
+| `/Users/saulcortes/Desktop/myc_erp/backend/migrations/versions/c5d7e9f1a3b4_resolution_engine_phase_5_review.py` | Migración reversible de evidencia temporal del outbox. | Demuestra que `failed_at` se agrega sin ampliar el alcance del esquema. |
 | `/Users/saulcortes/Desktop/myc_erp/backend/app/resolution_engine/domain/lifecycle.py` | Transiciones e invariantes de ejecución. | Confirma que ningún estado cambia fuera del Lifecycle y que la evidencia terminal concuerda. |
 | `/Users/saulcortes/Desktop/myc_erp/backend/tests/resolution_engine/test_execution_persistence.py` | Prueba integral del runtime persistente. | Reproduce autorización, acciones, idempotencia, locks, efectos, auditoría y outbox sobre SQL. |
 
