@@ -28,7 +28,7 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `f8a0b2c4d6e8`.
+- Revisión aplicada y único head verificado: `f9c1d3e5a7b9`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -47,11 +47,15 @@
 - `f8a0b2c4d6e8`, después de `fabc2cd495ef`, agrega modo, identidad,
   payload/hash y consumo append-only de operación, además de congelar el lote
   exacto de outbox.
+- `f9c1d3e5a7b9` agrega la evidencia propietaria append-only
+  `certificate_resolution_operations`, sus constraints, índices y trigger de
+  inmutabilidad para el primer vertical de Fase 9.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,213,207 bytes.
-- SHA-256 verificado: `763b5b262632d06d8bb6eb4433038c1f3009aa2da4e237867fae32c04901db96`.
-- El respaldo contiene `alembic_version = f8a0b2c4d6e8`.
+- Tamaño verificado: 74,218,048 bytes.
+- SHA-256 verificado: `1c0c5ed0bd6b8a93acd7d98c665d997ed1a6ef3808958486088c1315154a9dca`.
+- El respaldo contiene `alembic_version = f9c1d3e5a7b9`, la tabla propietaria
+  y `trg_certificate_resolution_operations_immutable`.
 
 ## Equipos y contexto de certificado
 
@@ -64,21 +68,23 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa fuera del sandbox: 306 pruebas y 19 subpruebas
-  correctas, 19 fallos y dos advertencias. Los 19 fallos provienen del `JSONB`
-  no portable del módulo Actividad al crear metadata SQLite (`TD-023`), fuera
-  del alcance del Motor; LibreOffice pasa fuera del sandbox.
-- Suite específica de Fase 8: 15 pruebas correctas.
-- Suite completa del Motor: 201 pruebas correctas, incluidas creación,
+- Suite backend completa: 311 pruebas y 19 subpruebas correctas, 21 fallos y
+  dos advertencias. Diecinueve fallos provienen del `JSONB` no portable del
+  módulo Actividad al crear metadata SQLite (`TD-023`) y dos del aborto del
+  proceso externo LibreOffice; ninguno pertenece a Fase 9.
+- Suite específica de Fase 9: 7 pruebas correctas.
+- Suite seleccionada de Certificados: 30 pruebas correctas; los cuatro fallos
+  restantes corresponden a los dos bloqueos externos anteriores.
+- Suite completa del Motor: 208 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
   revalidación, concurrencia, persistencia, ejecución, compensación,
   arquitectura, esquema y migraciones.
-- Frontend: 11 pruebas correctas y build Vite de producción correcto; permanece
-  la advertencia preexistente por tamaño del chunk principal.
+- Frontend: `package.json` no declara suite; build Vite de producción correcto,
+  con la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL: `f8a0b2c4d6e8` aplicó, revirtió a `fabc2cd495ef` y reaplicó a
-  head correctamente.
-- `alembic heads/current`: único head `f8a0b2c4d6e8`.
+- PostgreSQL: `f9c1d3e5a7b9` aplicó, revirtió a `f8a0b2c4d6e8` y reaplicó a
+  head correctamente; el trigger append-only quedó comprobado.
+- `alembic heads/current`: único head `f9c1d3e5a7b9`.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
   como `TD-021`; no propone operaciones sobre el esquema del Motor.
 - `git diff --check`: correcto.
@@ -104,8 +110,8 @@
 
 ## Motor de Resoluciones — Fases 8 y 9
 
-- Estado: Fases 0 a 8 `APROBADAS`; Fase 9 — Integración con ERP MYC
-  `ACTIVA` documentalmente, sin caso vertical seleccionado o implementado.
+- Estado: Fases 0 a 8 `APROBADAS`; primer vertical de Fase 9
+  `certificate.resolve_incorrect_release` implementado y `EN REVISIÓN`.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -135,9 +141,10 @@
 - La clave idempotente interna tiene namespace global por scope. Una futura API
   deberá autorizarla y namespaciarla por cliente/organización antes de construir
   el comando interno.
-- No se incorporaron API, gateways concretos, integraciones propietarias,
-  workers, schedulers, procesamiento masivo, recuperación, conciliación,
-  retries ni compensación automática.
+- Fase 9 incorpora exclusivamente provider read-only y gateways de ejecución y
+  compensación para Certificados; no agrega API, otros dominios, workers,
+  schedulers, procesamiento masivo, recuperación, conciliación, retries ni
+  compensación automática.
 - La Fase 7 incorpora modelo puro, `AuditEngine`, `EvidenceRegistry`,
   `ResolutionTimeline`, consultas autorizadas y adaptador SQL read-only.
   Verifica pertenencia, hashes reproducibles, vínculos exactos y secuencia; no
@@ -155,13 +162,13 @@
   El consumo se confirma con la transacción; rollback no quema la concesión.
 - La autenticación futura/expirada, permisos fuera de contexto, downgrade de
   permiso, recursos falsos y evidencia/hash alterados se rechazan.
-- Validaciones: 15 pruebas específicas; 45 pruebas específicas/arquitectónicas;
-  201 pruebas del Motor; backend completo con 306 pruebas y 19 subpruebas
-  correctas y 19 fallos ajenos registrados como `TD-023`; 11
-  pruebas frontend; build Vite y compilación Python correctos.
-- La migración reversible `f8a0b2c4d6e8` fue probada en
+- Validaciones de Fase 9: 7 específicas; 208 del Motor; 30 seleccionadas de
+  Certificados; backend completo con 311 pruebas y 19 subpruebas correctas,
+  19 fallos de `TD-023` y dos abortos de LibreOffice; build Vite y compilación
+  Python correctos.
+- La migración reversible `f9c1d3e5a7b9` fue probada en
   upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva histórica
-  `TD-021` y ninguna operación `resolution_*` adicional atribuible a Fase 8.
+  `TD-021` y ninguna operación sobre `certificate_resolution_operations`.
 - El respaldo SQL fue regenerado y coincide con el head.
 - Apertura aprobada de Fase 8:
   [`architecture/resolution-engine/21_PHASE_8_OPENING.md`](architecture/resolution-engine/21_PHASE_8_OPENING.md).
@@ -173,8 +180,11 @@
   `661f43a5cbba9070b1f02babd9ebbd5149f62b2b`.
 - Apertura oficial de Fase 9:
   [`architecture/resolution-engine/23_PHASE_9_OPENING.md`](architecture/resolution-engine/23_PHASE_9_OPENING.md).
-- Fase 9 sólo autoriza integración gradual mediante definiciones verticales,
-  Fact Providers read-only y Domain Gateways hacia servicios canónicos. API/SDK
-  públicos, distribución e IA permanecen fuera de alcance.
+- Contrato implementado del primer vertical:
+  [`architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md`](architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md).
+- Cierre técnico en revisión:
+  [`closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md).
+- Ningún otro dominio o Fase 10 fue iniciado. API/SDK públicos, distribución e
+  IA permanecen fuera de alcance.
 - La IA es una posibilidad futura opcional y no constituye dependencia
   arquitectónica u operativa del ERP o del Motor determinista.

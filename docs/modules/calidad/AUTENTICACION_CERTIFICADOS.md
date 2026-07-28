@@ -71,6 +71,19 @@ El backend devuelve conflictos estructurados `certificate_not_authenticated`, `a
 
 El caso real consultado sin mutación fue el certificado `2`, folio `MYCA-07-2026-0002`: `authenticated`, `match_status=pending` y PDF autenticado existente. Su ETS requiere pago y no tiene factura liquidada; por tanto se deriva “Pendiente de pago” y no un bloqueo de match. El escenario con pago habilitado se validó por HTTP automatizado y respondió `200`, persistiendo liberación, actor y fecha.
 
+## Resolución extraordinaria de liberación incorrecta
+
+Fase 9 incorpora el caso interno
+`certificate.resolve_incorrect_release`. No cambia el flujo ordinario de
+autenticación o liberación: ante una liberación ya consumada, el Motor puede
+coordinar el retiro del acceso futuro y el servicio canónico cambia únicamente
+`client_visible` a falso. Estado, fecha, actor y PDF autenticado se preservan.
+
+La operación usa lock e idempotencia propietaria, conserva snapshots y
+auditoría append-only en la misma transacción y puede compensarse restaurando
+la visibilidad sólo si el certificado no presenta deriva. No existe endpoint
+nuevo ni lógica del dominio dentro del adaptador del Motor.
+
 ## Evidencia del caso real
 
 La validación reversible del certificado `1` ejecutó:

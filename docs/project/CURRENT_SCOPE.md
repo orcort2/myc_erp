@@ -29,8 +29,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fases 0 a 8 aprobadas y Fase 9 activa
-  documentalmente, aún sin caso vertical implementado: además de la fundación, persistencia y
+- Motor de Resoluciones con Fases 0 a 8 aprobadas y el primer vertical de Fase
+  9 implementado `EN REVISIÓN`: además de la fundación, persistencia y
   seguridad aprobadas, existen 26 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
   repositorio de reconstrucción, migración reversible, identidad canónica,
@@ -62,9 +62,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   exactas. Las mutaciones distinguen replay idempotente de reutilización para
   otra operación mediante identidad/hash y consumo transaccional append-only;
   auditoría conserva una concesión reutilizable de consulta exacta. Fase 9
-  autoriza definiciones verticales, Fact Providers read-only y Domain Gateways
-  concretos hacia servicios canónicos, un caso gradual a la vez. No se ha
-  seleccionado ni implementado el primero.
+  integra exclusivamente `certificate.resolve_incorrect_release` mediante una
+  definición vertical, Fact Provider read-only y Domain Gateways hacia el
+  servicio canónico de Certificados. La mutación oculta el certificado sin
+  reescribir su liberación y admite compensación con evidencia append-only.
+  Ningún otro caso o dominio está iniciado.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

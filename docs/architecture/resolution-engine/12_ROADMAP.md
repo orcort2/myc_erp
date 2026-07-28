@@ -2446,8 +2446,11 @@ Mediante la integración completa del Modelo de Seguridad, el Motor garantiza qu
 # Fase 9 — Integración con ERP MYC
 
 > Estado vigente: `ACTIVA` desde 2026-07-28, bajo el alcance y los gates de
-> [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). La apertura todavía no
-> selecciona ni implementa un caso vertical.
+> [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). El primer y único vertical
+> autorizado es Certificados: `certificate.resolve_incorrect_release` está
+> implementado y `EN REVISIÓN` conforme a
+> [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md).
+> Ningún otro dominio puede iniciarse antes de su validación y aprobación.
 
 Con el Motor de Resoluciones completamente consolidado desde el punto de vista arquitectónico, la siguiente etapa consiste en convertirlo en el mecanismo institucional mediante el cual operan los distintos módulos del ERP MYC.
 

@@ -65,6 +65,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/resolution-engine/21_PHASE_8_OPENING.md`](../architecture/resolution-engine/21_PHASE_8_OPENING.md) | Apertura oficial, alcance, exclusiones, invariantes y gate de Fase 8 — Seguridad integral. |
 | [`../architecture/resolution-engine/22_INTEGRAL_SECURITY.md`](../architecture/resolution-engine/22_INTEGRAL_SECURITY.md) | Contrato implementado de controles canónicos, semántica de uso, consumo transaccional anti-replay y protección de límites críticos del Motor en Fase 8. |
 | [`../architecture/resolution-engine/23_PHASE_9_OPENING.md`](../architecture/resolution-engine/23_PHASE_9_OPENING.md) | Apertura oficial, integración gradual, ownership, límites, exclusiones y gates de Fase 9 — Integración con ERP MYC. |
+| [`../architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md`](../architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md) | Contrato implementado del primer vertical de Fase 9: Certificados, provider read-only, gateways, servicio canónico, idempotencia y compensación. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -88,6 +89,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/RESOLUTION_ENGINE_PHASE_6.md`](../closures/RESOLUTION_ENGINE_PHASE_6.md) | Dominio, contratos, persistencia, Lifecycle, ejecución síncrona, invariantes, límites y validaciones del Motor de Compensación de la Fase 6. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_7.md`](../closures/RESOLUTION_ENGINE_PHASE_7.md) | Modelo de auditoría/evidencia, consultas autorizadas, reconstrucción, integridad, pruebas y límites de la Fase 7. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_8.md`](../closures/RESOLUTION_ENGINE_PHASE_8.md) | Catálogo integral, autorización exacta, límites protegidos, migración, pruebas y exclusiones de la Fase 8. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md) | Cierre técnico en revisión del primer vertical de Fase 9, con garantías, validaciones y gate que impide abrir otro dominio. |
 
 ## Auditorías
 

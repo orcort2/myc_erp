@@ -140,3 +140,16 @@ uso a cada decisión, la tabla append-only
 consumo mutante y una organización no puede asociar la misma acción/operación a
 dos concesiones. La reserva se confirma o revierte con la transacción del
 efecto.
+
+## Extensión propietaria de Fase 9
+
+La migración `f9c1d3e5a7b9` no especializa el esquema general del Motor. Agrega
+`certificate_resolution_operations` dentro del dominio propietario de
+Certificados para conservar acción, idempotencia, intención, actor,
+correlación, snapshots, resultado y vínculo de compensación.
+
+La tabla referencia al certificado y a su operación fuente con
+`ON DELETE RESTRICT`, usa JSON portable en ORM y `JSONB` en PostgreSQL, y
+reutiliza el trigger institucional que impide `UPDATE` o `DELETE`. El
+expediente general enlaza el certificado mediante efectos/referencias del
+Motor; la reconstrucción del Motor no importa este ORM propietario.

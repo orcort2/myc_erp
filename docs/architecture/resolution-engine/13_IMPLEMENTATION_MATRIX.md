@@ -416,6 +416,9 @@ La Fase 0 se considera lista para revisión cuando:
 - Evidencia:
   [`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).
 - Fase 9: `ACTIVA` exclusivamente bajo
-  [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). Esta apertura aún no
-  selecciona ni implementa un caso vertical.
+  [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). Su primer y único vertical,
+  `certificate.resolve_incorrect_release`, está implementado y `EN REVISIÓN`
+  bajo
+  [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md).
+  Ningún otro dominio está iniciado.
 - Fase 10: `NO INICIADA`.

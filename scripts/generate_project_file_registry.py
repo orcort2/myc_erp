@@ -109,6 +109,21 @@ FORCE_RECLASSIFY = {
     "backend/app/resolution_engine/contracts/audit.py",
     "backend/app/resolution_engine/infrastructure/audit.py",
     "backend/app/resolution_engine/infrastructure/persistence/execution.py",
+    "backend/app/models/certificate_resolution_operation.py",
+    "backend/app/resolution_integrations/__init__.py",
+    "backend/app/resolution_integrations/certificates/__init__.py",
+    "backend/app/resolution_integrations/certificates/application.py",
+    "backend/app/resolution_integrations/certificates/contracts.py",
+    "backend/app/resolution_integrations/certificates/domain.py",
+    "backend/app/resolution_integrations/certificates/infrastructure.py",
+    "backend/app/services/certificate_resolution_operations.py",
+    "backend/migrations/versions/f9c1d3e5a7b9_phase_9_certificates_integration.py",
+    "backend/tests/resolution_engine/test_phase_9_certificates.py",
+    "docs/architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md",
+    "docs/architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md",
+    "docs/architecture/resolution-engine/README.MD",
+    "docs/closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md",
+    "docs/modules/calidad/AUTENTICACION_CERTIFICADOS.md",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -179,6 +194,116 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "En desarrollo"
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
+
+    phase_9_files = {
+        "backend/app/models/certificate_resolution_operation.py": (
+            "Evidencia propietaria de Certificados",
+            "Modela operaciones append-only, intención idempotente, snapshots y vínculo compensatorio del primer vertical de Fase 9.",
+            "SQLAlchemy, Certificate y tipos JSON portables",
+            "Servicio canónico, Alembic y auditoría",
+            "Crítico",
+        ),
+        "backend/app/resolution_integrations/__init__.py": (
+            "Frontera de integraciones del Motor",
+            "Declara el paquete anti-corrupción para casos ERP sin incorporar dependencias propietarias al núcleo.",
+            "Motor de Resoluciones y dominios propietarios",
+            "Composición interna de verticales",
+            "Alto",
+        ),
+        "backend/app/resolution_integrations/certificates/__init__.py": (
+            "API interna del vertical Certificados",
+            "Expone contratos y fábrica de integración sin transporte público ni lógica dentro del núcleo.",
+            "Dominio, aplicación e infraestructura del vertical",
+            "Bootstrap interno y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_integrations/certificates/domain.py": (
+            "Dominio del vertical Certificados",
+            "Define DTOs inmutables de solicitud, hechos, análisis, plan, simulación, revalidación y resultado con hashes canónicos.",
+            "Serialización canónica del Motor",
+            "Componentes puros y adaptadores",
+            "Crítico",
+        ),
+        "backend/app/resolution_integrations/certificates/contracts.py": (
+            "Puertos del vertical Certificados",
+            "Declara provider read-only, comando propietario y consulta de operación fuente sin SQLAlchemy, FastAPI ni servicios concretos.",
+            "DTOs del vertical y Protocol",
+            "Aplicación, infraestructura y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_integrations/certificates/application.py": (
+            "Definición vertical de Certificados",
+            "Registra versión 1.0 y siete componentes deterministas de contexto a revalidación para resolver una liberación incorrecta.",
+            "Registry, definición del Motor y puertos del vertical",
+            "Orquestador, composición interna y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_integrations/certificates/infrastructure.py": (
+            "Adaptadores internos de Certificados",
+            "Implementa provider SQL read-only y gateways que mapean comandos y delegan ejecución/compensación en el servicio canónico.",
+            "SQLAlchemy, runners del Motor y servicio propietario",
+            "Executor, CompensationRunner y pruebas",
+            "Crítico",
+        ),
+        "backend/app/services/certificate_resolution_operations.py": (
+            "Servicio canónico de resolución de Certificados",
+            "Bloquea, valida y retira/restaura visibilidad con idempotencia, auditoría y evidencia propietaria en una transacción.",
+            "Certificate, CertificateResolutionOperation y auditoría",
+            "Domain Gateways de Fase 9",
+            "Crítico",
+        ),
+        "backend/migrations/versions/f9c1d3e5a7b9_phase_9_certificates_integration.py": (
+            "Migración de Fase 9 Certificados",
+            "Crea tabla, constraints, índices y trigger append-only de operaciones propietarias mediante upgrade/downgrade reversibles.",
+            "Alembic, Fase 8 y esquema de Certificados",
+            "Despliegue, respaldo y auditoría",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_phase_9_certificates.py": (
+            "Suite de Fase 9 Certificados",
+            "Valida componentes puros, bloqueo, deriva, atomicidad, replay, seguridad integral, ejecución, compensación, arquitectura y migración.",
+            "Motor, vertical, servicio canónico y SQLAlchemy",
+            "Gate técnico del primer vertical",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md": (
+            "Contrato del vertical Certificados",
+            "Documenta caso, ownership, provider, definición, gateway, idempotencia, compensación, seguridad, flujo y gate de revisión.",
+            "Apertura de Fase 9, código y pruebas",
+            "Arquitectura, desarrollo, QA y revisión",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md": (
+            "Cierre técnico del vertical Certificados",
+            "Consolida entrega, garantías, validaciones, exclusiones y estado EN REVISIÓN sin habilitar otro dominio o fase.",
+            "Contrato, implementación y validaciones de Fase 9",
+            "Arquitectura, dirección, QA y auditoría",
+            "Alto",
+        ),
+        "docs/architecture/resolution-engine/README.MD": (
+            "Entrada normativa del Motor",
+            "Ordena documentos 01–24, publica Fases 0–8 aprobadas y el primer vertical de Fase 9 implementado EN REVISIÓN.",
+            "Roadmap, matriz, aperturas, contratos y cierres",
+            "Todo participante del Motor de Resoluciones",
+            "Crítico",
+        ),
+        "docs/modules/calidad/AUTENTICACION_CERTIFICADOS.md": (
+            "Contrato vigente de Certificados",
+            "Define aprobación, autenticación, liberación y la resolución extraordinaria interna que retira visibilidad sin reescribir evidencia histórica.",
+            "Calidad, servicios canónicos, Motor y almacenamiento",
+            "Operación, backend, frontend, QA y auditoría",
+            "Alto",
+        ),
+        "docs/architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md": (
+            "Contrato de persistencia del Motor",
+            "Documenta el esquema general reconstruible e inmutable y delimita la evidencia propietaria append-only de Certificados añadida en Fase 9.",
+            "Modelos ORM, repositorio y migraciones Fases 2–9",
+            "Motor, integraciones, Alembic, QA y auditoría",
+            "Crítico",
+        ),
+    }
+    if value in phase_9_files:
+        return phase_9_files[value]
 
     phase_8_files = {
         "backend/app/resolution_engine/__init__.py": (

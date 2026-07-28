@@ -4,6 +4,7 @@ from app.models.calibration_procedure import CalibrationProcedure
 from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 from app.models.catalog_item import CatalogItem, CatalogItemComponent
 from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
+from app.models.certificate_resolution_operation import CertificateResolutionOperation
 from app.models.client import Client, ClientCertificateProfile, ClientContact
 from app.models.document_template import DocumentTemplate
 from app.models.controlled_document import (
@@ -80,6 +81,7 @@ __all__ = [
     "Certificate",
     "CertificateCaptureFile",
     "CertificatePdfVersion",
+    "CertificateResolutionOperation",
     "Client",
     "ClientCertificateProfile",
     "ClientContact",

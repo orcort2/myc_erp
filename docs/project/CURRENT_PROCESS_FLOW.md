@@ -14,9 +14,8 @@ Este documento describe el flujo que existe en el sistema, no el flujo ideal ni 
 
 ## Motor de Resoluciones
 
-El flujo interno implementado continúa sin integración concreta con dominios
-del ERP. La Fase 9 está activa documentalmente, pero aún no se ha seleccionado
-ni implementado un caso vertical:
+El flujo interno implementado incorpora un único dominio real: Certificados.
+El primer vertical de Fase 9 está implementado y en revisión:
 
 ```text
 [decisión resolution.create exacta] → draft
@@ -72,10 +71,13 @@ queda enteramente antes o después del reporte, nunca mezclada. Los filtros se
 aplican sólo después de verificar el conjunto completo. La consulta no transita
 Lifecycle, no ejecuta handlers y no publica outbox.
 
-La futura integración de cada caso de Fase 9 deberá obtener hechos mediante
-Fact Providers read-only y producir mutaciones únicamente mediante Domain
-Gateways hacia servicios canónicos del módulo propietario. Este flujo todavía
-no forma parte del comportamiento ejecutable descrito arriba.
+Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
+read-only; análisis, estrategia, plan y simulación son deterministas; el
+gateway ejecuta el servicio canónico que bloquea el registro y cambia sólo
+`client_visible` de verdadero a falso. El servicio conserva una operación
+append-only en la misma transacción. Si se autoriza compensación y no existe
+deriva, otro gateway restaura la visibilidad anterior y agrega evidencia
+enlazada. Ningún adaptador modifica Lifecycle ni contiene reglas propietarias.
 
 ## Flujo principal
 
