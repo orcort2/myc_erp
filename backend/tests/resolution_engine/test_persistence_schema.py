@@ -15,6 +15,7 @@ from app.resolution_engine.infrastructure.persistence import (
 )
 
 EXPECTED_TABLES = {
+    "resolution_api_consumers",
     "resolutions",
     "resolution_problems",
     "resolution_context_snapshots",

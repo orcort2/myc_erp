@@ -2995,6 +2995,11 @@ La Fase 10 podrá considerarse concluida cuando:
 - la seguridad institucional permanezca intacta;
 - aplicaciones externas puedan utilizar el Motor sin depender del ERP.
 
+Estado verificable al 2026-07-28: estos criterios están implementados para la
+superficie pública v1 documentada en
+[`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md). La fase permanece pendiente de
+revisión y aprobación formal; este estado no autoriza Fase 11.
+
 ---
 
 # Resultado Esperado

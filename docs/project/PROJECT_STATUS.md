@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fases 0–9 aprobadas; Fase 10 activa documentalmente, sin implementación); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fases 0–9 aprobadas; Fase 10 implementada y pendiente de revisión formal); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -69,8 +69,10 @@ gateways delegan en el servicio canónico de Certificados, que retira sólo la
 visibilidad futura y conserva la liberación histórica. La operación y su
 compensación son transaccionales, idempotentes y append-only. Las observaciones
 bloqueantes de replay dependiente del estado y snapshot previo al flush están
-corregidas y aprobadas. Fase 10 — SDK y API Pública está `ACTIVA`
-documentalmente mediante su apertura oficial, pero aún no tiene implementación.
+corregidas y aprobadas. Fase 10 — SDK y API Pública está implementada mediante
+contratos v1 desacoplados, credenciales por consumidor/organización, creación
+por Lifecycle, consultas por auditoría, replay/cursor seguros, SDK HTTP y
+portal técnico. Permanece pendiente de revisión y aprobación formal.
 Distribución e IA siguen fuera de alcance y Fase 11 no se inició.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.

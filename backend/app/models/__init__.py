@@ -30,6 +30,7 @@ from app.models.reference_standard_certificate import (
     ReferenceStandardCertificate,
     ReferenceStandardCertificateUncertainty,
 )
+from app.models.resolution_api_consumer import ResolutionApiConsumer
 from app.models.service_order import (
     ServiceOrder,
     ServiceOrderItem,
@@ -115,6 +116,7 @@ __all__ = [
     "ReferenceStandardCertificateUncertainty",
     "ReferenceStandardUncertainty",
     "Resolution",
+    "ResolutionApiConsumer",
     "ResolutionAnalysis",
     "ResolutionAuditEvent",
     "ResolutionAuthorizationDecision",

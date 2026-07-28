@@ -10,7 +10,7 @@
 >
 > Historial anterior: `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte actualizado: 2026-07-27
+> Corte actualizado: 2026-07-28
 
 # Estado operativo actual del ERP MYC
 
@@ -28,7 +28,7 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `f9c1d3e5a7b9`.
+- Revisión aplicada y único head verificado: `a0d2f4b6c8e1`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -50,12 +50,14 @@
 - `f9c1d3e5a7b9` agrega la evidencia propietaria append-only
   `certificate_resolution_operations`, sus constraints, índices y trigger de
   inmutabilidad para el primer vertical de Fase 9.
+- `a0d2f4b6c8e1` crea `resolution_api_consumers` para credenciales hasheadas,
+  organización, permisos, vigencia y revocación de consumidores de la API v1.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,218,048 bytes.
-- SHA-256 verificado: `1c0c5ed0bd6b8a93acd7d98c665d997ed1a6ef3808958486088c1315154a9dca`.
-- El respaldo contiene `alembic_version = f9c1d3e5a7b9`, la tabla propietaria
-  y `trg_certificate_resolution_operations_immutable`.
+- Tamaño verificado: 74,222,078 bytes.
+- SHA-256 verificado: `de180a35da5553851297d5c6b145059e7bf0a9722e9fca0bbbd9d305beff6c7c`.
+- El respaldo contiene `alembic_version = a0d2f4b6c8e1`, la tabla de
+  consumidores v1, la evidencia propietaria y los triggers append-only.
 
 ## Equipos y contexto de certificado
 
@@ -68,24 +70,23 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 316 pruebas y 19 subpruebas correctas, 21 fallos y
-  dos advertencias. Diecinueve fallos provienen del `JSONB` no portable del
-  módulo Actividad al crear metadata SQLite (`TD-023`) y dos del aborto del
-  proceso externo LibreOffice; ninguno pertenece a Fase 9.
-- Suite específica de Fase 9: 12 pruebas correctas, incluidas deriva,
-  inactividad, colisiones y dos carreras concurrentes.
-- Suite seleccionada de Certificados: 30 pruebas correctas; los cuatro fallos
-  restantes corresponden a los dos bloqueos externos anteriores.
-- Suite completa del Motor: 213 pruebas correctas, incluidas creación,
+- Suite backend completa: 325 pruebas y 19 subpruebas correctas, 19 fallos y
+  dos advertencias. Todos los fallos provienen del `JSONB` no portable del
+  módulo Actividad al crear metadata SQLite (`TD-023`); ninguno pertenece a
+  Fase 10.
+- Suite específica de Fase 10: 7 pruebas correctas de contratos, consumidor,
+  organización, correlación, idempotencia, aislamiento, SDK y arquitectura.
+- Suite combinada Fases 9–10: 19 pruebas correctas.
+- Suite completa del Motor: 220 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
   revalidación, concurrencia, persistencia, ejecución, compensación,
   arquitectura, esquema y migraciones.
 - Frontend: `package.json` no declara suite; build Vite de producción correcto,
   con la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL: `f9c1d3e5a7b9` aplicó, revirtió a `f8a0b2c4d6e8` y reaplicó a
-  head correctamente; el trigger append-only quedó comprobado.
-- `alembic heads/current`: único head `f9c1d3e5a7b9`.
+- PostgreSQL: `a0d2f4b6c8e1` aplicó, revirtió a `f9c1d3e5a7b9` y reaplicó a
+  head correctamente; la tabla de consumidores y su unicidad quedaron vigentes.
+- `alembic heads/current`: único head `a0d2f4b6c8e1`.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
   como `TD-021`; no propone operaciones sobre el esquema del Motor.
 - `git diff --check`: correcto.

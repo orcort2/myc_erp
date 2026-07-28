@@ -28,6 +28,8 @@ EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
 FORCE_RECLASSIFY = {
     "AGENTS.md",
+    "backend/app/main.py",
+    "backend/app/models/__init__.py",
     "backend/app/schemas/catalog_item.py",
     "backend/app/schemas/controlled_document.py",
     "backend/app/schemas/equipment.py",
@@ -125,6 +127,21 @@ FORCE_RECLASSIFY = {
     "docs/architecture/resolution-engine/README.MD",
     "docs/closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md",
     "docs/modules/calidad/AUTENTICACION_CERTIFICADOS.md",
+    "backend/app/models/resolution_api_consumer.py",
+    "backend/app/resolution_public_api/__init__.py",
+    "backend/app/resolution_public_api/application.py",
+    "backend/app/resolution_public_api/errors.py",
+    "backend/app/resolution_public_api/security.py",
+    "backend/app/routers/resolution_public_api.py",
+    "backend/migrations/versions/a0d2f4b6c8e1_phase_10_public_api_consumers.py",
+    "backend/myc_resolution_contracts/__init__.py",
+    "backend/myc_resolution_contracts/v1.py",
+    "backend/myc_resolution_sdk/__init__.py",
+    "backend/myc_resolution_sdk/client.py",
+    "backend/myc_resolution_sdk/errors.py",
+    "backend/tests/resolution_engine/test_phase_10_public_api.py",
+    "docs/architecture/resolution-engine/26_PUBLIC_API_SDK.md",
+    "docs/closures/RESOLUTION_ENGINE_PHASE_10.md",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -195,6 +212,130 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "En desarrollo"
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
+
+    phase_10_files = {
+        "backend/app/main.py": (
+            "Entrada FastAPI",
+            "Crea la aplicación, registra routers/middleware/clientes y aplica headers/errores versionados de la API pública sin incorporar negocio.",
+            "Configuración, routers, Facturama y adaptadores públicos",
+            "Uvicorn, operación y consumidores HTTP",
+            "Crítico",
+        ),
+        "backend/app/models/__init__.py": (
+            "Registro de metadata ORM",
+            "Importa modelos operativos, entidades del Motor y consumidores API para una metadata completa de SQLAlchemy/Alembic.",
+            "Modelos ORM del ERP, Motor y frontera pública",
+            "Alembic, sesiones y pruebas de esquema",
+            "Crítico",
+        ),
+        "backend/app/models/resolution_api_consumer.py": (
+            "Consumidores públicos del Motor",
+            "Persiste clave, hash de secreto, organización, permisos, vigencia y revocación sin guardar credenciales planas.",
+            "SQLAlchemy, tipos portables y metadata ORM",
+            "Autenticación API v1 y Alembic",
+            "Crítico",
+        ),
+        "backend/app/resolution_public_api/application.py": (
+            "Fachada pública v1",
+            "Traduce DTOs hacia Lifecycle y auditoría, aplica idempotencia namespaced, aislamiento, filtros y cursor firmado sin duplicar negocio.",
+            "Servicios canónicos, seguridad integral y contratos v1",
+            "Router público y pruebas contractuales",
+            "Crítico",
+        ),
+        "backend/app/resolution_public_api/security.py": (
+            "Seguridad de consumidores v1",
+            "Autentica secreto hasheado, fija organización y construye ActorContext con permisos y correlación exactos.",
+            "Consumer ORM, configuración y dominio de seguridad",
+            "Dependencia HTTP, fachada y provisionamiento",
+            "Crítico",
+        ),
+        "backend/app/resolution_public_api/errors.py": (
+            "Errores públicos estables",
+            "Define códigos, categorías, mensajes seguros, correlación y detalles controlados independientes de excepciones internas.",
+            "Contrato de transporte v1",
+            "Router, handlers y SDK",
+            "Alto",
+        ),
+        "backend/app/resolution_public_api/__init__.py": (
+            "API interna de composición pública",
+            "Expone la fachada y contexto de consumidor sin publicar infraestructura del Motor.",
+            "Aplicación y seguridad pública",
+            "Router y composición",
+            "Alto",
+        ),
+        "backend/app/routers/resolution_public_api.py": (
+            "Transporte HTTP público v1",
+            "Valida headers y parámetros, publica endpoints/portal técnico y delega íntegramente en la fachada pública.",
+            "FastAPI, contratos y fachada",
+            "Consumidores HTTP, OpenAPI y SDK",
+            "Crítico",
+        ),
+        "backend/myc_resolution_contracts/v1.py": (
+            "Contratos públicos v1",
+            "Declara DTOs estrictos, congelados y versionados de solicitudes, recursos, colecciones, capacidades y errores sin importar app.",
+            "Pydantic",
+            "API, SDK e integradores",
+            "Crítico",
+        ),
+        "backend/myc_resolution_contracts/__init__.py": (
+            "Paquete de contratos públicos",
+            "Publica la superficie estable del contrato v1.",
+            "Contratos v1",
+            "SDK e integradores",
+            "Alto",
+        ),
+        "backend/myc_resolution_sdk/client.py": (
+            "SDK oficial del Motor",
+            "Consume exclusivamente la API HTTP v1 y materializa DTOs públicos sin acceder a servicios, ORM o gateways.",
+            "httpx y contratos públicos",
+            "Aplicaciones consumidoras",
+            "Crítico",
+        ),
+        "backend/myc_resolution_sdk/errors.py": (
+            "Errores del SDK",
+            "Mapea respuestas públicas fallidas a una excepción estable con código, estado y correlación.",
+            "Contrato de errores HTTP",
+            "Clientes del SDK",
+            "Alto",
+        ),
+        "backend/myc_resolution_sdk/__init__.py": (
+            "Paquete SDK público",
+            "Publica cliente y error oficiales sin filtrar implementación interna.",
+            "Cliente y errores del SDK",
+            "Aplicaciones consumidoras",
+            "Alto",
+        ),
+        "backend/migrations/versions/a0d2f4b6c8e1_phase_10_public_api_consumers.py": (
+            "Migración de consumidores API",
+            "Crea y revierte tabla, unicidad e índices de consumidores institucionales de Fase 10.",
+            "Alembic, PostgreSQL y Fase 9",
+            "Despliegue, seguridad y respaldo",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_phase_10_public_api.py": (
+            "Suite específica de Fase 10",
+            "Prueba contratos, autenticación, organización, correlación, replay/conflicto, aislamiento, filtros, SDK y dependencias arquitectónicas.",
+            "FastAPI, SQLite, contratos, SDK y Motor",
+            "Gate técnico de Fase 10",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/26_PUBLIC_API_SDK.md": (
+            "Contrato API/SDK v1",
+            "Documenta superficie, DTOs, seguridad, idempotencia, consultas, SDK, compatibilidad y límites implementados.",
+            "Apertura, código, migración y pruebas de Fase 10",
+            "Arquitectura, integradores, QA y seguridad",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_10.md": (
+            "Cierre técnico de Fase 10",
+            "Consolida implementación, persistencia, validaciones, garantías y estado pendiente de aprobación formal.",
+            "Contrato, código, suites y respaldo",
+            "Arquitectura, dirección, QA y auditoría",
+            "Alto",
+        ),
+    }
+    if value in phase_10_files:
+        return phase_10_files[value]
 
     phase_9_files = {
         "backend/app/models/certificate_resolution_operation.py": (
@@ -283,7 +424,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/architecture/resolution-engine/README.MD": (
             "Entrada normativa del Motor",
-            "Ordena documentos 01–25, publica Fases 0–9 aprobadas y Fase 10 activa documentalmente sin implementación.",
+            "Ordena documentos 01–26, publica Fases 0–9 aprobadas y Fase 10 implementada pendiente de revisión formal.",
             "Roadmap, matriz, aperturas, contratos y cierres",
             "Todo participante del Motor de Resoluciones",
             "Crítico",

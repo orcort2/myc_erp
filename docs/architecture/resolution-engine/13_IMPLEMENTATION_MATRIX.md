@@ -424,7 +424,7 @@ La Fase 0 se considera lista para revisión cuando:
   segunda comprobación bajo lock, recuperación concurrente exacta y snapshot
   posterior a `flush/refresh`, sin cambio de esquema. Cierre formal:
   `5abfe2d` + `901bd85`.
-- Fase 10: `ACTIVA` con apertura oficial
+- Fase 10: `IMPLEMENTADA`, pendiente de revisión y aprobación formal
   [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md); implementación aún no
   iniciada en este corte.
 - Fase 11: `NO INICIADA`.

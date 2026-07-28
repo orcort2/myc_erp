@@ -1,4 +1,4 @@
-> Estado: APERTURA OFICIAL — FASE ACTIVA
+> Estado: IMPLEMENTACIÓN CONCLUIDA — PENDIENTE DE REVISIÓN FORMAL
 >
 > Fecha: 2026-07-28
 >
@@ -19,8 +19,10 @@ Las Fases 0 a 9 están aprobadas. Fase 9 queda cerrada mediante:
 901bd85454f3d88ed8f988c71c3475a568d94cd8
 ```
 
-La implementación de Fase 10 queda autorizada, pero todavía no se ha iniciado
-en este corte documental.
+La implementación autorizada quedó concluida. Su contrato verificable está en
+[`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md) y el cierre técnico en
+[`../../closures/RESOLUTION_ENGINE_PHASE_10.md`](../../closures/RESOLUTION_ENGINE_PHASE_10.md).
+La fase todavía no cuenta con aprobación formal y Fase 11 permanece bloqueada.
 
 ## Objetivo
 

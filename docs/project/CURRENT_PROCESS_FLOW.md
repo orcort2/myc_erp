@@ -71,11 +71,15 @@ queda enteramente antes o después del reporte, nunca mezclada. Los filtros se
 aplican sólo después de verificar el conjunto completo. La consulta no transita
 Lifecycle, no ejecuta handlers y no publica outbox.
 
-Fase 9 está aprobada. Fase 10 tiene apertura documental, pero todavía no existe
-flujo público ejecutable: no hay contratos externos, endpoints o SDK del Motor
-que puedan describirse como comportamiento vigente. Su futura frontera deberá
-traducir contratos versionados hacia estos mismos comandos y consultas, sin
-agregar otra autoridad de estado o seguridad.
+Fase 9 está aprobada. Fase 10 implementa el flujo público v1:
+consumidor autenticado y ligado a organización → contrato estricto →
+ActorContext → autorización integral → `ResolutionLifecycleService` para alta
+o `AuditQueryService` para consulta → DTO público. La clave de alta se
+namespacia por versión/consumidor/organización; un replay exacto recupera el
+mismo expediente ya autorizado y una colisión se rechaza. Listado y detalle
+exigen `resolution.audit.inspect`, aplican aislamiento organizacional y no
+transitan Lifecycle ni ejecutan handlers. El SDK usa exclusivamente HTTP.
+Fase 10 permanece pendiente de aprobación formal.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
 read-only; análisis, estrategia, plan y simulación son deterministas; el
