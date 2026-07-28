@@ -3,7 +3,8 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from threading import Event
 
-from sqlalchemy import create_engine, event, select
+import pytest
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import Session
 
 import app.models  # noqa: F401
@@ -23,8 +24,12 @@ from app.resolution_engine.application.registry import ResolutionRegistry
 from app.resolution_engine.contracts.lifecycle import (
     CreateResolutionCommand,
     ResolutionProblemInput,
+    lifecycle_transition_operation_payload,
 )
-from app.resolution_engine.contracts.audit import AuditQuery
+from app.resolution_engine.contracts.audit import (
+    AuditQuery,
+    audit_security_operation_payload,
+)
 from app.resolution_engine.domain.definitions import (
     ComponentReference,
     ResolutionDefinition,
@@ -35,6 +40,7 @@ from app.resolution_engine.domain.enums import (
     ResolutionSource,
 )
 from app.resolution_engine.domain.audit import EvidenceIntegrity
+from app.resolution_engine.domain.exceptions import AuditAccessDeniedError
 from app.resolution_engine.domain.lifecycle import (
     LifecycleAction,
     ResolutionStateMachine,
@@ -47,6 +53,7 @@ from app.resolution_engine.domain.security import (
     PermissionGrant,
     SecurityDecision,
     SecurityDecisionOutcome,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityResource,
 )
@@ -71,6 +78,7 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionAuditEvent,
     ResolutionContextSnapshot,
     ResolutionSecurityDecision,
+    ResolutionSecurityDecisionUse,
 )
 
 NOW = datetime(2026, 7, 27, 18, tzinfo=timezone.utc)
@@ -196,28 +204,36 @@ def lifecycle_service(session):
 
 def create_resolution(session):
     service = lifecycle_service(session)
+    base = CreateResolutionCommand(
+        resolution_type="audit.resolve",
+        source=ResolutionSource.SYSTEM,
+        subject_type="example",
+        subject_id="42",
+        title="Auditable",
+        actor=actor(),
+        security_decision_id=1,
+        request_key="create-audit-resolution",
+        problem=ResolutionProblemInput(
+            problem_code="audit.problem",
+            summary="Evidence required",
+            detected_by="test",
+            detected_at=NOW,
+        ),
+    )
+    definition = registry().resolve("audit.resolve", None)
     security_decision_id = authorize_action(
         session,
         action="resolution.create",
         resource_type="resolution_definition",
         resource_id="audit.resolve@1.0",
         context={"source": ResolutionSource.SYSTEM.value},
+        operation_id=base.request_key,
+        operation_payload=base.security_operation_payload(definition),
     )
     created = service.create(
-        CreateResolutionCommand(
-            resolution_type="audit.resolve",
-            source=ResolutionSource.SYSTEM,
-            subject_type="example",
-            subject_id="42",
-            title="Auditable",
-            actor=actor(),
+        replace(
+            base,
             security_decision_id=security_decision_id,
-            problem=ResolutionProblemInput(
-                problem_code="audit.problem",
-                summary="Evidence required",
-                detected_by="test",
-                detected_at=NOW,
-            ),
         )
     )
     session.commit()
@@ -240,9 +256,8 @@ def create_auditable_resolution(session):
     )
     session.add(context)
     session.flush()
-    session.get(Resolution, resolution_id).current_context_snapshot_id = (
-        context.id
-    )
+    root = session.get(Resolution, resolution_id)
+    root.current_context_snapshot_id = context.id
     session.flush()
     service.transition(
         resolution_id,
@@ -258,9 +273,21 @@ def create_auditable_resolution(session):
                 context={
                     "lifecycle_action": (
                         LifecycleAction.RECORD_CONTEXT.value
-                    )
+                    ),
+                    "expected_state": root.status,
+                    "expected_version": root.version,
                 },
+                operation_id="audit-record-context",
+                operation_payload=lifecycle_transition_operation_payload(
+                    resolution_id=resolution_id,
+                    action=LifecycleAction.RECORD_CONTEXT.value,
+                    expected_state=root.status,
+                    expected_version=root.version,
+                    reason=None,
+                    metadata=None,
+                ),
             ),
+            operation_id="audit-record-context",
         ),
     )
     session.commit()
@@ -275,6 +302,9 @@ def authorize_action(
     resource_id,
     context,
     resolution_id=None,
+    operation_id,
+    operation_payload,
+    use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
 ):
     request = SecurityRequest(
         actor=actor(),
@@ -286,6 +316,9 @@ def authorize_action(
             resolution_id=resolution_id,
         ),
         required_permissions=(ComponentKey(action),),
+        use_mode=use_mode,
+        operation_id=operation_id,
+        operation_payload=operation_payload,
         context=context,
     )
     decision = ResolutionAuthorizationService(
@@ -309,6 +342,8 @@ def authorize_action(
 
 
 def authorize_audit_query(session, resolution_id):
+    audit_context = {"purpose": "phase-7-test"}
+    operation_id = f"audit-query:{resolution_id}:phase-7"
     request = SecurityRequest(
         actor=actor(),
         action=ComponentKey("resolution.audit.inspect"),
@@ -321,8 +356,14 @@ def authorize_audit_query(session, resolution_id):
         required_permissions=(
             ComponentKey("resolution.audit.inspect"),
         ),
+        use_mode=SecurityDecisionUseMode.REUSABLE_READ,
+        operation_id=operation_id,
+        operation_payload=audit_security_operation_payload(
+            resolution_id=resolution_id,
+            context=audit_context,
+        ),
         occurred_functions={"requester": ("auditor-1",)},
-        context={"purpose": "phase-7-test"},
+        context=audit_context,
     )
     decision = ResolutionAuthorizationService(
         evaluator=SecurityPolicyEvaluator(
@@ -349,7 +390,8 @@ def authorize_audit_query(session, resolution_id):
             security_decision_id=persisted.id,
             actor=actor(),
             requested_at=NOW,
-            context={"purpose": "phase-7-test"},
+            operation_id=operation_id,
+            context=audit_context,
         ),
         persisted,
     )
@@ -381,6 +423,13 @@ def test_sql_audit_reconstructs_and_verifies_persisted_history():
             query,
             kinds=("audit_event",),
         )) == 2
+        assert session.scalar(
+            select(func.count(ResolutionSecurityDecisionUse.id))
+        ) == 2
+        with pytest.raises(AuditAccessDeniedError):
+            service.inspect(
+                replace(query, operation_id="another-audit-scope")
+            )
 
 
 def test_sql_audit_uses_one_snapshot_during_concurrent_transition(tmp_path):
@@ -440,10 +489,8 @@ def test_sql_audit_uses_one_snapshot_during_concurrent_transition(tmp_path):
                 )
                 writer.add(context)
                 writer.flush()
-                writer.get(
-                    Resolution,
-                    resolution_id,
-                ).current_context_snapshot_id = context.id
+                root = writer.get(Resolution, resolution_id)
+                root.current_context_snapshot_id = context.id
                 writer.flush()
                 lifecycle_service(writer).transition(
                     resolution_id,
@@ -461,9 +508,26 @@ def test_sql_audit_uses_one_snapshot_during_concurrent_transition(tmp_path):
                             context={
                                 "lifecycle_action": (
                                     LifecycleAction.RECORD_CONTEXT.value
-                                )
+                                ),
+                                "expected_state": root.status,
+                                "expected_version": root.version,
                             },
+                            operation_id="concurrent-record-context",
+                            operation_payload=(
+                                lifecycle_transition_operation_payload(
+                                    resolution_id=resolution_id,
+                                    action=(
+                                        LifecycleAction
+                                        .RECORD_CONTEXT.value
+                                    ),
+                                    expected_state=root.status,
+                                    expected_version=root.version,
+                                    reason=None,
+                                    metadata=None,
+                                )
+                            ),
                         ),
+                        operation_id="concurrent-record-context",
                     ),
                 )
                 writer.commit()

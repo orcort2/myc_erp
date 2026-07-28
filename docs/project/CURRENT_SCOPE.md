@@ -58,7 +58,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   Fase 8 — Seguridad integral está implementada `EN REVISIÓN`: centraliza el
   catálogo de controles en el evaluador vigente y protege creación/transición,
   ejecución, compensación, consultas y outbox mediante decisiones append-only
-  exactas. Fase 9 continúa `NO INICIADA`.
+  exactas. Las mutaciones distinguen replay idempotente de reutilización para
+  otra operación mediante identidad/hash y consumo transaccional append-only;
+  auditoría conserva una concesión reutilizable de consulta exacta. Fase 9
+  continúa `NO INICIADA`.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

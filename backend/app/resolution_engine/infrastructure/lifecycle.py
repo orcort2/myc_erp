@@ -7,7 +7,10 @@ from datetime import datetime
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from app.resolution_engine.contracts.lifecycle import CreateResolutionCommand
+from app.resolution_engine.contracts.lifecycle import (
+    CreateResolutionCommand,
+    lifecycle_transition_operation_payload,
+)
 from app.resolution_engine.domain.canonical import canonical_sha256
 from app.resolution_engine.domain.definitions import ResolutionDefinition
 from app.resolution_engine.domain.enums import (
@@ -37,7 +40,10 @@ from app.resolution_engine.domain.lifecycle import (
     SimulationEvidence,
     StrategyEvidence,
 )
-from app.resolution_engine.domain.security import ActorContext
+from app.resolution_engine.domain.security import (
+    ActorContext,
+    SecurityDecisionUseMode,
+)
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
@@ -72,11 +78,23 @@ class SqlAlchemyLifecycleStore:
         public_id: str,
         occurred_at: datetime,
     ) -> ResolutionLifecycle:
-        self._verify_creation_security(
+        replayed = self._verify_creation_security(
             command,
             definition=definition,
             occurred_at=occurred_at,
         )
+        if replayed:
+            existing = self._session.scalar(
+                select(Resolution).where(
+                    Resolution.request_key == command.request_key
+                )
+            )
+            if existing is None:
+                raise LifecycleInvariantError(
+                    action="create",
+                    violations=("security_replay_result_missing",),
+                )
+            return self._from_record(self._required_record(existing.id))
         identity = command.actor.identity
         authentication = command.actor.authentication
         resolution = Resolution(
@@ -164,8 +182,30 @@ class SqlAlchemyLifecycleStore:
         security_decision_id: int,
         actor: ActorContext,
         occurred_at: datetime,
+        operation_id: str,
+        reason: str | None,
+        metadata,
     ) -> None:
-        reasons = self._security.verify(
+        root = self._session.get(Resolution, resolution_id)
+        if root is None:
+            raise LifecycleInvariantError(
+                action=action,
+                violations=("security_resolution_missing",),
+            )
+        context = {
+            "lifecycle_action": action,
+            "expected_state": root.status,
+            "expected_version": root.version,
+        }
+        operation_payload = lifecycle_transition_operation_payload(
+            resolution_id=resolution_id,
+            action=action,
+            expected_state=root.status,
+            expected_version=root.version,
+            reason=reason,
+            metadata=metadata,
+        )
+        _, reasons = self._security.claim(
             self._session,
             SecurityDecisionExpectation(
                 decision_id=security_decision_id,
@@ -177,8 +217,11 @@ class SqlAlchemyLifecycleStore:
                     ComponentKey("resolution.lifecycle.transition"),
                 ),
                 occurred_at=occurred_at,
+                use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+                operation_id=operation_id,
+                operation_payload=operation_payload,
                 resolution_id=resolution_id,
-                context={"lifecycle_action": action},
+                context=context,
             ),
         )
         if reasons:
@@ -271,8 +314,8 @@ class SqlAlchemyLifecycleStore:
         *,
         definition: ResolutionDefinition,
         occurred_at: datetime,
-    ) -> None:
-        reasons = self._security.verify(
+    ) -> bool:
+        claim, reasons = self._security.claim(
             self._session,
             SecurityDecisionExpectation(
                 decision_id=command.security_decision_id,
@@ -286,6 +329,11 @@ class SqlAlchemyLifecycleStore:
                     ComponentKey("resolution.create"),
                 ),
                 occurred_at=occurred_at,
+                use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+                operation_id=command.request_key,
+                operation_payload=command.security_operation_payload(
+                    definition
+                ),
                 context={"source": command.source.value},
             ),
         )
@@ -294,6 +342,7 @@ class SqlAlchemyLifecycleStore:
                 action="create",
                 violations=reasons,
             )
+        return bool(claim and claim.replayed)
 
     def _required_record(self, resolution_id: int) -> ResolutionRecord:
         record = self._repository.load_record(resolution_id)

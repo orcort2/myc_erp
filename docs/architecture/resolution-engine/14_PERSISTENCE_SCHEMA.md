@@ -132,3 +132,11 @@ decisiones de seguridad con la revalidación exacta y cada nueva ejecución con
 su decisión autorizante mediante FKs compuestas, constraint de completitud e
 índice. Las columnas permanecen nulas para históricos y no se inventa
 autoridad retrospectiva.
+
+La corrección de replay `f8a0b2c4d6e8` agrega identidad/hash/payload y modo de
+uso a cada decisión, la tabla append-only
+`resolution_security_decision_uses` y la reserva
+`publication_operation_id` del outbox. Una decisión sólo puede tener un
+consumo mutante y una organización no puede asociar la misma acción/operación a
+dos concesiones. La reserva se confirma o revierte con la transacción del
+efecto.

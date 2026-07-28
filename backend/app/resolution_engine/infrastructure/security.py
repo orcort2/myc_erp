@@ -55,6 +55,12 @@ class SqlAlchemySecurityEvidenceStore:
                 str(permission)
                 for permission in decision.required_permissions
             ],
+            "use_mode": decision.use_mode.value,
+            "operation_id": decision.operation_id,
+            "operation_payload": dict(
+                context_snapshot.get("operation_payload", {})
+            ),
+            "operation_hash": decision.operation_hash,
             "occurred_functions": dict(
                 context_snapshot.get("occurred_functions", {})
             ),
@@ -95,6 +101,12 @@ class SqlAlchemySecurityEvidenceStore:
                     str(permission)
                     for permission in decision.required_permissions
                 ],
+                use_mode=decision.use_mode.value,
+                operation_id=decision.operation_id,
+                operation_hash=decision.operation_hash,
+                operation_payload=dict(
+                    context_snapshot.get("operation_payload", {})
+                ),
                 reason_codes=list(decision.reason_codes),
                 actor_snapshot=decision.actor.identity.snapshot(),
                 authentication_snapshot=(

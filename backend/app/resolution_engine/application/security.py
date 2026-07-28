@@ -18,6 +18,7 @@ from app.resolution_engine.domain.security import (
     SecurityControl,
     SecurityDecision,
     SecurityDecisionOutcome,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityRiskLevel,
 )
@@ -52,6 +53,7 @@ INTEGRAL_SECURITY_CONTROLS = (
         required_permissions=(ComponentKey("resolution.create"),),
         resource_types=("resolution_definition",),
         risk_level=SecurityRiskLevel.MODERATE,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.lifecycle.transition"),
@@ -60,72 +62,84 @@ INTEGRAL_SECURITY_CONTROLS = (
         ),
         resource_types=("resolution",),
         risk_level=SecurityRiskLevel.HIGH,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.context.build"),
         required_permissions=(ComponentKey("resolution.context.build"),),
         resource_types=("resolution",),
         risk_level=SecurityRiskLevel.MODERATE,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.analyze"),
         required_permissions=(ComponentKey("resolution.analyze"),),
         resource_types=("resolution",),
         risk_level=SecurityRiskLevel.MODERATE,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.strategy.select"),
         required_permissions=(ComponentKey("resolution.strategy.select"),),
         resource_types=("resolution",),
         risk_level=SecurityRiskLevel.HIGH,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.plan.build"),
         required_permissions=(ComponentKey("resolution.plan.build"),),
         resource_types=("resolution",),
         risk_level=SecurityRiskLevel.HIGH,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.simulate"),
         required_permissions=(ComponentKey("resolution.simulate"),),
         resource_types=("resolution_plan",),
         risk_level=SecurityRiskLevel.HIGH,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.plan.authorize"),
         required_permissions=(ComponentKey("resolution.plan.authorize"),),
         resource_types=("resolution_plan",),
         risk_level=SecurityRiskLevel.CRITICAL,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.revalidate"),
         required_permissions=(ComponentKey("resolution.revalidate"),),
         resource_types=("resolution_plan",),
         risk_level=SecurityRiskLevel.HIGH,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.execute"),
         required_permissions=(ComponentKey("resolution.execute"),),
         resource_types=("resolution_plan",),
         risk_level=SecurityRiskLevel.CRITICAL,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.compensate"),
         required_permissions=(ComponentKey("resolution.compensate"),),
         resource_types=("resolution_execution",),
         risk_level=SecurityRiskLevel.CRITICAL,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
     SecurityControl(
         action=ComponentKey("resolution.audit.inspect"),
         required_permissions=(ComponentKey("resolution.audit.inspect"),),
         resource_types=("resolution",),
         risk_level=SecurityRiskLevel.HIGH,
+        use_mode=SecurityDecisionUseMode.REUSABLE_READ,
     ),
     SecurityControl(
         action=ComponentKey("resolution.outbox.publish"),
         required_permissions=(ComponentKey("resolution.outbox.publish"),),
         resource_types=("resolution_outbox",),
         risk_level=SecurityRiskLevel.CRITICAL,
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
     ),
 )
 
@@ -172,6 +186,8 @@ class IntegralSecurityControlPolicy:
                 != control.required_permissions
             ):
                 reasons.append("required_permissions_downgrade")
+            if request.use_mode is not control.use_mode:
+                reasons.append("security_use_mode_mismatch")
             if (
                 request.resource.resource_type
                 not in {"resolution_definition", "resolution_outbox"}
@@ -202,6 +218,7 @@ class IntegralSecurityControlPolicy:
                 "control": (
                     {
                         "risk_level": control.risk_level.value,
+                        "use_mode": control.use_mode.value,
                         "resource_types": list(control.resource_types),
                         "required_permissions": [
                             str(permission)
@@ -504,6 +521,7 @@ class ResolutionAuthorizationService:
             context_snapshot={
                 "occurred_functions": dict(request.occurred_functions),
                 "context": dict(request.context),
+                "operation_payload": dict(request.operation_payload),
             },
         )
         return decision

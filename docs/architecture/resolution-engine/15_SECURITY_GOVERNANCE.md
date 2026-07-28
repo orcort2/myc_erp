@@ -136,6 +136,8 @@ transformar roles en condicionales distribuidos.
 - autorización de plan/simulación siempre señala versiones y hashes exactos;
 - evidencia de otra resolución no puede autorizarse;
 - concesiones y denegaciones son reproducibles, correlacionables e inmutables;
+- toda decisión declara modo, operación e intención canónica; mutaciones se
+  consumen una sola vez de forma transaccional;
 - la seguridad del backend no depende del frontend.
 
 ## Evolución
@@ -146,6 +148,11 @@ persistidas sin reevaluar políticas. La futura integración podrá adaptar la i
 ERP y consumir el servicio desde API. No debe crear evaluadores
 paralelos, permisos codificados en servicios, booleanos de aprobación ni
 accesos directos desde el Motor a `User`, `Role` o módulos propietarios.
+
+La corrección bloqueante de Fase 8 eleva el catálogo a `1.1`: auditoría usa
+`reusable_read` para una consulta exacta y las demás capacidades usan
+`single_operation`. El consumo append-only diferencia replay idempotente de
+reutilización para otra intención sin introducir otro evaluador.
 
 Desde Fase 6, preparar o ejecutar una compensación consume una decisión
 `resolution.compensate` `allowed` vinculada a la resolución, ejecución fuente,

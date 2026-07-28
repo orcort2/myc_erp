@@ -18,8 +18,28 @@ antes de evaluar las políticas institucionales.
 `SqlAlchemySecurityDecisionVerifier` no reevalúa políticas ni decide autoridad.
 Comprueba que una concesión append-only ya emitida por el evaluador conserva
 exactamente actor, autenticación, organización, correlación, acción, recurso,
-permisos, contexto, plan, revalidación y hash. Ejecución, compensación,
-Lifecycle, auditoría y outbox reutilizan este único verificador.
+permisos, contexto, plan, revalidación, semántica de uso, operación e intención
+canónica. Ejecución, compensación, Lifecycle, auditoría y outbox reutilizan
+este único verificador.
+
+## Semántica de uso y replay
+
+El catálogo central versión `1.1` declara una de dos semánticas por acción:
+
+- `single_operation`: toda mutación y publicación crítica queda ligada a un
+  `operation_id`, un payload de intención y su hash canónico;
+- `reusable_read`: sólo `resolution.audit.inspect`; permite repetir la misma
+  consulta exacta mientras identidad, autenticación, permisos y contexto sigan
+  vigentes.
+
+Una decisión `single_operation` se reserva en
+`resolution_security_decision_uses` dentro de la misma transacción que inicia
+el cambio. La unicidad por decisión impide consumirla para otra operación; la
+unicidad por organización, acción y `operation_id` impide representar una
+misma operación con concesiones divergentes. Un rollback revierte también la
+reserva. Un reintento con el mismo ID y hash continúa por la idempotencia del
+límite; el mismo ID con otra intención o la misma decisión con otra operación
+se deniega.
 
 ## Controles transversales
 
@@ -52,40 +72,46 @@ otra ruta persistente autorizada.
 
 ### Lifecycle
 
-Crear exige una decisión `resolution.create` para la definición versionada y
-la fuente exactas. Las transiciones exigen
-`resolution.lifecycle.transition` para resolución, actor y acción exactos
-antes de reconstruir el expediente. El ID de decisión queda en la evidencia de
-creación/transición; sólo `ResolutionStateMachine` calcula el nuevo estado.
+Crear exige `request_key` y una decisión `resolution.create` ligada al comando
+canónico completo: definición/versión/fingerprint, fuente, sujeto, problema y
+metadatos. Repetir exactamente la misma solicitud devuelve la misma resolución;
+cambiar cualquier parte no puede reutilizar la concesión. Las transiciones
+incluyen resolución, acción, estado y versión esperados, contexto e identidad
+única de operación. Una concesión de una versión anterior no autoriza otra
+transición. Sólo `ResolutionStateMachine` calcula el nuevo estado.
 
 ### Ejecución
 
 `ExecuteResolutionCommand` porta `security_decision_id`. La decisión
 `resolution.execute` debe señalar el plan y la revalidación exactos. Se
-verifica antes de consultar un replay y otra vez dentro de la transacción que
-reserva idempotencia, lock, ejecución y Lifecycle. Un actor ajeno no puede usar
-la clave idempotente para recuperar un resultado.
+verifica antes de consultar un replay y se consume dentro de la transacción que
+reserva idempotencia, lock, ejecución y Lifecycle. La clave idempotente es
+también la identidad de operación: el replay exacto recupera el resultado y un
+actor o intención distintos no pueden tantearlo.
 
 ### Compensación
 
-La preparación y el inicio vuelven a comprobar la misma concesión
+La preparación consume y el inicio vuelve a comprobar la misma concesión
 `resolution.compensate`, incluida vigencia actual de autenticación/permisos,
-actor, organización, ejecución fuente, contexto y hash. No cambia la selección
-ni la clausura de dependencias de Fase 6.
+actor, organización, ejecución fuente, estrategia, razón, selección exacta,
+contexto e identidad idempotente. No cambia la clausura de dependencias ni la
+recuperación idempotente de Fase 6.
 
 ### Auditoría
 
-`AuditQuery` transporta el `ActorContext`, el instante y el contexto de
-consulta. El acceso se verifica antes de abrir el snapshot read-only. Después
-continúan sin cambios la verificación completa, el filtrado posterior y la
-reconstrucción determinista de Fase 7.
+`AuditQuery` transporta el `ActorContext`, el instante, `operation_id` y el
+contexto de consulta. Su concesión `reusable_read` puede reutilizarse sólo para
+la misma resolución y contexto exactos, durante la vigencia de la
+autenticación. No crea un consumo mutante. El acceso se verifica antes de abrir
+el snapshot read-only.
 
 ### Outbox
 
-La publicación explícita exige `resolution.outbox.publish`, queda ligada a
-actor, organización y límite del lote, y sólo selecciona eventos cuyas raíces
-pertenecen a esa organización. No se agregan workers, scheduler, retry ni
-automatización.
+La publicación explícita exige `resolution.outbox.publish`, `operation_id`,
+actor, organización y límite. La primera reserva congela los IDs exactos del
+lote y los marca con esa operación; un replay devuelve el reporte del mismo
+lote y nunca selecciona los siguientes pendientes. No se agregan workers,
+scheduler, retry ni automatización.
 
 ## Persistencia
 
@@ -96,8 +122,17 @@ histórico:
 - vínculo exacto de `resolution_executions` con la decisión de seguridad;
 - FKs compuestas, constraint de completitud e índice.
 
-Las filas históricas permanecen válidas con valores nulos; toda ejecución nueva
-del contrato de Fase 8 persiste la decisión exacta.
+La corrección `f8a0b2c4d6e8`, posterior al head de Actividad
+`fabc2cd495ef`, agrega:
+
+- modo de uso, identidad, payload y hash de operación a cada decisión;
+- `resolution_security_decision_uses` como consumo append-only con unicidad
+  transaccional;
+- `publication_operation_id` para congelar cada lote de outbox.
+
+Las decisiones históricas reciben marcadores `legacy-decision:*` para conservar
+integridad estructural, pero no adquieren retrospectivamente una intención
+verificable ni autorizan límites endurecidos nuevos.
 
 ## Límites
 

@@ -14,6 +14,7 @@ from app.resolution_engine.contracts.compensation import (
     ExecuteCompensationCommand,
     PrepareCompensationCommand,
     StartCompensationResult,
+    compensation_security_operation_payload,
 )
 from app.resolution_engine.domain.canonical import canonical_sha256
 from app.resolution_engine.domain.compensation import (
@@ -43,7 +44,10 @@ from app.resolution_engine.domain.lifecycle import (
     CompensationEvidence,
     LifecycleTransition,
 )
-from app.resolution_engine.domain.security import ActorContext
+from app.resolution_engine.domain.security import (
+    ActorContext,
+    SecurityDecisionUseMode,
+)
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.execution_control import (
     SqlAlchemyExecutionControl,
@@ -251,6 +255,7 @@ class SqlAlchemyCompensationStore:
                         session,
                         command,
                         occurred_at=created_at,
+                        claim=True,
                     )
                     existing = session.scalar(
                         select(ResolutionCompensationPlan).where(
@@ -289,7 +294,11 @@ class SqlAlchemyCompensationStore:
                             command.actor.authentication.correlation_id
                         ),
                         created_at=created_at,
-                        metadata_json={},
+                        metadata_json={
+                            "selected_step_execution_ids": list(
+                                command.selected_step_execution_ids
+                            )
+                        },
                     )
                     session.add(row)
                     session.flush()
@@ -828,10 +837,9 @@ class SqlAlchemyCompensationStore:
         command: PrepareCompensationCommand,
         *,
         occurred_at: datetime,
+        claim: bool = False,
     ) -> None:
-        reasons = self._security.verify(
-            session,
-            SecurityDecisionExpectation(
+        expectation = SecurityDecisionExpectation(
                 decision_id=command.security_decision_id,
                 action="resolution.compensate",
                 resource_type="resolution_execution",
@@ -841,10 +849,28 @@ class SqlAlchemyCompensationStore:
                     ComponentKey("resolution.compensate"),
                 ),
                 occurred_at=occurred_at,
+                use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+                operation_id=command.idempotency_key,
+                operation_payload=compensation_security_operation_payload(
+                    resolution_id=command.resolution_id,
+                    source_execution_id=command.source_execution_id,
+                    strategy=command.strategy.value,
+                    reason=command.reason,
+                    selected_step_execution_ids=(
+                        command.selected_step_execution_ids
+                    ),
+                    actor_id=command.actor.identity.actor_id,
+                    organization_id=(
+                        command.actor.identity.organization_id
+                    ),
+                ),
                 resolution_id=command.resolution_id,
                 context={},
-            ),
-        )
+            )
+        if claim:
+            _, reasons = self._security.claim(session, expectation)
+        else:
+            reasons = self._security.verify(session, expectation)
         if reasons:
             raise CompensationNotAllowedError(
                 "exact compensation authorization is invalid: "
@@ -894,6 +920,26 @@ class SqlAlchemyCompensationStore:
                         ComponentKey("resolution.compensate"),
                     ),
                     occurred_at=occurred_at,
+                    use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+                    operation_id=plan.plan_key,
+                    operation_payload=(
+                        compensation_security_operation_payload(
+                            resolution_id=plan.resolution_id,
+                            source_execution_id=(
+                                plan.source_execution_id
+                            ),
+                            strategy=plan.strategy,
+                            reason=plan.reason,
+                            selected_step_execution_ids=tuple(
+                                plan.metadata_json.get(
+                                    "selected_step_execution_ids",
+                                    (),
+                                )
+                            ),
+                            actor_id=plan.created_by_actor_id,
+                            organization_id=identity.organization_id,
+                        )
+                    ),
                     resolution_id=plan.resolution_id,
                     context={},
                 ),

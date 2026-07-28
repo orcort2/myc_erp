@@ -111,9 +111,11 @@ Toda consulta exige una `ResolutionSecurityDecision`:
 - recurso `resolution` con ID interno o público exacto;
 - misma organización cuando la raíz la define.
 
-Desde Fase 8, `AuditQuery` transporta el `ActorContext`, instante y contexto
-exactos; la autenticación y permisos deben seguir vigentes y la evidencia debe
-contener la política integral y un hash reproducible.
+Desde Fase 8, `AuditQuery` transporta el `ActorContext`, instante,
+`operation_id` y contexto exactos. Su modo `reusable_read` permite repetir
+únicamente la misma resolución/consulta mientras autenticación y permisos
+sigan vigentes; no crea consumos mutantes. La evidencia debe contener la
+política integral, modo, intención y hash reproducible.
 
 El servicio no codifica roles ni consulta tablas propietarias. La decisión se
 produce mediante las políticas generales de seguridad aprobadas.

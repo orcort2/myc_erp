@@ -13,6 +13,19 @@ from app.resolution_engine.domain.security import ActorContext
 AUDIT_READ_ACTION = "resolution.audit.inspect"
 
 
+def audit_security_operation_payload(
+    *,
+    resolution_id: int,
+    context: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Alcance canónico de una concesión de consulta reutilizable."""
+
+    return {
+        "resolution_id": resolution_id,
+        "context": dict(context),
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class AuditQuery:
     """Identidad y autorización exactas requeridas para leer evidencia."""
@@ -21,6 +34,7 @@ class AuditQuery:
     security_decision_id: int
     actor: ActorContext
     requested_at: datetime
+    operation_id: str
     context: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -31,6 +45,10 @@ class AuditQuery:
         if self.requested_at.tzinfo is None:
             raise InvalidAuditEvidenceError(
                 "audit query time must include timezone"
+            )
+        if not self.operation_id.strip():
+            raise InvalidAuditEvidenceError(
+                "audit operation_id is required"
             )
 
 

@@ -176,6 +176,14 @@ class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
             name="ck_resolution_security_decisions_evidence_hash",
         ),
         CheckConstraint(
+            "use_mode IN ('single_operation','reusable_read')",
+            name="ck_resolution_security_decisions_use_mode",
+        ),
+        CheckConstraint(
+            "length(operation_hash) = 64",
+            name="ck_resolution_security_decisions_operation_hash",
+        ),
+        CheckConstraint(
             "(plan_id IS NULL AND plan_version IS NULL AND plan_hash IS NULL) "
             "OR (plan_id IS NOT NULL AND plan_version IS NOT NULL "
             "AND plan_hash IS NOT NULL)",
@@ -234,6 +242,12 @@ class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
     required_permissions: Mapped[list[Any]] = mapped_column(
         JSON_DOCUMENT, nullable=False
     )
+    use_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    operation_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    operation_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation_payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
     reason_codes: Mapped[list[Any]] = mapped_column(
         JSON_DOCUMENT, nullable=False
     )
@@ -253,6 +267,59 @@ class ResolutionSecurityDecision(ResolutionRecordMixin, Base):
         String(120), nullable=False, index=True
     )
     evidence_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class ResolutionSecurityDecisionUse(
+    ResolutionRecordMixin,
+    CreatedAtMixin,
+    Base,
+):
+    """Consumo único append-only ligado a una operación canónica."""
+
+    __tablename__ = "resolution_security_decision_uses"
+    __table_args__ = (
+        UniqueConstraint(
+            "security_decision_id",
+            name="uq_resolution_security_decision_uses_decision",
+        ),
+        UniqueConstraint(
+            "organization_id",
+            "action",
+            "operation_id",
+            name="uq_resolution_security_decision_uses_operation",
+        ),
+        CheckConstraint(
+            "length(operation_hash) = 64",
+            name="ck_resolution_security_decision_uses_hash",
+        ),
+        Index(
+            "ix_resolution_security_decision_uses_resolution",
+            "resolution_id",
+            "created_at",
+        ),
+    )
+
+    security_decision_id: Mapped[int] = mapped_column(
+        BIGINT_ID,
+        ForeignKey(
+            "resolution_security_decisions.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    resolution_id: Mapped[int | None] = mapped_column(
+        BIGINT_ID,
+        ForeignKey("resolutions.id", ondelete="RESTRICT"),
+    )
+    organization_id: Mapped[str] = mapped_column(
+        String(160), nullable=False
+    )
+    action: Mapped[str] = mapped_column(String(200), nullable=False)
+    operation_id: Mapped[str] = mapped_column(String(240), nullable=False)
+    operation_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    operation_context: Mapped[dict[str, Any]] = mapped_column(
+        JSON_DOCUMENT, nullable=False
+    )
 
 
 class ResolutionIdempotencyRecord(
@@ -420,6 +487,10 @@ class ResolutionOutboxEvent(
             "available_at",
             "id",
         ),
+        Index(
+            "ix_resolution_outbox_events_publication_operation",
+            "publication_operation_id",
+        ),
     )
 
     resolution_id: Mapped[int] = mapped_column(
@@ -452,6 +523,9 @@ class ResolutionOutboxEvent(
         Integer, server_default="0", nullable=False
     )
     last_error: Mapped[str | None] = mapped_column(Text)
+    publication_operation_id: Mapped[str | None] = mapped_column(
+        String(240)
+    )
     correlation_id: Mapped[str | None] = mapped_column(
         String(120), index=True
     )

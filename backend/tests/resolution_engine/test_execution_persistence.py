@@ -18,6 +18,8 @@ from app.resolution_engine.application.security import (
 from app.resolution_engine.contracts.execution import (
     ExecuteResolutionCommand,
     PublishOutboxCommand,
+    execution_security_operation_payload,
+    outbox_security_operation_payload,
 )
 from app.resolution_engine.domain.enums import (
     EntityRelationshipType,
@@ -43,6 +45,7 @@ from app.resolution_engine.domain.security import (
     ActorType,
     AuthenticationContext,
     PermissionGrant,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityResource,
 )
@@ -390,6 +393,18 @@ def authorize_execution(session, resolution_id, revalidation):
         required_permissions=(
             ComponentKey("resolution.execute"),
         ),
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+        operation_id="execution-request-1",
+        operation_payload=execution_security_operation_payload(
+            resolution_id=root.id,
+            plan_id=plan.id,
+            plan_version=plan.version,
+            plan_hash=plan.plan_hash,
+            revalidation_id=revalidation.id,
+            revalidation_hash=revalidation.revalidation_hash,
+            actor_id=actor().identity.actor_id,
+            organization_id=actor().identity.organization_id,
+        ),
         context={
             "resolution_status": (
                 ResolutionStatus.READY_FOR_EXECUTION.value
@@ -423,6 +438,12 @@ def authorize_outbox(session, *, limit=100):
         ),
         required_permissions=(
             ComponentKey("resolution.outbox.publish"),
+        ),
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+        operation_id=f"outbox-batch-{limit}",
+        operation_payload=outbox_security_operation_payload(
+            organization_id=actor().identity.organization_id,
+            limit=limit,
         ),
         context={"limit": limit},
     )
@@ -772,12 +793,13 @@ def test_outbox_publication_is_explicit_and_does_not_retry_failures():
         security_decision_id=security_decision_id,
         actor=actor(),
         organization_id="organization-1",
+        operation_id="outbox-batch-100",
     )
     first = publication.publish_available(publication_command)
     second = publication.publish_available(publication_command)
 
     assert first.failed == 3
-    assert second.failed == second.published == 0
+    assert second == first
     assert len(publisher.messages) == 3
     with factory() as session:
         rows = tuple(session.scalars(select(ResolutionOutboxEvent)))
@@ -816,6 +838,7 @@ def test_outbox_publication_marks_each_event_published_once():
             security_decision_id=security_decision_id,
             actor=actor(),
             organization_id="organization-1",
+            operation_id="outbox-batch-100",
         )
     )
 
@@ -828,3 +851,46 @@ def test_outbox_publication_marks_each_event_published_once():
         assert {row.status for row in rows} == {"published"}
         assert {row.attempts for row in rows} == {1}
         assert all(row.published_at is not None for row in rows)
+
+
+def test_outbox_decision_never_selects_a_second_batch_on_replay():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        resolution_id = seed_ready_resolution(session)
+    build_executor(factory, Handler()).execute(command(resolution_id))
+    with factory() as session:
+        security_decision_id = authorize_outbox(session, limit=1)
+        session.commit()
+    publisher = Publisher()
+    publication = OutboxPublicationService(
+        store=SqlAlchemyOutboxStore(factory),
+        publisher=publisher,
+        clock=AdvancingClock(NOW + timedelta(hours=1)),
+    )
+    publication_command = PublishOutboxCommand(
+        security_decision_id=security_decision_id,
+        actor=actor(),
+        organization_id="organization-1",
+        operation_id="outbox-batch-1",
+        limit=1,
+    )
+
+    first = publication.publish_available(publication_command)
+    replay = publication.publish_available(publication_command)
+
+    assert first == replay
+    assert first.published == 1
+    assert len(publisher.messages) == 1
+    with factory() as session:
+        remaining = tuple(
+            session.scalars(
+                select(ResolutionOutboxEvent).where(
+                    ResolutionOutboxEvent.status == "pending"
+                )
+            )
+        )
+        assert len(remaining) == 2
+        assert all(
+            row.publication_operation_id is None for row in remaining
+        )

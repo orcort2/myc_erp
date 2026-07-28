@@ -27,6 +27,7 @@ from app.resolution_engine.domain.security import ActorContext
 class LifecycleActor:
     context: ActorContext
     security_decision_id: int | None = None
+    operation_id: str | None = None
     actor_function: str | None = None
 
     @property
@@ -108,6 +109,8 @@ class ResolutionLifecycleService:
         violations = actor.context.validate_at(occurred_at)
         if actor.security_decision_id is None or actor.security_decision_id <= 0:
             violations += ("security_decision_required",)
+        if actor.operation_id is None or not actor.operation_id.strip():
+            violations += ("security_operation_id_required",)
         if violations:
             raise LifecycleInvariantError(
                 action=action.value,
@@ -119,6 +122,9 @@ class ResolutionLifecycleService:
             security_decision_id=actor.security_decision_id,
             actor=actor.context,
             occurred_at=occurred_at,
+            operation_id=actor.operation_id,
+            reason=reason,
+            metadata=metadata,
         )
         lifecycle = self._store.load(resolution_id)
         if lifecycle is None:

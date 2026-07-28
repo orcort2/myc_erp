@@ -23,6 +23,29 @@ from app.resolution_engine.domain.security import ActorContext
 from app.resolution_engine.domain.value_objects import ComponentKey
 
 
+def compensation_security_operation_payload(
+    *,
+    resolution_id: int,
+    source_execution_id: int,
+    strategy: str,
+    reason: str,
+    selected_step_execution_ids: tuple[int, ...],
+    actor_id: str,
+    organization_id: str,
+) -> dict:
+    """Intención exacta autorizada para preparar una compensación."""
+
+    return {
+        "resolution_id": resolution_id,
+        "source_execution_id": source_execution_id,
+        "strategy": strategy,
+        "reason": reason,
+        "selected_step_execution_ids": list(selected_step_execution_ids),
+        "actor_id": actor_id,
+        "organization_id": organization_id,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class PrepareCompensationCommand:
     resolution_id: int

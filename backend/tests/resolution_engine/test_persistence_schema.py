@@ -11,6 +11,7 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionPlan,
     ResolutionPlanStepDependency,
     ResolutionSecurityDecision,
+    ResolutionSecurityDecisionUse,
 )
 
 EXPECTED_TABLES = {
@@ -31,6 +32,7 @@ EXPECTED_TABLES = {
     "resolution_entity_references",
     "resolution_results",
     "resolution_security_decisions",
+    "resolution_security_decision_uses",
     "resolution_audit_events",
     "resolution_idempotency_records",
     "resolution_locks",
@@ -154,6 +156,25 @@ def test_security_decisions_reference_exact_authorization_evidence():
     assert ("plan_id", "resolution_id", "plan_hash") in constrained_sets
     assert ("simulation_id", "resolution_id", "simulation_hash") in constrained_sets
     assert ("simulation_id", "plan_id", "resolution_id") in constrained_sets
+
+
+def test_security_decision_use_is_append_only_and_unique_per_operation():
+    constraint_names = {
+        constraint.name
+        for constraint in ResolutionSecurityDecisionUse.__table__.constraints
+    }
+
+    assert "uq_resolution_security_decision_uses_decision" in constraint_names
+    assert "uq_resolution_security_decision_uses_operation" in constraint_names
+    assert {
+        "security_decision_id",
+        "organization_id",
+        "action",
+        "operation_id",
+        "operation_hash",
+        "operation_context",
+        "created_at",
+    }.issubset(ResolutionSecurityDecisionUse.__table__.c.keys())
 
 
 def test_plan_identity_and_hash_have_stable_unique_targets():

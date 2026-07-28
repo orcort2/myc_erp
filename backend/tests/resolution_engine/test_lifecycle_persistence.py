@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -20,6 +21,7 @@ from app.resolution_engine.application.security import (
 from app.resolution_engine.contracts.lifecycle import (
     CreateResolutionCommand,
     ResolutionProblemInput,
+    lifecycle_transition_operation_payload,
 )
 from app.resolution_engine.domain.definitions import (
     ComponentReference,
@@ -43,6 +45,7 @@ from app.resolution_engine.domain.security import (
     ActorType,
     AuthenticationContext,
     PermissionGrant,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityResource,
 )
@@ -155,6 +158,8 @@ def authorize(
     resource_id,
     context,
     resolution_id=None,
+    operation_id,
+    operation_payload,
 ):
     request = SecurityRequest(
         actor=actor(),
@@ -166,6 +171,9 @@ def authorize(
             resolution_id=resolution_id,
         ),
         required_permissions=(ComponentKey(action),),
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+        operation_id=operation_id,
+        operation_payload=operation_payload,
         context=context,
     )
     decision = ResolutionAuthorizationService(
@@ -182,26 +190,34 @@ def authorize(
 
 
 def command(session):
-    return CreateResolutionCommand(
+    base = CreateResolutionCommand(
         resolution_type="example.resolve",
         source=ResolutionSource.USER,
         subject_type="example",
         subject_id="42",
         title="Resolver caso",
         actor=actor(),
-        security_decision_id=authorize(
-            session,
-            action="resolution.create",
-            resource_type="resolution_definition",
-            resource_id="example.resolve@1.0",
-            context={"source": ResolutionSource.USER.value},
-        ),
+        security_decision_id=1,
+        request_key="create-example-42",
         priority=ResolutionPriority.HIGH,
         problem=ResolutionProblemInput(
             problem_code="example.problem",
             summary="Problema verificable",
             detected_by="test",
             detected_at=NOW,
+        ),
+    )
+    definition = registry().resolve("example.resolve", None)
+    return replace(
+        base,
+        security_decision_id=authorize(
+            session,
+            action="resolution.create",
+            resource_type="resolution_definition",
+            resource_id="example.resolve@1.0",
+            context={"source": ResolutionSource.USER.value},
+            operation_id=base.request_key,
+            operation_payload=base.security_operation_payload(definition),
         ),
     )
 
@@ -249,9 +265,25 @@ def test_creation_and_transition_are_reconstructible_and_audited():
                     context={
                         "lifecycle_action": (
                             LifecycleAction.RECORD_CONTEXT.value
-                        )
+                        ),
+                        "expected_state": root.status,
+                        "expected_version": root.version,
                     },
+                    operation_id="transition-record-context-1",
+                    operation_payload=(
+                        lifecycle_transition_operation_payload(
+                            resolution_id=created.resolution_id,
+                            action=(
+                                LifecycleAction.RECORD_CONTEXT.value
+                            ),
+                            expected_state=root.status,
+                            expected_version=root.version,
+                            reason=None,
+                            metadata=None,
+                        )
+                    ),
                 ),
+                operation_id="transition-record-context-1",
             ),
         )
         session.commit()

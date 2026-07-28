@@ -100,6 +100,7 @@ FORCE_RECLASSIFY = {
     "backend/app/resolution_engine/domain/security.py",
     "backend/app/resolution_engine/infrastructure/security_decisions.py",
     "backend/migrations/versions/e7f9a1b3c5d7_resolution_engine_phase_8_security.py",
+    "backend/migrations/versions/f8a0b2c4d6e8_phase_8_security_decision_replay.py",
     "backend/tests/resolution_engine/test_phase_8_security.py",
     "docs/architecture/resolution-engine/21_PHASE_8_OPENING.md",
     "docs/architecture/resolution-engine/22_INTEGRAL_SECURITY.md",
@@ -202,14 +203,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/contracts/audit.py": (
             "Contratos de auditoría protegida",
-            "Declara AuditQuery con ActorContext, instante, contexto y decisión exactos, además de puertos read-only.",
+            "Declara AuditQuery con ActorContext, instante, operación, contexto y concesión reusable_read exactos, además de puertos read-only.",
             "Dominio de auditoría y seguridad",
             "AuditQueryService, adaptador SQL y pruebas",
             "Crítico",
         ),
         "backend/app/resolution_engine/contracts/execution.py": (
             "Contratos de ejecución protegida",
-            "Declara comandos con decisión exacta, verificación pre-replay y publicación outbox autorizada por organización.",
+            "Declara comandos con operación/decisión exactas, verificación pre-replay y reserva única de publicación outbox por organización.",
             "ActorContext, dominio de ejecución y Lifecycle",
             "Executor, stores, publicador y pruebas",
             "Crítico",
@@ -258,7 +259,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/outbox.py": (
             "Store de outbox protegido",
-            "Verifica publicación exacta y selecciona sólo eventos pendientes de la organización autorizada antes de marcar resultados.",
+            "Consume una autorización, congela IDs de un único lote organizacional y devuelve su resultado en replay sin seleccionar otro lote.",
             "SQLAlchemy, verificador integral y modelos outbox",
             "OutboxPublicationService y pruebas",
             "Crítico",
@@ -272,7 +273,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/persistence/evidence.py": (
             "Modelo ORM de evidencia integral",
-            "Define decisiones append-only vinculables a plan, simulación, autorización y revalidación exactos, además del outbox.",
+            "Define decisiones con modo/intención canónica, consumos append-only únicos y reserva de lote, además de evidencia/outbox previos.",
             "SQLAlchemy Base y modelos del Motor",
             "Seguridad, auditoría, Alembic y pruebas",
             "Crítico",
@@ -307,7 +308,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/security_decisions.py": (
             "Verificador de decisiones persistidas",
-            "Comprueba una concesión append-only exacta sin reevaluar políticas: actor, autenticación, permisos, contexto, recurso, plan, revalidación y hash.",
+            "Comprueba modo, operación e intención exactos y reserva consumos single-operation transaccionales sin reevaluar políticas.",
             "SQLAlchemy, modelos del Motor y dominio de seguridad",
             "Lifecycle, ejecución, compensación, auditoría y outbox",
             "Crítico",
@@ -319,9 +320,16 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
             "Despliegues, restauraciones y auditoría del Motor",
             "Crítico",
         ),
+        "backend/migrations/versions/f8a0b2c4d6e8_phase_8_security_decision_replay.py": (
+            "Corrección de replay de Fase 8",
+            "Agrega semántica e intención canónica, consumo append-only único y reserva exacta de lote outbox mediante una migración reversible.",
+            "Alembic, head de Actividad y modelos de seguridad/outbox",
+            "Despliegues, restauraciones, Motor y auditoría",
+            "Crítico",
+        ),
         "backend/tests/resolution_engine/test_phase_8_security.py": (
             "Suite de seguridad integral",
-            "Cubre catálogo completo, downgrade, recursos falsos, permisos contextuales, autenticación futura, tampering, replay ajeno, migración y verificador único.",
+            "Cubre catálogo, tampering, replay de creación, versión Lifecycle, concurrencia, rollback, migraciones y verificador único.",
             "Dominio, aplicación, adaptadores SQL y migración de Fase 8",
             "Gate específico de Fase 8",
             "Crítico",
@@ -644,7 +652,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_engine/infrastructure/persistence/__init__.py": (
             "API de persistencia",
-            "Expone las 26 entidades ORM vigentes, incluidas las cuatro estructuras compensatorias de Fase 6.",
+            "Expone las 27 entidades ORM vigentes, incluido el consumo append-only de decisiones y las cuatro estructuras compensatorias.",
             "Módulos core, planning, governance, execution, compensation y evidence",
             "Metadata global, repositorios, migraciones y pruebas",
             "Alto",
@@ -659,7 +667,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/app/resolution_engine/infrastructure/repositories.py": (
             "Repositorio de expediente",
             "Reconstruye determinísticamente el expediente completo, incluidas las cuatro colecciones compensatorias, sin administrar transacciones o estados.",
-            "SQLAlchemy Session y 26 modelos persistentes",
+            "SQLAlchemy Session y modelos persistentes del expediente",
             "Lifecycle, servicios del Motor y pruebas",
             "Crítico",
         ),
@@ -707,7 +715,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/tests/resolution_engine/test_persistence_schema.py": (
             "Prueba de esquema del Motor",
-            "Verifica 26 tablas, relaciones, aislamiento, inmutabilidad, evidencia outbox y estructuras compensatorias.",
+            "Verifica 27 tablas, consumo único de decisiones, relaciones, aislamiento, inmutabilidad, outbox y compensación.",
             "Metadata SQLAlchemy y modelos persistentes",
             "Gates de arquitectura de datos de Fases 2 a 6",
             "Crítico",

@@ -32,9 +32,11 @@ from app.resolution_engine.domain.security import (
     SecurityControl,
     SecurityDecision,
     SecurityDecisionOutcome,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityResource,
     SecurityRiskLevel,
+    security_operation_hash,
 )
 from app.resolution_engine.domain.lifecycle import (
     LifecycleAction,
@@ -110,7 +112,9 @@ __all__ = [
     "SecurityControl",
     "SecurityDecision",
     "SecurityDecisionOutcome",
+    "SecurityDecisionUseMode",
     "SecurityRequest",
     "SecurityResource",
     "SecurityRiskLevel",
+    "security_operation_hash",
 ]

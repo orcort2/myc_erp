@@ -33,15 +33,13 @@ class OutboxPublicationService:
         if command.limit <= 0:
             raise ValueError("limit must be positive")
         requested_at = self._clock.now()
-        self._store.verify_publication(
+        reservation = self._store.reserve_publication(
             command,
             occurred_at=requested_at,
         )
-        messages = self._store.pending(
-            organization_id=command.organization_id,
-            available_at=requested_at,
-            limit=command.limit,
-        )
+        if reservation.previous_report is not None:
+            return reservation.previous_report
+        messages = reservation.messages
         published = 0
         failed = 0
         for message in messages:

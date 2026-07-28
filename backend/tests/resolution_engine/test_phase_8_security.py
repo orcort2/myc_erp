@@ -1,13 +1,20 @@
 """Suite específica de Fase 8: seguridad integral del Motor."""
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.orm import Session, sessionmaker
 
+import app.models  # noqa: F401
+from app.core.db import Base
+from app.resolution_engine.application.lifecycle import (
+    LifecycleActor,
+    ResolutionLifecycleService,
+)
 from app.resolution_engine.application.security import (
     INTEGRAL_SECURITY_CONTROLS,
     OrganizationBoundaryPolicy,
@@ -15,7 +22,15 @@ from app.resolution_engine.application.security import (
     SecurityPolicyEvaluator,
 )
 from app.resolution_engine.domain.enums import ResolutionStatus
-from app.resolution_engine.domain.exceptions import ExecutionNotReadyError
+from app.resolution_engine.domain.exceptions import (
+    ExecutionNotReadyError,
+    LifecycleInvariantError,
+)
+from app.resolution_engine.domain.lifecycle import ResolutionStateMachine
+from app.resolution_engine.domain.lifecycle import LifecycleAction
+from app.resolution_engine.contracts.lifecycle import (
+    lifecycle_transition_operation_payload,
+)
 from app.resolution_engine.domain.security import (
     ActorContext,
     ActorIdentity,
@@ -23,13 +38,19 @@ from app.resolution_engine.domain.security import (
     AuthenticationContext,
     PermissionGrant,
     SecurityDecisionOutcome,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityResource,
 )
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.persistence import (
+    Resolution,
     ResolutionExecution,
     ResolutionSecurityDecision,
+    ResolutionSecurityDecisionUse,
+)
+from app.resolution_engine.infrastructure.lifecycle import (
+    SqlAlchemyLifecycleStore,
 )
 from tests.resolution_engine.test_execution_persistence import (
     Handler,
@@ -39,6 +60,13 @@ from tests.resolution_engine.test_execution_persistence import (
     command,
     seed_ready_resolution,
     sqlite_engine,
+)
+from tests.resolution_engine.test_lifecycle_persistence import (
+    FixedClock,
+    FixedIdentifiers,
+    authorize as lifecycle_authorize,
+    command as lifecycle_command,
+    registry,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -98,6 +126,9 @@ def request(
             else None,
         ),
         required_permissions=(ComponentKey(permission),),
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+        operation_id="phase-8-operation",
+        operation_payload={"resource_id": "10"},
         context=operation_context,
     )
 
@@ -127,6 +158,18 @@ def test_integral_catalog_covers_every_phase_1_to_7_capability_once():
         "resolution.audit.inspect",
         "resolution.outbox.publish",
     }
+    modes = {
+        str(control.action): control.use_mode
+        for control in INTEGRAL_SECURITY_CONTROLS
+    }
+    assert modes["resolution.audit.inspect"] is (
+        SecurityDecisionUseMode.REUSABLE_READ
+    )
+    assert all(
+        mode is SecurityDecisionUseMode.SINGLE_OPERATION
+        for action, mode in modes.items()
+        if action != "resolution.audit.inspect"
+    )
 
 
 @pytest.mark.parametrize(
@@ -261,6 +304,173 @@ def test_phase_8_migration_preserves_historical_rows_and_exact_links():
     assert "fk_resolution_security_decisions_revalidation" in source
     assert "ck_resolution_security_decisions_revalidation_complete" in source
     assert 'sa.Column("security_decision_id", BIGINT_ID)' in source
+
+    replay_source = (
+        ROOT
+        / "migrations"
+        / "versions"
+        / "f8a0b2c4d6e8_phase_8_security_decision_replay.py"
+    ).read_text()
+    assert 'down_revision: str | None = "fabc2cd495ef"' in replay_source
+    assert "resolution_security_decision_uses" in replay_source
+    assert "trg_resolution_security_decision_uses_immutable" in replay_source
+    assert "publication_operation_id" in replay_source
+
+
+def lifecycle_service(session):
+    return ResolutionLifecycleService(
+        registry=registry(),
+        store=SqlAlchemyLifecycleStore(session),
+        state_machine=ResolutionStateMachine(),
+        clock=FixedClock(),
+        identifiers=FixedIdentifiers(),
+    )
+
+
+def test_creation_decision_replays_only_the_same_canonical_request():
+    engine = sqlite_engine()
+    with Session(engine) as session:
+        creation = lifecycle_command(session)
+        first = lifecycle_service(session).create(creation)
+        replay = lifecycle_service(session).create(creation)
+
+        assert replay.resolution_id == first.resolution_id
+        assert session.scalar(
+            select(func.count(ResolutionSecurityDecisionUse.id))
+        ) == 1
+        assert session.scalar(
+            select(func.count(Resolution.id))
+        ) == 1
+
+        with pytest.raises(
+            LifecycleInvariantError,
+            match="security_operation_hash_mismatch",
+        ):
+            lifecycle_service(session).create(
+                replace(creation, subject_id="different-subject")
+            )
+
+
+def test_rolled_back_creation_does_not_consume_the_decision():
+    engine = sqlite_engine()
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        creation = lifecycle_command(session)
+        session.commit()
+
+    with factory() as session:
+        lifecycle_service(session).create(creation)
+        session.rollback()
+
+    with factory() as session:
+        assert session.scalar(
+            select(func.count(ResolutionSecurityDecisionUse.id))
+        ) == 0
+        created = lifecycle_service(session).create(creation)
+        session.commit()
+        assert created.resolution_id > 0
+
+
+def test_lifecycle_decision_cannot_cross_aggregate_version():
+    engine = sqlite_engine()
+    with Session(engine) as session:
+        creation = lifecycle_command(session)
+        created = lifecycle_service(session).create(creation)
+        root = session.get(Resolution, created.resolution_id)
+        operation_id = "transition-version-1"
+        action = LifecycleAction.CANCEL.value
+        context = {
+            "lifecycle_action": action,
+            "expected_state": root.status,
+            "expected_version": root.version,
+        }
+        decision_id = lifecycle_authorize(
+            session,
+            action="resolution.lifecycle.transition",
+            resource_type="resolution",
+            resource_id=str(root.id),
+            resolution_id=root.id,
+            context=context,
+            operation_id=operation_id,
+            operation_payload=lifecycle_transition_operation_payload(
+                resolution_id=root.id,
+                action=action,
+                expected_state=root.status,
+                expected_version=root.version,
+                reason=None,
+                metadata=None,
+            ),
+        )
+        root.version += 1
+        session.flush()
+
+        with pytest.raises(
+            LifecycleInvariantError,
+            match="security_operation_hash_mismatch",
+        ):
+            lifecycle_service(session).transition(
+                root.id,
+                LifecycleAction.CANCEL,
+                actor=LifecycleActor(
+                    context=creation.actor,
+                    security_decision_id=decision_id,
+                    operation_id=operation_id,
+                ),
+            )
+
+
+def test_concurrent_different_creations_cannot_consume_one_decision(
+    tmp_path,
+):
+    database = tmp_path / "phase8-replay.sqlite"
+    engine = create_engine(
+        f"sqlite:///{database}",
+        connect_args={"check_same_thread": False, "timeout": 5},
+    )
+
+    @event.listens_for(engine, "connect")
+    def enable_foreign_keys(connection, _):
+        connection.execute("PRAGMA foreign_keys=ON")
+
+    tables = [
+        table
+        for name, table in Base.metadata.tables.items()
+        if name == "resolutions"
+        or name.startswith("resolution_")
+        or name in {"users", "controlled_documents"}
+    ]
+    Base.metadata.create_all(engine, tables=tables)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as session:
+        creation = lifecycle_command(session)
+        session.commit()
+
+    commands = (
+        creation,
+        replace(creation, subject_id="different-subject"),
+    )
+
+    def attempt(item):
+        with factory() as session:
+            try:
+                result = lifecycle_service(session).create(item)
+                session.commit()
+                return ("created", result.resolution_id)
+            except LifecycleInvariantError as exc:
+                session.rollback()
+                return ("denied", tuple(exc.violations))
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = tuple(pool.map(attempt, commands))
+
+    assert sorted(value[0] for value in results) == [
+        "created",
+        "denied",
+    ]
+    with factory() as session:
+        assert session.scalar(
+            select(func.count(ResolutionSecurityDecisionUse.id))
+        ) == 1
 
 
 def test_critical_consumers_share_one_persisted_decision_verifier():

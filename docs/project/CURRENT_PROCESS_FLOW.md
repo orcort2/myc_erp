@@ -34,8 +34,11 @@ del ERP es:
 ```
 
 El catálogo integral deniega acciones, recursos o permisos no registrados.
-Crear y transitar Lifecycle exige una decisión exacta y sólo la máquina de
-estados calcula el estado. Un plan no autorizado o no revalidado no inicia.
+Crear exige una intención canónica y `request_key`; un replay exacto recupera
+la misma resolución. Transitar Lifecycle exige operación, estado y versión
+esperados. Cada mutación consume su decisión append-only dentro de la
+transacción: un rollback libera el intento y otra intención queda denegada.
+Sólo la máquina de estados calcula el estado. Un plan no autorizado o no revalidado no inicia.
 Cada acción se identifica por
 ejecución y paso, persiste su intención antes de invocar el adaptador y conserva
 resultado/efectos después. Al regresar del handler, el token/TTL se valida y el
@@ -43,8 +46,8 @@ checkpoint lo vuelve a validar atómicamente. La decisión de ejecución se
 comprueba antes de consultar un replay y dentro de la reserva transaccional.
 Una pérdida de lock o resultado
 incierto termina en `blocked` sin repetición automática. El outbox se publica
-sólo mediante una invocación explícita autorizada, aislada por organización y
-conserva la fecha de fallo.
+sólo mediante una invocación explícita autorizada, aislada por organización;
+congela un lote exacto por operación y conserva la fecha de fallo.
 
 La compensación es un flujo independiente y síncrono. Sólo parte de una
 ejecución terminada elegible, usa una decisión `resolution.compensate` para la
@@ -58,7 +61,9 @@ recuperación, conciliación ni compensación automática.
 
 La auditoría es un flujo read-only separado. Exige una decisión
 `resolution.audit.inspect` concedida para la resolución, actor, autenticación,
-correlación, contexto, recurso y organización exactos. Después abre un snapshot consistente, carga el
+correlación, contexto, recurso, organización e identidad de consulta exactos.
+La concesión `reusable_read` puede repetir esa misma consulta mientras siga
+vigente, sin registrar un consumo mutante. Después abre un snapshot consistente, carga el
 expediente completo y proyecta su evidencia antes de cerrar la transacción, sin
 exponer ORM. Verifica hashes, referencias, pertenencia y secuencia, y genera una
 línea de tiempo y un hash deterministas del corte. Una confirmación concurrente

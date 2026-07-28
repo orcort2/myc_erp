@@ -301,6 +301,7 @@ def query(resolution_id=1):
             ),
         ),
         requested_at=NOW,
+        operation_id=f"audit-query-{resolution_id}",
     )
 
 
@@ -342,4 +343,5 @@ def test_audit_query_requires_timezone_aware_request_time():
             security_decision_id=10,
             actor=query().actor,
             requested_at=NOW.replace(tzinfo=None),
+            operation_id="audit-query-1",
         )

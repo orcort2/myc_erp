@@ -20,6 +20,7 @@ from app.resolution_engine.domain.security import (
     PermissionGrant,
     PolicyResult,
     SecurityDecisionOutcome,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityResource,
 )
@@ -116,6 +117,9 @@ def request(
         action=AUTHORIZE_PLAN,
         resource=resource or plan_resource(),
         required_permissions=(AUTHORIZE_PERMISSION,),
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+        operation_id="authorize-plan-20",
+        operation_payload={"plan_id": 20, "plan_version": 3},
         occurred_functions=occurred_functions or {},
         context={"resolution_status": "pending_authorization"},
     )

@@ -45,8 +45,32 @@ class SecurityRiskLevel(StrEnum):
     CRITICAL = "critical"
 
 
+class SecurityDecisionUseMode(StrEnum):
+    """Semántica institucional de reutilización de una concesión."""
+
+    SINGLE_OPERATION = "single_operation"
+    REUSABLE_READ = "reusable_read"
+
+
 INTEGRAL_SECURITY_POLICY_KEY = "security.integral_control_catalog"
-INTEGRAL_SECURITY_POLICY_VERSION = "1.0"
+INTEGRAL_SECURITY_POLICY_VERSION = "1.1"
+
+
+def security_operation_hash(
+    *,
+    action: str | ComponentKey,
+    operation_id: str,
+    payload: Mapping[str, Any],
+) -> str:
+    """Hash único y reproducible de la intención autorizada."""
+
+    return canonical_sha256(
+        {
+            "action": str(ComponentKey.parse(action)),
+            "operation_id": operation_id,
+            "payload": dict(payload),
+        }
+    )
 
 
 def _non_empty(value: str, field_name: str, *, maximum: int = 200) -> str:
@@ -379,6 +403,7 @@ class SecurityControl:
     required_permissions: tuple[ComponentKey, ...]
     resource_types: tuple[str, ...]
     risk_level: SecurityRiskLevel
+    use_mode: SecurityDecisionUseMode
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "action", ComponentKey.parse(self.action))
@@ -394,6 +419,11 @@ class SecurityControl:
             self,
             "risk_level",
             SecurityRiskLevel(self.risk_level),
+        )
+        object.__setattr__(
+            self,
+            "use_mode",
+            SecurityDecisionUseMode(self.use_mode),
         )
         if not self.required_permissions:
             raise InvalidResolutionValueError(
@@ -432,6 +462,9 @@ class SecurityRequest:
     action: ComponentKey
     resource: SecurityResource
     required_permissions: tuple[ComponentKey, ...]
+    use_mode: SecurityDecisionUseMode
+    operation_id: str
+    operation_payload: Mapping[str, Any]
     occurred_functions: Mapping[str, tuple[str, ...]] = field(
         default_factory=dict
     )
@@ -446,6 +479,21 @@ class SecurityRequest:
                 ComponentKey.parse(permission)
                 for permission in self.required_permissions
             ),
+        )
+        object.__setattr__(
+            self,
+            "use_mode",
+            SecurityDecisionUseMode(self.use_mode),
+        )
+        object.__setattr__(
+            self,
+            "operation_id",
+            _non_empty(self.operation_id, "operation_id", maximum=240),
+        )
+        object.__setattr__(
+            self,
+            "operation_payload",
+            MappingProxyType(dict(self.operation_payload)),
         )
         object.__setattr__(
             self,
@@ -509,6 +557,9 @@ class SecurityDecision:
     policy_results: tuple[PolicyResult, ...]
     reason_codes: tuple[str, ...]
     required_permissions: tuple[ComponentKey, ...]
+    use_mode: SecurityDecisionUseMode
+    operation_id: str
+    operation_hash: str
     evidence_hash: str
 
     @classmethod
@@ -532,6 +583,14 @@ class SecurityDecision:
             "required_permissions": [
                 str(permission) for permission in request.required_permissions
             ],
+            "use_mode": request.use_mode.value,
+            "operation_id": request.operation_id,
+            "operation_payload": dict(request.operation_payload),
+            "operation_hash": security_operation_hash(
+                action=request.action,
+                operation_id=request.operation_id,
+                payload=request.operation_payload,
+            ),
             "occurred_functions": dict(request.occurred_functions),
             "context": dict(request.context),
         }
@@ -544,5 +603,8 @@ class SecurityDecision:
             policy_results=policy_results,
             reason_codes=reason_codes,
             required_permissions=request.required_permissions,
+            use_mode=request.use_mode,
+            operation_id=request.operation_id,
+            operation_hash=evidence["operation_hash"],
             evidence_hash=canonical_sha256(evidence),
         )

@@ -24,7 +24,11 @@ críticos reutilizan una verificación común de su evidencia persistida.
 - endurecimiento de preparación/inicio compensatorio;
 - consulta de auditoría con contexto de actor vigente;
 - publicación de outbox autorizada y aislada por organización;
-- migración reversible `e7f9a1b3c5d7`;
+- semántica `single_operation`/`reusable_read`, intención canónica y consumo
+  append-only transaccional;
+- creación idempotente exacta, transición ligada a estado/versión y lote
+  outbox congelado;
+- migraciones reversibles `e7f9a1b3c5d7` y `f8a0b2c4d6e8`;
 - suite específica de Fase 8.
 
 ## Invariantes preservadas
@@ -37,36 +41,42 @@ snapshots ni reconstrucción determinista. No se incorporan componentes de Fase
 
 ## Validaciones
 
-- Fase 8: **11 passed**.
-- Fase 8 + arquitectura/esquema: **40 passed**.
-- Suite completa del Motor: **195 passed**.
-- Backend completo: **319 passed**, **19 subtests passed**, dos advertencias
-  conocidas de dependencias. Las dos pruebas LibreOffice que abortan dentro del
-  sandbox pasaron al repetir la misma suite fuera de ese aislamiento.
+- Fase 8: **15 passed**.
+- Fase 8 + arquitectura/esquema: **45 passed**.
+- Suite completa del Motor: **201 passed**.
+- Backend completo fuera del sandbox: **306 passed**, **19 subtests passed** y
+  **19 failed**. Todos los fallos nacen antes del caso probado porque
+  `activity_messages.metadata_json` usa `JSONB` no portable al crear la
+  metadata SQLite; se registra como `TD-023` y no se corrige por ser deuda
+  general ajena al Motor. Las dos pruebas LibreOffice sí pasan fuera del
+  sandbox.
 - Frontend: **11 passed**.
 - Build Vite: correcto; permanece el aviso conocido de chunk superior a 500 kB.
 - Compilación Python: correcta para `app` y `tests`.
-- PostgreSQL: upgrade `d6e8f0a2b4c5 → e7f9a1b3c5d7`, downgrade y reaplicación
+- PostgreSQL: upgrade `fabc2cd495ef → f8a0b2c4d6e8`, downgrade y reaplicación
   correctos.
-- Alembic `current` y `heads`: `e7f9a1b3c5d7 (head)`.
+- Alembic `current` y `heads`: `f8a0b2c4d6e8 (head)`.
 - `alembic check`: conserva exclusivamente la deriva histórica `TD-021`; no
   propone otra operación `resolution_*` atribuible a Fase 8.
-- Respaldo regenerado: 74,192,563 bytes, SHA-256
-  `7afc23f7996cbea6aaf70870fac0fa1c7649891220aee9917bc7503d545fe6d0`,
-  con `alembic_version=e7f9a1b3c5d7`.
+- Respaldo regenerado: 74,213,207 bytes, SHA-256
+  `763b5b262632d06d8bb6eb4433038c1f3009aa2da4e237867fae32c04901db96`,
+  con `alembic_version=f8a0b2c4d6e8`.
 - Inventario regenerado mediante el script oficial y rutas verificadas.
 - `git diff --check`: correcto.
 
 ## Migración
 
-`e7f9a1b3c5d7` es reversible y no obliga a inventar decisiones para
-ejecuciones históricas. Las nuevas rutas endurecidas siempre persisten el
-vínculo exacto.
+`f8a0b2c4d6e8` es reversible y lineal después del head de Actividad
+`fabc2cd495ef`. Las decisiones históricas reciben identidad legacy estructural
+sin inventar intención verificable. Las nuevas rutas persisten modo, operación,
+payload/hash y consumo exactos.
 
 ## Pendientes
 
 - `TD-022` permanece: decisiones anteriores a Fase 7 sin base canónica completa
   sólo pueden mostrarse como `asserted`; no se migran por inferencia.
+- `TD-023` bloquea la suite backend completa por el `JSONB` no portable del
+  módulo Actividad; su corrección pertenece a ese módulo, no al Motor.
 - La seguridad general de routers, portal y demás ERP sigue fuera de esta fase.
 - La Fase 9 requiere aprobación formal expresa.
 

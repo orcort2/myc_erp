@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.resolution_engine.domain.canonical import canonical_sha256
@@ -13,11 +14,14 @@ from app.resolution_engine.domain.security import (
     INTEGRAL_SECURITY_POLICY_KEY,
     INTEGRAL_SECURITY_POLICY_VERSION,
     ActorContext,
+    SecurityDecisionUseMode,
+    security_operation_hash,
 )
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
     ResolutionSecurityDecision,
+    ResolutionSecurityDecisionUse,
 )
 
 
@@ -30,6 +34,9 @@ class SecurityDecisionExpectation:
     actor: ActorContext
     required_permissions: tuple[ComponentKey, ...]
     occurred_at: datetime
+    use_mode: SecurityDecisionUseMode
+    operation_id: str
+    operation_payload: Mapping[str, Any]
     resolution_id: int | None = None
     plan_id: int | None = None
     plan_version: int | None = None
@@ -37,6 +44,14 @@ class SecurityDecisionExpectation:
     revalidation_id: int | None = None
     revalidation_hash: str | None = None
     context: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class SecurityDecisionUseClaim:
+    """Resultado de reservar una concesión single-operation."""
+
+    replayed: bool
+    operation_context: Mapping[str, Any] = field(default_factory=dict)
 
 
 class SqlAlchemySecurityDecisionVerifier:
@@ -91,6 +106,19 @@ class SqlAlchemySecurityDecisionVerifier:
         ]
         if decision.required_permissions != required:
             reasons.append("security_required_permissions_mismatch")
+        if decision.use_mode != expectation.use_mode.value:
+            reasons.append("security_use_mode_mismatch")
+        if decision.operation_id != expectation.operation_id:
+            reasons.append("security_operation_id_mismatch")
+        expected_operation_hash = security_operation_hash(
+            action=expectation.action,
+            operation_id=expectation.operation_id,
+            payload=expectation.operation_payload,
+        )
+        if decision.operation_hash != expected_operation_hash:
+            reasons.append("security_operation_hash_mismatch")
+        if decision.operation_payload != dict(expectation.operation_payload):
+            reasons.append("security_operation_payload_mismatch")
         for permission in expectation.required_permissions:
             if not any(
                 grant.applies_to(
@@ -168,3 +196,82 @@ class SqlAlchemySecurityDecisionVerifier:
         elif canonical_sha256(payload) != decision.evidence_hash:
             reasons.append("security_evidence_hash_mismatch")
         return tuple(dict.fromkeys(reasons))
+
+    def claim(
+        self,
+        session: Session,
+        expectation: SecurityDecisionExpectation,
+        /,
+        *,
+        operation_context: Mapping[str, Any] | None = None,
+    ) -> tuple[SecurityDecisionUseClaim | None, tuple[str, ...]]:
+        """Reserva una concesión en la misma transacción de su efecto."""
+
+        decision = session.scalar(
+            select(ResolutionSecurityDecision)
+            .where(
+                ResolutionSecurityDecision.id == expectation.decision_id
+            )
+            .with_for_update()
+        )
+        if decision is None:
+            return None, ("security_decision_missing",)
+        reasons = self.verify(session, expectation)
+        if reasons:
+            return None, reasons
+        if expectation.use_mode is not SecurityDecisionUseMode.SINGLE_OPERATION:
+            return None, ("security_use_mode_not_consumable",)
+
+        existing = session.scalar(
+            select(ResolutionSecurityDecisionUse).where(
+                ResolutionSecurityDecisionUse.security_decision_id
+                == expectation.decision_id
+            )
+        )
+        if existing is not None:
+            if (
+                existing.organization_id
+                != expectation.actor.identity.organization_id
+                or existing.action != expectation.action
+                or existing.operation_id != expectation.operation_id
+                or existing.operation_hash != decision.operation_hash
+            ):
+                return None, ("security_decision_replay_different_operation",)
+            return (
+                SecurityDecisionUseClaim(
+                    replayed=True,
+                    operation_context=dict(existing.operation_context),
+                ),
+                (),
+            )
+
+        operation_collision = session.scalar(
+            select(ResolutionSecurityDecisionUse).where(
+                ResolutionSecurityDecisionUse.organization_id
+                == expectation.actor.identity.organization_id,
+                ResolutionSecurityDecisionUse.action == expectation.action,
+                ResolutionSecurityDecisionUse.operation_id
+                == expectation.operation_id,
+            )
+        )
+        if operation_collision is not None:
+            return None, ("security_operation_already_authorized",)
+
+        use = ResolutionSecurityDecisionUse(
+            security_decision_id=expectation.decision_id,
+            resolution_id=expectation.resolution_id,
+            organization_id=expectation.actor.identity.organization_id,
+            action=expectation.action,
+            operation_id=expectation.operation_id,
+            operation_hash=decision.operation_hash,
+            operation_context=dict(operation_context or {}),
+        )
+        session.add(use)
+        session.flush()
+        return (
+            SecurityDecisionUseClaim(
+                replayed=False,
+                operation_context=dict(use.operation_context),
+            ),
+            (),
+        )

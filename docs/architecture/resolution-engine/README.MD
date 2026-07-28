@@ -111,7 +111,9 @@ general y no requiere migración. Su contrato está en
 La Fase 8 está implementada y `EN REVISIÓN`. Consolida el catálogo de
 controles dentro del evaluador de Fase 3 y exige decisiones persistidas exactas
 en Lifecycle, ejecución, compensación, consultas de auditoría y publicación de
-outbox. Su apertura está en
+outbox. La corrección bloqueante agrega semántica de uso, intención canónica,
+consumo transaccional único y lotes outbox congelados; auditoría conserva sólo
+la reutilización de la misma consulta exacta. Su apertura está en
 [`21_PHASE_8_OPENING.md`](21_PHASE_8_OPENING.md), su contrato en
 [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).

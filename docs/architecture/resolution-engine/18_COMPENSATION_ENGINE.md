@@ -107,7 +107,10 @@ mediante las políticas de Fase 3; el Motor no conoce roles ni tablas del ERP.
 
 Desde Fase 8, preparación e inicio reutilizan el verificador integral y además
 exigen permiso todavía vigente, snapshots exactos de actor/autenticación,
-contexto, política integral y hash canónico reproducible.
+contexto, política integral, clave idempotente, estrategia, razón, selección y
+hash canónico reproducible. La preparación consume la decisión en su propia
+transacción; el replay exacto conserva el plan y una intención diferente se
+deniega.
 
 ## Lifecycle
 

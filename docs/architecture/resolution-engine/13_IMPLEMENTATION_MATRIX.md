@@ -402,8 +402,12 @@ La Fase 0 se considera lista para revisión cuando:
   evaluador de Fase 3.
 - Consumo: Lifecycle, ejecución, compensación, auditoría y outbox verifican la
   misma decisión persistida exacta antes de exponer datos o producir efectos.
+  Las mutaciones declaran `single_operation`, se consumen transaccionalmente y
+  sólo permiten replay de la misma intención; auditoría declara
+  `reusable_read` para una consulta exacta.
 - Persistencia: `e7f9a1b3c5d7` conserva históricos y vincula nuevas
-  autorizaciones con revalidación y ejecución exactas.
+  autorizaciones con revalidación y ejecución exactas; `f8a0b2c4d6e8` agrega
+  identidad/hash/payload de operación, consumo append-only y reserva de lote.
 - Alcance: no se incorporaron ERP, UC-001, gateways, API, SDK, FastAPI,
   routers, workers, distribución, IA, automatizaciones, UI o integraciones.
 - Contrato:

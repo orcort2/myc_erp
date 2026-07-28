@@ -158,8 +158,10 @@ fuente y poseen `event_key` y `payload_hash` estables.
 
 La publicación es una llamada síncrona y explícita; no existe proceso
 automático. Desde Fase 8 exige una decisión `resolution.outbox.publish`
-ligada a actor, organización y límite del lote, y el store sólo selecciona
-eventos de esa organización. El publicador externo debe ser idempotente por `event_key`. Un éxito
+ligada a actor, organización, límite e identidad de operación. La primera
+reserva congela los IDs exactos del lote; su replay informa el mismo lote y no
+selecciona pendientes posteriores. El store sólo selecciona eventos de esa
+organización. El publicador externo debe ser idempotente por `event_key`. Un éxito
 marca `published`; una excepción marca `failed`, conserva `failed_at`,
 `attempts` y `last_error`, y no agenda otro intento. Claims distribuidos,
 backoff, recuperación y workers pertenecen a una fase posterior expresamente
@@ -186,6 +188,7 @@ alcance. Incorporarlos exigirá fase aprobada, políticas explícitas y pruebas 
 preserven las claves y evidencia histórica de este contrato.
 
 Desde Fase 8, `ExecuteResolutionCommand` incluye la decisión
-`resolution.execute` ligada a plan y revalidación exactos. Se verifica antes
-de consultar replay y otra vez dentro de la reserva transaccional; conocer una
-clave idempotente no permite recuperar el resultado de otro actor.
+`resolution.execute` ligada a plan, revalidación y clave idempotente exactos.
+Se verifica antes de consultar replay y se consume dentro de la reserva
+transaccional; repetir la misma intención recupera el resultado y cambiar
+actor, clave o evidencia no permite reutilizarla.

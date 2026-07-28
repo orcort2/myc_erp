@@ -13,6 +13,7 @@ from app.resolution_engine.contracts.execution import (
     ExecuteResolutionCommand,
     StartExecutionResult,
     StepStartResult,
+    execution_security_operation_payload,
 )
 from app.resolution_engine.domain.canonical import canonical_sha256
 from app.resolution_engine.domain.enums import (
@@ -35,7 +36,10 @@ from app.resolution_engine.domain.execution import (
     ExecutionSummary,
 )
 from app.resolution_engine.domain.lifecycle import LifecycleTransition
-from app.resolution_engine.domain.security import ActorContext
+from app.resolution_engine.domain.security import (
+    ActorContext,
+    SecurityDecisionUseMode,
+)
 from app.resolution_engine.domain.value_objects import ComponentKey
 from app.resolution_engine.infrastructure.execution_control import (
     SqlAlchemyExecutionControl,
@@ -197,6 +201,7 @@ class SqlAlchemyExecutionStore:
                         plan_id=prepared_plan_id,
                         revalidation_id=prepared_revalidation_id,
                         occurred_at=occurred_at,
+                        claim=True,
                     )
                     previous = self._existing_execution(
                         session,
@@ -872,6 +877,7 @@ class SqlAlchemyExecutionStore:
         plan_id: int,
         revalidation_id: int,
         occurred_at: datetime,
+        claim: bool = False,
     ) -> None:
         plan = session.get(ResolutionPlan, plan_id)
         revalidation = session.get(
@@ -882,9 +888,7 @@ class SqlAlchemyExecutionStore:
             raise ExecutionNotReadyError(
                 "execution authorization evidence is incomplete"
             )
-        reasons = self._security.verify(
-            session,
-            SecurityDecisionExpectation(
+        expectation = SecurityDecisionExpectation(
                 decision_id=command.security_decision_id,
                 action="resolution.execute",
                 resource_type="resolution_plan",
@@ -894,6 +898,20 @@ class SqlAlchemyExecutionStore:
                     ComponentKey("resolution.execute"),
                 ),
                 occurred_at=occurred_at,
+                use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+                operation_id=command.idempotency_key,
+                operation_payload=execution_security_operation_payload(
+                    resolution_id=command.resolution_id,
+                    plan_id=plan.id,
+                    plan_version=plan.version,
+                    plan_hash=plan.plan_hash,
+                    revalidation_id=revalidation.id,
+                    revalidation_hash=revalidation.revalidation_hash,
+                    actor_id=command.actor.identity.actor_id,
+                    organization_id=(
+                        command.actor.identity.organization_id
+                    ),
+                ),
                 resolution_id=command.resolution_id,
                 plan_id=plan.id,
                 plan_version=plan.version,
@@ -905,8 +923,11 @@ class SqlAlchemyExecutionStore:
                         ResolutionStatus.READY_FOR_EXECUTION.value
                     ),
                 },
-            ),
-        )
+            )
+        if claim:
+            _, reasons = self._security.claim(session, expectation)
+        else:
+            reasons = self._security.verify(session, expectation)
         if reasons:
             raise ExecutionNotReadyError(
                 "exact execution authorization is invalid: "

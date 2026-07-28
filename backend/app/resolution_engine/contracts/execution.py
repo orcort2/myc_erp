@@ -20,6 +20,31 @@ from app.resolution_engine.domain.security import ActorContext
 from app.resolution_engine.domain.value_objects import ComponentKey
 
 
+def execution_security_operation_payload(
+    *,
+    resolution_id: int,
+    plan_id: int,
+    plan_version: int,
+    plan_hash: str,
+    revalidation_id: int,
+    revalidation_hash: str,
+    actor_id: str,
+    organization_id: str,
+) -> dict:
+    """Intención estable cubierta por una autorización de ejecución."""
+
+    return {
+        "resolution_id": resolution_id,
+        "plan_id": plan_id,
+        "plan_version": plan_version,
+        "plan_hash": plan_hash,
+        "revalidation_id": revalidation_id,
+        "revalidation_hash": revalidation_hash,
+        "actor_id": actor_id,
+        "organization_id": organization_id,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class ExecuteResolutionCommand:
     """Comando interno; la idempotency_key pertenece al namespace global."""
@@ -70,10 +95,36 @@ class OutboxPublicationReport:
 
 
 @dataclass(frozen=True, slots=True)
+class OutboxReservationResult:
+    messages: tuple[OutboxMessage, ...] = ()
+    previous_report: OutboxPublicationReport | None = None
+
+    def __post_init__(self) -> None:
+        if self.messages and self.previous_report is not None:
+            raise ValueError(
+                "outbox reservation cannot mix messages and previous report"
+            )
+
+
+def outbox_security_operation_payload(
+    *,
+    organization_id: str,
+    limit: int,
+) -> dict:
+    """Intención de selección única de un lote institucional."""
+
+    return {
+        "organization_id": organization_id,
+        "limit": limit,
+    }
+
+
+@dataclass(frozen=True, slots=True)
 class PublishOutboxCommand:
     security_decision_id: int
     actor: ActorContext
     organization_id: str
+    operation_id: str
     limit: int = 100
 
 
@@ -200,6 +251,14 @@ class OutboxStore(Protocol):
         occurred_at: datetime,
     ) -> None:
         """Valida una decisión institucional antes de leer el outbox."""
+
+    def reserve_publication(
+        self,
+        command: PublishOutboxCommand,
+        *,
+        occurred_at: datetime,
+    ) -> OutboxReservationResult:
+        """Vincula atómicamente una concesión con un lote exacto."""
 
     def pending(
         self,

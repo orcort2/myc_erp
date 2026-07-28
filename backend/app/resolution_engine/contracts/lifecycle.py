@@ -73,6 +73,8 @@ class CreateResolutionCommand:
     def __post_init__(self) -> None:
         if self.security_decision_id <= 0:
             raise ValueError("security_decision_id must be positive")
+        if self.request_key is None or not self.request_key.strip():
+            raise ValueError("request_key is required for secure creation")
         object.__setattr__(self, "source", ResolutionSource(self.source))
         object.__setattr__(
             self,
@@ -84,6 +86,68 @@ class CreateResolutionCommand:
             "metadata",
             MappingProxyType(dict(self.metadata)),
         )
+
+    def security_operation_payload(
+        self,
+        definition: ResolutionDefinition,
+        /,
+    ) -> dict[str, Any]:
+        """Intención canónica que la concesión de creación debe cubrir."""
+
+        problem = self.problem
+        return {
+            "definition": {
+                "resolution_type": str(definition.resolution_type),
+                "version": str(definition.version),
+                "fingerprint": definition.fingerprint,
+            },
+            "source": self.source.value,
+            "subject": {
+                "type": self.subject_type,
+                "id": self.subject_id,
+            },
+            "title": self.title,
+            "description": self.description,
+            "reason": self.reason,
+            "priority": self.priority.value,
+            "request_key": self.request_key,
+            "parent_resolution_id": self.parent_resolution_id,
+            "requires_authorization": self.requires_authorization,
+            "metadata": dict(self.metadata),
+            "problem": {
+                "problem_code": problem.problem_code,
+                "summary": problem.summary,
+                "description": problem.description,
+                "detected_by": problem.detected_by,
+                "detected_at": problem.detected_at.isoformat(),
+                "source_payload": dict(problem.source_payload),
+                "external_reference": problem.external_reference,
+                "severity": problem.severity.value,
+                "observed_state": dict(problem.observed_state),
+                "evidence": list(problem.evidence),
+            },
+        }
+
+
+def lifecycle_transition_operation_payload(
+    *,
+    resolution_id: int,
+    action: str,
+    expected_state: str,
+    expected_version: int,
+    reason: str | None,
+    metadata: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Intención exacta de una transición gobernada por Lifecycle."""
+
+    return {
+        "resolution_id": resolution_id,
+        "action": action,
+        "expected_state": expected_state,
+        "expected_version": expected_version,
+        "reason": reason,
+        "metadata": dict(metadata or {}),
+    }
 
 
 class LifecycleStore(Protocol):
@@ -110,6 +174,9 @@ class LifecycleStore(Protocol):
         security_decision_id: int,
         actor: ActorContext,
         occurred_at: datetime,
+        operation_id: str,
+        reason: str | None,
+        metadata: Mapping[str, Any] | None,
     ) -> None:
         """Deniega antes de reconstruir o cambiar el estado raíz."""
 

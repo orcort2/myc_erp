@@ -28,7 +28,7 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `e7f9a1b3c5d7`.
+- Revisión aplicada y único head verificado: `f8a0b2c4d6e8`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -44,11 +44,14 @@
 - `e7f9a1b3c5d7` vincula decisiones de seguridad con revalidación exacta y
   ejecuciones con su decisión institucional mediante FKs compuestas,
   constraint de completitud e índice; las columnas son nulas para históricos.
+- `f8a0b2c4d6e8`, después de `fabc2cd495ef`, agrega modo, identidad,
+  payload/hash y consumo append-only de operación, además de congelar el lote
+  exacto de outbox.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,192,563 bytes.
-- SHA-256 verificado: `7afc23f7996cbea6aaf70870fac0fa1c7649891220aee9917bc7503d545fe6d0`.
-- El respaldo contiene `alembic_version = e7f9a1b3c5d7`.
+- Tamaño verificado: 74,213,207 bytes.
+- SHA-256 verificado: `763b5b262632d06d8bb6eb4433038c1f3009aa2da4e237867fae32c04901db96`.
+- El respaldo contiene `alembic_version = f8a0b2c4d6e8`.
 
 ## Equipos y contexto de certificado
 
@@ -61,19 +64,21 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 319 pruebas y 19 subpruebas correctas; dos
-  advertencias conocidas de dependencias.
-- Suite específica de Fase 8: 11 pruebas correctas.
-- Suite completa del Motor: 195 pruebas correctas, incluidas creación,
+- Suite backend completa fuera del sandbox: 306 pruebas y 19 subpruebas
+  correctas, 19 fallos y dos advertencias. Los 19 fallos provienen del `JSONB`
+  no portable del módulo Actividad al crear metadata SQLite (`TD-023`), fuera
+  del alcance del Motor; LibreOffice pasa fuera del sandbox.
+- Suite específica de Fase 8: 15 pruebas correctas.
+- Suite completa del Motor: 201 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
   revalidación, concurrencia, persistencia, ejecución, compensación,
   arquitectura, esquema y migraciones.
 - Frontend: 11 pruebas correctas y build Vite de producción correcto; permanece
   la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL: `e7f9a1b3c5d7` aplicó, revirtió a `d6e8f0a2b4c5` y reaplicó a
+- PostgreSQL: `f8a0b2c4d6e8` aplicó, revirtió a `fabc2cd495ef` y reaplicó a
   head correctamente.
-- `alembic heads/current`: único head `e7f9a1b3c5d7`.
+- `alembic heads/current`: único head `f8a0b2c4d6e8`.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
   como `TD-021`; no propone operaciones sobre el esquema del Motor.
 - `git diff --check`: correcto.
@@ -144,12 +149,17 @@
 - Fase 8 agrega el catálogo integral dentro del evaluador de Fase 3. Lifecycle,
   ejecución, compensación, auditoría y outbox comparten un único verificador de
   decisiones persistidas y deniegan antes de replay, lectura o efecto.
+- El catálogo `1.1` declara `single_operation` para mutaciones y
+  `reusable_read` sólo para auditoría exacta. Creación liga `request_key` e
+  intención completa, Lifecycle incluye estado/versión y outbox congela IDs.
+  El consumo se confirma con la transacción; rollback no quema la concesión.
 - La autenticación futura/expirada, permisos fuera de contexto, downgrade de
   permiso, recursos falsos y evidencia/hash alterados se rechazan.
-- Validaciones: 11 pruebas específicas; 40 pruebas específicas/arquitectónicas;
-  195 pruebas del Motor; backend completo con 319 pruebas y 19 subpruebas; 11
+- Validaciones: 15 pruebas específicas; 45 pruebas específicas/arquitectónicas;
+  201 pruebas del Motor; backend completo con 306 pruebas y 19 subpruebas
+  correctas y 19 fallos ajenos registrados como `TD-023`; 11
   pruebas frontend; build Vite y compilación Python correctos.
-- La migración reversible `e7f9a1b3c5d7` fue probada en
+- La migración reversible `f8a0b2c4d6e8` fue probada en
   upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva histórica
   `TD-021` y ninguna operación `resolution_*` adicional atribuible a Fase 8.
 - El respaldo SQL fue regenerado y coincide con el head.

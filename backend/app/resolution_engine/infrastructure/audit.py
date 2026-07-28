@@ -8,9 +8,11 @@ from sqlalchemy.orm import Session
 from app.resolution_engine.contracts.audit import (
     AUDIT_READ_ACTION,
     AuditQuery,
+    audit_security_operation_payload,
 )
 from app.resolution_engine.domain.audit import ResolutionAuditSnapshot
 from app.resolution_engine.domain.value_objects import ComponentKey
+from app.resolution_engine.domain.security import SecurityDecisionUseMode
 from app.resolution_engine.infrastructure.audit_projection import (
     AuditProjector,
 )
@@ -78,6 +80,12 @@ class SqlAlchemyAuditAccessVerifier:
                     ComponentKey(AUDIT_READ_ACTION),
                 ),
                 occurred_at=query.requested_at,
+                use_mode=SecurityDecisionUseMode.REUSABLE_READ,
+                operation_id=query.operation_id,
+                operation_payload=audit_security_operation_payload(
+                    resolution_id=query.resolution_id,
+                    context=query.context,
+                ),
                 resolution_id=query.resolution_id,
                 context=query.context,
             ),

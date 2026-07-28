@@ -21,6 +21,7 @@ from app.resolution_engine.application.security import (
 from app.resolution_engine.contracts.compensation import (
     ExecuteCompensationCommand,
     PrepareCompensationCommand,
+    compensation_security_operation_payload,
 )
 from app.resolution_engine.domain.compensation import CompensationEngine
 from app.resolution_engine.domain.enums import (
@@ -39,6 +40,7 @@ from app.resolution_engine.domain.execution import (
 from app.resolution_engine.domain.lifecycle import ResolutionStateMachine
 from app.resolution_engine.domain.security import (
     SecurityDecisionOutcome,
+    SecurityDecisionUseMode,
     SecurityRequest,
     SecurityResource,
 )
@@ -213,7 +215,16 @@ def seed_completed_dependency_chain(factory):
         )
 
 
-def authorize_compensation(session, resolution_id, execution_id):
+def authorize_compensation(
+    session,
+    resolution_id,
+    execution_id,
+    *,
+    key="plan-1",
+    strategy=CompensationStrategy.TOTAL,
+    reason="restore institutional consistency",
+    selected_step_execution_ids=(),
+):
     request = SecurityRequest(
         actor=actor(),
         action=ComponentKey("resolution.compensate"),
@@ -225,6 +236,19 @@ def authorize_compensation(session, resolution_id, execution_id):
         ),
         required_permissions=(
             ComponentKey("resolution.compensate"),
+        ),
+        use_mode=SecurityDecisionUseMode.SINGLE_OPERATION,
+        operation_id=key,
+        operation_payload=compensation_security_operation_payload(
+            resolution_id=resolution_id,
+            source_execution_id=execution_id,
+            strategy=strategy.value,
+            reason=reason,
+            selected_step_execution_ids=tuple(
+                selected_step_execution_ids
+            ),
+            actor_id=actor().identity.actor_id,
+            organization_id=actor().identity.organization_id,
         ),
         context={},
     )
@@ -273,6 +297,23 @@ def prepare_partial_command(
         actor=actor(),
         selected_step_execution_ids=tuple(selected_ids),
     )
+
+
+def authorize_prepare(factory, command):
+    with factory() as session:
+        decision_id = authorize_compensation(
+            session,
+            command.resolution_id,
+            command.source_execution_id,
+            key=command.idempotency_key,
+            strategy=command.strategy,
+            reason=command.reason,
+            selected_step_execution_ids=(
+                command.selected_step_execution_ids
+            ),
+        )
+        session.commit()
+    return replace(command, security_decision_id=decision_id)
 
 
 def build_services(factory, handler, *, clock=None):
@@ -545,11 +586,14 @@ def test_same_confirmed_step_cannot_be_planned_for_compensation_twice():
     )
     planner, _ = build_services(factory, CompensationHandler())
     planner.prepare(
-        prepare_command(
-            resolution_id,
-            execution_id,
-            decision_id,
-            key="first-plan",
+        authorize_prepare(
+            factory,
+            prepare_command(
+                resolution_id,
+                execution_id,
+                decision_id,
+                key="first-plan",
+            ),
         )
     )
 
@@ -558,11 +602,14 @@ def test_same_confirmed_step_cannot_be_planned_for_compensation_twice():
         match="conflicts",
     ):
         planner.prepare(
-            prepare_command(
-                resolution_id,
-                execution_id,
-                decision_id,
-                key="second-plan",
+            authorize_prepare(
+                factory,
+                prepare_command(
+                    resolution_id,
+                    execution_id,
+                    decision_id,
+                    key="second-plan",
+                ),
             )
         )
 
@@ -616,12 +663,15 @@ def test_open_partial_dependency_selection_is_not_persisted(
         match="dependency closure violated",
     ):
         planner.prepare(
-            prepare_partial_command(
-                resolution_id,
-                execution_id,
-                decision_id,
-                (step_ids[key] for key in selected_keys),
-                key=f"invalid-{'-'.join(selected_keys)}",
+            authorize_prepare(
+                factory,
+                prepare_partial_command(
+                    resolution_id,
+                    execution_id,
+                    decision_id,
+                    (step_ids[key] for key in selected_keys),
+                    key=f"invalid-{'-'.join(selected_keys)}",
+                ),
             )
         )
 
@@ -654,12 +704,15 @@ def test_persisted_partial_selection_is_closed_and_reversed(
     planner, _ = build_services(factory, CompensationHandler())
 
     plan = planner.prepare(
-        prepare_partial_command(
-            resolution_id,
-            execution_id,
-            decision_id,
-            (step_ids[key] for key in selected_keys),
-            key=f"valid-{'-'.join(selected_keys)}",
+        authorize_prepare(
+            factory,
+            prepare_partial_command(
+                resolution_id,
+                execution_id,
+                decision_id,
+                (step_ids[key] for key in selected_keys),
+                key=f"valid-{'-'.join(selected_keys)}",
+            ),
         )
     )
 
@@ -687,12 +740,15 @@ def test_unconfirmed_dependent_does_not_block_persisted_plan():
     planner, _ = build_services(factory, CompensationHandler())
 
     plan = planner.prepare(
-        prepare_partial_command(
-            resolution_id,
-            execution_id,
-            decision_id,
-            (step_ids["B"],),
-            key="unconfirmed-C",
+        authorize_prepare(
+            factory,
+            prepare_partial_command(
+                resolution_id,
+                execution_id,
+                decision_id,
+                (step_ids["B"],),
+                key="unconfirmed-C",
+            ),
         )
     )
 
@@ -711,12 +767,15 @@ def test_previously_compensated_dependent_does_not_block_new_plan():
     handler = CompensationHandler()
     planner, executor = build_services(factory, handler)
     plan_c = planner.prepare(
-        prepare_partial_command(
-            resolution_id,
-            execution_id,
-            decision_id,
-            (step_ids["C"],),
-            key="prior-C-plan",
+        authorize_prepare(
+            factory,
+            prepare_partial_command(
+                resolution_id,
+                execution_id,
+                decision_id,
+                (step_ids["C"],),
+                key="prior-C-plan",
+            ),
         )
     )
     executor.execute(
@@ -733,12 +792,15 @@ def test_previously_compensated_dependent_does_not_block_new_plan():
         session.commit()
 
     plan_b = planner.prepare(
-        prepare_partial_command(
-            resolution_id,
-            execution_id,
-            decision_id,
-            (step_ids["B"],),
-            key="after-C-plan",
+        authorize_prepare(
+            factory,
+            prepare_partial_command(
+                resolution_id,
+                execution_id,
+                decision_id,
+                (step_ids["B"],),
+                key="after-C-plan",
+            ),
         )
     )
 
@@ -755,12 +817,15 @@ def test_valid_partial_plan_replay_remains_idempotent():
         step_ids,
     ) = seed_completed_dependency_chain(factory)
     planner, _ = build_services(factory, CompensationHandler())
-    command = prepare_partial_command(
-        resolution_id,
-        execution_id,
-        decision_id,
-        (step_ids["C"],),
-        key="valid-C-replay",
+    command = authorize_prepare(
+        factory,
+        prepare_partial_command(
+            resolution_id,
+            execution_id,
+            decision_id,
+            (step_ids["C"],),
+            key="valid-C-replay",
+        ),
     )
 
     first = planner.prepare(command)

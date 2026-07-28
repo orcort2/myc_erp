@@ -123,9 +123,12 @@ la máquina ni agrega condicionales al núcleo.
 
 La autorización protegida se obtiene mediante los servicios de Fase 3 y se
 persiste antes de avanzar el Lifecycle. Desde Fase 8, cada transición pública
-exige `resolution.lifecycle.transition` ligada a actor, resolución y acción
-exactos antes de reconstruir la raíz. La máquina no reevalúa roles ni permisos:
-valida la evidencia exacta resultante. El futuro adaptador de API compondrá la
+exige `resolution.lifecycle.transition` ligada a actor, resolución, acción,
+estado esperado, versión esperada e identidad canónica de operación. Creación
+exige `request_key` y vincula definición, fuente, sujeto y problema completos.
+El consumo ocurre en la misma unidad de trabajo; un rollback no quema la
+concesión y un replay exacto de creación recupera la raíz ya creada. La máquina
+no reevalúa roles ni permisos: valida la evidencia exacta resultante. El futuro adaptador de API compondrá la
 evaluación de seguridad y el servicio de Lifecycle dentro del backend; el
 frontend nunca será autoridad.
 

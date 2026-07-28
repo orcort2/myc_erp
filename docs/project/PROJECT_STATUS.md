@@ -59,8 +59,11 @@ abre un snapshot transaccional consistente, verifica hashes, secuencia y
 vínculos, exige autorización exacta y produce timeline/reporte deterministas
 sin mezclar confirmaciones concurrentes. Seguridad integral añade un catálogo
 canónico de controles y exige evidencia exacta en Lifecycle, ejecución,
-compensación, consultas y outbox antes de leer replays o producir efectos. La
-Fase 9 permanece `NO INICIADA`.
+compensación, consultas y outbox antes de leer replays o producir efectos. Las
+mutaciones consumen una operación canónica única; creación recupera el mismo
+resultado al repetir la intención, Lifecycle queda ligado a estado/versión y
+outbox congela un lote. Auditoría sólo reutiliza la misma consulta read-only.
+La Fase 9 permanece `NO INICIADA`.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
