@@ -21,6 +21,7 @@ from myc_resolution_contracts.v1 import (
     CreateResolutionRequest,
     ResolutionCollection,
     ResolutionResource,
+    ResolutionSort,
 )
 
 router = APIRouter(tags=["Resolution Engine Public API v1"])
@@ -106,6 +107,7 @@ def list_resolutions(
     subject_id: str | None = Query(default=None, max_length=160),
     cursor: str | None = Query(default=None, max_length=800),
     limit: int = Query(default=50, ge=1, le=100),
+    sort: ResolutionSort = Query(default="created_at_desc"),
     context: PublicApiConsumerContext = Depends(consumer_context),
     db: Session = Depends(get_db),
 ) -> ResolutionCollection:
@@ -117,6 +119,7 @@ def list_resolutions(
         subject_id=subject_id,
         cursor=cursor,
         limit=limit,
+        sort=sort,
     )
 
 

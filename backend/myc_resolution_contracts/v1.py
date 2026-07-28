@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 CONTRACT_VERSION = "1.0"
+ResolutionSort = Literal["created_at_desc", "created_at_asc"]
 
 
 class PublicContract(BaseModel):
@@ -91,6 +92,7 @@ class ResolutionCollection(PublicContract):
     items: tuple[ResolutionResource, ...]
     next_cursor: str | None = None
     limit: int
+    sort: ResolutionSort
 
 
 class ApiCapabilities(PublicContract):

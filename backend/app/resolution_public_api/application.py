@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
-import hmac
-import json
 from dataclasses import replace
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -64,6 +60,14 @@ from app.resolution_integrations.certificates import (
     build_certificate_resolution_integration,
 )
 from app.resolution_public_api.errors import PublicApiError
+from app.resolution_public_api.cursor import (
+    CURSOR_CONTRACT_VERSION,
+    CURSOR_DIRECTION,
+    CursorPosition,
+    CursorQueryIdentity,
+    CursorValidationError,
+    PublicCursorCodec,
+)
 from app.resolution_public_api.security import PublicApiConsumerContext
 from myc_resolution_contracts.v1 import (
     ApiCapabilities,
@@ -80,6 +84,7 @@ class ResolutionPublicApi:
     def __init__(self, session: Session) -> None:
         self._session = session
         self._clock = SystemClock()
+        self._cursor_codec = PublicCursorCodec(settings.secret_key)
 
     def capabilities(self) -> ApiCapabilities:
         return ApiCapabilities(
@@ -238,7 +243,17 @@ class ResolutionPublicApi:
         subject_id: str | None,
         cursor: str | None,
         limit: int,
+        sort: str,
     ) -> ResolutionCollection:
+        cursor_identity = self._cursor_identity(
+            context=context,
+            status=status,
+            resolution_type=resolution_type,
+            subject_type=subject_type,
+            subject_id=subject_id,
+            limit=limit,
+            sort=sort,
+        )
         statement = select(Resolution).where(
             Resolution.organization_id == context.consumer.organization_id
         )
@@ -250,12 +265,60 @@ class ResolutionPublicApi:
         ):
             if value is not None:
                 statement = statement.where(column == value)
+        sqlite = self._session.get_bind().dialect.name == "sqlite"
+        order_column = (
+            func.datetime(Resolution.created_at)
+            if sqlite
+            else Resolution.created_at
+        )
         if cursor:
-            row_id = self._decode_cursor(cursor, context)
-            statement = statement.where(Resolution.id < row_id)
+            try:
+                position = self._cursor_codec.decode(
+                    cursor,
+                    expected_identity=cursor_identity,
+                )
+            except CursorValidationError as exc:
+                raise self._error(
+                    context,
+                    422,
+                    "invalid_cursor",
+                    "Cursor is invalid for this query.",
+                    {"reason": exc.reason},
+                ) from None
+            created_at = position.created_at
+            order_value = (
+                created_at.strftime("%Y-%m-%d %H:%M:%S")
+                if sqlite
+                else created_at
+            )
+            if sort == "created_at_desc":
+                statement = statement.where(
+                    or_(
+                        order_column < order_value,
+                        and_(
+                            order_column == order_value,
+                            Resolution.id < position.internal_id,
+                        ),
+                    )
+                )
+            else:
+                statement = statement.where(
+                    or_(
+                        order_column > order_value,
+                        and_(
+                            order_column == order_value,
+                            Resolution.id > position.internal_id,
+                        ),
+                    )
+                )
+        ordering = (
+            (order_column.desc(), Resolution.id.desc())
+            if sort == "created_at_desc"
+            else (order_column.asc(), Resolution.id.asc())
+        )
         roots = tuple(
             self._session.scalars(
-                statement.order_by(Resolution.id.desc()).limit(limit + 1)
+                statement.order_by(*ordering).limit(limit + 1)
             )
         )
         page = roots[:limit]
@@ -264,7 +327,13 @@ class ResolutionPublicApi:
             for root in page
         )
         next_cursor = (
-            self._encode_cursor(page[-1], context)
+            self._cursor_codec.encode(
+                identity=cursor_identity,
+                position=CursorPosition(
+                    created_at=page[-1].created_at,
+                    internal_id=page[-1].id,
+                ),
+            )
             if len(roots) > limit and page
             else None
         )
@@ -272,6 +341,7 @@ class ResolutionPublicApi:
             items=items,
             next_cursor=next_cursor,
             limit=limit,
+            sort=sort,
         )
 
     def _inspect(
@@ -413,44 +483,31 @@ class ResolutionPublicApi:
         )
         return f"public-v1:{digest}"
 
-    def _encode_cursor(self, root: Resolution, context) -> str:
-        payload = json.dumps(
-            [root.id],
-            separators=(",", ":"),
-        ).encode()
-        signature = hmac.new(
-            settings.secret_key.encode()
-            + context.consumer.consumer_key.encode(),
-            payload,
-            hashlib.sha256,
-        ).digest()
-        encoded_payload = base64.urlsafe_b64encode(payload).decode().rstrip("=")
-        encoded_signature = (
-            base64.urlsafe_b64encode(signature).decode().rstrip("=")
+    @staticmethod
+    def _cursor_identity(
+        *,
+        context,
+        status,
+        resolution_type,
+        subject_type,
+        subject_id,
+        limit,
+        sort,
+    ) -> CursorQueryIdentity:
+        return CursorQueryIdentity.build(
+            contract_version=CURSOR_CONTRACT_VERSION,
+            consumer_key=context.consumer.consumer_key,
+            organization_id=context.consumer.organization_id,
+            filters={
+                "status": status,
+                "resolution_type": resolution_type,
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+            },
+            sort=sort,
+            direction=CURSOR_DIRECTION,
+            page_size=limit,
         )
-        return f"{encoded_payload}.{encoded_signature}"
-
-    def _decode_cursor(self, value: str, context) -> int:
-        try:
-            encoded_payload, encoded_signature = value.split(".", 1)
-            payload = base64.urlsafe_b64decode(
-                encoded_payload + "=" * (-len(encoded_payload) % 4)
-            )
-            signature = base64.urlsafe_b64decode(
-                encoded_signature + "=" * (-len(encoded_signature) % 4)
-            )
-            expected = hmac.new(
-                settings.secret_key.encode()
-                + context.consumer.consumer_key.encode(),
-                payload,
-                hashlib.sha256,
-            ).digest()
-            if not hmac.compare_digest(signature, expected):
-                raise ValueError
-            (row_id,) = json.loads(payload)
-            return int(row_id)
-        except (ValueError, TypeError, json.JSONDecodeError):
-            raise self._error(context, 422, "invalid_cursor", "Cursor is invalid.") from None
 
     @staticmethod
     def _error(context, status, code, message, details=None):

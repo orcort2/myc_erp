@@ -29,8 +29,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fases 0 a 9 aprobadas y Fase 10 implementada,
-  pendiente de revisión y aprobación formal
+- Motor de Resoluciones con Fases 0 a 9 aprobadas y Fase 10 `EN REVISIÓN`,
+  con corrección bloqueante de cursor implementada
   documentalmente sin implementación: además de la fundación, persistencia y
   seguridad aprobadas, existen 26 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
@@ -71,7 +71,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   pos-flush están cubiertos por la corrección aprobada. Fase 10 implementa
   contratos públicos v1, API institucional, seguridad por
   consumidor/organización, creación Lifecycle, consultas de auditoría con
-  filtros/cursor, SDK HTTP y portal técnico. Está pendiente de revisión formal.
+  filtros y cursor `c1` AES-GCM ligado a consulta, SDK HTTP y portal técnico.
+  Está pendiente de aprobación formal.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

@@ -12,6 +12,7 @@ from myc_resolution_contracts.v1 import (
     CreateResolutionRequest,
     ResolutionCollection,
     ResolutionResource,
+    ResolutionSort,
 )
 from myc_resolution_sdk.errors import ResolutionApiError
 
@@ -96,6 +97,7 @@ class ResolutionEngineClient:
         subject_id: str | None = None,
         cursor: str | None = None,
         limit: int = 50,
+        sort: ResolutionSort = "created_at_desc",
         correlation_id: str | None = None,
     ) -> ResolutionCollection:
         params = {
@@ -107,6 +109,7 @@ class ResolutionEngineClient:
                 "subject_id": subject_id,
                 "cursor": cursor,
                 "limit": limit,
+                "sort": sort,
             }.items()
             if value is not None
         }

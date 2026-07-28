@@ -1,4 +1,4 @@
-> Estado: IMPLEMENTADO — PENDIENTE DE REVISIÓN FORMAL
+> Estado: EN REVISIÓN — CORRECCIÓN BLOQUEANTE IMPLEMENTADA
 >
 > Versión de contrato: 1.0
 >
@@ -113,8 +113,42 @@ creación. Las lecturas reutilizan exclusivamente una concesión
 ## Consultas
 
 La colección acepta filtros exactos por `status`, `resolution_type`,
-`subject_type` y `subject_id`. Usa paginación keyset descendente y un cursor
-opaco firmado por consumidor; el límite permitido es `1..100`.
+`subject_type` y `subject_id`. Usa paginación keyset por
+`created_at + id` con orden `created_at_desc` o `created_at_asc`; el límite
+permitido es `1..100`.
+
+### Contrato del cursor `c1`
+
+El cursor público no es un payload Base64 firmado. Es un sobre versionado
+`c1` cifrado y autenticado mediante AES-GCM. La clave de 256 bits se deriva del
+secreto institucional con un dominio exclusivo para cursores y cada token usa
+un nonce criptográficamente aleatorio.
+
+Dentro del contenido cifrado se conserva:
+
+- versión del sobre y versión contractual;
+- consumidor y organización exactos;
+- hash canónico de los cuatro filtros;
+- orden de clasificación;
+- dirección de paginación (`forward`);
+- tamaño de página;
+- instante e ID interno requeridos por el keyset.
+
+Al recibir un cursor, el adaptador autentica y descifra el sobre y después
+compara toda la identidad de consulta con la solicitud actual. Cualquier cambio
+de filtros, consumidor, organización, versión, orden, dirección o límite
+produce `422 invalid_cursor` antes de consultar la siguiente página.
+
+La posición y las claves internas existen sólo dentro del ciphertext. El
+consumidor puede reconocer la versión externa `c1`, pero no recuperar IDs,
+secuencias, filtros o posición.
+
+Los cursores del formato anterior quedan revocados: aquel payload revelaba la
+posición y no contenía identidad suficiente para validar la consulta original.
+Por política de compatibilidad de seguridad se rechazan con
+`cursor_version_unsupported`; reinterpretarlos como `c1` sería inseguro. Las
+futuras versiones de sobre deberán coexistir sólo cuando puedan verificar
+íntegramente su contrato original.
 
 Cada recurso candidato se autoriza antes de proyectarse. La consulta de datos
 no modifica Lifecycle ni ejecuta handlers. La evidencia de autorización que

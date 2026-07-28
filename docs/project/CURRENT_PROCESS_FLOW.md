@@ -79,7 +79,9 @@ namespacia por versión/consumidor/organización; un replay exacto recupera el
 mismo expediente ya autorizado y una colisión se rechaza. Listado y detalle
 exigen `resolution.audit.inspect`, aplican aislamiento organizacional y no
 transitan Lifecycle ni ejecutan handlers. El SDK usa exclusivamente HTTP.
-Fase 10 permanece pendiente de aprobación formal.
+El cursor `c1` cifra la posición y vincula contrato, consumidor, organización,
+filtros, orden, dirección y tamaño de página; una solicitud divergente se
+rechaza antes de continuar el keyset. Fase 10 permanece `EN REVISIÓN`.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
 read-only; análisis, estrategia, plan y simulación son deterministas; el

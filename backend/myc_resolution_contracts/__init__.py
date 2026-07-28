@@ -7,6 +7,7 @@ from myc_resolution_contracts.v1 import (
     ProblemInput,
     ResolutionCollection,
     ResolutionResource,
+    ResolutionSort,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "ProblemInput",
     "ResolutionCollection",
     "ResolutionResource",
+    "ResolutionSort",
 ]

@@ -1,4 +1,4 @@
-> Estado: IMPLEMENTACIÓN CONCLUIDA — PENDIENTE DE REVISIÓN Y APROBACIÓN
+> Estado: EN REVISIÓN — CORRECCIÓN BLOQUEANTE IMPLEMENTADA
 >
 > Fecha: 2026-07-28
 
@@ -9,7 +9,7 @@
 Se implementó la primera interfaz pública institucional y versionada del Motor:
 contratos v1 desacoplados, credenciales por consumidor/organización, API
 FastAPI delgada, creación por Lifecycle, consultas por auditoría, idempotencia
-namespaced, filtros, cursor firmado, errores estables, SDK HTTP y portal
+namespaced, filtros, cursor opaco ligado a consulta, errores estables, SDK HTTP y portal
 técnico.
 
 Este cierre no declara la Fase 10 aprobada. La Fase 11 permanece bloqueada.
@@ -22,15 +22,17 @@ compensación ni el vertical de Certificados.
 
 ## Evidencia de validación
 
-- suite específica Fase 10: `7 passed`;
-- Fase 10 + vertical Fase 9: `19 passed`;
-- suite completa del Motor: `220 passed`;
-- backend completo: `325 passed`, `19 failed`, `19 subtests passed`;
+- suite específica Fase 10: `10 passed`;
+- Fase 10 + vertical Fase 9: `22 passed`;
+- suite completa del Motor: `223 passed`;
+- backend completo: `328 passed`, `19 failed`, `19 subtests passed`;
 - los 19 fallos backend son exclusivamente la incompatibilidad SQLite/JSONB
   de Actividad ya registrada como `TD-023`;
 - compilación Python de aplicación, contratos, SDK y suite: correcta;
 - frontend Vite: build correcto, con advertencia preexistente de chunk;
-- Alembic `current` y `heads`: `a0d2f4b6c8e1 (head)`;
+- Alembic `current` y `heads`: `b18ac098c1db (head)`, revisión externa de
+  Notificaciones aplicada concurrentemente sobre `a0d2f4b6c8e1`; esta
+  corrección no agrega ni modifica esquema;
 - Alembic `check`: continúa fallando sólo por la deriva histórica `TD-021`;
 - respaldo regenerado con el mismo head.
 
@@ -46,7 +48,20 @@ compensación ni el vertical de Certificados.
 - la creación delega en `ResolutionLifecycleService`;
 - no se añadió lógica de negocio, vertical, IA ni distribución.
 
+## Corrección bloqueante de cursor
+
+La revisión detectó que el cursor inicial firmaba sólo la posición y mantenía
+visible la clave interna. La corrección reemplaza ese formato por el sobre
+opaco `c1` con AES-GCM y liga versión contractual, consumidor, organización,
+hash canónico de filtros, orden, dirección, tamaño de página y posición
+keyset. Cualquier divergencia se rechaza.
+
+El formato legacy se revoca deliberadamente porque carece de identidad de
+consulta y no puede hacerse seguro mediante reinterpretación. La suite cubre
+filtros, consumidores, organizaciones, orden, versión, opacidad, determinismo,
+SDK y política legacy.
+
 ## Estado de salida
 
-Fase 10 queda `IMPLEMENTADA / PENDIENTE DE REVISIÓN FORMAL`. Sólo un dictamen
+Fase 10 queda `EN REVISIÓN`, con la corrección bloqueante implementada. Sólo un dictamen
 posterior podrá cambiarla a `APROBADA` y autorizar la apertura de Fase 11.

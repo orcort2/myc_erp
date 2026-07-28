@@ -130,6 +130,7 @@ FORCE_RECLASSIFY = {
     "backend/app/models/resolution_api_consumer.py",
     "backend/app/resolution_public_api/__init__.py",
     "backend/app/resolution_public_api/application.py",
+    "backend/app/resolution_public_api/cursor.py",
     "backend/app/resolution_public_api/errors.py",
     "backend/app/resolution_public_api/security.py",
     "backend/app/routers/resolution_public_api.py",
@@ -237,9 +238,16 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/resolution_public_api/application.py": (
             "Fachada pública v1",
-            "Traduce DTOs hacia Lifecycle y auditoría, aplica idempotencia namespaced, aislamiento, filtros y cursor firmado sin duplicar negocio.",
+            "Traduce DTOs hacia Lifecycle y auditoría, aplica idempotencia namespaced, aislamiento, filtros y keyset con identidad completa sin duplicar negocio.",
             "Servicios canónicos, seguridad integral y contratos v1",
             "Router público y pruebas contractuales",
+            "Crítico",
+        ),
+        "backend/app/resolution_public_api/cursor.py": (
+            "Codec de cursor público c1",
+            "Cifra y autentica con AES-GCM versión, consumidor, organización, filtros, orden, dirección, tamaño y posición keyset sin revelar IDs internos.",
+            "Cryptography, hashing canónico y secreto institucional",
+            "Fachada pública, SDK indirecto y pruebas de cursor",
             "Crítico",
         ),
         "backend/app/resolution_public_api/security.py": (
@@ -314,14 +322,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/tests/resolution_engine/test_phase_10_public_api.py": (
             "Suite específica de Fase 10",
-            "Prueba contratos, autenticación, organización, correlación, replay/conflicto, aislamiento, filtros, SDK y dependencias arquitectónicas.",
+            "Prueba contratos, seguridad, replay, aislamiento, SDK y cursores opacos ligados a filtro/consumidor/organización/orden/versión con keyset determinista.",
             "FastAPI, SQLite, contratos, SDK y Motor",
             "Gate técnico de Fase 10",
             "Crítico",
         ),
         "docs/architecture/resolution-engine/26_PUBLIC_API_SDK.md": (
             "Contrato API/SDK v1",
-            "Documenta superficie, DTOs, seguridad, idempotencia, consultas, SDK, compatibilidad y límites implementados.",
+            "Documenta superficie, DTOs, seguridad, idempotencia, cursor c1 opaco ligado a consulta, SDK, compatibilidad y límites.",
             "Apertura, código, migración y pruebas de Fase 10",
             "Arquitectura, integradores, QA y seguridad",
             "Crítico",
@@ -424,7 +432,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/architecture/resolution-engine/README.MD": (
             "Entrada normativa del Motor",
-            "Ordena documentos 01–26, publica Fases 0–9 aprobadas y Fase 10 implementada pendiente de revisión formal.",
+            "Ordena documentos 01–26, publica Fases 0–9 aprobadas y Fase 10 en revisión con la corrección del cursor opaco implementada.",
             "Roadmap, matriz, aperturas, contratos y cierres",
             "Todo participante del Motor de Resoluciones",
             "Crítico",

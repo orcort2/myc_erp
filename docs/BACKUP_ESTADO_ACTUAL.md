@@ -28,7 +28,10 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado: `a0d2f4b6c8e1`.
+- Revisión aplicada y único head verificado en la base local:
+  `b18ac098c1db`. Esa revisión pertenece al trabajo concurrente de
+  Notificaciones y desciende de `a0d2f4b6c8e1`; la corrección del cursor no
+  agrega ni modifica esquema.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -70,14 +73,15 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 325 pruebas y 19 subpruebas correctas, 19 fallos y
+- Suite backend completa: 328 pruebas y 19 subpruebas correctas, 19 fallos y
   dos advertencias. Todos los fallos provienen del `JSONB` no portable del
   módulo Actividad al crear metadata SQLite (`TD-023`); ninguno pertenece a
   Fase 10.
-- Suite específica de Fase 10: 7 pruebas correctas de contratos, consumidor,
-  organización, correlación, idempotencia, aislamiento, SDK y arquitectura.
-- Suite combinada Fases 9–10: 19 pruebas correctas.
-- Suite completa del Motor: 220 pruebas correctas, incluidas creación,
+- Suite específica de Fase 10: 10 pruebas correctas de contratos, consumidor,
+  organización, correlación, idempotencia, aislamiento, identidad completa y
+  opacidad del cursor, compatibilidad versionada, SDK y arquitectura.
+- Suite combinada Fases 9–10: 22 pruebas correctas.
+- Suite completa del Motor: 223 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
   revalidación, concurrencia, persistencia, ejecución, compensación,
   arquitectura, esquema y migraciones.
@@ -86,12 +90,16 @@
 - Compilación de bytecode Python: correcta.
 - PostgreSQL: `a0d2f4b6c8e1` aplicó, revirtió a `f9c1d3e5a7b9` y reaplicó a
   head correctamente; la tabla de consumidores y su unicidad quedaron vigentes.
-- `alembic heads/current`: único head `a0d2f4b6c8e1`.
+- `alembic heads/current`: único head local `b18ac098c1db`, revisión externa de
+  Notificaciones aplicada concurrentemente sobre `a0d2f4b6c8e1`; no forma
+  parte del commit de Fase 10.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
   como `TD-021`; no propone operaciones sobre el esquema del Motor.
 - `git diff --check`: correcto.
-- El respaldo SQL fue regenerado después de aplicar la migración y su
-  `alembic_version` coincide con head.
+- El respaldo de Fase 10 conserva `alembic_version = a0d2f4b6c8e1`. La
+  corrección del cursor no exige regenerarlo porque no cambia esquema ni
+  datos. La sincronización del respaldo con `b18ac098c1db` corresponde al
+  trabajo externo de Notificaciones que introdujo y aplicó esa migración.
 
 ## Pendientes vigentes
 
@@ -112,8 +120,8 @@
 
 ## Motor de Resoluciones — Fases 9 y 10
 
-- Estado: Fases 0 a 9 `APROBADAS`; Fase 10 — SDK y API Pública `ACTIVA`
-  documentalmente, sin implementación iniciada.
+- Estado: Fases 0 a 9 `APROBADAS`; Fase 10 — SDK y API Pública `EN REVISIÓN`
+  con corrección bloqueante de cursor implementada. Fase 11 no iniciada.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -140,9 +148,8 @@
 - El outbox se publica sólo mediante una invocación explícita autorizada,
   aislada por organización y un publicador idempotente por `event_key`; un
   fallo conserva `failed_at`, intentos y error, sin scheduler ni reintento.
-- La clave idempotente interna tiene namespace global por scope. Una futura API
-  deberá autorizarla y namespaciarla por cliente/organización antes de construir
-  el comando interno.
+- La API v1 autentica consumidor/organización, namespacia la clave idempotente
+  y delega creación en Lifecycle y consultas en auditoría.
 - Fase 9 incorpora exclusivamente provider read-only y gateways de ejecución y
   compensación para Certificados; no agrega API, otros dominios, workers,
   schedulers, procesamiento masivo, recuperación, conciliación, retries ni
@@ -164,10 +171,10 @@
   El consumo se confirma con la transacción; rollback no quema la concesión.
 - La autenticación futura/expirada, permisos fuera de contexto, downgrade de
   permiso, recursos falsos y evidencia/hash alterados se rechazan.
-- Validaciones de Fase 9: 12 específicas; 213 del Motor; 30 seleccionadas de
-  Certificados; backend completo con 316 pruebas y 19 subpruebas correctas,
-  19 fallos de `TD-023` y dos abortos de LibreOffice; build Vite y compilación
-  Python correctos.
+- La corrección de Fase 10 reemplaza el cursor Base64 firmado por un sobre
+  opaco `c1` AES-GCM. Versión, consumidor, organización, filtros, orden,
+  dirección, tamaño y posición keyset se cifran/autentican juntos; el formato
+  legacy inseguro se rechaza.
 - La migración reversible `f9c1d3e5a7b9` fue probada en
   upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva histórica
   `TD-021` y ninguna operación sobre `certificate_resolution_operations`.
@@ -197,8 +204,9 @@
 - Commits aprobados de Fase 9: `5abfe2d` y `901bd85`.
 - Apertura oficial de Fase 10:
   [`architecture/resolution-engine/25_PHASE_10_OPENING.md`](architecture/resolution-engine/25_PHASE_10_OPENING.md).
-- Fase 10 autoriza contratos públicos versionados, API institucional, SDK,
-  client libraries y documentación; aún no existe implementación. Fase 11,
-  distribución e IA permanecen fuera de alcance.
+- Contrato implementado de Fase 10:
+  [`architecture/resolution-engine/26_PUBLIC_API_SDK.md`](architecture/resolution-engine/26_PUBLIC_API_SDK.md).
+- Fase 10 permanece `EN REVISIÓN`; Fase 11, distribución e IA permanecen fuera
+  de alcance.
 - La IA es una posibilidad futura opcional y no constituye dependencia
   arquitectónica u operativa del ERP o del Motor determinista.
