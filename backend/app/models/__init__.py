@@ -1,3 +1,4 @@
+from app.models.activity import ActivityAttachment, ActivityMention, ActivityMessage, ActivityMessageRevision, ActivityThread
 from app.models.audit_log import AuditLog
 from app.models.calibration_procedure import CalibrationProcedure
 from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
@@ -67,6 +68,11 @@ from app.resolution_engine.infrastructure.persistence import (
 )
 
 __all__ = [
+    "ActivityAttachment",
+    "ActivityMention",
+    "ActivityMessage",
+    "ActivityMessageRevision",
+    "ActivityThread",
     "AuditLog",
     "CalibrationProcedure",
     "CatalogItem",

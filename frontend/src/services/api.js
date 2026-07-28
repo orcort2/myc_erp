@@ -1430,3 +1430,46 @@ export async function changeQuotationStatus(quotationId, action, comment = null)
     body: JSON.stringify({ comment })
   });
 }
+
+export function getActivity(entityType, entityId) {
+  return request(`/activity/${entityType}/${entityId}`);
+}
+
+export function createActivityMessage(entityType, entityId, payload) {
+  return request(`/activity/${entityType}/${entityId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateActivityMessage(messageId, payload) {
+  return request(`/activity/messages/${messageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function withdrawActivityMessage(messageId, payload) {
+  return request(`/activity/messages/${messageId}/withdraw`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function addActivityAttachment(messageId, file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  return uploadRequest(`/activity/messages/${messageId}/attachments`, formData);
+}
+
+export async function downloadActivityAttachment(attachment) {
+  const result = await downloadRequest(`/activity/attachments/${attachment.id}/download`);
+  const url = window.URL.createObjectURL(result.blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = result.filename || attachment.original_name || 'archivo';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}

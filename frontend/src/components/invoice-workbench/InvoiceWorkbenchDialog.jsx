@@ -1,12 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  BadgeDollarSign,
-  CreditCard,
-  FileClock,
+  Activity,
   FileText,
-  History,
-  Landmark,
   ReceiptText,
   X,
 } from 'lucide-react';
@@ -18,6 +14,7 @@ import {
 } from '../signatures/signatureMorphAnimation.js';
 import InvoiceDraftView from './InvoiceDraftView.jsx';
 import InvoiceDetailView from './InvoiceDetailView.jsx';
+import ActivityPanel from '../activity/ActivityPanel.jsx';
 
 import './invoice-workbench.css';
 
@@ -33,29 +30,9 @@ const WORKSPACE_TABS = [
     icon: ReceiptText,
   },
   {
-    key: 'payments',
-    label: 'Pagos',
-    icon: CreditCard,
-  },
-  {
-    key: 'receivable',
-    label: 'Cuenta por cobrar',
-    icon: Landmark,
-  },
-  {
-    key: 'creditNotes',
-    label: 'Notas de crédito',
-    icon: BadgeDollarSign,
-  },
-  {
-    key: 'documents',
-    label: 'Documentos',
-    icon: FileClock,
-  },
-  {
-    key: 'history',
-    label: 'Historial',
-    icon: History,
+    key: 'activity',
+    label: 'Actividad',
+    icon: Activity,
   },
 ];
 
@@ -340,48 +317,15 @@ export default function InvoiceWorkbenchDialog({
       );
     }
 
-    if (activeWorkspaceTab === 'payments') {
+    if (activeWorkspaceTab === 'activity') {
       return (
-        <WorkspaceEmptyState
-          title="Centro de pagos"
-          description="Aquí se mostrarán los pagos vinculados exclusivamente a esta factura y el formulario para registrar nuevos movimientos."
+        <ActivityPanel
+          entityType="invoice"
+          entityId={invoice?.id}
         />
       );
     }
-
-    if (activeWorkspaceTab === 'receivable') {
-      return (
-        <WorkspaceEmptyState
-          title="Cuenta por cobrar"
-          description="Aquí se mostrará el saldo, vencimiento, antigüedad y seguimiento de cobranza de este expediente."
-        />
-      );
-    }
-
-    if (activeWorkspaceTab === 'creditNotes') {
-      return (
-        <WorkspaceEmptyState
-          title="Notas de crédito"
-          description="Aquí se concentrarán las notas de crédito relacionadas exclusivamente con esta factura."
-        />
-      );
-    }
-
-    if (activeWorkspaceTab === 'documents') {
-      return (
-        <WorkspaceEmptyState
-          title="Documentos fiscales"
-          description="Los documentos disponibles de esta factura se descargan desde la pestaña Factura."
-        />
-      );
-    }
-
-    return (
-      <WorkspaceEmptyState
-        title="Historial del expediente"
-        description="Aquí se mostrarán los cambios, emisiones, pagos, recuperaciones documentales y acciones de auditoría."
-      />
-    );
+    return null;
   }
 
   return createPortal(

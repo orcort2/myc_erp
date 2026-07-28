@@ -11,8 +11,14 @@ INITIAL_ROLES = {
 
 
 ROLE_PERMISSIONS = {
+    "ACTIVITY_READ": "activity.read",
+    "ACTIVITY_WRITE": "activity.write",
+    "ACTIVITY_AUDIT": "activity.audit",
+    "ACTIVITY_MODERATE": "activity.moderate",
     "Administrador": {"*"},
     "Comercial": {
+        "activity.read",
+        "activity.write",
         "clients.read",
         "clients.create",
         "clients.update",
@@ -27,6 +33,8 @@ ROLE_PERMISSIONS = {
         "sat_catalogs.manage_aliases",
     },
     "Tecnico": {
+        "activity.read",
+        "activity.write",
         "equipment.read",
         "equipment.update",
         "field_sheets.read",
@@ -47,6 +55,8 @@ ROLE_PERMISSIONS = {
         "service_orders.sign",
     },
     "Captura": {
+        "activity.read",
+        "activity.write",
         "clients.read",
         "quotations.read",
         "service_orders.read",
@@ -69,6 +79,9 @@ ROLE_PERMISSIONS = {
         "uncertainty.execute",
     },
     "Calidad": {
+        "activity.read",
+        "activity.write",
+        "activity.audit",
         "audit_logs.read",
         "certificates.read",
         "certificates.quality",
@@ -115,6 +128,8 @@ ROLE_PERMISSIONS = {
         "field_sheet_templates.import",
     },
     "Finanzas": {
+        "activity.read",
+        "activity.write",
         "clients.read",
         "certificates.read",
         "quotations.read",
@@ -136,6 +151,9 @@ ROLE_PERMISSIONS = {
         "service_orders.read_own",
     },
     "Desarrollador": {
+        "activity.read",
+        "activity.write",
+        "activity.audit",
         "audit_logs.read",
         "users.read",
         "users.manage",

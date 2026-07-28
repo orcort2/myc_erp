@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.services.facturama.client import FacturamaClient
 from app.services.office_converter import diagnose_office_converter
 from app.routers import (
+    activity,
     audit_logs,
     auth,
     calibration_procedures,
@@ -81,6 +82,7 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
+app.include_router(activity.router, prefix="/api")
 app.include_router(audit_logs.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
