@@ -63,8 +63,9 @@ dominio.
 | 8. Seguridad integral | `APROBADA` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Cumplido en `73e437d` + `661f43a`: catálogo central, decisiones exactas, consumo anti-replay y límites críticos protegidos sin evaluadores paralelos |
 | 9. Integración con ERP MYC | `APROBADA` | Definiciones verticales, providers y Domain Gateways concretos | Fases 0 a 8 aprobadas; servicio canónico de Certificados | Replay o snapshot que debilite idempotencia/evidencia del vertical | Cumplido en `5abfe2d` + `901bd85`: Certificados integrado sin acceso ORM desde el Motor, con replay histórico, concurrencia, evidencia confirmada y compensación |
 | 10. SDK y API Pública | `APROBADA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Fases 0 a 9 aprobadas; apertura `25_PHASE_10_OPENING.md` | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Cumplido en `dd9a84e`: contratos v1, cursor ligado a consulta, API/SDK sin filtrar internals |
-| 11. Motor Distribuido | `EN REVISIÓN` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Fase 10 aprobada en `dd9a84e`; apertura `27_PHASE_11_OPENING.md` | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Implementado: cola durable, workers pull, leases/fencing, recovery seguro, retry determinista y eventos operativos |
-| 12. IA y Resoluciones Asistidas | `NO INICIADA` | Posibilidad futura opcional y no comprometida de asistencia explicable; no forma parte del alcance actual | Decisión y apertura futuras expresas; nunca es dependencia del ERP ni del Motor determinista | Evidencia insuficiente, sesgo, dependencia operativa o decisiones no explicables | Cualquier asistencia futura deberá ser prescindible y no sustituir políticas, autorización o decisión institucional |
+| 11. Motor Distribuido | `APROBADA` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Fase 10 aprobada en `dd9a84e`; apertura `27_PHASE_11_OPENING.md` | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Cumplido en `cbde517`: cola durable, workers pull, leases/fencing, recovery seguro, retry determinista y eventos operativos |
+| 12. Centro de Resoluciones | `EN REVISIÓN` | Consola ERP, API interna, catálogo guiado, proyecciones, operación end-to-end y worker independiente de sesión | Fase 11 aprobada en `cbde517`; contrato `29_PHASE_12_RESOLUTION_CENTER.md` | Bypass de Lifecycle/Security/runtime, lógica paralela, ejecución ligada a HTTP o exposición de internals | Implementado: expediente, filtros/keyset, flujo guiado, autorización/revalidación canónicas y despacho durable |
+| 13. IA y Resoluciones Asistidas | `NO INICIADA` | Posibilidad futura opcional y no comprometida de asistencia explicable; no forma parte del alcance actual | Decisión y apertura futuras expresas; nunca es dependencia del ERP ni del Motor determinista | Evidencia insuficiente, sesgo, dependencia operativa o decisiones no explicables | Cualquier asistencia futura deberá ser prescindible y no sustituir políticas, autorización o decisión institucional |
 
 ## Dependencias entre componentes
 
@@ -82,7 +83,8 @@ dominio.
 | Executor | Plan autorizado/revalidado, idempotencia y locks | Solicitud original o lógica improvisada |
 | Domain Gateway | Servicio canónico del módulo propietario | ORM directo de otro dominio |
 | Audit service | Actor, correlación, hashes y eventos | Registros editables o borrado operativo |
-| Recovery worker futuro | Persistencia, idempotencia y evidencia | Memoria del proceso interrumpido |
+| Runtime distribuido | Persistencia, idempotencia, leases y evidencia | Memoria del proceso interrumpido o sesión web |
+| Centro de Resoluciones | Servicios canónicos y proyecciones read-only | Reglas de dominio, handlers directos o mutación ORM en routers |
 
 ## Matriz de deuda bloqueante
 
@@ -428,6 +430,9 @@ La Fase 0 se considera lista para revisión cuando:
   consulta vigentes bajo
   [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md) y
   [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md).
-- Fase 11: `EN REVISIÓN`; runtime distribuido implementado bajo
+- Fase 11: `APROBADA` mediante `cbde517`; runtime distribuido vigente bajo
   [`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md) y
   [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md).
+- Fase 12: `EN REVISIÓN`; Centro de Resoluciones implementado bajo
+  [`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md).
+  Fase 13 permanece `NO INICIADA`.

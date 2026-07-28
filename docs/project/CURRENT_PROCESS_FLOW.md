@@ -89,7 +89,23 @@ reclamar dos trabajos de la misma resolución en paralelo. Heartbeats renuevan
 nodo y trabajo durante la operación. Recovery reencola sólo si el posible
 efecto no comenzó; si comenzó, deja `blocked` por incertidumbre. Un retry
 automático requiere ausencia de efecto declarada y usa backoff exponencial
-acotado sin jitter. La Fase 11 permanece `EN REVISIÓN`.
+acotado sin jitter. La Fase 11 está aprobada en `cbde517`.
+
+Fase 12 expone el flujo operativo interno:
+
+```text
+/resolutions → catálogo registrado → alta por Lifecycle
+→ contexto → análisis → plan → simulación → autorización → revalidación
+→ HTTP 202 / enqueue durable → worker independiente → Executor canónico
+→ polling visible de expediente, eventos, intentos, evidencias y resultado
+```
+
+La decisión de ejecución se confirma antes de publicar el trabajo. El snapshot
+durable del actor no contiene el token HTTP y su concesión por operación no
+caduca con la sesión web. Un `work_key` único por resolución evita dos
+despachos. La lista y el expediente son proyecciones read-only aisladas por
+organización/actor; hashes, nodo y lease requieren permisos técnicos. Fase 12
+queda `EN REVISIÓN`.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
 read-only; análisis, estrategia, plan y simulación son deterministas; el

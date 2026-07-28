@@ -60,3 +60,19 @@ GET  /api/developers/resolution-engine
 El cliente oficial es `backend/myc_resolution_sdk` y consume exclusivamente
 HTTP. El contrato y la guía están en
 `docs/architecture/resolution-engine/26_PUBLIC_API_SDK.md`.
+
+## Centro de Resoluciones
+
+La consola interna está disponible en `/resolutions` y consume
+`/api/resolution-center/v1`. Permite consultar expedientes, crear desde el
+catálogo registrado, preparar, analizar, planificar, simular, autorizar y
+aceptar una ejecución durable. El trabajo continúa en el worker aunque la
+sesión web termine:
+
+```bash
+cd backend
+../venv/bin/python -m app.resolution_center.worker
+```
+
+El contrato operativo está en
+`docs/architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md`.

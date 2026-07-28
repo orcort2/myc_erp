@@ -5,6 +5,7 @@ import {
   Files,
   FileText,
   Gauge,
+  Network,
   Ruler,
   Settings,
   ShieldCheck
@@ -12,6 +13,7 @@ import {
 
 export const navigation = [
   { label: 'Dashboard', icon: Gauge, path: '/dashboard' },
+  { label: 'Resoluciones', icon: Network, path: '/resolutions' },
   { label: 'Clientes', icon: Building2, path: '/dashboard#clientes' },
   { label: 'Ventas / Cotizaciones', icon: FileText, path: '/dashboard#cotizaciones' },
   /*{ label: 'Catálogo MYC', icon: FileCheck2, path: '/dashboard#catalogo' },*/
@@ -23,6 +25,14 @@ export const navigation = [
 ];
 
 export const modules = [
+  {
+    key: 'resolutions',
+    name: 'Centro de Resoluciones',
+    description: 'Consola institucional para operar y auditar resoluciones.',
+    icon: Network,
+    path: '/resolutions',
+    status: 'Activo'
+  },
   {
     key: 'clients',
     name: 'Clientes',

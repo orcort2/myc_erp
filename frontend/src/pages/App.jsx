@@ -19,6 +19,7 @@ import ModulePage from './ModulePage.jsx';
 import ProceduresPage from './ProceduresPage.jsx';
 import QualityPage from './QualityPage.jsx';
 import QuotationsPage from './QuotationsPage.jsx';
+import ResolutionCenterPage from './ResolutionCenterPage.jsx';
 import ServiceOrdersPage from './ServiceOrdersPage.jsx';
 import SettingsPage from './SettingsPage.jsx';
 import StandardsPage from './StandardsPage.jsx';
@@ -159,6 +160,8 @@ export function App() {
     >
       {selectedModule?.key === 'clients' ? (
         <ClientsPage />
+      ) : selectedModule?.key === 'resolutions' ? (
+        <ResolutionCenterPage />
       ) : selectedModule?.key === 'quotations' ? (
         <QuotationsPage />
       ) : selectedModule?.key === 'serviceOrders' ? (

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     facturama_sandbox_url: str = ""
     facturama_production_url: str = ""
     facturama_timeout_seconds: float = Field(default=30, gt=0)
+    resolution_center_organization_id: str = "myc"
 
 
 @lru_cache

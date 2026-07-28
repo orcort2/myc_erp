@@ -164,6 +164,49 @@ export async function refreshSession() {
   return payload.user;
 }
 
+function resolutionCenterQuery(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  });
+  const value = query.toString();
+  return value ? `?${value}` : '';
+}
+
+export function getResolutionCenterCapabilities() {
+  return request('/resolution-center/v1/capabilities');
+}
+
+export function listResolutionDefinitions() {
+  return request('/resolution-center/v1/definitions');
+}
+
+export function listCenterResolutions(params = {}) {
+  return request(`/resolution-center/v1/resolutions${resolutionCenterQuery(params)}`);
+}
+
+export function getCenterResolution(publicId) {
+  return request(`/resolution-center/v1/resolutions/${encodeURIComponent(publicId)}`);
+}
+
+export function createCenterResolution(payload, idempotencyKey) {
+  return request('/resolution-center/v1/resolutions', {
+    method: 'POST',
+    headers: { 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify(payload)
+  });
+}
+
+export function runCenterResolutionStage(publicId, stage, payload = null, idempotencyKey = null) {
+  return request(`/resolution-center/v1/resolutions/${encodeURIComponent(publicId)}/${stage}`, {
+    method: 'POST',
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    body: payload === null ? undefined : JSON.stringify(payload)
+  });
+}
+
 export async function getModules() {
   return request('/modules');
 }

@@ -67,5 +67,6 @@ fencing obsoleto, incertidumbre, ciclo worker y migración reversible.
 
 ## Estado de salida
 
-Fase 11 queda `EN REVISIÓN`. Fase 12 permanece `NO INICIADA` y no recibió
-código, contrato ni dependencia.
+La revisión formal posterior aprobó Fase 11 mediante
+`cbde51783870e4b06a4de84c27e05dc2b5ea3de1` y autorizó Fase 12. Este cierre
+continúa como evidencia técnica histórica de la entrega distribuida.

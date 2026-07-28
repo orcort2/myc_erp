@@ -29,7 +29,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fases 0 a 10 aprobadas y Fase 11 `EN REVISIÓN`.
+- Motor de Resoluciones con Fases 0 a 11 aprobadas y Fase 12 `EN REVISIÓN`.
   Además de la fundación, persistencia y
   seguridad aprobadas, existen 29 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
@@ -75,6 +75,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   exclusividad por resolución, leases con fencing, recuperación, retry
   determinista, eventos append-only y snapshot operacional. Los efectos
   inciertos quedan bloqueados y no se reintentan automáticamente.
+  Fase 12 agrega el Centro de Resoluciones en `/resolutions`, API interna v1,
+  proyecciones consolidadas, flujo administrativo guiado y worker operativo
+  independiente de la sesión. Conserva la API pública/SDK y no agrega estados,
+  handlers ni reglas paralelas. El único vertical sigue siendo Certificados.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

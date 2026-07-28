@@ -7,6 +7,7 @@ INITIAL_ROLES = {
     "Finanzas": "Pagos, facturacion y liberacion financiera.",
     "Cliente": "Acceso limitado para cliente externo.",
     "Desarrollador": "Acceso tecnico avanzado para desarrollo y soporte.",
+    "Auditor": "Consulta institucional de expedientes y evidencias.",
 }
 
 
@@ -17,6 +18,7 @@ ROLE_PERMISSIONS = {
     "ACTIVITY_MODERATE": "activity.moderate",
     "Administrador": {"*"},
     "Comercial": {
+        "resolution_center.read",
         "activity.read",
         "activity.write",
         "clients.read",
@@ -33,6 +35,7 @@ ROLE_PERMISSIONS = {
         "sat_catalogs.manage_aliases",
     },
     "Tecnico": {
+        "resolution_center.read",
         "activity.read",
         "activity.write",
         "equipment.read",
@@ -55,6 +58,7 @@ ROLE_PERMISSIONS = {
         "service_orders.sign",
     },
     "Captura": {
+        "resolution_center.read",
         "activity.read",
         "activity.write",
         "clients.read",
@@ -79,6 +83,7 @@ ROLE_PERMISSIONS = {
         "uncertainty.execute",
     },
     "Calidad": {
+        "resolution_center.read",
         "activity.read",
         "activity.write",
         "activity.audit",
@@ -128,6 +133,7 @@ ROLE_PERMISSIONS = {
         "field_sheet_templates.import",
     },
     "Finanzas": {
+        "resolution_center.read",
         "activity.read",
         "activity.write",
         "clients.read",
@@ -151,6 +157,7 @@ ROLE_PERMISSIONS = {
         "service_orders.read_own",
     },
     "Desarrollador": {
+        "resolution_center.*",
         "activity.read",
         "activity.write",
         "activity.audit",
@@ -216,6 +223,13 @@ ROLE_PERMISSIONS = {
         "service_orders.signatures.reopen",
         "sat_catalogs.read",
         "sat_catalogs.manage",
+    },
+    "Auditor": {
+        "resolution_center.read",
+        "resolution_center.read_all",
+        "resolution_center.audit",
+        "resolution_center.infrastructure",
+        "audit_logs.read",
     },
 }
 
@@ -285,4 +299,15 @@ PERMISSIONS = {
     "SAT_CATALOGS_MANAGE": "sat_catalogs.manage",
     "SAT_CATALOGS_MANAGE_FAVORITES": "sat_catalogs.manage_favorites",
     "SAT_CATALOGS_MANAGE_ALIASES": "sat_catalogs.manage_aliases",
+    "RESOLUTION_CENTER_READ": "resolution_center.read",
+    "RESOLUTION_CENTER_READ_ALL": "resolution_center.read_all",
+    "RESOLUTION_CENTER_CREATE": "resolution_center.create",
+    "RESOLUTION_CENTER_PREPARE": "resolution_center.prepare",
+    "RESOLUTION_CENTER_ANALYZE": "resolution_center.analyze",
+    "RESOLUTION_CENTER_PLAN": "resolution_center.plan",
+    "RESOLUTION_CENTER_SIMULATE": "resolution_center.simulate",
+    "RESOLUTION_CENTER_AUTHORIZE": "resolution_center.authorize",
+    "RESOLUTION_CENTER_EXECUTE": "resolution_center.execute",
+    "RESOLUTION_CENTER_AUDIT": "resolution_center.audit",
+    "RESOLUTION_CENTER_INFRASTRUCTURE": "resolution_center.infrastructure",
 }

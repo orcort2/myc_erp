@@ -144,7 +144,7 @@ identidad completa de la consulta. Su apertura está en
 [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md) y su cierre técnico en
 [`../../closures/RESOLUTION_ENGINE_PHASE_10.md`](../../closures/RESOLUTION_ENGINE_PHASE_10.md).
 
-La Fase 11 — Motor Distribuido está implementada y `EN REVISIÓN`. Incorpora
+La Fase 11 — Motor Distribuido está `APROBADA` mediante `cbde517`. Incorpora
 cola SQL durable, workers pull, coordinación por capacidad, heartbeats, leases
 con fencing, exclusividad por resolución, recuperación segura, retry
 determinista, eventos append-only y observabilidad operacional sin modificar
@@ -152,5 +152,11 @@ los contratos anteriores. Su apertura está en
 [`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md), su contrato en
 [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_11.md`](../../closures/RESOLUTION_ENGINE_PHASE_11.md).
-Fase 12 permanece no iniciada. La IA es únicamente una posibilidad futura
-opcional y nunca una dependencia arquitectónica u operativa del Motor.
+
+La Fase 12 — Centro de Resoluciones está implementada y `EN REVISIÓN`. Expone
+la consola `/resolutions`, API interna, proyecciones, flujo guiado y aceptación
+durable independiente de sesión, sin modificar la API pública. Su contrato está
+en [`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md) y el
+cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_12.md`](../../closures/RESOLUTION_ENGINE_PHASE_12.md).
+Fase 13 e IA permanecen no iniciadas.

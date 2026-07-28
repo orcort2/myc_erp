@@ -31,8 +31,8 @@
 - Revisión aplicada en la base local compartida: `b18ac098c1db`. Esa revisión
   y su archivo no confirmado pertenecen al trabajo concurrente de
   Notificaciones. El árbol visible tiene dos heads:
-  `b18ac098c1db` y `c1e3f5a7b9d2`; el commit aislado de Fase 11 conserva un
-  único head `c1e3f5a7b9d2`, hijo del head aprobado de Fase 10.
+  `b18ac098c1db` y `d2f4a6b8c0e3`; el índice exclusivo de Fase 12 conserva un
+  único head `d2f4a6b8c0e3`, hijo de `c1e3f5a7b9d2`.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -61,6 +61,10 @@
   índices de despacho/observabilidad; un trigger PostgreSQL protege los eventos
   append-only. Su upgrade→downgrade→upgrade fue validado en una base PostgreSQL
   temporal limpia, luego eliminada.
+- `d2f4a6b8c0e3` conserva inmutables identidad y contenido del plan y permite
+  únicamente sus transiciones canónicas; protege además cambios de activación
+  e invalidación. La cadena completa, downgrade a `c1e3f5a7b9d2` y upgrade de
+  retorno se validaron en PostgreSQL temporal, después eliminado.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
 - Tamaño verificado: 74,222,078 bytes.
@@ -79,38 +83,36 @@
 
 ## Validaciones ejecutadas
 
-- Suite específica Fase 11 + arquitectura + esquema: `40 passed`.
-- Suite completa del Motor en árbol aislado del trabajo concurrente:
-  `233 passed`, dos advertencias de dependencias; incluye Fases 1–11.
-- Suite backend completa en el árbol compartido: `320 passed`, `23 failed`,
-  `14 errors`, `19 subtests passed` y dos advertencias. Los errores/fallos de
-  metadata proceden del `JSONB` directo de Actividad (`TD-023`) y del trabajo
-  concurrente de Notificaciones; dos fallos adicionales son el aborto del
-  binario LibreOffice local. Ninguno apunta a archivos de Fase 11.
-- Suite backend en árbol aislado: `335 passed`, `22 failed`,
-  `19 subtests passed`; mantiene los 19 fallos SQLite/JSONB de Actividad, dos
-  fallos del conversor LibreOffice y uno por el XLSX SAT ignorado que no forma
-  parte de `git archive`.
-- Frontend: `package.json` no declara suite; build Vite de producción correcto,
-  con la advertencia preexistente por tamaño del chunk principal.
+- Suite específica Fase 12: `11 passed`.
+- Suite completa del Motor sobre el índice exclusivo de Fase 12:
+  `244 passed`, dos advertencias de dependencias; incluye Fases 1–12.
+- Suite backend completa sobre la fotografía exclusiva: `348 passed`,
+  `20 failed`, `19 subtests passed`. Diecinueve fallos son la deuda conocida
+  SQLite/`JSONB` de Actividad (`TD-023`); el vigésimo sólo refleja que el XLSX
+  SAT ignorado no entra en la fotografía Git. La prueba SAT ejecutada contra el
+  recurso local oficial terminó `4 passed`; por tanto el estado verificable con
+  ese recurso es `349 passed`, `19 failed`. Ningún fallo apunta a Fase 12.
+- La suite del Motor sobre el árbol compartido fue contaminada por el modelo
+  concurrente de Notificaciones (`JSONB` no portable): alcanzó `226 passed`
+  antes de `2 failed` y `14 errors`. La fotografía exclusiva elimina esa causa
+  ajena y termina completa.
+- Frontend: pruebas Node específicas `2 passed`; build Vite de producción
+  correcto (`1675` módulos), con advertencia no bloqueante por tamaño del chunk.
 - Compilación de bytecode Python: correcta.
 - PostgreSQL temporal limpio: cadena completa aplicada hasta
-  `c1e3f5a7b9d2`, downgrade a `a0d2f4b6c8e1` y upgrade nuevamente correctos;
-  `current` y `heads` mostraron un único `c1e3f5a7b9d2` y se confirmó instalado
-  `trg_resolution_work_events_immutable`.
+  `d2f4a6b8c0e3`, downgrade a `c1e3f5a7b9d2` y upgrade nuevamente correctos;
+  `current` y `heads` mostraron un único `d2f4a6b8c0e3`.
 - `alembic heads/current` del árbol compartido: heads `b18ac098c1db` y
-  `c1e3f5a7b9d2`; base local en `b18ac098c1db`. Fase 11 no se aplicó sobre esa
+  `d2f4a6b8c0e3`; base local en `b18ac098c1db`. Fase 12 no se aplicó sobre esa
   rama ajena para no mezclar ni alterar el trabajo de Notificaciones.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
-  como `TD-021`; en PostgreSQL limpio no propuso operaciones sobre
-  `resolution_worker_nodes`, `resolution_work_items` ni
-  `resolution_work_events`.
+  como `TD-021`; no detectó una operación propia de Fase 12.
 - `git diff --check`: correcto.
 - El respaldo conserva `alembic_version = a0d2f4b6c8e1`. No se regeneró:
-  Fase 11 se validó en una base temporal y no modificó la base local; la
+  Fase 12 se validó en una base temporal y no modificó la base local; la
   sincronización de `b18ac098c1db` pertenece al trabajo externo de
   Notificaciones. Al integrar ambas ramas Alembic deberá definirse un único
-  descendiente/merge y entonces aplicar Fase 11 y regenerar el respaldo.
+  descendiente/merge y entonces aplicar Fase 12 y regenerar el respaldo.
 
 ## Pendientes vigentes
 
@@ -129,10 +131,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fases 9 a 11
+## Motor de Resoluciones — Fases 9 a 12
 
-- Estado: Fases 0 a 10 `APROBADAS`; Fase 11 — Motor Distribuido
-  `EN REVISIÓN`. Fase 12 no iniciada.
+- Estado: Fases 0 a 11 `APROBADAS`; Fase 12 — Centro de Resoluciones
+  `EN REVISIÓN`. Fase 13 no iniciada.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -235,6 +237,16 @@
   [`architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md`](architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md).
 - Cierre técnico:
   [`closures/RESOLUTION_ENGINE_PHASE_11.md`](closures/RESOLUTION_ENGINE_PHASE_11.md).
-- Fase 11 permanece `EN REVISIÓN`; Fase 12 e IA permanecen fuera de alcance.
+- Fase 11 fue aprobada mediante
+  `cbde51783870e4b06a4de84c27e05dc2b5ea3de1`.
+- Fase 12 expone `/resolutions`, API interna v1, catálogo controlado,
+  proyecciones de lista/expediente/timeline, flujo guiado y worker independiente
+  de sesión. La autoridad se confirma antes del enqueue; el token HTTP no forma
+  parte del trabajo durable y un `work_key` único impide doble despacho.
+- Contrato de Fase 12:
+  [`architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md`](architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md).
+- Cierre técnico de Fase 12:
+  [`closures/RESOLUTION_ENGINE_PHASE_12.md`](closures/RESOLUTION_ENGINE_PHASE_12.md).
+- Fase 12 queda `EN REVISIÓN`; Fase 13 e IA permanecen fuera de alcance.
 - La IA es una posibilidad futura opcional y no constituye dependencia
   arquitectónica u operativa del ERP o del Motor determinista.

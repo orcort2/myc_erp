@@ -3296,9 +3296,10 @@ La organización podrá incrementar su capacidad de procesamiento incorporando n
 
 # Relación con las Fases Posteriores
 
-La infraestructura distribuida constituye el entorno ideal para incorporar capacidades avanzadas de asistencia inteligente.
-
-La siguiente fase aprovechará la información histórica, la evidencia institucional y la capacidad de procesamiento distribuido para integrar mecanismos de inteligencia artificial que apoyen la toma de decisiones sin sustituir el gobierno arquitectónico del Motor.
+La infraestructura distribuida permite exponer las capacidades aprobadas en
+una consola operativa sin convertir la sesión web en propietaria del trabajo.
+La siguiente fase integra esas capacidades end-to-end antes de considerar
+cualquier ampliación futura.
 
 ---
 
@@ -3308,9 +3309,35 @@ La Fase 11 convierte al Motor de Resoluciones en una plataforma distribuida, res
 
 Mediante la coordinación de múltiples instancias, la arquitectura incrementa su capacidad de procesamiento sin comprometer los principios fundamentales de consistencia, trazabilidad, evidencia y confianza institucional que caracterizan al Motor desde su concepción.
 
-# 13. Fase 12 — IA y Resoluciones Asistidas
+# 13. Fase 12 — Centro de Resoluciones
 
-# Fase 12 — IA y Resoluciones Asistidas
+# Fase 12 — Centro de Resoluciones
+
+> Estado vigente: `EN REVISIÓN`. Apertura autorizada tras la aprobación formal
+> de Fase 11 en `cbde51783870e4b06a4de84c27e05dc2b5ea3de1`.
+
+La Fase 12 incorpora una consola institucional independiente en `/resolutions`
+y una API interna versionada. Su objetivo es permitir consultar, crear,
+preparar, analizar, planificar, simular, autorizar, ejecutar y auditar
+resoluciones utilizando exclusivamente Registry, Lifecycle, Orchestrator,
+Security, Executor y runtime distribuido canónicos.
+
+La capa de lectura compone proyecciones de lista, expediente y timeline sin
+reescribir eventos. La ejecución se acepta de forma asíncrona y continúa aunque
+el navegador o la sesión desaparezcan. La UI no conserva trabajo, no inventa
+estados y no ejecuta handlers.
+
+El alcance completo, permisos, flujos, límites, pruebas y migración están en
+[`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md).
+
+La fase termina `EN REVISIÓN`; Fase 13 no puede iniciarse sin aprobación
+formal.
+
+---
+
+# 14. Fase 13 — IA y Resoluciones Asistidas
+
+# Fase 13 — IA y Resoluciones Asistidas
 
 > Estado vigente: `NO INICIADA`. Carácter: posibilidad futura `OPCIONAL`. Esta
 > etapa conceptual no es un compromiso de implementación ni una dependencia
@@ -3564,7 +3591,7 @@ El Motor continuará siendo el único responsable de construir y ejecutar resolu
 
 # Criterios de Finalización
 
-La Fase 12 podrá considerarse concluida cuando:
+La Fase 13 podrá considerarse concluida cuando:
 
 - la IA pueda asistir la planificación;
 - existan recomendaciones explicables;
@@ -3593,11 +3620,11 @@ Las capacidades futuras no consistirán en modificar la arquitectura fundamental
 
 # Declaración Final
 
-La Fase 12 representa la consolidación del Motor de Resoluciones como una plataforma empresarial inteligente.
+La Fase 13 representa la consolidación del Motor de Resoluciones como una plataforma empresarial inteligente.
 
 Mediante la incorporación de inteligencia artificial gobernada, explicable y completamente subordinada a las políticas institucionales, el Motor amplía su capacidad para asistir la toma de decisiones sin renunciar a los principios fundamentales de responsabilidad, evidencia, seguridad y confianza que han guiado su arquitectura desde su concepción.
 
-# 14. Criterios de Madurez
+# 15. Criterios de Madurez
 
 # Criterios de Madurez
 

@@ -36,6 +36,7 @@ from app.routers import (
     quotations,
     reference_standards,
     reference_standard_certificates,
+    resolution_center,
     resolution_public_api,
     sat_catalogs,
     service_orders,
@@ -109,6 +110,7 @@ app.include_router(document_interpretations.router, prefix="/api")
 app.include_router(document_templates.router, prefix="/api")
 app.include_router(reference_standards.router, prefix="/api")
 app.include_router(reference_standard_certificates.router, prefix="/api")
+app.include_router(resolution_center.router, prefix="/api")
 app.include_router(resolution_public_api.router, prefix="/api")
 app.include_router(calibration_procedures.router, prefix="/api")
 app.include_router(quotations.router, prefix="/api")

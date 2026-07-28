@@ -153,6 +153,26 @@ FORCE_RECLASSIFY = {
     "docs/architecture/resolution-engine/27_PHASE_11_OPENING.md",
     "docs/architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_11.md",
+    "backend/app/core/config.py",
+    "backend/app/core/permissions.py",
+    "backend/app/resolution_center/__init__.py",
+    "backend/app/resolution_center/actor.py",
+    "backend/app/resolution_center/query.py",
+    "backend/app/resolution_center/schemas.py",
+    "backend/app/resolution_center/worker.py",
+    "backend/app/resolution_center/workflow.py",
+    "backend/app/routers/resolution_center.py",
+    "backend/migrations/versions/d2f4a6b8c0e3_phase_12_plan_lifecycle_guard.py",
+    "backend/tests/resolution_engine/test_phase_12_resolution_center.py",
+    "frontend/src/constants/navigation.js",
+    "frontend/src/pages/App.jsx",
+    "frontend/src/pages/ResolutionCenterPage.jsx",
+    "frontend/src/pages/resolution-center.css",
+    "frontend/src/services/api.js",
+    "frontend/src/utils/resolutionCenter.js",
+    "frontend/src/utils/resolutionCenter.test.js",
+    "docs/architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md",
+    "docs/closures/RESOLUTION_ENGINE_PHASE_12.md",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -223,6 +243,151 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "En desarrollo"
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
+
+    phase_12_files = {
+        "backend/app/core/config.py": (
+            "Configuración central",
+            "Define entorno, seguridad, storage, conversión y la organización única configurada para la consola interna de resoluciones.",
+            "Pydantic Settings y variables de entorno",
+            "Main, servicios, workers y adaptadores del ERP",
+            "Crítico",
+        ),
+        "backend/app/core/permissions.py": (
+            "Matriz ejecutable de permisos",
+            "Declara roles y permisos del ERP, incluidos lectura, operación, auditoría e infraestructura del Centro de Resoluciones.",
+            "Servicio de autenticación y nombres de permisos",
+            "Routers, capabilities y administración",
+            "Crítico",
+        ),
+        "backend/app/resolution_center/__init__.py": (
+            "Paquete del Centro de Resoluciones",
+            "Delimita la superficie interna de la consola sin exportar infraestructura como contrato público.",
+            "Adaptadores del Centro",
+            "Composición backend y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_center/actor.py": (
+            "Adaptador de actor ERP",
+            "Convierte usuario y permisos ERP en ActorContext canónico con autoridad durable por operación independiente del token HTTP.",
+            "Usuarios, auth y dominio de seguridad",
+            "Workflow y worker indirecto",
+            "Crítico",
+        ),
+        "backend/app/resolution_center/query.py": (
+            "Proyección operativa",
+            "Compone lista keyset, expediente y timeline con aislamiento organizacional, ownership y redacción técnica sin ser fuente de verdad.",
+            "Persistencia canónica, usuarios y cursor c1",
+            "API interna y frontend",
+            "Crítico",
+        ),
+        "backend/app/resolution_center/schemas.py": (
+            "Contratos internos v1",
+            "Define DTOs estrictos de definiciones, lista, expediente, timeline, capabilities y comandos guiados.",
+            "Pydantic",
+            "Router, workflow, query y frontend HTTP",
+            "Alto",
+        ),
+        "backend/app/resolution_center/workflow.py": (
+            "Workflow administrativo",
+            "Compone Registry, Lifecycle, Orchestrator, Security y dispatcher para el flujo guiado sin duplicar reglas de dominio.",
+            "Servicios canónicos e integración Certificados",
+            "Router interno y pruebas end-to-end",
+            "Crítico",
+        ),
+        "backend/app/resolution_center/worker.py": (
+            "Proceso worker del Centro",
+            "Reconstruye comandos durables y delega trabajos al ResolutionExecutor con heartbeats, recovery, fencing y apagado drenado.",
+            "Runtime distribuido y vertical Certificados",
+            "Operación multinodo",
+            "Crítico",
+        ),
+        "backend/app/routers/resolution_center.py": (
+            "API interna del Centro v1",
+            "Aplica permisos, valida HTTP y delega lista, expediente y etapas al query/workflow sin importar infraestructura del Motor.",
+            "FastAPI, schemas, auth y servicios del Centro",
+            "Frontend del ERP",
+            "Crítico",
+        ),
+        "backend/migrations/versions/d2f4a6b8c0e3_phase_12_plan_lifecycle_guard.py": (
+            "Migración correctiva de Fase 12",
+            "Permite transiciones canónicas del plan conservando identidad, contenido, activación e invalidación protegidos y downgrade reversible.",
+            "Alembic, PostgreSQL y Fase 11",
+            "Despliegues y validación de esquema",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_phase_12_resolution_center.py": (
+            "Suite específica de Fase 12",
+            "Prueba flujo guiado, aislamiento, cursor, redacción, idempotencia, despacho único, actor durable y límites arquitectónicos.",
+            "Centro, Motor, SQLite y migración",
+            "Gate técnico de Fase 12",
+            "Crítico",
+        ),
+        "frontend/src/constants/navigation.js": (
+            "Navegación principal",
+            "Declara módulos y agrega Resoluciones como consola transversal independiente en /resolutions.",
+            "Iconos y rutas del ERP",
+            "AppLayout, dashboard y selector de módulos",
+            "Alto",
+        ),
+        "frontend/src/pages/App.jsx": (
+            "Raíz de aplicación",
+            "Gestiona sesión y enrutamiento autenticado, incluida la composición independiente del Centro de Resoluciones.",
+            "AppLayout, autenticación y páginas",
+            "main.jsx y usuarios autenticados",
+            "Crítico",
+        ),
+        "frontend/src/pages/ResolutionCenterPage.jsx": (
+            "Consola de Resoluciones",
+            "Implementa lista, filtros, expediente, catálogo guiado, acciones por capability y polling visible sin estado paralelo.",
+            "API interna, utilidades y sistema visual",
+            "Usuarios operativos, administradores y auditores",
+            "Crítico",
+        ),
+        "frontend/src/pages/resolution-center.css": (
+            "Estilos del Centro",
+            "Integra tabla, filtros, badges, modales, timeline y estados responsive con variables visuales del ERP.",
+            "CSS global y markup del Centro",
+            "ResolutionCenterPage",
+            "Alto",
+        ),
+        "frontend/src/services/api.js": (
+            "Cliente API compartido",
+            "Centraliza transporte ERP e incorpora contratos internos versionados del Centro sin acceder al Motor directamente.",
+            "fetch/HTTP y endpoints FastAPI",
+            "Páginas y controladores frontend",
+            "Crítico",
+        ),
+        "frontend/src/utils/resolutionCenter.js": (
+            "Reglas de presentación del Centro",
+            "Deriva polling visible y habilitación de etapas exclusivamente desde estados/capabilities entregados por backend.",
+            "JavaScript puro",
+            "ResolutionCenterPage y pruebas",
+            "Alto",
+        ),
+        "frontend/src/utils/resolutionCenter.test.js": (
+            "Pruebas frontend de Fase 12",
+            "Verifica suspensión de polling y permisos independientes por etapa sin roles hardcodeados.",
+            "Node test y utilidades del Centro",
+            "Gate frontend de Fase 12",
+            "Alto",
+        ),
+        "docs/architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md": (
+            "Contrato del Centro de Resoluciones",
+            "Documenta apertura, fronteras, flujo, sesión independiente, lectura, permisos, UI, migración y límites de Fase 12.",
+            "Aprobación, implementación y pruebas",
+            "Arquitectura, operación, desarrollo, QA y auditoría",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_12.md": (
+            "Cierre técnico de Fase 12",
+            "Consolida entrega, invariantes, migración, validaciones, exclusiones y estado EN REVISIÓN.",
+            "Contrato, código, suites e inventario",
+            "Arquitectura, dirección, QA y auditoría",
+            "Alto",
+        ),
+    }
+    if value in phase_12_files:
+        return phase_12_files[value]
 
     phase_11_files = {
         "backend/app/resolution_engine/__init__.py": (
@@ -297,7 +462,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/architecture/resolution-engine/README.MD": (
             "Entrada normativa del Motor",
-            "Ordena documentos 01–28 y publica Fases 0–10 aprobadas, Fase 11 en revisión y Fase 12 no iniciada.",
+            "Ordena documentos 01–29 y publica Fases 0–11 aprobadas, Fase 12 en revisión y Fase 13 no iniciada.",
             "Roadmap, matriz, aperturas, contratos y cierres",
             "Todo participante del Motor de Resoluciones",
             "Crítico",
@@ -367,7 +532,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/closures/RESOLUTION_ENGINE_PHASE_11.md": (
             "Cierre técnico de Fase 11",
-            "Consolida entrega distribuida, persistencia, garantías, pruebas, exclusiones y estado pendiente de revisión.",
+            "Consolida la entrega distribuida aprobada, persistencia, garantías, pruebas y exclusiones.",
             "Contrato, implementación, migración y suites",
             "Arquitectura, dirección, QA y auditoría",
             "Alto",
@@ -379,7 +544,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     phase_10_files = {
         "backend/app/main.py": (
             "Entrada FastAPI",
-            "Crea la aplicación, registra routers/middleware/clientes y aplica headers/errores versionados de la API pública sin incorporar negocio.",
+            "Crea la aplicación, registra routers y middleware, incluida la API pública y la consola interna de Resoluciones, sin incorporar negocio.",
             "Configuración, routers, Facturama y adaptadores públicos",
             "Uvicorn, operación y consumidores HTTP",
             "Crítico",
