@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import ast
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from threading import Barrier
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -138,6 +141,33 @@ def sqlite_engine():
     ]
     Base.metadata.create_all(engine, tables=tables)
     return engine
+
+
+def concurrent_sqlite_factory(path: Path):
+    engine = create_engine(
+        f"sqlite+pysqlite:///{path}",
+        connect_args={
+            "check_same_thread": False,
+            "timeout": 30,
+        },
+    )
+
+    @event.listens_for(engine, "connect")
+    def configure_connection(dbapi_connection, _record):
+        dbapi_connection.isolation_level = None
+        dbapi_connection.execute("PRAGMA journal_mode=WAL")
+
+    @event.listens_for(engine, "begin")
+    def begin_immediate(connection):
+        connection.exec_driver_sql("BEGIN IMMEDIATE")
+
+    tables = [
+        table
+        for name, table in Base.metadata.tables.items()
+        if not name.startswith("activity_")
+    ]
+    Base.metadata.create_all(engine, tables=tables)
+    return sessionmaker(bind=engine, expire_on_commit=False)
 
 
 @pytest.fixture
@@ -424,6 +454,308 @@ def test_domain_operation_is_atomic_idempotent_and_compensable(factory):
         assert len(operations) == 2
         assert operations[1].source_operation_id == operations[0].id
         assert len(audits) == 2
+
+
+def test_exact_replay_uses_confirmed_history_after_drift_and_inactivation(
+    factory,
+):
+    with factory() as session, session.begin():
+        certificate = seed_certificate(
+            session,
+            folio="MYCA-07-2026-0903",
+        )
+        certificate_id = certificate.id
+        historical_release = certificate.released_to_client_at
+        historical_actor = certificate.released_to_client_by_id
+    commands = SqlAlchemyCertificateCommandService(factory)
+    values = {
+        "certificate_id": certificate_id,
+        "expected_status": "released_to_client",
+        "reason": "Replay histórico estable",
+        "actor_id": "7",
+        "correlation_id": "phase-9-replay-history",
+        "idempotency_key": "certificate-withdraw-history",
+        "request_hash": "1" * 64,
+    }
+    confirmed = commands.withdraw_incorrect_release(**values)
+
+    with factory() as session, session.begin():
+        certificate = session.get(Certificate, certificate_id)
+        operation = session.scalar(
+            select(CertificateResolutionOperation).where(
+                CertificateResolutionOperation.idempotency_key
+                == values["idempotency_key"]
+            )
+        )
+        assert operation is not None
+        assert confirmed.after_snapshot == operation.after_snapshot
+        assert (
+            confirmed.after_snapshot
+            == operation.result_payload["after_snapshot"]
+        )
+        assert confirmed.after_snapshot["updated_at"] == (
+            certificate.updated_at.isoformat()
+        )
+        certificate.status = "cancelled"
+        certificate.is_active = False
+
+    replay = commands.withdraw_incorrect_release(**values)
+    assert replay == confirmed
+    with pytest.raises(
+        CertificateResolutionOperationError,
+        match="otra intención",
+    ):
+        commands.withdraw_incorrect_release(
+            **{**values, "request_hash": "2" * 64}
+        )
+    with pytest.raises(
+        CertificateResolutionOperationError,
+        match="otra intención",
+    ):
+        commands.withdraw_incorrect_release(
+            **{**values, "reason": "Payload alterado"}
+        )
+
+    with factory() as session:
+        certificate = session.get(Certificate, certificate_id)
+        assert certificate.status == "cancelled"
+        assert certificate.is_active is False
+        assert certificate.client_visible is False
+        assert certificate.released_to_client_at.replace(
+            tzinfo=timezone.utc
+        ) == historical_release
+        assert (
+            certificate.released_to_client_by_id
+            == historical_actor
+        )
+        assert (
+            session.scalar(
+                select(func.count(CertificateResolutionOperation.id)).where(
+                    CertificateResolutionOperation.certificate_id
+                    == certificate_id
+                )
+            )
+            == 1
+        )
+
+
+def test_compensation_replay_uses_confirmed_snapshot_after_later_drift(
+    factory,
+):
+    with factory() as session, session.begin():
+        certificate_id = seed_certificate(
+            session,
+            folio="MYCA-07-2026-0904",
+        ).id
+    commands = SqlAlchemyCertificateCommandService(factory)
+    withdrawn = commands.withdraw_incorrect_release(
+        certificate_id=certificate_id,
+        expected_status="released_to_client",
+        reason="Preparar compensación",
+        actor_id="7",
+        correlation_id="phase-9-compensation-history",
+        idempotency_key="certificate-withdraw-for-history",
+        request_hash="3" * 64,
+    )
+    values = {
+        "certificate_id": certificate_id,
+        "source_operation_key": withdrawn.idempotency_key,
+        "actor_id": "7",
+        "correlation_id": "phase-9-compensation-history",
+        "idempotency_key": "certificate-restore-history",
+        "request_hash": "4" * 64,
+    }
+    restored = commands.restore_incorrect_release_visibility(**values)
+
+    with factory() as session, session.begin():
+        certificate = session.get(Certificate, certificate_id)
+        operation = session.scalar(
+            select(CertificateResolutionOperation).where(
+                CertificateResolutionOperation.idempotency_key
+                == values["idempotency_key"]
+            )
+        )
+        assert operation is not None
+        assert restored.after_snapshot == operation.after_snapshot
+        assert restored.after_snapshot["updated_at"] == (
+            certificate.updated_at.isoformat()
+        )
+        certificate.status = "cancelled"
+        certificate.is_active = False
+
+    replay = commands.restore_incorrect_release_visibility(**values)
+    assert replay == restored
+    with pytest.raises(
+        CertificateResolutionOperationError,
+        match="otra intención",
+    ):
+        commands.restore_incorrect_release_visibility(
+            **{**values, "request_hash": "5" * 64}
+        )
+
+
+def test_concurrent_exact_requests_commit_one_mutation(tmp_path):
+    factory = concurrent_sqlite_factory(
+        tmp_path / "phase9-concurrent-exact.sqlite"
+    )
+    with factory() as session, session.begin():
+        certificate_id = seed_certificate(
+            session,
+            folio="MYCA-07-2026-0905",
+        ).id
+    commands = SqlAlchemyCertificateCommandService(factory)
+    values = {
+        "certificate_id": certificate_id,
+        "expected_status": "released_to_client",
+        "reason": "Solicitud concurrente exacta",
+        "actor_id": "7",
+        "correlation_id": "phase-9-concurrent-exact",
+        "idempotency_key": "certificate-concurrent-exact",
+        "request_hash": "6" * 64,
+    }
+    barrier = Barrier(3)
+
+    def invoke():
+        barrier.wait()
+        return commands.withdraw_incorrect_release(**values)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(invoke) for _ in range(2)]
+        barrier.wait()
+        results = [future.result(timeout=10) for future in futures]
+
+    assert results[0] == results[1]
+    with factory() as session:
+        certificate = session.get(Certificate, certificate_id)
+        assert certificate.client_visible is False
+        assert (
+            session.scalar(
+                select(func.count(CertificateResolutionOperation.id)).where(
+                    CertificateResolutionOperation.certificate_id
+                    == certificate_id
+                )
+            )
+            == 1
+        )
+        assert (
+            session.scalar(
+                select(func.count(AuditLog.id)).where(
+                    AuditLog.entity == "certificates",
+                    AuditLog.entity_id == certificate_id,
+                )
+            )
+            == 1
+        )
+
+
+def test_concurrent_colliding_payloads_commit_only_one_effect(tmp_path):
+    factory = concurrent_sqlite_factory(
+        tmp_path / "phase9-concurrent-conflict.sqlite"
+    )
+    with factory() as session, session.begin():
+        certificate_id = seed_certificate(
+            session,
+            folio="MYCA-07-2026-0906",
+        ).id
+    commands = SqlAlchemyCertificateCommandService(factory)
+    common = {
+        "certificate_id": certificate_id,
+        "expected_status": "released_to_client",
+        "actor_id": "7",
+        "correlation_id": "phase-9-concurrent-conflict",
+        "idempotency_key": "certificate-concurrent-conflict",
+    }
+    requests = (
+        {
+            **common,
+            "reason": "Primera intención",
+            "request_hash": "7" * 64,
+        },
+        {
+            **common,
+            "reason": "Segunda intención",
+            "request_hash": "8" * 64,
+        },
+    )
+    barrier = Barrier(3)
+
+    def invoke(values):
+        barrier.wait()
+        try:
+            return commands.withdraw_incorrect_release(**values)
+        except CertificateResolutionOperationError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(invoke, values)
+            for values in requests
+        ]
+        barrier.wait()
+        results = [future.result(timeout=10) for future in futures]
+
+    assert sum(
+        not isinstance(result, Exception) for result in results
+    ) == 1
+    conflict = next(
+        result for result in results if isinstance(result, Exception)
+    )
+    assert isinstance(conflict, CertificateResolutionOperationError)
+    assert conflict.code == "idempotency_conflict"
+    with factory() as session:
+        certificate = session.get(Certificate, certificate_id)
+        assert certificate.client_visible is False
+        assert session.scalar(
+            select(func.count(CertificateResolutionOperation.id)).where(
+                CertificateResolutionOperation.certificate_id
+                == certificate_id
+            )
+        ) == 1
+        assert session.scalar(
+            select(func.count(AuditLog.id)).where(
+                AuditLog.entity == "certificates",
+                AuditLog.entity_id == certificate_id,
+            )
+        ) == 1
+
+
+def test_unique_race_recovers_only_the_exact_confirmed_result(factory):
+    with factory() as session, session.begin():
+        certificate_id = seed_certificate(
+            session,
+            folio="MYCA-07-2026-0907",
+        ).id
+    commands = SqlAlchemyCertificateCommandService(factory)
+    values = {
+        "certificate_id": certificate_id,
+        "expected_status": "released_to_client",
+        "reason": "Resultado ganador concurrente",
+        "actor_id": "7",
+        "correlation_id": "phase-9-unique-race",
+        "idempotency_key": "certificate-unique-race",
+        "request_hash": "9" * 64,
+    }
+    confirmed = commands.withdraw_incorrect_release(**values)
+    simulated_race = IntegrityError(
+        "unique idempotency race",
+        {},
+        RuntimeError("concurrent winner"),
+    )
+
+    with patch(
+        "app.resolution_integrations.certificates.infrastructure."
+        "withdraw_incorrect_release",
+        side_effect=simulated_race,
+    ):
+        recovered = commands.withdraw_incorrect_release(**values)
+        assert recovered == confirmed
+        with pytest.raises(
+            CertificateResolutionOperationError,
+            match="otra intención",
+        ):
+            commands.withdraw_incorrect_release(
+                **{**values, "request_hash": "0" * 64}
+            )
 
 
 def test_domain_operation_rolls_back_mutation_and_evidence_together(factory):

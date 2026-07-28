@@ -420,5 +420,8 @@ La Fase 0 se considera lista para revisión cuando:
   `certificate.resolve_incorrect_release`, está implementado y `EN REVISIÓN`
   bajo
   [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md).
-  Ningún otro dominio está iniciado.
+  La corrección de revisión asegura replay histórico previo al estado actual,
+  segunda comprobación bajo lock, recuperación concurrente exacta y snapshot
+  posterior a `flush/refresh`, sin cambio de esquema. Ningún otro dominio está
+  iniciado.
 - Fase 10: `NO INICIADA`.

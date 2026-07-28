@@ -77,7 +77,10 @@ gateway ejecuta el servicio canónico que bloquea el registro y cambia sólo
 `client_visible` de verdadero a falso. El servicio conserva una operación
 append-only en la misma transacción. Si se autoriza compensación y no existe
 deriva, otro gateway restaura la visibilidad anterior y agrega evidencia
-enlazada. Ningún adaptador modifica Lifecycle ni contiene reglas propietarias.
+enlazada. Un replay exacto consulta primero la operación histórica y no depende
+del certificado actual. Una clave nueva vuelve a comprobarse después del lock;
+el snapshot de salida se crea sólo después de `flush/refresh`. Ningún adaptador
+modifica Lifecycle ni contiene reglas propietarias.
 
 ## Flujo principal
 

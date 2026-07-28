@@ -79,11 +79,27 @@ def withdraw_incorrect_release(
             "reason_required",
             "La resolución exige un motivo",
         )
+    request_payload = withdraw_operation_request_payload(
+        certificate_id=certificate_id,
+        expected_status=expected_status,
+        reason=normalized_reason,
+    )
+    replay = _operation_replay(
+        db,
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
+        operation_key=WITHDRAW_OPERATION,
+        request_payload=request_payload,
+    )
+    if replay is not None:
+        return replay
     certificate = _locked_certificate(db, certificate_id)
     replay = _operation_replay(
         db,
         idempotency_key=idempotency_key,
         request_hash=request_hash,
+        operation_key=WITHDRAW_OPERATION,
+        request_payload=request_payload,
     )
     if replay is not None:
         return replay
@@ -105,12 +121,8 @@ def withdraw_incorrect_release(
 
     before = _certificate_snapshot(certificate)
     certificate.client_visible = False
+    _stabilize_certificate(db, certificate)
     after = _certificate_snapshot(certificate)
-    request_payload = {
-        "certificate_id": certificate_id,
-        "expected_status": expected_status,
-        "reason": normalized_reason,
-    }
     result = CertificateOperationResult(
         certificate_id=certificate.id,
         folio=certificate.folio,
@@ -169,11 +181,26 @@ def restore_incorrect_release_visibility(
         idempotency_key=idempotency_key,
         request_hash=request_hash,
     )
+    request_payload = restore_operation_request_payload(
+        certificate_id=certificate_id,
+        source_operation_key=source_operation_key,
+    )
+    replay = _operation_replay(
+        db,
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
+        operation_key=RESTORE_OPERATION,
+        request_payload=request_payload,
+    )
+    if replay is not None:
+        return replay
     certificate = _locked_certificate(db, certificate_id)
     replay = _operation_replay(
         db,
         idempotency_key=idempotency_key,
         request_hash=request_hash,
+        operation_key=RESTORE_OPERATION,
+        request_payload=request_payload,
     )
     if replay is not None:
         return replay
@@ -205,6 +232,7 @@ def restore_incorrect_release_visibility(
     certificate.client_visible = bool(
         source.before_snapshot["client_visible"]
     )
+    _stabilize_certificate(db, certificate)
     after = _certificate_snapshot(certificate)
     result = CertificateOperationResult(
         certificate_id=certificate.id,
@@ -223,10 +251,7 @@ def restore_incorrect_release_visibility(
             request_hash=request_hash,
             actor_id=actor_id,
             correlation_id=correlation_id,
-            request_payload={
-                "certificate_id": certificate_id,
-                "source_operation_key": source_operation_key,
-            },
+            request_payload=request_payload,
             before_snapshot=before,
             after_snapshot=after,
             result_payload=_result_payload(result),
@@ -270,6 +295,8 @@ def _operation_replay(
     *,
     idempotency_key: str,
     request_hash: str,
+    operation_key: str,
+    request_payload: dict[str, Any],
 ) -> CertificateOperationResult | None:
     operation = db.scalar(
         select(CertificateResolutionOperation).where(
@@ -279,7 +306,11 @@ def _operation_replay(
     )
     if operation is None:
         return None
-    if operation.request_hash != request_hash:
+    if (
+        operation.request_hash != request_hash
+        or operation.operation_key != operation_key
+        or operation.request_payload != request_payload
+    ):
         raise CertificateResolutionOperationError(
             "idempotency_conflict",
             "La clave idempotente ya cubre otra intención",
@@ -293,6 +324,63 @@ def _operation_replay(
         before_snapshot=dict(payload["before_snapshot"]),
         after_snapshot=dict(payload["after_snapshot"]),
     )
+
+
+def recover_confirmed_certificate_operation(
+    db: Session,
+    *,
+    idempotency_key: str,
+    request_hash: str,
+    operation_key: str,
+    request_payload: dict[str, Any],
+) -> CertificateOperationResult | None:
+    """Recupera únicamente un resultado confirmado de la intención exacta."""
+
+    return _operation_replay(
+        db,
+        idempotency_key=idempotency_key,
+        request_hash=request_hash,
+        operation_key=operation_key,
+        request_payload=request_payload,
+    )
+
+
+def withdraw_operation_request_payload(
+    *,
+    certificate_id: int,
+    expected_status: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Intención propietaria canónica para ejecución y recuperación."""
+
+    return {
+        "certificate_id": certificate_id,
+        "expected_status": expected_status,
+        "reason": reason.strip(),
+    }
+
+
+def restore_operation_request_payload(
+    *,
+    certificate_id: int,
+    source_operation_key: str,
+) -> dict[str, Any]:
+    """Intención propietaria canónica para compensación y recuperación."""
+
+    return {
+        "certificate_id": certificate_id,
+        "source_operation_key": source_operation_key,
+    }
+
+
+def _stabilize_certificate(
+    db: Session,
+    certificate: Certificate,
+) -> None:
+    """Materializa y recarga valores ORM/BD antes de capturar evidencia."""
+
+    db.flush([certificate])
+    db.refresh(certificate)
 
 
 def _certificate_snapshot(certificate: Certificate) -> dict[str, Any]:

@@ -84,6 +84,13 @@ auditoría append-only en la misma transacción y puede compensarse restaurando
 la visibilidad sólo si el certificado no presenta deriva. No existe endpoint
 nuevo ni lógica del dominio dentro del adaptador del Motor.
 
+Un replay exacto de ejecución o compensación recupera el resultado append-only
+antes de consultar el certificado, incluso si después cambió o quedó inactivo.
+Hash, operación o payload distintos se rechazan. Para una clave nueva se repite
+el lookup después del lock; el snapshot posterior se toma tras `flush` y
+`refresh`, por lo que coincide con `updated_at` y el estado realmente
+persistidos.
+
 ## Evidencia del caso real
 
 La validación reversible del certificado `1` ejecutó:

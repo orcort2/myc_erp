@@ -129,6 +129,9 @@ su contrato está en
 [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md)
 y su cierre técnico en
 [`../../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](../../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md).
+Las observaciones de replay dependiente del estado actual y snapshot previo al
+flush están corregidas sin migración y permanecen pendientes de revisión
+formal.
 
 API/SDK públicos, workers, schedulers, distribución e IA permanecen fuera de
 alcance. La Fase 10 no fue iniciada. La IA es únicamente una posibilidad futura

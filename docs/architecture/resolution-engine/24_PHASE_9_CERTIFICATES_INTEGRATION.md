@@ -109,8 +109,26 @@ registro append-only con:
 - operación fuente cuando se trata de compensación.
 
 La misma clave y el mismo hash devuelven el resultado persistido sin repetir la
-mutación. La misma clave con otra intención se rechaza. Dos operaciones
-distintas no pueden retirar dos veces la misma visibilidad.
+mutación. Este replay se resuelve antes de consultar, bloquear o validar el
+estado actual del certificado: continúa disponible aunque después cambien el
+estado, la visibilidad o la vigencia del registro. Además del hash deben
+coincidir operación y payload canónico; cualquier colisión se rechaza.
+
+Para una clave nueva se consulta inicialmente la ausencia de resultado, se
+bloquea el certificado y se repite la consulta dentro de la transacción. La
+unicidad persistente resuelve carreras entre certificados distintos; si otra
+transacción confirma primero, el perdedor revierte íntegramente y recupera
+únicamente ese resultado exacto. Dos operaciones distintas no pueden retirar
+dos veces la misma visibilidad.
+
+## Snapshot confirmado
+
+El snapshot posterior nunca se toma sólo desde el objeto mutado en memoria. El
+servicio aplica el cambio, ejecuta `flush`, refresca la fila desde la base y
+después construye `after_snapshot`, `result_payload`, auditoría y efectos.
+Así `client_visible`, `updated_at`, estado y cualquier valor ORM/BD generado
+coinciden con la fila confirmada. Ejecución y compensación siguen el mismo
+protocolo y todo permanece dentro de una única transacción.
 
 ## Compensación
 
@@ -196,5 +214,6 @@ evidencia propietaria append-only y migración reversible
 `f9c1d3e5a7b9`.
 
 La suite específica valida el ciclo puro, bloqueo y deriva, atomicidad,
-idempotencia, rollback, ejecución real protegida por la seguridad de Fase 8,
-compensación y límites arquitectónicos. No se inició otro caso, dominio o fase.
+idempotencia histórica, colisiones, concurrencia, rollback, snapshot pos-flush,
+ejecución real protegida por la seguridad de Fase 8, compensación y límites
+arquitectónicos. No se inició otro caso, dominio o fase.

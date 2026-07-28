@@ -2450,7 +2450,9 @@ Mediante la integración completa del Modelo de Seguridad, el Motor garantiza qu
 > autorizado es Certificados: `certificate.resolve_incorrect_release` está
 > implementado y `EN REVISIÓN` conforme a
 > [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md).
-> Ningún otro dominio puede iniciarse antes de su validación y aprobación.
+> La corrección bloqueante de replay histórico y snapshot confirmado está
+> implementada sin cambio de esquema. Ningún otro dominio puede iniciarse
+> antes de su validación y aprobación.
 
 Con el Motor de Resoluciones completamente consolidado desde el punto de vista arquitectónico, la siguiente etapa consiste en convertirlo en el mecanismo institucional mediante el cual operan los distintos módulos del ERP MYC.
 

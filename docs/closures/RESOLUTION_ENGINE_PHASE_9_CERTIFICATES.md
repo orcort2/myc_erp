@@ -37,6 +37,9 @@ habilita otro dominio y no inicia la Fase 10.
 - Consultas y simulación no producen efectos.
 - Toda mutación cruza un Domain Gateway hacia el servicio canónico.
 - Replay exacto no reinvoca; una intención distinta se rechaza.
+- Replay exacto recupera el resultado histórico antes de validar el estado
+  actual; una colisión de hash, operación o payload se deniega.
+- El snapshot posterior se construye sólo después de `flush` y `refresh`.
 - Operación, auditoría y cambio de visibilidad confirman o revierten juntos.
 - La compensación agrega evidencia y no elimina la operación fuente.
 - No se incorporaron routers, API pública, SDK, workers, distribución, UI,
@@ -44,12 +47,12 @@ habilita otro dominio y no inicia la Fase 10.
 
 ## Validaciones
 
-- suite específica de Fase 9: **7 passed**;
-- suite completa del Motor: **208 passed**;
+- suite específica de Fase 9: **12 passed**;
+- suite completa del Motor: **213 passed**;
 - pruebas seleccionadas de Certificados: **30 passed**; dos pruebas del
   conversor abortan por LibreOffice en el entorno y dos pruebas que crean toda
   la metadata SQLite son bloqueadas por `TD-023`;
-- backend completo: **311 passed**, **19 subtests passed**, **21 failed**:
+- backend completo: **316 passed**, **19 subtests passed**, **21 failed**:
   19 fallos por `TD-023` y dos por el aborto externo de LibreOffice;
 - frontend: no declara suite en `package.json`; build Vite correcto, con la
   advertencia preexistente de tamaño de chunk;
@@ -59,6 +62,23 @@ habilita otro dominio y no inicia la Fase 10.
 - `alembic check`: conserva únicamente la deriva histórica `TD-021`, sin
   operación atribuible a la tabla de Fase 9;
 - trigger append-only comprobado en PostgreSQL.
+
+## Corrección bloqueante de revisión
+
+La revisión posterior a `5abfe2d` identificó que el replay consultaba primero
+el certificado vigente y que el snapshot posterior podía preceder al `flush`.
+Ambas observaciones quedaron corregidas sin migración:
+
+1. lookup histórico exacto antes del estado actual;
+2. segunda comprobación después del lock para la primera ejecución;
+3. recuperación del ganador ante colisión concurrente de unicidad;
+4. denegación de hash, operación o payload distintos;
+5. mutación, `flush`, `refresh` y sólo entonces evidencia posterior;
+6. el mismo protocolo para compensación.
+
+La suite reproduce replay tras deriva/inactividad, dos solicitudes concurrentes
+exactas, colisiones concurrentes, rollback y equivalencia entre snapshot,
+resultado y fila persistida. La Fase 9 continúa `EN REVISIÓN`.
 
 ## Restricción
 

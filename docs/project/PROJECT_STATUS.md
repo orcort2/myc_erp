@@ -67,8 +67,11 @@ outbox congela un lote. Auditoría sólo reutiliza la misma consulta read-only.
 La integración conserva ownership: un provider read-only obtiene hechos y los
 gateways delegan en el servicio canónico de Certificados, que retira sólo la
 visibilidad futura y conserva la liberación histórica. La operación y su
-compensación son transaccionales, idempotentes y append-only. API/SDK públicos,
-otro dominio, distribución e IA siguen fuera de alcance; Fase 10 no se inició.
+compensación son transaccionales, idempotentes y append-only. Las observaciones
+bloqueantes de replay dependiente del estado y snapshot previo al flush están
+corregidas y cubiertas por concurrencia, deriva, rollback y equivalencia
+persistente; la fase espera revisión formal. API/SDK públicos, otro dominio,
+distribución e IA siguen fuera de alcance; Fase 10 no se inició.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.

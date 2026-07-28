@@ -68,14 +68,15 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 311 pruebas y 19 subpruebas correctas, 21 fallos y
+- Suite backend completa: 316 pruebas y 19 subpruebas correctas, 21 fallos y
   dos advertencias. Diecinueve fallos provienen del `JSONB` no portable del
   módulo Actividad al crear metadata SQLite (`TD-023`) y dos del aborto del
   proceso externo LibreOffice; ninguno pertenece a Fase 9.
-- Suite específica de Fase 9: 7 pruebas correctas.
+- Suite específica de Fase 9: 12 pruebas correctas, incluidas deriva,
+  inactividad, colisiones y dos carreras concurrentes.
 - Suite seleccionada de Certificados: 30 pruebas correctas; los cuatro fallos
   restantes corresponden a los dos bloqueos externos anteriores.
-- Suite completa del Motor: 208 pruebas correctas, incluidas creación,
+- Suite completa del Motor: 213 pruebas correctas, incluidas creación,
   transiciones válidas/inválidas, invariantes, autorización exacta,
   revalidación, concurrencia, persistencia, ejecución, compensación,
   arquitectura, esquema y migraciones.
@@ -162,13 +163,21 @@
   El consumo se confirma con la transacción; rollback no quema la concesión.
 - La autenticación futura/expirada, permisos fuera de contexto, downgrade de
   permiso, recursos falsos y evidencia/hash alterados se rechazan.
-- Validaciones de Fase 9: 7 específicas; 208 del Motor; 30 seleccionadas de
-  Certificados; backend completo con 311 pruebas y 19 subpruebas correctas,
+- Validaciones de Fase 9: 12 específicas; 213 del Motor; 30 seleccionadas de
+  Certificados; backend completo con 316 pruebas y 19 subpruebas correctas,
   19 fallos de `TD-023` y dos abortos de LibreOffice; build Vite y compilación
   Python correctos.
 - La migración reversible `f9c1d3e5a7b9` fue probada en
   upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva histórica
   `TD-021` y ninguna operación sobre `certificate_resolution_operations`.
+- La corrección bloqueante posterior no modifica esquema ni datos: usa la
+  unicidad/trigger vigentes, por lo que no requiere migración ni regeneración
+  del respaldo. Se verificaron nuevamente head, tamaño, hash, versión y trigger
+  del respaldo existente.
+- Replay exacto de ejecución/compensación se resuelve antes del certificado
+  actual; una clave nueva usa segunda comprobación bajo lock y recuperación del
+  ganador concurrente. `after_snapshot` se construye después de
+  `flush/refresh`.
 - El respaldo SQL fue regenerado y coincide con el head.
 - Apertura aprobada de Fase 8:
   [`architecture/resolution-engine/21_PHASE_8_OPENING.md`](architecture/resolution-engine/21_PHASE_8_OPENING.md).

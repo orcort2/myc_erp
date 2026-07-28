@@ -66,7 +66,9 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   definición vertical, Fact Provider read-only y Domain Gateways hacia el
   servicio canónico de Certificados. La mutación oculta el certificado sin
   reescribir su liberación y admite compensación con evidencia append-only.
-  Ningún otro caso o dominio está iniciado.
+  Replay histórico, colisiones concurrentes y snapshots confirmados
+  pos-flush están cubiertos por la corrección de revisión. Ningún otro caso o
+  dominio está iniciado.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

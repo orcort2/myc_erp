@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.resolution_engine.domain.enums import EntityRelationshipType
@@ -42,7 +44,10 @@ from app.services.certificate_resolution_operations import (
     CertificateOperationResult,
     CertificateResolutionOperationError,
     get_certificate_resolution_facts,
+    recover_confirmed_certificate_operation,
+    restore_operation_request_payload,
     restore_incorrect_release_visibility,
+    withdraw_operation_request_payload,
     withdraw_incorrect_release,
 )
 
@@ -71,17 +76,65 @@ class SqlAlchemyCertificateCommandService:
         self,
         **values,
     ) -> CertificateOperationOutcome:
-        with self._session_factory() as session, session.begin():
-            result = withdraw_incorrect_release(session, **values)
+        try:
+            with self._session_factory() as session, session.begin():
+                result = withdraw_incorrect_release(session, **values)
+        except IntegrityError as exc:
+            result = self._recover_concurrent_result(
+                values=values,
+                operation_key=WITHDRAW_OPERATION,
+                request_payload=withdraw_operation_request_payload(
+                    certificate_id=values["certificate_id"],
+                    expected_status=values["expected_status"],
+                    reason=values["reason"],
+                ),
+                original_error=exc,
+            )
         return _operation_outcome(result)
 
     def restore_incorrect_release_visibility(
         self,
         **values,
     ) -> CertificateOperationOutcome:
-        with self._session_factory() as session, session.begin():
-            result = restore_incorrect_release_visibility(session, **values)
+        try:
+            with self._session_factory() as session, session.begin():
+                result = restore_incorrect_release_visibility(
+                    session,
+                    **values,
+                )
+        except IntegrityError as exc:
+            result = self._recover_concurrent_result(
+                values=values,
+                operation_key=RESTORE_OPERATION,
+                request_payload=restore_operation_request_payload(
+                    certificate_id=values["certificate_id"],
+                    source_operation_key=values[
+                        "source_operation_key"
+                    ],
+                ),
+                original_error=exc,
+            )
         return _operation_outcome(result)
+
+    def _recover_concurrent_result(
+        self,
+        *,
+        values: dict[str, Any],
+        operation_key: str,
+        request_payload: dict[str, Any],
+        original_error: IntegrityError,
+    ) -> CertificateOperationResult:
+        with self._session_factory() as session:
+            result = recover_confirmed_certificate_operation(
+                session,
+                idempotency_key=values["idempotency_key"],
+                request_hash=values["request_hash"],
+                operation_key=operation_key,
+                request_payload=request_payload,
+            )
+        if result is None:
+            raise original_error
+        return result
 
 
 class SqlAlchemySourceOperationReferenceReader:

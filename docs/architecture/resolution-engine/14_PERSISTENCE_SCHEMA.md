@@ -153,3 +153,9 @@ La tabla referencia al certificado y a su operación fuente con
 reutiliza el trigger institucional que impide `UPDATE` o `DELETE`. El
 expediente general enlaza el certificado mediante efectos/referencias del
 Motor; la reconstrucción del Motor no importa este ORM propietario.
+
+La corrección de revisión no modifica el esquema. La clave única existente
+continúa siendo la reserva durable frente a carreras. Para una clave nueva, el
+servicio realiza lookup, lock y segundo lookup; ante una carrera de unicidad la
+transacción perdedora revierte y consulta el ganador exacto. La fila del
+certificado se vacía y refresca antes de construir la evidencia posterior.
