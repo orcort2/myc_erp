@@ -20,13 +20,16 @@ import {
   createCenterResolution,
   getCenterResolution,
   getResolutionCenterCapabilities,
+  getResolutionCenterIndicators,
   listCenterResolutions,
   listResolutionDefinitions,
   runCenterResolutionStage
 } from '../services/api.js';
 import {
   ACTIVE_RESOLUTION_STATES,
+  buildResolutionParameters,
   canRunResolutionStage,
+  resolutionParameterFields,
   shouldPollResolutions
 } from '../utils/resolutionCenter.js';
 import './resolution-center.css';
@@ -63,6 +66,31 @@ function formatDuration(seconds) {
   return `${Math.floor(seconds / 3600)} h ${Math.floor((seconds % 3600) / 60)} min`;
 }
 
+function DynamicParameterField({ definition, name, onChange, value }) {
+  const schema = definition.parameter_schema.properties[name];
+  const required = definition.parameter_schema.required?.includes(name);
+  const common = {
+    id: `resolution-parameter-${name}`,
+    maxLength: schema.maxLength,
+    minLength: schema.minLength,
+    onChange: (event) => onChange(name, event.target.value),
+    placeholder: schema.placeholder,
+    required,
+    value: value ?? ''
+  };
+  return (
+    <label htmlFor={common.id}>
+      {schema.title || name}
+      {schema['ui:widget'] === 'textarea'
+        ? <textarea {...common} rows={schema['ui:rows'] || 3} />
+        : schema.enum
+          ? <select {...common}>{schema.enum.map((option) => <option key={option} value={option}>{option}</option>)}</select>
+          : <input {...common} type={schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text'} />}
+      {schema.description ? <small>{schema.description}</small> : null}
+    </label>
+  );
+}
+
 function CreateResolutionDialog({ definitions, onClose, onCreated }) {
   const [definitionKey, setDefinitionKey] = useState(
     definitions[0] ? `${definitions[0].resolution_type}@${definitions[0].version}` : ''
@@ -72,12 +100,32 @@ function CreateResolutionDialog({ definitions, onClose, onCreated }) {
   ) ?? definitions[0];
   const [form, setForm] = useState({
     subject_id: '',
-    title: 'Retiro administrativo de acceso a certificado',
-    reason: '',
-    priority: 'normal'
+    title: definitions[0]?.labels?.create_title || '',
+    priority: 'normal',
+    parameters: {}
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const parameterFields = resolutionParameterFields(definition);
+
+  function selectDefinition(value) {
+    const selected = definitions.find(
+      (item) => `${item.resolution_type}@${item.version}` === value
+    );
+    setDefinitionKey(value);
+    setForm((current) => ({
+      ...current,
+      title: selected?.labels?.create_title || '',
+      parameters: {}
+    }));
+  }
+
+  function setParameter(name, value) {
+    setForm((current) => ({
+      ...current,
+      parameters: { ...current.parameters, [name]: value }
+    }));
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -91,11 +139,9 @@ function CreateResolutionDialog({ definitions, onClose, onCreated }) {
         subject_type: definition.object_type,
         subject_id: form.subject_id.trim(),
         title: form.title.trim(),
-        reason: form.reason.trim(),
+        reason: String(form.parameters.reason || form.title).trim(),
         priority: form.priority,
-        parameters: {
-          reason: form.reason.trim()
-        }
+        parameters: buildResolutionParameters(definition, form.parameters)
       };
       const created = await createCenterResolution(payload, crypto.randomUUID());
       onCreated(created.public_id);
@@ -120,7 +166,7 @@ function CreateResolutionDialog({ definitions, onClose, onCreated }) {
           <>
             <label>
               Tipo de resolución
-              <select onChange={(event) => setDefinitionKey(event.target.value)} value={definitionKey}>
+              <select onChange={(event) => selectDefinition(event.target.value)} value={definitionKey}>
                 {definitions.map((item) => (
                   <option key={`${item.resolution_type}@${item.version}`} value={`${item.resolution_type}@${item.version}`}>
                     {item.name} · v{item.version}
@@ -133,13 +179,14 @@ function CreateResolutionDialog({ definitions, onClose, onCreated }) {
               <div>
                 <strong>{definition.name}</strong>
                 <p>{definition.description}</p>
-                <small>{definition.domain} · v{definition.version} · {definition.capabilities.join(', ')}</small>
+                <small>{definition.domain} · v{definition.version} · riesgo {definition.risk_level}</small>
+                <small>Simulación: {definition.supports_simulation ? 'sí' : 'no'} · Compensación: {definition.supports_compensation ? 'sí' : 'no'}</small>
               </div>
             </section>
             <div className="resolution-form-grid">
               <label>
-                {definition.object_type}
-                <input required onChange={(event) => setForm({ ...form, subject_id: event.target.value })} placeholder={`ID de ${definition.object_type}`} value={form.subject_id} />
+                {definition.labels?.subject || definition.object_type}
+                <input required onChange={(event) => setForm({ ...form, subject_id: event.target.value })} placeholder={definition.labels?.subject_placeholder || `ID de ${definition.object_type}`} value={form.subject_id} />
               </label>
               <label>
                 Prioridad
@@ -155,14 +202,19 @@ function CreateResolutionDialog({ definitions, onClose, onCreated }) {
               Título
               <input maxLength="240" required onChange={(event) => setForm({ ...form, title: event.target.value })} value={form.title} />
             </label>
-            <label>
-              Motivo institucional
-              <textarea maxLength="2000" required onChange={(event) => setForm({ ...form, reason: event.target.value })} rows="4" value={form.reason} />
-            </label>
-            <aside className="resolution-warning">
+            {parameterFields.map(({ name }) => (
+              <DynamicParameterField
+                definition={definition}
+                key={name}
+                name={name}
+                onChange={setParameter}
+                value={form.parameters[name]}
+              />
+            ))}
+            {definition.warnings?.length ? <aside className="resolution-warning">
               <AlertTriangle size={18} />
-              <span>{definition.warnings?.[0]}</span>
-            </aside>
+              <span>{definition.warnings.join(' ')}</span>
+            </aside> : null}
           </>
         ) : <p>No existen definiciones habilitadas.</p>}
         {error ? <p className="resolution-error">{error}</p> : null}
@@ -240,6 +292,20 @@ function ResolutionDetailDialog({ capabilities, detail, loading, onClose, onRefr
                   {detail.subject.route ? <a className="secondary-button" href={detail.subject.route}>Abrir objeto</a> : null}
                 </div>
               </DetailSection>
+              <DetailSection title="Parámetros utilizados">
+                <dl className="resolution-result-details">
+                  {Object.entries(detail.parameters).map(([key, value]) => (
+                    <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>
+                  ))}
+                </dl>
+              </DetailSection>
+              {detail.analysis ? <DetailSection title="Análisis">
+                <div className="resolution-result-card">
+                  <ShieldCheck size={21} />
+                  <div><strong>{detail.analysis.status}</strong><p>{detail.analysis.findings.join(' · ') || 'Sin hallazgos'}</p></div>
+                </div>
+                {detail.analysis.blockers.length ? <p className="resolution-error">{detail.analysis.blockers.join(' · ')}</p> : null}
+              </DetailSection> : null}
               {detail.plan ? <DetailSection title="Plan y simulación">
                 <p><strong>{detail.plan.summary}</strong></p>
                 <ul>{detail.plan.steps.map((step) => <li key={step.sequence}>{step.sequence}. {step.description} <StatusBadge>{step.criticality}</StatusBadge></li>)}</ul>
@@ -268,6 +334,28 @@ function ResolutionDetailDialog({ capabilities, detail, loading, onClose, onRefr
                   <div><dt>Pasos fallidos</dt><dd>{detail.result.failed_steps?.length ? detail.result.failed_steps.join(' · ') : 'Ninguno'}</dd></div>
                 </dl>
               </DetailSection> : null}
+              <DetailSection title="Ejecución, intentos y recuperación">
+                {detail.attempts.length ? <ol className="resolution-evidence-list">
+                  {detail.attempts.map((attempt) => (
+                    <li key={attempt.attempt_number}>
+                      <strong>Intento {attempt.attempt_number}</strong>
+                      <StatusBadge>{attempt.status}</StatusBadge>
+                      <small>{formatDate(attempt.started_at)}</small>
+                    </li>
+                  ))}
+                </ol> : <p className="resolution-muted">Aún no existen intentos de ejecución.</p>}
+                {detail.recovery.map((event, index) => (
+                  <p key={`${event.occurred_at}-${index}`}><strong>{event.event_type}</strong> · {formatDate(event.occurred_at)}</p>
+                ))}
+              </DetailSection>
+              <DetailSection title="Compensaciones">
+                {detail.compensations.length ? detail.compensations.map((item) => (
+                  <div className="resolution-result-card" key={item.plan_id}>
+                    <RefreshCw size={20} />
+                    <div><strong>{item.strategy}</strong><p>{item.reason}</p><StatusBadge>{item.execution?.status || 'planificada'}</StatusBadge></div>
+                  </div>
+                )) : <p className="resolution-muted">No se ha requerido compensación.</p>}
+              </DetailSection>
               <DetailSection title="Evidencias y auditoría">
                 <p className="resolution-muted">Historial append-only · {detail.evidence.security_decisions.length} decisiones · {detail.evidence.context_snapshots.length} snapshots · {detail.evidence.references.length} evidencias</p>
                 <ol className="resolution-evidence-list">
@@ -348,6 +436,7 @@ export default function ResolutionCenterPage() {
   });
   const [capabilities, setCapabilities] = useState(null);
   const [definitions, setDefinitions] = useState([]);
+  const [indicators, setIndicators] = useState(null);
   const [selectedId, setSelectedId] = useState('');
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -370,13 +459,17 @@ export default function ResolutionCenterPage() {
     loadingRef.current = true;
     setError('');
     try {
-      const payload = await listCenterResolutions({
-        ...query,
-        cursor: append ? nextCursor : undefined,
-        limit: 40
-      });
+      const [payload, indicatorPayload] = await Promise.all([
+        listCenterResolutions({
+          ...query,
+          cursor: append ? nextCursor : undefined,
+          limit: 40
+        }),
+        getResolutionCenterIndicators()
+      ]);
       setItems((current) => append ? [...current, ...payload.items] : payload.items);
       setNextCursor(payload.next_cursor);
+      setIndicators(indicatorPayload);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -438,14 +531,28 @@ export default function ResolutionCenterPage() {
 
   return (
     <section className="resolution-center-page">
-      <header className="resolution-center-hero">
+      <header className="module-workspace__hero clients-hero resolution-center-hero">
+        <span className="module-workspace__icon"><Network size={28} /></span>
         <div>
-          <span className="resolution-eyebrow"><Network size={15} /> Consola institucional</span>
+          <p>Consola institucional</p>
           <h1>Centro de Resoluciones</h1>
-          <p>Consulta, prepara, autoriza y sigue resoluciones operadas por el Motor real.</p>
+          <span>Consulta, prepara, autoriza y sigue resoluciones operadas por el Motor real.</span>
         </div>
         {capabilities?.can_create ? <button className="primary-button" onClick={() => setCreateOpen(true)} type="button"><Plus size={18} /> Nueva resolución</button> : null}
       </header>
+
+      {indicators ? <section aria-label="Indicadores del Motor" className="resolution-indicators">
+        {[
+          ['Pendientes', indicators.pending],
+          ['Autorizadas', indicators.authorized],
+          ['Ejecutándose', indicators.executing],
+          ['Finalizadas', indicators.completed],
+          ['Fallidas', indicators.failed],
+          ['Bloqueadas', indicators.blocked],
+          ['Compensadas', indicators.compensated],
+          ['Con reintentos', indicators.with_retries]
+        ].map(([label, value]) => <article key={label}><small>{label}</small><strong>{value}</strong></article>)}
+      </section> : null}
 
       <div className="resolution-toolbar">
         <label className="resolution-search"><Search size={18} /><input onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="ID, certificado, ETS, factura, cliente…" value={filters.search} /></label>

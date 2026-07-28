@@ -105,6 +105,20 @@ durable del actor no contiene el token HTTP y su concesión por operación no
 caduca con la sesión web. Un `work_key` único por resolución evita dos
 despachos. La lista y el expediente son proyecciones read-only aisladas por
 organización/actor; hashes, nodo y lease requieren permisos técnicos. Fase 12
+quedó `APROBADA` mediante `a7bf75f`.
+
+Fase 13 conserva ese flujo y elimina los últimos contratos específicos de
+presentación:
+
+```text
+registro institucional versionado → formulario derivado del esquema
+→ servicios canónicos → cola durable → worker → resultado persistido
+→ indicadores/timeline/expediente proyectados por backend
+```
+
+Certificados recorre el ciclo completo incluso después de cerrar la sesión.
+La decisión de ejecución incluye el estado exacto esperado por Seguridad; el
+worker no omite ni reevalúa de forma paralela Lifecycle o políticas. Fase 13
 queda `EN REVISIÓN`.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot

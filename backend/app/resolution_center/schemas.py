@@ -20,9 +20,13 @@ class ResolutionDefinitionResource(CenterModel):
     domain: str
     object_type: str
     object_route: str | None = None
+    risk_level: Literal["low", "medium", "high", "critical"]
     capabilities: tuple[str, ...]
     required_permissions: tuple[str, ...]
+    supports_simulation: bool
+    supports_compensation: bool
     parameter_schema: dict[str, Any]
+    labels: dict[str, str]
     warnings: tuple[str, ...] = ()
 
 
@@ -56,6 +60,18 @@ class ResolutionCollection(CenterModel):
     limit: int
 
 
+class ResolutionCenterIndicators(CenterModel):
+    total: int
+    pending: int
+    authorized: int
+    executing: int
+    completed: int
+    failed: int
+    blocked: int
+    compensated: int
+    with_retries: int
+
+
 class TimelineEntry(CenterModel):
     occurred_at: datetime
     category: str
@@ -75,11 +91,16 @@ class ResolutionDetail(CenterModel):
     definition_version: str
     correlation_id: str | None = None
     subject: dict[str, Any]
+    parameters: dict[str, Any] = Field(default_factory=dict)
+    analysis: dict[str, Any] | None = None
     lifecycle: tuple[TimelineEntry, ...]
     distributed: dict[str, Any] | None = None
     plan: dict[str, Any] | None = None
     simulation: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
+    attempts: tuple[dict[str, Any], ...] = ()
+    recovery: tuple[dict[str, Any], ...] = ()
+    compensations: tuple[dict[str, Any], ...] = ()
     evidence: dict[str, Any] = Field(default_factory=dict)
     capabilities: tuple[str, ...] = ()
 

@@ -183,6 +183,10 @@ export function listResolutionDefinitions() {
   return request('/resolution-center/v1/definitions');
 }
 
+export function getResolutionCenterIndicators() {
+  return request('/resolution-center/v1/indicators');
+}
+
 export function listCenterResolutions(params = {}) {
   return request(`/resolution-center/v1/resolutions${resolutionCenterQuery(params)}`);
 }

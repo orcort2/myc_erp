@@ -76,3 +76,7 @@ cd backend
 
 El contrato operativo está en
 `docs/architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md`.
+La Fase 12 está aprobada y la Fase 13 consolida `/resolutions` como consola
+oficial: metadata institucional versionada, formularios dinámicos, indicadores
+backend, expediente operativo completo y Certificados end-to-end mediante el
+worker canónico. Fase 13 permanece `EN REVISIÓN`; Fase 14 no está iniciada.

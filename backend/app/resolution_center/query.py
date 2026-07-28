@@ -4,22 +4,26 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import String, and_, cast, func, or_, select
+from sqlalchemy import String, and_, case, cast, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.user import User
 from app.resolution_center.schemas import (
     ResolutionCollection,
+    ResolutionCenterIndicators,
     ResolutionDetail,
     ResolutionListItem,
     TimelineEntry,
 )
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
+    ResolutionAnalysis,
     ResolutionAuditEvent,
     ResolutionAuthorizationDecision,
     ResolutionAuthorizationRequest,
+    ResolutionCompensationExecution,
+    ResolutionCompensationPlan,
     ResolutionContextSnapshot,
     ResolutionEvidenceReference,
     ResolutionExecution,
@@ -29,6 +33,7 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionRevalidation,
     ResolutionSecurityDecision,
     ResolutionSimulation,
+    ResolutionStepExecution,
     ResolutionWorkEvent,
     ResolutionWorkItem,
 )
@@ -274,6 +279,155 @@ class ResolutionOperationsQueryService:
             limit=limit,
         )
 
+    def indicators(
+        self,
+        *,
+        organization_id: str,
+        actor_id: str,
+        can_read_all: bool,
+    ) -> ResolutionCenterIndicators:
+        """Calcula el tablero operativo íntegramente en backend."""
+
+        latest_work = (
+            select(
+                ResolutionWorkItem.resolution_id.label("resolution_id"),
+                func.max(ResolutionWorkItem.id).label("work_id"),
+            )
+            .group_by(ResolutionWorkItem.resolution_id)
+            .subquery()
+        )
+        scoped = (
+            select(
+                Resolution.id.label("resolution_id"),
+                Resolution.status.label("lifecycle_status"),
+                ResolutionWorkItem.status.label("work_status"),
+                func.coalesce(ResolutionWorkItem.attempt_count, 0).label(
+                    "attempt_count"
+                ),
+            )
+            .outerjoin(
+                latest_work,
+                latest_work.c.resolution_id == Resolution.id,
+            )
+            .outerjoin(
+                ResolutionWorkItem,
+                ResolutionWorkItem.id == latest_work.c.work_id,
+            )
+            .where(Resolution.organization_id == organization_id)
+        )
+        if not can_read_all:
+            scoped = scoped.where(
+                Resolution.requested_by_actor_id == actor_id
+            )
+        projection = scoped.subquery()
+        row = self._session.execute(
+            select(
+                func.count().label("total"),
+                func.sum(
+                    case(
+                        (
+                            projection.c.lifecycle_status.in_(
+                                tuple(ACTIVE_STATES - {"authorized", "executing"})
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("pending"),
+                func.sum(
+                    case(
+                        (
+                            projection.c.lifecycle_status.in_(
+                                ("authorized", "ready_for_execution")
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("authorized"),
+                func.sum(
+                    case(
+                        (
+                            or_(
+                                projection.c.lifecycle_status == "executing",
+                                projection.c.work_status == "claimed",
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("executing"),
+                func.sum(
+                    case(
+                        (
+                            projection.c.lifecycle_status.in_(
+                                ("completed", "compensated")
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("completed"),
+                func.sum(
+                    case(
+                        (
+                            or_(
+                                projection.c.lifecycle_status == "failed",
+                                projection.c.work_status == "failed",
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("failed"),
+                func.sum(
+                    case(
+                        (
+                            or_(
+                                projection.c.lifecycle_status == "blocked",
+                                projection.c.work_status == "blocked",
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("blocked"),
+                func.sum(
+                    case(
+                        (
+                            projection.c.lifecycle_status.in_(
+                                ("compensated", "partially_compensated")
+                            ),
+                            1,
+                        ),
+                        else_=0,
+                    )
+                ).label("compensated"),
+                func.sum(
+                    case(
+                        (projection.c.attempt_count > 1, 1),
+                        else_=0,
+                    )
+                ).label("with_retries"),
+            ).select_from(projection)
+        ).one()
+        return ResolutionCenterIndicators(
+            **{
+                key: int(getattr(row, key) or 0)
+                for key in (
+                    "total",
+                    "pending",
+                    "authorized",
+                    "executing",
+                    "completed",
+                    "failed",
+                    "blocked",
+                    "compensated",
+                    "with_retries",
+                )
+            }
+        )
+
     def get(
         self,
         public_id: str,
@@ -310,6 +464,68 @@ class ResolutionOperationsQueryService:
             )
         )
         work = self._latest_work(root.id)
+        analysis = self._session.scalar(
+            select(ResolutionAnalysis)
+            .where(ResolutionAnalysis.resolution_id == root.id)
+            .order_by(ResolutionAnalysis.analysis_version.desc())
+        )
+        executions = tuple(
+            self._session.scalars(
+                select(ResolutionExecution)
+                .where(ResolutionExecution.resolution_id == root.id)
+                .order_by(ResolutionExecution.attempt_number)
+            )
+        )
+        execution_ids = tuple(item.id for item in executions)
+        step_executions = (
+            tuple(
+                self._session.scalars(
+                    select(ResolutionStepExecution)
+                    .where(
+                        ResolutionStepExecution.execution_id.in_(execution_ids)
+                    )
+                    .order_by(
+                        ResolutionStepExecution.execution_id,
+                        ResolutionStepExecution.id,
+                    )
+                )
+            )
+            if execution_ids
+            else ()
+        )
+        compensation_plans = tuple(
+            self._session.scalars(
+                select(ResolutionCompensationPlan)
+                .where(ResolutionCompensationPlan.resolution_id == root.id)
+                .order_by(ResolutionCompensationPlan.id)
+            )
+        )
+        compensation_executions = tuple(
+            self._session.scalars(
+                select(ResolutionCompensationExecution)
+                .where(
+                    ResolutionCompensationExecution.resolution_id == root.id
+                )
+                .order_by(ResolutionCompensationExecution.id)
+            )
+        )
+        recovery_events = tuple(
+            self._session.scalars(
+                select(ResolutionWorkEvent)
+                .where(
+                    ResolutionWorkEvent.resolution_id == root.id,
+                    ResolutionWorkEvent.event_type.in_(
+                        (
+                            "lease_expired",
+                            "recovered",
+                            "retry_scheduled",
+                            "retry_exhausted",
+                        )
+                    ),
+                )
+                .order_by(ResolutionWorkEvent.id)
+            )
+        )
         steps = (
             tuple(
                 self._session.scalars(
@@ -373,6 +589,22 @@ class ResolutionOperationsQueryService:
                 "label": root.metadata_json.get("subject_label"),
                 "route": root.metadata_json.get("subject_route"),
             },
+            parameters=dict(root.metadata_json.get("parameters", {})),
+            analysis=(
+                {
+                    "version": analysis.analysis_version,
+                    "status": analysis.status,
+                    "is_resolvable": analysis.is_resolvable,
+                    "findings": analysis.findings,
+                    "blockers": analysis.blockers,
+                    "warnings": analysis.warnings,
+                    "available_strategies": analysis.available_strategies,
+                    "analyzed_at": _aware(analysis.analyzed_at),
+                    "analyzed_by": self._actor_name(analysis.analyzed_by),
+                }
+                if analysis
+                else None
+            ),
             lifecycle=self.timeline(
                 root,
                 include_technical=include_technical,
@@ -467,6 +699,72 @@ class ResolutionOperationsQueryService:
                 }
                 if result
                 else None
+            ),
+            attempts=tuple(
+                {
+                    "attempt_number": item.attempt_number,
+                    "status": item.status,
+                    "started_at": (
+                        _aware(item.started_at) if item.started_at else None
+                    ),
+                    "completed_at": (
+                        _aware(item.completed_at) if item.completed_at else None
+                    ),
+                    "worker": item.worker_id if include_technical else None,
+                    "retryable": item.retryable,
+                    "retry_after": (
+                        _aware(item.retry_after) if item.retry_after else None
+                    ),
+                    "error_code": item.error_code,
+                    "error_message": item.error_message,
+                    "steps": [
+                        {
+                            "status": step.status,
+                            "attempt_number": step.attempt_number,
+                            "retry_count": step.retry_count,
+                            "error_code": step.error_code,
+                        }
+                        for step in step_executions
+                        if step.execution_id == item.id
+                    ],
+                }
+                for item in executions
+            ),
+            recovery=tuple(
+                {
+                    "event_type": item.event_type,
+                    "occurred_at": _aware(item.occurred_at),
+                    "attempt_number": item.attempt_number,
+                    "details": (
+                        dict(item.payload) if include_technical else {}
+                    ),
+                }
+                for item in recovery_events
+            ),
+            compensations=tuple(
+                {
+                    "plan_id": plan.id,
+                    "strategy": plan.strategy,
+                    "reason": plan.reason,
+                    "created_at": _aware(plan.created_at),
+                    "execution": next(
+                        (
+                            {
+                                "status": execution.status,
+                                "started_at": _aware(execution.started_at),
+                                "completed_at": (
+                                    _aware(execution.completed_at)
+                                    if execution.completed_at
+                                    else None
+                                ),
+                            }
+                            for execution in compensation_executions
+                            if execution.plan_id == plan.id
+                        ),
+                        None,
+                    ),
+                }
+                for plan in compensation_plans
             ),
             evidence={
                 "security_decisions": [

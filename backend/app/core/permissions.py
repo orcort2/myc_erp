@@ -7,6 +7,7 @@ INITIAL_ROLES = {
     "Finanzas": "Pagos, facturacion y liberacion financiera.",
     "Cliente": "Acceso limitado para cliente externo.",
     "Desarrollador": "Acceso tecnico avanzado para desarrollo y soporte.",
+    "Operador": "Opera resoluciones propias sin facultad de autorización.",
     "Auditor": "Consulta institucional de expedientes y evidencias.",
 }
 
@@ -223,6 +224,15 @@ ROLE_PERMISSIONS = {
         "service_orders.signatures.reopen",
         "sat_catalogs.read",
         "sat_catalogs.manage",
+    },
+    "Operador": {
+        "resolution_center.read",
+        "resolution_center.create",
+        "resolution_center.prepare",
+        "resolution_center.analyze",
+        "resolution_center.plan",
+        "resolution_center.simulate",
+        "resolution_center.execute",
     },
     "Auditor": {
         "resolution_center.read",

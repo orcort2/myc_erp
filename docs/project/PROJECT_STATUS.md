@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fases 0–11 aprobadas; Fase 12 `EN REVISIÓN`); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fases 0–12 aprobadas; Fase 13 `EN REVISIÓN`); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -79,8 +79,10 @@ Fase 12 añade el Centro de Resoluciones como módulo principal: lista keyset,
 expediente/timeline, catálogo guiado, contexto, análisis, plan, simulación,
 autorización, revalidación y aceptación durable. El worker independiente
 continúa por la cola de Fase 11 aunque termine la sesión web. La API interna no
-modifica la API pública ni el SDK. Fase 12 queda `EN REVISIÓN`; Fase 13 e IA
-permanecen fuera de alcance.
+modifica la API pública ni el SDK. Fase 12 quedó `APROBADA` mediante `a7bf75f`.
+Fase 13 consolida metadata institucional, formularios dinámicos, indicadores,
+expediente y el vertical Certificados end-to-end; queda `EN REVISIÓN`. Fase 14
+e IA permanecen fuera de alcance.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.

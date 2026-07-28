@@ -2,8 +2,9 @@
 
 ## Estado
 
-`EN REVISIÓN`. La Fase 11 fue aprobada formalmente en `cbde517`; la Fase 12
-implementa exclusivamente el Centro de Resoluciones. Fase 13 no fue iniciada.
+`APROBADA`. La revisión formal aprobó la Fase 12 mediante
+`a7bf75f0f2de23faecb17276aa11d187c654a00c` y autorizó la apertura de la Fase
+13 — Consolidación del Centro de Resoluciones.
 
 ## Entrega
 

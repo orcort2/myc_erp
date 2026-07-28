@@ -3335,9 +3335,38 @@ formal.
 
 ---
 
-# 14. Fase 13 — IA y Resoluciones Asistidas
+# 14. Fase 13 — Consolidación del Centro de Resoluciones
 
-# Fase 13 — IA y Resoluciones Asistidas
+# Fase 13 — Consolidación del Centro de Resoluciones e integración operativa
+
+> Estado: `EN REVISIÓN`
+>
+> Apertura autorizada tras la aprobación formal de Fase 12 en
+> `a7bf75f0f2de23faecb17276aa11d187c654a00c`.
+
+La Fase 13 convierte el Centro de Resoluciones en la consola oficial del Motor
+y establece el patrón universal de integración. No agrega infraestructura
+paralela: registra metadata institucional versionada, construye formularios
+desde esquemas declarativos, consolida indicadores y expediente mediante
+proyecciones backend y valida el ciclo completo con los ejecutores y workers
+canónicos.
+
+Cada integración aporta definición, proveedor de contexto, análisis,
+estrategia, plan, ejecutor, compensación y presentación. El Centro no contiene
+ramas de UI o workflow por dominio. Certificados es la primera integración
+consolidada y demuestra creación, contexto, análisis, plan, simulación,
+autorización, despacho, ejecución independiente de sesión y consulta de
+resultado.
+
+El contrato verificable está en
+[`30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md).
+La Fase 14 no puede iniciarse antes de la aprobación formal de esta fase.
+
+---
+
+# 15. Fase 14 — IA y Resoluciones Asistidas
+
+# Fase 14 — IA y Resoluciones Asistidas
 
 > Estado vigente: `NO INICIADA`. Carácter: posibilidad futura `OPCIONAL`. Esta
 > etapa conceptual no es un compromiso de implementación ni una dependencia
@@ -3591,7 +3620,7 @@ El Motor continuará siendo el único responsable de construir y ejecutar resolu
 
 # Criterios de Finalización
 
-La Fase 13 podrá considerarse concluida cuando:
+La Fase 14 podrá considerarse concluida cuando:
 
 - la IA pueda asistir la planificación;
 - existan recomendaciones explicables;
@@ -3620,7 +3649,7 @@ Las capacidades futuras no consistirán en modificar la arquitectura fundamental
 
 # Declaración Final
 
-La Fase 13 representa la consolidación del Motor de Resoluciones como una plataforma empresarial inteligente.
+La Fase 14 representa la consolidación del Motor de Resoluciones como una plataforma empresarial inteligente.
 
 Mediante la incorporación de inteligencia artificial gobernada, explicable y completamente subordinada a las políticas institucionales, el Motor amplía su capacidad para asistir la toma de decisiones sin renunciar a los principios fundamentales de responsabilidad, evidencia, seguridad y confianza que han guiado su arquitectura desde su concepción.
 

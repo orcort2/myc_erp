@@ -433,6 +433,9 @@ La Fase 0 se considera lista para revisión cuando:
 - Fase 11: `APROBADA` mediante `cbde517`; runtime distribuido vigente bajo
   [`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md) y
   [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md).
-- Fase 12: `EN REVISIÓN`; Centro de Resoluciones implementado bajo
+- Fase 12: `APROBADA` mediante `a7bf75f`; Centro de Resoluciones vigente bajo
   [`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md).
-  Fase 13 permanece `NO INICIADA`.
+- Fase 13: `EN REVISIÓN`; consolidación, registro institucional, formularios
+  dinámicos, indicadores, expediente y Certificados end-to-end bajo
+  [`30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md).
+  Fase 14 permanece `NO INICIADA`.

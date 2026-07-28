@@ -20,6 +20,7 @@ from app.resolution_center.schemas import (
     CenterCapabilities,
     CreateAdministrativeResolutionRequest,
     OperationAccepted,
+    ResolutionCenterIndicators,
     ResolutionCollection,
     ResolutionDefinitionResource,
     ResolutionDetail,
@@ -136,6 +137,18 @@ def list_resolutions(
             status_code=422,
             detail={"code": "invalid_cursor", "message": str(exc)},
         ) from None
+
+
+@router.get("/indicators", response_model=ResolutionCenterIndicators)
+def indicators(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("resolution_center.read")),
+) -> ResolutionCenterIndicators:
+    return ResolutionOperationsQueryService(db).indicators(
+        organization_id=settings.resolution_center_organization_id,
+        actor_id=_actor_id(current_user),
+        can_read_all=_can_read_all(current_user),
+    )
 
 
 @router.get(

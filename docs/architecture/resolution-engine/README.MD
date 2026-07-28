@@ -153,10 +153,18 @@ los contratos anteriores. Su apertura está en
 [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_11.md`](../../closures/RESOLUTION_ENGINE_PHASE_11.md).
 
-La Fase 12 — Centro de Resoluciones está implementada y `EN REVISIÓN`. Expone
+La Fase 12 — Centro de Resoluciones está `APROBADA` mediante `a7bf75f`. Expone
 la consola `/resolutions`, API interna, proyecciones, flujo guiado y aceptación
 durable independiente de sesión, sin modificar la API pública. Su contrato está
 en [`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md) y el
 cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_12.md`](../../closures/RESOLUTION_ENGINE_PHASE_12.md).
-Fase 13 e IA permanecen no iniciadas.
+
+La Fase 13 — Consolidación del Centro está implementada y `EN REVISIÓN`.
+Formaliza el registro institucional versionado, formularios dinámicos,
+indicadores backend, expediente completo, rol Operador y ejecución end-to-end
+de Certificados independiente de sesión. Su contrato está en
+[`30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md)
+y su cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_13.md`](../../closures/RESOLUTION_ENGINE_PHASE_13.md).
+Fase 14 e IA permanecen no iniciadas.

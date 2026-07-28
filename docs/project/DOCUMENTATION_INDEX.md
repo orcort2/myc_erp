@@ -71,6 +71,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/resolution-engine/27_PHASE_11_OPENING.md`](../architecture/resolution-engine/27_PHASE_11_OPENING.md) | Apertura aprobada, alcance, invariantes, exclusiones y gate de Fase 11 — Motor Distribuido. |
 | [`../architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md`](../architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md) | Contrato implementado de cola durable, workers, leases/fencing, recovery, retry determinista y observabilidad distribuida. |
 | [`../architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md`](../architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md) | Apertura y contrato implementado del Centro de Resoluciones: consola, API interna, proyecciones, flujo guiado, permisos y ejecución independiente de sesión. |
+| [`../architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](../architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md) | Contrato implementado de registro institucional, formularios dinámicos, indicadores, expediente e integración operativa end-to-end de Fase 13. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -97,7 +98,8 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md) | Cierre aprobado del vertical Certificados de Fase 9, con correcciones bloqueantes, validaciones y commits oficiales. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_10.md`](../closures/RESOLUTION_ENGINE_PHASE_10.md) | Cierre técnico de implementación de API/SDK v1, pendiente de revisión y aprobación formal de Fase 10. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_11.md`](../closures/RESOLUTION_ENGINE_PHASE_11.md) | Cierre técnico aprobado de distribución, coordinación multinodo, recuperación y observabilidad de Fase 11. |
-| [`../closures/RESOLUTION_ENGINE_PHASE_12.md`](../closures/RESOLUTION_ENGINE_PHASE_12.md) | Cierre técnico de consola operativa, API interna, proyecciones y flujo end-to-end de Fase 12, pendiente de revisión formal. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_12.md`](../closures/RESOLUTION_ENGINE_PHASE_12.md) | Cierre técnico aprobado de consola operativa, API interna, proyecciones y flujo end-to-end de Fase 12. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_13.md`](../closures/RESOLUTION_ENGINE_PHASE_13.md) | Cierre técnico de consolidación, patrón universal e integración Certificados end-to-end de Fase 13, pendiente de revisión formal. |
 
 ## Auditorías
 

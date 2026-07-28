@@ -25,3 +25,27 @@ export function canRunResolutionStage(stage, capabilities = {}) {
   if (stage === 'execute') return Boolean(capabilities.can_execute);
   return false;
 }
+
+export function resolutionParameterFields(definition) {
+  const schema = definition?.parameter_schema ?? {};
+  const required = new Set(schema.required ?? []);
+  return Object.entries(schema.properties ?? {}).map(([name, field]) => ({
+    ...field,
+    name,
+    required: required.has(name)
+  }));
+}
+
+export function buildResolutionParameters(definition, values = {}) {
+  return Object.fromEntries(
+    resolutionParameterFields(definition)
+      .filter(({ name }) => values[name] !== undefined && values[name] !== '')
+      .map((field) => {
+        const raw = values[field.name];
+        if (field.type === 'integer') return [field.name, Number.parseInt(raw, 10)];
+        if (field.type === 'number') return [field.name, Number(raw)];
+        if (field.type === 'boolean') return [field.name, raw === true || raw === 'true'];
+        return [field.name, typeof raw === 'string' ? raw.trim() : raw];
+      })
+  );
+}

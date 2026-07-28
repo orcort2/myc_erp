@@ -13,6 +13,10 @@ from app.core.config import settings
 from app.core.db import SessionLocal
 from app.models.user import User
 from app.resolution_center.actor import actor_for_user
+from app.resolution_center.definitions import (
+    ResolutionCenterComponentResolver,
+    build_resolution_center_registry,
+)
 from app.resolution_center.schemas import (
     AuthorizationRequest,
     CreateAdministrativeResolutionRequest,
@@ -85,15 +89,6 @@ from app.resolution_engine.infrastructure.security import (
     SqlAlchemySecurityEvidenceStore,
     SqlAlchemySecurityResourceVerifier,
 )
-from app.resolution_integrations.certificates import (
-    CERTIFICATE_RESOLUTION_TYPE,
-    build_certificate_resolution_integration,
-)
-from app.resolution_integrations.certificates.domain import (
-    CertificateFacts,
-    CertificateResolutionContext,
-    CertificateResolutionRequest,
-)
 from app.services.auth import user_has_permission
 
 
@@ -122,60 +117,42 @@ class ResolutionCenterWorkflowService:
         self._clock = SystemClock()
         self._session_factory = session_factory
         self._registry = ResolutionRegistry()
-        self._integration = integration or build_certificate_resolution_integration(
-            session_factory
+        self._center_registry, integrations = build_resolution_center_registry(
+            session_factory,
+            engine_registry=self._registry,
+            certificate_integration=integration,
         )
-        self._integration.register(self._registry)
+        self._integrations = integrations
         self._orchestrator = ResolutionOrchestrator(
             registry=self._registry,
-            components=self._integration.component_resolver,
+            components=ResolutionCenterComponentResolver(integrations),
         )
 
     def definitions(self) -> tuple[ResolutionDefinitionResource, ...]:
-        definition = self._registry.resolve(
-            str(CERTIFICATE_RESOLUTION_TYPE),
-            "1.0",
-        )
-        return (
-            ResolutionDefinitionResource(
-                resolution_type=str(definition.resolution_type),
-                version=str(definition.version),
-                name="Retiro de certificado liberado incorrectamente",
-                description=definition.description,
-                domain="certificates",
-                object_type="certificate",
-                object_route="/dashboard#certificados",
-                capabilities=(
-                    "context",
-                    "analysis",
-                    "plan",
-                    "simulation",
-                    "authorization",
-                    "distributed_execution",
-                    "compensation",
-                ),
-                required_permissions=(
-                    "certificates.approve",
-                    "certificates.release",
-                ),
-                parameter_schema={
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["reason"],
-                    "properties": {
-                        "reason": {
-                            "type": "string",
-                            "title": "Motivo",
-                            "minLength": 1,
-                            "maxLength": 2000,
-                        }
-                    },
-                },
-                warnings=(
-                    "Retira visibilidad futura sin reescribir la liberación histórica.",
-                ),
-            ),
-        )
+        resources = []
+        for entry in self._center_registry.list():
+            definition = entry.definition
+            presentation = entry.presentation
+            resources.append(
+                ResolutionDefinitionResource(
+                    resolution_type=str(definition.resolution_type),
+                    version=str(definition.version),
+                    name=presentation.name,
+                    description=presentation.description,
+                    domain=presentation.domain,
+                    object_type=presentation.object_type,
+                    object_route=presentation.object_route,
+                    risk_level=presentation.risk_level,
+                    capabilities=presentation.capabilities,
+                    required_permissions=presentation.required_permissions,
+                    supports_simulation=presentation.supports_simulation,
+                    supports_compensation=presentation.supports_compensation,
+                    parameter_schema=dict(presentation.parameter_schema),
+                    labels=dict(presentation.labels),
+                    warnings=presentation.warnings,
+                )
+            )
+        return tuple(resources)
 
     def create(
         self,
@@ -190,10 +167,11 @@ class ResolutionCenterWorkflowService:
             organization_id=self._organization_id,
             correlation_id=correlation_id,
         )
-        definition = self._registry.resolve(
+        entry = self._center_registry.resolve(
             payload.resolution_type,
             payload.definition_version,
         )
+        definition = entry.definition
         self._validate_parameters(payload)
         request_key = (
             f"resolution-center:{self._organization_id}:"
@@ -243,7 +221,7 @@ class ResolutionCenterWorkflowService:
                 "center_request_hash": request_hash,
                 "parameters": payload.parameters,
                 "subject_label": None,
-                "subject_route": "/dashboard#certificados",
+                "subject_route": entry.presentation.object_route,
             },
         )
         decision_id = self._authorize(
@@ -287,7 +265,7 @@ class ResolutionCenterWorkflowService:
             root,
             actor,
             action="resolution.context.build",
-            payload={"request": self._request_snapshot(request)},
+            payload={"request": self._request_snapshot(root, request)},
         )
         row = ResolutionContextSnapshot(
             resolution_id=root.id,
@@ -747,6 +725,7 @@ class ResolutionCenterWorkflowService:
             ),
             operation_id=operation_id,
             operation_payload=operation_payload,
+            context={"resolution_status": root.status},
         )
         # La decisión debe ser visible para cualquier worker antes de publicar
         # el trabajo en la cola, que usa deliberadamente otra sesión corta.
@@ -1035,17 +1014,22 @@ class ResolutionCenterWorkflowService:
             correlation_id=correlation_id,
         )
 
-    def _domain_request(self, root: Resolution) -> CertificateResolutionRequest:
-        if root.resolution_type != str(CERTIFICATE_RESOLUTION_TYPE):
+    def _entry(self, root: Resolution):
+        try:
+            return self._center_registry.resolve(
+                root.resolution_type,
+                root.definition_version,
+            )
+        except LookupError:
             raise ResolutionCenterWorkflowError(
                 "unsupported_definition",
                 "La definición no está habilitada para operación administrativa.",
-            )
+            ) from None
+
+    def _domain_request(self, root: Resolution):
+        entry = self._entry(root)
         parameters = root.metadata_json.get("parameters", {})
-        return CertificateResolutionRequest(
-            certificate_id=int(root.subject_id),
-            reason=str(parameters.get("reason") or root.reason or "").strip(),
-        )
+        return entry.request_factory(root.subject_id, parameters)
 
     def _current_context(self, root: Resolution):
         row = self._session.get(
@@ -1058,11 +1042,7 @@ class ResolutionCenterWorkflowService:
                 "La resolución no tiene un contexto persistido.",
                 status_code=409,
             )
-        snapshot = row.facts
-        return CertificateResolutionContext(
-            facts=CertificateFacts(**snapshot["facts"]),
-            reason=str(snapshot["reason"]),
-        )
+        return self._entry(root).context_hydrator(row.facts)
 
     def _current_analysis(self, root: Resolution, context):
         return self._orchestrator.analyze(
@@ -1117,34 +1097,76 @@ class ResolutionCenterWorkflowService:
         self,
         payload: CreateAdministrativeResolutionRequest,
     ) -> None:
-        if payload.resolution_type != str(CERTIFICATE_RESOLUTION_TYPE):
+        try:
+            entry = self._center_registry.resolve(
+                payload.resolution_type,
+                payload.definition_version,
+            )
+        except LookupError:
             raise ResolutionCenterWorkflowError(
                 "unsupported_definition",
                 "Tipo de resolución no habilitado.",
-            )
-        if payload.subject_type != "certificate":
+            ) from None
+        presentation = entry.presentation
+        if payload.subject_type != presentation.object_type:
             raise ResolutionCenterWorkflowError(
                 "invalid_subject_type",
-                "Esta definición requiere un certificado.",
+                f"Esta definición requiere: {presentation.object_type}.",
             )
-        if set(payload.parameters) - {"reason"}:
+        schema = presentation.parameter_schema
+        properties = schema.get("properties", {})
+        unknown = set(payload.parameters) - set(properties)
+        if unknown:
             raise ResolutionCenterWorkflowError(
                 "unknown_parameters",
                 "La solicitud contiene parámetros no declarados.",
             )
-        reason = str(payload.parameters.get("reason") or payload.reason).strip()
-        if not reason:
-            raise ResolutionCenterWorkflowError(
-                "reason_required",
-                "El motivo es obligatorio.",
-            )
+        for name in schema.get("required", ()):
+            if name not in payload.parameters:
+                raise ResolutionCenterWorkflowError(
+                    "required_parameter_missing",
+                    f"El parámetro {name} es obligatorio.",
+                )
+        for name, value in payload.parameters.items():
+            field = properties[name]
+            field_type = field.get("type")
+            valid_type = {
+                "string": isinstance(value, str),
+                "integer": isinstance(value, int)
+                and not isinstance(value, bool),
+                "number": isinstance(value, (int, float))
+                and not isinstance(value, bool),
+                "boolean": isinstance(value, bool),
+            }.get(field_type, True)
+            if not valid_type:
+                raise ResolutionCenterWorkflowError(
+                    "invalid_parameter_type",
+                    f"El parámetro {name} no cumple el tipo {field_type}.",
+                )
+            if field.get("enum") and value not in field["enum"]:
+                raise ResolutionCenterWorkflowError(
+                    "invalid_parameter_choice",
+                    f"El parámetro {name} no pertenece al catálogo permitido.",
+                )
+            if field_type == "string":
+                text = str(value)
+                if len(text) < field.get("minLength", 0):
+                    raise ResolutionCenterWorkflowError(
+                        "invalid_parameter",
+                        f"El parámetro {name} no cumple la longitud mínima.",
+                    )
+                if len(text) > field.get("maxLength", len(text)):
+                    raise ResolutionCenterWorkflowError(
+                        "invalid_parameter",
+                        f"El parámetro {name} excede la longitud permitida.",
+                    )
 
-    @staticmethod
-    def _request_snapshot(request: CertificateResolutionRequest) -> dict:
-        return {
-            "certificate_id": request.certificate_id,
-            "reason": request.reason,
-        }
+    def _request_snapshot(
+        self,
+        root: Resolution,
+        request: object,
+    ) -> dict:
+        return dict(self._entry(root).request_snapshot(request))
 
     @staticmethod
     def _accepted(root: Resolution, message: str) -> OperationAccepted:

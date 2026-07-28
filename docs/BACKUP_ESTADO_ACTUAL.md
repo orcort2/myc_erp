@@ -28,11 +28,11 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada en la base local compartida: `b18ac098c1db`. Esa revisión
-  y su archivo no confirmado pertenecen al trabajo concurrente de
-  Notificaciones. El árbol visible tiene dos heads:
-  `b18ac098c1db` y `d2f4a6b8c0e3`; el índice exclusivo de Fase 12 conserva un
-  único head `d2f4a6b8c0e3`, hijo de `c1e3f5a7b9d2`.
+- Revisión aplicada en la base local compartida: `4c7ef14e1391`, merge de
+  `b18ac098c1db` (Notificaciones) y `d2f4a6b8c0e3` (Centro). El merge y
+  Notificaciones son cambios concurrentes ajenos a Fase 13. La fotografía
+  exclusiva de esta fase conserva un único head `d2f4a6b8c0e3`; Fase 13 no
+  agrega migración ni modifica datos.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -83,36 +83,40 @@
 
 ## Validaciones ejecutadas
 
-- Suite específica Fase 12: `11 passed`.
-- Suite completa del Motor sobre el índice exclusivo de Fase 12:
-  `244 passed`, dos advertencias de dependencias; incluye Fases 1–12.
-- Suite backend completa sobre la fotografía exclusiva: `348 passed`,
+- Suite específica Fase 13: `8 passed`; incluye Certificados completo desde
+  creación hasta resultado por worker después de cerrar la sesión.
+- Suites específicas Fases 12–13: `19 passed`.
+- Suite completa del Motor sobre el índice exclusivo de Fase 13:
+  `252 passed`, dos advertencias de dependencias; incluye Fases 1–13.
+- Suite backend completa sobre la fotografía exclusiva: `356 passed`,
   `20 failed`, `19 subtests passed`. Diecinueve fallos son la deuda conocida
   SQLite/`JSONB` de Actividad (`TD-023`); el vigésimo sólo refleja que el XLSX
   SAT ignorado no entra en la fotografía Git. La prueba SAT ejecutada contra el
-  recurso local oficial terminó `4 passed`; por tanto el estado verificable con
-  ese recurso es `349 passed`, `19 failed`. Ningún fallo apunta a Fase 12.
+  recurso local oficial conserva su validación dedicada. Ningún fallo apunta a
+  Fase 13.
 - La suite del Motor sobre el árbol compartido fue contaminada por el modelo
-  concurrente de Notificaciones (`JSONB` no portable): alcanzó `226 passed`
-  antes de `2 failed` y `14 errors`. La fotografía exclusiva elimina esa causa
-  ajena y termina completa.
-- Frontend: pruebas Node específicas `2 passed`; build Vite de producción
+  concurrente de Notificaciones (`JSONB` no portable): `236 passed`,
+  `2 failed`, `14 errors`. La fotografía exclusiva elimina esa causa ajena y
+  termina completa.
+- Frontend: pruebas Node específicas `3 passed`; build Vite de producción
   correcto (`1675` módulos), con advertencia no bloqueante por tamaño del chunk.
 - Compilación de bytecode Python: correcta.
 - PostgreSQL temporal limpio: cadena completa aplicada hasta
   `d2f4a6b8c0e3`, downgrade a `c1e3f5a7b9d2` y upgrade nuevamente correctos;
   `current` y `heads` mostraron un único `d2f4a6b8c0e3`.
-- `alembic heads/current` del árbol compartido: heads `b18ac098c1db` y
-  `d2f4a6b8c0e3`; base local en `b18ac098c1db`. Fase 12 no se aplicó sobre esa
-  rama ajena para no mezclar ni alterar el trabajo de Notificaciones.
+- `alembic heads/current` del árbol compartido: único head y base local en
+  `4c7ef14e1391`, merge concurrente. La fotografía exclusiva tiene un único
+  `d2f4a6b8c0e3`; upgrade completo, downgrade a `c1e3f5a7b9d2` y upgrade de
+  retorno terminaron correctamente en PostgreSQL temporal eliminado.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
-  como `TD-021`; no detectó una operación propia de Fase 12.
+  como `TD-021` en la fotografía exclusiva; el árbol compartido añade la
+  inconsistencia concurrente entre tabla/migración de Notificaciones y metadata
+  importada. No detectó una operación propia de Fase 13.
 - `git diff --check`: correcto.
-- El respaldo conserva `alembic_version = a0d2f4b6c8e1`. No se regeneró:
-  Fase 12 se validó en una base temporal y no modificó la base local; la
-  sincronización de `b18ac098c1db` pertenece al trabajo externo de
-  Notificaciones. Al integrar ambas ramas Alembic deberá definirse un único
-  descendiente/merge y entonces aplicar Fase 12 y regenerar el respaldo.
+- El respaldo conserva `alembic_version = a0d2f4b6c8e1`. Fase 13 no lo
+  regeneró porque no creó migración ni modificó la base local. La actualización
+  de la base a `4c7ef14e1391` ocurrió en el trabajo concurrente de
+  Notificaciones; ese trabajo debe regenerar el respaldo al cerrar su cambio.
 
 ## Pendientes vigentes
 
@@ -131,10 +135,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fases 9 a 12
+## Motor de Resoluciones — Fases 9 a 13
 
-- Estado: Fases 0 a 11 `APROBADAS`; Fase 12 — Centro de Resoluciones
-  `EN REVISIÓN`. Fase 13 no iniciada.
+- Estado: Fases 0 a 12 `APROBADAS`; Fase 13 — Consolidación del Centro
+  `EN REVISIÓN`. Fase 14 no iniciada.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -247,6 +251,13 @@
   [`architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md`](architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md).
 - Cierre técnico de Fase 12:
   [`closures/RESOLUTION_ENGINE_PHASE_12.md`](closures/RESOLUTION_ENGINE_PHASE_12.md).
-- Fase 12 queda `EN REVISIÓN`; Fase 13 e IA permanecen fuera de alcance.
+- Fase 12 fue aprobada mediante `a7bf75f`.
+- Fase 13 incorpora registro institucional versionado, formularios dinámicos,
+  indicadores backend, expediente completo, rol Operador e integración
+  Certificados end-to-end:
+  [`architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md).
+- Cierre técnico de Fase 13:
+  [`closures/RESOLUTION_ENGINE_PHASE_13.md`](closures/RESOLUTION_ENGINE_PHASE_13.md).
+- Fase 13 queda `EN REVISIÓN`; Fase 14 e IA permanecen fuera de alcance.
 - La IA es una posibilidad futura opcional y no constituye dependencia
   arquitectónica u operativa del ERP o del Motor determinista.

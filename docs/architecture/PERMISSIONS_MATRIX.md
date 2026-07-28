@@ -24,6 +24,7 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
 | Finanzas | Cobranza, facturación, liberación y resoluciones propias | `resolution_center.read`, `clients.read`, `certificates.read`, `quotations.read`, `payments.read`, `payments.manage`, `invoices.read`, `invoices.manage`, `integrations.facturama.status`, `certificates.release`, `release.manage`, `sat_catalogs.read`, `sat_catalogs.manage_favorites`, `sat_catalogs.manage_aliases` |
 | Cliente | Portal limitado previsto | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own` |
 | Desarrollador | Soporte técnico amplio sin comodín global | `resolution_center.*`, auditoría, usuarios, settings, patrones, procedimientos, metrología, control documental, certificados, liberación, incertidumbre, plantillas de Hojas de Campo, firmas ETS y administración SAT según el conjunto exacto de `ROLE_PERMISSIONS` |
+| Operador | Operación de resoluciones propias sin autorización | `resolution_center.read`, `resolution_center.create`, `resolution_center.prepare`, `resolution_center.analyze`, `resolution_center.plan`, `resolution_center.simulate`, `resolution_center.execute` |
 | Auditor | Expediente institucional read-only | `resolution_center.read`, `resolution_center.read_all`, `resolution_center.audit`, `resolution_center.infrastructure`, `audit_logs.read` |
 
 ## Familias declaradas en `PERMISSIONS`

@@ -10,6 +10,7 @@ from threading import Event
 from uuid import uuid4
 
 from app.core.db import SessionLocal
+from app.resolution_center.definitions import build_resolution_center_registry
 from app.resolution_engine.application.action_runner import ActionRunner
 from app.resolution_engine.application.distribution import (
     DistributedRecoveryService,
@@ -17,6 +18,7 @@ from app.resolution_engine.application.distribution import (
     ResolutionExecutionWorkHandler,
 )
 from app.resolution_engine.application.execution import ResolutionExecutor
+from app.resolution_engine.application.registry import ResolutionRegistry
 from app.resolution_engine.contracts.distribution import WorkerRegistration
 from app.resolution_engine.contracts.execution import ExecuteResolutionCommand
 from app.resolution_engine.domain.execution import ExecutionEngine
@@ -36,9 +38,6 @@ from app.resolution_engine.infrastructure.execution import (
 from app.resolution_engine.infrastructure.runtime import (
     SystemClock,
     UuidIdentifierFactory,
-)
-from app.resolution_integrations.certificates import (
-    build_certificate_resolution_integration,
 )
 
 
@@ -105,11 +104,21 @@ def build_worker(
     instance_id: str | None = None,
     capacity: int = 1,
 ) -> DistributedWorker:
-    integration = build_certificate_resolution_integration(SessionLocal)
+    registry = ResolutionRegistry()
+    _, integrations = build_resolution_center_registry(
+        SessionLocal,
+        engine_registry=registry,
+    )
     clock = SystemClock()
     executor = ResolutionExecutor(
         store=SqlAlchemyExecutionStore(SessionLocal),
-        action_runner=ActionRunner(integration.action_handlers),
+        action_runner=ActionRunner(
+            tuple(
+                handler
+                for integration in integrations
+                for handler in integration.action_handlers
+            )
+        ),
         engine=ExecutionEngine(),
         state_machine=ResolutionStateMachine(),
         clock=clock,

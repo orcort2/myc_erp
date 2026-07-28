@@ -16,9 +16,29 @@
   justify-content: space-between;
 }
 
-.resolution-center-hero h1 { font-size: clamp(1.8rem, 3vw, 2.6rem); margin: 4px 0; }
-.resolution-center-hero p { color: var(--color-text-muted, #667085); margin: 0; }
+.resolution-center-hero { width: 100%; }
+.resolution-center-hero .primary-button { margin-left: auto; }
 .resolution-eyebrow { align-items: center; color: #0f766e; display: inline-flex; font-size: .76rem; font-weight: 800; gap: 6px; letter-spacing: .08em; text-transform: uppercase; }
+
+.resolution-indicators {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(8, minmax(110px, 1fr));
+  overflow-x: auto;
+}
+
+.resolution-indicators article {
+  background: var(--resolution-surface);
+  border: 1px solid var(--resolution-border);
+  border-radius: 12px;
+  display: grid;
+  gap: 4px;
+  min-width: 110px;
+  padding: 12px 14px;
+}
+
+.resolution-indicators small { color: var(--color-text-muted, #667085); }
+.resolution-indicators strong { font-size: 1.35rem; }
 
 .resolution-toolbar {
   background: var(--resolution-surface);
@@ -125,6 +145,7 @@
 @keyframes resolution-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 900px) {
+  .resolution-indicators { grid-template-columns: repeat(4, minmax(120px, 1fr)); }
   .resolution-filter-grid { grid-template-columns: 1fr 1fr; }
   .resolution-detail-body { grid-template-columns: 1fr; overflow: auto; }
   .resolution-detail-main { overflow: visible; }
@@ -135,6 +156,7 @@
 @media (max-width: 640px) {
   .resolution-center-page { padding: 16px; }
   .resolution-center-hero { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .resolution-center-hero .primary-button { margin-left: 0; }
   .resolution-filter-grid, .resolution-form-grid, .resolution-summary-grid { grid-template-columns: 1fr; }
   .resolution-modal-layer { padding: 8px; }
 }
