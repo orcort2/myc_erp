@@ -1,4 +1,4 @@
-> Estado: IMPLEMENTACIÓN CONCLUIDA — PENDIENTE DE REVISIÓN FORMAL
+> Estado: APROBADA
 >
 > Fecha: 2026-07-28
 >
@@ -19,10 +19,10 @@ Las Fases 0 a 9 están aprobadas. Fase 9 queda cerrada mediante:
 901bd85454f3d88ed8f988c71c3475a568d94cd8
 ```
 
-La implementación autorizada quedó concluida. Su contrato verificable está en
+La implementación autorizada quedó aprobada mediante `dd9a84e`. Su contrato verificable está en
 [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md) y el cierre técnico en
 [`../../closures/RESOLUTION_ENGINE_PHASE_10.md`](../../closures/RESOLUTION_ENGINE_PHASE_10.md).
-La fase todavía no cuenta con aprobación formal y Fase 11 permanece bloqueada.
+Fase 11 fue abierta posteriormente mediante `27_PHASE_11_OPENING.md`.
 
 ## Objetivo
 
@@ -152,7 +152,7 @@ La Fase 10 sólo podrá aprobarse cuando los contratos públicos sean estables,
 versionados, seguros y consumibles mediante el SDK sin exponer internals ni
 duplicar reglas del Motor.
 
-## Restricción
+## Resultado
 
-La Fase 11 — Motor Distribuido permanece `NO INICIADA`. No puede comenzar hasta
-que Fase 10 concluya, sea revisada y reciba aprobación formal.
+El gate fue aprobado formalmente en `dd9a84e`; esta apertura no autoriza ni
+describe componentes posteriores por sí sola.

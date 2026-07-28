@@ -28,10 +28,11 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada y único head verificado en la base local:
-  `b18ac098c1db`. Esa revisión pertenece al trabajo concurrente de
-  Notificaciones y desciende de `a0d2f4b6c8e1`; la corrección del cursor no
-  agrega ni modifica esquema.
+- Revisión aplicada en la base local compartida: `b18ac098c1db`. Esa revisión
+  y su archivo no confirmado pertenecen al trabajo concurrente de
+  Notificaciones. El árbol visible tiene dos heads:
+  `b18ac098c1db` y `c1e3f5a7b9d2`; el commit aislado de Fase 11 conserva un
+  único head `c1e3f5a7b9d2`, hijo del head aprobado de Fase 10.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -55,6 +56,11 @@
   inmutabilidad para el primer vertical de Fase 9.
 - `a0d2f4b6c8e1` crea `resolution_api_consumers` para credenciales hasheadas,
   organización, permisos, vigencia y revocación de consumidores de la API v1.
+- `c1e3f5a7b9d2` crea nodos, trabajos durables y eventos distribuidos, con
+  prioridad, intentos, leases cercados, índice parcial único por resolución e
+  índices de despacho/observabilidad; un trigger PostgreSQL protege los eventos
+  append-only. Su upgrade→downgrade→upgrade fue validado en una base PostgreSQL
+  temporal limpia, luego eliminada.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
 - Tamaño verificado: 74,222,078 bytes.
@@ -73,33 +79,38 @@
 
 ## Validaciones ejecutadas
 
-- Suite backend completa: 328 pruebas y 19 subpruebas correctas, 19 fallos y
-  dos advertencias. Todos los fallos provienen del `JSONB` no portable del
-  módulo Actividad al crear metadata SQLite (`TD-023`); ninguno pertenece a
-  Fase 10.
-- Suite específica de Fase 10: 10 pruebas correctas de contratos, consumidor,
-  organización, correlación, idempotencia, aislamiento, identidad completa y
-  opacidad del cursor, compatibilidad versionada, SDK y arquitectura.
-- Suite combinada Fases 9–10: 22 pruebas correctas.
-- Suite completa del Motor: 223 pruebas correctas, incluidas creación,
-  transiciones válidas/inválidas, invariantes, autorización exacta,
-  revalidación, concurrencia, persistencia, ejecución, compensación,
-  arquitectura, esquema y migraciones.
+- Suite específica Fase 11 + arquitectura + esquema: `40 passed`.
+- Suite completa del Motor en árbol aislado del trabajo concurrente:
+  `233 passed`, dos advertencias de dependencias; incluye Fases 1–11.
+- Suite backend completa en el árbol compartido: `320 passed`, `23 failed`,
+  `14 errors`, `19 subtests passed` y dos advertencias. Los errores/fallos de
+  metadata proceden del `JSONB` directo de Actividad (`TD-023`) y del trabajo
+  concurrente de Notificaciones; dos fallos adicionales son el aborto del
+  binario LibreOffice local. Ninguno apunta a archivos de Fase 11.
+- Suite backend en árbol aislado: `335 passed`, `22 failed`,
+  `19 subtests passed`; mantiene los 19 fallos SQLite/JSONB de Actividad, dos
+  fallos del conversor LibreOffice y uno por el XLSX SAT ignorado que no forma
+  parte de `git archive`.
 - Frontend: `package.json` no declara suite; build Vite de producción correcto,
   con la advertencia preexistente por tamaño del chunk principal.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL: `a0d2f4b6c8e1` aplicó, revirtió a `f9c1d3e5a7b9` y reaplicó a
-  head correctamente; la tabla de consumidores y su unicidad quedaron vigentes.
-- `alembic heads/current`: único head local `b18ac098c1db`, revisión externa de
-  Notificaciones aplicada concurrentemente sobre `a0d2f4b6c8e1`; no forma
-  parte del commit de Fase 10.
+- PostgreSQL temporal limpio: cadena completa aplicada hasta
+  `c1e3f5a7b9d2`, downgrade a `a0d2f4b6c8e1` y upgrade nuevamente correctos;
+  `current` y `heads` mostraron un único `c1e3f5a7b9d2` y se confirmó instalado
+  `trg_resolution_work_events_immutable`.
+- `alembic heads/current` del árbol compartido: heads `b18ac098c1db` y
+  `c1e3f5a7b9d2`; base local en `b18ac098c1db`. Fase 11 no se aplicó sobre esa
+  rama ajena para no mezclar ni alterar el trabajo de Notificaciones.
 - `alembic check` continúa reportando sólo la deriva histórica ajena registrada
-  como `TD-021`; no propone operaciones sobre el esquema del Motor.
+  como `TD-021`; en PostgreSQL limpio no propuso operaciones sobre
+  `resolution_worker_nodes`, `resolution_work_items` ni
+  `resolution_work_events`.
 - `git diff --check`: correcto.
-- El respaldo de Fase 10 conserva `alembic_version = a0d2f4b6c8e1`. La
-  corrección del cursor no exige regenerarlo porque no cambia esquema ni
-  datos. La sincronización del respaldo con `b18ac098c1db` corresponde al
-  trabajo externo de Notificaciones que introdujo y aplicó esa migración.
+- El respaldo conserva `alembic_version = a0d2f4b6c8e1`. No se regeneró:
+  Fase 11 se validó en una base temporal y no modificó la base local; la
+  sincronización de `b18ac098c1db` pertenece al trabajo externo de
+  Notificaciones. Al integrar ambas ramas Alembic deberá definirse un único
+  descendiente/merge y entonces aplicar Fase 11 y regenerar el respaldo.
 
 ## Pendientes vigentes
 
@@ -118,10 +129,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fases 9 y 10
+## Motor de Resoluciones — Fases 9 a 11
 
-- Estado: Fases 0 a 9 `APROBADAS`; Fase 10 — SDK y API Pública `EN REVISIÓN`
-  con corrección bloqueante de cursor implementada. Fase 11 no iniciada.
+- Estado: Fases 0 a 10 `APROBADAS`; Fase 11 — Motor Distribuido
+  `EN REVISIÓN`. Fase 12 no iniciada.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -175,18 +186,29 @@
   opaco `c1` AES-GCM. Versión, consumidor, organización, filtros, orden,
   dirección, tamaño y posición keyset se cifran/autentican juntos; el formato
   legacy inseguro se rechaza.
-- La migración reversible `f9c1d3e5a7b9` fue probada en
-  upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva histórica
-  `TD-021` y ninguna operación sobre `certificate_resolution_operations`.
-- La corrección bloqueante posterior no modifica esquema ni datos: usa la
-  unicidad/trigger vigentes, por lo que no requiere migración ni regeneración
-  del respaldo. Se verificaron nuevamente head, tamaño, hash, versión y trigger
-  del respaldo existente.
+- Fase 11 usa `resolution_work_items` como cola durable compartida,
+  `resolution_worker_nodes` para capacidad/heartbeat/drenado y
+  `resolution_work_events` como secuencia operacional append-only.
+- Claim usa prioridad/disponibilidad, `SKIP LOCKED`, exclusión de claims
+  existentes y un índice parcial único por `resolution_id`. Nodo, token,
+  versión y vigencia forman el fencing obligatorio.
+- El worker renueva lease y heartbeat durante el handler y delega en
+  `ResolutionExecutor` o `CompensationExecutor`; no interpreta planes,
+  Lifecycle, seguridad ni reglas propietarias.
+- Recovery reencola únicamente antes del posible efecto. Si
+  `effect_started_at` existe, bloquea por incertidumbre. Retry requiere
+  ausencia de efecto confirmada y usa backoff exponencial acotado sin jitter.
+- Las migraciones reversibles `f9c1d3e5a7b9` y `c1e3f5a7b9d2` fueron
+  probadas en upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva
+  histórica `TD-021` y ninguna operación sobre las tablas distribuidas.
 - Replay exacto de ejecución/compensación se resuelve antes del certificado
   actual; una clave nueva usa segunda comprobación bajo lock y recuperación del
   ganador concurrente. `after_snapshot` se construye después de
   `flush/refresh`.
-- El respaldo SQL fue regenerado y coincide con el head.
+- El respaldo SQL coincide con el último head aprobado y aplicado antes del
+  trabajo concurrente (`a0d2f4b6c8e1`); la situación temporal de la rama local
+  y su regeneración pendiente se describen en Persistencia, migración y
+  respaldo.
 - Apertura aprobada de Fase 8:
   [`architecture/resolution-engine/21_PHASE_8_OPENING.md`](architecture/resolution-engine/21_PHASE_8_OPENING.md).
 - Contrato:
@@ -206,7 +228,13 @@
   [`architecture/resolution-engine/25_PHASE_10_OPENING.md`](architecture/resolution-engine/25_PHASE_10_OPENING.md).
 - Contrato implementado de Fase 10:
   [`architecture/resolution-engine/26_PUBLIC_API_SDK.md`](architecture/resolution-engine/26_PUBLIC_API_SDK.md).
-- Fase 10 permanece `EN REVISIÓN`; Fase 11, distribución e IA permanecen fuera
-  de alcance.
+- Fase 10 fue aprobada mediante `dd9a84e`.
+- Apertura oficial de Fase 11:
+  [`architecture/resolution-engine/27_PHASE_11_OPENING.md`](architecture/resolution-engine/27_PHASE_11_OPENING.md).
+- Contrato implementado de Fase 11:
+  [`architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md`](architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md).
+- Cierre técnico:
+  [`closures/RESOLUTION_ENGINE_PHASE_11.md`](closures/RESOLUTION_ENGINE_PHASE_11.md).
+- Fase 11 permanece `EN REVISIÓN`; Fase 12 e IA permanecen fuera de alcance.
 - La IA es una posibilidad futura opcional y no constituye dependencia
   arquitectónica u operativa del ERP o del Motor determinista.

@@ -1,4 +1,4 @@
-"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 8."""
+"""Tipos de dominio puros del Motor de Resoluciones hasta Fase 11."""
 
 from app.resolution_engine.domain.audit import (
     AuditEngine,
@@ -65,6 +65,18 @@ from app.resolution_engine.domain.compensation import (
     CompensationPlanStep,
     CompensationSource,
 )
+from app.resolution_engine.domain.distribution import (
+    DeterministicRetryPolicy,
+    DistributedWorkItem,
+    DistributedWorkKind,
+    DistributedWorkRequest,
+    DistributedWorkResult,
+    DistributedWorkStatus,
+    DistributionSnapshot,
+    RecoveryReport,
+    WorkerNodeStatus,
+    WorkFailureCertainty,
+)
 
 __all__ = [
     "AuditEngine",
@@ -87,6 +99,13 @@ __all__ = [
     "CompensationSource",
     "ComponentReference",
     "DefinitionVersion",
+    "DeterministicRetryPolicy",
+    "DistributedWorkItem",
+    "DistributedWorkKind",
+    "DistributedWorkRequest",
+    "DistributedWorkResult",
+    "DistributedWorkStatus",
+    "DistributionSnapshot",
     "LifecycleAction",
     "LifecycleEvidence",
     "LifecycleTransition",
@@ -94,6 +113,7 @@ __all__ = [
     "ResolutionLifecycle",
     "ResolutionStateMachine",
     "ResolutionType",
+    "RecoveryReport",
     "ActorContext",
     "ActionCertainty",
     "ActorIdentity",
@@ -117,4 +137,6 @@ __all__ = [
     "SecurityResource",
     "SecurityRiskLevel",
     "security_operation_hash",
+    "WorkerNodeStatus",
+    "WorkFailureCertainty",
 ]

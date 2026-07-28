@@ -1,4 +1,4 @@
-> Estado: EN REVISIÓN — CORRECCIÓN BLOQUEANTE IMPLEMENTADA
+> Estado: APROBADA
 >
 > Fecha: 2026-07-28
 
@@ -12,7 +12,7 @@ FastAPI delgada, creación por Lifecycle, consultas por auditoría, idempotencia
 namespaced, filtros, cursor opaco ligado a consulta, errores estables, SDK HTTP y portal
 técnico.
 
-Este cierre no declara la Fase 10 aprobada. La Fase 11 permanece bloqueada.
+La revisión formal aprobó la Fase 10 mediante `dd9a84e`.
 
 ## Persistencia
 
@@ -63,5 +63,6 @@ SDK y política legacy.
 
 ## Estado de salida
 
-Fase 10 queda `EN REVISIÓN`, con la corrección bloqueante implementada. Sólo un dictamen
-posterior podrá cambiarla a `APROBADA` y autorizar la apertura de Fase 11.
+Fase 10 quedó `APROBADA` mediante
+`dd9a84ed3ce2e9727fb2b30d8280ed727a25442f`. Fase 11 fue abierta por
+autorización formal posterior.

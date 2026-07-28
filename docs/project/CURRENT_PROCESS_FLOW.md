@@ -56,8 +56,7 @@ ejecución y actor exactos, persiste un plan inmutable y ejecuta en orden invers
 antes de persistir si deja activo cualquier dependiente confirmado directo o
 transitivo; un efecto no confirmado o ya compensado no bloquea. Punto de no
 retorno, duplicado, actor distinto, fallo o pérdida de lock se rechazan o
-quedan trazados sin reinvocación. No existen API, workers, schedulers, retries,
-recuperación, conciliación ni compensación automática.
+quedan trazados sin reinvocación. No existe compensación automática.
 
 La auditoría es un flujo read-only separado. Exige una decisión
 `resolution.audit.inspect` concedida para la resolución, actor, autenticación,
@@ -81,7 +80,16 @@ exigen `resolution.audit.inspect`, aplican aislamiento organizacional y no
 transitan Lifecycle ni ejecutan handlers. El SDK usa exclusivamente HTTP.
 El cursor `c1` cifra la posición y vincula contrato, consumidor, organización,
 filtros, orden, dirección y tamaño de página; una solicitud divergente se
-rechaza antes de continuar el keyset. Fase 10 permanece `EN REVISIÓN`.
+rechaza antes de continuar el keyset. Fase 10 está aprobada en `dd9a84e`.
+
+Fase 11 agrega un flujo interno asíncrono sin cambiar esa API:
+dispatcher → trabajo durable → claim `SKIP LOCKED` → lease cercado → handler
+canónico → resultado/evento. Los nodos hacen pull según capacidad y no pueden
+reclamar dos trabajos de la misma resolución en paralelo. Heartbeats renuevan
+nodo y trabajo durante la operación. Recovery reencola sólo si el posible
+efecto no comenzó; si comenzó, deja `blocked` por incertidumbre. Un retry
+automático requiere ausencia de efecto declarada y usa backoff exponencial
+acotado sin jitter. La Fase 11 permanece `EN REVISIÓN`.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
 read-only; análisis, estrategia, plan y simulación son deterministas; el

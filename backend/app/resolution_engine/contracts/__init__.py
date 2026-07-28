@@ -44,6 +44,12 @@ from app.resolution_engine.contracts.compensation import (
     ExecuteCompensationCommand,
     PrepareCompensationCommand,
 )
+from app.resolution_engine.contracts.distribution import (
+    DistributedWorkHandler,
+    DistributedWorkStore,
+    WorkerRegistration,
+    WorkLease,
+)
 
 __all__ = [
     "AuditRecordStore",
@@ -64,6 +70,8 @@ __all__ = [
     "ExecuteResolutionCommand",
     "ExecuteCompensationCommand",
     "ExecutionStore",
+    "DistributedWorkHandler",
+    "DistributedWorkStore",
     "IdentifierFactory",
     "LifecycleStore",
     "PermissionPolicy",
@@ -78,4 +86,6 @@ __all__ = [
     "SecurityResourceVerifier",
     "Simulator",
     "StrategySelector",
+    "WorkerRegistration",
+    "WorkLease",
 ]

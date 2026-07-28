@@ -1,4 +1,4 @@
-"""Servicios de aplicación del Motor de Resoluciones hasta Fase 8."""
+"""Servicios de aplicación internos del Motor hasta Fase 11."""
 
 from app.resolution_engine.application.audit import AuditQueryService
 
@@ -31,6 +31,13 @@ from app.resolution_engine.application.compensation import (
 from app.resolution_engine.application.compensation_runner import (
     CompensationRunner,
 )
+from app.resolution_engine.application.distribution import (
+    CompensationExecutionWorkHandler,
+    DistributedDispatcher,
+    DistributedRecoveryService,
+    DistributedWorker,
+    ResolutionExecutionWorkHandler,
+)
 
 __all__ = [
     "AuditQueryService",
@@ -39,12 +46,17 @@ __all__ = [
     "CompensationExecutor",
     "CompensationPlanner",
     "CompensationRunner",
+    "CompensationExecutionWorkHandler",
+    "DistributedDispatcher",
+    "DistributedRecoveryService",
+    "DistributedWorker",
     "INTEGRAL_SECURITY_CONTROLS",
     "IntegralSecurityControlPolicy",
     "OrganizationBoundaryPolicy",
     "PermissionPolicy",
     "OutboxPublicationService",
     "ResolutionAuthorizationService",
+    "ResolutionExecutionWorkHandler",
     "ResolutionExecutor",
     "ResolutionLifecycleService",
     "ResolutionOrchestrator",

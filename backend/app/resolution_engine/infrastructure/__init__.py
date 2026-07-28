@@ -1,4 +1,4 @@
-"""Adaptadores de persistencia y runtime autorizados hasta Fase 8."""
+"""Adaptadores de persistencia y runtime autorizados hasta Fase 11."""
 
 from app.resolution_engine.infrastructure.audit import (
     SqlAlchemyAuditAccessVerifier,
@@ -31,6 +31,9 @@ from app.resolution_engine.infrastructure.security_decisions import (
     SecurityDecisionExpectation,
     SqlAlchemySecurityDecisionVerifier,
 )
+from app.resolution_engine.infrastructure.distribution import (
+    SqlAlchemyDistributedWorkStore,
+)
 
 __all__ = [
     "SqlAlchemyAuditAccessVerifier",
@@ -40,6 +43,7 @@ __all__ = [
     "SqlAlchemyExecutionControl",
     "SqlAlchemyCompensationStore",
     "SqlAlchemyExecutionStore",
+    "SqlAlchemyDistributedWorkStore",
     "SqlAlchemyLifecycleStore",
     "SqlAlchemyOutboxStore",
     "SecurityDecisionExpectation",

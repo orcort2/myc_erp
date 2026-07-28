@@ -143,6 +143,16 @@ FORCE_RECLASSIFY = {
     "backend/tests/resolution_engine/test_phase_10_public_api.py",
     "docs/architecture/resolution-engine/26_PUBLIC_API_SDK.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_10.md",
+    "backend/app/resolution_engine/application/distribution.py",
+    "backend/app/resolution_engine/contracts/distribution.py",
+    "backend/app/resolution_engine/domain/distribution.py",
+    "backend/app/resolution_engine/infrastructure/distribution.py",
+    "backend/app/resolution_engine/infrastructure/persistence/distribution.py",
+    "backend/migrations/versions/c1e3f5a7b9d2_phase_11_distributed_runtime.py",
+    "backend/tests/resolution_engine/test_phase_11_distributed_runtime.py",
+    "docs/architecture/resolution-engine/27_PHASE_11_OPENING.md",
+    "docs/architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md",
+    "docs/closures/RESOLUTION_ENGINE_PHASE_11.md",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -166,7 +176,7 @@ def included(path: Path) -> bool:
         any(part in EXCLUDED_PARTS for part in path.parts)
         or path.name in EXCLUDED_NAMES
         or value.startswith(EXCLUDED_PREFIXES)
-        or path.suffix in {".pyc", ".pyo"}
+        or path.suffix in {".pyc", ".pyo", ".zip"}
     )
 
 
@@ -213,6 +223,158 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "En desarrollo"
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
+
+    phase_11_files = {
+        "backend/app/resolution_engine/__init__.py": (
+            "Superficie interna del Motor",
+            "Publica las capacidades internas aprobadas hasta Fase 11, incluidos dispatcher, worker, recovery y handlers hacia ejecutores canónicos.",
+            "Aplicación, contratos y dominio del Motor",
+            "Composición interna e integraciones registradas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/__init__.py": (
+            "API de aplicación",
+            "Exporta servicios canónicos y coordinación distribuida aprobados hasta Fase 11 sin transporte público.",
+            "Servicios de aplicación del Motor",
+            "Composición interna y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/contracts/__init__.py": (
+            "API de contratos",
+            "Publica comandos, puertos de ejecución y contratos de trabajo/nodo/lease distribuidos sin infraestructura.",
+            "Protocols y comandos del Motor",
+            "Aplicación, adaptadores y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/domain/__init__.py": (
+            "API de dominio",
+            "Publica tipos puros de resolución, compensación, auditoría, seguridad y distribución determinista hasta Fase 11.",
+            "Módulos puros del dominio",
+            "Aplicación, infraestructura y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/domain/exceptions.py": (
+            "Errores del Motor",
+            "Mantiene jerarquía estable de errores e incorpora conflictos, pérdida de lease, nodo, handler, retry seguro e incertidumbre distribuida.",
+            "Python estándar",
+            "Todas las capas internas y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/__init__.py": (
+            "API de infraestructura",
+            "Exporta adaptadores SQL y runtime, incluido el store distribuido durable de Fase 11.",
+            "Persistencia, runtime y stores del Motor",
+            "Composición interna y pruebas",
+            "Alto",
+        ),
+        "backend/app/resolution_engine/infrastructure/persistence/__init__.py": (
+            "Registro ORM del Motor",
+            "Publica el modelo persistente completo, incluidos nodos, trabajos y eventos distribuidos.",
+            "Modelos ORM de Fases 2–11",
+            "Metadata, Alembic, stores y pruebas",
+            "Crítico",
+        ),
+        "backend/app/models/__init__.py": (
+            "Registro de metadata ORM",
+            "Importa modelos del ERP y las 31 entidades del Motor, incluidos consumidores, nodos, trabajos y eventos, para metadata completa.",
+            "Modelos ORM del ERP y Motor",
+            "Alembic, sesiones y pruebas de esquema",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_architecture.py": (
+            "Pruebas arquitectónicas del Motor",
+            "Verifica dirección de capas, aislamiento de fases previas, ausencia de dependencias prohibidas y propiedad de mutaciones hasta Fase 11.",
+            "AST y árbol de paquetes del Motor",
+            "Gate transversal de arquitectura",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_persistence_schema.py": (
+            "Pruebas del esquema del Motor",
+            "Verifica registro de las 31 tablas generales, FKs restrictivas, genericidad, inmutabilidad y constraints estructurales.",
+            "SQLAlchemy metadata y modelos del Motor",
+            "Gate transversal de persistencia",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/README.MD": (
+            "Entrada normativa del Motor",
+            "Ordena documentos 01–28 y publica Fases 0–10 aprobadas, Fase 11 en revisión y Fase 12 no iniciada.",
+            "Roadmap, matriz, aperturas, contratos y cierres",
+            "Todo participante del Motor de Resoluciones",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/domain/distribution.py": (
+            "Dominio de distribución",
+            "Define tipos, estados, solicitudes, resultados, snapshots y política de retry exponencial determinista sin dependencias de infraestructura.",
+            "Canonical hashing, errores y tipos estándar",
+            "Dispatcher, workers, store SQL y pruebas de Fase 11",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/contracts/distribution.py": (
+            "Puertos de distribución",
+            "Declara registro de nodos, leases, handlers y operaciones durables de despacho, recuperación y observabilidad.",
+            "Dominio distribuido y Protocol",
+            "Aplicación, infraestructura SQL y composición interna",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/application/distribution.py": (
+            "Dispatcher y workers distribuidos",
+            "Coordina enqueue, claim, heartbeats de nodo/trabajo, invocación de handlers, retry seguro, drenado y recovery sin interpretar negocio.",
+            "Contratos distribuidos, Clock e IdentifierFactory",
+            "Supervisores internos y pruebas de Fase 11",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/distribution.py": (
+            "Store SQL distribuido",
+            "Implementa cola pull con SKIP LOCKED, capacidad, exclusividad por resolución, leases cercados, recuperación, retry y snapshot operacional transaccionales.",
+            "SQLAlchemy, modelos y hashing canónico",
+            "Dispatcher, workers, recovery y pruebas",
+            "Crítico",
+        ),
+        "backend/app/resolution_engine/infrastructure/persistence/distribution.py": (
+            "Modelo ORM distribuido",
+            "Modela nodos, trabajos durables y eventos append-only con estados, constraints, hashes, índices, leases y vínculos al expediente.",
+            "SQLAlchemy Base y tipos persistentes del Motor",
+            "Store SQL, Alembic, metadata y auditoría operativa",
+            "Crítico",
+        ),
+        "backend/migrations/versions/c1e3f5a7b9d2_phase_11_distributed_runtime.py": (
+            "Migración de Fase 11",
+            "Crea y revierte nodos, trabajos y eventos distribuidos con constraints, FKs, índices de coordinación y trigger append-only.",
+            "Alembic, PostgreSQL y head aprobado de Fase 10",
+            "Despliegue, respaldo, workers y validación de esquema",
+            "Crítico",
+        ),
+        "backend/tests/resolution_engine/test_phase_11_distributed_runtime.py": (
+            "Suite específica de Fase 11",
+            "Prueba idempotencia, colisiones, multinodo, exclusividad, fencing, recovery, incertidumbre, retry exacto, eventos y migración reversible.",
+            "Motor, SQLAlchemy, SQLite y migración Fase 11",
+            "Gate técnico de Fase 11",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/27_PHASE_11_OPENING.md": (
+            "Apertura oficial de Fase 11",
+            "Registra aprobación de Fase 10, alcance distribuido, invariantes, exclusiones y gate sin habilitar Fase 12.",
+            "Dictamen Fase 10, roadmap y matriz",
+            "Arquitectura, desarrollo, QA y revisión",
+            "Crítico",
+        ),
+        "docs/architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md": (
+            "Contrato del runtime distribuido",
+            "Documenta frontera, persistencia, claim, balanceo, fencing, recovery, retries, observabilidad, operación y límites de Fase 11.",
+            "Apertura, código, migración y pruebas de Fase 11",
+            "Arquitectura, operación, desarrollo, QA y auditoría",
+            "Crítico",
+        ),
+        "docs/closures/RESOLUTION_ENGINE_PHASE_11.md": (
+            "Cierre técnico de Fase 11",
+            "Consolida entrega distribuida, persistencia, garantías, pruebas, exclusiones y estado pendiente de revisión.",
+            "Contrato, implementación, migración y suites",
+            "Arquitectura, dirección, QA y auditoría",
+            "Alto",
+        ),
+    }
+    if value in phase_11_files:
+        return phase_11_files[value]
 
     phase_10_files = {
         "backend/app/main.py": (
@@ -336,7 +498,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/closures/RESOLUTION_ENGINE_PHASE_10.md": (
             "Cierre técnico de Fase 10",
-            "Consolida implementación, persistencia, validaciones, garantías y estado pendiente de aprobación formal.",
+            "Consolida implementación, persistencia, validaciones, garantías, corrección de cursor y aprobación formal en dd9a84e.",
             "Contrato, código, suites y respaldo",
             "Arquitectura, dirección, QA y auditoría",
             "Alto",

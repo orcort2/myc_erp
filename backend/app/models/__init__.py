@@ -67,6 +67,9 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionSimulation,
     ResolutionStepExecution,
     ResolutionStrategySelection,
+    ResolutionWorkerNode,
+    ResolutionWorkEvent,
+    ResolutionWorkItem,
 )
 
 __all__ = [
@@ -137,6 +140,9 @@ __all__ = [
     "ResolutionSimulation",
     "ResolutionStepExecution",
     "ResolutionStrategySelection",
+    "ResolutionWorkerNode",
+    "ResolutionWorkEvent",
+    "ResolutionWorkItem",
     "Role",
     "ServiceOrder",
     "ServiceOrderItem",

@@ -62,8 +62,8 @@ dominio.
 | 7. Auditoría y Evidencia | `APROBADA` | Audit Engine, Evidence Registry, Resolution Timeline, Evidence Store y servicios de trazabilidad/reconstrucción | Expediente, seguridad, Lifecycle, ejecución y compensación aprobados | Sólo carencias que impidan verificar o reconstruir evidencia general; no integración ERP | Cumplido en `4ae25ea` + `768ef6e`: expediente reconstruible, consulta autorizada, snapshot consistente, timeline y diagnósticos explícitos |
 | 8. Seguridad integral | `APROBADA` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Cumplido en `73e437d` + `661f43a`: catálogo central, decisiones exactas, consumo anti-replay y límites críticos protegidos sin evaluadores paralelos |
 | 9. Integración con ERP MYC | `APROBADA` | Definiciones verticales, providers y Domain Gateways concretos | Fases 0 a 8 aprobadas; servicio canónico de Certificados | Replay o snapshot que debilite idempotencia/evidencia del vertical | Cumplido en `5abfe2d` + `901bd85`: Certificados integrado sin acceso ORM desde el Motor, con replay histórico, concurrencia, evidencia confirmada y compensación |
-| 10. SDK y API Pública | `ACTIVA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Fases 0 a 9 aprobadas; apertura `25_PHASE_10_OPENING.md` | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Contratos públicos completos sin filtrar internals ni duplicar reglas |
-| 11. Motor Distribuido | `NO INICIADA` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Contratos públicos estables, evidencia y operación verificables | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Distribución sin reinterpretar históricos ni confirmar efectos inciertos |
+| 10. SDK y API Pública | `APROBADA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Fases 0 a 9 aprobadas; apertura `25_PHASE_10_OPENING.md` | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Cumplido en `dd9a84e`: contratos v1, cursor ligado a consulta, API/SDK sin filtrar internals |
+| 11. Motor Distribuido | `EN REVISIÓN` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Fase 10 aprobada en `dd9a84e`; apertura `27_PHASE_11_OPENING.md` | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Implementado: cola durable, workers pull, leases/fencing, recovery seguro, retry determinista y eventos operativos |
 | 12. IA y Resoluciones Asistidas | `NO INICIADA` | Posibilidad futura opcional y no comprometida de asistencia explicable; no forma parte del alcance actual | Decisión y apertura futuras expresas; nunca es dependencia del ERP ni del Motor determinista | Evidencia insuficiente, sesgo, dependencia operativa o decisiones no explicables | Cualquier asistencia futura deberá ser prescindible y no sustituir políticas, autorización o decisión institucional |
 
 ## Dependencias entre componentes
@@ -424,8 +424,10 @@ La Fase 0 se considera lista para revisión cuando:
   segunda comprobación bajo lock, recuperación concurrente exacta y snapshot
   posterior a `flush/refresh`, sin cambio de esquema. Cierre formal:
   `5abfe2d` + `901bd85`.
-- Fase 10: `EN REVISIÓN`; API/SDK y corrección bloqueante del cursor opaco
-  ligado a consulta implementadas, pendientes de dictamen formal
-  [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md); implementación aún no
-  aprobada en este corte.
-- Fase 11: `NO INICIADA`.
+- Fase 10: `APROBADA` mediante `dd9a84e`; API/SDK y cursor opaco ligado a
+  consulta vigentes bajo
+  [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md) y
+  [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md).
+- Fase 11: `EN REVISIÓN`; runtime distribuido implementado bajo
+  [`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md) y
+  [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md).

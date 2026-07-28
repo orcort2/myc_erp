@@ -182,6 +182,7 @@ with ResolutionEngineClient(
 - La API traduce; no decide ni contiene ORM.
 - El SDK transporta; no replica reglas.
 - Certificados permanece como único vertical.
-- No se incorporaron workers, colas, distribución, múltiples instancias,
+- Fase 10 no incorporó workers, colas, distribución, múltiples instancias,
   microservicios, autenticación federada, IA o proveedores de IA.
-- Fase 11 permanece no iniciada y bloqueada hasta aprobación formal.
+- Fase 11 fue aprobada para apertura e implementada posteriormente sin cambiar
+  este contrato público; su estado es `EN REVISIÓN`.

@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fases 0–9 aprobadas; Fase 10 `EN REVISIÓN` con corrección de cursor implementada); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fases 0–10 aprobadas; Fase 11 `EN REVISIÓN`); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -74,8 +74,12 @@ contratos v1 desacoplados, credenciales por consumidor/organización, creación
 por Lifecycle, consultas por auditoría, replay/cursor seguros, SDK HTTP y
 portal técnico. El cursor `c1` cifra y autentica toda la consulta, rechaza
 cambios de identidad/filtros/orden/versión y no revela la posición interna.
-La fase permanece `EN REVISIÓN` y pendiente de aprobación formal.
-Distribución e IA siguen fuera de alcance y Fase 11 no se inició.
+La Fase 10 está aprobada mediante `dd9a84e`. Fase 11 incorpora cola durable,
+workers pull, coordinación multinodo, leases con fencing, exclusividad por
+resolución, recuperación, retry determinista y eventos operativos append-only.
+Un lease vencido antes del efecto puede reencolarse; después del posible efecto
+queda bloqueado como incierto. La fase está `EN REVISIÓN`. Fase 12 e IA siguen
+fuera de alcance.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.

@@ -28,6 +28,11 @@ from app.resolution_engine.infrastructure.persistence.execution import (
     ResolutionResult,
     ResolutionStepExecution,
 )
+from app.resolution_engine.infrastructure.persistence.distribution import (
+    ResolutionWorkerNode,
+    ResolutionWorkEvent,
+    ResolutionWorkItem,
+)
 from app.resolution_engine.infrastructure.persistence.governance import (
     ResolutionAuthorizationDecision,
     ResolutionAuthorizationRequest,
@@ -68,4 +73,7 @@ __all__ = [
     "ResolutionSimulation",
     "ResolutionStepExecution",
     "ResolutionStrategySelection",
+    "ResolutionWorkerNode",
+    "ResolutionWorkEvent",
+    "ResolutionWorkItem",
 ]

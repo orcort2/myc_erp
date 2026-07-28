@@ -68,6 +68,8 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md`](../architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md) | Contrato implementado del primer vertical de Fase 9: Certificados, provider read-only, gateways, servicio canónico, idempotencia y compensación. |
 | [`../architecture/resolution-engine/25_PHASE_10_OPENING.md`](../architecture/resolution-engine/25_PHASE_10_OPENING.md) | Apertura oficial de Fase 10: contratos públicos versionados, API institucional, SDK, seguridad, compatibilidad, exclusiones y gate previo a distribución. |
 | [`../architecture/resolution-engine/26_PUBLIC_API_SDK.md`](../architecture/resolution-engine/26_PUBLIC_API_SDK.md) | Contrato implementado de la API pública v1, autenticación de consumidores, organización, idempotencia, cursor `c1` opaco ligado a consulta, SDK y compatibilidad de Fase 10. |
+| [`../architecture/resolution-engine/27_PHASE_11_OPENING.md`](../architecture/resolution-engine/27_PHASE_11_OPENING.md) | Apertura aprobada, alcance, invariantes, exclusiones y gate de Fase 11 — Motor Distribuido. |
+| [`../architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md`](../architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md) | Contrato implementado de cola durable, workers, leases/fencing, recovery, retry determinista y observabilidad distribuida. |
 | [`../modules/control-documental/PLANTILLAS_MAESTRAS.md`](../modules/control-documental/PLANTILLAS_MAESTRAS.md) | Contrato técnico vigente de Masters XLSX y snapshots. |
 | [`../modules/captura/PAQUETE_CAPTURA.md`](../modules/captura/PAQUETE_CAPTURA.md) | Elegibilidad, diagnóstico y estructura de entrega del Paquete de Captura. |
 | [`../modules/calidad/AUTENTICACION_CERTIFICADOS.md`](../modules/calidad/AUTENTICACION_CERTIFICADOS.md) | Contrato vigente de aprobación del Master, generación de PDF y autenticación. |
@@ -93,6 +95,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/RESOLUTION_ENGINE_PHASE_8.md`](../closures/RESOLUTION_ENGINE_PHASE_8.md) | Catálogo integral, autorización exacta, límites protegidos, migración, pruebas y exclusiones de la Fase 8. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md) | Cierre aprobado del vertical Certificados de Fase 9, con correcciones bloqueantes, validaciones y commits oficiales. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_10.md`](../closures/RESOLUTION_ENGINE_PHASE_10.md) | Cierre técnico de implementación de API/SDK v1, pendiente de revisión y aprobación formal de Fase 10. |
+| [`../closures/RESOLUTION_ENGINE_PHASE_11.md`](../closures/RESOLUTION_ENGINE_PHASE_11.md) | Cierre técnico de distribución, coordinación multinodo, recuperación y observabilidad de Fase 11, pendiente de revisión formal. |
 
 ## Auditorías
 

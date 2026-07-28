@@ -43,6 +43,9 @@ EXPECTED_TABLES = {
     "resolution_compensation_plan_steps",
     "resolution_compensation_executions",
     "resolution_compensation_step_executions",
+    "resolution_worker_nodes",
+    "resolution_work_items",
+    "resolution_work_events",
 }
 
 

@@ -198,6 +198,48 @@ class CompensationInvocationUncertainError(ResolutionEngineError):
     """La compensación pudo producir efectos, pero no confirmó resultado."""
 
 
+class DistributedWorkError(ResolutionEngineError):
+    """Base de fallos explícitos del runtime distribuido."""
+
+    error_code = "distributed_work_error"
+
+
+class DistributedWorkConflictError(DistributedWorkError):
+    """Una clave durable ya representa otra solicitud."""
+
+    error_code = "distributed_work_conflict"
+
+
+class DistributedLeaseLostError(DistributedWorkError):
+    """El fencing token dejó de ser el propietario vigente."""
+
+    error_code = "distributed_lease_lost"
+
+
+class WorkerNodeUnavailableError(DistributedWorkError):
+    """El nodo no está activo, vigente o corresponde a otra instancia."""
+
+    error_code = "worker_node_unavailable"
+
+
+class DistributedHandlerNotFoundError(DistributedWorkError):
+    """No existe handler registrado para el tipo de trabajo."""
+
+    error_code = "distributed_handler_not_found"
+
+
+class RetryableDistributedWorkError(DistributedWorkError):
+    """Fallo confirmado antes de efectos; admite retry determinista."""
+
+    error_code = "distributed_work_retryable"
+
+
+class DistributedWorkUncertainError(DistributedWorkError):
+    """El handler no puede confirmar si produjo un efecto."""
+
+    error_code = "distributed_work_uncertain"
+
+
 class InvalidAuditEvidenceError(ResolutionEngineError, ValueError):
     """Una proyección de auditoría viola su contrato estable."""
 

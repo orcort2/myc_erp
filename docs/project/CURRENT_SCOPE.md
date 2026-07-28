@@ -29,10 +29,9 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fases 0 a 9 aprobadas y Fase 10 `EN REVISIÓN`,
-  con corrección bloqueante de cursor implementada
-  documentalmente sin implementación: además de la fundación, persistencia y
-  seguridad aprobadas, existen 26 modelos persistentes generales, relaciones normalizadas,
+- Motor de Resoluciones con Fases 0 a 10 aprobadas y Fase 11 `EN REVISIÓN`.
+  Además de la fundación, persistencia y
+  seguridad aprobadas, existen 29 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
   repositorio de reconstrucción, migración reversible, identidad canónica,
   autenticación tipada, permisos atómicos, políticas versionadas,
@@ -51,8 +50,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   orden/dependencias, exige clausura transitiva de dependientes activos,
   impide duplicados y puntos de no retorno y conserva
   ejecución, actor, lock, auditoría y outbox sin reinterpretar el efecto
-  original. Gateways concretos, API, workers, schedulers, recuperación,
-  conciliación, retries y compensación automática continúan sin comportamiento.
+  original. No existe compensación automática.
   Fase 7 — Auditoría y Evidencia está aprobada: añade modelo
   puro, registro de evidencia, verificación de integridad, timeline,
   reconstrucción sobre snapshot transaccional consistente y consultas
@@ -71,8 +69,12 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   pos-flush están cubiertos por la corrección aprobada. Fase 10 implementa
   contratos públicos v1, API institucional, seguridad por
   consumidor/organización, creación Lifecycle, consultas de auditoría con
-  filtros y cursor `c1` AES-GCM ligado a consulta, SDK HTTP y portal técnico.
-  Está pendiente de aprobación formal.
+  filtros y cursor `c1` AES-GCM ligado a consulta, SDK HTTP y portal técnico;
+  está aprobada mediante `dd9a84e`. Fase 11 añade cola SQL durable, workers
+  pull, capacidad/heartbeat/drenado de nodos, claim con `SKIP LOCKED`,
+  exclusividad por resolución, leases con fencing, recuperación, retry
+  determinista, eventos append-only y snapshot operacional. Los efectos
+  inciertos quedan bloqueados y no se reintentan automáticamente.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
@@ -99,8 +101,8 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - Mejoras aspiracionales de auditorías antiguas no incorporadas al registro vigente de observaciones o deuda técnica.
 - Publicar en v1 simulación, autorización de planes, ejecución o compensación
   no forma parte de la superficie concluida: esos servicios internos no se
-  reinterpretaron ni duplicaron. Procesamiento distribuido e IA permanecen
-  fuera del alcance vigente; la IA sólo es una posibilidad futura opcional,
+  reinterpretaron ni duplicaron. La IA permanece
+  fuera del alcance vigente y sólo es una posibilidad futura opcional,
   sin dependencia arquitectónica ni operativa del ERP o del Motor.
 
 ## Criterio para versión estable 1.0

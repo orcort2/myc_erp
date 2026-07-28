@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 9 ACTIVA
+> Estado: ARQUITECTURA VIGENTE — FASE 11 EN REVISIÓN
 >
-> Fase anterior: Fase 8 aprobada
+> Fase anterior: Fase 10 aprobada en `dd9a84e`
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -35,6 +35,11 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 21. [`21_PHASE_8_OPENING.md`](21_PHASE_8_OPENING.md)
 22. [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md)
 23. [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md)
+24. [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md)
+25. [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md)
+26. [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md)
+27. [`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md)
+28. [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md)
 
 ## Regla de precedencia
 
@@ -132,12 +137,20 @@ y su cierre técnico en
 Las observaciones de replay dependiente del estado actual y snapshot previo al
 flush quedaron corregidas y aprobadas mediante `901bd85`.
 
-La Fase 10 — SDK y API Pública permanece `EN REVISIÓN`. La corrección
-bloqueante sustituyó el cursor inicial por `c1`, opaco y ligado a la identidad
-completa de la consulta; aún requiere dictamen formal. Su apertura está en
+La Fase 10 — SDK y API Pública está `APROBADA` mediante `dd9a84e`. La
+corrección bloqueante sustituyó el cursor inicial por `c1`, opaco y ligado a la
+identidad completa de la consulta. Su apertura está en
 [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md), su contrato v1 en
 [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md) y su cierre técnico en
 [`../../closures/RESOLUTION_ENGINE_PHASE_10.md`](../../closures/RESOLUTION_ENGINE_PHASE_10.md).
-Distribución, workers, múltiples instancias e IA permanecen fuera de alcance.
-La Fase 11 no fue iniciada. La IA es únicamente una posibilidad futura opcional
-y nunca una dependencia arquitectónica u operativa del Motor.
+
+La Fase 11 — Motor Distribuido está implementada y `EN REVISIÓN`. Incorpora
+cola SQL durable, workers pull, coordinación por capacidad, heartbeats, leases
+con fencing, exclusividad por resolución, recuperación segura, retry
+determinista, eventos append-only y observabilidad operacional sin modificar
+los contratos anteriores. Su apertura está en
+[`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md), su contrato en
+[`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md) y su cierre en
+[`../../closures/RESOLUTION_ENGINE_PHASE_11.md`](../../closures/RESOLUTION_ENGINE_PHASE_11.md).
+Fase 12 permanece no iniciada. La IA es únicamente una posibilidad futura
+opcional y nunca una dependencia arquitectónica u operativa del Motor.

@@ -2739,10 +2739,10 @@ Al coordinar las decisiones institucionales de todos los dominios mediante una a
 
 # Fase 10 — SDK y API Pública
 
-> Estado vigente: `ACTIVA` desde 2026-07-28, con Fase 9 aprobada mediante
-> `5abfe2d` y `901bd85`. La implementación se rige por
-> [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md) y todavía no ha comenzado
-> en este corte documental. Fase 11 permanece `NO INICIADA`.
+> Estado vigente: `APROBADA` mediante `dd9a84e`. La implementación se rige por
+> [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md) y
+> [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md). Fase 11 fue abierta e
+> implementada posteriormente; permanece `EN REVISIÓN`.
 
 Una vez que el Motor de Resoluciones se encuentra plenamente integrado al ERP MYC, el siguiente paso consiste en convertirlo en una plataforma reutilizable capaz de ser consumida por aplicaciones externas, servicios especializados y nuevos productos de software.
 
@@ -3027,6 +3027,11 @@ Mediante una API institucional, un SDK oficial y contratos públicos estables, e
 # 12. Fase 11 — Motor Distribuido
 
 # Fase 11 — Motor Distribuido
+
+> Estado vigente: `EN REVISIÓN`. La apertura aprobada está en
+> [`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md) y el contrato implementado
+> en [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md). Fase 12
+> permanece `NO INICIADA`.
 
 Una vez que el Motor de Resoluciones puede ser consumido por múltiples aplicaciones mediante una API institucional, el siguiente paso consiste en permitir que su capacidad de procesamiento crezca más allá de una única instancia.
 
