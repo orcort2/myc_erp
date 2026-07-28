@@ -29,8 +29,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fases 0 a 8 aprobadas y el primer vertical de Fase
-  9 implementado `EN REVISIÓN`: además de la fundación, persistencia y
+- Motor de Resoluciones con Fases 0 a 9 aprobadas y Fase 10 activa
+  documentalmente sin implementación: además de la fundación, persistencia y
   seguridad aprobadas, existen 26 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
   repositorio de reconstrucción, migración reversible, identidad canónica,
@@ -67,8 +67,9 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   servicio canónico de Certificados. La mutación oculta el certificado sin
   reescribir su liberación y admite compensación con evidencia append-only.
   Replay histórico, colisiones concurrentes y snapshots confirmados
-  pos-flush están cubiertos por la corrección de revisión. Ningún otro caso o
-  dominio está iniciado.
+  pos-flush están cubiertos por la corrección aprobada. Fase 10 autoriza
+  contratos públicos versionados, API institucional y SDK, pero todavía no
+  existe superficie pública implementada.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
@@ -93,9 +94,10 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - El historial transversal de un mismo activo del cliente a través de múltiples servicios. El modelo actual conserva cada equipo como ocurrencia del ETS, sus identificadores (`serial_number`, `internal_id`) y snapshots sin imponer unicidad global; una evolución futura podrá enlazarlo a una identidad de activo separada sin reescribir el expediente histórico.
 - Funcionalidades descritas únicamente en especificaciones archivadas que no estén confirmadas en [`BUSINESS_RULES.md`](BUSINESS_RULES.md), [`DECISIONS.md`](DECISIONS.md) o el código vigente.
 - Mejoras aspiracionales de auditorías antiguas no incorporadas al registro vigente de observaciones o deuda técnica.
-- API/SDK públicos del Motor, procesamiento distribuido e IA. La IA permanece
-  como posibilidad futura opcional, sin dependencia arquitectónica ni
-  operativa del ERP o del Motor determinista.
+- API/SDK públicos del Motor todavía no implementados, aunque su construcción
+  ya está autorizada por Fase 10. Procesamiento distribuido e IA permanecen
+  fuera del alcance vigente; la IA sólo es una posibilidad futura opcional,
+  sin dependencia arquitectónica ni operativa del ERP o del Motor.
 
 ## Criterio para versión estable 1.0
 

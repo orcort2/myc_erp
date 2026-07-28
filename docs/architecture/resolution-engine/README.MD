@@ -120,19 +120,20 @@ la reutilización de la misma consulta exacta. Su apertura está en
 [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).
 
-La Fase 9 está `ACTIVA` sólo para integración gradual con ERP mediante
+La Fase 9 está `APROBADA`. Integró gradualmente el ERP mediante
 definiciones verticales, Fact Providers read-only y Domain Gateways que
 consuman servicios canónicos propietarios. Su apertura está en
 [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). El primer y único vertical,
-`certificate.resolve_incorrect_release`, está implementado y `EN REVISIÓN`;
+`certificate.resolve_incorrect_release`, está implementado y aprobado;
 su contrato está en
 [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md)
 y su cierre técnico en
 [`../../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](../../closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md).
 Las observaciones de replay dependiente del estado actual y snapshot previo al
-flush están corregidas sin migración y permanecen pendientes de revisión
-formal.
+flush quedaron corregidas y aprobadas mediante `901bd85`.
 
-API/SDK públicos, workers, schedulers, distribución e IA permanecen fuera de
-alcance. La Fase 10 no fue iniciada. La IA es únicamente una posibilidad futura
-opcional y nunca una dependencia arquitectónica u operativa del Motor.
+La Fase 10 — SDK y API Pública está `ACTIVA` documentalmente bajo
+[`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md); su implementación todavía
+no comenzó. Distribución, workers, múltiples instancias e IA permanecen fuera
+de alcance. La Fase 11 no fue iniciada. La IA es únicamente una posibilidad
+futura opcional y nunca una dependencia arquitectónica u operativa del Motor.

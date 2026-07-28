@@ -109,10 +109,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fases 8 y 9
+## Motor de Resoluciones — Fases 9 y 10
 
-- Estado: Fases 0 a 8 `APROBADAS`; primer vertical de Fase 9
-  `certificate.resolve_incorrect_release` implementado y `EN REVISIÓN`.
+- Estado: Fases 0 a 9 `APROBADAS`; Fase 10 — SDK y API Pública `ACTIVA`
+  documentalmente, sin implementación iniciada.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -191,9 +191,13 @@
   [`architecture/resolution-engine/23_PHASE_9_OPENING.md`](architecture/resolution-engine/23_PHASE_9_OPENING.md).
 - Contrato implementado del primer vertical:
   [`architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md`](architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md).
-- Cierre técnico en revisión:
+- Cierre aprobado de Fase 9:
   [`closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md).
-- Ningún otro dominio o Fase 10 fue iniciado. API/SDK públicos, distribución e
-  IA permanecen fuera de alcance.
+- Commits aprobados de Fase 9: `5abfe2d` y `901bd85`.
+- Apertura oficial de Fase 10:
+  [`architecture/resolution-engine/25_PHASE_10_OPENING.md`](architecture/resolution-engine/25_PHASE_10_OPENING.md).
+- Fase 10 autoriza contratos públicos versionados, API institucional, SDK,
+  client libraries y documentación; aún no existe implementación. Fase 11,
+  distribución e IA permanecen fuera de alcance.
 - La IA es una posibilidad futura opcional y no constituye dependencia
   arquitectónica u operativa del ERP o del Motor determinista.

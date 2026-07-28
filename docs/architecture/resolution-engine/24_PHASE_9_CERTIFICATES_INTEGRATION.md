@@ -1,4 +1,4 @@
-> Estado: IMPLEMENTADO — EN REVISIÓN
+> Estado: IMPLEMENTADO — APROBADO
 >
 > Fecha: 2026-07-28
 >
@@ -207,7 +207,7 @@ La integración deberá demostrar:
 
 ## Resultado verificable
 
-El primer caso vertical quedó implementado y permanece **EN REVISIÓN**. La
+El primer caso vertical quedó implementado y **APROBADO**. La
 entrega registra la definición `1.0`, siete componentes deterministas, provider
 read-only, gateway de ejecución, gateway de compensación, servicio canónico,
 evidencia propietaria append-only y migración reversible
@@ -217,3 +217,6 @@ La suite específica valida el ciclo puro, bloqueo y deriva, atomicidad,
 idempotencia histórica, colisiones, concurrencia, rollback, snapshot pos-flush,
 ejecución real protegida por la seguridad de Fase 8, compensación y límites
 arquitectónicos. No se inició otro caso, dominio o fase.
+
+La aprobación formal conserva como cierre `5abfe2d` y `901bd85`. La apertura
+posterior de Fase 10 no amplía ni modifica este vertical.

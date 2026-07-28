@@ -15,7 +15,7 @@ Este documento describe el flujo que existe en el sistema, no el flujo ideal ni 
 ## Motor de Resoluciones
 
 El flujo interno implementado incorpora un único dominio real: Certificados.
-El primer vertical de Fase 9 está implementado y en revisión:
+El primer vertical de Fase 9 está implementado y aprobado:
 
 ```text
 [decisión resolution.create exacta] → draft
@@ -70,6 +70,12 @@ línea de tiempo y un hash deterministas del corte. Una confirmación concurrent
 queda enteramente antes o después del reporte, nunca mezclada. Los filtros se
 aplican sólo después de verificar el conjunto completo. La consulta no transita
 Lifecycle, no ejecuta handlers y no publica outbox.
+
+Fase 9 está aprobada. Fase 10 tiene apertura documental, pero todavía no existe
+flujo público ejecutable: no hay contratos externos, endpoints o SDK del Motor
+que puedan describirse como comportamiento vigente. Su futura frontera deberá
+traducir contratos versionados hacia estos mismos comandos y consultas, sin
+agregar otra autoridad de estado o seguridad.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
 read-only; análisis, estrategia, plan y simulación son deterministas; el

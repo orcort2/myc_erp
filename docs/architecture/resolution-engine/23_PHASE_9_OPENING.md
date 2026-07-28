@@ -153,15 +153,16 @@ Python, validaciones arquitectónicas, `alembic current`, `alembic heads`,
 
 ## Restricción
 
-La Fase 10 — SDK y API Pública permanece `NO INICIADA`. No puede comenzar hasta
-que la Fase 9 haya concluido y sea aprobada formalmente.
+La Fase 10 — SDK y API Pública permaneció `NO INICIADA` durante la
+implementación y revisión de esta fase. El dictamen final satisfizo esta
+restricción al aprobar Fase 9 y autorizar su apertura posterior.
 
 ## Primer caso autorizado y resultado
 
 El primer y único dominio autorizado es **CERTIFICADOS**. Se seleccionó
 `certificate.resolve_incorrect_release` y su implementación queda
-**EN REVISIÓN** conforme al contrato
+**APROBADA** conforme al contrato
 [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md).
 
-No se inició otro dominio. La Fase 9 no está aprobada por esta entrega y la
-restricción sobre Fase 10 continúa íntegra.
+No se inició otro dominio. El dictamen final aprobó Fase 9 mediante `5abfe2d` y
+`901bd85` y autorizó la apertura documental de Fase 10.

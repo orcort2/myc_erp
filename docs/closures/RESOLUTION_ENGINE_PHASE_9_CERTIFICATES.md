@@ -1,4 +1,4 @@
-> Estado: CIERRE TÉCNICO — EN REVISIÓN
+> Estado: CIERRE OFICIAL — APROBADA
 >
 > Fecha: 2026-07-28
 >
@@ -13,8 +13,13 @@ caso real del Motor. La resolución retira el acceso futuro del cliente a un
 certificado liberado incorrectamente, sin borrar ni reinterpretar su estado,
 fecha, actor, PDF autenticado o historia.
 
-La entrega queda **EN REVISIÓN**. Este documento no aprueba la Fase 9, no
-habilita otro dominio y no inicia la Fase 10.
+La entrega quedó **APROBADA** mediante dictamen formal. Los commits oficiales
+del cierre son:
+
+```text
+5abfe2d788c2a5d641d8a25037ffd2cfbad914ce
+901bd85454f3d88ed8f988c71c3475a568d94cd8
+```
 
 ## Componentes entregados
 
@@ -78,14 +83,13 @@ Ambas observaciones quedaron corregidas sin migración:
 
 La suite reproduce replay tras deriva/inactividad, dos solicitudes concurrentes
 exactas, colisiones concurrentes, rollback y equivalencia entre snapshot,
-resultado y fila persistida. La Fase 9 continúa `EN REVISIÓN`.
+resultado y fila persistida. La revisión final declaró resueltas ambas
+observaciones y aprobó la Fase 9.
 
-## Restricción
-
-Hasta revisión y aprobación formal:
+## Estado final
 
 ```text
-FASE 9 — EN REVISIÓN
-SIGUIENTE DOMINIO — NO INICIADO
-FASE 10 — NO INICIADA
+FASE 9 — APROBADA
+FASE 10 — AUTORIZADA; APERTURA DOCUMENTAL ACTIVA
+FASE 11 — NO INICIADA
 ```

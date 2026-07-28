@@ -2448,11 +2448,10 @@ Mediante la integración completa del Modelo de Seguridad, el Motor garantiza qu
 > Estado vigente: `ACTIVA` desde 2026-07-28, bajo el alcance y los gates de
 > [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). El primer y único vertical
 > autorizado es Certificados: `certificate.resolve_incorrect_release` está
-> implementado y `EN REVISIÓN` conforme a
+> implementado y `APROBADO` conforme a
 > [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md).
-> La corrección bloqueante de replay histórico y snapshot confirmado está
-> implementada sin cambio de esquema. Ningún otro dominio puede iniciarse
-> antes de su validación y aprobación.
+> La corrección bloqueante de replay histórico y snapshot confirmado fue
+> aprobada sin cambio de esquema mediante `901bd85`.
 
 Con el Motor de Resoluciones completamente consolidado desde el punto de vista arquitectónico, la siguiente etapa consiste en convertirlo en el mecanismo institucional mediante el cual operan los distintos módulos del ERP MYC.
 
@@ -2739,6 +2738,11 @@ Al coordinar las decisiones institucionales de todos los dominios mediante una a
 # 11. Fase 10 — SDK y API Pública
 
 # Fase 10 — SDK y API Pública
+
+> Estado vigente: `ACTIVA` desde 2026-07-28, con Fase 9 aprobada mediante
+> `5abfe2d` y `901bd85`. La implementación se rige por
+> [`25_PHASE_10_OPENING.md`](25_PHASE_10_OPENING.md) y todavía no ha comenzado
+> en este corte documental. Fase 11 permanece `NO INICIADA`.
 
 Una vez que el Motor de Resoluciones se encuentra plenamente integrado al ERP MYC, el siguiente paso consiste en convertirlo en una plataforma reutilizable capaz de ser consumida por aplicaciones externas, servicios especializados y nuevos productos de software.
 

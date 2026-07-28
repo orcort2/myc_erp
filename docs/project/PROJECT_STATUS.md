@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fase 8 aprobada; primer vertical de Fase 9 implementado y en revisión); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fases 0–9 aprobadas; Fase 10 activa documentalmente, sin implementación); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -46,9 +46,9 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
 
-El Motor de Resoluciones tiene aprobadas las Fases 0 a 8. El primer y único
-vertical de la Fase 9, `certificate.resolve_incorrect_release`, está
-implementado y `EN REVISIÓN`. Además de fundación, persistencia, seguridad,
+El Motor de Resoluciones tiene aprobadas las Fases 0 a 9. El primer y único
+vertical de la Fase 9, `certificate.resolve_incorrect_release`, quedó aprobado
+mediante `5abfe2d` y `901bd85`. Además de fundación, persistencia, seguridad,
 Lifecycle y ejecución, existe compensación total/parcial síncrona de efectos
 confirmados declarados reversibles. Plan, autorización, ejecución original,
 checkpoints y resultado quedan vinculados y reconstruibles; Lifecycle conserva
@@ -69,9 +69,9 @@ gateways delegan en el servicio canónico de Certificados, que retira sólo la
 visibilidad futura y conserva la liberación histórica. La operación y su
 compensación son transaccionales, idempotentes y append-only. Las observaciones
 bloqueantes de replay dependiente del estado y snapshot previo al flush están
-corregidas y cubiertas por concurrencia, deriva, rollback y equivalencia
-persistente; la fase espera revisión formal. API/SDK públicos, otro dominio,
-distribución e IA siguen fuera de alcance; Fase 10 no se inició.
+corregidas y aprobadas. Fase 10 — SDK y API Pública está `ACTIVA`
+documentalmente mediante su apertura oficial, pero aún no tiene implementación.
+Distribución e IA siguen fuera de alcance y Fase 11 no se inició.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
