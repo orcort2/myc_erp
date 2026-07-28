@@ -104,6 +104,7 @@ FORCE_RECLASSIFY = {
     "backend/tests/resolution_engine/test_phase_8_security.py",
     "docs/architecture/resolution-engine/21_PHASE_8_OPENING.md",
     "docs/architecture/resolution-engine/22_INTEGRAL_SECURITY.md",
+    "docs/architecture/resolution-engine/23_PHASE_9_OPENING.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_8.md",
     "backend/app/resolution_engine/contracts/audit.py",
     "backend/app/resolution_engine/infrastructure/audit.py",
@@ -336,7 +337,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/architecture/resolution-engine/21_PHASE_8_OPENING.md": (
             "Apertura oficial de Fase 8",
-            "Registra autorización, alcance, exclusiones, dependencias, invariantes, validaciones y prohibición de iniciar Fase 9.",
+            "Registra autorización, alcance, exclusiones, dependencias, invariantes, validaciones y cumplimiento de la restricción previa a Fase 9.",
             "Aprobación de Fase 7, roadmap y matriz",
             "Arquitectura, dirección, desarrollo y revisión",
             "Crítico",
@@ -349,11 +350,18 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
             "Crítico",
         ),
         "docs/closures/RESOLUTION_ENGINE_PHASE_8.md": (
-            "Cierre técnico de Fase 8",
-            "Consolida componentes, invariantes, migración, validaciones, exclusiones y estado EN REVISIÓN antes de Fase 9.",
+            "Cierre aprobado de Fase 8",
+            "Consolida componentes, invariantes, migración, validaciones, commits, exclusiones y aprobación formal que habilita Fase 9.",
             "Implementación, arquitectura y validaciones de Fase 8",
             "Arquitectura, desarrollo, QA, dirección y auditoría",
             "Alto",
+        ),
+        "docs/architecture/resolution-engine/23_PHASE_9_OPENING.md": (
+            "Apertura oficial de Fase 9",
+            "Registra autorización, integración gradual, ownership, contratos, exclusiones, invariantes y gates por caso vertical.",
+            "Aprobación de Fase 8, roadmap y matriz",
+            "Arquitectura, dirección, desarrollo, QA y revisión",
+            "Crítico",
         ),
     }
     if value in phase_8_files:

@@ -60,11 +60,11 @@ dominio.
 | 5. Ejecución controlada | `APROBADA` | Modelo y Engine de ejecución, Executor, Action Runner, contratos, checkpoints, idempotencia, locks, resultados, eventos y publicación explícita de outbox | Plan autorizado/revalidado de Fase 4 | Sólo contradicciones que impidan ejecutar mediante contratos generales; no se integran módulos propietarios | Cumplido en `ca5fdda`: ejecución exacta, lock posterior al handler, incertidumbre preservada y outbox trazable |
 | 6. Motor de Compensación | `APROBADA` | Modelo declarativo, planes total/parcial, clausura transitiva, Runner, contratos, persistencia, Lifecycle, checkpoints, idempotencia, locks, auditoría y outbox | Ejecución controlada y seguridad exacta de Fases 3 a 5 | Sólo contradicciones que impidan vincular efectos reversibles confirmados; no automatización ni gateways | Cumplido en `74a3de5` + `e1d373e`: compensación reconstruible, segura, cerrada sobre dependientes y sin duplicados |
 | 7. Auditoría y Evidencia | `APROBADA` | Audit Engine, Evidence Registry, Resolution Timeline, Evidence Store y servicios de trazabilidad/reconstrucción | Expediente, seguridad, Lifecycle, ejecución y compensación aprobados | Sólo carencias que impidan verificar o reconstruir evidencia general; no integración ERP | Cumplido en `4ae25ea` + `768ef6e`: expediente reconstruible, consulta autorizada, snapshot consistente, timeline y diagnósticos explícitos |
-| 8. Seguridad integral | `EN REVISIÓN` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Cumplido técnicamente: catálogo central, decisiones exactas y límites críticos protegidos sin evaluadores paralelos |
-| 9. Integración con ERP MYC | `NO INICIADA` | Definiciones verticales, UC-001 y siguientes, providers y Domain Gateways concretos | Núcleo y auditoría aprobados; servicios canónicos de dominios participantes | Actor opcional, duplicidad o mutación inmediata únicamente del caso incorporado | Primeros casos completos sin acceso directo del Motor a tablas propietarias |
+| 8. Seguridad integral | `APROBADA` | Endurecimiento transversal, protección integral del ciclo y gobierno de acceso sobre las capacidades consolidadas | Evidencia institucional verificable; reutiliza la fundación adelantada y aprobada en Fase 3 | Sólo brechas propias del Motor; la deuda general del ERP sigue separada | Cumplido en `73e437d` + `661f43a`: catálogo central, decisiones exactas, consumo anti-replay y límites críticos protegidos sin evaluadores paralelos |
+| 9. Integración con ERP MYC | `ACTIVA` | Definiciones verticales, UC-001 y siguientes, providers y Domain Gateways concretos | Fases 0 a 8 aprobadas; servicios canónicos de dominios participantes | Actor opcional, duplicidad o mutación inmediata únicamente del caso incorporado | Primeros casos completos sin acceso directo del Motor a tablas propietarias |
 | 10. SDK y API Pública | `NO INICIADA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Motor institucional e integraciones estabilizadas | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Contratos públicos completos sin filtrar internals ni duplicar reglas |
 | 11. Motor Distribuido | `NO INICIADA` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Contratos públicos estables, evidencia y operación verificables | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Distribución sin reinterpretar históricos ni confirmar efectos inciertos |
-| 12. IA y Resoluciones Asistidas | `NO INICIADA` | Asistencia, recomendaciones y aprendizaje explicable sobre evidencia histórica | Historial institucional suficiente y Motor distribuido estabilizado | Evidencia insuficiente, sesgo o decisiones no explicables | Asistencia gobernada sin sustituir políticas, autorización o decisión institucional |
+| 12. IA y Resoluciones Asistidas | `NO INICIADA` | Posibilidad futura opcional y no comprometida de asistencia explicable; no forma parte del alcance actual | Decisión y apertura futuras expresas; nunca es dependencia del ERP ni del Motor determinista | Evidencia insuficiente, sesgo, dependencia operativa o decisiones no explicables | Cualquier asistencia futura deberá ser prescindible y no sustituir políticas, autorización o decisión institucional |
 
 ## Dependencias entre componentes
 
@@ -393,11 +393,12 @@ La Fase 0 se considera lista para revisión cuando:
 - Evidencia detallada:
   [`../../closures/RESOLUTION_ENGINE_PHASE_7.md`](../../closures/RESOLUTION_ENGINE_PHASE_7.md).
 
-## Apertura y resultado técnico de Fase 8
+## Cierre aprobado de Fase 8 y apertura de Fase 9
 
 - Apertura: aprobada expresamente el 2026-07-27; contrato
   [`21_PHASE_8_OPENING.md`](21_PHASE_8_OPENING.md).
-- Estado: `EN REVISIÓN`; Fase 9 `NO INICIADA`.
+- Estado: `APROBADA` el 2026-07-28 mediante `73e437d` y
+  `661f43a5cbba9070b1f02babd9ebbd5149f62b2b`.
 - Gobierno: catálogo único de acción, permiso, recurso y riesgo integrado al
   evaluador de Fase 3.
 - Consumo: Lifecycle, ejecución, compensación, auditoría y outbox verifican la
@@ -414,3 +415,7 @@ La Fase 0 se considera lista para revisión cuando:
   [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md).
 - Evidencia:
   [`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).
+- Fase 9: `ACTIVA` exclusivamente bajo
+  [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). Esta apertura aún no
+  selecciona ni implementa un caso vertical.
+- Fase 10: `NO INICIADA`.

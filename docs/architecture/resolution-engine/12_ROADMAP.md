@@ -2445,6 +2445,10 @@ Mediante la integración completa del Modelo de Seguridad, el Motor garantiza qu
 
 # Fase 9 — Integración con ERP MYC
 
+> Estado vigente: `ACTIVA` desde 2026-07-28, bajo el alcance y los gates de
+> [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). La apertura todavía no
+> selecciona ni implementa un caso vertical.
+
 Con el Motor de Resoluciones completamente consolidado desde el punto de vista arquitectónico, la siguiente etapa consiste en convertirlo en el mecanismo institucional mediante el cual operan los distintos módulos del ERP MYC.
 
 Hasta este punto, el Motor existe como una plataforma independiente capaz de administrar resoluciones de manera segura, consistente y gobernada.
@@ -2681,7 +2685,11 @@ Durante esta fase aún permanecen fuera del alcance:
 - inteligencia artificial;
 - aprendizaje automático.
 
-Estas capacidades se desarrollarán posteriormente.
+API/SDK públicos y distribución pertenecen a fases posteriores. La inteligencia
+artificial y el aprendizaje automático no forman parte del alcance actual ni
+constituyen una dependencia comprometida del ERP o del Motor: sólo podrán
+considerarse como posibilidad futura opcional mediante una decisión y apertura
+expresas.
 
 ---
 
@@ -2709,7 +2717,9 @@ Las decisiones institucionales comenzarán a administrarse de manera uniforme en
 
 La integración con el ERP constituye el punto de partida para abrir el Motor hacia otros consumidores.
 
-Las siguientes fases permitirán exponer interfaces públicas, construir SDKs reutilizables, operar de forma distribuida e incorporar capacidades avanzadas de inteligencia institucional.
+Las siguientes fases podrán exponer interfaces públicas, construir SDKs
+reutilizables y operar de forma distribuida. Cualquier capacidad de IA será
+opcional, prescindible y objeto de una autorización futura independiente.
 
 La consolidación dentro del ERP es el paso previo a su evolución como plataforma.
 
@@ -3282,6 +3292,15 @@ Mediante la coordinación de múltiples instancias, la arquitectura incrementa s
 # 13. Fase 12 — IA y Resoluciones Asistidas
 
 # Fase 12 — IA y Resoluciones Asistidas
+
+> Estado vigente: `NO INICIADA`. Carácter: posibilidad futura `OPCIONAL`. Esta
+> etapa conceptual no es un compromiso de implementación ni una dependencia
+> arquitectónica u operativa.
+> El ERP y el Motor deben conservar funcionamiento completo mediante código
+> determinista, reglas, políticas, permisos, validaciones, Lifecycle,
+> simulación, ejecución, compensación y auditoría. Cualquier apertura futura
+> requerirá autorización expresa y mantendrá prescindibles a todos los
+> proveedores de IA.
 
 Después de consolidar una arquitectura distribuida, segura, completamente auditable y capaz de administrar millones de resoluciones, el siguiente paso consiste en incorporar mecanismos de inteligencia artificial como asistentes especializados del Motor de Resoluciones.
 

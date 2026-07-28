@@ -14,8 +14,9 @@ Este documento describe el flujo que existe en el sistema, no el flujo ideal ni 
 
 ## Motor de Resoluciones
 
-El flujo interno implementado y todavía sin integración concreta con dominios
-del ERP es:
+El flujo interno implementado continúa sin integración concreta con dominios
+del ERP. La Fase 9 está activa documentalmente, pero aún no se ha seleccionado
+ni implementado un caso vertical:
 
 ```text
 [decisión resolution.create exacta] → draft
@@ -70,6 +71,11 @@ línea de tiempo y un hash deterministas del corte. Una confirmación concurrent
 queda enteramente antes o después del reporte, nunca mezclada. Los filtros se
 aplican sólo después de verificar el conjunto completo. La consulta no transita
 Lifecycle, no ejecuta handlers y no publica outbox.
+
+La futura integración de cada caso de Fase 9 deberá obtener hechos mediante
+Fact Providers read-only y producir mutaciones únicamente mediante Domain
+Gateways hacia servicios canónicos del módulo propietario. Este flujo todavía
+no forma parte del comportamiento ejecutable descrito arriba.
 
 ## Flujo principal
 

@@ -29,7 +29,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fases 0 a 7 aprobadas y Fase 8 en revisión: además de la fundación, persistencia y
+- Motor de Resoluciones con Fases 0 a 8 aprobadas y Fase 9 activa
+  documentalmente, aún sin caso vertical implementado: además de la fundación, persistencia y
   seguridad aprobadas, existen 26 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
   repositorio de reconstrucción, migración reversible, identidad canónica,
@@ -55,13 +56,15 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   puro, registro de evidencia, verificación de integridad, timeline,
   reconstrucción sobre snapshot transaccional consistente y consultas
   autorizadas sobre el expediente general sin persistir una fuente paralela.
-  Fase 8 — Seguridad integral está implementada `EN REVISIÓN`: centraliza el
+  Fase 8 — Seguridad integral está `APROBADA`: centraliza el
   catálogo de controles en el evaluador vigente y protege creación/transición,
   ejecución, compensación, consultas y outbox mediante decisiones append-only
   exactas. Las mutaciones distinguen replay idempotente de reutilización para
   otra operación mediante identidad/hash y consumo transaccional append-only;
   auditoría conserva una concesión reutilizable de consulta exacta. Fase 9
-  continúa `NO INICIADA`.
+  autoriza definiciones verticales, Fact Providers read-only y Domain Gateways
+  concretos hacia servicios canónicos, un caso gradual a la vez. No se ha
+  seleccionado ni implementado el primero.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 
@@ -86,6 +89,9 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - El historial transversal de un mismo activo del cliente a través de múltiples servicios. El modelo actual conserva cada equipo como ocurrencia del ETS, sus identificadores (`serial_number`, `internal_id`) y snapshots sin imponer unicidad global; una evolución futura podrá enlazarlo a una identidad de activo separada sin reescribir el expediente histórico.
 - Funcionalidades descritas únicamente en especificaciones archivadas que no estén confirmadas en [`BUSINESS_RULES.md`](BUSINESS_RULES.md), [`DECISIONS.md`](DECISIONS.md) o el código vigente.
 - Mejoras aspiracionales de auditorías antiguas no incorporadas al registro vigente de observaciones o deuda técnica.
+- API/SDK públicos del Motor, procesamiento distribuido e IA. La IA permanece
+  como posibilidad futura opcional, sin dependencia arquitectónica ni
+  operativa del ERP o del Motor determinista.
 
 ## Criterio para versión estable 1.0
 

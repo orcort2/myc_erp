@@ -1,6 +1,6 @@
-> Estado: CIERRE TÉCNICO EN REVISIÓN
+> Estado: APROBADA
 >
-> Fecha: 2026-07-27
+> Fecha de aprobación: 2026-07-28
 >
 > Fase: 8 — Seguridad integral
 
@@ -71,25 +71,30 @@ snapshots ni reconstrucción determinista. No se incorporan componentes de Fase
 sin inventar intención verificable. Las nuevas rutas persisten modo, operación,
 payload/hash y consumo exactos.
 
-## Pendientes
+## Pendientes externos o históricos
 
 - `TD-022` permanece: decisiones anteriores a Fase 7 sin base canónica completa
   sólo pueden mostrarse como `asserted`; no se migran por inferencia.
 - `TD-023` bloquea la suite backend completa por el `JSONB` no portable del
-  módulo Actividad; su corrección pertenece a ese módulo, no al Motor.
+  módulo Actividad; su corrección pertenece a ese módulo, no al Motor y no
+  impide el cierre aprobado.
 - La seguridad general de routers, portal y demás ERP sigue fuera de esta fase.
-- La Fase 9 requiere aprobación formal expresa.
 
-## Commit
+## Commits del cierre
 
-La implementación y este cierre se agrupan en un commit exclusivo de Fase 8.
-Su hash se reporta en el cierre operativo y no se incrusta aquí para evitar una
-referencia circular.
+- `73e437d` — `feat(resolution-engine): complete phase 8 security`.
+- `661f43a5cbba9070b1f02babd9ebbd5149f62b2b` —
+  `fix(resolution-engine): bind security decisions to operations`; este commit
+  resuelve la observación bloqueante anti-replay y fue identificado en el
+  dictamen como `fix(resolution-engine): prevent security decision replay`.
+
+La revisión arquitectónica concluyó satisfactoriamente y autorizó la apertura
+documental de la Fase 9.
 
 ## Estado
 
 ```text
 FASE 8
-EN REVISIÓN
-FASE 9 NO INICIADA
+APROBADA
+FASE 9 ACTIVA
 ```

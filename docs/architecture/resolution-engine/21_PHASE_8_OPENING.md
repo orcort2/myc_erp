@@ -72,7 +72,9 @@ backend completo, frontend, build, compilación Python, validaciones
 arquitectónicas, `alembic current`, `alembic heads`, `alembic check`,
 inventario, documentación sincronizada y commit exclusivo.
 
-## Restricción
+## Restricción cumplida
 
-La Fase 9 — Integración con ERP MYC permanece `NO INICIADA` hasta la revisión y
-aprobación formal de este cierre.
+Durante la ejecución de esta fase, la Fase 9 — Integración con ERP MYC
+permaneció `NO INICIADA`. La revisión formal aprobó Fase 8 el 2026-07-28 y
+habilitó la apertura vigente
+[`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md).

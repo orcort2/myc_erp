@@ -102,10 +102,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fase 8
+## Motor de Resoluciones — Fases 8 y 9
 
-- Estado: Fases 0 a 7 `APROBADAS`; Fase 8 — Seguridad integral
-  `EN REVISIÓN`; Fase 9 `NO INICIADA`.
+- Estado: Fases 0 a 8 `APROBADAS`; Fase 9 — Integración con ERP MYC
+  `ACTIVA` documentalmente, sin caso vertical seleccionado o implementado.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -169,3 +169,12 @@
   [`architecture/resolution-engine/22_INTEGRAL_SECURITY.md`](architecture/resolution-engine/22_INTEGRAL_SECURITY.md).
 - Cierre:
   [`closures/RESOLUTION_ENGINE_PHASE_8.md`](closures/RESOLUTION_ENGINE_PHASE_8.md).
+- Commits aprobados de Fase 8: `73e437d` y
+  `661f43a5cbba9070b1f02babd9ebbd5149f62b2b`.
+- Apertura oficial de Fase 9:
+  [`architecture/resolution-engine/23_PHASE_9_OPENING.md`](architecture/resolution-engine/23_PHASE_9_OPENING.md).
+- Fase 9 sólo autoriza integración gradual mediante definiciones verticales,
+  Fact Providers read-only y Domain Gateways hacia servicios canónicos. API/SDK
+  públicos, distribución e IA permanecen fuera de alcance.
+- La IA es una posibilidad futura opcional y no constituye dependencia
+  arquitectónica u operativa del ERP o del Motor determinista.

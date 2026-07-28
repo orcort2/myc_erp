@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 8 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 9 ACTIVA
 >
-> Próxima fase: Fase 9 no iniciada
+> Fase anterior: Fase 8 aprobada
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -34,6 +34,7 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 20. [`20_AUDIT_EVIDENCE.md`](20_AUDIT_EVIDENCE.md)
 21. [`21_PHASE_8_OPENING.md`](21_PHASE_8_OPENING.md)
 22. [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md)
+23. [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md)
 
 ## Regla de precedencia
 
@@ -108,7 +109,8 @@ general y no requiere migración. Su contrato está en
 [`20_AUDIT_EVIDENCE.md`](20_AUDIT_EVIDENCE.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_7.md`](../../closures/RESOLUTION_ENGINE_PHASE_7.md).
 
-La Fase 8 está implementada y `EN REVISIÓN`. Consolida el catálogo de
+La Fase 8 está implementada y `APROBADA` mediante `73e437d` y
+`661f43a5cbba9070b1f02babd9ebbd5149f62b2b`. Consolida el catálogo de
 controles dentro del evaluador de Fase 3 y exige decisiones persistidas exactas
 en Lifecycle, ejecución, compensación, consultas de auditoría y publicación de
 outbox. La corrección bloqueante agrega semántica de uso, intención canónica,
@@ -118,6 +120,12 @@ la reutilización de la misma consulta exacta. Su apertura está en
 [`22_INTEGRAL_SECURITY.md`](22_INTEGRAL_SECURITY.md) y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).
 
-API, gateways concretos, integraciones propietarias, workers, schedulers,
-recuperación, reintentos, conciliación y compensación automática permanecen
-fuera de alcance. La Fase 9 no fue iniciada.
+La Fase 9 está `ACTIVA` sólo para integración gradual con ERP mediante
+definiciones verticales, Fact Providers read-only y Domain Gateways que
+consuman servicios canónicos propietarios. Su apertura está en
+[`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md); todavía no se ha seleccionado
+ni implementado un caso vertical.
+
+API/SDK públicos, workers, schedulers, distribución e IA permanecen fuera de
+alcance. La Fase 10 no fue iniciada. La IA es únicamente una posibilidad futura
+opcional y nunca una dependencia arquitectónica u operativa del Motor.

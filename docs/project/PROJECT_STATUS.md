@@ -18,7 +18,7 @@ Este documento contiene sólo el estado vigente. Es la única fuente documental 
 | --- | --- |
 | **SELLADO** | Control Documental V1 |
 | **CASI SELLADO** | Dashboard; Clientes; Cotizaciones; Órdenes de Trabajo; Equipos; Certificados; Plantillas Maestras de Certificado; Catálogos SAT; Base de datos y migraciones |
-| **EN DESARROLLO** | Motor de Resoluciones (Fase 8 en revisión; Fase 9 no iniciada); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
+| **EN DESARROLLO** | Motor de Resoluciones (Fase 8 aprobada; Fase 9 activa sin caso vertical iniciado); Autenticación; ETS/Servicios; Hojas de Campo; Captura; Calidad; Facturación; Pagos y notas de crédito; Patrones/certificados de patrón/procedimientos; Perfiles técnicos/metrología/selección de patrones/incertidumbre; Administración/Usuarios/Roles/Configuración/Auditoría; Integraciones; Portal de cliente; APIs; Componentes reutilizables y UX; Toolkit/scripts; Infraestructura; Seguridad |
 | **PENDIENTE** | Contactos como dominio autónomo; Agenda; Llamados; Catálogo MYC |
 | **NO INICIADO** | CRM/Leads; Google Drive; Encuestas y reporte final |
 
@@ -46,8 +46,9 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
 
-El Motor de Resoluciones tiene aprobadas las Fases 0 a 7 y la Fase 8 está
-`EN REVISIÓN`. Además de fundación, persistencia, seguridad,
+El Motor de Resoluciones tiene aprobadas las Fases 0 a 8 y la Fase 9 está
+`ACTIVA` documentalmente, todavía sin un caso vertical seleccionado o
+implementado. Además de fundación, persistencia, seguridad,
 Lifecycle y ejecución, existe compensación total/parcial síncrona de efectos
 confirmados declarados reversibles. Plan, autorización, ejecución original,
 checkpoints y resultado quedan vinculados y reconstruibles; Lifecycle conserva
@@ -63,7 +64,10 @@ compensación, consultas y outbox antes de leer replays o producir efectos. Las
 mutaciones consumen una operación canónica única; creación recupera el mismo
 resultado al repetir la intención, Lifecycle queda ligado a estado/versión y
 outbox congela un lote. Auditoría sólo reutiliza la misma consulta read-only.
-La Fase 9 permanece `NO INICIADA`.
+La integración de Fase 9 deberá ser gradual, preservar ownership y usar
+exclusivamente providers read-only y gateways hacia servicios canónicos del
+dominio. API/SDK públicos, distribución e IA siguen fuera de alcance; la IA no
+es dependencia del Motor.
 
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
