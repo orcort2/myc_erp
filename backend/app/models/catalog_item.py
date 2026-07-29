@@ -14,6 +14,10 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
             "service_kind IN ('simple', 'composite')",
             name="ck_catalog_items_service_kind",
         ),
+        CheckConstraint(
+            "service_type IS NULL OR service_type IN ('accredited', 'traceable', 'linked')",
+            name="ck_catalog_items_service_type",
+        ),
     )
 
     item_type: Mapped[str] = mapped_column(String(20), index=True)
@@ -37,6 +41,11 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     internal_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     cost_currency: Mapped[str | None] = mapped_column(String(3))
     calibration_scope: Mapped[str | None] = mapped_column(String(60))
+    service_type: Mapped[str | None] = mapped_column(String(20), index=True)
+    linked_company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("linked_companies.id"), index=True
+    )
+    linked_certificate_prefix: Mapped[str | None] = mapped_column(String(12))
     # Sólo aplica a servicios de calibración. El equipo congela la versión activa
     # al momento de crearse, por lo que este vínculo nunca se consulta para
     # reconstruir entregables históricos.
@@ -57,6 +66,7 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         back_populates="component_item",
         foreign_keys="CatalogItemComponent.component_catalog_item_id",
     )
+    linked_company: Mapped["LinkedCompany | None"] = relationship()
 
 
 class CatalogItemComponent(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):

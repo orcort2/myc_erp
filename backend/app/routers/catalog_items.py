@@ -1,18 +1,48 @@
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.schemas.catalog_item import CatalogItemCreate, CatalogItemOut, CatalogItemUpdate
+from app.schemas.catalog_item import (
+    CatalogItemCreate,
+    CatalogItemOut,
+    CatalogItemUpdate,
+    LinkedCompanyCreate,
+    LinkedCompanyOut,
+)
 from app.services.catalog_items import (
     create_catalog_item,
+    create_linked_company,
     delete_catalog_item,
     get_catalog_item,
     list_catalog_items,
+    list_linked_companies,
     update_catalog_item,
 )
+from app.models.user import User
+from app.services.auth import get_current_user, user_has_permission
 
 
 router = APIRouter(prefix="/catalog-items", tags=["catalog-items"])
+
+
+@router.get("/linked-companies", response_model=list[LinkedCompanyOut])
+def get_linked_companies(db: Session = Depends(get_db)) -> list[LinkedCompanyOut]:
+    return list_linked_companies(db)
+
+
+@router.post(
+    "/linked-companies",
+    response_model=LinkedCompanyOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_linked_company(
+    payload: LinkedCompanyCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> LinkedCompanyOut:
+    if not user_has_permission(current_user, "services.manage_linked_company"):
+        raise HTTPException(status_code=403, detail="Permiso insuficiente")
+    return create_linked_company(db, payload, user_id=current_user.id)
 
 
 @router.get("", response_model=list[CatalogItemOut])

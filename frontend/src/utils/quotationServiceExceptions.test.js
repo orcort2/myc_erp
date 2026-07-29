@@ -4,13 +4,16 @@ import assert from 'node:assert/strict';
 import {
   canShowQuotationServiceException,
   formatQuotationServiceOption,
-  hasQuotationExceptionPermission
+  hasQuotationExceptionPermission,
+  normalizeLinkedCertificatePrefix,
+  serviceTypeLabel,
+  validateLinkedServiceFields
 } from './quotationServiceExceptions.js';
 
 
 test('exception action requires an accepted quotation and explicit permission', () => {
   const user = {
-    permissions: ['quotations.exceptions.request_change_service']
+    permissions: ['quotations.exceptions.request_unlock']
   };
   assert.equal(canShowQuotationServiceException({ status: 'accepted' }, user), true);
   assert.equal(canShowQuotationServiceException({ status: 'sent' }, user), false);
@@ -21,7 +24,7 @@ test('wildcard permission is accepted without exposing a technical id', () => {
   assert.equal(
     hasQuotationExceptionPermission(
       { permissions: ['*'] },
-      'quotations.exceptions.authorize_change_service'
+      'quotations.exceptions.authorize_unlock'
     ),
     true
   );
@@ -32,5 +35,60 @@ test('wildcard permission is accepted without exposing a technical id', () => {
       name: 'Calibración trazable'
     }),
     'SRV-CAL-002 · Calibración trazable'
+  );
+});
+
+test('formal service types have the three institutional labels', () => {
+  assert.equal(serviceTypeLabel('accredited'), 'Acreditado');
+  assert.equal(serviceTypeLabel('traceable'), 'Trazable');
+  assert.equal(serviceTypeLabel('linked'), 'Vinculado');
+});
+
+test('linked fields are conditional and prefix validation matches backend', () => {
+  assert.equal(
+    validateLinkedServiceFields({
+      serviceType: 'accredited',
+      linkedCompanyId: '',
+      linkedCompanyName: '',
+      linkedCertificatePrefix: ''
+    }),
+    null
+  );
+  assert.match(
+    validateLinkedServiceFields({
+      serviceType: 'linked',
+      linkedCompanyId: '',
+      linkedCompanyName: '',
+      linkedCertificatePrefix: ''
+    }),
+    /empresa/
+  );
+  assert.match(
+    validateLinkedServiceFields({
+      serviceType: 'linked',
+      linkedCompanyId: 'other',
+      linkedCompanyName: '',
+      linkedCertificatePrefix: 'CMVG'
+    }),
+    /nombre/
+  );
+  assert.equal(normalizeLinkedCertificatePrefix(' cmvg '), 'CMVG');
+  assert.equal(
+    validateLinkedServiceFields({
+      serviceType: 'linked',
+      linkedCompanyId: '12',
+      linkedCompanyName: '',
+      linkedCertificatePrefix: 'cmvg'
+    }),
+    null
+  );
+  assert.match(
+    validateLinkedServiceFields({
+      serviceType: 'linked',
+      linkedCompanyId: '12',
+      linkedCompanyName: '',
+      linkedCertificatePrefix: 'CM-VG'
+    }),
+    /alfanuméricos/
   );
 });

@@ -7,11 +7,14 @@ from app.schemas.quotation_service_change import (
     QuotationServiceChangeCreate,
     QuotationServiceChangeRead,
     QuotationServiceChangeReview,
+    QuotationUnlockApply,
+    QuotationUnlockPreview,
 )
 from app.services.auth import get_current_user
 from app.services.quotation_service_changes import (
     apply_change,
     list_requests,
+    preview_change,
     quotation_context,
     request_change,
     review_request,
@@ -71,12 +74,25 @@ def post_review(
 
 
 @router.post(
+    "/{exception_folio}/preview",
+)
+def post_preview(
+    exception_folio: str,
+    payload: QuotationUnlockPreview,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    return preview_change(db, exception_folio, payload, current_user)
+
+
+@router.post(
     "/{exception_folio}/apply",
     response_model=QuotationServiceChangeRead,
 )
 def post_apply(
     exception_folio: str,
+    payload: QuotationUnlockApply,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> QuotationServiceChangeRead:
-    return apply_change(db, exception_folio, current_user)
+    return apply_change(db, exception_folio, payload, current_user)

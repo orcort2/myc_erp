@@ -282,7 +282,17 @@ def freeze_certificate_operational_context(
         if item is not None
         else None
     )
-    equipment.certificate_operational_context_snapshot = {
+    service_snapshot = item.service_snapshot if item is not None else None
+    if service_snapshot:
+        equipment.service_type_snapshot = service_snapshot.get("service_type_snapshot")
+        equipment.linked_company_id = service_snapshot.get("linked_company_id")
+        equipment.linked_company_name_snapshot = service_snapshot.get(
+            "linked_company_name_snapshot"
+        )
+        equipment.certificate_prefix_snapshot = service_snapshot.get(
+            "certificate_prefix_snapshot"
+        )
+    context_snapshot = {
         "schema_version": 1,
         "calibration_scope": equipment.calibration_scope,
         "certificate_type": certificate_type_from_scope(
@@ -292,6 +302,9 @@ def freeze_certificate_operational_context(
         "service_order_item_id": equipment.service_order_item_id,
         "source_catalog_item_id": item.catalog_item_id if item is not None else None,
     }
+    if service_snapshot is not None:
+        context_snapshot["service_snapshot"] = service_snapshot
+    equipment.certificate_operational_context_snapshot = context_snapshot
     return expected_master_id
 
 

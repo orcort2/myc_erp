@@ -21,17 +21,17 @@ class QuotationServiceChangeRequest(TimestampMixin, Base):
     quotation_id: Mapped[int] = mapped_column(
         ForeignKey("quotations.id", ondelete="RESTRICT"), nullable=False, index=True
     )
-    service_order_id: Mapped[int] = mapped_column(
-        ForeignKey("service_orders.id", ondelete="RESTRICT"), nullable=False, index=True
+    service_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_orders.id", ondelete="SET NULL"), nullable=True, index=True
     )
-    quotation_item_id: Mapped[int] = mapped_column(
-        ForeignKey("quotation_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    quotation_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quotation_items.id", ondelete="RESTRICT"), nullable=True, index=True
     )
-    current_catalog_item_id: Mapped[int] = mapped_column(
-        ForeignKey("catalog_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    current_catalog_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("catalog_items.id", ondelete="RESTRICT"), nullable=True, index=True
     )
-    requested_catalog_item_id: Mapped[int] = mapped_column(
-        ForeignKey("catalog_items.id", ondelete="RESTRICT"), nullable=False, index=True
+    requested_catalog_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("catalog_items.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     requester_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
@@ -46,6 +46,9 @@ class QuotationServiceChangeRequest(TimestampMixin, Base):
         ForeignKey("users.id", ondelete="RESTRICT"), index=True
     )
     snapshot_id: Mapped[int | None] = mapped_column(
+        ForeignKey("quotation_snapshots.id", ondelete="RESTRICT"), index=True
+    )
+    result_snapshot_id: Mapped[int | None] = mapped_column(
         ForeignKey("quotation_snapshots.id", ondelete="RESTRICT"), index=True
     )
 
@@ -63,6 +66,10 @@ class QuotationServiceChangeRequest(TimestampMixin, Base):
     current_service_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
     requested_service_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
     impact_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
+    service_order_folio_snapshot: Mapped[str | None] = mapped_column(String(40))
+    base_quotation_snapshot: Mapped[dict | None] = mapped_column(JSON)
+    delta_snapshot: Mapped[dict | None] = mapped_column(JSON)
+    rebuild_audit_snapshot: Mapped[dict | None] = mapped_column(JSON)
     quotation_version_at_request: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
@@ -88,3 +95,6 @@ class QuotationServiceChangeRequest(TimestampMixin, Base):
     )
     applied_by: Mapped["User | None"] = relationship(foreign_keys=[applied_by_id])
     snapshot: Mapped["QuotationSnapshot | None"] = relationship(foreign_keys=[snapshot_id])
+    result_snapshot: Mapped["QuotationSnapshot | None"] = relationship(
+        foreign_keys=[result_snapshot_id]
+    )

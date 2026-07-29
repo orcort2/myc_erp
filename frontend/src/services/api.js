@@ -178,11 +178,29 @@ export function reviewQuotationServiceChange(exceptionFolio, payload) {
   );
 }
 
-export function applyQuotationServiceChange(exceptionFolio) {
+export function previewQuotationUnlock(exceptionFolio, payload) {
+  return request(
+    `/quotation-service-exceptions/${encodeURIComponent(exceptionFolio)}/preview`,
+    { method: 'POST', body: JSON.stringify(payload) }
+  );
+}
+
+export function applyQuotationServiceChange(exceptionFolio, payload) {
   return request(
     `/quotation-service-exceptions/${encodeURIComponent(exceptionFolio)}/apply`,
-    { method: 'POST' }
+    { method: 'POST', body: JSON.stringify(payload) }
   );
+}
+
+export function listLinkedCompanies() {
+  return request('/catalog-items/linked-companies');
+}
+
+export function createLinkedCompany(payload) {
+  return request('/catalog-items/linked-companies', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
 }
 
 export async function refreshSession() {

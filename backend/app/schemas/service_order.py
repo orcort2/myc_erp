@@ -130,6 +130,7 @@ class ServiceOrderRead(ServiceOrderBase):
     technician_name: str | None = None
 
     status: ServiceOrderStatus
+    source_snapshot: dict | None = None
 
     closed_at: date | None = None
 

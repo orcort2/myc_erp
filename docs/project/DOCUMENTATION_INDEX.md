@@ -54,7 +54,9 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
 | [`../architecture/ACTIVITY_INSTITUTIONAL.md`](../architecture/ACTIVITY_INSTITUTIONAL.md) | Contrato genérico de conversación, eventos, menciones, adjuntos, atención, no leídos y permisos por entidad. |
-| [`../architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md`](../architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md) | Primera excepción contextual de Ventas: folios visibles, expediente, capacidad limitada, segregación, revalidación y sincronización Cotización–ETS. |
+| [`../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md`](../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md) | Desbloqueo temporal, revisión/delta y reconstrucción física atómica del ETS virgen con el mismo folio. |
+| [`../architecture/services/SERVICE_TYPE_AND_LINKED_LABORATORIES.md`](../architecture/services/SERVICE_TYPE_AND_LINKED_LABORATORIES.md) | Taxonomía acreditado/trazable/vinculado, empresas, prefijos y snapshots. |
+| [`../architecture/folios/CERTIFICATE_AND_WORK_ORDER_FOLIOS.md`](../architecture/folios/CERTIFICATE_AND_WORK_ORDER_FOLIOS.md) | Formatos compactos, contadores por prefijo/año, pisos 2026 y concurrencia. |
 | [`../architecture/resolution-engine/README.MD`](../architecture/resolution-engine/README.MD) | Entrada normativa del Motor de Resoluciones; ordena la lectura de visión, principios, arquitectura, datos, flujos, API, casos, seguridad y Roadmap. |
 | [`../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md`](../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md) | Orden técnico aprobado, dependencias, deuda bloqueante, gates y protocolo de revisión fase por fase del Motor de Resoluciones. |
 | [`../architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md`](../architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md) | Contrato implementado del esquema general, versionado, reconstruible e históricamente inmutable de la Fase 2. |
@@ -91,7 +93,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/DOCUMENT_REORGANIZATION_REPORT_2026-07-21.md`](../closures/DOCUMENT_REORGANIZATION_REPORT_2026-07-21.md) | Cierre de esta reorganización y matriz de movimientos/conflictos. |
 | [`../closures/INTEGRACION_PAGOS_FACTURACION_2026-07-29.md`](../closures/INTEGRACION_PAGOS_FACTURACION_2026-07-29.md) | Integración del registro/historial de pagos, cartera, conservación al timbrar y refresco financiero dentro del Workbench único. |
 | [`../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md`](../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md) | Cierre técnico de Actividad transversal, pendiente de revisión formal. |
-| [`../closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md`](../closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md) | Cierre técnico de la primera excepción contextual de Ventas y sus validaciones. |
+| [`../closures/SALES_UNLOCK_AND_SERVICE_TYPES_2026-07-29.md`](../closures/SALES_UNLOCK_AND_SERVICE_TYPES_2026-07-29.md) | Cierre técnico del desbloqueo, reconstrucción ETS, tipos vinculados y folios institucionales. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_0.md`](../closures/RESOLUTION_ENGINE_PHASE_0.md) | Ratificación, matriz, gates, validaciones y condición de aprobación de la Fase 0 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_1.md`](../closures/RESOLUTION_ENGINE_PHASE_1.md) | Contratos, catálogos, serialización canónica, runtime, registro versionado, aislamiento y validaciones de la Fase 1 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_2.md`](../closures/RESOLUTION_ENGINE_PHASE_2.md) | Modelo ORM, integridad, reconstrucción, inmutabilidad, migración reversible y validaciones de la Fase 2 del Motor de Resoluciones. |
@@ -138,6 +140,8 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 - [`../archive/architecture/SISTEMA_ERP_MYC_ESPECIFICACION_V2.md`](../archive/architecture/SISTEMA_ERP_MYC_ESPECIFICACION_V2.md)
 - [`../archive/architecture/SISTEMA_ERP_MYC_V3.md`](../archive/architecture/SISTEMA_ERP_MYC_V3.md)
 - [`../archive/architecture/base-datos-mvp.md`](../archive/architecture/base-datos-mvp.md)
+- [`../architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md`](../architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md): contrato sustituido conservado como evidencia.
+- [`../closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md`](../closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md): cierre sustituido conservado como evidencia.
 
 ### Hojas de Campo históricas
 

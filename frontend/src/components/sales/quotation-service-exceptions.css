@@ -98,3 +98,8 @@
 .sales-exception-list dd {
   margin: 0;
 }
+
+.sales-exception-inline-status {
+  color: var(--muted-text, #64748b);
+  font-size: 0.82rem;
+}

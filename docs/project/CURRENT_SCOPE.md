@@ -123,3 +123,15 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 ## Criterio para versión estable 1.0
 
 La versión 1.0 requiere, como mínimo, cerrar los riesgos P0 de seguridad, eliminar duplicaciones que alteran el flujo, completar el circuito operativo Hojas de Campo→Captura→Calidad→Certificados, cerrar el flujo fiscal que se mantenga dentro de alcance y demostrar los recorridos críticos mediante pruebas autenticadas. Una capacidad no iniciada sólo será requisito de 1.0 si se confirma expresamente en este documento.
+
+## Ampliación verificada 2026-07-29 — Ventas y folios
+
+- Cotización aprobada: solicitud, autorización y edición directa excepcional de
+  partidas con revisión/delta.
+- ETS virgen: validación integral, eliminación física y recreación atómica con
+  el mismo `OSMYC-…`.
+- Catálogo: tipos `accredited`, `traceable`, `linked`, empresas vinculadas
+  extensibles y prefijo congelado.
+- Certificados/OT: formatos compactos y contadores anuales con pisos 2026.
+- Fuera de alcance: actualización no destructiva de un ETS con operación y
+  excepciones de otros módulos.

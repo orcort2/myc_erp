@@ -7,7 +7,8 @@ from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.core.folios import FolioRequest, generate_folio
+from app.services.institutional_folios import build_certificate_folio
+from app.schemas.service_type import normalize_service_type
 from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
@@ -90,32 +91,18 @@ def _json_safe(value):
 
 
 def _next_certificate_folio(
-    db: Session, *, certificate_type: str, issued_on: date
+    db: Session,
+    *,
+    certificate_type: str,
+    issued_on: date,
+    linked_prefix: str | None = None,
 ) -> str:
-    if certificate_type == "acreditado":
-        service_type = "acreditado"
-        prefix = "MYCA"
-    elif certificate_type == "vinculado":
-        service_type = "vinculado"
-        prefix = "MYCV"
-    else:
-        service_type = "trazable"
-        prefix = "MYCT"
-    prefix = f"{prefix}-{issued_on:%m}-{issued_on:%Y}-"
-    last_folio = db.scalar(
-        select(Certificate.folio)
-        .where(Certificate.folio.like(f"{prefix}%"))
-        .order_by(Certificate.folio.desc())
-        .limit(1)
-    )
-    sequence = 1 if not last_folio else int(last_folio.rsplit("-", 1)[-1]) + 1
-    return generate_folio(
-        FolioRequest(
-            document_type="certificado",
-            service_type=service_type,
-            issued_on=issued_on,
-            sequence=sequence,
-        )
+    normalized = normalize_service_type(certificate_type)
+    return build_certificate_folio(
+        db,
+        service_type=normalized.value if normalized else certificate_type,
+        issued_on=issued_on,
+        linked_prefix=linked_prefix,
     )
 
 
@@ -308,11 +295,18 @@ def create_certificate(
         payload.equipment_id,
     )
     issued_on = payload.issued_on or date.today()
-    folio = payload.expected_folio or _next_certificate_folio(
-        db,
-        certificate_type=payload.certificate_type,
-        issued_on=issued_on,
-    )
+    equipment = db.get(Equipment, payload.equipment_id)
+    try:
+        folio = payload.expected_folio or _next_certificate_folio(
+            db,
+            certificate_type=payload.certificate_type,
+            issued_on=issued_on,
+            linked_prefix=(
+                equipment.certificate_prefix_snapshot if equipment is not None else None
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     certificate = Certificate(
         **payload.model_dump(exclude={"issued_on", "expected_folio"}),
         folio=folio,

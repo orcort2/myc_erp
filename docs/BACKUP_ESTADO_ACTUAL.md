@@ -28,14 +28,15 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Head único del código: `9d0e1f2a3b4c`.
-- Head aplicado en la base PostgreSQL local compartida: `9d0e1f2a3b4c`.
-- `9d0e1f2a3b4c` crea el expediente de excepción contextual de cambio de
-  servicio, con folio `EXV-…`, relaciones restrictivas, snapshots de impacto,
-  capacidad de un uso, vigencia e índices de consulta.
-- Tras el upgrade se regeneró `backup_erp_myc_antes_prueba.sql` (71 MB) y se
-  confirmó que la tabla `alembic_version` del origen contiene
-  `9d0e1f2a3b4c`.
+- Head único del código: `b03b4c5d6e7f`.
+- Head aplicado en la base PostgreSQL local compartida: `b03b4c5d6e7f`.
+- `ae1f2a3b4c5d` amplía el expediente `EXV-…` para desbloqueo controlado,
+  empresas vinculadas, tipo canónico, snapshots y contadores institucionales.
+- `af2a3b4c5d6e` agrega el snapshot fuente del ETS y restricciones de tipo/
+  contador; `b03b4c5d6e7f` fija sin disminuir los pisos 2026: certificados
+  8000 y OT 7000.
+- Tras el upgrade se regeneró `backup_erp_myc_antes_prueba.sql` y se confirmó
+  `alembic_version = b03b4c5d6e7f`.
 - `8c9d0e1f2a3b` institucionaliza Actividad con eventos idempotentes,
   lecturas por usuario y solicitudes de atención. Su upgrade completo,
   downgrade a `7b8c9d0e1f2a` y re-upgrade se validaron en PostgreSQL temporal.
@@ -79,12 +80,11 @@
   retorno se validaron en PostgreSQL temporal, después eliminado.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,264,804 bytes.
-- SHA-256 verificado: `df84b395ef72bb45293a71d76c296a2d6fe64763793fca2f0698f00716dd1a92`.
-- El respaldo contiene `alembic_version = 8c9d0e1f2a3b`, las tablas y columnas
-  de Actividad institucional, además de las columnas de
-  conciliación de Fase 14, la tabla de consumidores v1, la evidencia
-  propietaria y los triggers append-only.
+- Tamaño verificado: 74,299,864 bytes.
+- SHA-256 verificado: `365a58c7c5f311837238c1138bbbec3ece9d7a44116cd332052ab7699dc4c3be`.
+- El respaldo contiene `alembic_version = b03b4c5d6e7f`,
+  `linked_companies`, `institutional_folio_sequences`, snapshots de servicio/
+  ETS/equipo y las estructuras previas de Actividad y Motor.
 - La integración de pagos no agrega migraciones ni modifica datos locales; por
   ello no corresponde regenerar el respaldo SQL y su head permanece vigente.
 
@@ -124,6 +124,17 @@
 - El contador de avance usa internamente `FINISHED_STATUSES = {calibrated, labeled, not_done}`. No cambiaron estados, transiciones ni semántica operativa.
 - No se implementó historial transversal de activos. El equipo continúa siendo una ocurrencia del servicio y conserva serie/ID interno sin unicidad global, permitiendo enlazar en el futuro una identidad de activo separada sin reescribir históricos.
 
+## Ventas, servicios vinculados y folios
+
+- `quotation.controlled_unlock` reemplaza el cambio puntual: solicitud,
+  autorización nominativa, edición directa, delta, nueva revisión y cierre.
+- El validador bloquea cualquier ETS con evidencia operativa. Un ETS virgen se
+  elimina físicamente y se recrea atómicamente con el mismo `OSMYC-…`.
+- Catálogo y snapshots distinguen `accredited`, `traceable` y `linked`; CAPYMET
+  y BESS son registros iniciales y “Otro” crea una empresa institucional.
+- Certificados usan `MYCA|MYCT|{prefijo} + AAMM + NNNN`, sin guiones. Los
+  contadores son transaccionales por año/prefijo/documento.
+
 ## Validaciones ejecutadas
 
 - Integración de pagos: frontend Node `13 passed`; build Vite correcto con
@@ -152,12 +163,17 @@
 - Regresión operativa de Hojas de Campo, plantillas y Fase 14: cubierta por la
   suite backend completa.
 - `alembic check` continúa mostrando `TD-021`, pero no detecta operaciones
-  nuevas sobre `activity_*` ni `notifications`.
-- Backend completo ejecutado fuera del sandbox para permitir LibreOffice:
-  `411 passed`, `19 subtests passed`; 2 warnings de dependencias.
-- Excepción contextual: `11 passed` backend; regresión dirigida de Actividad y
-  Servicios Compuestos `23 passed`.
-- Frontend completo: `23 passed`, incluidas 2 pruebas nuevas; build Vite
+  nuevas sobre `activity_*`, `notifications`, desbloqueo, clasificación,
+  snapshots, empresas vinculadas ni contadores institucionales.
+- PostgreSQL temporal del cambio vigente:
+  `upgrade head → downgrade 9d0e1f2a3b4c → upgrade head`; terminó en
+  `b03b4c5d6e7f (head)` y la base temporal fue eliminada.
+- Backend completo: `408 passed`, `19 subtests passed`; 2 warnings de
+  dependencias.
+- Desbloqueo/servicios/folios: `8 passed` focalizados; incluye permisos,
+  delta, rollback, reconstrucción física, bloqueos, linked, normalización y
+  secuencias 2026/2027.
+- Frontend completo: `25 passed`, incluidas 4 pruebas del flujo; build Vite
   correcto con `1703` módulos y advertencia no
   bloqueante por tamaño del chunk.
 - `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios
@@ -172,6 +188,10 @@
 3. Resolver las deudas transversales vigentes en [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 4. Implementar historial de activos sólo cuando se incorpore formalmente al alcance; no pertenece a esta entrega.
 5. Ejecutar el E2E autenticado Factura→pago→timbrado→liquidación→liberación con datos representativos cuando el backend vuelva a ser arrancable y exista configuración Sandbox.
+6. Ejecutar E2E autenticado de desbloqueo→delta→reconstrucción y alta de
+   empresa vinculada “Otro”; la suite de servicio y build ya son correctos.
+7. Diseñar por separado una actualización no destructiva para ETS con
+   operación; no relajar el validador vigente.
 
 ## Documentación y trazabilidad
 
@@ -259,10 +279,9 @@
   actual; una clave nueva usa segunda comprobación bajo lock y recuperación del
   ganador concurrente. `after_snapshot` se construye después de
   `flush/refresh`.
-- El respaldo SQL coincide con el último head aprobado y aplicado antes del
-  trabajo concurrente (`a0d2f4b6c8e1`); la situación temporal de la rama local
-  y su regeneración pendiente se describen en Persistencia, migración y
-  respaldo.
+- El respaldo SQL vigente coincide con el head aprobado y aplicado
+  `b03b4c5d6e7f`; su tamaño, hash y contenido verificable se describen en
+  Persistencia, migración y respaldo.
 - Apertura aprobada de Fase 8:
   [`architecture/resolution-engine/21_PHASE_8_OPENING.md`](architecture/resolution-engine/21_PHASE_8_OPENING.md).
 - Contrato:

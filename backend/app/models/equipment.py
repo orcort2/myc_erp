@@ -41,6 +41,12 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         String(60),
         index=True,
     )
+    service_type_snapshot: Mapped[str | None] = mapped_column(String(20), index=True)
+    linked_company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("linked_companies.id"), index=True
+    )
+    linked_company_name_snapshot: Mapped[str | None] = mapped_column(String(180))
+    certificate_prefix_snapshot: Mapped[str | None] = mapped_column(String(12))
     certificate_master_document_id: Mapped[int | None] = mapped_column(
         ForeignKey("controlled_documents.id"), index=True
     )

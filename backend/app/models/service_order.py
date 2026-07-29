@@ -6,6 +6,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -18,6 +19,7 @@ from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 
 class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "service_orders"
+    __table_args__ = {"sqlite_autoincrement": True}
 
     folio: Mapped[str] = mapped_column(String(40), unique=True, index=True)
 
@@ -38,6 +40,7 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     completed_equipment: Mapped[int] = mapped_column(default=0)
     requires_payment: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     notes: Mapped[str | None] = mapped_column(Text)
+    source_snapshot: Mapped[dict | None] = mapped_column(JSON)
 
     technician_signature_data_url: Mapped[str | None] = mapped_column(Text)
     client_received_signature_data_url: Mapped[str | None] = mapped_column(Text)
@@ -368,6 +371,7 @@ class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     service_name: Mapped[str] = mapped_column(String(180))
     calibration_scope: Mapped[str | None] = mapped_column(String(60))
+    service_snapshot: Mapped[dict | None] = mapped_column(JSON)
     quantity: Mapped[int] = mapped_column(default=1)
     status: Mapped[str] = mapped_column(String(60), default="pending")
 

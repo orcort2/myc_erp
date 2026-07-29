@@ -17,7 +17,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-001 | Cotizaciones | El folio usa `MYC-MM-AA-####` y no debe colisionar. | `backend/app/services/quotations.py`, `backend/app/core/folios.py` | 2026-06, confirmada 2026-07 |
 | BR-002 | Cotizaciones | Sólo se permiten las transiciones definidas; aceptada, rechazada, expirada y cancelada son terminales. | `backend/app/services/quotations.py` | 2026-06 |
 | BR-003 | Cotizaciones | Las partidas congelan datos comerciales/fiscales relevantes y cada guardado puede producir snapshot. | `backend/app/models/quotation.py`, `backend/app/services/quotations.py` | 2026-07 |
-| BR-048 | Cotizaciones / ETS | Cambiar excepcionalmente el servicio de una cotización aprobada sólo procede con ETS relacionado y cero registros físicos de equipo. Requiere solicitud, revisor segregado, capacidad nominativa `quotation.change_service_type`, vigencia, un uso, snapshot/revisión y sincronización atómica del mismo ETS; no autoriza precio, impuestos ni edición general. La interacción usa folios `MYC-…`, `OSMYC-…` y `EXV-…`, no IDs internos. | [`../architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md`](../architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md) | 2026-07-29 |
+| BR-048 | Cotizaciones / ETS | El desbloqueo `quotation.controlled_unlock` permite editar directamente las partidas de una cotización aprobada sólo cuando su ETS pasa el validador integral de virginidad. Compara revisiones, crea snapshots nuevos y reconstruye físicamente el ETS con el mismo `OSMYC-…`; un cambio operativo bloquea sin mutación parcial. | [`../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md`](../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md) | 2026-07-29 |
 | BR-004 | ETS | `service_orders` es la raíz operativa del expediente y debe pertenecer a un cliente activo; una cotización vinculada debe ser coherente con ese cliente. | `backend/app/models/service_order.py`, `backend/app/services/service_orders.py` | V3, vigente 2026-07 |
 | BR-005 | ETS | El folio usa `OSMYC-AA-MM-####`; el estado sólo cambia mediante la máquina de transiciones vigente. | `backend/app/services/service_orders.py`, `backend/app/core/folios.py` | 2026-06 |
 | BR-006 | OT/Equipos | Una OT agrupa como máximo 10 equipos; las OT usan consecutivo numérico único. | `WORK_ORDER_EQUIPMENT_LIMIT`, `ServiceWorkOrder` | 2026-07 |
@@ -26,7 +26,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-009 | Plantillas Maestras/Equipos | Al crear el ETS, cada partida congela el identificador del Master esperado. Al dar de alta el equipo, éste congela documento, versión, ruta, nombre, hash, vigencia y el contexto operativo —alcance, tipo de certificado, Master y partida/origen— sin resolver por nombre ni volver a consultar el catálogo. | modelos/servicios de ETS y Equipos; migración `8c2d4e6f7a9b` | 2026-07-23 |
 | BR-010 | Hojas de Campo | La hoja conserva snapshot de plantilla e identidad; una plantilla no debe cambiar retroactivamente una hoja creada. | modelos/servicios de Hojas de Campo | 2026-07-13 |
 | BR-011 | Hojas de Campo | No hay fallback silencioso a plantilla General cuando no existe coincidencia segura; la selección debe ser explícita. | integración operativa auditada 2026-07-13 | 2026-07-13 |
-| BR-012 | Certificados | Cada certificado se vincula a un equipo y un ETS; su folio depende del tipo: `MYCA`, `MYCV` o `MYCT`. | `backend/app/services/certificates.py`, `backend/app/core/folios.py` | 2026-06/07 |
+| BR-012 | Certificados | Cada certificado se vincula a un equipo y un ETS; usa `MYCA`/`MYCT` o el prefijo vinculado congelado, seguido por `AAMMNNNN` sin guiones. | `backend/app/services/institutional_folios.py`, arquitectura de folios | 2026-07-29 |
 | BR-013 | Calidad | La aprobación del Master XLSX es la única compuerta documental para autenticar. Desde `quality_approved` —o el alias legacy `approved`— Autenticar genera el PDF final desde el Master identificado, lo sella, conserva actor/fecha/auditoría/referencia al Master y pasa a `authenticated`. No exige PDF previo, `final_pdf_path` ni `match_status`; un rechazo de Calidad requiere comentario. | `backend/app/services/certificate_authentication.py`, pruebas de autenticación desde Master | 2026-07-21 |
 | BR-014 | Certificados | Calidad es el único autenticador funcional acordado; ETS sólo debe consultar el estado. La duplicación actual es un defecto, no una segunda regla. | auditoría integral 2026-07-21 | 2026-07 |
 | BR-015 | Certificados | La vista ordinaria de Certificados sólo muestra PDFs autenticados en estado autenticado o liberado. | frontend de Certificados y servicio de certificados | 2026-07 |
@@ -82,3 +82,20 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 6. Notas técnicas, comerciales, fiscales o documentales permanecen en su
    agregado; no se migran a conversación sin clasificación inequívoca.
 7. Un adjunto admite máximo 15 MB y debe coincidir en extensión, MIME y firma.
+## Reglas de desbloqueo, servicios y folios — 2026-07-29
+
+1. Una cotización aprobada sólo se edita mediante una autorización
+   `quotation.controlled_unlock` vigente, asignada al aplicador y ligada a su
+   revisión base y `OSMYC-…`.
+2. El ETS sólo se elimina físicamente cuando el validador propietario no
+   encuentra operación; las OT automáticas `pending` son derivadas
+   reconstruibles, pero cualquier OT que avanzó bloquea.
+3. La confirmación es atómica: nueva revisión, partidas, eliminación/recreación,
+   auditoría y consumo de autorización se confirman o revierten juntos.
+4. `service_type` usa `accredited | traceable | linked`;
+   `calibration_scope` conserva sus tres claves vigentes.
+5. Vinculado exige empresa y prefijo alfanumérico mayúsculo de 2–12
+   caracteres. Equipo y certificado usan el snapshot, no el catálogo vivo.
+6. Certificados usan `{PREFIJO}{AA}{MM}{NNNN}` sin guiones. En 2026 comienzan
+   o continúan desde 8000; desde cada año nuevo, 1000. OT usa 7000 en 2026 y
+   1000 desde cada año posterior. Ningún contador se reinicia por mes.

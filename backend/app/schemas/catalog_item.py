@@ -9,6 +9,12 @@ from app.schemas.service_scope import (
     SERVICE_SCOPE_VALUES_BY_CATEGORY,
     ServiceScope,
 )
+from app.schemas.service_type import (
+    ServiceType,
+    calibration_scope_for_service_type,
+    normalize_certificate_prefix,
+    normalize_service_type,
+)
 
 
 CatalogItemType = Literal["product", "service"]
@@ -99,6 +105,9 @@ class CatalogItemBase(BaseModel):
     internal_cost: Decimal | None = Field(default=None, ge=0)
     cost_currency: str | None = Field(default=None, min_length=3, max_length=3)
     calibration_scope: ServiceScope | None = None
+    service_type: ServiceType | None = None
+    linked_company_id: int | None = Field(default=None, gt=0)
+    linked_certificate_prefix: str | None = Field(default=None, max_length=12)
     expected_certificate_master_id: int | None = None
     quotation_legend: str | None = None
     tax_object: TaxObject = "iva_16"
@@ -121,6 +130,27 @@ class CatalogItemBase(BaseModel):
             raise ValueError("calibration_scope debe ser null para categorias sin alcance")
         if self.item_type == "product" and self.calibration_scope is not None:
             raise ValueError("calibration_scope debe ser null para productos")
+        if self.item_type == "service" and self.category == "Calibracion":
+            if self.service_type is None:
+                self.service_type = normalize_service_type(
+                    None, calibration_scope=self.calibration_scope
+                )
+            if self.service_type is None:
+                raise ValueError("service_type es obligatorio para servicios de calibración")
+            expected_scope = calibration_scope_for_service_type(self.service_type)
+            if self.calibration_scope != expected_scope:
+                raise ValueError("service_type y calibration_scope no corresponden")
+            if self.service_type == ServiceType.LINKED:
+                if self.linked_certificate_prefix:
+                    self.linked_certificate_prefix = normalize_certificate_prefix(
+                        self.linked_certificate_prefix
+                    )
+            elif self.linked_company_id is not None or self.linked_certificate_prefix:
+                raise ValueError(
+                    "La empresa y las iniciales vinculadas sólo aplican a servicios vinculados"
+                )
+        elif self.service_type is not None or self.linked_company_id is not None:
+            raise ValueError("El tipo de servicio vinculado sólo aplica a calibración")
         if self.internal_unit == "other" and not self.custom_internal_unit:
             raise ValueError("custom_internal_unit es obligatorio si internal_unit es other")
         return self
@@ -161,6 +191,9 @@ class CatalogItemUpdate(BaseModel):
     internal_cost: Decimal | None = Field(default=None, ge=0)
     cost_currency: str | None = Field(default=None, min_length=3, max_length=3)
     calibration_scope: ServiceScope | None = None
+    service_type: ServiceType | None = None
+    linked_company_id: int | None = Field(default=None, gt=0)
+    linked_certificate_prefix: str | None = Field(default=None, max_length=12)
     expected_certificate_master_id: int | None = None
     quotation_legend: str | None = None
     tax_object: TaxObject | None = None
@@ -175,3 +208,25 @@ class CatalogItemOut(CatalogItemBase):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class LinkedCompanyOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    legal_name: str | None = None
+    abbreviation: str
+    default_certificate_prefix: str
+    notes: str | None = None
+    document_configuration: dict | None = None
+    is_enabled: bool
+    is_active: bool
+
+
+class LinkedCompanyCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=180)
+    legal_name: str | None = Field(default=None, max_length=240)
+    abbreviation: str = Field(min_length=2, max_length=40)
+    default_certificate_prefix: str = Field(min_length=2, max_length=12)
+    notes: str | None = None

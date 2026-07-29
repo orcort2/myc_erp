@@ -28,6 +28,8 @@ from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSigna
 from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
 from app.models.institutional_configuration import InstitutionalConfiguration
 from app.models.invoice import CreditNote, FacturamaInvoiceAttempt, Invoice, InvoiceItem, InvoicePayment, InvoiceSettings
+from app.models.folio_sequence import InstitutionalFolioSequence
+from app.models.linked_company import LinkedCompany
 from app.models.notification import Notification
 from app.models.sat_catalog import SatCatalog, SatCatalogAlias, SatCatalogFavorite, SatCatalogRecord, SatCatalogVersion
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
@@ -115,12 +117,14 @@ __all__ = [
     "FieldSheetSignature",
     "FieldSheetTemplateDefinition",
     "InstitutionalConfiguration",
+    "InstitutionalFolioSequence",
     "Invoice",
     "InvoiceItem",
     "InvoicePayment",
     "CreditNote",
     "InvoiceSettings",
     "Notification",
+    "LinkedCompany",
     "SatCatalog",
     "SatCatalogAlias",
     "SatCatalogFavorite",

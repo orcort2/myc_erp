@@ -64,6 +64,10 @@ class EquipmentRead(EquipmentBase):
     certificate_master_document_id: int | None = None
     certificate_master_version_id: int | None = None
     certificate_template_filename_snapshot: str | None = None
+    service_type_snapshot: str | None = None
+    linked_company_id: int | None = None
+    linked_company_name_snapshot: str | None = None
+    certificate_prefix_snapshot: str | None = None
     is_active: bool
     created_at: datetime
     updated_at: datetime

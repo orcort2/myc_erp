@@ -14,7 +14,12 @@
 | --- | --- | --- |
 | `accredited_iso_17025` | Acreditación propia ISO/IEC 17025 | `acreditado` / folio `MYCA` |
 | `traceable` | Servicio trazable o no acreditado | `trazable` / folio `MYCT` |
-| `accredited_linked_lab` | Acreditación por laboratorio vinculado | `vinculado` / folio `MYCV` |
+| `accredited_linked_lab` | Acreditación por laboratorio vinculado | `vinculado` / prefijo congelado de la empresa vinculada |
+
+La clasificación comercial `accredited | traceable | linked`, las empresas y
+los prefijos se rigen por
+[`services/SERVICE_TYPE_AND_LINKED_LABORATORIES.md`](services/SERVICE_TYPE_AND_LINKED_LABORATORIES.md).
+No modifica las claves operativas de este contrato.
 
 Las leyendas, números o frases impresas en plantillas y certificados —por ejemplo `Certificado / Certificate: L25-313`— son contenido documental. Nunca son claves del dominio, valores de API ni discriminantes persistentes.
 

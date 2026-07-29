@@ -81,10 +81,10 @@ Certificado y Factura, además de pago y nota de crédito. Auditoría continúa
 siendo la fuente institucional de quién cambió el dominio; Activity presenta
 el evento operativo en contexto.
 
-La excepción contextual de cambio de servicio publica solicitud, decisión,
-bloqueo y aplicación con una clave idempotente por `EXV-…`, tanto en la
-Cotización `MYC-…` como en el ETS `OSMYC-…`. Los IDs de relación permanecen
-internos; cuerpo, metadata y navegación usan folios visibles.
+El desbloqueo controlado publica solicitud, decisión, bloqueo y cierre con
+claves idempotentes por `EXV-…`. La evidencia principal vive en la Cotización
+`MYC-…`; el ETS recreado `OSMYC-…` recibe su evento de reconstrucción. Los IDs
+de relación permanecen internos y la narrativa usa folios visibles.
 
 ## Adjuntos
 

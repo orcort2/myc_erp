@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.models.client import Client
 from app.models.catalog_item import CatalogItem
+from app.models.linked_company import LinkedCompany
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
 from app.schemas.quotation import (
     QuotationCreate,
@@ -18,6 +19,7 @@ from app.schemas.quotation import (
 from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
+from app.schemas.service_type import normalize_service_type
 
 TERMINAL_STATUSES = {"accepted", "rejected", "expired", "cancelled"}
 ALLOWED_TRANSITIONS = {
@@ -77,6 +79,46 @@ def _build_operational_snapshot(
     db: Session,
     catalog_item: CatalogItem,
 ) -> dict:
+    def snapshot_for(item: CatalogItem) -> dict:
+        company = (
+            db.get(LinkedCompany, item.linked_company_id)
+            if item.linked_company_id is not None
+            else None
+        )
+        service_type = normalize_service_type(
+            item.service_type, calibration_scope=item.calibration_scope
+        )
+        return {
+            "service_id": item.id,
+            "service_key": item.internal_key,
+            "service_name_snapshot": item.name,
+            "service_description_snapshot": item.description,
+            "service_type_snapshot": service_type.value if service_type else None,
+            "calibration_scope_snapshot": item.calibration_scope,
+            "linked_company_id": item.linked_company_id,
+            "linked_company_name_snapshot": company.name if company else None,
+            "certificate_prefix_snapshot": item.linked_certificate_prefix,
+            "price_snapshot": f"{Decimal(item.final_price_mxn):.2f}",
+            "tax_snapshot": {
+                "object": item.tax_object,
+                "rate": f"{Decimal(item.tax_rate):.2f}",
+            },
+            "accreditation_snapshot": (
+                {"scope": item.calibration_scope}
+                if service_type and service_type.value == "accredited"
+                else None
+            ),
+            "traceability_snapshot": (
+                {"scope": item.calibration_scope}
+                if service_type and service_type.value == "traceable"
+                else None
+            ),
+            "procedure_snapshot": None,
+            "template_snapshot": {
+                "expected_certificate_master_id": item.expected_certificate_master_id
+            },
+        }
+
     if catalog_item.service_kind == "composite":
         operational_items = expand_catalog_item_for_operations(
             db,
@@ -91,6 +133,7 @@ def _build_operational_snapshot(
                 "calibration_scope": catalog_item.calibration_scope,
                 "quantity": 1,
                 "status": "pending",
+                "service_snapshot": snapshot_for(catalog_item),
             }
         ]
 
@@ -99,6 +142,7 @@ def _build_operational_snapshot(
         "service_kind": catalog_item.service_kind,
         "commercial_catalog_item_id": catalog_item.id,
         "commercial_service_name": catalog_item.name,
+        "commercial_service_snapshot": snapshot_for(catalog_item),
         "operational_items": operational_items,
     }
 
@@ -196,6 +240,10 @@ def _quotation_snapshot_data(quotation: Quotation) -> dict:
                     "operational_snapshot": item.operational_snapshot,
                     "service_name": item.service_name,
                     "description": item.description,
+                    "calibration_scope": item.calibration_scope,
+                    "quotation_legend": item.quotation_legend,
+                    "tax_object": item.tax_object,
+                    "tax_rate": item.tax_rate,
                     "quantity": item.quantity,
                     "unit": item.unit,
                     "unit_price": item.unit_price,

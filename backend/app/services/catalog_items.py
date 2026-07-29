@@ -6,6 +6,13 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.catalog_item import CatalogItem, CatalogItemComponent
+from app.models.linked_company import LinkedCompany
+from app.schemas.service_type import (
+    ServiceType,
+    calibration_scope_for_service_type,
+    normalize_certificate_prefix,
+    normalize_service_type,
+)
 from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.services.storage_service import resolve_storage_path
 from datetime import date
@@ -121,6 +128,35 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
         values["service_kind"] = "simple"
         values["calibration_scope"] = None
         values["expected_certificate_master_id"] = None
+        values["service_type"] = None
+        values["linked_company_id"] = None
+        values["linked_certificate_prefix"] = None
+    if values.get("item_type") == "service" and values.get("category") == "Calibracion":
+        service_type = normalize_service_type(
+            values.get("service_type"),
+            calibration_scope=values.get("calibration_scope"),
+        )
+        if service_type is None:
+            raise HTTPException(status_code=422, detail="Selecciona un tipo de servicio")
+        values["service_type"] = service_type.value
+        values["calibration_scope"] = calibration_scope_for_service_type(service_type)
+        if service_type is ServiceType.LINKED:
+            company_id = values.get("linked_company_id")
+            # La existencia se valida en create/update, donde está disponible la sesión.
+            try:
+                values["linked_certificate_prefix"] = normalize_certificate_prefix(
+                    values.get("linked_certificate_prefix")
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            if company_id is None or values["linked_certificate_prefix"] is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Empresa e iniciales son obligatorias para servicios vinculados",
+                )
+        else:
+            values["linked_company_id"] = None
+            values["linked_certificate_prefix"] = None
     if values.get("category") != "Calibracion":
         values["expected_certificate_master_id"] = None
     if values.get("internal_unit") != "other":
@@ -133,6 +169,71 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
             values.get("margin_percent", Decimal("0.00")),
         )
     return values
+
+
+def _ensure_linked_company(db: Session, values: dict) -> None:
+    if values.get("service_type") != ServiceType.LINKED.value:
+        return
+    company = db.get(LinkedCompany, values.get("linked_company_id"))
+    if company is None or not company.is_active or not company.is_enabled:
+        raise HTTPException(status_code=422, detail="La empresa vinculada no está disponible")
+
+
+def list_linked_companies(db: Session) -> list[LinkedCompany]:
+    return list(
+        db.scalars(
+            select(LinkedCompany)
+            .where(
+                LinkedCompany.is_active.is_(True),
+                LinkedCompany.is_enabled.is_(True),
+            )
+            .order_by(LinkedCompany.name)
+        ).all()
+    )
+
+
+def create_linked_company(db: Session, payload, *, user_id: int | None = None) -> LinkedCompany:
+    try:
+        prefix = normalize_certificate_prefix(payload.default_certificate_prefix)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    abbreviation = (payload.abbreviation or payload.name).strip().upper()
+    existing = db.scalar(
+        select(LinkedCompany).where(
+            or_(
+                LinkedCompany.name.ilike(payload.name.strip()),
+                LinkedCompany.abbreviation == abbreviation,
+            )
+        )
+    )
+    if existing is not None:
+        return existing
+    company = LinkedCompany(
+        name=payload.name.strip(),
+        legal_name=payload.legal_name.strip() if payload.legal_name else None,
+        abbreviation=abbreviation,
+        default_certificate_prefix=prefix,
+        notes=payload.notes,
+        document_configuration={},
+        is_enabled=True,
+    )
+    db.add(company)
+    db.flush()
+    write_audit_log(
+        db,
+        action="linked_company.created",
+        entity="linked_companies",
+        entity_id=company.id,
+        user_id=user_id,
+        new_values={
+            "name": company.name,
+            "abbreviation": company.abbreviation,
+            "default_certificate_prefix": company.default_certificate_prefix,
+        },
+    )
+    db.commit()
+    db.refresh(company)
+    return company
 
 
 def _ensure_certificate_master(db: Session, document_id: int | None) -> None:
@@ -342,6 +443,14 @@ def expand_catalog_item_for_operations(
         if item is None:
             raise HTTPException(status_code=409, detail="El concepto de catálogo ya no existe")
         if item.service_kind == "simple":
+            company = (
+                db.get(LinkedCompany, item.linked_company_id)
+                if item.linked_company_id is not None
+                else None
+            )
+            service_type = normalize_service_type(
+                item.service_type, calibration_scope=item.calibration_scope
+            )
             current = aggregated.setdefault(
                 item.id,
                 {
@@ -353,6 +462,33 @@ def expand_catalog_item_for_operations(
                     ),
                     "quantity": 0,
                     "status": "pending",
+                    "service_snapshot": {
+                        "service_id": item.id,
+                        "service_key": item.internal_key,
+                        "service_name_snapshot": item.name,
+                        "service_description_snapshot": item.description,
+                        "service_type_snapshot": (
+                            service_type.value if service_type else None
+                        ),
+                        "calibration_scope_snapshot": item.calibration_scope,
+                        "linked_company_id": item.linked_company_id,
+                        "linked_company_name_snapshot": (
+                            company.name if company else None
+                        ),
+                        "certificate_prefix_snapshot": (
+                            item.linked_certificate_prefix
+                        ),
+                        "price_snapshot": f"{Decimal(item.final_price_mxn):.2f}",
+                        "tax_snapshot": {
+                            "object": item.tax_object,
+                            "rate": f"{Decimal(item.tax_rate):.2f}",
+                        },
+                        "template_snapshot": {
+                            "expected_certificate_master_id": (
+                                item.expected_certificate_master_id
+                            )
+                        },
+                    },
                 },
             )
             current["quantity"] += multiplier
@@ -389,6 +525,7 @@ def create_catalog_item(
     components = payload.components
     raw_values.pop("components", None)
     values = _prepare_values(raw_values)
+    _ensure_linked_company(db, values)
     _ensure_valid_components(
         db,
         parent_id=None,
@@ -462,6 +599,9 @@ def update_catalog_item(
         "internal_cost": item.internal_cost,
         "cost_currency": item.cost_currency,
         "calibration_scope": item.calibration_scope,
+        "service_type": item.service_type,
+        "linked_company_id": item.linked_company_id,
+        "linked_certificate_prefix": item.linked_certificate_prefix,
         "expected_certificate_master_id": item.expected_certificate_master_id,
         "quotation_legend": item.quotation_legend,
         "tax_object": item.tax_object,
@@ -469,6 +609,7 @@ def update_catalog_item(
 
     should_recalculate = bool({"origin_price", "exchange_rate", "margin_percent"} & set(updates))
     prepared = _prepare_values(merged, recalculate_price=should_recalculate)
+    _ensure_linked_company(db, prepared)
     _ensure_certificate_master(db, prepared.get("expected_certificate_master_id"))
     if prepared["service_kind"] == "simple":
         effective_components = []
@@ -499,6 +640,9 @@ def update_catalog_item(
     keys_to_apply = set(updates) | {
         "service_kind",
         "calibration_scope",
+        "service_type",
+        "linked_company_id",
+        "linked_certificate_prefix",
         "custom_internal_unit",
         "final_price_mxn",
         "internal_key",

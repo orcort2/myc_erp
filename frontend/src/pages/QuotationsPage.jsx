@@ -24,6 +24,7 @@ import { quotationStatusLabels, quotationActions, quotationTransitions } from '.
 import {
   changeQuotationStatus,
   createCatalogItem,
+  createLinkedCompany,
   createQuotation,
   createQuotationItem,
   createServiceOrder,
@@ -35,6 +36,7 @@ import {
   getCurrentUser,
   getQuotationPdfUrl,
   getQuotationTemplate,
+  listLinkedCompanies,
   listQuotationSnapshots,
   listCatalogItems,
   listControlledDocuments,
@@ -42,6 +44,8 @@ import {
   listQuotations,
   restoreQuotationSnapshot,
   restoreQuotationTemplateDefaults,
+  previewQuotationUnlock,
+  applyQuotationServiceChange,
   updateCatalogItem,
   updateQuotation,
   updateQuotationItem,
@@ -51,6 +55,7 @@ import { downloadCsv, parseDelimitedText } from '../utils/csv.js';
 import { getRowValue } from '../utils/clients.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { formatDate, formatMoney, getClientDisplayName, normalizeKey } from '../utils/formatters.js';
+import { validateLinkedServiceFields } from '../utils/quotationServiceExceptions.js';
 
 const defaultQuotationTemplate = {
   name: 'Plantilla de cotizacion MYC',
@@ -136,6 +141,17 @@ function mapCatalogItemFromApi(item) {
       : [],
     commodity: item.commodity,
     calibrationScope: item.calibration_scope ?? '',
+    serviceType: item.service_type ?? (
+      item.calibration_scope === 'accredited_iso_17025'
+        ? 'accredited'
+        : item.calibration_scope === 'accredited_linked_lab'
+          ? 'linked'
+          : item.calibration_scope === 'traceable'
+            ? 'traceable'
+            : ''
+    ),
+    linkedCompanyId: item.linked_company_id ? String(item.linked_company_id) : '',
+    linkedCertificatePrefix: item.linked_certificate_prefix ?? '',
     expectedCertificateMasterId: item.expected_certificate_master_id ? String(item.expected_certificate_master_id) : '',
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
@@ -161,7 +177,14 @@ function mapCatalogItemFromApi(item) {
 function mapCatalogPayloadFromForm(form) {
   const commodity = inferBackendCatalogKind(form.type, form.category);
   const scopeOptions = getCategoryScopeOptions(form.category);
-  const calibrationScope = scopeOptions.length ? form.calibrationScope || scopeOptions[0].value : null;
+  const serviceScopeByType = {
+    accredited: 'accredited_iso_17025',
+    traceable: 'traceable',
+    linked: 'accredited_linked_lab'
+  };
+  const calibrationScope = form.category === 'Calibracion'
+    ? serviceScopeByType[form.serviceType] || 'traceable'
+    : scopeOptions.length ? form.calibrationScope || scopeOptions[0].value : null;
   return {
     item_type: catalogTypeToApi[form.type] ?? form.type,
     service_kind: form.type === 'Servicio' ? form.serviceKind : 'simple',
@@ -186,6 +209,9 @@ function mapCatalogPayloadFromForm(form) {
     internal_cost: form.internalCost === '' ? null : Number(form.internalCost),
     cost_currency: form.internalCost === '' ? null : form.costCurrency,
     calibration_scope: calibrationScope,
+    service_type: form.category === 'Calibracion' ? form.serviceType : null,
+    linked_company_id: form.serviceType === 'linked' ? Number(form.linkedCompanyId) || null : null,
+    linked_certificate_prefix: form.serviceType === 'linked' ? form.linkedCertificatePrefix.trim().toUpperCase() || null : null,
     expected_certificate_master_id: form.category === 'Calibracion' ? Number(form.expectedCertificateMasterId) || null : null,
     quotation_legend: null,
     tax_object: form.taxObject || 'iva_16'
@@ -389,6 +415,7 @@ function QuotationsPage() {
   const [draftItems, setDraftItems] = useState([]);
   const [selectedQuotation, setSelectedQuotation] = useState(null);
   const [catalogItems, setCatalogItems] = useState([]);
+  const [linkedCompanies, setLinkedCompanies] = useState([]);
   const [activeServicePickerId, setActiveServicePickerId] = useState(null);
   const [certificateMasters, setCertificateMasters] = useState([]);
   const [productForm, setProductForm] = useState(emptyProductForm);
@@ -422,6 +449,8 @@ function QuotationsPage() {
   const [savingItemIds, setSavingItemIds] = useState(new Set());
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [exceptionalUnlock, setExceptionalUnlock] = useState(null);
+  const [unlockPreview, setUnlockPreview] = useState(null);
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
   const skipNextAutosaveRef = useRef(false);
 
@@ -467,18 +496,23 @@ function QuotationsPage() {
       }),
     [catalogFilters, catalogItems]
   );
+  const canEditSelectedQuotation = Boolean(
+    selectedQuotation &&
+      (!isQuotationTerminal(selectedQuotation) || exceptionalUnlock?.can_apply)
+  );
 
 
   async function loadQuotationData() {
     setError('');
     setIsLoading(true);
     try {
-      const [quotationResult, clientResult, catalogResult, templateResult, mastersResult] = await Promise.allSettled([
+      const [quotationResult, clientResult, catalogResult, templateResult, mastersResult, linkedCompaniesResult] = await Promise.allSettled([
         listQuotations(),
         listClients(),
         listCatalogItems({ is_active: true }),
         getQuotationTemplate(),
-        listControlledDocuments({ document_type: 'certificate_master', status: 'active' })
+        listControlledDocuments({ document_type: 'certificate_master', status: 'active' }),
+        listLinkedCompanies()
       ]);
       if (quotationResult.status === 'rejected') {
         throw quotationResult.reason;
@@ -490,6 +524,7 @@ function QuotationsPage() {
         throw catalogResult.reason;
       }
       setCertificateMasters(mastersResult.status === 'fulfilled' ? mastersResult.value : []);
+      setLinkedCompanies(linkedCompaniesResult.status === 'fulfilled' ? linkedCompaniesResult.value : []);
       const quotationItems = quotationResult.value;
       const clientItems = clientResult.value;
       const catalogApiItems = catalogResult.value;
@@ -554,6 +589,7 @@ function QuotationsPage() {
       if (field === 'category') {
         const options = getCategoryScopeOptions(value);
         next.calibrationScope = options[0]?.value ?? '';
+        if (value === 'Calibracion' && !next.serviceType) next.serviceType = 'traceable';
       }
       if (field === 'type') {
         const categories = value === 'Producto' ? productCategories : serviceCategories;
@@ -568,6 +604,22 @@ function QuotationsPage() {
       }
       if (field === 'serviceKind' && value === 'simple') {
         next.components = [];
+      }
+      if (field === 'serviceType') {
+        const scopeByType = {
+          accredited: 'accredited_iso_17025',
+          traceable: 'traceable',
+          linked: 'accredited_linked_lab'
+        };
+        next.calibrationScope = scopeByType[value] || '';
+        if (value !== 'linked') {
+          next.linkedCompanyId = '';
+          next.linkedCertificatePrefix = '';
+        }
+      }
+      if (field === 'linkedCompanyId') {
+        const company = linkedCompanies.find((item) => String(item.id) === String(value));
+        if (company) next.linkedCertificatePrefix = company.default_certificate_prefix || '';
       }
       return next;
     });
@@ -687,6 +739,8 @@ function QuotationsPage() {
 
   async function openQuotationDetail(quotation) {
     setError('');
+    setExceptionalUnlock(null);
+    setUnlockPreview(null);
     try {
       const detail = await getQuotation(quotation.id);
       setSelectedQuotation(detail);
@@ -716,6 +770,8 @@ function QuotationsPage() {
     setAutosaveStatus('');
     setDraftItems([]);
     setEditingItemForms({});
+    setExceptionalUnlock(null);
+    setUnlockPreview(null);
     setQuotationDetailTab('info');
     setError('');
     const rawContext = window.sessionStorage.getItem('myc:contextReturn');
@@ -967,6 +1023,10 @@ function QuotationsPage() {
         serviceKind: item.serviceKind || 'simple',
         components: item.components || [],
         calibrationScope: item.calibrationScope || 'traceable',
+        serviceType: item.serviceType || 'traceable',
+        linkedCompanyId: item.linkedCompanyId || '',
+        linkedCompanyName: '',
+        linkedCertificatePrefix: item.linkedCertificatePrefix || '',
         expectedCertificateMasterId: item.expectedCertificateMasterId || '',
         quotationLegend: item.quotationLegend,
         satKey: item.satKey,
@@ -1021,6 +1081,15 @@ function QuotationsPage() {
       setError('Selecciona el alcance.');
       return;
     }
+    if (productForm.category === 'Calibracion' && !productForm.serviceType) {
+      setError('Selecciona el tipo de servicio.');
+      return;
+    }
+    const linkedServiceError = validateLinkedServiceFields(productForm);
+    if (linkedServiceError) {
+      setError(linkedServiceError);
+      return;
+    }
     if (productForm.internalUnit === 'other' && !productForm.customInternalUnit.trim()) {
       setError('Captura la unidad interna personalizada.');
       return;
@@ -1048,6 +1117,17 @@ function QuotationsPage() {
     setIsSaving(true);
     try {
       const payload = mapCatalogPayloadFromForm(productForm);
+      if (productForm.serviceType === 'linked' && productForm.linkedCompanyId === 'other') {
+        const company = await createLinkedCompany({
+          name: productForm.linkedCompanyName.trim(),
+          abbreviation: productForm.linkedCertificatePrefix.trim().toUpperCase(),
+          default_certificate_prefix: productForm.linkedCertificatePrefix.trim().toUpperCase()
+        });
+        payload.linked_company_id = company.id;
+        setLinkedCompanies((current) => (
+          current.some((item) => item.id === company.id) ? current : [...current, company]
+        ));
+      }
       const saved = editingProductId
         ? await updateCatalogItem(editingProductId, payload)
         : await createCatalogItem(payload);
@@ -1240,6 +1320,98 @@ function QuotationsPage() {
     );
   }
 
+  function selectEditingCatalogConcept(itemId, conceptId) {
+    const item = catalogItems.find((catalogItem) => String(catalogItem.id) === String(conceptId));
+    if (!item) return;
+    setEditingItemForms((current) => ({
+      ...current,
+      [itemId]: {
+        ...(current[itemId] ?? emptyQuotationItemForm),
+        catalogItemId: item.id,
+        catalogSearch: item.name,
+        description: item.name,
+        unit: item.customInternalUnit || item.internalUnit || item.satUnit || 'Servicio',
+        unitPrice: String(item.finalPriceMxn ?? calculateFinalPriceMxn(item)),
+        currency: 'MXN',
+        satKey: item.satKey || '',
+        satUnit: item.satUnit || '',
+        internalUnit: item.internalUnit || '',
+        commodity: item.commodity || null,
+        calibrationScope: item.calibrationScope || null,
+        quotationLegend: item.quotationLegend || '',
+        taxObject: item.taxObject || 'iva_16',
+        taxRate: String(item.taxRate ?? 16)
+      }
+    }));
+  }
+
+  function enterExceptionalMode(activeRequest) {
+    setExceptionalUnlock(activeRequest);
+    setUnlockPreview(null);
+    setDraftItems([]);
+    setEditingItemForms({});
+    setQuotationDetailTab('items');
+    setNotice(`Edición excepcional activa mediante ${activeRequest.folio}.`);
+  }
+
+  function buildUnlockItems() {
+    return getQuotationItems(selectedQuotation).map((item) => {
+      const catalog = catalogItems.find(
+        (catalogItem) => String(catalogItem.id) === String(item.catalog_item_id)
+      );
+      if (!catalog?.internalKey) {
+        throw new Error(`La partida ${item.service_name} no tiene una clave de servicio vigente.`);
+      }
+      return {
+        service_key: catalog.internalKey,
+        quantity: Number(item.quantity || 1),
+        unit_price: Number(item.unit_price || 0),
+        discount_percent: Number(item.discount_percent || 0),
+        description: item.description || null
+      };
+    });
+  }
+
+  async function previewExceptionalRevision() {
+    if (!exceptionalUnlock) return;
+    setError('');
+    try {
+      const preview = await previewQuotationUnlock(exceptionalUnlock.folio, {
+        items: buildUnlockItems()
+      });
+      setUnlockPreview(preview);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  }
+
+  async function applyExceptionalRevision() {
+    if (!exceptionalUnlock) return;
+    setIsSaving(true);
+    setError('');
+    try {
+      const result = await applyQuotationServiceChange(exceptionalUnlock.folio, {
+        expected_snapshot_number: exceptionalUnlock.base_snapshot_number,
+        items: buildUnlockItems()
+      });
+      const updated = await getQuotation(selectedQuotation.id);
+      setSelectedQuotation(updated);
+      setExceptionalUnlock(null);
+      setUnlockPreview(null);
+      setDraftItems([]);
+      setEditingItemForms({});
+      await refreshQuotationSnapshots(updated.id);
+      await loadQuotationData();
+      setNotice(
+        `${result.quotation_folio} actualizada; el ETS ${result.service_order_folio} fue reconstruido con el mismo folio.`
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function cancelDraftItem(draftId) {
     setDraftItems((current) => current.filter((item) => item.id !== draftId));
   }
@@ -1255,6 +1427,24 @@ function QuotationsPage() {
     setError('');
     setNotice('');
     try {
+      if (exceptionalUnlock?.can_apply) {
+        const payload = buildQuotationItemPayload(draft);
+        const temporaryItem = {
+          ...payload,
+          id: `exceptional-${draft.id}`,
+          is_active: true,
+          total: Number(payload.quantity) * Number(payload.unit_price),
+          tax_total: 0,
+          _exceptionalNew: true
+        };
+        setSelectedQuotation((current) => ({
+          ...current,
+          items: [...(current.items || []), temporaryItem]
+        }));
+        setDraftItems((current) => current.filter((item) => item.id !== draft.id));
+        setNotice('Partida nueva preparada para la revisión excepcional.');
+        return;
+      }
       const updated = await createQuotationItem(selectedQuotation.id, buildQuotationItemPayload(draft));
       setSelectedQuotation(updated);
       setNotice(`Partida agregada a ${updated.folio}`);
@@ -1309,6 +1499,20 @@ function QuotationsPage() {
     setError('');
     setNotice('');
     try {
+      if (exceptionalUnlock?.can_apply) {
+        const payload = buildQuotationItemPayload(form);
+        setSelectedQuotation((current) => ({
+          ...current,
+          items: (current.items || []).map((item) => (
+            item.id === itemId
+              ? { ...item, ...payload, _exceptionalChanged: true }
+              : item
+          ))
+        }));
+        cancelEditQuotationItem(itemId);
+        setNotice('Cambio preparado para la revisión excepcional.');
+        return;
+      }
       const updated = await updateQuotationItem(
         selectedQuotation.id,
         itemId,
@@ -1341,6 +1545,15 @@ function QuotationsPage() {
         setError('');
         setNotice('');
         try {
+          if (exceptionalUnlock?.can_apply) {
+            setSelectedQuotation((current) => ({
+              ...current,
+              items: (current.items || []).filter((currentItem) => currentItem.id !== item.id)
+            }));
+            cancelEditQuotationItem(item.id);
+            setNotice('Partida retirada de la revisión excepcional.');
+            return;
+          }
           const updated = await deleteQuotationItem(selectedQuotation.id, item.id);
           setSelectedQuotation(updated);
           cancelEditQuotationItem(item.id);
@@ -1379,7 +1592,7 @@ function QuotationsPage() {
       setNotice('Abre una cotizacion para agregar este concepto como partida.');
       return;
     }
-    if (isQuotationTerminal(selectedQuotation)) {
+    if (isQuotationTerminal(selectedQuotation) && !exceptionalUnlock?.can_apply) {
       setError('No se pueden agregar partidas a una cotizacion en estado terminal.');
       return;
     }
@@ -1555,7 +1768,7 @@ function QuotationsPage() {
         {currentUser?.permissions?.some((permission) => (
           permission === '*' ||
           permission === 'quotations.*' ||
-          permission === 'quotations.exceptions.inspect_change_service'
+          permission === 'quotations.exceptions.inspect'
         )) ? (
           <button
             aria-selected={salesTab === 'exceptions'}
@@ -1742,11 +1955,19 @@ function QuotationsPage() {
                 <span className="catalog-item-name-cell">
                   <strong>{item.name}</strong>
                   {item.itemType === 'service' ? (
+                    <>
                     <small>
                       {item.serviceKind === 'composite'
                         ? `Servicio Compuesto · ${item.components.length} componentes`
                         : 'Servicio Simple'}
                     </small>
+                    {item.category === 'Calibracion' ? (
+                      <small>
+                        {item.serviceType === 'accredited' ? 'Acreditado' : item.serviceType === 'linked' ? 'Vinculado' : 'Trazable'}
+                        {item.serviceType === 'linked' && item.linkedCertificatePrefix ? ` · ${item.linkedCertificatePrefix}` : ''}
+                      </small>
+                    ) : null}
+                    </>
                   ) : null}
                 </span>
                 <span>{item.satKey || '-'}</span>
@@ -2205,20 +2426,13 @@ function QuotationsPage() {
                     >
                       Generar orden de servicio
                     </button>
+                    <QuotationServiceExceptionAction
+                      currentUser={currentUser}
+                      onEnterExceptionalMode={enterExceptionalMode}
+                      quotation={selectedQuotation}
+                    />
                   </div>
                 </section>
-
-                <QuotationServiceExceptionAction
-                  catalogItems={catalogItems}
-                  currentUser={currentUser}
-                  onApplied={async () => {
-                    const updated = await getQuotation(selectedQuotation.id);
-                    setSelectedQuotation(updated);
-                    await refreshQuotationSnapshots(updated.id);
-                    await loadQuotationData();
-                  }}
-                  quotation={selectedQuotation}
-                />
 
                 {!['rejected', 'expired', 'cancelled'].includes(selectedQuotation.status) ? (
                 <section className="danger-zone">
@@ -2251,6 +2465,19 @@ function QuotationsPage() {
 
             {quotationDetailTab === 'items' ? (
               <section className="quotation-section">
+                {exceptionalUnlock?.can_apply ? (
+                  <div className="quotation-exceptional-banner">
+                    <div>
+                      <strong>Edición excepcional activa · {exceptionalUnlock.folio}</strong>
+                      <span>Autorizó: {exceptionalUnlock.reviewer_name || 'Autorizador registrado'}</span>
+                      <span>Motivo: {exceptionalUnlock.reason}</span>
+                      <span>Vigencia: {new Date(exceptionalUnlock.expires_at).toLocaleString('es-MX')}</span>
+                    </div>
+                    <button className="primary-button" onClick={previewExceptionalRevision} type="button">
+                      Guardar nueva revisión
+                    </button>
+                  </div>
+                ) : null}
                 <div className="quotation-section__title">
                   <div>
                     <p>Partidas reales</p>
@@ -2258,14 +2485,14 @@ function QuotationsPage() {
                   </div>
                   <button
                     className="primary-button"
-                    disabled={isQuotationTerminal(selectedQuotation)}
+                    disabled={!canEditSelectedQuotation}
                     onClick={addDraftItem}
                     type="button"
                   >
                     + Agregar partida
                   </button>
                 </div>
-                {isQuotationTerminal(selectedQuotation) ? (
+                {isQuotationTerminal(selectedQuotation) && !exceptionalUnlock?.can_apply ? (
                   <div className="client-fiscal-note">
                     Esta cotizacion esta en estado terminal. Las partidas quedan bloqueadas para conservar el historico comercial.
                   </div>
@@ -2294,6 +2521,21 @@ function QuotationsPage() {
                             <span className="quote-line-concept">
                               {isEditing ? (
                                 <>
+                                  {exceptionalUnlock?.can_apply ? (
+                                    <select
+                                      onChange={(event) => selectEditingCatalogConcept(item.id, event.target.value)}
+                                      value={form.catalogItemId || ''}
+                                    >
+                                      <option value="">Selecciona un servicio</option>
+                                      {catalogItems
+                                        .filter((catalogItem) => catalogItem.itemType === 'service' && catalogItem.status === 'Activo')
+                                        .map((catalogItem) => (
+                                          <option key={catalogItem.id} value={catalogItem.id}>
+                                            {catalogItem.name} · {catalogItem.serviceType || 'sin tipo'} · {formatMoney(catalogItem.finalPriceMxn)}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  ) : null}
                                   <input
                                     onChange={(event) => updateEditingItem(item.id, 'description', event.target.value)}
                                     type="text"
@@ -2323,8 +2565,11 @@ function QuotationsPage() {
                               ) : (
                                 <>
                                   <strong>{item.service_name}</strong>
+                                  {item._exceptionalNew ? <mark className="status-pill">Nueva</mark> : null}
+                                  {item._exceptionalChanged ? <mark className="status-pill">Modificada</mark> : null}
                                   {item.description ? <small>{item.description}</small> : null}
                                   {item.quotation_legend ? <small>{item.quotation_legend}</small> : null}
+                                  {item.calibration_scope ? <small>Tipo: {item.calibration_scope === 'accredited_iso_17025' ? 'Acreditado' : item.calibration_scope === 'accredited_linked_lab' ? 'Vinculado' : 'Trazable'}</small> : null}
                                   <small>Impuesto: {Number(item.tax_rate ?? 0)}%</small>
                                 </>
                               )}
@@ -2395,7 +2640,7 @@ function QuotationsPage() {
                                 <>
                                   <button
                                     className="table-button"
-                                    disabled={isQuotationTerminal(selectedQuotation)}
+                                    disabled={!canEditSelectedQuotation}
                                     onClick={() => startEditQuotationItem(item)}
                                     type="button"
                                   >
@@ -2403,7 +2648,7 @@ function QuotationsPage() {
                                   </button>
                                   <button
                                     className="table-button"
-                                    disabled={isQuotationTerminal(selectedQuotation)}
+                                    disabled={!canEditSelectedQuotation}
                                     onClick={() => duplicateQuotationItem(item)}
                                     type="button"
                                   >
@@ -2411,7 +2656,7 @@ function QuotationsPage() {
                                   </button>
                                   <button
                                     className="table-button"
-                                    disabled={isQuotationTerminal(selectedQuotation) || isSavingItem}
+                                    disabled={!canEditSelectedQuotation || isSavingItem}
                                     onClick={() => deleteSavedQuotationItem(item)}
                                     type="button"
                                   >
@@ -2825,7 +3070,7 @@ function QuotationsPage() {
               </label>
               {productForm.type === 'Servicio' ? (
                 <label>
-                  Tipo de servicio
+                  Composición
                   <select
                     onChange={(event) => updateProductForm('serviceKind', event.target.value)}
                     value={productForm.serviceKind}
@@ -2834,6 +3079,62 @@ function QuotationsPage() {
                     <option value="composite">Servicio Compuesto</option>
                   </select>
                 </label>
+              ) : null}
+              {productForm.type === 'Servicio' && productForm.category === 'Calibracion' ? (
+                <label>
+                  Tipo de servicio
+                  <select
+                    onChange={(event) => updateProductForm('serviceType', event.target.value)}
+                    value={productForm.serviceType || 'traceable'}
+                  >
+                    <option value="accredited">Acreditado</option>
+                    <option value="traceable">Trazable</option>
+                    <option value="linked">Vinculado</option>
+                  </select>
+                </label>
+              ) : null}
+              {productForm.serviceType === 'linked' && productForm.category === 'Calibracion' ? (
+                <>
+                  <label>
+                    Empresa o laboratorio vinculado
+                    <select
+                      required
+                      onChange={(event) => updateProductForm('linkedCompanyId', event.target.value)}
+                      value={productForm.linkedCompanyId}
+                    >
+                      <option value="">Seleccionar empresa</option>
+                      {linkedCompanies.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                      <option value="other">Otro</option>
+                    </select>
+                  </label>
+                  {productForm.linkedCompanyId === 'other' ? (
+                    <label>
+                      Nombre de la empresa vinculada
+                      <input
+                        maxLength={180}
+                        onChange={(event) => updateProductForm('linkedCompanyName', event.target.value)}
+                        required
+                        type="text"
+                        value={productForm.linkedCompanyName}
+                      />
+                    </label>
+                  ) : null}
+                  <label>
+                    Iniciales de folio
+                    <input
+                      maxLength={12}
+                      onChange={(event) => updateProductForm('linkedCertificatePrefix', event.target.value.toUpperCase())}
+                      pattern="[A-Z0-9]{2,12}"
+                      required
+                      type="text"
+                      value={productForm.linkedCertificatePrefix}
+                    />
+                  </label>
+                </>
               ) : null}
               <label>
                 Clave interna generada
@@ -2890,7 +3191,7 @@ function QuotationsPage() {
                   />
                 </label>
               ) : null}
-              {getCategoryScopeOptions(productForm.category).length ? (
+              {getCategoryScopeOptions(productForm.category).length && productForm.category !== 'Calibracion' ? (
                 <label>
                   Alcance
                   <select
@@ -3072,6 +3373,59 @@ function QuotationsPage() {
                 </select>
               </label>
             </form>
+          </section>
+        </div>
+      ) : null}
+
+      {unlockPreview ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="client-modal quotation-modal quotation-unlock-summary" aria-modal="true" role="dialog">
+            <div className="section-heading">
+              <div>
+                <p>Cambios detectados</p>
+                <h2>Nueva revisión de {unlockPreview.quotation_folio}</h2>
+              </div>
+              <button className="icon-text-button" onClick={() => setUnlockPreview(null)} type="button">
+                Cerrar
+              </button>
+            </div>
+            <div className="quotation-unlock-summary__columns">
+              <section>
+                <h3>Eliminado</h3>
+                {unlockPreview.delta.removed.length ? unlockPreview.delta.removed.map((item, index) => (
+                  <article key={`${item.service_key}-removed-${index}`}>
+                    <strong>{item.service_name}</strong>
+                    <span>{item.service_type || 'Sin tipo'} · {formatMoney(item.unit_price)}</span>
+                  </article>
+                )) : <span>Sin partidas eliminadas.</span>}
+              </section>
+              <section>
+                <h3>Agregado</h3>
+                {unlockPreview.delta.added.length ? unlockPreview.delta.added.map((item, index) => (
+                  <article key={`${item.service_key}-added-${index}`}>
+                    <strong>{item.service_name}</strong>
+                    <span>{item.service_type || 'Sin tipo'} · {formatMoney(item.unit_price)}</span>
+                    {item.linked_company ? <small>{item.linked_company} · {item.certificate_prefix}</small> : null}
+                  </article>
+                )) : <span>Sin partidas agregadas.</span>}
+              </section>
+            </div>
+            <div className={unlockPreview.rebuild.allowed ? 'sales-exception-impact' : 'form-error dashboard-error'}>
+              {unlockPreview.rebuild.allowed
+                ? `El ETS ${unlockPreview.service_order_folio} está vacío y será reconstruido conservando exactamente el mismo folio.`
+                : `No puede reconstruirse: ${unlockPreview.rebuild.blockers.join(', ')}.`}
+            </div>
+            <div className="toolbar-actions">
+              <button className="table-button" onClick={() => setUnlockPreview(null)} type="button">Volver a editar</button>
+              <button
+                className="primary-button"
+                disabled={isSaving || !unlockPreview.delta.has_changes || !unlockPreview.rebuild.allowed}
+                onClick={applyExceptionalRevision}
+                type="button"
+              >
+                {isSaving ? 'Reconstruyendo…' : 'Confirmar revisión y reconstruir ETS'}
+              </button>
+            </div>
           </section>
         </div>
       ) : null}

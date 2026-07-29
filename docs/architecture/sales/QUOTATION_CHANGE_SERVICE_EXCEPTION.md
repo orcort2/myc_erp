@@ -1,10 +1,12 @@
-> Estado: VIGENTE
+> Estado: SUSTITUIDO el 2026-07-29 por `QUOTATION_CONTROLLED_UNLOCK.md`
 >
 > Tipo: Arquitectura vigente
 >
 > Corte verificado: 2026-07-29
 
 # Excepción contextual: cambio de servicio en cotización aprobada
+
+> Evidencia histórica del diseño puntual; no rige el comportamiento vigente.
 
 ## Alcance
 

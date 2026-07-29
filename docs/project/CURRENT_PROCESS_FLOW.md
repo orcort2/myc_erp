@@ -197,6 +197,16 @@ En calibración, la partida del catálogo conserva una de tres modalidades canó
 
 Al crear el ETS, cada `ServiceOrderItem` congela el identificador del Master esperado mediante el ID estable del concepto operativo. Al registrar el equipo, Equipos lee exclusivamente esa partida y congela alcance, tipo de certificado, Master esperado, partida y origen de catálogo junto con la versión/archivo del Master. Cambiar después el nombre o la selección del catálogo no modifica el expediente; no existe resolución por `service_name`.
 
+Una cotización aprobada con ETS completamente virgen admite:
+
+`Solicitar desbloqueo → autorizar → editar partidas en la ficha → revisar delta
+→ confirmar → crear revisión → eliminar ETS virgen → recrear con el mismo
+OSMYC → cerrar EXV`.
+
+El ETS se vuelve a construir desde la revisión nueva. Si aparecen equipos,
+certificados, archivos, factura, firmas, resolución, OT ejecutada o un estado
+operativo, la confirmación se bloquea y no se aplica ninguna mutación.
+
 ## 3. Agenda y Llamado dentro de ETS
 
 Agenda y Llamado no son módulos autónomos actuales. La fecha de agenda vive en el ETS y el llamado es el hito `confirmed → called`. No existe actualmente el circuito histórico con folios `AMYC`/`SMYC`, calendario, bitácora y estados independientes.
@@ -262,14 +272,16 @@ El ETS puede avanzar a liberado y cerrado tras las compuertas operativas. Encues
 
 ## Excepciones y rutas laterales
 
-- Cotización aprobada + ETS existente + cero equipos permite solicitar
-  `Cambiar tipo de servicio` desde Ventas. El usuario trabaja con los folios
+- Cotización aprobada + ETS realmente virgen permite solicitar
+  `Desbloquear cotización` desde Ventas. El usuario trabaja con los folios
   `MYC-…`, `OSMYC-…` y `EXV-…`; nunca captura IDs internos. Un revisor distinto
-  autoriza/rechaza/pide información. La autorización concede
-  `quotation.change_service_type` por tiempo, usuario y un solo uso. Al aplicar,
-  backend revalida bajo lock, conserva snapshot/revisión, actualiza sólo el
-  servicio autorizado y sincroniza las partidas dependientes del mismo ETS en
-  una transacción. Cualquier equipo posterior bloquea sin cambio parcial.
+  autoriza, rechaza o pide información. La autorización es temporal, nominativa
+  y de un solo uso. El Comercial edita directamente todas las partidas, revisa
+  el delta y guarda una nueva revisión. Backend revalida bajo lock, elimina
+  físicamente el ETS virgen y sus OT pendientes derivadas, y lo recrea desde la
+  nueva revisión conservando exactamente el mismo folio `OSMYC-…`. Equipos,
+  capturas, firmas, certificados, facturas, resoluciones o una OT avanzada
+  bloquean toda la operación sin cambio parcial.
 - Equipos adicionales pueden bloquearse y registrar una solicitud/comentario, pero la excepción no es todavía un agregado persistente especializado.
 - Estados legacy de certificados se normalizan para compatibilidad.
 - Las firmas directas y el número de OT en `service_orders` siguen presentes como compatibilidad junto a las estructuras vigentes por ciclos y `service_work_orders`.

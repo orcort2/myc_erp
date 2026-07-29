@@ -26,6 +26,7 @@ from app.schemas.service_order import (
 from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
+from app.services.institutional_folios import next_work_order_number
 
 
 
@@ -127,10 +128,53 @@ def _next_service_order_folio(db: Session, issued_on: date) -> str:
 
 
 def _next_work_order_number(db: Session) -> int:
-    legacy_last = db.scalar(select(func.max(ServiceOrder.work_order_number)))
-    work_order_last = db.scalar(select(func.max(ServiceWorkOrder.work_order_number)))
-    last_number = max(int(legacy_last or 7000), int(work_order_last or 7000))
-    return max(last_number + 1, 7001)
+    return next_work_order_number(db)
+
+
+def _service_order_source_snapshot(quotation: Quotation | None) -> dict | None:
+    if quotation is None:
+        return None
+    client = quotation.client
+    return {
+        "schema_version": 1,
+        "quotation_folio": quotation.folio,
+        "client": {
+            "legal_name": client.legal_name,
+            "commercial_name": client.commercial_name,
+            "rfc": client.rfc,
+            "email": client.email,
+            "phone": client.phone,
+            "address": {
+                "street_type": client.street_type,
+                "street": client.street,
+                "exterior_number": client.exterior_number,
+                "interior_number": client.interior_number,
+                "neighborhood": client.neighborhood,
+                "locality": client.locality,
+                "municipality": client.municipality,
+                "city": client.city,
+                "state": client.state,
+                "postal_code": client.postal_code,
+                "country": client.country,
+            },
+            "contacts": [
+                {
+                    "name": contact.name,
+                    "email": contact.email,
+                    "phone": contact.phone,
+                    "position": contact.position,
+                }
+                for contact in client.contacts
+                if contact.is_active
+            ],
+        },
+        "quotation": {
+            "issued_on": quotation.issued_on.isoformat() if quotation.issued_on else None,
+            "valid_until": quotation.valid_until.isoformat() if quotation.valid_until else None,
+            "payment_terms": quotation.payment_terms,
+            "notes": quotation.notes,
+        },
+    }
 
 
 def _count_expected_equipment(items: list[ServiceOrderItem]) -> int:
@@ -212,6 +256,10 @@ def _service_order_items_from_quotation(
                     ),
                     "quantity": operational_quantity,
                     "status": snapshot_item.get("status", "pending"),
+                    "service_snapshot": (
+                        snapshot_item.get("service_snapshot")
+                        or snapshot.get("commercial_service_snapshot")
+                    ),
                 }
 
                 operational_items.append(
@@ -265,6 +313,9 @@ def _service_order_items_from_quotation(
                     ),
                     quantity=quotation_item.quantity,
                     status="pending",
+                    service_snapshot=(
+                        quotation_item.operational_snapshot or {}
+                    ).get("commercial_service_snapshot"),
                 )
             )
             continue
@@ -373,6 +424,7 @@ def create_service_order(
         completed_equipment=payload.completed_equipment,
         requires_payment=payload.requires_payment,
         notes=payload.notes,
+        source_snapshot=_service_order_source_snapshot(quotation),
         status="scheduled",
     )
 

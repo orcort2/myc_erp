@@ -30,6 +30,6 @@ def generate_folio(request: FolioRequest) -> str:
                 prefix = "V"
             else:
                 prefix = "T"
-            return f"MYC{prefix}-{issued_on:%m}-{issued_on:%Y}-{sequence}"
+            return f"MYC{prefix}{issued_on:%y%m}{sequence}"
         case _:
             raise ValueError(f"Tipo de folio no soportado: {request.document_type}")

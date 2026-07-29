@@ -17,13 +17,13 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
 | Rol | Alcance declarado | Permisos principales exactos |
 | --- | --- | --- |
 | Administrador | Acceso total | `*` |
-| Comercial | Clientes, cotizaciones, documentos, lectura de ETS/SAT y revisión de equipo adicional | Permisos previos más contribución completa a Actividad, `service_orders.additional_equipment.propose/commercial_review` y solicitud/aplicación/inspección de cambio de servicio |
+| Comercial | Clientes, cotizaciones, catálogo, documentos, lectura de ETS/SAT y revisión de equipo adicional | Contribución completa a Actividad, `service_orders.additional_equipment.propose/commercial_review`, clasificación/empresa/prefijo y solicitud/aplicación/inspección/reconstrucción de desbloqueo |
 | Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | Permisos previos más contribución completa a Actividad y `service_orders.additional_equipment.propose/execute` |
 | Captura | Preparación, generación documental y resoluciones propias | Permisos operativos previos más contribución completa a Actividad |
 | Calidad | Revisión, aprobación, metrología, control documental y autorización de equipo adicional | Gobierno completo de Actividad y `service_orders.additional_equipment.authorize` |
 | Finanzas | Cobranza, facturación, liberación y resoluciones propias | Contribución/resolución de atención en Actividad más permisos financieros vigentes |
 | Cliente | Portal limitado previsto | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own` |
-| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno completo de Actividad, `resolution_center.*`, permisos técnicos y solicitud/autorización/aplicación/inspección de cambio de servicio |
+| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno completo de Actividad, `resolution_center.*`, permisos técnicos, folios y solicitud/autorización/aplicación/inspección de desbloqueo |
 | Operador | Operación de resoluciones propias sin autorización | Contribución completa a Actividad, permisos del Centro y equipo adicional |
 | Auditor | Expediente institucional read-only | `activity.read`, `activity.view_audit` y permisos de auditoría vigentes |
 
@@ -32,11 +32,14 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
 - Usuarios: `users.read`, `users.manage`.
 - Clientes: `clients.read`, `clients.create`, `clients.update`.
 - Cotizaciones: `quotations.read`, `quotations.create`, `quotations.update`.
-- Excepción de servicio: `quotations.exceptions.request_change_service`,
-  `authorize_change_service`, `apply_change_service` e
-  `inspect_change_service`. La autoautorización exige
-  `quotations.exceptions.self_authorize_change_service`, no asignado a roles
+- Desbloqueo: `quotations.exceptions.request_unlock`,
+  `authorize_unlock`, `apply_unlock`, `inspect` y
+  `rebuild_empty_service_order`. La autoautorización exige
+  `quotations.exceptions.self_authorize_unlock`, no asignado a roles
   ordinarios; Administrador conserva `*`.
+- Servicios/folios: `services.manage_service_type`,
+  `services.manage_linked_company`, `services.manage_certificate_prefix` y
+  `folios.manage_sequences`.
 - Certificados: lectura, creación, aprobación, captura, carga PDF y override de match.
 - Auditoría: `audit_logs.read`.
 - Patrones y procedimientos: lectura, creación, actualización y eliminación.
