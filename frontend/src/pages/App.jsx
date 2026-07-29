@@ -16,6 +16,7 @@ import EquipmentPage from './EquipmentPage.jsx';
 import FlowTestPage from './FlowTestPage.jsx';
 import LoginPage from './LoginPage.jsx';
 import ModulePage from './ModulePage.jsx';
+import CommunicationsPage from './CommunicationsPage.jsx';
 import ProceduresPage from './ProceduresPage.jsx';
 import QualityPage from './QualityPage.jsx';
 import QuotationsPage from './QuotationsPage.jsx';
@@ -27,7 +28,6 @@ import UncertaintyPage from './UncertaintyPage.jsx';
 import SignatureLabPage from './SignatureLabPage.jsx';
 import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
 import FieldSheetLabPage from './labs/FieldSheetLabPage.jsx';
-import InvoiceWorkbenchLabPage from './labs/InvoiceWorkbenchLabPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -141,15 +141,17 @@ export function App() {
     return <DocumentDesignerLabPage />;
   }
 
-  if (path === '/invoice-workbench-lab') {
-    return <InvoiceWorkbenchLabPage />;
-  }
 
+  const isCommunicationsCenter = path === '/communications' || path === '/notifications';
   const selectedModule = modules.find(
     (module) => path === module.path || module.legacyPaths?.includes(path)
   );
-  const showModuleNavigation = Boolean(selectedModule);
-  const layoutSubtitle = selectedModule ? formatModuleDateTime(now) : 'Sistema principal';
+  const showModuleNavigation = Boolean(selectedModule) || isCommunicationsCenter;
+  const layoutSubtitle = selectedModule
+    ? formatModuleDateTime(now)
+    : isCommunicationsCenter
+      ? 'Centro de comunicaciones'
+      : 'Sistema principal';
 
   return (
     <AppLayout
@@ -158,7 +160,9 @@ export function App() {
       subtitle={layoutSubtitle}
       user={user}
     >
-      {selectedModule?.key === 'clients' ? (
+      {isCommunicationsCenter ? (
+        <CommunicationsPage user={user} />
+      ) : selectedModule?.key === 'clients' ? (
         <ClientsPage />
       ) : selectedModule?.key === 'resolutions' ? (
         <ResolutionCenterPage />

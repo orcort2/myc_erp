@@ -8,7 +8,15 @@ class ActivityUserRead(BaseModel):
     id: int
     full_name: str
     email: str
+    role_name: str | None = None
 
+class ActivityMentionableUserRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    full_name: str
+    email: str
+    role_name: str | None = None
 
 class ActivityAttachmentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)

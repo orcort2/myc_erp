@@ -664,22 +664,6 @@ def patch_service_order(
 ) -> ServiceOrderRead:
     return update_service_order(db, service_order_id, payload)
 
-@router.post(
-    "/{service_order_id}/confirm-signatures",
-    response_model=ServiceOrderRead,
-)
-def confirm_service_order_signatures(
-    service_order_id: int,
-    db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_current_user),
-) -> ServiceOrderRead:
-    from app.services.service_orders import confirm_signature_cycle
-
-    return confirm_signature_cycle(
-        db,
-        service_order_id,
-        user_id=current_user.id if current_user else None,
-    )
 
 @router.post("/{service_order_id}/confirm", response_model=ServiceOrderRead)
 def confirm_service_order(

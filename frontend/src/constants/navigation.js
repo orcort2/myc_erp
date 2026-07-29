@@ -8,7 +8,9 @@ import {
   Network,
   Ruler,
   Settings,
-  ShieldCheck
+  ShieldCheck, 
+  Bell,
+  MessagesSquare
 } from 'lucide-react';
 
 export const navigation = [
@@ -21,7 +23,8 @@ export const navigation = [
   { label: 'Control Documental', icon: Files, path: '/dashboard#control-documental' },
   { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
   { label: 'Facturación', icon: Banknote, path: '/dashboard#facturacion' },
-  { label: 'Configuracion', icon: Settings, path: '/dashboard#configuracion' }
+  { label: 'Comunicaciones', icon: MessagesSquare, path: '/communications' },
+  { label: 'Ajustes', icon: Settings, path: '/dashboard#configuracion' }
 ];
 
 export const modules = [
@@ -91,9 +94,17 @@ export const modules = [
     status: 'Activo'
   },
   {
+    key: 'communications',
+    name: 'Comunicaciones',
+    description: 'Notificaciones, mensajería interna y atención centralizada a clientes.',
+    icon: MessagesSquare,
+    path: '/communications',
+    status: 'Activo'
+  },
+  {
     key: 'settings',
-    name: 'Configuracion',
-    description: 'Usuarios, roles, permisos y parametros del sistema.',
+    name: 'Ajustes',
+    description: 'Identidad institucional, usuarios, seguridad y parametros administrables del sistema.',
     icon: Settings,
     path: '/dashboard#configuracion',
     status: 'En desarrollo'

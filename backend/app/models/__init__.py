@@ -6,6 +6,7 @@ from app.models.catalog_item import CatalogItem, CatalogItemComponent
 from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
 from app.models.certificate_resolution_operation import CertificateResolutionOperation
 from app.models.client import Client, ClientCertificateProfile, ClientContact
+from app.models.communication import CommunicationConversation, CommunicationMessage
 from app.models.document_template import DocumentTemplate
 from app.models.controlled_document import (
     ControlledDocument,
@@ -89,6 +90,8 @@ __all__ = [
     "Client",
     "ClientCertificateProfile",
     "ClientContact",
+    "CommunicationConversation",
+    "CommunicationMessage",
     "ControlledDocument",
     "ControlledDocumentVersion",
     "DocumentInterpretation",

@@ -1520,3 +1520,80 @@ export async function downloadActivityAttachment(attachment) {
   anchor.remove();
   window.URL.revokeObjectURL(url);
 }
+
+function notificationQuery(params = {}) {
+  const query = new URLSearchParams();
+
+  Object.entries(params).forEach(([key, value]) => {
+    if (
+      value !== undefined
+      && value !== null
+      && value !== ''
+    ) {
+      query.set(key, String(value));
+    }
+  });
+
+  const value = query.toString();
+
+  return value
+    ? `?${value}`
+    : '';
+}
+
+export function listNotifications(params = {}) {
+  return request(
+    `/notifications${notificationQuery(params)}`,
+  );
+}
+
+export function getNotificationUnreadCount() {
+  return request('/notifications/unread-count');
+}
+
+export function markNotificationRead(
+  notificationId,
+) {
+  return request(
+    `/notifications/${encodeURIComponent(
+      notificationId,
+    )}/read`,
+    {
+      method: 'POST',
+    },
+  );
+}
+
+export function markAllNotificationsRead() {
+  return request('/notifications/read-all', {
+    method: 'POST',
+  });
+}
+export function getCommunicationDirectory() {
+  return request('/communications/directory');
+}
+
+export function listCommunicationConversations(params = {}) {
+  const query = new URLSearchParams();
+  if (params.conversation_type) query.set('conversation_type', params.conversation_type);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request(`/communications/conversations${suffix}`);
+}
+
+export function getCommunicationConversation(conversationId) {
+  return request(`/communications/conversations/${encodeURIComponent(conversationId)}`);
+}
+
+export function createCommunicationConversation(payload) {
+  return request('/communications/conversations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function sendCommunicationMessage(conversationId, body) {
+  return request(`/communications/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ body }),
+  });
+}

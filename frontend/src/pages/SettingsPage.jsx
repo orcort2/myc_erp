@@ -1,52 +1,44 @@
 import React, { useState } from 'react';
 
-import AuditSettingsPanel from './settings/AuditSettingsPanel.jsx';
-import FieldSheetTemplatesSettingsPanel from './settings/FieldSheetTemplatesSettingsPanel.jsx';
-import UsersSettingsPanel from './settings/UsersSettingsPanel.jsx';
-
-const SETTINGS_TABS = [
-  { id: 'users', label: 'Usuarios' },
-  { id: 'audit', label: 'Auditoria' },
-  { id: 'fieldSheetTemplates', label: 'Panel maestro' },
-];
+import {
+  getDefaultChild,
+  getDefaultSection,
+  settingsNavigation,
+} from './settings/navigation/settingsNavigation.js';
+import SettingsLayout from './settings/shared/SettingsLayout.jsx';
 
 function SettingsPage({ user = null }) {
-  const [activeTab, setActiveTab] = useState('users');
+  const initialSection = getDefaultSection();
+  const [activeSection, setActiveSection] = useState(initialSection);
+  const [activeChild, setActiveChild] = useState(getDefaultChild(initialSection));
+
+  function handleSectionChange(section) {
+    setActiveSection(section);
+    setActiveChild(getDefaultChild(section));
+  }
+
+  function handleChildChange(child) {
+    setActiveChild(child);
+  }
 
   return (
-    <section className="module-workspace">
+    <section className="module-workspace settings-workspace">
       <div className="module-workspace__hero">
         <div>
-          <p>Configuración</p>
-          <h1>Operación, trazabilidad y diseño documental</h1>
-          <span>Usuarios, auditoría, plantillas, familias y catálogos operativos</span>
+          <p>Ajustes</p>
+          <h1>Administración del ERP</h1>
+          <span>Configura la empresa, los usuarios y los parámetros seguros de operación.</span>
         </div>
       </div>
 
-      <section className="settings-card">
-        <div className="settings-tabs" role="tablist" aria-label="Configuración">
-          {SETTINGS_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              aria-selected={activeTab === tab.id}
-              className={`settings-tab ${activeTab === tab.id ? 'is-active' : ''}`}
-              onClick={() => setActiveTab(tab.id)}
-              role="tab"
-              type="button"
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {activeTab === 'users' ? (
-          <UsersSettingsPanel />
-        ) : activeTab === 'audit' ? (
-          <AuditSettingsPanel />
-        ) : (
-          <FieldSheetTemplatesSettingsPanel user={user} />
-        )}
-      </section>
+      <SettingsLayout
+        navigation={settingsNavigation}
+        activeSection={activeSection}
+        activeChild={activeChild}
+        onSectionChange={handleSectionChange}
+        onChildChange={handleChildChange}
+        user={user}
+      />
     </section>
   );
 }

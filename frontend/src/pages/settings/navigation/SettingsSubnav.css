@@ -1,0 +1,101 @@
+.settings-subnav {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.settings-subnav__header {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 24px 22px 20px;
+}
+
+.settings-subnav__header h3 {
+  color: var(--myc-text, #0f172a);
+  font-size: 1.15rem;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.settings-subnav__header p {
+  color: var(--myc-muted, #64748b);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.settings-subnav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+}
+
+.settings-subnav__item {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--myc-text, #0f172a);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 13px 12px;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  width: 100%;
+}
+
+.settings-subnav__item:hover {
+  background: rgba(148, 163, 184, 0.08);
+  border-color: rgba(148, 163, 184, 0.16);
+}
+
+.settings-subnav__item:focus-visible {
+  outline: 2px solid rgba(15, 118, 110, 0.35);
+  outline-offset: 2px;
+}
+
+.settings-subnav__item.is-active {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(15, 118, 110, 0.2);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  color: var(--myc-primary, #0f766e);
+}
+
+.settings-subnav__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-subnav__copy strong {
+  font-size: 0.91rem;
+  line-height: 1.3;
+}
+
+.settings-subnav__copy small {
+  color: var(--myc-muted, #64748b);
+  font-size: 0.76rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.settings-subnav__empty {
+  color: var(--myc-muted, #64748b);
+  padding: 24px;
+}
+
+.settings-subnav__empty span {
+  color: var(--myc-text, #0f172a);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.settings-subnav__empty p {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 7px 0 0;
+}

@@ -18,6 +18,7 @@ from app.routers import (
     calibration_procedures,
     catalog_items,
     certificates,
+    communications,
     client_portal,
     clients,
     document_interpretations,
@@ -31,6 +32,7 @@ from app.routers import (
     institutional_configurations,
     metrology,
     modules,
+    notifications,
     operational_engines,
     pattern_selection,
     quotations,
@@ -101,6 +103,7 @@ async def public_contract_headers(request: Request, call_next):
 app.include_router(health.router, prefix="/api")
 app.include_router(auth.router, prefix="/api")
 app.include_router(activity.router, prefix="/api")
+app.include_router(notifications.router, prefix="/api")
 app.include_router(audit_logs.router, prefix="/api")
 app.include_router(modules.router, prefix="/api")
 app.include_router(clients.router, prefix="/api")
@@ -119,6 +122,7 @@ app.include_router(technical_profiles.router, prefix="/api")
 app.include_router(equipment.router, prefix="/api")
 app.include_router(field_sheets.router, prefix="/api")
 app.include_router(certificates.router, prefix="/api")
+app.include_router(communications.router, prefix="/api")
 app.include_router(invoices.router, prefix="/api")
 app.include_router(integrations.router, prefix="/api")
 app.include_router(sat_catalogs.router, prefix="/api")

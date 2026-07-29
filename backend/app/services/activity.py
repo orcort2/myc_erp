@@ -12,6 +12,12 @@ from app.models.activity import (
     ActivityMessageRevision,
     ActivityThread,
 )
+
+from app.services.notifications import (
+    create_activity_mention_notification,
+    revoke_activity_mention_notifications,
+)
+
 from app.models.client import Client
 from app.models.invoice import Invoice
 from app.models.service_order import ServiceOrder
@@ -25,15 +31,45 @@ ENTITY_RULES = {
     "service_order": (ServiceOrder, "service_orders.read", "service_orders.update"),
     "invoice": (Invoice, "invoices.read", "invoices.manage"),
 }
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".txt",
+    ".md",
+    ".csv",
+    ".zip",
+    ".docx",
+    ".xlsx",
+    ".pptx",
+}
+
 ALLOWED_CONTENT_TYPES = {
     "application/pdf",
+
     "image/jpeg",
     "image/png",
     "image/webp",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+
     "text/plain",
+    "text/markdown",
+    "text/csv",
+
+    "application/zip",
+    "application/x-zip-compressed",
+
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+
+GENERIC_CONTENT_TYPES = {
+    "",
+    "application/octet-stream",
+}
+
 MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
 
 
@@ -93,24 +129,73 @@ def list_messages(db: Session, entity_type: str, entity_id: int, user: User) -> 
     return thread, messages
 
 
-def _sync_mentions(db: Session, message: ActivityMessage, user_ids: list[int]) -> None:
+def _sync_mentions(
+    db: Session,
+    message: ActivityMessage,
+    user_ids: list[int],
+    actor: User,
+) -> None:
     requested = set(user_ids)
+
     if requested:
-        existing_users = set(db.scalars(select(User.id).where(User.id.in_(requested), User.is_active.is_(True))).all())
+        existing_users = set(
+            db.scalars(
+                select(User.id).where(
+                    User.id.in_(requested),
+                    User.is_active.is_(True),
+                )
+            ).all()
+        )
+
         missing = requested - existing_users
+
         if missing:
-            raise HTTPException(status_code=422, detail={"message": "Usuarios mencionados no encontrados", "user_ids": sorted(missing)})
-    current = {mention.mentioned_user_id: mention for mention in message.mentions}
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Usuarios mencionados no encontrados",
+                    "user_ids": sorted(missing),
+                },
+            )
+
+    current = {
+        mention.mentioned_user_id: mention
+        for mention in message.mentions
+    }
+
     now = datetime.now(timezone.utc)
+    revoked_user_ids: set[int] = set()
+
     for user_id, mention in current.items():
         if user_id not in requested and mention.revoked_at is None:
             mention.revoked_at = now
+            revoked_user_ids.add(user_id)
+
+    if revoked_user_ids:
+        revoke_activity_mention_notifications(
+            db,
+            message_id=message.id,
+            recipient_user_ids=revoked_user_ids,
+        )
+
     for user_id in requested:
         mention = current.get(user_id)
+
         if mention:
             mention.revoked_at = None
         else:
-            db.add(ActivityMention(message=message, mentioned_user_id=user_id))
+            mention = ActivityMention(
+                message=message,
+                mentioned_user_id=user_id,
+            )
+            db.add(mention)
+
+        create_activity_mention_notification(
+            db,
+            message=message,
+            recipient_user_id=user_id,
+            actor=actor,
+        )
 
 
 def create_message(db: Session, entity_type: str, entity_id: int, payload: ActivityMessageCreate, user: User) -> ActivityMessage:
@@ -119,7 +204,7 @@ def create_message(db: Session, entity_type: str, entity_id: int, payload: Activ
     message = ActivityMessage(thread_id=thread.id, author_id=user.id, body=payload.body.strip())
     db.add(message)
     db.flush()
-    _sync_mentions(db, message, payload.mentioned_user_ids)
+    _sync_mentions(db, message, payload.mentioned_user_ids, user)
     db.commit()
     return get_message(db, message.id)
 
@@ -150,7 +235,7 @@ def update_message(db: Session, message_id: int, payload: ActivityMessageUpdate,
         ))
         message.body = new_body
         message.edited_at = datetime.now(timezone.utc)
-    _sync_mentions(db, message, payload.mentioned_user_ids)
+    _sync_mentions(db, message, payload.mentioned_user_ids, user)
     db.commit()
     return get_message(db, message.id)
 
@@ -177,35 +262,103 @@ def withdraw_message(db: Session, message_id: int, payload: ActivityMessageWithd
     return get_message(db, message.id)
 
 
-def add_attachment(db: Session, message_id: int, upload: UploadFile, user: User) -> ActivityAttachment:
+def add_attachment(
+    db: Session,
+    message_id: int,
+    upload: UploadFile,
+    user: User,
+) -> ActivityAttachment:
     message = get_message(db, message_id)
-    ensure_entity_access(db, user, message.thread.entity_type, message.thread.entity_id, write=True)
-    if message.author_id != user.id or message.withdrawn_at is not None or message.is_system:
-        raise HTTPException(status_code=409, detail="No se pueden adjuntar archivos a este mensaje")
-    content_type = upload.content_type or "application/octet-stream"
-    if content_type not in ALLOWED_CONTENT_TYPES:
-        raise HTTPException(status_code=415, detail="Tipo de archivo no permitido")
+
+    ensure_entity_access(
+        db,
+        user,
+        message.thread.entity_type,
+        message.thread.entity_id,
+        write=True,
+    )
+
+    if (
+        message.author_id != user.id
+        or message.withdrawn_at is not None
+        or message.is_system
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="No se pueden adjuntar archivos a este mensaje",
+        )
+
+    original_name = upload.filename or "archivo"
+    extension = Path(original_name).suffix.lower()
+    content_type = (
+        upload.content_type
+        or "application/octet-stream"
+    ).lower()
+
+    if extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={
+                "message": "Extensión de archivo no permitida",
+                "extension": extension or None,
+            },
+        )
+
+    if (
+        content_type not in ALLOWED_CONTENT_TYPES
+        and content_type not in GENERIC_CONTENT_TYPES
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail={
+                "message": "Tipo de archivo no permitido",
+                "content_type": content_type,
+                "extension": extension,
+            },
+        )
+
     raw = upload.file.read(MAX_ATTACHMENT_BYTES + 1)
+
     if len(raw) > MAX_ATTACHMENT_BYTES:
-        raise HTTPException(status_code=413, detail="El archivo supera el límite de 15 MB")
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="El archivo supera el límite de 15 MB",
+        )
+
+    if len(raw) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No se pueden adjuntar archivos vacíos",
+        )
+
     upload.file.seek(0)
-    stored_name = safe_filename(upload.filename or "archivo")
+
+    stored_name = safe_filename(original_name)
+
     saved = save_upload(
         upload,
-        directory=f"activity/{message.thread.entity_type}/{message.thread.entity_id}/{message.id}",
+        directory=(
+            f"activity/"
+            f"{message.thread.entity_type}/"
+            f"{message.thread.entity_id}/"
+            f"{message.id}"
+        ),
         filename=stored_name,
     )
+
     attachment = ActivityAttachment(
         message_id=message.id,
-        original_name=upload.filename or Path(saved.relative_path).name,
+        original_name=original_name,
         stored_path=saved.relative_path,
         content_type=content_type,
         size_bytes=len(raw),
         uploaded_by_id=user.id,
     )
+
     db.add(attachment)
     db.commit()
     db.refresh(attachment)
+
     return attachment
 
 

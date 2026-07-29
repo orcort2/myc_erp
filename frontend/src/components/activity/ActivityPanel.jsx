@@ -17,6 +17,7 @@ import {
   downloadActivityAttachment,
   getActivity,
   getCurrentUser,
+  listUsers,
   updateActivityMessage,
   withdrawActivityMessage,
 } from '../../services/api.js';
@@ -31,7 +32,6 @@ const WITHDRAW_REASONS = [
   'Otro',
 ];
 
-
 export default function ActivityPanel({
   entityType,
   entityId,
@@ -39,9 +39,11 @@ export default function ActivityPanel({
   const [activeTab, setActiveTab] = useState('conversation');
   const [thread, setThread] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
+  const [mentionUsers, setMentionUsers] = useState([]);
 
   const [body, setBody] = useState('');
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [mentionedUsers, setMentionedUsers] = useState([]);
 
   const [editingId, setEditingId] = useState(null);
   const [editingBody, setEditingBody] = useState('');
@@ -67,8 +69,11 @@ export default function ActivityPanel({
   useEffect(() => {
     if (!entityType || !entityId) {
       setThread(null);
+      setBody('');
+      setSelectedFiles([]);
+      setMentionedUsers([]);
       setError('');
-      return;
+      return undefined;
     }
 
     let cancelled = false;
@@ -84,12 +89,36 @@ export default function ActivityPanel({
             : getCurrentUser(),
         ]);
 
+        let users = [];
+
+        try {
+          const usersResponse = await listUsers();
+
+          users = Array.isArray(usersResponse)
+            ? usersResponse
+            : usersResponse?.items ?? [];
+        } catch {
+          /*
+           * La conversación debe seguir disponible aunque el
+           * catálogo de usuarios no pueda cargarse. En ese caso
+           * solamente se desactiva temporalmente el autocompletado.
+           */
+          users = [];
+        }
+
         if (cancelled) {
           return;
         }
 
         setThread(activity);
         setCurrentUser(user);
+        setMentionUsers(
+          users.filter(
+            (candidate) =>
+              candidate?.is_active !== false
+              && candidate?.id !== user?.id,
+          ),
+        );
       } catch (requestError) {
         if (cancelled) {
           return;
@@ -111,68 +140,187 @@ export default function ActivityPanel({
 
   async function refresh() {
     if (!entityType || !entityId) {
-      return;
+      return false;
     }
 
     setError('');
 
     try {
-      const activity = await getActivity(entityType, entityId);
+      const activity = await getActivity(
+        entityType,
+        entityId,
+      );
+
       setThread(activity);
 
       if (!currentUser) {
         const user = await getCurrentUser();
         setCurrentUser(user);
       }
+
+      return true;
     } catch (requestError) {
       setError(
         requestError?.message
           || 'No fue posible actualizar la actividad.',
       );
+
+      return false;
     }
   }
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  function handleAddFiles(incomingFiles) {
+    setSelectedFiles((currentFiles) => {
+      const combinedFiles = [
+        ...currentFiles,
+        ...incomingFiles,
+      ];
 
+      return combinedFiles.filter(
+        (file, index, filesArray) =>
+          filesArray.findIndex(
+            (candidate) =>
+              candidate.name === file.name
+              && candidate.size === file.size
+              && candidate.lastModified === file.lastModified,
+          ) === index,
+      );
+    });
+  }
+
+  function handleRemoveFile(fileIndex) {
+    setSelectedFiles((currentFiles) =>
+      currentFiles.filter(
+        (_, index) => index !== fileIndex,
+      ),
+    );
+  }
+
+  function appendMessageToThread(message) {
+    setThread((currentThread) => {
+      if (!currentThread) {
+        return {
+          messages: [message],
+        };
+      }
+
+      const currentMessages =
+        currentThread.messages ?? [];
+
+      const alreadyExists = currentMessages.some(
+        (currentMessage) =>
+          currentMessage.id === message.id,
+      );
+
+      if (alreadyExists) {
+        return currentThread;
+      }
+
+      return {
+        ...currentThread,
+        messages: [
+          ...currentMessages,
+          message,
+        ],
+      };
+    });
+  }
+
+  async function handleSubmit() {
     const trimmedBody = body.trim();
 
-    if (!trimmedBody || busy) {
+    if (
+      busy
+      || (
+        !trimmedBody
+        && selectedFiles.length === 0
+      )
+    ) {
       return;
     }
+
+    const filesToUpload = [...selectedFiles];
 
     setBusy(true);
     setError('');
 
+    let createdMessage;
+
     try {
-      const message = await createActivityMessage(
+      createdMessage = await createActivityMessage(
         entityType,
         entityId,
         {
-          body: trimmedBody,
-          mentioned_user_ids: [],
+          body: trimmedBody || 'Archivo adjunto',
+          mentioned_user_ids: mentionedUsers.map(
+            (user) => user.id,
+          ),
         },
       );
-
-      if (selectedFile) {
-        await addActivityAttachment(
-          message.id,
-          selectedFile,
-        );
-      }
-
-      setBody('');
-      setSelectedFile(null);
-
-      await refresh();
     } catch (requestError) {
       setError(
         requestError?.message
-          || 'No fue posible publicar el mensaje.',
+          || 'No fue posible crear el mensaje.',
       );
-    } finally {
+
       setBusy(false);
+      return;
     }
+
+    /*
+     * El mensaje ya existe en el servidor.
+     * Lo agregamos inmediatamente al estado local.
+     */
+    appendMessageToThread(createdMessage);
+
+    /*
+     * Limpiamos el compositor después de crear correctamente
+     * el mensaje. Los archivos que fallen se restaurarán después.
+     */
+    setBody('');
+    setSelectedFiles([]);
+    setMentionedUsers([]);
+
+    if (filesToUpload.length === 0) {
+      setBusy(false);
+      return;
+    }
+
+    const failedFiles = [];
+
+    for (const file of filesToUpload) {
+      try {
+        await addActivityAttachment(
+          createdMessage.id,
+          file,
+        );
+      } catch {
+        failedFiles.push(file);
+      }
+    }
+
+    /*
+     * Restauramos exclusivamente los archivos que no pudieron
+     * subirse. Los que sí fueron enviados no vuelven al compositor.
+     */
+    if (failedFiles.length > 0) {
+      setSelectedFiles(failedFiles);
+
+      setError(
+        failedFiles.length === 1
+          ? `No fue posible subir el archivo: ${failedFiles[0].name}`
+          : `No fue posible subir ${failedFiles.length} archivos.`,
+      );
+    }
+
+    /*
+     * Recuperamos la estructura definitiva del mensaje y sus
+     * adjuntos. Si esta actualización falla, no restauramos
+     * archivos que ya fueron enviados.
+     */
+    await refresh();
+
+    setBusy(false);
   }
 
   async function handleSaveEdit(message) {
@@ -191,7 +339,10 @@ export default function ActivityPanel({
         reason: 'Corrección realizada por el autor',
         mentioned_user_ids: (message.mentions ?? [])
           .filter((mention) => !mention.revoked_at)
-          .map((mention) => mention.mentioned_user_id),
+          .map(
+            (mention) =>
+              mention.mentioned_user_id,
+          ),
       });
 
       setEditingId(null);
@@ -209,10 +360,17 @@ export default function ActivityPanel({
   }
 
   function handleWithdraw(message) {
+    if (busy) {
+      return;
+    }
+
     setWithdrawTarget(message);
   }
 
-  async function confirmWithdraw({ reason, note }) {
+  async function confirmWithdraw({
+    reason,
+    note,
+  }) {
     if (!withdrawTarget || busy) {
       return;
     }
@@ -221,10 +379,13 @@ export default function ActivityPanel({
     setError('');
 
     try {
-      await withdrawActivityMessage(withdrawTarget.id, {
-        reason,
-        note,
-      });
+      await withdrawActivityMessage(
+        withdrawTarget.id,
+        {
+          reason,
+          note,
+        },
+      );
 
       if (editingId === withdrawTarget.id) {
         setEditingId(null);
@@ -236,8 +397,8 @@ export default function ActivityPanel({
       await refresh();
     } catch (requestError) {
       setError(
-        requestError?.message ??
-          'No fue posible retirar el mensaje.',
+        requestError?.message
+          || 'No fue posible retirar el mensaje.',
       );
     } finally {
       setBusy(false);
@@ -252,6 +413,14 @@ export default function ActivityPanel({
   function handleCancelEdit() {
     setEditingId(null);
     setEditingBody('');
+  }
+
+  function handleCancelWithdraw() {
+    if (busy) {
+      return;
+    }
+
+    setWithdrawTarget(null);
   }
 
   if (!entityType || !entityId) {
@@ -286,7 +455,9 @@ export default function ActivityPanel({
               ? 'is-active'
               : ''
           }
-          onClick={() => setActiveTab('conversation')}
+          onClick={() =>
+            setActiveTab('conversation')
+          }
           type="button"
         >
           <MessageSquare
@@ -303,7 +474,9 @@ export default function ActivityPanel({
               ? 'is-active'
               : ''
           }
-          onClick={() => setActiveTab('files')}
+          onClick={() =>
+            setActiveTab('files')
+          }
           type="button"
         >
           <FileText
@@ -322,7 +495,9 @@ export default function ActivityPanel({
               ? 'is-active'
               : ''
           }
-          onClick={() => setActiveTab('history')}
+          onClick={() =>
+            setActiveTab('history')
+          }
           type="button"
         >
           <History
@@ -352,8 +527,12 @@ export default function ActivityPanel({
             editingId={editingId}
             messages={messages}
             onCancelEdit={handleCancelEdit}
-            onDownloadAttachment={downloadActivityAttachment}
-            onEditingBodyChange={setEditingBody}
+            onDownloadAttachment={
+              downloadActivityAttachment
+            }
+            onEditingBodyChange={
+              setEditingBody
+            }
             onSaveEdit={handleSaveEdit}
             onStartEdit={handleStartEdit}
             onWithdraw={handleWithdraw}
@@ -362,11 +541,16 @@ export default function ActivityPanel({
           <ActivityComposer
             body={body}
             busy={busy}
+            mentionUsers={mentionUsers}
+            mentionedUsers={mentionedUsers}
             onBodyChange={setBody}
-            onFileChange={setSelectedFile}
-            onRemoveFile={() => setSelectedFile(null)}
+            onFilesChange={handleAddFiles}
+            onMentionedUsersChange={
+              setMentionedUsers
+            }
+            onRemoveFile={handleRemoveFile}
             onSubmit={handleSubmit}
-            selectedFile={selectedFile}
+            selectedFiles={selectedFiles}
           />
         </>
       ) : null}
@@ -374,7 +558,9 @@ export default function ActivityPanel({
       {activeTab === 'files' ? (
         <ActivityFiles
           files={files}
-          onDownloadAttachment={downloadActivityAttachment}
+          onDownloadAttachment={
+            downloadActivityAttachment
+          }
         />
       ) : null}
 
@@ -383,12 +569,12 @@ export default function ActivityPanel({
       ) : null}
 
       <ActivityWithdrawModal
-        open={Boolean(withdrawTarget)}
         busy={busy}
-        reasons={WITHDRAW_REASONS}
-        onCancel={() => setWithdrawTarget(null)}
+        onCancel={handleCancelWithdraw}
         onConfirm={confirmWithdraw}
-        />
+        open={Boolean(withdrawTarget)}
+        reasons={WITHDRAW_REASONS}
+      />
     </section>
   );
 }
