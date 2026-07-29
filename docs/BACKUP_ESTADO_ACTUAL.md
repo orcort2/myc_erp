@@ -29,8 +29,7 @@
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
 - Head único del código: `7b8c9d0e1f2a`.
-- Head aplicado en la base PostgreSQL local compartida: `6ae1d4877cdb`; la
-  migración exclusiva de Fase 14 permanece pendiente de despliegue local.
+- Head aplicado en la base PostgreSQL local compartida: `7b8c9d0e1f2a`.
 - `6ae1d4877cdb` incorpora Communications sobre el merge de Notificaciones y
   Motor. Es trabajo previo/concurrente, no parte de Fase 14.
 - `7b8c9d0e1f2a` agrega a `equipment` el FK BIGINT restrictivo
@@ -71,10 +70,11 @@
   retorno se validaron en PostgreSQL temporal, después eliminado.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,222,078 bytes.
-- SHA-256 verificado: `de180a35da5553851297d5c6b145059e7bf0a9722e9fca0bbbd9d305beff6c7c`.
-- El respaldo contiene `alembic_version = a0d2f4b6c8e1`, la tabla de
-  consumidores v1, la evidencia propietaria y los triggers append-only.
+- Tamaño verificado: 74,253,414 bytes.
+- SHA-256 verificado: `8612fb33707aeba36da5005dd9a9c3d74857b73ce88d7a5a265ce9233874e431`.
+- El respaldo contiene `alembic_version = 7b8c9d0e1f2a`, las columnas de
+  conciliación de Fase 14, la tabla de consumidores v1, la evidencia
+  propietaria y los triggers append-only.
 
 ## Equipos y contexto de certificado
 
@@ -98,6 +98,15 @@
 - Compilación de bytecode Python: correcta.
 - PostgreSQL temporal: `upgrade head → downgrade 6ae1d4877cdb → upgrade head`;
   `current = 7b8c9d0e1f2a (head)`. Base temporal eliminada.
+- PostgreSQL local: se aplicó `6ae1d4877cdb → 7b8c9d0e1f2a` después de
+  detectar que el ORM de `Equipment` consultaba columnas todavía ausentes.
+  La consulta propietaria devuelve dos equipos y `list_field_sheets()` dos
+  Hojas de Campo sin excepción; `/api/health` responde `200` y
+  `/api/field-sheets` sin credenciales responde el `401` esperado, no `500`.
+- Regresión operativa de Hojas de Campo, plantillas y Fase 14: `20 passed`.
+  La prueba adicional de contexto de Equipos conserva dos fallos preexistentes
+  por el `JSONB` directo de Activity bajo SQLite, no por PostgreSQL ni por la
+  migración aplicada.
 - `alembic check` no detectó drift en las columnas, índice o FK de Fase 14.
   Continúa mostrando la deuda histórica `TD-021` y la inconsistencia ajena de
   metadata de Notificaciones.
@@ -111,9 +120,8 @@
   alcance. La suite completa no se declara correcta.
 - `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios
   finales en CSS concurrente ajeno a Fase 14.
-- El respaldo conserva su `alembic_version` anterior. Fase 14 sólo modificó una
-  base PostgreSQL temporal ya eliminada, por lo que no regeneró el dump de la
-  base local.
+- Tras migrar la base local se regeneró `backup_erp_myc_antes_prueba.sql`; su
+  `alembic_version` coincide con el head del código.
 
 ## Pendientes vigentes
 
