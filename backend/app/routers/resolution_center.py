@@ -65,13 +65,22 @@ def capabilities(
     check = lambda permission: user_has_permission(current_user, permission)
     return CenterCapabilities(
         can_read=True,
-        can_create=check("resolution_center.create"),
+        can_create=(
+            check("resolution_center.create")
+            or check("service_orders.additional_equipment.propose")
+        ),
         can_prepare=check("resolution_center.prepare"),
         can_analyze=check("resolution_center.analyze"),
         can_plan=check("resolution_center.plan"),
         can_simulate=check("resolution_center.simulate"),
-        can_authorize=check("resolution_center.authorize"),
-        can_execute=check("resolution_center.execute"),
+        can_authorize=(
+            check("resolution_center.authorize")
+            or check("service_orders.additional_equipment.authorize")
+        ),
+        can_execute=(
+            check("resolution_center.execute")
+            or check("service_orders.additional_equipment.execute")
+        ),
         can_audit=check("resolution_center.audit"),
         can_view_infrastructure=check("resolution_center.infrastructure"),
     )
@@ -197,9 +206,7 @@ def create_resolution(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_permission("resolution_center.create")
-    ),
+    current_user: User = Depends(require_permission("resolution_center.read")),
 ) -> OperationAccepted:
     if not idempotency_key or len(idempotency_key) > 120:
         raise HTTPException(
@@ -305,9 +312,7 @@ def authorize(
     payload: AuthorizationRequest,
     correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_permission("resolution_center.authorize")
-    ),
+    current_user: User = Depends(require_permission("resolution_center.read")),
 ):
     try:
         return ResolutionCenterWorkflowService(db).authorize(
@@ -331,9 +336,7 @@ def execute(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     correlation_id: str | None = Header(default=None, alias="X-Correlation-ID"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(
-        require_permission("resolution_center.execute")
-    ),
+    current_user: User = Depends(require_permission("resolution_center.read")),
 ):
     if not idempotency_key or len(idempotency_key) > 120:
         raise HTTPException(

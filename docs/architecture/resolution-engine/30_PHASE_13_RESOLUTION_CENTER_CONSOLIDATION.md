@@ -2,8 +2,9 @@
 
 ## Estado
 
-`EN REVISIÓN`. Fase 12 fue aprobada formalmente mediante
-`a7bf75f0f2de23faecb17276aa11d187c654a00c`. Fase 14 no se inició.
+`APROBADA` mediante `bb76e3bba9482517c9dfb870567d6bdfc7b9b135`.
+Fase 12 fue aprobada formalmente mediante
+`a7bf75f0f2de23faecb17276aa11d187c654a00c`. Fase 14 fue abierta.
 
 ## Contrato
 

@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import JSON, Date, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, JSON, Date, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -24,6 +24,18 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         ForeignKey("service_order_items.id"),
         index=True,
     )
+
+    resolution_id: Mapped[int | None] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        ForeignKey("resolutions.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    resolution_reconciliation_id: Mapped[str | None] = mapped_column(
+        String(160),
+        unique=True,
+        index=True,
+    )
+    resolution_request_hash: Mapped[str | None] = mapped_column(String(64))
 
     calibration_scope: Mapped[str | None] = mapped_column(
         String(60),

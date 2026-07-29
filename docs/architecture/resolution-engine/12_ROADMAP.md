@@ -3313,7 +3313,7 @@ Mediante la coordinación de múltiples instancias, la arquitectura incrementa s
 
 # Fase 12 — Centro de Resoluciones
 
-> Estado vigente: `EN REVISIÓN`. Apertura autorizada tras la aprobación formal
+> Estado vigente: `APROBADA`. Apertura autorizada tras la aprobación formal
 > de Fase 11 en `cbde51783870e4b06a4de84c27e05dc2b5ea3de1`.
 
 La Fase 12 incorpora una consola institucional independiente en `/resolutions`
@@ -3330,8 +3330,7 @@ estados y no ejecuta handlers.
 El alcance completo, permisos, flujos, límites, pruebas y migración están en
 [`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md).
 
-La fase termina `EN REVISIÓN`; Fase 13 no puede iniciarse sin aprobación
-formal.
+La fase fue aprobada formalmente en `a7bf75f0f2de23faecb17276aa11d187c654a00c`.
 
 ---
 
@@ -3339,7 +3338,7 @@ formal.
 
 # Fase 13 — Consolidación del Centro de Resoluciones e integración operativa
 
-> Estado: `EN REVISIÓN`
+> Estado: `APROBADA`
 >
 > Apertura autorizada tras la aprobación formal de Fase 12 en
 > `a7bf75f0f2de23faecb17276aa11d187c654a00c`.
@@ -3360,17 +3359,61 @@ resultado.
 
 El contrato verificable está en
 [`30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md).
-La Fase 14 no puede iniciarse antes de la aprobación formal de esta fase.
+La fase fue aprobada formalmente en
+`bb76e3bba9482517c9dfb870567d6bdfc7b9b135`.
 
 ---
 
-# 15. Fase 14 — IA y Resoluciones Asistidas
+# 15. Fase 14 — Expansión institucional de integraciones
 
-# Fase 14 — IA y Resoluciones Asistidas
+# Fase 14 — Expansión institucional de integraciones
 
-> Estado vigente: `NO INICIADA`. Carácter: posibilidad futura `OPCIONAL`. Esta
-> etapa conceptual no es un compromiso de implementación ni una dependencia
-> arquitectónica u operativa.
+> Estado vigente: `TERMINADA — EN REVISIÓN`.
+>
+> Apertura autorizada tras la aprobación formal de Fase 13 en
+> `bb76e3bba9482517c9dfb870567d6bdfc7b9b135`.
+
+La Fase 14 demuestra que el patrón institucional consolidado no está ligado a
+Certificados. Incorpora el segundo vertical completo:
+`service_order.resolve_additional_equipment@1.0`.
+
+La propuesta puede originarse en el Centro, el ETS o una captura fuera de
+línea. Antes de ejecutar, sólo existe como solicitud conciliable dentro del
+expediente del Motor. No asigna OT, no crea equipo definitivo, no reserva folio
+y no altera Facturación. El análisis comprueba estado y actividad del ETS,
+catálogo, clasificación de acreditación, partidas operativas, duplicados,
+firmas, capacidad de OT, etapa e impacto comercial.
+
+Después de simulación, autorización y revalidación, el worker canónico ejecuta
+una operación propietaria transaccional. Reutiliza una OT con cupo o crea una
+nueva con límite de diez equipos, registra el equipo, congela su contexto
+documental, reserva el certificado esperado y señala nueva firma o ajuste
+comercial cuando corresponda. El identificador de conciliación único vincula
+el efecto con la resolución y hace deterministas los reintentos.
+
+La compensación sólo puede cancelar equipo aún `registered`, reservas
+`expected` no consumidas y una OT nueva todavía vacía. Nunca elimina evidencia
+histórica, firmas confirmadas, Hojas de Campo, certificados consumidos,
+documentos fiscales ni eventos del Motor.
+
+Una única composición explícita,
+`build_installed_resolution_integrations`, alimenta el Registry, el Centro, el
+worker y la API pública. Agregar un dominio instalado no requiere imports
+dinámicos, ramas JavaScript ni hardcode del tipo Certificados.
+
+El contrato, resultados deterministas, permisos, límites, migración y pruebas
+están en
+[`31_PHASE_14_INTEGRATION_EXPANSION.md`](31_PHASE_14_INTEGRATION_EXPANSION.md).
+La Fase 15 no puede iniciarse sin aprobación formal.
+
+---
+
+# Diseño futuro opcional — IA y Resoluciones Asistidas
+
+> Estado: `NO AUTORIZADO`. No pertenece a la Fase 14 ni a otra fase abierta.
+> Cualquier incorporación futura requiere apertura expresa y debe permanecer
+> opcional, prescindible y subordinada al Motor determinista.
+>
 > El ERP y el Motor deben conservar funcionamiento completo mediante código
 > determinista, reglas, políticas, permisos, validaciones, Lifecycle,
 > simulación, ejecución, compensación y auditoría. Cualquier apertura futura
@@ -3379,7 +3422,7 @@ La Fase 14 no puede iniciarse antes de la aprobación formal de esta fase.
 
 Después de consolidar una arquitectura distribuida, segura, completamente auditable y capaz de administrar millones de resoluciones, el siguiente paso consiste en incorporar mecanismos de inteligencia artificial como asistentes especializados del Motor de Resoluciones.
 
-El propósito de esta fase no consiste en sustituir las decisiones institucionales por modelos de inteligencia artificial.
+El propósito de esta posibilidad futura no consiste en sustituir las decisiones institucionales por modelos de inteligencia artificial.
 
 Por el contrario, busca utilizar la IA como una herramienta capaz de apoyar, analizar y optimizar las resoluciones construidas por el Motor, manteniendo siempre la autoridad final bajo el gobierno institucional y las reglas definidas por la organización.
 
@@ -3397,7 +3440,7 @@ Incorporar capacidades de inteligencia artificial que permitan asistir la constr
 
 # Alcance
 
-Durante esta fase se incorporan componentes especializados de asistencia inteligente.
+Una eventual fase autorizada podría incorporar componentes especializados de asistencia inteligente.
 
 Entre ellos:
 
@@ -3607,7 +3650,7 @@ La inteligencia nunca deberá convertirse en una fuente opaca de decisiones.
 
 # Exclusiones
 
-La presente fase no contempla:
+La propuesta futura no contempla:
 
 - decisiones completamente autónomas;
 - eliminación del gobierno institucional;
@@ -3620,7 +3663,7 @@ El Motor continuará siendo el único responsable de construir y ejecutar resolu
 
 # Criterios de Finalización
 
-La Fase 14 podrá considerarse concluida cuando:
+Una fase futura de IA sólo podría considerarse concluida cuando:
 
 - la IA pueda asistir la planificación;
 - existan recomendaciones explicables;
@@ -3649,7 +3692,7 @@ Las capacidades futuras no consistirán en modificar la arquitectura fundamental
 
 # Declaración Final
 
-La Fase 14 representa la consolidación del Motor de Resoluciones como una plataforma empresarial inteligente.
+Una eventual fase de IA buscaría consolidar el Motor como plataforma empresarial asistida sin sustituir su autoridad determinista.
 
 Mediante la incorporación de inteligencia artificial gobernada, explicable y completamente subordinada a las políticas institucionales, el Motor amplía su capacidad para asistir la toma de decisiones sin renunciar a los principios fundamentales de responsabilidad, evidencia, seguridad y confianza que han guiado su arquitectura desde su concepción.
 

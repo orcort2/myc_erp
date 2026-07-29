@@ -2,7 +2,8 @@
 
 ## Estado
 
-`EN REVISIÓN`. Fase 12 está aprobada; Fase 14 no fue iniciada.
+`APROBADA` mediante `bb76e3bba9482517c9dfb870567d6bdfc7b9b135`.
+La Fase 14 fue abierta formalmente.
 
 ## Entrega
 

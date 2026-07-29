@@ -293,7 +293,11 @@ def get_certificate(db: Session, certificate_id: int) -> Certificate:
 
 
 def create_certificate(
-    db: Session, payload: CertificateCreate, *, user_id: int | None = None
+    db: Session,
+    payload: CertificateCreate,
+    *,
+    user_id: int | None = None,
+    commit: bool = True,
 ) -> Certificate:
     _validate_certificate_links(db, payload)
     _ensure_no_active_certificate(db, payload.field_sheet_id)
@@ -335,8 +339,10 @@ def create_certificate(
             "status": certificate.status,
         },
     )
-    db.commit()
-    return get_certificate(db, certificate.id)
+    if commit:
+        db.commit()
+        return get_certificate(db, certificate.id)
+    return certificate
 
 
 def update_certificate(

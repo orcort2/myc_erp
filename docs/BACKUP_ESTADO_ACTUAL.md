@@ -10,7 +10,7 @@
 >
 > Historial anterior: `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte actualizado: 2026-07-28
+> Corte actualizado: 2026-07-29
 
 # Estado operativo actual del ERP MYC
 
@@ -28,11 +28,15 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Revisión aplicada en la base local compartida: `4c7ef14e1391`, merge de
-  `b18ac098c1db` (Notificaciones) y `d2f4a6b8c0e3` (Centro). El merge y
-  Notificaciones son cambios concurrentes ajenos a Fase 13. La fotografía
-  exclusiva de esta fase conserva un único head `d2f4a6b8c0e3`; Fase 13 no
-  agrega migración ni modifica datos.
+- Head único del código: `7b8c9d0e1f2a`.
+- Head aplicado en la base PostgreSQL local compartida: `6ae1d4877cdb`; la
+  migración exclusiva de Fase 14 permanece pendiente de despliegue local.
+- `6ae1d4877cdb` incorpora Communications sobre el merge de Notificaciones y
+  Motor. Es trabajo previo/concurrente, no parte de Fase 14.
+- `7b8c9d0e1f2a` agrega a `equipment` el FK BIGINT restrictivo
+  `resolution_id`, la conciliación única y el hash de solicitud. Se validó en
+  PostgreSQL temporal mediante upgrade completo, downgrade a
+  `6ae1d4877cdb` y upgrade de retorno; la base temporal fue eliminada.
 - `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
   Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
   padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
@@ -83,40 +87,33 @@
 
 ## Validaciones ejecutadas
 
-- Suite específica Fase 13: `8 passed`; incluye Certificados completo desde
-  creación hasta resultado por worker después de cerrar la sesión.
-- Suites específicas Fases 12–13: `19 passed`.
-- Suite completa del Motor sobre el índice exclusivo de Fase 13:
-  `252 passed`, dos advertencias de dependencias; incluye Fases 1–13.
-- Suite backend completa sobre la fotografía exclusiva: `356 passed`,
-  `20 failed`, `19 subtests passed`. Diecinueve fallos son la deuda conocida
-  SQLite/`JSONB` de Actividad (`TD-023`); el vigésimo sólo refleja que el XLSX
-  SAT ignorado no entra en la fotografía Git. La prueba SAT ejecutada contra el
-  recurso local oficial conserva su validación dedicada. Ningún fallo apunta a
-  Fase 13.
-- La suite del Motor sobre el árbol compartido fue contaminada por el modelo
-  concurrente de Notificaciones (`JSONB` no portable): `236 passed`,
-  `2 failed`, `14 errors`. La fotografía exclusiva elimina esa causa ajena y
-  termina completa.
-- Frontend: pruebas Node específicas `3 passed`; build Vite de producción
-  correcto (`1675` módulos), con advertencia no bloqueante por tamaño del chunk.
+- Suite específica Fase 14: `7 passed`; incluye composición, resultados,
+  simulación, autorización granular, productor ERP idempotente, revalidación,
+  concurrencia, compensación y E2E completo por worker después de cerrar la
+  sesión.
+- Suites seleccionadas Fases 13–14: `15 passed`.
+- Suites seleccionadas Fases 11–14: `36 passed`.
+- Frontend dinámico: `3 passed`; build Vite correcto con `1693` módulos y
+  advertencia no bloqueante por tamaño del chunk.
 - Compilación de bytecode Python: correcta.
-- PostgreSQL temporal limpio: cadena completa aplicada hasta
-  `d2f4a6b8c0e3`, downgrade a `c1e3f5a7b9d2` y upgrade nuevamente correctos;
-  `current` y `heads` mostraron un único `d2f4a6b8c0e3`.
-- `alembic heads/current` del árbol compartido: único head y base local en
-  `4c7ef14e1391`, merge concurrente. La fotografía exclusiva tiene un único
-  `d2f4a6b8c0e3`; upgrade completo, downgrade a `c1e3f5a7b9d2` y upgrade de
-  retorno terminaron correctamente en PostgreSQL temporal eliminado.
-- `alembic check` continúa reportando sólo la deriva histórica ajena registrada
-  como `TD-021` en la fotografía exclusiva; el árbol compartido añade la
-  inconsistencia concurrente entre tabla/migración de Notificaciones y metadata
-  importada. No detectó una operación propia de Fase 13.
-- `git diff --check`: correcto.
-- El respaldo conserva `alembic_version = a0d2f4b6c8e1`. Fase 13 no lo
-  regeneró porque no creó migración ni modificó la base local. La actualización
-  de la base a `4c7ef14e1391` ocurrió en el trabajo concurrente de
-  Notificaciones; ese trabajo debe regenerar el respaldo al cerrar su cambio.
+- PostgreSQL temporal: `upgrade head → downgrade 6ae1d4877cdb → upgrade head`;
+  `current = 7b8c9d0e1f2a (head)`. Base temporal eliminada.
+- `alembic check` no detectó drift en las columnas, índice o FK de Fase 14.
+  Continúa mostrando la deuda histórica `TD-021` y la inconsistencia ajena de
+  metadata de Notificaciones.
+- Suite completa del Motor: `243 passed`, `2 failed`, `14 errors`. Todos los
+  fallos/errores ocurren al crear metadata SQLite por `JSONB` directo de
+  Notificaciones, ajeno a esta fase y no corregido para respetar el alcance.
+- Backend completo: `348 passed`, `21 failed`, `14 errors` y `19 subtests
+  passed`. Los dos fallos y catorce errores del Motor provienen del `JSONB`
+  directo de Notificaciones bajo SQLite; los restantes corresponden a
+  Activity/SQLite/JSONB y a fixtures SAT/XLSX ya identificados fuera del
+  alcance. La suite completa no se declara correcta.
+- `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios
+  finales en CSS concurrente ajeno a Fase 14.
+- El respaldo conserva su `alembic_version` anterior. Fase 14 sólo modificó una
+  base PostgreSQL temporal ya eliminada, por lo que no regeneró el dump de la
+  base local.
 
 ## Pendientes vigentes
 
@@ -135,10 +132,10 @@
 - Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
 - Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
 
-## Motor de Resoluciones — Fases 9 a 13
+## Motor de Resoluciones — Fases 9 a 14
 
-- Estado: Fases 0 a 12 `APROBADAS`; Fase 13 — Consolidación del Centro
-  `EN REVISIÓN`. Fase 14 no iniciada.
+- Estado: Fases 0 a 13 `APROBADAS`; Fase 14 — Expansión institucional de
+  integraciones `TERMINADA — EN REVISIÓN`. Fase 15 no iniciada.
 - El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
   incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
   y evidencia de compensación total/parcial síncrona.
@@ -258,6 +255,13 @@
   [`architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md).
 - Cierre técnico de Fase 13:
   [`closures/RESOLUTION_ENGINE_PHASE_13.md`](closures/RESOLUTION_ENGINE_PHASE_13.md).
-- Fase 13 queda `EN REVISIÓN`; Fase 14 e IA permanecen fuera de alcance.
+- Fase 13 fue aprobada mediante
+  `bb76e3bba9482517c9dfb870567d6bdfc7b9b135`.
+- Fase 14 agrega composición instalada única y el vertical
+  `service_order.resolve_additional_equipment@1.0`:
+  [`architecture/resolution-engine/31_PHASE_14_INTEGRATION_EXPANSION.md`](architecture/resolution-engine/31_PHASE_14_INTEGRATION_EXPANSION.md).
+- Cierre técnico de Fase 14:
+  [`closures/RESOLUTION_ENGINE_PHASE_14.md`](closures/RESOLUTION_ENGINE_PHASE_14.md).
+- Fase 14 queda `EN REVISIÓN`; Fase 15 no está abierta.
 - La IA es una posibilidad futura opcional y no constituye dependencia
   arquitectónica u operativa del ERP o del Motor determinista.

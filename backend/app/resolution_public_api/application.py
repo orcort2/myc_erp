@@ -55,9 +55,8 @@ from app.resolution_engine.infrastructure.security import (
     SqlAlchemySecurityEvidenceStore,
     SqlAlchemySecurityResourceVerifier,
 )
-from app.resolution_integrations.certificates import (
-    CERTIFICATE_RESOLUTION_TYPE,
-    build_certificate_resolution_integration,
+from app.resolution_integrations.installed import (
+    build_installed_resolution_integrations,
 )
 from app.resolution_public_api.errors import PublicApiError
 from app.resolution_public_api.cursor import (
@@ -87,8 +86,12 @@ class ResolutionPublicApi:
         self._cursor_codec = PublicCursorCodec(settings.secret_key)
 
     def capabilities(self) -> ApiCapabilities:
+        integrations = build_installed_resolution_integrations(SessionLocal)
         return ApiCapabilities(
-            supported_resolution_types=(str(CERTIFICATE_RESOLUTION_TYPE),),
+            supported_resolution_types=tuple(
+                str(item.definition.resolution_type)
+                for item in integrations
+            ),
             operations=("resolution.create", "resolution.get", "resolution.list"),
         )
 
@@ -113,8 +116,9 @@ class ResolutionPublicApi:
             return self._inspect(existing, context=context, include_timeline=True)
 
         registry = ResolutionRegistry()
-        integration = build_certificate_resolution_integration(SessionLocal)
-        integration.register(registry)
+        for item in build_installed_resolution_integrations(SessionLocal):
+            item.integration.register(registry)
+        registry.freeze()
         try:
             definition = registry.resolve(
                 request.resolution_type,

@@ -64,8 +64,9 @@ dominio.
 | 9. Integración con ERP MYC | `APROBADA` | Definiciones verticales, providers y Domain Gateways concretos | Fases 0 a 8 aprobadas; servicio canónico de Certificados | Replay o snapshot que debilite idempotencia/evidencia del vertical | Cumplido en `5abfe2d` + `901bd85`: Certificados integrado sin acceso ORM desde el Motor, con replay histórico, concurrencia, evidencia confirmada y compensación |
 | 10. SDK y API Pública | `APROBADA` | API/SDK versionados, comandos, consultas, errores, concurrencia, filtros y paginación | Fases 0 a 9 aprobadas; apertura `25_PHASE_10_OPENING.md` | Infraestructura de transporte que impida seguridad, idempotencia o compatibilidad | Cumplido en `dd9a84e`: contratos v1, cursor ligado a consulta, API/SDK sin filtrar internals |
 | 11. Motor Distribuido | `APROBADA` | Procesamiento distribuido, recuperación, coordinación multinodo, alta disponibilidad y observabilidad operativa | Fase 10 aprobada en `dd9a84e`; apertura `27_PHASE_11_OPENING.md` | Falta de idempotencia, conciliación o exclusividad distribuida demostrable | Cumplido en `cbde517`: cola durable, workers pull, leases/fencing, recovery seguro, retry determinista y eventos operativos |
-| 12. Centro de Resoluciones | `EN REVISIÓN` | Consola ERP, API interna, catálogo guiado, proyecciones, operación end-to-end y worker independiente de sesión | Fase 11 aprobada en `cbde517`; contrato `29_PHASE_12_RESOLUTION_CENTER.md` | Bypass de Lifecycle/Security/runtime, lógica paralela, ejecución ligada a HTTP o exposición de internals | Implementado: expediente, filtros/keyset, flujo guiado, autorización/revalidación canónicas y despacho durable |
-| 13. IA y Resoluciones Asistidas | `NO INICIADA` | Posibilidad futura opcional y no comprometida de asistencia explicable; no forma parte del alcance actual | Decisión y apertura futuras expresas; nunca es dependencia del ERP ni del Motor determinista | Evidencia insuficiente, sesgo, dependencia operativa o decisiones no explicables | Cualquier asistencia futura deberá ser prescindible y no sustituir políticas, autorización o decisión institucional |
+| 12. Centro de Resoluciones | `APROBADA` | Consola ERP, API interna, catálogo guiado, proyecciones, operación end-to-end y worker independiente de sesión | Fase 11 aprobada en `cbde517`; contrato `29_PHASE_12_RESOLUTION_CENTER.md` | Bypass de Lifecycle/Security/runtime, lógica paralela, ejecución ligada a HTTP o exposición de internals | Cumplido en `a7bf75f`: expediente, flujo guiado, autorización/revalidación canónicas y despacho durable |
+| 13. Consolidación del Centro | `APROBADA` | Registro institucional, metadata, formularios declarativos, indicadores, expediente y Certificados end-to-end | Fase 12 aprobada en `a7bf75f`; contrato `30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md` | Ramas por dominio, ejecución ligada a sesión, cálculo de indicadores en frontend | Cumplido en `bb76e3b`: patrón universal y consola oficial |
+| 14. Expansión institucional de integraciones | `EN REVISIÓN` | Composición única y vertical `service_order.resolve_additional_equipment@1.0` | Fase 13 aprobada en `bb76e3b`; contratos de ETS, Equipos, Certificados y Motor | Mutación previa a autorización, duplicados, más de diez equipos por OT, folios en simulación o lógica paralela | Implementado: segundo vertical completo, conciliación estable, worker, revalidación y compensación limitada |
 
 ## Dependencias entre componentes
 
@@ -418,7 +419,7 @@ La Fase 0 se considera lista para revisión cuando:
 - Evidencia:
   [`../../closures/RESOLUTION_ENGINE_PHASE_8.md`](../../closures/RESOLUTION_ENGINE_PHASE_8.md).
 - Fase 9: `APROBADA` bajo
-  [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). Su primer y único vertical,
+  [`23_PHASE_9_OPENING.md`](23_PHASE_9_OPENING.md). Su primer vertical,
   `certificate.resolve_incorrect_release`, está implementado y aprobado
   bajo
   [`24_PHASE_9_CERTIFICATES_INTEGRATION.md`](24_PHASE_9_CERTIFICATES_INTEGRATION.md).
@@ -435,7 +436,10 @@ La Fase 0 se considera lista para revisión cuando:
   [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md).
 - Fase 12: `APROBADA` mediante `a7bf75f`; Centro de Resoluciones vigente bajo
   [`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md).
-- Fase 13: `EN REVISIÓN`; consolidación, registro institucional, formularios
+- Fase 13: `APROBADA` mediante `bb76e3b`; consolidación, registro institucional, formularios
   dinámicos, indicadores, expediente y Certificados end-to-end bajo
   [`30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md).
-  Fase 14 permanece `NO INICIADA`.
+- Fase 14: `TERMINADA — EN REVISIÓN`; composición instalada única y segundo vertical
+  determinista bajo
+  [`31_PHASE_14_INTEGRATION_EXPANSION.md`](31_PHASE_14_INTEGRATION_EXPANSION.md).
+  La IA permanece como posibilidad futura opcional no autorizada.

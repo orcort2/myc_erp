@@ -8,14 +8,12 @@ from typing import Any, Callable, Mapping
 
 from app.resolution_engine.application.registry import ResolutionRegistry
 from app.resolution_engine.domain.definitions import ResolutionDefinition
-from app.resolution_integrations.certificates import (
-    CERTIFICATE_RESOLUTION_TYPE,
-    build_certificate_resolution_integration,
+from app.resolution_integrations.additional_equipment import (
+    ADDITIONAL_EQUIPMENT_RESOLUTION_TYPE,
 )
-from app.resolution_integrations.certificates.domain import (
-    CertificateFacts,
-    CertificateResolutionContext,
-    CertificateResolutionRequest,
+from app.resolution_integrations.certificates import CERTIFICATE_RESOLUTION_TYPE
+from app.resolution_integrations.installed import (
+    build_installed_resolution_integrations,
 )
 
 
@@ -41,6 +39,11 @@ class ResolutionPresentation:
     parameter_schema: Mapping[str, Any]
     labels: Mapping[str, str]
     warnings: tuple[str, ...] = ()
+    strategy_keys: tuple[str, ...] = ()
+    plan_summary: str = ""
+    expected_impacts: tuple[str, ...] = ()
+    preserved_entities: tuple[str, ...] = ()
+    step_description: str = ""
 
     def __post_init__(self) -> None:
         if self.risk_level not in {"low", "medium", "high", "critical"}:
@@ -136,92 +139,34 @@ def build_resolution_center_registry(
     *,
     engine_registry: ResolutionRegistry,
     certificate_integration=None,
+    additional_equipment_integration=None,
 ) -> tuple[ResolutionCenterDefinitionRegistry, tuple[object, ...]]:
     """Compone integraciones sin enseñar dominios concretos al Centro."""
 
-    integration = (
-        certificate_integration
-        or build_certificate_resolution_integration(session_factory)
+    installed = build_installed_resolution_integrations(
+        session_factory,
+        certificate_integration=certificate_integration,
+        additional_equipment_integration=additional_equipment_integration,
     )
     registry = ResolutionCenterDefinitionRegistry()
-    registry.register(
-        ResolutionCenterDefinition(
-            definition=integration.definition,
-            presentation=ResolutionPresentation(
-                name="Retiro de certificado liberado incorrectamente",
-                description=integration.definition.description,
-                domain="certificates",
-                object_type="certificate",
-                object_route="/dashboard#certificados",
-                risk_level="high",
-                capabilities=(
-                    "context",
-                    "analysis",
-                    "plan",
-                    "simulation",
-                    "authorization",
-                    "distributed_execution",
-                    "compensation",
-                ),
-                required_permissions=(
-                    "certificates.approve",
-                    "certificates.release",
-                ),
-                supports_simulation=True,
-                supports_compensation=True,
-                parameter_schema={
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["reason"],
-                    "properties": {
-                        "reason": {
-                            "type": "string",
-                            "title": "Motivo institucional",
-                            "description": (
-                                "Explique por qué la liberación debe corregirse."
-                            ),
-                            "minLength": 1,
-                            "maxLength": 2000,
-                            "ui:widget": "textarea",
-                            "ui:rows": 4,
-                        }
-                    },
-                },
-                labels={
-                    "subject": "Certificado",
-                    "subject_placeholder": "ID del certificado",
-                    "create_title": "Retiro administrativo de acceso",
-                    "analysis": "Validación de liberación y visibilidad",
-                    "simulation": "Impacto previsto sobre acceso del cliente",
-                    "result": "Resultado del retiro de acceso",
-                },
-                warnings=(
-                    "Retira visibilidad futura sin reescribir la liberación histórica.",
-                ),
+    for item in installed:
+        registry.register(
+            ResolutionCenterDefinition(
+                definition=item.definition,
+                presentation=ResolutionPresentation(**item.presentation),
+                request_factory=item.request_factory,
+                context_hydrator=item.context_hydrator,
+                request_snapshot=item.request_snapshot,
             ),
-            request_factory=lambda subject_id, parameters: (
-                CertificateResolutionRequest(
-                    certificate_id=int(subject_id),
-                    reason=str(parameters["reason"]),
-                )
-            ),
-            context_hydrator=lambda snapshot: CertificateResolutionContext(
-                facts=CertificateFacts(**snapshot["facts"]),
-                reason=str(snapshot["reason"]),
-            ),
-            request_snapshot=lambda request: {
-                "certificate_id": request.certificate_id,
-                "reason": request.reason,
-            },
-        ),
-        engine_registry=engine_registry,
-    )
+            engine_registry=engine_registry,
+        )
     registry.freeze()
     engine_registry.freeze()
-    return registry, (integration,)
+    return registry, tuple(item.integration for item in installed)
 
 
 __all__ = [
+    "ADDITIONAL_EQUIPMENT_RESOLUTION_TYPE",
     "CERTIFICATE_RESOLUTION_TYPE",
     "ResolutionCenterDefinition",
     "ResolutionCenterDefinitionRegistry",

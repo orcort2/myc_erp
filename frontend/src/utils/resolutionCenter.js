@@ -42,9 +42,10 @@ export function buildResolutionParameters(definition, values = {}) {
       .filter(({ name }) => values[name] !== undefined && values[name] !== '')
       .map((field) => {
         const raw = values[field.name];
-        if (field.type === 'integer') return [field.name, Number.parseInt(raw, 10)];
-        if (field.type === 'number') return [field.name, Number(raw)];
-        if (field.type === 'boolean') return [field.name, raw === true || raw === 'true'];
+        const types = Array.isArray(field.type) ? field.type : [field.type];
+        if (types.includes('integer')) return [field.name, Number.parseInt(raw, 10)];
+        if (types.includes('number')) return [field.name, Number(raw)];
+        if (types.includes('boolean')) return [field.name, raw === true || raw === 'true'];
         return [field.name, typeof raw === 'string' ? raw.trim() : raw];
       })
   );

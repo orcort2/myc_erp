@@ -57,6 +57,8 @@ from app.resolution_engine.domain.lifecycle import (
     ResolutionStateMachine,
 )
 from app.resolution_engine.domain.security import (
+    ActorContext,
+    PermissionGrant,
     SecurityDecisionOutcome,
     SecurityDecisionUseMode,
     SecurityRequest,
@@ -170,6 +172,13 @@ class ResolutionCenterWorkflowService:
         entry = self._center_registry.resolve(
             payload.resolution_type,
             payload.definition_version,
+        )
+        actor = self._actor_for_presentation_stage(
+            user=user,
+            actor=actor,
+            presentation=entry.presentation,
+            permission_suffix=".propose",
+            engine_permissions=("resolution.create",),
         )
         definition = entry.definition
         self._validate_parameters(payload)
@@ -320,6 +329,7 @@ class ResolutionCenterWorkflowService:
             payload={"context_hash": context.context_hash},
         )
         snapshot = analysis.snapshot()
+        presentation = self._entry(root).presentation
         row = ResolutionAnalysis(
             resolution_id=root.id,
             context_snapshot_id=root.current_context_snapshot_id,
@@ -331,7 +341,9 @@ class ResolutionCenterWorkflowService:
                 [] if analysis.is_resolvable else list(analysis.reason_codes)
             ),
             available_strategies=(
-                ["withdraw_client_access"] if analysis.is_resolvable else []
+                list(presentation.strategy_keys)
+                if analysis.is_resolvable
+                else []
             ),
             analyzed_at=self._clock.now(),
             analyzed_by=actor.identity.actor_id,
@@ -352,6 +364,7 @@ class ResolutionCenterWorkflowService:
     ) -> OperationAccepted:
         root, actor = self._root_and_actor(public_id, user, correlation_id)
         self._expect(root, "analyzed")
+        presentation = self._entry(root).presentation
         context = self._current_context(root)
         analysis = self._current_analysis(root, context)
         strategy, plan = self._orchestrator.build_plan(
@@ -418,13 +431,10 @@ class ResolutionCenterWorkflowService:
             version=1,
             schema_version="1.0",
             status="ready",
-            summary="Retirar acceso futuro al certificado",
+            summary=presentation.plan_summary,
             rationale=strategy.rationale,
-            expected_impact={"changes": ["client_visible:true→false"]},
-            preserved_entities=[
-                "certificate.status",
-                "certificate.release_history",
-            ],
+            expected_impact={"changes": list(presentation.expected_impacts)},
+            preserved_entities=list(presentation.preserved_entities),
             blockers=list(plan.blockers),
             authorization_requirements=requirements.snapshot(),
             plan_hash=plan.plan_hash,
@@ -443,10 +453,14 @@ class ResolutionCenterWorkflowService:
                     sequence=sequence,
                     operation_key=step.operation_key,
                     owner_module=step.owner_module,
-                    description="Retirar visibilidad futura del certificado",
+                    description=presentation.step_description,
                     input_payload=step.input_payload,
-                    expected_output={"client_visible": False},
-                    criticality="high",
+                    expected_output={
+                        "expected_impacts": list(
+                            presentation.expected_impacts
+                        )
+                    },
+                    criticality=presentation.risk_level,
                     retry_policy={"mode": "distributed_deterministic"},
                     is_compensable=True,
                     compensation_operation_key=step.compensation_operation_key,
@@ -554,6 +568,16 @@ class ResolutionCenterWorkflowService:
                 + ", ".join(missing_permissions),
                 status_code=403,
             )
+        actor = self._actor_for_presentation_stage(
+            user=user,
+            actor=actor,
+            presentation=self._entry(root).presentation,
+            permission_suffix=".authorize",
+            engine_permissions=(
+                "resolution.plan.authorize",
+                "resolution.revalidate",
+            ),
+        )
         request = self._session.scalar(
             select(ResolutionAuthorizationRequest)
             .where(
@@ -673,6 +697,13 @@ class ResolutionCenterWorkflowService:
     ) -> OperationAccepted:
         root, actor = self._root_and_actor(public_id, user, correlation_id)
         self._expect(root, "ready_for_execution")
+        actor = self._actor_for_presentation_stage(
+            user=user,
+            actor=actor,
+            presentation=self._entry(root).presentation,
+            permission_suffix=".execute",
+            engine_permissions=("resolution.revalidate", "resolution.execute"),
+        )
         work_key = f"center:execution:{self._organization_id}:{root.public_id}"
         existing_work = self._session.scalar(
             select(ResolutionWorkItem).where(
@@ -886,6 +917,67 @@ class ResolutionCenterWorkflowService:
             ),
             operation_id=f"center:{action}:{root.public_id}:{root.version}",
             operation_payload=payload,
+        )
+
+    @staticmethod
+    def _actor_for_presentation_stage(
+        *,
+        user: User,
+        actor: ActorContext,
+        presentation,
+        permission_suffix: str,
+        engine_permissions: tuple[str, ...],
+    ) -> ActorContext:
+        """Vincula un permiso del vertical con la operación canónica del Motor."""
+
+        required = tuple(
+            permission
+            for permission in presentation.required_permissions
+            if permission.endswith(permission_suffix)
+        )
+        if not required:
+            granted = {
+                str(grant.permission) for grant in actor.permissions
+            }
+            missing_engine = [
+                permission
+                for permission in engine_permissions
+                if permission not in granted
+            ]
+            if missing_engine:
+                raise ResolutionCenterWorkflowError(
+                    "domain_permission_missing",
+                    "Faltan permisos requeridos para la etapa: "
+                    + ", ".join(missing_engine),
+                    status_code=403,
+                )
+            return actor
+        missing = [
+            permission
+            for permission in required
+            if not user_has_permission(user, permission)
+        ]
+        if missing:
+            raise ResolutionCenterWorkflowError(
+                "domain_permission_missing",
+                "Faltan permisos requeridos por la integración: "
+                + ", ".join(missing),
+                status_code=403,
+            )
+        grants = {
+            str(grant.permission): grant
+            for grant in actor.permissions
+        }
+        for permission in (*required, *engine_permissions):
+            grants[permission] = PermissionGrant(
+                permission=ComponentKey(permission)
+            )
+        grants["resolution.lifecycle.transition"] = PermissionGrant(
+            permission=ComponentKey("resolution.lifecycle.transition")
+        )
+        return replace(
+            actor,
+            permissions=tuple(grants[key] for key in sorted(grants)),
         )
 
     def _authorize(
@@ -1130,14 +1222,23 @@ class ResolutionCenterWorkflowService:
         for name, value in payload.parameters.items():
             field = properties[name]
             field_type = field.get("type")
-            valid_type = {
+            allowed_types = (
+                tuple(field_type)
+                if isinstance(field_type, list)
+                else (field_type,)
+            )
+            type_checks = {
                 "string": isinstance(value, str),
                 "integer": isinstance(value, int)
                 and not isinstance(value, bool),
                 "number": isinstance(value, (int, float))
                 and not isinstance(value, bool),
                 "boolean": isinstance(value, bool),
-            }.get(field_type, True)
+                "null": value is None,
+            }
+            valid_type = any(
+                type_checks.get(item, True) for item in allowed_types
+            )
             if not valid_type:
                 raise ResolutionCenterWorkflowError(
                     "invalid_parameter_type",
@@ -1148,7 +1249,7 @@ class ResolutionCenterWorkflowService:
                     "invalid_parameter_choice",
                     f"El parámetro {name} no pertenece al catálogo permitido.",
                 )
-            if field_type == "string":
+            if "string" in allowed_types and isinstance(value, str):
                 text = str(value)
                 if len(text) < field.get("minLength", 0):
                     raise ResolutionCenterWorkflowError(
@@ -1159,6 +1260,17 @@ class ResolutionCenterWorkflowService:
                     raise ResolutionCenterWorkflowError(
                         "invalid_parameter",
                         f"El parámetro {name} excede la longitud permitida.",
+                    )
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if "minimum" in field and value < field["minimum"]:
+                    raise ResolutionCenterWorkflowError(
+                        "invalid_parameter",
+                        f"El parámetro {name} es menor al mínimo permitido.",
+                    )
+                if "maximum" in field and value > field["maximum"]:
+                    raise ResolutionCenterWorkflowError(
+                        "invalid_parameter",
+                        f"El parámetro {name} excede el máximo permitido.",
                     )
 
     def _request_snapshot(

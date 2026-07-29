@@ -240,7 +240,11 @@ def _ensure_expected_certificate_for_equipment(
     )
 
 
-def _snapshot_certificate_master(db: Session, equipment: Equipment, document_id: int | None) -> None:
+def snapshot_certificate_master(
+    db: Session,
+    equipment: Equipment,
+    document_id: int | None,
+) -> None:
     """Freeze the exact active certificate template used by an equipment."""
     if document_id is None:
         return
@@ -262,7 +266,7 @@ def _snapshot_certificate_master(db: Session, equipment: Equipment, document_id:
     equipment.certificate_template_expires_on_snapshot = version.expires_on
 
 
-def _freeze_certificate_operational_context(
+def freeze_certificate_operational_context(
     db: Session,
     equipment: Equipment,
 ) -> int | None:
@@ -335,8 +339,8 @@ def create_equipment(
     equipment = Equipment(**data, status="registered")
     db.add(equipment)
     db.flush()
-    expected_master_id = _freeze_certificate_operational_context(db, equipment)
-    _snapshot_certificate_master(db, equipment, expected_master_id)
+    expected_master_id = freeze_certificate_operational_context(db, equipment)
+    snapshot_certificate_master(db, equipment, expected_master_id)
 
     certificate_type = certificate_type_from_scope(equipment.calibration_scope)
     if certificate_type:

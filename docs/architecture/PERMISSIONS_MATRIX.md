@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `../archive/security/permisos.md` y matrices de las especificaciones V2/V3
 >
-> Corte auditado: 2026-07-28 contra `backend/app/core/permissions.py`
+> Corte auditado: 2026-07-29 contra `backend/app/core/permissions.py`
 
 # Matriz vigente de roles y permisos
 
@@ -17,15 +17,15 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
 | Rol | Alcance declarado | Permisos principales exactos |
 | --- | --- | --- |
 | Administrador | Acceso total | `*` |
-| Comercial | Clientes, cotizaciones, documentos, lectura de ETS/SAT y resoluciones propias | `resolution_center.read`, `clients.read`, `clients.create`, `clients.update`, `documents.read`, `quotations.read`, `quotations.create`, `quotations.update`, `quotations.act_as_advisor`, `service_orders.read`, `sat_catalogs.read`, `sat_catalogs.manage_favorites`, `sat_catalogs.manage_aliases` |
-| Técnico | Equipos, Hojas de Campo, patrones, procedimientos, motores, firmas ETS y resoluciones propias | `resolution_center.read`, `equipment.read`, `equipment.update`, `field_sheets.read`, `field_sheets.create`, `field_sheets.update`, `field_sheets.review`, `field_sheet_templates.read`, `standards.read`, `procedures.read`, `documents.read`, `document_interpretations.read`, `technical_profiles.read`, `reference_standard_certificates.read`, `pattern_selection.execute`, `uncertainty.execute`, `service_orders.read`, `service_orders.update`, `service_orders.sign` |
+| Comercial | Clientes, cotizaciones, documentos, lectura de ETS/SAT y revisión de equipo adicional | Permisos previos más `service_orders.additional_equipment.propose` y `service_orders.additional_equipment.commercial_review` |
+| Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | Permisos previos más `service_orders.additional_equipment.propose` y `service_orders.additional_equipment.execute` |
 | Captura | Preparación, generación documental y resoluciones propias | `resolution_center.read`, `clients.read`, `quotations.read`, `service_orders.read`, `field_sheets.read`, `field_sheets.create`, `field_sheets.update`, `field_sheet_templates.read`, `certificates.read`, `certificates.create`, `certificates.generate`, `certificates.capture`, `certificates.upload_pdf`, `standards.read`, `procedures.read`, `documents.read`, `document_interpretations.read`, `technical_profiles.read`, `reference_standard_certificates.read`, `pattern_selection.execute`, `uncertainty.execute` |
-| Calidad | Revisión, aprobación, metrología, control documental y resoluciones propias | `resolution_center.read`, `audit_logs.read`, `certificates.read`, `certificates.quality`, `certificates.approve`, `certificates.match_override`, `field_sheets.read`, `field_sheets.update`, `field_sheets.review`, `service_orders.read`, `service_orders.signatures.reopen`, `standards.read`, `procedures.read`, `metrology.execute`, CRUD/aprobación de documentos, interpretaciones, perfiles, certificados de patrón, modelos de incertidumbre y plantillas de Hojas de Campo |
+| Calidad | Revisión, aprobación, metrología, control documental y autorización de equipo adicional | Permisos previos más `service_orders.additional_equipment.authorize` |
 | Finanzas | Cobranza, facturación, liberación y resoluciones propias | `resolution_center.read`, `clients.read`, `certificates.read`, `quotations.read`, `payments.read`, `payments.manage`, `invoices.read`, `invoices.manage`, `integrations.facturama.status`, `certificates.release`, `release.manage`, `sat_catalogs.read`, `sat_catalogs.manage_favorites`, `sat_catalogs.manage_aliases` |
 | Cliente | Portal limitado previsto | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own` |
 | Desarrollador | Soporte técnico amplio sin comodín global | `resolution_center.*`, auditoría, usuarios, settings, patrones, procedimientos, metrología, control documental, certificados, liberación, incertidumbre, plantillas de Hojas de Campo, firmas ETS y administración SAT según el conjunto exacto de `ROLE_PERMISSIONS` |
-| Operador | Operación de resoluciones propias sin autorización | `resolution_center.read`, `resolution_center.create`, `resolution_center.prepare`, `resolution_center.analyze`, `resolution_center.plan`, `resolution_center.simulate`, `resolution_center.execute` |
-| Auditor | Expediente institucional read-only | `resolution_center.read`, `resolution_center.read_all`, `resolution_center.audit`, `resolution_center.infrastructure`, `audit_logs.read` |
+| Operador | Operación de resoluciones propias sin autorización | Permisos del Centro más `service_orders.additional_equipment.propose` y `service_orders.additional_equipment.execute` |
+| Auditor | Expediente institucional read-only | Permisos de auditoría más `service_orders.additional_equipment.audit` |
 
 ## Familias declaradas en `PERMISSIONS`
 
@@ -43,6 +43,14 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
 - SAT: lectura, administración, favoritos y alias.
 - Centro de Resoluciones: `read`, `read_all`, `create`, `prepare`, `analyze`,
   `plan`, `simulate`, `authorize`, `execute`, `audit` e `infrastructure`.
+- Equipo adicional: `propose`, `authorize`, `execute`, `commercial_review` y
+  `audit`, bajo `service_orders.additional_equipment`.
+
+En las etapas crear, autorizar y ejecutar, el router exige sesión con lectura
+del Centro y el workflow aplica después el permiso específico de la definición.
+Para Equipo adicional esto permite segregación real entre Comercial/Operador,
+Calidad y Técnico; para definiciones sin permiso vertical equivalente se
+conserva el permiso canónico `resolution_center.*` de la etapa.
 
 ## Inconsistencias vigentes
 

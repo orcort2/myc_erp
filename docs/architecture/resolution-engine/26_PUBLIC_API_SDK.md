@@ -26,8 +26,10 @@ Expone únicamente:
 El portal técnico está en `/api/developers/resolution-engine`. No ejecuta
 operaciones ni incorpora un flujo alterno.
 
-La versión 1.0 inicia y consulta expedientes del único vertical integrado,
-`certificate.resolve_incorrect_release`. Simulación, autorización de planes,
+La versión 1.0 inicia y consulta expedientes de las definiciones instaladas.
+Fase 14 publica `certificate.resolve_incorrect_release@1.0` y
+`service_order.resolve_additional_equipment@1.0` desde la misma composición
+explícita; agregar un tipo no cambia el contrato HTTP. Simulación, autorización de planes,
 ejecución y compensación conservan sus servicios internos aprobados, pero no se
 publican en esta primera versión: exponerlos sin un contrato público completo
 sería reinterpretar capacidades y seguridad más allá de esta entrega.
@@ -181,8 +183,9 @@ with ResolutionEngineClient(
 - Lifecycle continúa como única autoridad de estado.
 - La API traduce; no decide ni contiene ORM.
 - El SDK transporta; no replica reglas.
-- Certificados permanece como único vertical.
+- Las capacidades publican todos los verticales instalados sin hardcode de
+  Certificados; cada alta se valida contra el Registry versionado.
 - Fase 10 no incorporó workers, colas, distribución, múltiples instancias,
   microservicios, autenticación federada, IA o proveedores de IA.
-- Fase 11 fue aprobada para apertura e implementada posteriormente sin cambiar
-  este contrato público; su estado es `EN REVISIÓN`.
+- Fase 11 fue aprobada e implementada posteriormente sin cambiar este contrato
+  público.

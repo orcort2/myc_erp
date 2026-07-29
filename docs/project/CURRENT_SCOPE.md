@@ -29,7 +29,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
 - Backend parcial del portal de cliente.
-- Motor de Resoluciones con Fases 0 a 12 aprobadas y Fase 13 `EN REVISIÓN`.
+- Motor de Resoluciones con Fases 0 a 13 aprobadas y Fase 14 `EN REVISIÓN`.
   Además de la fundación, persistencia y
   seguridad aprobadas, existen 29 modelos persistentes generales, relaciones normalizadas,
   constraints, índices, protección de inmutabilidad, outbox estructural,
@@ -82,7 +82,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   Fase 13 convierte esa superficie en consola oficial: registro institucional
   versionado, formularios declarativos, indicadores backend, expediente
   completo y ejecución real de Certificados después de terminar la sesión.
-  Fase 14 e IA no están implementadas.
+  Fase 14 incorpora una composición instalada única y el segundo vertical
+  `service_order.resolve_additional_equipment@1.0`: propuesta offline/ERP,
+  análisis, plan, simulación sin efectos, autorización, revalidación, cola,
+  worker, alta idempotente y compensación limitada. La IA no está autorizada.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

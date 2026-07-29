@@ -377,16 +377,16 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "frontend/src/utils/resolutionCenter.js": (
             "Reglas de presentación del Centro",
-            "Deriva campos/parámetros desde esquemas versionados, polling visible y habilitación de etapas desde contratos backend.",
+            "Deriva campos/parámetros desde esquemas versionados, convierte tipos simples o nullable, controla polling visible y habilita etapas desde contratos backend.",
             "JavaScript puro",
             "ResolutionCenterPage y pruebas",
             "Alto",
         ),
         "frontend/src/utils/resolutionCenter.test.js": (
             "Pruebas frontend del Centro",
-            "Verifica formularios declarativos, descarte de parámetros arbitrarios, suspensión de polling y permisos por etapa.",
+            "Verifica formularios declarativos y campos nullable, descarte de parámetros arbitrarios, suspensión de polling y permisos por etapa.",
             "Node test y utilidades del Centro",
-            "Gate frontend de Fase 12",
+            "Gates frontend de Fases 12 y 14",
             "Alto",
         ),
         "docs/architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md": (

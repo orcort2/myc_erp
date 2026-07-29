@@ -119,7 +119,22 @@ registro institucional versionado → formulario derivado del esquema
 Certificados recorre el ciclo completo incluso después de cerrar la sesión.
 La decisión de ejecución incluye el estado exacto esperado por Seguridad; el
 worker no omite ni reevalúa de forma paralela Lifecycle o políticas. Fase 13
-queda `EN REVISIÓN`.
+fue aprobada en `bb76e3b`.
+
+Fase 14 agrega un segundo vertical sin cambiar el flujo:
+
+```text
+ETS/móvil/Centro → propuesta con reconciliation_id
+→ contexto read-only del ETS, catálogo, OT, firmas y facturación
+→ análisis y estrategia deterministas → simulación sin folio ni equipo
+→ autorización → revalidación de hechos críticos → cola durable
+→ worker/Executor → lock de ETS → reutilizar OT o crear OT límite 10
+→ equipo + reserva expected + auditoría → resultado reconstruible
+```
+
+Un replay exacto recupera el equipo por conciliación. La compensación sólo
+cancela equipo `registered`, reserva `expected` y OT propia vacía. La fase
+queda `EN REVISIÓN`; Fase 15 no está abierta.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
 read-only; análisis, estrategia, plan y simulación son deterministas; el

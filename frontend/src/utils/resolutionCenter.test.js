@@ -31,7 +31,11 @@ test('versioned metadata builds fields and accepts only declared parameters', ()
       required: ['reason'],
       properties: {
         reason: { type: 'string', title: 'Motivo' },
-        severity: { type: 'integer', title: 'Severidad' }
+        severity: { type: 'integer', title: 'Severidad' },
+        preferred_work_order_id: {
+          type: ['integer', 'null'],
+          title: 'OT preferida'
+        }
       }
     }
   };
@@ -43,16 +47,22 @@ test('versioned metadata builds fields and accepts only declared parameters', ()
     })),
     [
       { name: 'reason', required: true },
-      { name: 'severity', required: false }
+      { name: 'severity', required: false },
+      { name: 'preferred_work_order_id', required: false }
     ]
   );
   assert.deepEqual(
     buildResolutionParameters(definition, {
       reason: '  corrección requerida  ',
       severity: '3',
+      preferred_work_order_id: '17',
       arbitrary_command: 'delete'
     }),
-    { reason: 'corrección requerida', severity: 3 }
+    {
+      reason: 'corrección requerida',
+      severity: 3,
+      preferred_work_order_id: 17
+    }
   );
 });
 
