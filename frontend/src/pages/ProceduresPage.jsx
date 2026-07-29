@@ -2,6 +2,7 @@ import { FlaskConical, Plus } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import { emptyCalibrationProcedureForm } from '../constants/forms.js';
 import { calibrationProcedureStatusLabels } from '../constants/statuses.js';
 import {
@@ -412,6 +413,18 @@ function ProceduresPage() {
                 </div>
               </div>
             </form>
+            {selectedProcedure?.id ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Comunicación interna</p>
+                  <h3>Actividad del procedimiento</h3>
+                </div>
+                <ActivityPanel
+                  entityId={selectedProcedure.id}
+                  entityType="calibration_procedure"
+                />
+              </section>
+            ) : null}
           </section>
         </div>
       ) : null}

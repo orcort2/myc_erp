@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-07-28
+> Corte verificado: 2026-07-29
 
 # Registro de decisiones vigentes
 
@@ -81,3 +81,15 @@
 - Retirar modelos metrológicos ocultos o declararlos obsoletos sólo porque hoy no tienen datos.
 
 Estas cuestiones deben resolverse modificando [`CURRENT_SCOPE.md`](CURRENT_SCOPE.md); ningún documento histórico puede resolverlas por inferencia.
+## ADR-061 — Actividad es infraestructura transversal independiente
+
+**Decisión:** toda conversación interna nueva se implementa con un hilo único
+por entidad y el panel reutilizable de Activity. El dominio propietario conserva
+sus datos y publica sólo eventos formales idempotentes. Notifications distribuye
+avisos; Communications continúa como mensajería independiente. Resoluciones se
+adaptan por `public_id` desde Activity sin modificar Motor/API/SDK.
+
+**Motivo:** evitar notas paralelas, duplicación de reglas, acoplamiento al Motor
+y pérdida de trazabilidad.
+
+**Fecha:** 2026-07-29.

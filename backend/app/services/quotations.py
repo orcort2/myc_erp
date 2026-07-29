@@ -16,6 +16,7 @@ from app.schemas.quotation import (
     QuotationUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
 
 TERMINAL_STATUSES = {"accepted", "rejected", "expired", "cancelled"}
@@ -567,6 +568,16 @@ def change_quotation_status(
         previous_values={"status": previous_status},
         new_values={"status": new_status},
         comment=payload.comment if payload else None,
+    )
+    publish_event(
+        db,
+        entity_type="quotation",
+        entity_id=quotation.id,
+        event_code="quotation.status_changed",
+        idempotency_key=f"quotation:{quotation.id}:status:{new_status}",
+        body=f"Estado actualizado de {previous_status} a {new_status}.",
+        actor_id=user_id,
+        metadata={"previous_status": previous_status, "status": new_status},
     )
     db.commit()
     return get_quotation(db, quotation.id)

@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import SelectionActionBar from '../components/SelectionActionBar.jsx';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import SatCatalogField from '../components/invoice-workbench/SatCatalogField.jsx';
 import { emptyClientForm } from '../constants/forms.js';
 import { clientModalTabs, clientTemplateColumns } from '../constants/templates.js';
@@ -1403,6 +1404,15 @@ function ClientsPage() {
                       </div>
                     </>
                   )}
+                </section>
+              ) : null}
+
+              {clientModalTab === 'activity' ? (
+                <section className="form-field--wide">
+                  <ActivityPanel
+                    entityId={editingClientId}
+                    entityType="client"
+                  />
                 </section>
               ) : null}
 

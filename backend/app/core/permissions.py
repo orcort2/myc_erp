@@ -11,17 +11,36 @@ INITIAL_ROLES = {
     "Auditor": "Consulta institucional de expedientes y evidencias.",
 }
 
+ACTIVITY_CONTRIBUTOR_PERMISSIONS = {
+    "activity.read",
+    "activity.create",
+    "activity.edit_own",
+    "activity.delete_own",
+    "activity.attach_files",
+    "activity.mention",
+    "activity.request_attention",
+    # Compatibilidad temporal con consumidores anteriores.
+    "activity.write",
+}
+
+ACTIVITY_RESOLVER_PERMISSIONS = {
+    *ACTIVITY_CONTRIBUTOR_PERMISSIONS,
+    "activity.resolve_attention",
+}
+
+ACTIVITY_GOVERNANCE_PERMISSIONS = {
+    *ACTIVITY_RESOLVER_PERMISSIONS,
+    "activity.moderate",
+    "activity.view_audit",
+    "activity.audit",
+}
+
 
 ROLE_PERMISSIONS = {
-    "ACTIVITY_READ": "activity.read",
-    "ACTIVITY_WRITE": "activity.write",
-    "ACTIVITY_AUDIT": "activity.audit",
-    "ACTIVITY_MODERATE": "activity.moderate",
     "Administrador": {"*"},
     "Comercial": {
         "resolution_center.read",
-        "activity.read",
-        "activity.write",
+        *ACTIVITY_CONTRIBUTOR_PERMISSIONS,
         "clients.read",
         "clients.create",
         "clients.update",
@@ -39,8 +58,7 @@ ROLE_PERMISSIONS = {
     },
     "Tecnico": {
         "resolution_center.read",
-        "activity.read",
-        "activity.write",
+        *ACTIVITY_CONTRIBUTOR_PERMISSIONS,
         "equipment.read",
         "equipment.update",
         "field_sheets.read",
@@ -64,8 +82,7 @@ ROLE_PERMISSIONS = {
     },
     "Captura": {
         "resolution_center.read",
-        "activity.read",
-        "activity.write",
+        *ACTIVITY_CONTRIBUTOR_PERMISSIONS,
         "clients.read",
         "quotations.read",
         "service_orders.read",
@@ -89,9 +106,7 @@ ROLE_PERMISSIONS = {
     },
     "Calidad": {
         "resolution_center.read",
-        "activity.read",
-        "activity.write",
-        "activity.audit",
+        *ACTIVITY_GOVERNANCE_PERMISSIONS,
         "audit_logs.read",
         "certificates.read",
         "certificates.quality",
@@ -140,8 +155,7 @@ ROLE_PERMISSIONS = {
     },
     "Finanzas": {
         "resolution_center.read",
-        "activity.read",
-        "activity.write",
+        *ACTIVITY_RESOLVER_PERMISSIONS,
         "clients.read",
         "certificates.read",
         "quotations.read",
@@ -164,9 +178,7 @@ ROLE_PERMISSIONS = {
     },
     "Desarrollador": {
         "resolution_center.*",
-        "activity.read",
-        "activity.write",
-        "activity.audit",
+        *ACTIVITY_GOVERNANCE_PERMISSIONS,
         "audit_logs.read",
         "users.read",
         "users.manage",
@@ -236,6 +248,7 @@ ROLE_PERMISSIONS = {
         "sat_catalogs.manage",
     },
     "Operador": {
+        *ACTIVITY_CONTRIBUTOR_PERMISSIONS,
         "resolution_center.read",
         "resolution_center.create",
         "resolution_center.prepare",
@@ -247,6 +260,8 @@ ROLE_PERMISSIONS = {
         "service_orders.additional_equipment.execute",
     },
     "Auditor": {
+        "activity.read",
+        "activity.view_audit",
         "resolution_center.read",
         "resolution_center.read_all",
         "resolution_center.audit",
@@ -258,6 +273,16 @@ ROLE_PERMISSIONS = {
 
 
 PERMISSIONS = {
+    "ACTIVITY_READ": "activity.read",
+    "ACTIVITY_CREATE": "activity.create",
+    "ACTIVITY_EDIT_OWN": "activity.edit_own",
+    "ACTIVITY_DELETE_OWN": "activity.delete_own",
+    "ACTIVITY_MODERATE": "activity.moderate",
+    "ACTIVITY_ATTACH_FILES": "activity.attach_files",
+    "ACTIVITY_MENTION": "activity.mention",
+    "ACTIVITY_REQUEST_ATTENTION": "activity.request_attention",
+    "ACTIVITY_RESOLVE_ATTENTION": "activity.resolve_attention",
+    "ACTIVITY_VIEW_AUDIT": "activity.view_audit",
     "USERS_READ": "users.read",
     "USERS_MANAGE": "users.manage",
     "CLIENTS_READ": "clients.read",

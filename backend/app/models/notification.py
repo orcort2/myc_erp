@@ -5,6 +5,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -14,6 +15,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 from app.models.base import TimestampMixin
+
+JSON_DOCUMENT = JSON().with_variant(JSONB, "postgresql")
 
 
 class Notification(TimestampMixin, Base):
@@ -108,7 +111,7 @@ class Notification(TimestampMixin, Base):
     )
 
     metadata_json: Mapped[dict] = mapped_column(
-        JSONB,
+        JSON_DOCUMENT,
         nullable=False,
         default=dict,
         server_default="{}",

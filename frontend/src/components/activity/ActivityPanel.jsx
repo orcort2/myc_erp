@@ -7,6 +7,7 @@ import {
 
 import ActivityComposer from './ActivityComposer.jsx';
 import ActivityConversation from './ActivityConversation.jsx';
+import ActivityAttentionModal from './ActivityAttentionModal.jsx';
 import ActivityFiles from './ActivityFiles.jsx';
 import ActivityHistory from './ActivityHistory.jsx';
 import ActivityWithdrawModal from './ActivityWithdrawModal.jsx';
@@ -17,7 +18,10 @@ import {
   downloadActivityAttachment,
   getActivity,
   getCurrentUser,
-  listUsers,
+  listActivityMentionableUsers,
+  markActivityRead,
+  requestActivityAttention,
+  resolveActivityAttention,
   updateActivityMessage,
   withdrawActivityMessage,
 } from '../../services/api.js';
@@ -49,8 +53,10 @@ export default function ActivityPanel({
   const [editingBody, setEditingBody] = useState('');
 
   const [withdrawTarget, setWithdrawTarget] = useState(null);
+  const [attentionTarget, setAttentionTarget] = useState(null);
 
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const messages = thread?.messages ?? [];
@@ -80,6 +86,7 @@ export default function ActivityPanel({
 
     async function loadActivity() {
       setError('');
+      setLoading(true);
 
       try {
         const [activity, user] = await Promise.all([
@@ -91,19 +98,17 @@ export default function ActivityPanel({
 
         let users = [];
 
-        try {
-          const usersResponse = await listUsers();
-
-          users = Array.isArray(usersResponse)
-            ? usersResponse
-            : usersResponse?.items ?? [];
-        } catch {
+        if (activity.capabilities?.can_mention) {
+          try {
+            users = await listActivityMentionableUsers();
+          } catch {
           /*
            * La conversación debe seguir disponible aunque el
            * catálogo de usuarios no pueda cargarse. En ese caso
            * solamente se desactiva temporalmente el autocompletado.
            */
-          users = [];
+            users = [];
+          }
         }
 
         if (cancelled) {
@@ -119,6 +124,16 @@ export default function ActivityPanel({
               && candidate?.id !== user?.id,
           ),
         );
+        if (activity.unread_count > 0) {
+          try {
+            await markActivityRead(entityType, entityId);
+            setThread((current) => current
+              ? { ...current, unread_count: 0 }
+              : current);
+          } catch {
+            // La lectura visible permanece disponible aunque falle el acuse.
+          }
+        }
       } catch (requestError) {
         if (cancelled) {
           return;
@@ -128,6 +143,10 @@ export default function ActivityPanel({
           requestError?.message
             || 'No fue posible cargar la actividad.',
         );
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
@@ -321,6 +340,45 @@ export default function ActivityPanel({
     await refresh();
 
     setBusy(false);
+  }
+
+  async function confirmAttention(payload) {
+    if (!attentionTarget || busy) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await requestActivityAttention(attentionTarget.id, payload);
+      setAttentionTarget(null);
+      await refresh();
+    } catch (requestError) {
+      setError(
+        requestError?.message
+          || 'No fue posible solicitar la atención.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResolveAttention(attention) {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await resolveActivityAttention(attention.id);
+      await refresh();
+    } catch (requestError) {
+      setError(
+        requestError?.message
+          || 'No fue posible resolver la atención.',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleSaveEdit(message) {
@@ -518,10 +576,17 @@ export default function ActivityPanel({
         </div>
       ) : null}
 
-      {activeTab === 'conversation' ? (
+      {loading ? (
+        <div className="activity-loading" role="status">
+          Cargando actividad…
+        </div>
+      ) : null}
+
+      {!loading && activeTab === 'conversation' ? (
         <>
           <ActivityConversation
             busy={busy}
+            capabilities={thread?.capabilities}
             currentUser={currentUser}
             editingBody={editingBody}
             editingId={editingId}
@@ -534,24 +599,36 @@ export default function ActivityPanel({
               setEditingBody
             }
             onSaveEdit={handleSaveEdit}
+            onRequestAttention={setAttentionTarget}
+            onResolveAttention={handleResolveAttention}
             onStartEdit={handleStartEdit}
             onWithdraw={handleWithdraw}
           />
 
-          <ActivityComposer
-            body={body}
-            busy={busy}
-            mentionUsers={mentionUsers}
-            mentionedUsers={mentionedUsers}
-            onBodyChange={setBody}
-            onFilesChange={handleAddFiles}
-            onMentionedUsersChange={
-              setMentionedUsers
-            }
-            onRemoveFile={handleRemoveFile}
-            onSubmit={handleSubmit}
-            selectedFiles={selectedFiles}
-          />
+          {thread?.capabilities?.can_create ? (
+            <ActivityComposer
+              body={body}
+              busy={busy}
+              mentionUsers={
+                thread?.capabilities?.can_mention
+                  ? mentionUsers
+                  : []
+              }
+              mentionedUsers={mentionedUsers}
+              onBodyChange={setBody}
+              onFilesChange={
+                thread?.capabilities?.can_attach_files
+                  ? handleAddFiles
+                  : () => {}
+              }
+              onMentionedUsersChange={
+                setMentionedUsers
+              }
+              onRemoveFile={handleRemoveFile}
+              onSubmit={handleSubmit}
+              selectedFiles={selectedFiles}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -574,6 +651,14 @@ export default function ActivityPanel({
         onConfirm={confirmWithdraw}
         open={Boolean(withdrawTarget)}
         reasons={WITHDRAW_REASONS}
+      />
+
+      <ActivityAttentionModal
+        busy={busy}
+        message={attentionTarget}
+        onCancel={() => setAttentionTarget(null)}
+        onConfirm={confirmAttention}
+        users={mentionUsers}
       />
     </section>
   );

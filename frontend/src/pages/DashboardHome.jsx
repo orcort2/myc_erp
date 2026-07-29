@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import ActivityInboxWidget from '../components/activity/ActivityInboxWidget.jsx';
 import { defaultCounts, modules } from '../constants/navigation.js';
 import { getDashboardCounts } from '../services/api.js';
 import { navigate } from '../utils/routing.js';
@@ -95,6 +96,8 @@ function DashboardHome({ user }) {
       </section>
 
       {error ? <div className="form-error dashboard-error">{error}</div> : null}
+
+      <ActivityInboxWidget />
 
       <section className="dashboard-control-panel" aria-busy={isLoading}>
         <div className="dashboard-control-panel__header">

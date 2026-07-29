@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import mycLogo from '../assets/myc-logo.png';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import {
   internalUnitOptions,
   taxObjectOptions,
@@ -2038,6 +2039,7 @@ function QuotationsPage() {
               {[
                 ['info', 'Informacion'],
                 ['items', 'Partidas'],
+                ['activity', 'Actividad'],
                 ['history', 'Historial']
               ].map(([key, label]) => (
                 <button
@@ -2191,6 +2193,19 @@ function QuotationsPage() {
                 </section>
                 ) : null}
               </>
+            ) : null}
+
+            {quotationDetailTab === 'activity' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Comunicación interna</p>
+                  <h3>Actividad de la cotización</h3>
+                </div>
+                <ActivityPanel
+                  entityId={selectedQuotation.id}
+                  entityType="quotation"
+                />
+              </section>
             ) : null}
 
             {quotationDetailTab === 'items' ? (

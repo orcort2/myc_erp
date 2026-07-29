@@ -5,6 +5,7 @@ import mycLogo from '../assets/myc-logo.png';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import CaptureProcessingSummary from '../components/CaptureProcessingSummary.jsx';
 import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import {
   emptyServiceOrderForm,
   emptyEquipmentForm,
@@ -2678,7 +2679,7 @@ function ServiceOrdersPage({ user = null }) {
                 ['certificates', 'Certificados'],
                 ['billing', 'Facturacion'],
                 ['documents', 'Documentos'],
-                ['notes', 'Notas'],
+                ['notes', 'Actividad'],
                 ['history', 'Historial']
               ].map(([key, label]) => (
                 <button
@@ -3332,38 +3333,27 @@ function ServiceOrdersPage({ user = null }) {
             ) : null}
 
             {activeTab === 'notes' ? (
-              <section className="quotation-section">
-                <div className="quotation-section__title">
-                  <p>Notas</p>
-                  <h3>Observaciones operativas</h3>
-                </div>
-                <label className="quotation-notes-field">
-                  <textarea
-                    onChange={(event) => updateOrderForm('notes', event.target.value)}
-                    placeholder="Sin notas registradas."
-                    rows={6}
-                    value={orderForm.notes}
+              <>
+                {orderForm.notes ? (
+                  <section className="quotation-section">
+                    <div className="quotation-section__title">
+                      <p>Dato histórico conservado</p>
+                      <h3>Notas previas del ETS</h3>
+                    </div>
+                    <p>{orderForm.notes}</p>
+                  </section>
+                ) : null}
+                <section className="quotation-section">
+                  <div className="quotation-section__title">
+                    <p>Comunicación interna</p>
+                    <h3>Actividad del expediente</h3>
+                  </div>
+                  <ActivityPanel
+                    entityId={selectedOrder.id}
+                    entityType="service_order"
                   />
-                </label>
-                <div className="quotation-detail-save">
-                  <span>
-                    Las observaciones se guardan automáticamente después de dejar de escribir.
-                  </span>
-                  <button
-                    className="table-button"
-                    disabled={
-                      isSaving ||
-                      autosaveStatus === 'saving'
-                    }
-                    onClick={handleOrderSubmit}
-                    type="button"
-                  >
-                    {isSaving || autosaveStatus === 'saving'
-                      ? 'Guardando...'
-                      : <Save size={17} aria-label="Guardar" />}
-                  </button>
-                </div>
-              </section>
+                </section>
+              </>
             ) : null}
 
             {activeTab === 'history' ? (
@@ -3618,6 +3608,16 @@ function ServiceOrdersPage({ user = null }) {
                         <p>{selectedEquipmentDetail.notes || 'Sin notas particulares.'}</p>
                       </article>
                     </div>
+                  </section>
+                  <section className="quotation-section">
+                    <div className="quotation-section__title">
+                      <p>Comunicación interna</p>
+                      <h3>Actividad del equipo</h3>
+                    </div>
+                    <ActivityPanel
+                      entityId={selectedEquipmentDetail.id}
+                      entityType="equipment"
+                    />
                   </section>
                   <div className="quotation-detail-save ets-equipment-detail-actions">
                     <span>Las acciones del equipo se concentran aqui para mantener limpio el listado operativo.</span>
@@ -3979,6 +3979,7 @@ function ServiceOrdersPage({ user = null }) {
               {[
                 ['info', 'Informacion'],
                 ['technical', 'Datos tecnicos'],
+                ['activity', 'Actividad'],
                 ['history', 'Historial']
               ].map(([key, label]) => (
                 <button
@@ -4219,6 +4220,19 @@ function ServiceOrdersPage({ user = null }) {
                     </button>
                   </div>
                 ) : null}
+              </section>
+            ) : null}
+
+            {fieldSheetTab === 'activity' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Comunicación interna</p>
+                  <h3>Actividad de la Hoja de Campo</h3>
+                </div>
+                <ActivityPanel
+                  entityId={selectedFieldSheet.id}
+                  entityType="field_sheet"
+                />
               </section>
             ) : null}
 

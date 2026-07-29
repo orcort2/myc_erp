@@ -17,15 +17,15 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
 | Rol | Alcance declarado | Permisos principales exactos |
 | --- | --- | --- |
 | Administrador | Acceso total | `*` |
-| Comercial | Clientes, cotizaciones, documentos, lectura de ETS/SAT y revisión de equipo adicional | Permisos previos más `service_orders.additional_equipment.propose` y `service_orders.additional_equipment.commercial_review` |
-| Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | Permisos previos más `service_orders.additional_equipment.propose` y `service_orders.additional_equipment.execute` |
-| Captura | Preparación, generación documental y resoluciones propias | `resolution_center.read`, `clients.read`, `quotations.read`, `service_orders.read`, `field_sheets.read`, `field_sheets.create`, `field_sheets.update`, `field_sheet_templates.read`, `certificates.read`, `certificates.create`, `certificates.generate`, `certificates.capture`, `certificates.upload_pdf`, `standards.read`, `procedures.read`, `documents.read`, `document_interpretations.read`, `technical_profiles.read`, `reference_standard_certificates.read`, `pattern_selection.execute`, `uncertainty.execute` |
-| Calidad | Revisión, aprobación, metrología, control documental y autorización de equipo adicional | Permisos previos más `service_orders.additional_equipment.authorize` |
-| Finanzas | Cobranza, facturación, liberación y resoluciones propias | `resolution_center.read`, `clients.read`, `certificates.read`, `quotations.read`, `payments.read`, `payments.manage`, `invoices.read`, `invoices.manage`, `integrations.facturama.status`, `certificates.release`, `release.manage`, `sat_catalogs.read`, `sat_catalogs.manage_favorites`, `sat_catalogs.manage_aliases` |
+| Comercial | Clientes, cotizaciones, documentos, lectura de ETS/SAT y revisión de equipo adicional | Permisos previos más contribución completa a Actividad y `service_orders.additional_equipment.propose/commercial_review` |
+| Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | Permisos previos más contribución completa a Actividad y `service_orders.additional_equipment.propose/execute` |
+| Captura | Preparación, generación documental y resoluciones propias | Permisos operativos previos más contribución completa a Actividad |
+| Calidad | Revisión, aprobación, metrología, control documental y autorización de equipo adicional | Gobierno completo de Actividad y `service_orders.additional_equipment.authorize` |
+| Finanzas | Cobranza, facturación, liberación y resoluciones propias | Contribución/resolución de atención en Actividad más permisos financieros vigentes |
 | Cliente | Portal limitado previsto | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own` |
-| Desarrollador | Soporte técnico amplio sin comodín global | `resolution_center.*`, auditoría, usuarios, settings, patrones, procedimientos, metrología, control documental, certificados, liberación, incertidumbre, plantillas de Hojas de Campo, firmas ETS y administración SAT según el conjunto exacto de `ROLE_PERMISSIONS` |
-| Operador | Operación de resoluciones propias sin autorización | Permisos del Centro más `service_orders.additional_equipment.propose` y `service_orders.additional_equipment.execute` |
-| Auditor | Expediente institucional read-only | Permisos de auditoría más `service_orders.additional_equipment.audit` |
+| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno completo de Actividad, `resolution_center.*` y permisos técnicos vigentes |
+| Operador | Operación de resoluciones propias sin autorización | Contribución completa a Actividad, permisos del Centro y equipo adicional |
+| Auditor | Expediente institucional read-only | `activity.read`, `activity.view_audit` y permisos de auditoría vigentes |
 
 ## Familias declaradas en `PERMISSIONS`
 
@@ -45,6 +45,9 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
   `plan`, `simulate`, `authorize`, `execute`, `audit` e `infrastructure`.
 - Equipo adicional: `propose`, `authorize`, `execute`, `commercial_review` y
   `audit`, bajo `service_orders.additional_equipment`.
+- Actividad: `read`, `create`, `edit_own`, `delete_own`, `moderate`,
+  `attach_files`, `mention`, `request_attention`, `resolve_attention` y
+  `view_audit`. Todo acceso combina el permiso Activity con lectura del módulo.
 
 En las etapas crear, autorizar y ejecutar, el router exige sesión con lectura
 del Centro y el workflow aplica después el permiso específico de la definición.

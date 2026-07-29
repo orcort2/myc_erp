@@ -28,8 +28,11 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Head único del código: `7b8c9d0e1f2a`.
-- Head aplicado en la base PostgreSQL local compartida: `7b8c9d0e1f2a`.
+- Head único del código: `8c9d0e1f2a3b`.
+- Head aplicado en la base PostgreSQL local compartida: `8c9d0e1f2a3b`.
+- `8c9d0e1f2a3b` institucionaliza Actividad con eventos idempotentes,
+  lecturas por usuario y solicitudes de atención. Su upgrade completo,
+  downgrade a `7b8c9d0e1f2a` y re-upgrade se validaron en PostgreSQL temporal.
 - `6ae1d4877cdb` incorpora Communications sobre el merge de Notificaciones y
   Motor. Es trabajo previo/concurrente, no parte de Fase 14.
 - `7b8c9d0e1f2a` agrega a `equipment` el FK BIGINT restrictivo
@@ -70,9 +73,10 @@
   retorno se validaron en PostgreSQL temporal, después eliminado.
 - El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
 - Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,253,414 bytes.
-- SHA-256 verificado: `8612fb33707aeba36da5005dd9a9c3d74857b73ce88d7a5a265ce9233874e431`.
-- El respaldo contiene `alembic_version = 7b8c9d0e1f2a`, las columnas de
+- Tamaño verificado: 74,264,804 bytes.
+- SHA-256 verificado: `df84b395ef72bb45293a71d76c296a2d6fe64763793fca2f0698f00716dd1a92`.
+- El respaldo contiene `alembic_version = 8c9d0e1f2a3b`, las tablas y columnas
+  de Actividad institucional, además de las columnas de
   conciliación de Fase 14, la tabla de consumidores v1, la evidencia
   propietaria y los triggers append-only.
 - La integración de pagos no agrega migraciones ni modifica datos locales; por
@@ -92,6 +96,19 @@
 - Saldo cero retira la factura de cartera y satisface la compuerta financiera
   de certificados cuando `requires_payment=true`.
 
+## Actividad institucional
+
+- El hilo genérico cubre 19 tipos de entidad existentes y exige permiso de
+  Actividad más lectura del módulo.
+- Comentarios, menciones, adjuntos, revisión/retiro lógico, no leídos, bandeja,
+  atención y eventos formales usan un único servicio y panel.
+- Cotización, ETS, Equipo, Hoja de Campo, Certificado y Factura publican
+  transiciones canónicas; pagos y notas de crédito agregan eventos relacionados.
+- Las notas técnicas/documentales continúan en sus agregados. La nota histórica
+  del ETS queda visible en sólo lectura y no se realizó backfill ambiguo.
+- Activity y Notifications usan JSON portable con variante PostgreSQL JSONB;
+  `TD-023` quedó retirado.
+
 ## Equipos y contexto de certificado
 
 - Al crear el ETS, cada partida operativa congela el `expected_certificate_master_id` correspondiente a su identidad estable de catálogo.
@@ -108,10 +125,8 @@
 - Backend focalizado de pagos, Facturación, documentos, Certificados y
   readiness: `38 passed`; regresión adicional ETS/servicios/contratos:
   `16 passed`, `12 subtests passed`.
-- `test_certificate_release_http.py` no recolecta por el `ImportError`
-  preexistente de `app.services.activity.list_messages`, ajeno a pagos. El
-  backend no puede arrancarse para el E2E visual autenticado hasta resolver
-  ese defecto concurrente.
+- Activity backend: `8 passed`; frontend Activity verifica rutas canónicas y
+  capacidades de edición/resolución.
 - Suite específica Fase 14: `7 passed`; incluye composición, resultados,
   simulación, autorización granular, productor ERP idempotente, revalidación,
   concurrencia, compensación y E2E completo por worker después de cerrar la
@@ -128,21 +143,15 @@
   La consulta propietaria devuelve dos equipos y `list_field_sheets()` dos
   Hojas de Campo sin excepción; `/api/health` responde `200` y
   `/api/field-sheets` sin credenciales responde el `401` esperado, no `500`.
-- Regresión operativa de Hojas de Campo, plantillas y Fase 14: `20 passed`.
-  La prueba adicional de contexto de Equipos conserva dos fallos preexistentes
-  por el `JSONB` directo de Activity bajo SQLite, no por PostgreSQL ni por la
-  migración aplicada.
-- `alembic check` no detectó drift en las columnas, índice o FK de Fase 14.
-  Continúa mostrando la deuda histórica `TD-021` y la inconsistencia ajena de
-  metadata de Notificaciones.
-- Suite completa del Motor: `243 passed`, `2 failed`, `14 errors`. Todos los
-  fallos/errores ocurren al crear metadata SQLite por `JSONB` directo de
-  Notificaciones, ajeno a esta fase y no corregido para respetar el alcance.
-- Backend completo: `348 passed`, `21 failed`, `14 errors` y `19 subtests
-  passed`. Los dos fallos y catorce errores del Motor provienen del `JSONB`
-  directo de Notificaciones bajo SQLite; los restantes corresponden a
-  Activity/SQLite/JSONB y a fixtures SAT/XLSX ya identificados fuera del
-  alcance. La suite completa no se declara correcta.
+- Regresión operativa de Hojas de Campo, plantillas y Fase 14: cubierta por la
+  suite backend completa.
+- `alembic check` continúa mostrando `TD-021`, pero no detecta operaciones
+  nuevas sobre `activity_*` ni `notifications`.
+- Backend completo: `398 passed`, `2 failed`, `19 subtests passed`. Los dos
+  fallos son pruebas reales de LibreOffice, que abortó con `returncode=-6`;
+  no corresponden a Actividad.
+- Frontend Node: `21 passed`; build Vite correcto con `1700` módulos y
+  advertencia no bloqueante por tamaño del chunk.
 - `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios
   finales en CSS concurrente ajeno a Fase 14.
 - Tras migrar la base local se regeneró `backup_erp_myc_antes_prueba.sql`; su

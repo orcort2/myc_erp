@@ -25,6 +25,7 @@ from app.schemas.invoice import (
     ReleasedUninvoicedRow,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.activity import publish_event
 from app.services.clients import RFC_PATTERN, _validate_sat_code
 
 
@@ -474,6 +475,16 @@ def change_invoice_status(db: Session, invoice_id: int, payload: InvoiceStatusCh
         invoice.cancellation_reason = payload.comment
     _recalculate_invoice(invoice)
     write_audit_log(db, action=f"invoice.{payload.status}", entity="invoices", entity_id=invoice.id, user_id=user_id, previous_values={"status": current_status}, new_values={"status": invoice.status}, comment=payload.comment)
+    publish_event(
+        db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        event_code="invoice.status_changed",
+        idempotency_key=f"invoice:{invoice.id}:status:{invoice.status}",
+        body=f"Estado de factura actualizado de {current_status} a {invoice.status}.",
+        actor_id=user_id,
+        metadata={"previous_status": current_status, "status": invoice.status},
+    )
     db.commit()
     return get_invoice(db, invoice.id)
 
@@ -620,9 +631,26 @@ def register_invoice_payment(db: Session, invoice_id: int, payload: InvoicePayme
         registered_by_id=user_id,
     )
     invoice.payments.append(payment)
+    db.flush()
     invoice.last_payment_on = payload.paid_on
     _recalculate_invoice(invoice)
     write_audit_log(db, action="invoice.payment_registered", entity="invoice_payments", entity_id=invoice.id, user_id=user_id, new_values={"amount": str(payload.amount), "invoice_id": invoice.id})
+    publish_event(
+        db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        event_code="invoice.payment_registered",
+        idempotency_key=f"invoice:{invoice.id}:payment:{payment.id}",
+        body=f"Pago registrado por {payload.amount}.",
+        actor_id=user_id,
+        metadata={
+            "payment_id": payment.id,
+            "amount": str(payload.amount),
+            "status": payment.status,
+        },
+        related_entity_type="payment",
+        related_entity_id=payment.id,
+    )
     db.commit()
     return get_invoice(db, invoice.id)
 
@@ -643,10 +671,23 @@ def create_credit_note(db: Session, invoice_id: int, payload: CreditNoteCreate, 
         created_by_id=user_id,
     )
     invoice.credit_notes.append(note)
+    db.flush()
     _recalculate_invoice(invoice)
     if payload.status == "applied":
         invoice.status = "credit_note" if invoice.balance_due == Decimal("0.00") else invoice.status
     write_audit_log(db, action="invoice.credit_note_created", entity="credit_notes", entity_id=invoice.id, user_id=user_id, new_values={"folio": folio, "status": payload.status})
+    publish_event(
+        db,
+        entity_type="invoice",
+        entity_id=invoice.id,
+        event_code="invoice.credit_note_created",
+        idempotency_key=f"invoice:{invoice.id}:credit_note:{note.id}",
+        body=f"Nota de crédito {folio} creada.",
+        actor_id=user_id,
+        metadata={"credit_note_id": note.id, "folio": folio, "status": payload.status},
+        related_entity_type="credit_note",
+        related_entity_id=note.id,
+    )
     db.commit()
     return get_invoice(db, invoice.id)
 

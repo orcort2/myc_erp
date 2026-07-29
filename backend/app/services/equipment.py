@@ -15,6 +15,7 @@ from app.schemas.equipment import (
     EquipmentUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.activity import publish_event
 from app.services.certificates import create_certificate
 from app.services.service_order_certificate_capacity import (
     auto_service_order_item_id_for_scope,
@@ -501,6 +502,18 @@ def change_status(
         previous_values={"status": previous_status},
         new_values={"status": new_status},
         comment=payload.comment if payload else None,
+    )
+    publish_event(
+        db,
+        entity_type="equipment",
+        entity_id=equipment.id,
+        event_code="equipment.status_changed",
+        idempotency_key=f"equipment:{equipment.id}:status:{new_status}",
+        body=f"Estado del equipo actualizado de {previous_status} a {new_status}.",
+        actor_id=user_id,
+        metadata={"previous_status": previous_status, "status": new_status},
+        related_entity_type="service_order",
+        related_entity_id=equipment.service_order_id,
     )
 
     db.commit()

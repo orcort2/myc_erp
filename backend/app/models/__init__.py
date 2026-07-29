@@ -1,4 +1,12 @@
-from app.models.activity import ActivityAttachment, ActivityMention, ActivityMessage, ActivityMessageRevision, ActivityThread
+from app.models.activity import (
+    ActivityAttachment,
+    ActivityAttentionRequest,
+    ActivityMention,
+    ActivityMessage,
+    ActivityMessageRevision,
+    ActivityThread,
+    ActivityThreadRead,
+)
 from app.models.audit_log import AuditLog
 from app.models.calibration_procedure import CalibrationProcedure
 from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
@@ -20,6 +28,7 @@ from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSigna
 from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
 from app.models.institutional_configuration import InstitutionalConfiguration
 from app.models.invoice import CreditNote, FacturamaInvoiceAttempt, Invoice, InvoiceItem, InvoicePayment, InvoiceSettings
+from app.models.notification import Notification
 from app.models.sat_catalog import SatCatalog, SatCatalogAlias, SatCatalogFavorite, SatCatalogRecord, SatCatalogVersion
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
 from app.models.reference_standard import (
@@ -75,10 +84,12 @@ from app.resolution_engine.infrastructure.persistence import (
 
 __all__ = [
     "ActivityAttachment",
+    "ActivityAttentionRequest",
     "ActivityMention",
     "ActivityMessage",
     "ActivityMessageRevision",
     "ActivityThread",
+    "ActivityThreadRead",
     "AuditLog",
     "CalibrationProcedure",
     "CatalogItem",
@@ -108,6 +119,7 @@ __all__ = [
     "InvoicePayment",
     "CreditNote",
     "InvoiceSettings",
+    "Notification",
     "SatCatalog",
     "SatCatalogAlias",
     "SatCatalogFavorite",

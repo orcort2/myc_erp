@@ -2,9 +2,12 @@ from datetime import datetime
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
+    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -14,6 +17,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 from app.models.base import TimestampMixin
+
+JSON_DOCUMENT = JSON().with_variant(JSONB, "postgresql")
 
 
 class ActivityThread(TimestampMixin, Base):
@@ -106,8 +111,25 @@ class ActivityMessage(TimestampMixin, Base):
         Text,
     )
     metadata_json: Mapped[dict | None] = mapped_column(
-        JSONB,
+        JSON_DOCUMENT,
         default=dict,
+    )
+    event_code: Mapped[str | None] = mapped_column(
+        String(100),
+        index=True,
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(180),
+        unique=True,
+        index=True,
+    )
+    related_entity_type: Mapped[str | None] = mapped_column(
+        String(40),
+        index=True,
+    )
+    related_entity_id: Mapped[int | None] = mapped_column(
+        Integer,
+        index=True,
     )
 
     thread: Mapped["ActivityThread"] = relationship(
@@ -126,6 +148,10 @@ class ActivityMessage(TimestampMixin, Base):
         cascade="all, delete-orphan",
     )
     mentions: Mapped[list["ActivityMention"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+    )
+    attention_requests: Mapped[list["ActivityAttentionRequest"]] = relationship(
         back_populates="message",
         cascade="all, delete-orphan",
     )
@@ -254,4 +280,115 @@ class ActivityAttachment(TimestampMixin, Base):
 
     message: Mapped["ActivityMessage"] = relationship(
         back_populates="attachments",
+    )
+
+
+class ActivityThreadRead(TimestampMixin, Base):
+    __tablename__ = "activity_thread_reads"
+    __table_args__ = (
+        UniqueConstraint(
+            "thread_id",
+            "user_id",
+            name="uq_activity_thread_read_user",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=False)
+    thread_id: Mapped[int] = mapped_column(
+        ForeignKey("activity_threads.id", ondelete="CASCADE"),
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+    )
+    last_read_message_id: Mapped[int | None] = mapped_column(
+        ForeignKey("activity_messages.id", ondelete="SET NULL"),
+        index=True,
+    )
+    last_visited_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
+
+
+class ActivityAttentionRequest(TimestampMixin, Base):
+    __tablename__ = "activity_attention_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "priority IN ('low', 'normal', 'high', 'urgent')",
+            name="ck_activity_attention_priority",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'resolved')",
+            name="ck_activity_attention_status",
+        ),
+        CheckConstraint(
+            "assigned_user_id IS NOT NULL OR assigned_area IS NOT NULL",
+            name="ck_activity_attention_target",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND resolved_at IS NULL AND "
+            "resolved_by_id IS NULL) OR "
+            "(status = 'resolved' AND resolved_at IS NOT NULL AND "
+            "resolved_by_id IS NOT NULL)",
+            name="ck_activity_attention_resolution",
+        ),
+        Index(
+            "ix_activity_attention_assignee_status",
+            "assigned_user_id",
+            "status",
+        ),
+        Index(
+            "ix_activity_attention_thread_status",
+            "thread_id",
+            "status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=False)
+    thread_id: Mapped[int] = mapped_column(
+        ForeignKey("activity_threads.id", ondelete="CASCADE"),
+        index=True,
+    )
+    message_id: Mapped[int] = mapped_column(
+        ForeignKey("activity_messages.id", ondelete="CASCADE"),
+        index=True,
+    )
+    requested_by_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
+    )
+    assigned_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+    )
+    assigned_area: Mapped[str | None] = mapped_column(String(80), index=True)
+    priority: Mapped[str] = mapped_column(
+        String(20),
+        default="normal",
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="pending",
+        index=True,
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    resolved_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+    )
+    resolution_note: Mapped[str | None] = mapped_column(Text)
+
+    message: Mapped["ActivityMessage"] = relationship(
+        back_populates="attention_requests",
+    )
+    requested_by: Mapped["User"] = relationship(
+        foreign_keys=[requested_by_id],
+    )
+    assigned_user: Mapped["User | None"] = relationship(
+        foreign_keys=[assigned_user_id],
+    )
+    resolved_by: Mapped["User | None"] = relationship(
+        foreign_keys=[resolved_by_id],
     )

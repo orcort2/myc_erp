@@ -23,6 +23,7 @@ from app.schemas.certificate import (
     CertificateUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.activity import publish_event
 from app.services.certificate_authentication import authenticate_certificate_pdf
 from app.services.certificate_matching_engine import validate_certificate_pdf_match
 from app.services.storage_service import delete_if_unreferenced, resolve_storage_path, safe_filename, save_upload
@@ -395,6 +396,21 @@ def _set_status(
         previous_values={"status": previous_status},
         new_values={"status": new_status, **(extra_values or {})},
         comment=comment,
+    )
+    publish_event(
+        db,
+        entity_type="certificate",
+        entity_id=certificate.id,
+        event_code="certificate.status_changed",
+        idempotency_key=f"certificate:{certificate.id}:status:{new_status}",
+        body=(
+            f"Estado del certificado actualizado de "
+            f"{previous_status} a {new_status}."
+        ),
+        actor_id=user_id,
+        metadata={"previous_status": previous_status, "status": new_status},
+        related_entity_type="service_order",
+        related_entity_id=certificate.service_order_id,
     )
     db.commit()
     return get_certificate(db, certificate.id)

@@ -24,6 +24,7 @@ from app.schemas.service_order import (
     ServiceOrderUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
 
 
@@ -722,6 +723,16 @@ def change_status(
         previous_values={"status": previous_status},
         new_values={"status": new_status},
         comment=payload.comment if payload else None,
+    )
+    publish_event(
+        db,
+        entity_type="service_order",
+        entity_id=service_order.id,
+        event_code="service_order.status_changed",
+        idempotency_key=f"service_order:{service_order.id}:status:{new_status}",
+        body=f"Estado del ETS actualizado de {previous_status} a {new_status}.",
+        actor_id=user_id,
+        metadata={"previous_status": previous_status, "status": new_status},
     )
     db.commit()
     return get_service_order(db, service_order.id)

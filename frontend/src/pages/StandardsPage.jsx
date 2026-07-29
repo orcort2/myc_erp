@@ -2,6 +2,7 @@ import { Plus, Ruler, X } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import {
   emptyReferenceStandardForm,
   emptyReferenceStandardUncertaintyForm
@@ -780,6 +781,7 @@ function StandardsPage() {
                 ['general', 'General'],
                 ['certificates', 'Certificados'],
                 ['uncertainties', 'Incertidumbres'],
+                ['activity', 'Actividad'],
                 ['history', 'Historial']
               ].map(([key, label]) => (
                 <button
@@ -1380,6 +1382,19 @@ function StandardsPage() {
                 <div className="clients-empty">
                   El historial de uso en servicios, certificados emitidos y auditoría detallada se conectará en una fase posterior.
                 </div>
+              </section>
+            ) : null}
+
+            {modalTab === 'activity' && currentStandard?.id ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Comunicación interna</p>
+                  <h3>Actividad del patrón</h3>
+                </div>
+                <ActivityPanel
+                  entityId={currentStandard.id}
+                  entityType="reference_standard"
+                />
               </section>
             ) : null}
           </section>

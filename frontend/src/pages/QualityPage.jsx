@@ -1,5 +1,6 @@
 import { ShieldCheck } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
@@ -426,6 +427,7 @@ function QualityPage() {
                 ['certificate', 'Certificado'],
                 ['field-sheet', 'Hoja de Campo'],
                 ['equipment', 'Equipo'],
+                ['activity', 'Actividad'],
                 ['history', 'Historial']
               ].map(([key, label]) => (
                 <button
@@ -535,6 +537,19 @@ function QualityPage() {
                   </div>
                 </section>
               </>
+            ) : null}
+
+            {detailTab === 'activity' ? (
+              <section className="quotation-section">
+                <div className="quotation-section__title">
+                  <p>Comunicación interna</p>
+                  <h3>Actividad del certificado</h3>
+                </div>
+                <ActivityPanel
+                  entityId={selectedCertificate.id}
+                  entityType="certificate"
+                />
+              </section>
             ) : null}
 
             {detailTab === 'field-sheet' ? (

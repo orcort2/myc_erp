@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-07-28
+> Corte verificado: 2026-07-29
 
 # Índice único de documentación
 
@@ -53,6 +53,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
+| [`../architecture/ACTIVITY_INSTITUTIONAL.md`](../architecture/ACTIVITY_INSTITUTIONAL.md) | Contrato genérico de conversación, eventos, menciones, adjuntos, atención, no leídos y permisos por entidad. |
 | [`../architecture/resolution-engine/README.MD`](../architecture/resolution-engine/README.MD) | Entrada normativa del Motor de Resoluciones; ordena la lectura de visión, principios, arquitectura, datos, flujos, API, casos, seguridad y Roadmap. |
 | [`../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md`](../architecture/resolution-engine/13_IMPLEMENTATION_MATRIX.md) | Orden técnico aprobado, dependencias, deuda bloqueante, gates y protocolo de revisión fase por fase del Motor de Resoluciones. |
 | [`../architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md`](../architecture/resolution-engine/14_PERSISTENCE_SCHEMA.md) | Contrato implementado del esquema general, versionado, reconstruible e históricamente inmutable de la Fase 2. |
@@ -88,6 +89,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/REPORTE_CARGA_INICIAL_CATALOGOS_SAT.md`](../closures/REPORTE_CARGA_INICIAL_CATALOGOS_SAT.md) | Evidencia de carga inicial SAT. |
 | [`../closures/DOCUMENT_REORGANIZATION_REPORT_2026-07-21.md`](../closures/DOCUMENT_REORGANIZATION_REPORT_2026-07-21.md) | Cierre de esta reorganización y matriz de movimientos/conflictos. |
 | [`../closures/INTEGRACION_PAGOS_FACTURACION_2026-07-29.md`](../closures/INTEGRACION_PAGOS_FACTURACION_2026-07-29.md) | Integración del registro/historial de pagos, cartera, conservación al timbrar y refresco financiero dentro del Workbench único. |
+| [`../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md`](../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md) | Cierre técnico de Actividad transversal, pendiente de revisión formal. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_0.md`](../closures/RESOLUTION_ENGINE_PHASE_0.md) | Ratificación, matriz, gates, validaciones y condición de aprobación de la Fase 0 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_1.md`](../closures/RESOLUTION_ENGINE_PHASE_1.md) | Contratos, catálogos, serialización canónica, runtime, registro versionado, aislamiento y validaciones de la Fase 1 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_2.md`](../closures/RESOLUTION_ENGINE_PHASE_2.md) | Modelo ORM, integridad, reconstrucción, inmutabilidad, migración reversible y validaciones de la Fase 2 del Motor de Resoluciones. |
@@ -113,6 +115,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../audits/AUDITORIA_PAQUETE_CAPTURA_2026-07-17.md`](../audits/AUDITORIA_PAQUETE_CAPTURA_2026-07-17.md) | Diagnóstico puntual de Captura al 2026-07-17. |
 | [`../audits/AUDITORIA_TECNICA_FACTURACION_CFDI_4_0.md`](../audits/AUDITORIA_TECNICA_FACTURACION_CFDI_4_0.md) | Corte 2026-07-14 superado por integración posterior. |
 | [`../audits/INTEGRACION_OPERATIVA_HOJAS_CAMPO_ESTADO.md`](../audits/INTEGRACION_OPERATIVA_HOJAS_CAMPO_ESTADO.md) | Verificación puntual de integración al 2026-07-13. |
+| [`../audits/ACTIVITY_AND_NOTES_AUDIT_2026-07-29.md`](../audits/ACTIVITY_AND_NOTES_AUDIT_2026-07-29.md) | Inventario semántico y corte de integración transversal de Actividad/notas. |
 | [`../audits/MYC_TOOLKIT_AUDIT.md`](../audits/MYC_TOOLKIT_AUDIT.md) | Corte del Toolkit al 2026-07-14, parcialmente superado. |
 
 ## Diseño futuro

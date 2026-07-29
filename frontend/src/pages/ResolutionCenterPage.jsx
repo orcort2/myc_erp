@@ -15,6 +15,7 @@ import {
   X
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ResolutionActivityPanel from '../components/activity/ResolutionActivityPanel.jsx';
 
 import {
   createCenterResolution,
@@ -384,6 +385,9 @@ function ResolutionDetailDialog({ capabilities, detail, loading, onClose, onRefr
                     </li>
                   ))}
                 </ol>
+              </DetailSection>
+              <DetailSection title="Actividad interna">
+                <ResolutionActivityPanel publicId={detail.summary.public_id} />
               </DetailSection>
             </div>
             <aside className="resolution-detail-aside">

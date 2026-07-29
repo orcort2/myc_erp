@@ -21,6 +21,7 @@ from app.schemas.field_sheet import (
     FieldSheetUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.activity import publish_event
 from app.services.equipment import sync_service_order_equipment_counts
 from app.services.field_sheet_templates import (
     build_default_result_rows,
@@ -863,6 +864,22 @@ def complete_field_sheet(
         },
         comment=payload.comment if payload else None,
     )
+    publish_event(
+        db,
+        entity_type="field_sheet",
+        entity_id=field_sheet.id,
+        event_code="field_sheet.completed",
+        idempotency_key=f"field_sheet:{field_sheet.id}:completed",
+        body="Hoja de Campo completada y equipo marcado como calibrado.",
+        actor_id=user_id,
+        metadata={
+            "previous_status": previous_status,
+            "status": "completed",
+            "equipment_status": "calibrated",
+        },
+        related_entity_type="equipment",
+        related_entity_id=equipment.id,
+    )
 
     db.commit()
     return get_field_sheet(db, field_sheet.id)
@@ -907,6 +924,18 @@ def review_field_sheet(
             "certificate_status": certificate.status if certificate else None,
         },
         comment=payload.comment if payload else None,
+    )
+    publish_event(
+        db,
+        entity_type="field_sheet",
+        entity_id=field_sheet.id,
+        event_code="field_sheet.reviewed",
+        idempotency_key=f"field_sheet:{field_sheet.id}:reviewed",
+        body="Hoja de Campo enviada a revisión.",
+        actor_id=user_id,
+        metadata={"previous_status": "completed", "status": "under_review"},
+        related_entity_type="certificate" if certificate else None,
+        related_entity_id=certificate.id if certificate else None,
     )
     db.commit()
     return get_field_sheet(db, field_sheet.id)

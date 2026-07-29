@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-07-28
+> Corte verificado: 2026-07-29
 
 # Reglas de negocio vigentes
 
@@ -69,3 +69,15 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 ## Mantenimiento
 
 Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño futuro o Archivo, no puede incorporarse aquí hasta ser confirmada por implementación o decisión explícita.
+## Reglas complementarias de Actividad institucional
+
+1. Cada registro admite como máximo un hilo de Actividad.
+2. Leer o escribir exige permiso de Actividad y permiso de lectura del módulo.
+3. Los comentarios humanos se editan sólo por su autor durante 30 minutos; el
+   retiro es lógico y conserva revisión/auditoría.
+4. Eventos de sistema y decisiones formales son inmutables e idempotentes.
+5. Una atención requiere usuario o área y sólo el asignado/resolutor autorizado
+   o moderación puede cerrarla.
+6. Notas técnicas, comerciales, fiscales o documentales permanecen en su
+   agregado; no se migran a conversación sin clasificación inequívoca.
+7. Un adjunto admite máximo 15 MB y debe coincidir en extensión, MIME y firma.

@@ -1,4 +1,6 @@
 import {
+  AlertCircle,
+  CheckCircle2,
   Download,
   Edit3,
   Paperclip,
@@ -6,6 +8,10 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import {
+  canEditActivityMessage,
+  canResolveActivityAttention,
+} from './activityEntities.js';
 
 function formatDateTime(value) {
   if (!value) return '';
@@ -32,6 +38,7 @@ function formatBytes(bytes) {
 
 export default function ActivityMessage({
   message,
+  capabilities = {},
   currentUser,
   editingId,
   editingBody,
@@ -42,15 +49,28 @@ export default function ActivityMessage({
   onSaveEdit,
   onWithdraw,
   onDownloadAttachment,
+  onRequestAttention,
+  onResolveAttention,
 }) {
   const ownMessage = message.author?.id === currentUser?.id;
   const isEditing = editingId === message.id;
 
-  const canModify =
-    ownMessage &&
-    !message.withdrawn_at &&
-    !message.is_system &&
-    !message.is_formal;
+  const canEdit = canEditActivityMessage(
+    message,
+    currentUser,
+    capabilities,
+  );
+  const canWithdraw = (
+    (ownMessage && capabilities.can_delete_own)
+    || (!ownMessage && capabilities.can_moderate)
+  ) && !message.withdrawn_at && !message.is_system && !message.is_formal;
+  const canRequestAttention = (
+    capabilities.can_request_attention
+    && !message.withdrawn_at
+    && !message.is_system
+  );
+  const pendingAttention = (message.attention_requests ?? [])
+    .filter((attention) => attention.status === 'pending');
 
   return (
     <article
@@ -66,26 +86,42 @@ export default function ActivityMessage({
           {message.edited_at ? <span>· Editado</span> : null}
         </div>
 
-        {canModify ? (
+        {canEdit || canWithdraw || canRequestAttention ? (
           <div className="activity-message-actions">
-            <button
-              aria-label="Editar comentario"
-              onClick={() => onStartEdit(message)}
-              title="Editar"
-              type="button"
-            >
-              <Edit3 aria-hidden="true" size={15} />
-            </button>
+            {canRequestAttention ? (
+              <button
+                aria-label="Solicitar atención"
+                disabled={busy}
+                onClick={() => onRequestAttention(message)}
+                title="Solicitar atención"
+                type="button"
+              >
+                <AlertCircle aria-hidden="true" size={15} />
+              </button>
+            ) : null}
 
-            <button
-              aria-label="Retirar comentario"
-              disabled={busy}
-              onClick={() => onWithdraw(message)}
-              title="Retirar"
-              type="button"
-            >
-              <Trash2 aria-hidden="true" size={15} />
-            </button>
+            {canEdit ? (
+              <button
+                aria-label="Editar comentario"
+                onClick={() => onStartEdit(message)}
+                title="Editar"
+                type="button"
+              >
+                <Edit3 aria-hidden="true" size={15} />
+              </button>
+            ) : null}
+
+            {canWithdraw ? (
+              <button
+                aria-label="Retirar comentario"
+                disabled={busy}
+                onClick={() => onWithdraw(message)}
+                title="Retirar"
+                type="button"
+              >
+                <Trash2 aria-hidden="true" size={15} />
+              </button>
+            ) : null}
           </div>
         ) : null}
       </header>
@@ -146,6 +182,41 @@ export default function ActivityMessage({
               <Download aria-hidden="true" size={15} />
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {pendingAttention.length ? (
+        <div className="activity-attention-list">
+          {pendingAttention.map((attention) => {
+            const canResolve = canResolveActivityAttention(
+              attention,
+              currentUser,
+              capabilities,
+            );
+            return (
+              <div className={`activity-attention is-${attention.priority}`} key={attention.id}>
+                <AlertCircle aria-hidden="true" size={17} />
+                <div>
+                  <strong>Atención {attention.priority}</strong>
+                  <span>
+                    {attention.assigned_user?.full_name
+                      || attention.assigned_area
+                      || 'Área responsable'}
+                  </span>
+                </div>
+                {canResolve ? (
+                  <button
+                    disabled={busy}
+                    onClick={() => onResolveAttention(attention)}
+                    type="button"
+                  >
+                    <CheckCircle2 aria-hidden="true" size={15} />
+                    Resolver
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 

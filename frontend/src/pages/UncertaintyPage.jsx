@@ -1,5 +1,6 @@
 import { Calculator, Check, Copy, Plus, Send, XCircle } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 
 import {
   changeUncertaintyModelVersionStatus,
@@ -409,6 +410,21 @@ export default function UncertaintyPage() {
           </form>
         </aside>
       </div>
+
+      {selectedModel ? (
+        <section className="clients-list-panel">
+          <div className="section-heading">
+            <div>
+              <p>Comunicación interna</p>
+              <h2>Actividad del modelo</h2>
+            </div>
+          </div>
+          <ActivityPanel
+            entityId={selectedModel.id}
+            entityType="uncertainty_model"
+          />
+        </section>
+      ) : null}
 
       <section className="clients-list-panel">
         <div className="section-heading">

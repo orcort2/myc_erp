@@ -1,17 +1,11 @@
 import { navigate } from '../../utils/routing.js';
+import { ACTIVITY_ENTITY_DESTINATIONS } from '../activity/activityEntities.js';
 
 const ENTITY_DESTINATIONS = {
-  client: '/dashboard#clientes',
-  quotation: '/dashboard#cotizaciones',
+  ...ACTIVITY_ENTITY_DESTINATIONS,
   quote: '/dashboard#cotizaciones',
-  service_order: '/dashboard#servicios',
   service: '/dashboard#servicios',
   ets: '/dashboard#servicios',
-  equipment: '/dashboard#servicios',
-  field_sheet: '/dashboard#servicios',
-  certificate: '/dashboard#certificados',
-  invoice: '/dashboard#facturacion',
-  payment: '/dashboard#facturacion',
 };
 
 export function getNotificationDestination(notification) {

@@ -1482,6 +1482,37 @@ export function getActivity(entityType, entityId) {
   return request(`/activity/${entityType}/${entityId}`);
 }
 
+export function listActivityEntities() {
+  return request('/activity/entities');
+}
+
+export function listActivityMentionableUsers() {
+  return request('/activity/mentionable-users');
+}
+
+export function getResolutionActivityTarget(publicId) {
+  return request(`/activity/resolution-target/${encodeURIComponent(publicId)}`);
+}
+
+export function listActivityInbox({
+  unreadOnly = false,
+  attentionOnly = false,
+  limit = 50,
+} = {}) {
+  const query = new URLSearchParams({
+    unread_only: String(unreadOnly),
+    attention_only: String(attentionOnly),
+    limit: String(limit),
+  });
+  return request(`/activity/inbox?${query.toString()}`);
+}
+
+export function markActivityRead(entityType, entityId) {
+  return request(`/activity/${entityType}/${entityId}/read`, {
+    method: 'POST',
+  });
+}
+
 export function createActivityMessage(entityType, entityId, payload) {
   return request(`/activity/${entityType}/${entityId}/messages`, {
     method: 'POST',
@@ -1497,7 +1528,21 @@ export function updateActivityMessage(messageId, payload) {
 }
 
 export function withdrawActivityMessage(messageId, payload) {
-  return request(`/activity/messages/${messageId}/withdraw`, {
+  return request(`/activity/messages/${messageId}`, {
+    method: 'DELETE',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function requestActivityAttention(messageId, payload) {
+  return request(`/activity/messages/${messageId}/attention`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function resolveActivityAttention(attentionId, payload = {}) {
+  return request(`/activity/attention/${attentionId}/resolve`, {
     method: 'POST',
     body: JSON.stringify(payload),
   });

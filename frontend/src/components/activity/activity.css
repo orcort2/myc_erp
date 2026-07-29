@@ -1026,6 +1026,74 @@
   font-size: 12px;
 }
 
+.activity-loading {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: var(--activity-text-muted);
+  font-size: 13px;
+}
+
+.activity-attention-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.activity-attention {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid rgba(184, 128, 35, 0.28);
+  border-radius: 10px;
+  background: rgba(246, 226, 180, 0.34);
+  color: #71551d;
+}
+
+.activity-attention.is-urgent {
+  border-color: rgba(186, 77, 83, 0.32);
+  background: rgba(186, 77, 83, 0.1);
+  color: #8c343a;
+}
+
+.activity-attention > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-attention strong,
+.activity-attention span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-attention strong {
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.activity-attention span {
+  font-size: 11px;
+}
+
+.activity-attention button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
 /* =========================================================
    FILES TAB
    ========================================================= */
@@ -1405,6 +1473,7 @@
 }
 
 .activity-modal-body select,
+.activity-modal-body input,
 .activity-modal-body textarea {
   width: 100%;
   padding: 10px 11px;
@@ -1423,6 +1492,7 @@
 }
 
 .activity-modal-body select:focus,
+.activity-modal-body input:focus,
 .activity-modal-body textarea:focus {
   border-color: rgba(47, 127, 112, 0.6);
 
@@ -1495,6 +1565,7 @@
 .activity-file-item:focus-visible,
 .activity-modal button:focus-visible,
 .activity-modal select:focus-visible,
+.activity-modal input:focus-visible,
 .activity-modal textarea:focus-visible {
   outline: 2px solid rgba(47, 127, 112, 0.74);
   outline-offset: 2px;

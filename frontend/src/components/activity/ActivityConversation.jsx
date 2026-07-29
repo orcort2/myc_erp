@@ -7,6 +7,7 @@ import ActivityMessage from './ActivityMessage.jsx';
 
 export default function ActivityConversation({
   busy,
+  capabilities,
   currentUser,
   editingBody,
   editingId,
@@ -15,6 +16,8 @@ export default function ActivityConversation({
   onDownloadAttachment,
   onEditingBodyChange,
   onSaveEdit,
+  onRequestAttention,
+  onResolveAttention,
   onStartEdit,
   onWithdraw,
 }) {
@@ -96,6 +99,7 @@ export default function ActivityConversation({
       {messages.map((message) => (
         <ActivityMessage
           busy={busy}
+          capabilities={capabilities}
           currentUser={currentUser}
           editingBody={editingBody}
           editingId={editingId}
@@ -109,6 +113,8 @@ export default function ActivityConversation({
             onEditingBodyChange
           }
           onSaveEdit={onSaveEdit}
+          onRequestAttention={onRequestAttention}
+          onResolveAttention={onResolveAttention}
           onStartEdit={onStartEdit}
           onWithdraw={onWithdraw}
         />

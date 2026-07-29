@@ -3,12 +3,13 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models.activity import ActivityMessage
+from app.models.activity import ActivityAttentionRequest, ActivityMessage
 from app.models.notification import Notification
 from app.models.user import User
 
 
 NOTIFICATION_TYPE_ACTIVITY_MENTION = "activity_mention"
+NOTIFICATION_TYPE_ACTIVITY_ATTENTION = "activity_attention"
 
 
 def _utc_now() -> datetime:
@@ -105,6 +106,74 @@ def create_activity_mention_notification(
     db.add(notification)
 
     return notification
+
+
+def create_activity_attention_notification(
+    db: Session,
+    *,
+    attention: ActivityAttentionRequest,
+    actor: User,
+) -> Notification | None:
+    """Publica una notificación ligada a la solicitud dentro del mismo hilo."""
+
+    recipient_user_id = attention.assigned_user_id
+    if recipient_user_id is None or recipient_user_id == actor.id:
+        return None
+    message = attention.message
+    existing = db.scalar(
+        select(Notification).where(
+            Notification.recipient_user_id == recipient_user_id,
+            Notification.notification_type
+            == NOTIFICATION_TYPE_ACTIVITY_ATTENTION,
+            Notification.activity_message_id == message.id,
+        )
+    )
+    values = {
+        "actor_user_id": actor.id,
+        "title": f"{actor.full_name} solicitó tu atención",
+        "body": _message_excerpt(message.body),
+        "entity_type": message.thread.entity_type,
+        "entity_id": message.thread.entity_id,
+        "priority": attention.priority,
+        "metadata_json": {
+            "attention_id": attention.id,
+            "frontend_path": None,
+        },
+    }
+    if existing is not None:
+        for key, value in values.items():
+            setattr(existing, key, value)
+        existing.revoked_at = None
+        existing.dismissed_at = None
+        existing.read_at = None
+        return existing
+    notification = Notification(
+        recipient_user_id=recipient_user_id,
+        notification_type=NOTIFICATION_TYPE_ACTIVITY_ATTENTION,
+        activity_message_id=message.id,
+        **values,
+    )
+    db.add(notification)
+    return notification
+
+
+def resolve_activity_attention_notification(
+    db: Session,
+    *,
+    attention: ActivityAttentionRequest,
+) -> None:
+    if attention.assigned_user_id is None:
+        return
+    notification = db.scalar(
+        select(Notification).where(
+            Notification.recipient_user_id == attention.assigned_user_id,
+            Notification.notification_type
+            == NOTIFICATION_TYPE_ACTIVITY_ATTENTION,
+            Notification.activity_message_id == attention.message_id,
+        )
+    )
+    if notification is not None and notification.read_at is None:
+        notification.read_at = _utc_now()
 
 def revoke_activity_mention_notification(
     db: Session,

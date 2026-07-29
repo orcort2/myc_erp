@@ -167,6 +167,15 @@ Autenticación
   → Cierre del ETS
 ```
 
+## Actividad transversal
+
+En cualquier ficha integrada, el usuario autorizado consulta el hilo por
+entidad, publica un comentario, menciona o adjunta evidencia y puede solicitar
+atención a una persona/área. La lectura se confirma explícitamente. Los
+servicios canónicos publican eventos formales idempotentes dentro de su misma
+transacción; Actividad no cambia el estado del dominio. Dashboard consolida no
+leídos y atenciones, mientras Notifications conserva el aviso dirigido.
+
 ## 1. Acceso
 
 El usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo

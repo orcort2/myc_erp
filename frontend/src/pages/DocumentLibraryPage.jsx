@@ -13,6 +13,7 @@ import {
 import React, { useEffect, useMemo, useState } from 'react';
 
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
+import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import {
   activateControlledDocumentVersion,
   archiveControlledDocument,
@@ -74,6 +75,7 @@ const statusLabels = {
 const detailTabs = [
   ['information', 'Informacion'],
   ['versions', 'Versiones'],
+  ['activity', 'Actividad'],
   ['history', 'Historial'],
   ['publication', 'Publicacion'],
   ['designer', 'Diseñador']
@@ -504,6 +506,13 @@ function DocumentLibraryPage({ user = null }) {
                 <div className="document-history">
                   {historyItems.map((item, index) => <article key={`${item.title}-${item.date}-${index}`}><span><Clock3 size={16} /></span><div><time>{formatDate(item.date, true)}</time><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}
                 </div>
+              ) : null}
+
+              {activeTab === 'activity' ? (
+                <ActivityPanel
+                  entityId={selectedDocument.id}
+                  entityType="document"
+                />
               ) : null}
 
               {activeTab === 'publication' ? (
