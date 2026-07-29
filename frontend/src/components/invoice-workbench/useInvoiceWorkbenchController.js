@@ -4,6 +4,7 @@ import {
   createInvoice,
   downloadInstitutionalInvoicePdf,
   downloadInvoiceFiscalXml,
+  downloadInvoicePaymentReceiptPdf,
   getClient,
   getFacturamaStatus,
   getInvoice,
@@ -13,10 +14,12 @@ import {
   getServiceOrder,
   issueInvoice,
   listClients,
+  listAccountsReceivable,
   listInvoices,
   listQuotations,
   listSatCatalogs,
   listServiceOrders,
+  registerInvoicePayment,
   updateInvoice,
   updateInvoiceSettings,
 } from '../../services/api.js';
@@ -80,8 +83,10 @@ export default function useInvoiceWorkbenchController({
   loadOverview = true,
   openInitialContext = true,
   onIssuerConfigurationRequired,
+  onPaymentRegistered,
 } = {}) {
   const [dashboard, setDashboard] = useState(null);
+  const [accountsReceivable, setAccountsReceivable] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [clients, setClients] = useState([]);
   const [serviceOrders, setServiceOrders] = useState([]);
@@ -157,6 +162,7 @@ export default function useInvoiceWorkbenchController({
     try {
       const [
         dashboardResult,
+        receivableResult,
         invoicesResult,
         clientsResult,
         ordersResult,
@@ -165,6 +171,7 @@ export default function useInvoiceWorkbenchController({
         settingsResult,
       ] = await Promise.all([
         getInvoiceDashboard(),
+        listAccountsReceivable(),
         listInvoices(),
         listClients(),
         listServiceOrders(),
@@ -173,6 +180,7 @@ export default function useInvoiceWorkbenchController({
         getInvoiceSettings(),
       ]);
       setDashboard(dashboardResult);
+      setAccountsReceivable(receivableResult);
       setInvoices(invoicesResult);
       setClients(clientsResult);
       setServiceOrders(ordersResult);
@@ -458,6 +466,58 @@ export default function useInvoiceWorkbenchController({
     }
   }
 
+  async function registerWorkspacePayment(payload) {
+    if (!selectedInvoice) {
+      throw new Error('No hay una factura seleccionada para registrar el pago.');
+    }
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await registerInvoicePayment(selectedInvoice.id, payload);
+      setSelectedInvoice(updated);
+      setContextInvoice(updated);
+      setInvoices((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item))
+      );
+      setNotice('Pago registrado y resumen financiero actualizado.');
+      if (loadOverview) {
+        await loadBillingData();
+      }
+      try {
+        await onPaymentRegistered?.(updated);
+      } catch {
+        setNotice(
+          'Pago registrado. Actualiza el ETS para volver a consultar la liberación financiera.'
+        );
+      }
+      return updated;
+    } catch (requestError) {
+      setError(requestError.message);
+      throw requestError;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function downloadPaymentReceipt(payment) {
+    if (!payment) return;
+    setIsSaving(true);
+    setError('');
+    try {
+      const documentFile = await downloadInvoicePaymentReceiptPdf(payment.id);
+      saveDownloadedFile(
+        documentFile,
+        `Recibo_Pago_${selectedInvoice?.folio || payment.invoice_id}_${payment.id}.pdf`
+      );
+    } catch (requestError) {
+      setError(requestError.message);
+      throw requestError;
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   async function downloadInstitutionalPdf(invoice) {
     if (!invoice) return;
     setIsSaving(true);
@@ -508,6 +568,7 @@ export default function useInvoiceWorkbenchController({
   }
 
   return {
+    accountsReceivable,
     catalogByCode,
     clients,
     clientsById,
@@ -518,6 +579,7 @@ export default function useInvoiceWorkbenchController({
     dashboard,
     downloadFiscalXml,
     downloadInstitutionalPdf,
+    downloadPaymentReceipt,
     error,
     facturamaStatus,
     invoices,
@@ -533,6 +595,7 @@ export default function useInvoiceWorkbenchController({
     quotations,
     quotationsById,
     refreshFacturamaStatus,
+    registerWorkspacePayment,
     saveSettings,
     saveWorkspaceDraft,
     selectedClient,

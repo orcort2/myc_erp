@@ -3470,7 +3470,14 @@ function ServiceOrdersPage({ user = null }) {
                 className="ets-billing-tab-slot"
                 hidden={activeTab !== 'billing'}
               >
-                <EtsBillingTab serviceOrderId={selectedOrder.id} />
+                <EtsBillingTab
+                  onPaymentRegistered={async () => {
+                    const readiness = await getCertificateReleaseReadiness(selectedOrder.id);
+                    setCertificateReleaseReadiness(readiness);
+                  }}
+                  serviceOrderId={selectedOrder.id}
+                  user={user}
+                />
               </div>
             ) : null}
           </section>

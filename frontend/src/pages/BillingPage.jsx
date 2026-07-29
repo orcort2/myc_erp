@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import InvoiceWorkbenchDialog from '../components/invoice-workbench/InvoiceWorkbenchDialog.jsx';
+import { canIssueInvoiceAfterPayment } from '../components/invoice-workbench/invoicePaymentForm.js';
 import useInvoiceWorkbenchController, {
   findOrderForQuotation,
 } from '../components/invoice-workbench/useInvoiceWorkbenchController.js';
@@ -116,7 +117,7 @@ function resolveWorkspaceStatus(invoice) {
   };
 }
 
-function BillingPage() {
+function BillingPage({ user = null }) {
   const [activeView, setActiveView] = useState('center');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -125,12 +126,14 @@ function BillingPage() {
     []
   );
   const {
+    accountsReceivable,
     catalogByCode,
     clientsById,
     closeWorkspace,
     dashboard,
     downloadFiscalXml: handleDownloadFiscalXml,
     downloadInstitutionalPdf: handleDownloadInstitutionalPdf,
+    downloadPaymentReceipt: handleDownloadPaymentReceipt,
     error,
     facturamaStatus,
     invoices,
@@ -144,6 +147,7 @@ function BillingPage() {
     quotations,
     quotationsById,
     refreshFacturamaStatus,
+    registerWorkspacePayment: handleRegisterPayment,
     saveSettings,
     saveWorkspaceDraft: handleSaveWorkspaceDraft,
     selectedClient,
@@ -161,6 +165,11 @@ function BillingPage() {
     initialContext,
     onIssuerConfigurationRequired: () => setActiveView('settings'),
   });
+  const canManagePayments = Boolean(
+    user?.permissions?.includes('*') ||
+      user?.permissions?.includes('payments.*') ||
+      user?.permissions?.includes('payments.manage')
+  );
 
   const invoiceByQuotationId = useMemo(() => {
     const result = new Map();
@@ -637,6 +646,60 @@ function BillingPage() {
                 <strong>{formatMoney(dashboard?.pagos_hoy ?? 0)}</strong>
               </article>
             </div>
+
+            <section className="invoice-receivable-panel">
+              <div className="invoice-section-heading">
+                <div>
+                  <p>Cartera vigente</p>
+                  <h2>Cuentas por cobrar</h2>
+                </div>
+                <span>{accountsReceivable.length} pendiente{accountsReceivable.length === 1 ? '' : 's'}</span>
+              </div>
+
+              {!accountsReceivable.length ? (
+                <p className="empty-state">No hay facturas con saldo pendiente.</p>
+              ) : (
+                <div className="invoice-receivable-table">
+                  <div className="invoice-receivable-table__header" aria-hidden="true">
+                    <span>Factura / cliente</span>
+                    <span>ETS</span>
+                    <span>Total</span>
+                    <span>Pagado</span>
+                    <span>Saldo</span>
+                    <span>Vencimiento</span>
+                    <span>Antigüedad</span>
+                    <span>Último pago</span>
+                    <span>Estado</span>
+                  </div>
+                  {accountsReceivable.map((row) => (
+                    <button
+                      className="invoice-receivable-row"
+                      key={row.invoice_id}
+                      onClick={(event) =>
+                        openWorkspace(
+                          {
+                            invoice: invoices.find((item) => item.id === row.invoice_id) || { id: row.invoice_id },
+                          },
+                          event.currentTarget
+                        )
+                      }
+                      type="button"
+                    >
+                      <span><strong>{row.invoice_folio}</strong><small>{row.client_name}</small></span>
+                      <span>{row.service_order_id ? `ETS #${row.service_order_id}` : '—'}</span>
+                      <span>{formatMoney(row.total)}</span>
+                      <span>{formatMoney(row.amount_paid)}</span>
+                      <span><strong>{formatMoney(row.balance_due)}</strong></span>
+                      <span>{row.due_on || '—'}</span>
+                      <span>{row.aging_bucket}</span>
+                      <span>{row.last_payment_on || '—'}</span>
+                      <span>{INVOICE_STATUS[row.status]?.label || row.status}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <small>Selecciona una cuenta para abrir la factura y registrar el pago en su Resumen financiero.</small>
+            </section>
           </section>
         ) : null}
 
@@ -797,10 +860,10 @@ function BillingPage() {
         invoice={selectedInvoice}
         isSaving={isSaving}
         canIssue={Boolean(
-          selectedInvoice &&
-            ['draft', 'issue_failed'].includes(selectedInvoice.status) &&
+          canIssueInvoiceAfterPayment(selectedInvoice) &&
             facturamaStatus?.connected
         )}
+        canManagePayments={canManagePayments}
         issueBlockedReason={
           facturamaStatus?.connected
             ? ''
@@ -811,7 +874,9 @@ function BillingPage() {
         onDraftChange={updateWorkspaceDraft}
         onDownloadFiscalXml={handleDownloadFiscalXml}
         onDownloadInstitutionalPdf={handleDownloadInstitutionalPdf}
+        onDownloadPaymentReceipt={handleDownloadPaymentReceipt}
         onIssue={handleIssueInvoice}
+        onRegisterPayment={handleRegisterPayment}
         onSaveDraft={handleSaveWorkspaceDraft}
         open={workspaceOpen}
         originElement={workspaceOriginElement}

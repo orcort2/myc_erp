@@ -187,7 +187,7 @@ export function App() {
       ) : selectedModule?.key === 'uncertainty' ? (
         <UncertaintyPage />
       ) : selectedModule?.key === 'finance' ? (
-        <BillingPage />
+        <BillingPage user={user} />
       ) : selectedModule?.key === 'flowTest' ? (
         <FlowTestPage />
       ) : selectedModule?.key === 'settings' ? (

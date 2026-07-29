@@ -327,8 +327,8 @@ export async function registerInvoicePayment(invoiceId, payload) {
   });
 }
 
-export async function getInvoicePaymentReceiptPdfUrl(paymentId) {
-  return `${API_URL}/invoice-payments/${paymentId}/receipt-pdf`;
+export function downloadInvoicePaymentReceiptPdf(paymentId) {
+  return downloadRequest(`/invoice-payments/${paymentId}/receipt-pdf`);
 }
 
 export async function listAccountsReceivable() {

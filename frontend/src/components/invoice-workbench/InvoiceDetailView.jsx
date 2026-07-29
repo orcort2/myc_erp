@@ -1,11 +1,17 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  CreditCard,
+  Download,
   FileCode2,
   FileText,
   ReceiptText,
   ShieldCheck,
 } from 'lucide-react';
+import { useState } from 'react';
+
+import InvoicePaymentModal from './InvoicePaymentModal.jsx';
+import { canIssueInvoiceAfterPayment } from './invoicePaymentForm.js';
 
 const STATUS_LABELS = {
   draft: 'Borrador',
@@ -19,14 +25,6 @@ const STATUS_LABELS = {
   cancelled: 'Cancelada',
   credit_note: 'Nota de crédito',
 };
-
-const ISSUED_STATUSES = new Set([
-  'issued',
-  'partially_paid',
-  'paid',
-  'overdue',
-  'cancelled',
-]);
 
 function formatMoney(value, currency = 'MXN') {
   const amount = Number(value || 0);
@@ -87,21 +85,29 @@ export default function InvoiceDetailView({
   invoice,
   client = null,
   canEmit = false,
+  canManagePayments = false,
   isSaving = false,
   issueBlockedReason = '',
   onIssue,
   onDownloadInstitutionalPdf,
   onDownloadFiscalXml,
+  onDownloadPaymentReceipt,
+  onRegisterPayment,
 }) {
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+
   if (!invoice) {
     return <EmptyInvoiceState />;
   }
 
   const status = invoice.status || 'draft';
-  const isIssued = ISSUED_STATUSES.has(status);
-  const canShowIssue = ['draft', 'issue_failed'].includes(status);
+  const isIssued = Boolean(invoice.cfdi_uuid || invoice.facturama_id);
+  const canShowIssue = canIssueInvoiceAfterPayment(invoice);
   const hasXml = Boolean(invoice.facturama_xml_path);
   const currency = invoice.currency || 'MXN';
+  const balanceDue = Number(invoice.balance_due || 0);
+  const canRegisterPayment =
+    canManagePayments && status !== 'cancelled' && balanceDue > 0;
   const receiverName =
     client?.commercial_name ||
     client?.legal_name ||
@@ -266,7 +272,20 @@ export default function InvoiceDetailView({
             <p>Importes</p>
             <h4>Resumen financiero</h4>
           </div>
-          <ReceiptText aria-hidden="true" size={20} />
+          <div className="invoice-detail-section__actions">
+            {canRegisterPayment ? (
+              <button
+                className="primary-button"
+                disabled={isSaving}
+                onClick={() => setPaymentModalOpen(true)}
+                type="button"
+              >
+                <CreditCard aria-hidden="true" size={17} />
+                Registrar pago
+              </button>
+            ) : null}
+            <ReceiptText aria-hidden="true" size={20} />
+          </div>
         </div>
 
         <div className="invoice-detail-totals">
@@ -300,7 +319,57 @@ export default function InvoiceDetailView({
             label="Saldo"
             value={formatMoney(invoice.balance_due, currency)}
           />
+          <DetailField
+            label="Estado de la factura"
+            value={STATUS_LABELS[status] || status}
+          />
         </div>
+      </section>
+
+      <section className="invoice-detail-section">
+        <div className="invoice-detail-section__heading">
+          <div>
+            <p>Cobranza</p>
+            <h4>Pagos registrados</h4>
+          </div>
+          <CreditCard aria-hidden="true" size={20} />
+        </div>
+
+        {!invoice.payments?.length ? (
+          <p className="empty-state">No hay pagos registrados en esta factura.</p>
+        ) : (
+          <div className="invoice-payment-history">
+            {invoice.payments.map((payment) => (
+              <article key={payment.id}>
+                <div className="invoice-payment-history__main">
+                  <div>
+                    <span>{formatDate(payment.paid_on)}</span>
+                    <strong>{formatMoney(payment.amount, currency)}</strong>
+                  </div>
+                  <mark>{payment.status || 'pending'}</mark>
+                </div>
+                <dl>
+                  <div><dt>Banco</dt><dd>{payment.bank_name || '—'}</dd></div>
+                  <div><dt>Cuenta</dt><dd>{payment.bank_account || '—'}</dd></div>
+                  <div><dt>Referencia</dt><dd>{payment.reference || '—'}</dd></div>
+                  <div><dt>Forma</dt><dd>{payment.payment_form || '—'}</dd></div>
+                  <div><dt>Método</dt><dd>{payment.payment_method || '—'}</dd></div>
+                  <div><dt>Registró</dt><dd>{payment.registered_by_id ? `Usuario #${payment.registered_by_id}` : '—'}</dd></div>
+                  {payment.notes ? <div className="is-wide"><dt>Notas</dt><dd>{payment.notes}</dd></div> : null}
+                </dl>
+                <button
+                  className="table-button"
+                  disabled={isSaving || !onDownloadPaymentReceipt}
+                  onClick={() => onDownloadPaymentReceipt?.(payment)}
+                  type="button"
+                >
+                  <Download aria-hidden="true" size={16} />
+                  Descargar comprobante PDF
+                </button>
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="invoice-detail-section">
@@ -387,6 +456,14 @@ export default function InvoiceDetailView({
           ) : null}
         </section>
       ) : null}
+
+      <InvoicePaymentModal
+        invoice={invoice}
+        isSaving={isSaving}
+        onClose={() => setPaymentModalOpen(false)}
+        onSubmit={onRegisterPayment}
+        open={paymentModalOpen}
+      />
     </section>
   );
 }

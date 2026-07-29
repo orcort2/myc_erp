@@ -602,6 +602,8 @@ def register_invoice_payment(db: Session, invoice_id: int, payload: InvoicePayme
     invoice = get_invoice(db, invoice_id)
     if invoice.status == "cancelled":
         raise HTTPException(status_code=409, detail="No se puede registrar pago en factura cancelada")
+    if invoice.balance_due <= Decimal("0.00"):
+        raise HTTPException(status_code=409, detail="La factura no tiene saldo pendiente")
     if _money(payload.amount) > invoice.balance_due and invoice.balance_due > Decimal("0.00"):
         raise HTTPException(status_code=409, detail="El pago excede el saldo pendiente")
     payment = InvoicePayment(
@@ -676,6 +678,7 @@ def list_accounts_receivable(db: Session) -> list[dict]:
                 "service_order_id": invoice.service_order_id,
                 "status": invoice.status,
                 "total": invoice.total,
+                "amount_paid": invoice.amount_paid,
                 "balance_due": invoice.balance_due,
                 "due_on": invoice.due_on,
                 "aging_bucket": bucket,

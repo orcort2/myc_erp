@@ -143,7 +143,12 @@ def _mark_issued(
     invoice.facturama_response_json = stored_response
     invoice.facturama_http_status = http_status
     invoice.stamped_at = stamped_at or datetime.now(timezone.utc)
-    invoice.status = "issued"
+    if invoice.balance_due <= Decimal("0.00") and invoice.total > Decimal("0.00"):
+        invoice.status = "paid"
+    elif invoice.amount_paid > Decimal("0.00"):
+        invoice.status = "partially_paid"
+    else:
+        invoice.status = "issued"
     invoice.facturama_error_message = None
     attempt.status = "issued"
     attempt.response_json = stored_response

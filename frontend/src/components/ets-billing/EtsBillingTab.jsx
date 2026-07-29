@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Download, FileText, ReceiptText } from 'lucide-react';
 
 import InvoiceWorkbenchDialog from '../invoice-workbench/InvoiceWorkbenchDialog.jsx';
+import { canIssueInvoiceAfterPayment } from '../invoice-workbench/invoicePaymentForm.js';
 import useInvoiceWorkbenchController from '../invoice-workbench/useInvoiceWorkbenchController.js';
 import { formatDate, formatMoney } from '../../utils/formatters.js';
 import {
@@ -10,14 +11,15 @@ import {
 } from './etsInvoicePresentation.js';
 
 const NEXT_PHASE_CARDS = [
-  'Pagos',
-  'Cuentas por cobrar',
   'Notas de crédito',
   'Historial y documentos',
-  'Liberación financiera',
 ];
 
-export default function EtsBillingTab({ serviceOrderId }) {
+export default function EtsBillingTab({
+  serviceOrderId,
+  user = null,
+  onPaymentRegistered,
+}) {
   const initialContext = useMemo(
     () => ({ service_order_id: serviceOrderId }),
     [serviceOrderId]
@@ -30,6 +32,7 @@ export default function EtsBillingTab({ serviceOrderId }) {
     contextResolved,
     downloadFiscalXml,
     downloadInstitutionalPdf,
+    downloadPaymentReceipt,
     error,
     facturamaStatus,
     isSaving,
@@ -37,6 +40,7 @@ export default function EtsBillingTab({ serviceOrderId }) {
     notice,
     openWorkspaceByContext,
     saveWorkspaceDraft,
+    registerWorkspacePayment,
     selectedClient,
     selectedInvoice,
     selectedQuotation,
@@ -49,7 +53,13 @@ export default function EtsBillingTab({ serviceOrderId }) {
     initialContext,
     loadOverview: false,
     openInitialContext: false,
+    onPaymentRegistered,
   });
+  const canManagePayments = Boolean(
+    user?.permissions?.includes('*') ||
+      user?.permissions?.includes('payments.*') ||
+      user?.permissions?.includes('payments.manage')
+  );
 
   const invoice = contextInvoice;
   const contextView = getEtsInvoiceContextView({
@@ -186,10 +196,10 @@ export default function EtsBillingTab({ serviceOrderId }) {
         invoice={selectedInvoice}
         isSaving={isSaving}
         canIssue={Boolean(
-          selectedInvoice &&
-            ['draft', 'issue_failed'].includes(selectedInvoice.status) &&
+          canIssueInvoiceAfterPayment(selectedInvoice) &&
             facturamaStatus?.connected
         )}
+        canManagePayments={canManagePayments}
         issueBlockedReason={
           facturamaStatus?.connected
             ? ''
@@ -200,7 +210,9 @@ export default function EtsBillingTab({ serviceOrderId }) {
         onDraftChange={updateWorkspaceDraft}
         onDownloadFiscalXml={downloadFiscalXml}
         onDownloadInstitutionalPdf={downloadInstitutionalPdf}
+        onDownloadPaymentReceipt={downloadPaymentReceipt}
         onIssue={issueWorkspaceInvoice}
+        onRegisterPayment={registerWorkspacePayment}
         onSaveDraft={saveWorkspaceDraft}
         open={workspaceOpen}
         originElement={workspaceOriginElement}

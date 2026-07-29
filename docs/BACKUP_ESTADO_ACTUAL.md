@@ -75,6 +75,22 @@
 - El respaldo contiene `alembic_version = 7b8c9d0e1f2a`, las columnas de
   conciliación de Fase 14, la tabla de consumidores v1, la evidencia
   propietaria y los triggers append-only.
+- La integración de pagos no agrega migraciones ni modifica datos locales; por
+  ello no corresponde regenerar el respaldo SQL y su head permanece vigente.
+
+## Facturación y pagos
+
+- `InvoicePayment` y los endpoints existentes se consumen desde el Resumen
+  financiero del Workbench único; no existe pestaña de Pagos.
+- El modal registra pagos antes o después del timbrado, valida importe positivo
+  y no mayor al saldo, evita doble envío y refresca `Invoice`, cartera y
+  readiness del ETS.
+- La factura muestra total, pagado, saldo, estado, historial y comprobante PDF.
+  Cuentas por cobrar vive en el Dashboard existente y abre el mismo expediente.
+- Facturama conserva la condición financiera: después del timbrado deriva
+  `issued`, `partially_paid` o `paid` desde los importes persistidos.
+- Saldo cero retira la factura de cartera y satisface la compuerta financiera
+  de certificados cuando `requires_payment=true`.
 
 ## Equipos y contexto de certificado
 
@@ -87,6 +103,15 @@
 
 ## Validaciones ejecutadas
 
+- Integración de pagos: frontend Node `13 passed`; build Vite correcto con
+  `1695` módulos y advertencia no bloqueante por tamaño del chunk.
+- Backend focalizado de pagos, Facturación, documentos, Certificados y
+  readiness: `38 passed`; regresión adicional ETS/servicios/contratos:
+  `16 passed`, `12 subtests passed`.
+- `test_certificate_release_http.py` no recolecta por el `ImportError`
+  preexistente de `app.services.activity.list_messages`, ajeno a pagos. El
+  backend no puede arrancarse para el E2E visual autenticado hasta resolver
+  ese defecto concurrente.
 - Suite específica Fase 14: `7 passed`; incluye composición, resultados,
   simulación, autorización granular, productor ERP idempotente, revalidación,
   concurrencia, compensación y E2E completo por worker después de cerrar la
@@ -129,6 +154,7 @@
 2. Aplicar autorización deny-by-default y permisos explícitos al router de Equipos.
 3. Resolver las deudas transversales vigentes en [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 4. Implementar historial de activos sólo cuando se incorpore formalmente al alcance; no pertenece a esta entrega.
+5. Ejecutar el E2E autenticado Factura→pago→timbrado→liquidación→liberación con datos representativos cuando el backend vuelva a ser arrancable y exista configuración Sandbox.
 
 ## Documentación y trazabilidad
 

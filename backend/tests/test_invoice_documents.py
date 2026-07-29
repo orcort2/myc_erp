@@ -7,7 +7,11 @@ from unittest.mock import Mock
 
 from fastapi import HTTPException
 
-from app.routers.invoices import institutional_invoice_pdf, invoice_fiscal_xml
+from app.routers.invoices import (
+    institutional_invoice_pdf,
+    invoice_fiscal_xml,
+    payment_receipt_pdf,
+)
 from app.services.invoice_pdfs import (
     CATALOG_CANDIDATES,
     _catalog_entry,
@@ -122,4 +126,15 @@ class InvoiceDocumentTests(unittest.TestCase):
         self.assertEqual(
             xml.headers["content-disposition"],
             'attachment; filename="Factura_MYC_MYCF-000123.xml"',
+        )
+
+        with patch(
+            "app.routers.invoices.generate_invoice_payment_receipt_pdf",
+            return_value=(b"%PDF-payment", "Recibo_Pago_000123_9.pdf"),
+        ):
+            receipt = payment_receipt_pdf(9, object(), object())
+        self.assertEqual(receipt.media_type, "application/pdf")
+        self.assertEqual(
+            receipt.headers["content-disposition"],
+            'inline; filename="Recibo_Pago_000123_9.pdf"',
         )

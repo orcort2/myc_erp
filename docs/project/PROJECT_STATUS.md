@@ -90,7 +90,7 @@ permanece como posibilidad futura opcional no autorizada.
 1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
 3. Hojas de Campo sin cierre semántico, automatizaciones metrológicas y E2E de las 23 plantillas.
-4. Facturación ya integra el resumen contextual del ETS sobre el Workbench único; permanecen el borrador no autosalvado, las vistas internas de siguiente fase y el flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
+4. Facturación ya integra en el Workbench único el registro e historial de pagos, comprobante PDF, saldos/estado en tiempo real, cartera y refresco del readiness financiero del ETS. Permanecen el borrador no autosalvado, notas/documentos internos y el flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
 5. Administración y roles sin gestión dinámica ni filtrado visual por permisos.
 6. Toolkit, infraestructura y UX con diagnósticos, puertos, pruebas de despliegue, páginas monolíticas y bundle pendientes.
 

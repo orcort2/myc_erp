@@ -6,13 +6,13 @@
 >
 > Prevalece sobre: implementaciones que vuelvan a concentrar el flujo en una página o creen controladores paralelos
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-07-29
 
 # Controlador reutilizable del Workbench de Facturación
 
 ## Propósito
 
-`useInvoiceWorkbenchController` es el único controlador frontend del expediente de Facturación. Centraliza carga, apertura, borrador, actualización, emisión, descargas, refresco, errores y estados de carga sobre el agregado backend `Invoice` existente.
+`useInvoiceWorkbenchController` es el único controlador frontend del expediente de Facturación. Centraliza carga, apertura, borrador, actualización, emisión, pagos, descargas, cartera, refresco, errores y estados de carga sobre el agregado backend `Invoice` existente.
 
 `BillingPage.jsx` conserva únicamente la composición del Centro de Facturación: filtros, métricas, tabla, dashboard, configuración y montaje de `InvoiceWorkbenchDialog`. Otros módulos deben consumir el mismo controlador; no deben copiar sus llamadas API, payload de borrador ni transición de emisión.
 
@@ -26,7 +26,10 @@ El controlador vive en `frontend/src/components/invoice-workbench/useInvoiceWork
 - contexto por `invoice_id` o `service_order_id`;
 - creación/actualización con `saveWorkspaceDraft`;
 - emisión con `issueWorkspaceInvoice`;
-- descarga de PDF MYC y XML;
+- registro con `registerWorkspacePayment`, sin calcular saldo en React;
+- descarga de PDF MYC, XML y comprobante de pago;
+- carga global de Cuentas por cobrar;
+- callback opcional `onPaymentRegistered` para refrescar readiness del consumidor contextual;
 - refresco del centro y estado Facturama;
 - estado seleccionado, draft, loading, saving, error y aviso;
 - catálogos, configuración y mapas necesarios por los componentes actuales.
@@ -57,7 +60,9 @@ La tarjeta adapta únicamente su presentación:
 - emitida/timbrada y estados administrativos posteriores con CFDI: `Ver factura`, PDF MYC y XML mediante las funciones del controlador;
 - cancelada: `Ver detalle`, sin descargas desde la pestaña.
 
-Pagos, cuentas por cobrar, notas de crédito, historial/documentos y liberación financiera sólo aparecen como tarjetas de siguiente fase. La pestaña no contiene llamadas directas a `api.js`, payload fiscal, transición, emisión, descarga ni lógica backend.
+El Resumen financiero del diálogo incluye el botón `Registrar pago` sólo con permiso efectivo, saldo positivo y estado no cancelado. El modal usa exactamente `InvoicePaymentCreate`, omite `status` técnico, impide cero/negativos/exceso y doble envío, y deja al backend el cálculo. El historial usa `invoice.payments` y el endpoint existente del comprobante. La pestaña ETS no contiene llamadas directas a APIs de pagos: consume las acciones del controlador y, al registrar, vuelve a consultar el readiness financiero. Notas de crédito e historial documental especializado permanecen fuera de esta integración.
+
+Cuentas por cobrar se presenta en el Dashboard existente del Centro de Facturación, no como nueva pestaña. Consume `GET /invoices/accounts-receivable` y abre la factura mediante `openWorkspace`; no recalcula cartera.
 
 La carga contextual usa un bloque estático con altura mínima equivalente al contenido final, sin transición ni animación. La etiqueta de estado, el resumen y sus acciones sólo se montan después de resolver el contexto. `ServiceOrdersPage` conserva montada la pestaña después de su primera apertura y sólo la oculta al alternar carpetas del mismo ETS; así no reinicia la consulta ni reproduce el salto al regresar. Abrir otro ETS reinicia correctamente el contexto.
 
@@ -74,6 +79,8 @@ La carga contextual usa un bloque estático con altura mínima equivalente al co
 - No deben recrearse en páginas consumidoras el payload fiscal, la validación del emisor, la descarga ni el refresco.
 - Un nuevo consumidor debe abrir por contexto explícito y, si no necesita el Centro completo, usar `loadOverview=false`.
 - El resumen contextual debe conservar `contextInvoice` al cerrar el diálogo y actualizarlo con la respuesta de guardar o emitir.
+- Un pago debe actualizar `selectedInvoice`, `contextInvoice`, el listado global y, cuando corresponda, cartera/dashboard y readiness del ETS.
+- Una factura `partially_paid` o `paid` sin UUID continúa siendo emitible; confirmar el PAC no puede perder pagos ni reemplazar su estado financiero por `issued`.
 - `contextInvoice=null` sólo puede presentarse como “Sin factura” con `contextResolved=true`; `isLoading` no sustituye este contrato porque también representa dependencias generales del Workbench.
 
 ## Validación del Sprint 2A

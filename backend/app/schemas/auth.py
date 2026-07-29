@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field
+
+from app.core.permissions import ROLE_PERMISSIONS
 
 
 class RoleRead(BaseModel):
@@ -21,6 +23,14 @@ class UserRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     roles: list[RoleRead] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def permissions(self) -> list[str]:
+        permissions: set[str] = set()
+        for role in self.roles:
+            permissions.update(ROLE_PERMISSIONS.get(role.name, set()))
+        return sorted(permissions)
 
 
 class UserRegister(BaseModel):

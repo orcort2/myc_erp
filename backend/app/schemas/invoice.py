@@ -203,6 +203,7 @@ class AccountsReceivableRow(BaseModel):
     service_order_id: int | None = None
     status: str
     total: Decimal
+    amount_paid: Decimal
     balance_due: Decimal
     due_on: date | None = None
     aging_bucket: str

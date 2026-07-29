@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Activity,
@@ -140,6 +140,7 @@ export default function InvoiceWorkbenchDialog({
   catalogByCode,
   isSaving = false,
   canIssue = false,
+  canManagePayments = false,
   issueBlockedReason = '',
   originElement = null,
   onConceptChange,
@@ -149,6 +150,8 @@ export default function InvoiceWorkbenchDialog({
   onGoToInvoice,
   onDownloadInstitutionalPdf,
   onDownloadFiscalXml,
+  onDownloadPaymentReceipt,
+  onRegisterPayment,
   onClose,
 }) {
   const [isClosing, setIsClosing] = useState(false);
@@ -159,19 +162,6 @@ export default function InvoiceWorkbenchDialog({
   const closeAnimationRef = useRef(null);
   const closeMetricsRef = useRef(null);
   const modalRef = useRef(null);
-
-  const invoiceStatus = invoice?.status || null;
-  const isIssued = useMemo(
-    () =>
-      [
-        'issued',
-        'partially_paid',
-        'paid',
-        'overdue',
-        'cancelled',
-      ].includes(invoiceStatus),
-    [invoiceStatus]
-  );
 
   const title =
     quotation?.folio ||
@@ -306,6 +296,7 @@ export default function InvoiceWorkbenchDialog({
       return (
         <InvoiceDetailView
           canEmit={canIssue}
+          canManagePayments={canManagePayments}
           client={client}
           invoice={invoice}
           isSaving={isSaving}
@@ -313,6 +304,8 @@ export default function InvoiceWorkbenchDialog({
           onIssue={onIssue}
           onDownloadInstitutionalPdf={onDownloadInstitutionalPdf}
           onDownloadFiscalXml={onDownloadFiscalXml}
+          onDownloadPaymentReceipt={onDownloadPaymentReceipt}
+          onRegisterPayment={onRegisterPayment}
         />
       );
     }
