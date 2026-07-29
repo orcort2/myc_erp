@@ -216,7 +216,7 @@ def _write_snapshot(
     *,
     reason: str,
     user_id: int | None = None,
-) -> None:
+) -> QuotationSnapshot:
     current_number = db.scalar(
         select(func.max(QuotationSnapshot.snapshot_number)).where(
             QuotationSnapshot.quotation_id == quotation.id
@@ -230,6 +230,8 @@ def _write_snapshot(
         snapshot_data=_quotation_snapshot_data(quotation),
     )
     db.add(snapshot)
+    db.flush()
+    return snapshot
 
 
 def _date_from_snapshot(value: object) -> date | None:

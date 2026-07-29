@@ -262,6 +262,14 @@ El ETS puede avanzar a liberado y cerrado tras las compuertas operativas. Encues
 
 ## Excepciones y rutas laterales
 
+- Cotización aprobada + ETS existente + cero equipos permite solicitar
+  `Cambiar tipo de servicio` desde Ventas. El usuario trabaja con los folios
+  `MYC-…`, `OSMYC-…` y `EXV-…`; nunca captura IDs internos. Un revisor distinto
+  autoriza/rechaza/pide información. La autorización concede
+  `quotation.change_service_type` por tiempo, usuario y un solo uso. Al aplicar,
+  backend revalida bajo lock, conserva snapshot/revisión, actualiza sólo el
+  servicio autorizado y sincroniza las partidas dependientes del mismo ETS en
+  una transacción. Cualquier equipo posterior bloquea sin cambio parcial.
 - Equipos adicionales pueden bloquearse y registrar una solicitud/comentario, pero la excepción no es todavía un agregado persistente especializado.
 - Estados legacy de certificados se normalizan para compatibilidad.
 - Las firmas directas y el número de OT en `service_orders` siguen presentes como compatibilidad junto a las estructuras vigentes por ciclos y `service_work_orders`.

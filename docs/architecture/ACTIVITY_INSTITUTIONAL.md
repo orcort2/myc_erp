@@ -81,6 +81,11 @@ Certificado y Factura, además de pago y nota de crédito. Auditoría continúa
 siendo la fuente institucional de quién cambió el dominio; Activity presenta
 el evento operativo en contexto.
 
+La excepción contextual de cambio de servicio publica solicitud, decisión,
+bloqueo y aplicación con una clave idempotente por `EXV-…`, tanto en la
+Cotización `MYC-…` como en el ETS `OSMYC-…`. Los IDs de relación permanecen
+internos; cuerpo, metadata y navegación usan folios visibles.
+
 ## Adjuntos
 
 Máximo 10 archivos por mensaje y 15 MB por archivo. Se valida:

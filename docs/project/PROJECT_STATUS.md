@@ -34,7 +34,7 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 | --- | --- |
 | Dashboard | Visibilidad por permisos y E2E autenticado con datos representativos. |
 | Clientes | Proteger todas las rutas y ejecutar el ciclo autenticado completo. |
-| Cotizaciones | Servicios Compuestos ya conservan un concepto comercial y expanden el ETS con pruebas; falta completar restauración de partidas desde snapshots, asegurar rutas y ejecutar E2E autenticado hasta ETS. |
+| Cotizaciones | Servicios Compuestos conservan un concepto comercial y expanden el ETS; la primera excepción contextual cambia un servicio autorizado sobre la misma cotización/ETS con cero equipos, folios visibles, snapshot, segregación y pruebas. Falta completar restauración de partidas desde snapshots, asegurar las rutas legacy y ejecutar E2E autenticado en navegador hasta ETS. |
 | Órdenes de Trabajo | E2E multi-OT, permisos y encapsulado del número legacy. |
 | Equipos | La independencia del catálogo vivo y el snapshot operativo quedaron validados; falta proteger el router y completar el E2E autenticado dentro del ciclo multi-OT. |
 | Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada; falta retirar la superficie autenticadora duplicada de ETS y completar E2E de verificación pública. |

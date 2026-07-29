@@ -5,6 +5,10 @@ import mycLogo from '../assets/myc-logo.png';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import {
+  QuotationServiceExceptionAction,
+  QuotationServiceExceptionReview
+} from '../components/sales/QuotationServiceExceptions.jsx';
+import {
   internalUnitOptions,
   taxObjectOptions,
   serviceCategories,
@@ -28,6 +32,7 @@ import {
   deleteQuotationItem,
   downloadQuotationPdf,
   getQuotation,
+  getCurrentUser,
   getQuotationPdfUrl,
   getQuotationTemplate,
   listQuotationSnapshots,
@@ -378,6 +383,7 @@ function QuotationsPage() {
   const [salesTab, setSalesTab] = useState('quotations');
   const [quotationDetailTab, setQuotationDetailTab] = useState('info');
   const [quotations, setQuotations] = useState([]);
+  const [currentUser, setCurrentUser] = useState(null);
   const [clients, setClients] = useState([]);
   const [detailForm, setDetailForm] = useState(emptyQuotationForm);
   const [draftItems, setDraftItems] = useState([]);
@@ -497,6 +503,11 @@ function QuotationsPage() {
           ? mapTemplateFromApi(templateResult.value)
           : defaultQuotationTemplate
       );
+      try {
+        setCurrentUser(await getCurrentUser());
+      } catch {
+        setCurrentUser(null);
+      }
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -1541,6 +1552,20 @@ function QuotationsPage() {
         >
           Plantilla cotizacion
         </button>
+        {currentUser?.permissions?.some((permission) => (
+          permission === '*' ||
+          permission === 'quotations.*' ||
+          permission === 'quotations.exceptions.inspect_change_service'
+        )) ? (
+          <button
+            aria-selected={salesTab === 'exceptions'}
+            className={salesTab === 'exceptions' ? 'module-tab is-active' : 'module-tab'}
+            onClick={() => setSalesTab('exceptions')}
+            type="button"
+          >
+            Excepciones
+          </button>
+        ) : null}
       </div>
 
       {salesTab === 'quotations' ? (
@@ -2003,6 +2028,10 @@ function QuotationsPage() {
       </section>
       )}
 
+      {salesTab === 'exceptions' ? (
+        <QuotationServiceExceptionReview currentUser={currentUser} />
+      ) : null}
+
       {isDetailOpen && selectedQuotation ? (
         <div className="modal-backdrop" role="presentation">
           <section className="client-modal quotation-detail-modal" aria-modal="true" role="dialog">
@@ -2178,6 +2207,18 @@ function QuotationsPage() {
                     </button>
                   </div>
                 </section>
+
+                <QuotationServiceExceptionAction
+                  catalogItems={catalogItems}
+                  currentUser={currentUser}
+                  onApplied={async () => {
+                    const updated = await getQuotation(selectedQuotation.id);
+                    setSelectedQuotation(updated);
+                    await refreshQuotationSnapshots(updated.id);
+                    await loadQuotationData();
+                  }}
+                  quotation={selectedQuotation}
+                />
 
                 {!['rejected', 'expired', 'cancelled'].includes(selectedQuotation.status) ? (
                 <section className="danger-zone">

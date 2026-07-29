@@ -20,6 +20,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Dashboard y navegación principal.
 - Clientes, contactos dependientes, datos fiscales, constancias e importación/exportación.
 - Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
+- Primera excepción contextual de Ventas: una cotización aprobada con ETS y cero equipos puede solicitar, autorizar y aplicar una sustitución técnica de servicio sobre los mismos folios. Precio, impuestos, reapertura general y otras excepciones quedan fuera.
 - ETS/Servicios, hitos de agenda/llamado, equipos, Órdenes de Trabajo y firmas por ciclo.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad, revisión consecutiva de certificados por contexto OT/ETS, autenticación, verificación pública y liberación.

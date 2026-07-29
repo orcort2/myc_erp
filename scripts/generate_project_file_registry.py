@@ -167,8 +167,6 @@ FORCE_RECLASSIFY = {
     "backend/tests/resolution_engine/test_phase_12_resolution_center.py",
     "backend/tests/resolution_engine/test_phase_13_resolution_center_consolidation.py",
     "frontend/src/constants/navigation.js",
-    "frontend/src/pages/App.jsx",
-    "frontend/src/pages/ResolutionCenterPage.jsx",
     "frontend/src/pages/resolution-center.css",
     "frontend/src/services/api.js",
     "frontend/src/utils/resolutionCenter.js",
@@ -177,6 +175,24 @@ FORCE_RECLASSIFY = {
     "docs/architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_12.md",
     "docs/closures/RESOLUTION_ENGINE_PHASE_13.md",
+    "backend/app/core/permissions.py",
+    "backend/app/main.py",
+    "backend/app/models/__init__.py",
+    "backend/app/models/quotation_service_change.py",
+    "backend/app/routers/quotation_service_changes.py",
+    "backend/app/schemas/quotation_service_change.py",
+    "backend/app/services/quotation_service_changes.py",
+    "backend/app/services/quotations.py",
+    "backend/migrations/versions/9d0e1f2a3b4c_quotation_service_change_exception.py",
+    "backend/tests/test_quotation_service_change_exception.py",
+    "frontend/src/components/sales/QuotationServiceExceptions.jsx",
+    "frontend/src/components/sales/quotation-service-exceptions.css",
+    "frontend/src/pages/QuotationsPage.jsx",
+    "frontend/src/services/api.js",
+    "frontend/src/utils/quotationServiceExceptions.js",
+    "frontend/src/utils/quotationServiceExceptions.test.js",
+    "docs/architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md",
+    "docs/closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md",
 }
 SECTION_ORDER = (
     "Backend", "Frontend", "Scripts", "Recursos", "Configuración",
@@ -247,6 +263,137 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "En desarrollo"
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
+
+    sales_exception_files = {
+        "backend/app/core/permissions.py": (
+            "Matriz ejecutable de permisos",
+            "Declara roles y permisos del ERP, incluidos los cuatro permisos segregados de la excepción contextual de servicio.",
+            "Servicio de autenticación y nombres de permisos",
+            "Routers, capabilities, frontend y administración",
+            "Crítico",
+        ),
+        "backend/app/main.py": (
+            "Entrada FastAPI",
+            "Crea la aplicación y registra routers/middleware, incluida la API contextual de excepciones de Ventas.",
+            "Configuración, routers, Facturama y servicios de arranque",
+            "Uvicorn, operación y consumidores HTTP",
+            "Crítico",
+        ),
+        "backend/app/models/__init__.py": (
+            "Registro de metadata ORM",
+            "Importa modelos del ERP, Motor y expediente de excepción de servicio para metadata completa.",
+            "Modelos ORM del ERP y Motor",
+            "Alembic, sesiones y pruebas de esquema",
+            "Crítico",
+        ),
+        "backend/app/models/quotation_service_change.py": (
+            "Expediente de excepción de Ventas",
+            "Persiste solicitud, folios, snapshots de servicio, decisión, capacidad limitada, vigencia, consumo y resultado sin exponer IDs al usuario.",
+            "SQLAlchemy, cotización, ETS, catálogo, usuarios y snapshots",
+            "Servicio contextual, Alembic, auditoría y pruebas",
+            "Crítico",
+        ),
+        "backend/app/schemas/quotation_service_change.py": (
+            "Contratos de excepción de Ventas",
+            "Valida solicitud, decisión administrativa y recurso visible con folios, impacto, estado y capacidades.",
+            "Pydantic",
+            "Router contextual y frontend de Ventas",
+            "Alto",
+        ),
+        "backend/app/services/quotation_service_changes.py": (
+            "Dominio de cambio excepcional de servicio",
+            "Solicita, autoriza y aplica atómicamente el servicio autorizado; revalida versión, ETS y cero equipos, sincroniza partidas, snapshots, Actividad, auditoría y notificaciones.",
+            "Cotizaciones, ETS, catálogo, permisos, Actividad y notificaciones",
+            "Router contextual, Ventas y pruebas",
+            "Crítico",
+        ),
+        "backend/app/routers/quotation_service_changes.py": (
+            "API contextual de excepciones de Ventas",
+            "Expone elegibilidad y comandos por folios visibles de cotización/excepción sin pedir IDs técnicos al usuario.",
+            "FastAPI, auth, schemas y servicio propietario",
+            "Frontend de Cotizaciones",
+            "Crítico",
+        ),
+        "backend/app/services/quotations.py": (
+            "Dominio de cotizaciones",
+            "Gestiona CRUD, estados, partidas, importes y snapshots; devuelve la revisión creada para vincular cambios excepcionales.",
+            "SQLAlchemy, catálogo, Actividad y auditoría",
+            "Router, PDFs, ETS y excepción contextual",
+            "Crítico",
+        ),
+        "backend/migrations/versions/9d0e1f2a3b4c_quotation_service_change_exception.py": (
+            "Migración de excepción de servicio",
+            "Crea el expediente persistente, relaciones restrictivas, unicidad activa, vigencia, snapshots e índices del flujo contextual.",
+            "Alembic, PostgreSQL y head 8c9d0e1f2a3b",
+            "Despliegue, rollback, servicios y pruebas",
+            "Crítico",
+        ),
+        "backend/tests/test_quotation_service_change_exception.py": (
+            "Suite de excepción de servicio",
+            "Prueba elegibilidad, folios, permisos, segregación, idempotencia, impacto comercial, snapshot, aplicación única, sincronización y bloqueo por equipos.",
+            "Pytest, SQLAlchemy y servicios de Ventas",
+            "Gate backend de la excepción contextual",
+            "Crítico",
+        ),
+        "frontend/src/components/sales/QuotationServiceExceptions.jsx": (
+            "UI contextual de excepciones de Ventas",
+            "Permite solicitar, revisar y aplicar el cambio desde la cotización usando folios, nombres y claves visibles; no presenta IDs técnicos.",
+            "React, cliente API y utilidades de permisos",
+            "QuotationsPage y usuarios Comercial/Administrador",
+            "Crítico",
+        ),
+        "frontend/src/components/sales/quotation-service-exceptions.css": (
+            "Estilos de excepción de Ventas",
+            "Define tarjeta contextual, diálogo, impacto y bandeja administrativa responsive.",
+            "CSS y variables visuales del ERP",
+            "QuotationServiceExceptions",
+            "Alto",
+        ),
+        "frontend/src/utils/quotationServiceExceptions.js": (
+            "Presentación de excepción de Ventas",
+            "Deriva visibilidad por estado/permiso y etiquetas de servicio mediante clave visible sin mostrar IDs.",
+            "JavaScript puro",
+            "Componentes de Ventas y pruebas frontend",
+            "Alto",
+        ),
+        "frontend/src/utils/quotationServiceExceptions.test.js": (
+            "Pruebas frontend de excepción",
+            "Verifica permiso/estado de la acción y etiqueta visible del servicio sin ID técnico.",
+            "Node test y utilidades de Ventas",
+            "Gate frontend de la excepción contextual",
+            "Alto",
+        ),
+        "frontend/src/pages/QuotationsPage.jsx": (
+            "Módulo de Cotizaciones",
+            "Compone listado, detalle, catálogo, plantilla y la primera excepción contextual con bandeja administrativa.",
+            "React, API, formularios, PDF, Actividad y componentes de Ventas",
+            "Usuarios del módulo comercial",
+            "Crítico",
+        ),
+        "frontend/src/services/api.js": (
+            "Cliente API compartido",
+            "Centraliza transporte autenticado e incorpora elegibilidad, solicitud, revisión y aplicación de excepciones por folio.",
+            "fetch/HTTP y endpoints FastAPI",
+            "Páginas y controladores frontend",
+            "Crítico",
+        ),
+        "docs/architecture/sales/QUOTATION_CHANGE_SERVICE_EXCEPTION.md": (
+            "Contrato de excepción de servicio",
+            "Define alcance, folios visibles, estados, permisos, capacidad, invariantes, atomicidad, Actividad y límites del primer caso de Ventas.",
+            "Código, reglas y pruebas de Ventas",
+            "Arquitectura, operación, desarrollo y QA",
+            "Crítico",
+        ),
+        "docs/closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md": (
+            "Cierre técnico de excepción de servicio",
+            "Consolida diagnóstico, modelo, validaciones, pruebas, migración, archivos, límites y deuda pendiente.",
+            "Contrato, implementación, migración y suites",
+            "Arquitectura, dirección, QA y auditoría",
+            "Alto",
+        ),
+    }
+    if value in sales_exception_files:
+        return sales_exception_files[value]
 
     phase_12_files = {
         "backend/app/core/config.py": (

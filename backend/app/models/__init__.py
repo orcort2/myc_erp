@@ -31,6 +31,7 @@ from app.models.invoice import CreditNote, FacturamaInvoiceAttempt, Invoice, Inv
 from app.models.notification import Notification
 from app.models.sat_catalog import SatCatalog, SatCatalogAlias, SatCatalogFavorite, SatCatalogRecord, SatCatalogVersion
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
+from app.models.quotation_service_change import QuotationServiceChangeRequest
 from app.models.reference_standard import (
     FieldSheetReferenceStandard,
     ReferenceStandard,
@@ -129,6 +130,7 @@ __all__ = [
     "Quotation",
     "QuotationItem",
     "QuotationSnapshot",
+    "QuotationServiceChangeRequest",
     "ReferenceStandard",
     "ReferenceStandardCertificate",
     "ReferenceStandardCertificateUncertainty",

@@ -443,3 +443,7 @@ La Fase 0 se considera lista para revisión cuando:
   determinista bajo
   [`31_PHASE_14_INTEGRATION_EXPANSION.md`](31_PHASE_14_INTEGRATION_EXPANSION.md).
   La IA permanece como posibilidad futura opcional no autorizada.
+- La excepción contextual de Ventas `quotation.change_service_type` no abre ni
+  continúa otra fase del Motor. Usa una bandeja de negocio y servicios
+  propietarios acotados; no agrega definición, Registry, Lifecycle, worker,
+  API pública ni estados al Centro.

@@ -28,8 +28,14 @@
 ## Persistencia, migración y respaldo
 
 - Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Head único del código: `8c9d0e1f2a3b`.
-- Head aplicado en la base PostgreSQL local compartida: `8c9d0e1f2a3b`.
+- Head único del código: `9d0e1f2a3b4c`.
+- Head aplicado en la base PostgreSQL local compartida: `9d0e1f2a3b4c`.
+- `9d0e1f2a3b4c` crea el expediente de excepción contextual de cambio de
+  servicio, con folio `EXV-…`, relaciones restrictivas, snapshots de impacto,
+  capacidad de un uso, vigencia e índices de consulta.
+- Tras el upgrade se regeneró `backup_erp_myc_antes_prueba.sql` (71 MB) y se
+  confirmó que la tabla `alembic_version` del origen contiene
+  `9d0e1f2a3b4c`.
 - `8c9d0e1f2a3b` institucionaliza Actividad con eventos idempotentes,
   lecturas por usuario y solicitudes de atención. Su upgrade completo,
   downgrade a `7b8c9d0e1f2a` y re-upgrade se validaron en PostgreSQL temporal.
@@ -147,11 +153,13 @@
   suite backend completa.
 - `alembic check` continúa mostrando `TD-021`, pero no detecta operaciones
   nuevas sobre `activity_*` ni `notifications`.
-- Backend completo: `398 passed`, `2 failed`, `19 subtests passed`. Los dos
-  fallos son pruebas reales de LibreOffice, que abortó con `returncode=-6`;
-  no corresponden a Actividad.
-- Frontend Node: `21 passed`; build Vite correcto con `1700` módulos y
-  advertencia no bloqueante por tamaño del chunk.
+- Backend completo ejecutado fuera del sandbox para permitir LibreOffice:
+  `411 passed`, `19 subtests passed`; 2 warnings de dependencias.
+- Excepción contextual: `11 passed` backend; regresión dirigida de Actividad y
+  Servicios Compuestos `23 passed`.
+- Frontend completo: `23 passed`, incluidas 2 pruebas nuevas; build Vite
+  correcto con `1703` módulos y advertencia no
+  bloqueante por tamaño del chunk.
 - `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios
   finales en CSS concurrente ajeno a Fase 14.
 - Tras migrar la base local se regeneró `backup_erp_myc_antes_prueba.sql`; su

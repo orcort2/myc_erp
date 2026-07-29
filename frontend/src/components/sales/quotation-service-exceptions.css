@@ -1,0 +1,100 @@
+.sales-exception-card,
+.sales-exception-review {
+  display: grid;
+  gap: 1rem;
+}
+
+.sales-exception-card {
+  background: color-mix(in srgb, var(--panel-bg, #fff) 94%, #1f6f5f);
+  border: 1px solid rgba(31, 111, 95, 0.2);
+  border-radius: 16px;
+  padding: 1rem;
+}
+
+.sales-exception-card p,
+.sales-exception-card h3,
+.sales-exception-card span {
+  margin: 0;
+}
+
+.sales-exception-active,
+.sales-exception-impact {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.sales-exception-message {
+  border-left: 3px solid #1f6f5f;
+  padding: 0.65rem 0.85rem;
+}
+
+.sales-exception-dialog {
+  align-items: center;
+  background: rgba(15, 23, 42, 0.52);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 1100;
+}
+
+.sales-exception-dialog form {
+  background: var(--panel-bg, #fff);
+  border-radius: 18px;
+  display: grid;
+  gap: 1rem;
+  max-height: 90vh;
+  max-width: 620px;
+  overflow: auto;
+  padding: 1.25rem;
+  width: 100%;
+}
+
+.sales-exception-dialog label {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.sales-exception-dialog__header,
+.sales-exception-list article header {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+}
+
+.sales-exception-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.sales-exception-list article {
+  background: var(--panel-bg, #fff);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 16px;
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.sales-exception-list header div,
+.sales-exception-list dl div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.sales-exception-list dl {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin: 0;
+}
+
+.sales-exception-list dt {
+  color: var(--muted-text, #64748b);
+  font-size: 0.78rem;
+}
+
+.sales-exception-list dd {
+  margin: 0;
+}

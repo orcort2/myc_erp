@@ -151,6 +151,40 @@ export async function getCurrentUser() {
   return request('/auth/me');
 }
 
+export function getQuotationServiceExceptionContext(quotationFolio) {
+  return request(
+    `/quotation-service-exceptions/quotations/${encodeURIComponent(quotationFolio)}/context`
+  );
+}
+
+export function listQuotationServiceExceptions(params = {}) {
+  const query = new URLSearchParams();
+  if (params.quotationFolio) query.set('quotation_folio', params.quotationFolio);
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request(`/quotation-service-exceptions${suffix}`);
+}
+
+export function requestQuotationServiceChange(quotationFolio, payload) {
+  return request(
+    `/quotation-service-exceptions/quotations/${encodeURIComponent(quotationFolio)}`,
+    { method: 'POST', body: JSON.stringify(payload) }
+  );
+}
+
+export function reviewQuotationServiceChange(exceptionFolio, payload) {
+  return request(
+    `/quotation-service-exceptions/${encodeURIComponent(exceptionFolio)}/review`,
+    { method: 'POST', body: JSON.stringify(payload) }
+  );
+}
+
+export function applyQuotationServiceChange(exceptionFolio) {
+  return request(
+    `/quotation-service-exceptions/${encodeURIComponent(exceptionFolio)}/apply`,
+    { method: 'POST' }
+  );
+}
+
 export async function refreshSession() {
   const refreshToken = getRefreshToken();
   if (!refreshToken) {
