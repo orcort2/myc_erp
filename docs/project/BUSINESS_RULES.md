@@ -99,3 +99,10 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 6. Certificados usan `{PREFIJO}{AA}{MM}{NNNN}` sin guiones. En 2026 comienzan
    o continúan desde 8000; desde cada año nuevo, 1000. OT usa 7000 en 2026 y
    1000 desde cada año posterior. Ningún contador se reinicia por mes.
+7. Un actor con `authorize_unlock`, `apply_unlock`,
+   `rebuild_empty_service_order`, `inspect` y
+   `self_authorize_unlock` registra el motivo y obtiene el desbloqueo en el
+   mismo comando. Administrador satisface esta autoridad mediante `*`; el
+   expediente conserva solicitante/revisor, vigencia, Actividad, notificación
+   y auditoría de autoautorización. Los roles sin esa combinación mantienen la
+   revisión segregada.

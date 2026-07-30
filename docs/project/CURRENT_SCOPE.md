@@ -20,7 +20,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Dashboard y navegación principal.
 - Clientes, contactos dependientes, datos fiscales, constancias e importación/exportación.
 - Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
-- Primera excepción contextual de Ventas: una cotización aprobada con ETS y cero equipos puede solicitar, autorizar y aplicar una sustitución técnica de servicio sobre los mismos folios. Precio, impuestos, reapertura general y otras excepciones quedan fuera.
+- Primera excepción contextual de Ventas: una cotización aprobada con ETS
+  integralmente virgen puede desbloquear todas sus partidas, guardar una nueva
+  revisión y reconstruir el ETS con el mismo folio. Administrador registra el
+  motivo y desbloquea directamente mediante autoridad `*`; otros roles
+  conservan solicitud y revisión segregadas.
 - ETS/Servicios, hitos de agenda/llamado, equipos, Órdenes de Trabajo y firmas por ciclo.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad, revisión consecutiva de certificados por contexto OT/ETS, autenticación, verificación pública y liberación.
@@ -127,7 +131,8 @@ La versión 1.0 requiere, como mínimo, cerrar los riesgos P0 de seguridad, elim
 ## Ampliación verificada 2026-07-29 — Ventas y folios
 
 - Cotización aprobada: solicitud, autorización y edición directa excepcional de
-  partidas con revisión/delta.
+  partidas con revisión/delta. Administrador compacta solicitud/autorización en
+  un comando auditado y entra inmediatamente a editar.
 - ETS virgen: validación integral, eliminación física y recreación atómica con
   el mismo `OSMYC-…`.
 - Catálogo: tipos `accredited`, `traceable`, `linked`, empresas vinculadas

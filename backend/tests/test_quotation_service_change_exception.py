@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 import app.models  # noqa: F401
 from app.core.db import Base
 from app.models.activity import ActivityMessage
+from app.models.audit_log import AuditLog
 from app.models.catalog_item import CatalogItem
 from app.models.client import Client
 from app.models.equipment import Equipment
@@ -303,6 +304,37 @@ def test_controlled_unlock_rebuilds_empty_ets_with_same_visible_folio(db, contex
     assert request.rebuild_audit_snapshot["folio_preserved"] is True
     assert db.scalar(select(func.count(ActivityMessage.id))) >= 4
     assert db.scalar(select(func.count(Notification.id))) >= 2
+
+
+def test_administrator_registers_reason_and_unlocks_directly(db, context):
+    result = request_change(
+        db,
+        context.quotation.folio,
+        QuotationServiceChangeCreate(
+            reason="Corrección administrativa antes de iniciar la operación."
+        ),
+        context.administrator,
+    )
+    request = db.scalar(select(QuotationServiceChangeRequest))
+
+    assert result["status"] == "authorized"
+    assert result["can_apply"] is True
+    assert result["requester_name"] == context.administrator.full_name
+    assert result["reviewer_name"] == context.administrator.full_name
+    assert request.requester_id == context.administrator.id
+    assert request.reviewer_id == context.administrator.id
+    assert request.authorized_apply_user_id == context.administrator.id
+    assert request.expires_at is not None
+    assert db.scalar(
+        select(func.count(AuditLog.id)).where(
+            AuditLog.action == "quotation.unlock_self_authorized"
+        )
+    ) == 1
+    assert db.scalar(
+        select(func.count(ActivityMessage.id)).where(
+            ActivityMessage.event_code == "quotation.unlock.authorized"
+        )
+    ) == 1
 
 
 def test_rebuild_validator_blocks_equipment_and_executed_work_order(db, context):

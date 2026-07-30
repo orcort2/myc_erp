@@ -19,14 +19,19 @@ normalizado y snapshots catálogo→cotización→ETS→equipo. Los certificados
 vinculados usan el formato compacto y contadores anuales; OT adopta los pisos
 2026/normal anual.
 
+Corrección UX posterior: Administrador no envía una petición a otro usuario.
+Al registrar el motivo, su autoridad `*` produce solicitud y autorización
+auditadas en el mismo comando y abre inmediatamente la edición excepcional.
+Comercial y cualquier rol sin `self_authorize_unlock` conservan la segregación.
+
 Migraciones:
 
 - `ae1f2a3b4c5d`: empresas, clasificación, snapshots, contadores y expediente.
 - `af2a3b4c5d6e`: snapshot fuente del ETS y restricciones.
 - `b03b4c5d6e7f`: pisos institucionales 2026.
 
-Validación registrada: backend completo `408 passed`, `19 subtests passed`
-(`8 passed` focalizados); frontend Node `25 passed`; Vite build correcto.
+Validación registrada: backend completo `409 passed`, `19 subtests passed`
+(`9 passed` focalizados); frontend Node `26 passed`; Vite build correcto.
 Alembic local quedó en
 `b03b4c5d6e7f (head)`. En PostgreSQL temporal se validó
 `upgrade head → downgrade 9d0e1f2a3b4c → upgrade head` y después se eliminó

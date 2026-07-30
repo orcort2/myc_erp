@@ -395,7 +395,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/services/quotation_service_changes.py": (
             "Dominio de desbloqueo controlado",
-            "Solicita, autoriza, previsualiza y consume atómicamente una nueva revisión; revalida locks, congela historial, elimina el ETS virgen y lo recrea con el mismo OSMYC.",
+            "Solicita, autoautoriza sólo con autoridad explícita, revisa, previsualiza y consume atómicamente una nueva revisión; revalida locks, congela historial, elimina el ETS virgen y lo recrea con el mismo OSMYC.",
             "Cotizaciones, ETS, catálogo, permisos, reconstrucción, Actividad y notificaciones",
             "Router contextual, Ventas y pruebas",
             "Crítico",
@@ -458,14 +458,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/tests/test_quotation_service_change_exception.py": (
             "Suite de desbloqueo y folios",
-            "Prueba delta, segregación, reconstrucción física con mismo OSMYC, bloqueos operativos, snapshots vinculados y secuencias compactas 2026/2027.",
+            "Prueba segregación, autoautorización administrativa auditada, delta, rollback, reconstrucción con mismo OSMYC, bloqueos, snapshots y secuencias 2026/2027.",
             "Pytest, SQLAlchemy, Ventas, ETS y certificados",
             "Gate backend del desbloqueo controlado",
             "Crítico",
         ),
         "frontend/src/components/sales/QuotationServiceExceptions.jsx": (
             "UI contextual de desbloqueo",
-            "Permite solicitar y revisar el desbloqueo, muestra estado, motivo, revisor y vigencia, y habilita la edición directa sin presentar IDs técnicos.",
+            "Permite solicitar/revisar o registrar y desbloquear directamente con autoridad administrativa; muestra motivo, revisor y vigencia y habilita edición sin IDs técnicos.",
             "React, cliente API y utilidades de permisos",
             "QuotationsPage y usuarios Comercial/Administrador",
             "Crítico",
@@ -479,14 +479,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "frontend/src/utils/quotationServiceExceptions.js": (
             "Presentación de excepción de Ventas",
-            "Deriva visibilidad por estado/permiso, etiquetas formales y validación condicional de empresa/prefijo sin mostrar IDs técnicos.",
+            "Deriva visibilidad, autoridad explícita de autoautorización, etiquetas formales y validación condicional de empresa/prefijo sin mostrar IDs técnicos.",
             "JavaScript puro",
             "Componentes de Ventas y pruebas frontend",
             "Alto",
         ),
         "frontend/src/utils/quotationServiceExceptions.test.js": (
             "Pruebas frontend de excepción",
-            "Verifica acción contextual, permisos, etiquetas acreditado/trazable/vinculado y validación normalizada de empresa y prefijo.",
+            "Verifica acción contextual, autoautorización administrativa, permisos, etiquetas acreditado/trazable/vinculado y validación de empresa/prefijo.",
             "Node test y utilidades de Ventas",
             "Gate frontend de la excepción contextual",
             "Alto",

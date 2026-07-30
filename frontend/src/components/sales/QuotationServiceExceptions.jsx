@@ -8,6 +8,7 @@ import {
 } from '../../services/api.js';
 import {
   canShowQuotationServiceException,
+  canSelfAuthorizeQuotationUnlock,
   hasQuotationExceptionPermission
 } from '../../utils/quotationServiceExceptions.js';
 import './quotation-service-exceptions.css';
@@ -24,6 +25,7 @@ export function QuotationServiceExceptionAction({
   const [form, setForm] = useState({ reason: '', observation: '' });
   const [message, setMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const canSelfAuthorize = canSelfAuthorizeQuotationUnlock(currentUser);
 
   async function loadContext() {
     if (!quotation?.folio || quotation.status !== 'accepted') {
@@ -55,9 +57,35 @@ export function QuotationServiceExceptionAction({
         reason: form.reason.trim(),
         observation: form.observation.trim() || null
       });
-      setMessage(`Solicitud ${result.folio} enviada para autorización.`);
+      setMessage(
+        result.can_apply
+          ? `${quotation.folio} desbloqueada mediante ${result.folio}.`
+          : `Solicitud ${result.folio} enviada para autorización.`
+      );
       setIsOpen(false);
       await loadContext();
+      if (result.can_apply) onEnterExceptionalMode?.(result);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function authorizeExistingRequest() {
+    const active = context?.active_request;
+    if (!active) return;
+    setMessage('');
+    setIsSaving(true);
+    try {
+      const result = await reviewQuotationServiceChange(active.folio, {
+        decision: 'authorize',
+        comment: 'Autoautorización administrativa registrada.',
+        validity_hours: 72
+      });
+      setMessage(`${quotation.folio} desbloqueada mediante ${result.folio}.`);
+      await loadContext();
+      if (result.can_apply) onEnterExceptionalMode?.(result);
     } catch (error) {
       setMessage(error.message);
     } finally {
@@ -82,6 +110,18 @@ export function QuotationServiceExceptionAction({
           type="button"
         >
           Editar cotización desbloqueada
+        </button>
+      ) : active &&
+        canSelfAuthorize &&
+        active.can_review &&
+        ['pending_review', 'information_required'].includes(active.status) ? (
+        <button
+          className="primary-button"
+          disabled={isSaving}
+          onClick={authorizeExistingRequest}
+          type="button"
+        >
+          {isSaving ? 'Procesando…' : 'Autorizar y editar'}
         </button>
       ) : active ? (
         <span className="sales-exception-inline-status">
@@ -117,10 +157,11 @@ export function QuotationServiceExceptionAction({
               </button>
             </div>
             <div className="sales-exception-impact">
-              <strong>Alcance controlado</strong>
+              <strong>{canSelfAuthorize ? 'Desbloqueo administrativo' : 'Alcance controlado'}</strong>
               <span>
-                La autorización habilita la edición directa de partidas y reconstruye el ETS
-                únicamente si continúa sin información operativa.
+                {canSelfAuthorize
+                  ? 'Tu autoridad permite registrar el motivo y abrir inmediatamente la edición excepcional. La reconstrucción sólo procederá si el ETS continúa virgen.'
+                  : 'La autorización habilita la edición directa de partidas y reconstruye el ETS únicamente si continúa sin información operativa.'}
               </span>
             </div>
             <label>
@@ -146,7 +187,11 @@ export function QuotationServiceExceptionAction({
                 Cancelar
               </button>
               <button className="primary-button" disabled={isSaving} type="submit">
-                {isSaving ? 'Enviando…' : 'Solicitar desbloqueo'}
+                {isSaving
+                  ? 'Procesando…'
+                  : canSelfAuthorize
+                    ? 'Registrar y desbloquear'
+                    : 'Solicitar desbloqueo'}
               </button>
             </div>
           </form>

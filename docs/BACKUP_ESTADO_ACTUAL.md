@@ -128,6 +128,9 @@
 
 - `quotation.controlled_unlock` reemplaza el cambio puntual: solicitud,
   autorización nominativa, edición directa, delta, nueva revisión y cierre.
+- Administrador registra el motivo y desbloquea directamente mediante su
+  autoridad `*`; no espera aprobación externa. La autoautorización mantiene
+  expediente `EXV`, vigencia de 72 horas, eventos, notificación y auditoría.
 - El validador bloquea cualquier ETS con evidencia operativa. Un ETS virgen se
   elimina físicamente y se recrea atómicamente con el mismo `OSMYC-…`.
 - Catálogo y snapshots distinguen `accredited`, `traceable` y `linked`; CAPYMET
@@ -168,12 +171,12 @@
 - PostgreSQL temporal del cambio vigente:
   `upgrade head → downgrade 9d0e1f2a3b4c → upgrade head`; terminó en
   `b03b4c5d6e7f (head)` y la base temporal fue eliminada.
-- Backend completo: `408 passed`, `19 subtests passed`; 2 warnings de
+- Backend completo: `409 passed`, `19 subtests passed`; 2 warnings de
   dependencias.
-- Desbloqueo/servicios/folios: `8 passed` focalizados; incluye permisos,
-  delta, rollback, reconstrucción física, bloqueos, linked, normalización y
-  secuencias 2026/2027.
-- Frontend completo: `25 passed`, incluidas 4 pruebas del flujo; build Vite
+- Desbloqueo/servicios/folios: `9 passed` focalizados; incluye permisos,
+  autoautorización administrativa, delta, rollback, reconstrucción física,
+  bloqueos, linked, normalización y secuencias 2026/2027.
+- Frontend completo: `26 passed`, incluidas 5 pruebas del flujo; build Vite
   correcto con `1703` módulos y advertencia no
   bloqueante por tamaño del chunk.
 - `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios

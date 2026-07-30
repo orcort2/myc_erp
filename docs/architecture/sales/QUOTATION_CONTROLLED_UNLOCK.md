@@ -67,7 +67,16 @@ notificaciones quedan fuera del ETS eliminado.
 
 Comercial solicita, inspecciona y aplica; Desarrollador autoriza y administra.
 Administrador conserva `*`. La segregación impide autoautorización salvo
-capacidad explícita.
+capacidad explícita. Si un mismo actor reúne `authorize_unlock`,
+`apply_unlock`, `rebuild_empty_service_order`, `inspect` y
+`self_authorize_unlock`, el comando de solicitud registra también la
+autorización, asignación y vigencia de 72 horas. Administrador entra por esta
+ruta mediante `*`: la interfaz dice `Registrar y desbloquear`, abre
+inmediatamente la edición y conserva eventos separados de solicitud y
+autorización, notificación y auditoría `quotation.unlock_self_authorized`.
+Si ya existía una solicitud administrativa pendiente creada por la versión
+anterior, la misma ficha ofrece `Autorizar y editar` y consume el endpoint de
+revisión vigente; no obliga a crear otro expediente.
 
 ## Límites
 

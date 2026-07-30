@@ -6,6 +6,19 @@ export function hasQuotationExceptionPermission(user, permission) {
   );
 }
 
+export function canSelfAuthorizeQuotationUnlock(user) {
+  return (
+    hasQuotationExceptionPermission(
+      user,
+      'quotations.exceptions.self_authorize_unlock'
+    ) &&
+    hasQuotationExceptionPermission(
+      user,
+      'quotations.exceptions.authorize_unlock'
+    )
+  );
+}
+
 export function formatQuotationServiceOption(item) {
   return item?.internalKey ? `${item.internalKey} · ${item.name}` : item?.name || 'Servicio';
 }

@@ -47,6 +47,7 @@ INSPECT_PERMISSION = "quotations.exceptions.inspect"
 REBUILD_PERMISSION = "quotations.exceptions.rebuild_empty_service_order"
 SELF_AUTHORIZE_PERMISSION = "quotations.exceptions.self_authorize_unlock"
 CAPABILITY = "quotation.controlled_unlock"
+DEFAULT_UNLOCK_VALIDITY_HOURS = 72
 ACTIVE_STATUSES = {"pending_review", "information_required", "authorized"}
 STATUS_LABELS = {
     "pending_review": "Pendiente de revisión",
@@ -393,13 +394,23 @@ def request_change(
     if existing is not None:
         return _resource(db, existing, user)
     moment = _now()
+    auto_authorize = all(
+        user_has_permission(user, permission)
+        for permission in (
+            AUTHORIZE_PERMISSION,
+            APPLY_PERMISSION,
+            REBUILD_PERMISSION,
+            INSPECT_PERMISSION,
+            SELF_AUTHORIZE_PERMISSION,
+        )
+    )
     request = QuotationServiceChangeRequest(
         folio=_next_folio(db, moment),
         quotation_id=quotation.id,
         service_order_id=order.id,
         requester_id=user.id,
         snapshot_id=snapshot.id,
-        status="pending_review",
+        status="authorized" if auto_authorize else "pending_review",
         capability=CAPABILITY,
         active_scope_key=f"{quotation.id}:{user.id}",
         reason=payload.reason.strip(),
@@ -411,6 +422,19 @@ def request_change(
         base_quotation_snapshot=snapshot.snapshot_data,
         quotation_version_at_request=quotation.updated_at,
         requested_at=moment,
+        reviewer_id=user.id if auto_authorize else None,
+        reviewed_at=moment if auto_authorize else None,
+        review_comment=(
+            "Autoautorización administrativa registrada por autoridad explícita."
+            if auto_authorize
+            else None
+        ),
+        authorized_apply_user_id=user.id if auto_authorize else None,
+        expires_at=(
+            moment + timedelta(hours=DEFAULT_UNLOCK_VALIDITY_HOURS)
+            if auto_authorize
+            else None
+        ),
     )
     db.add(request)
     db.flush()
@@ -428,17 +452,46 @@ def request_change(
         actor_id=user.id,
         metadata={"exception_folio": request.folio, "service_order_folio": order.folio},
     )
-    for reviewer_id in _reviewer_ids(db, user.id):
+    if auto_authorize:
+        authorized_event = publish_event(
+            db,
+            entity_type="quotation",
+            entity_id=quotation.id,
+            event_code="quotation.unlock.authorized",
+            idempotency_key=f"{request.folio}:review:authorized",
+            body=(
+                f"{user.full_name} registró el motivo y desbloqueó directamente "
+                f"la cotización {quotation.folio} con autoridad administrativa."
+            ),
+            actor_id=user.id,
+            metadata={
+                "exception_folio": request.folio,
+                "status": request.status,
+                "self_authorized": True,
+            },
+        )
         _notify(
             db,
             request=request,
-            recipient_id=reviewer_id,
+            recipient_id=user.id,
             actor_id=user.id,
-            kind="quotation_unlock_requested",
-            title=f"Revisar desbloqueo {request.folio}",
+            kind="quotation_unlock_authorized",
+            title=f"Cotización desbloqueada mediante {request.folio}",
             body=f"{quotation.folio} · {order.folio}",
-            event_id=event.id,
+            event_id=authorized_event.id,
         )
+    else:
+        for reviewer_id in _reviewer_ids(db, user.id):
+            _notify(
+                db,
+                request=request,
+                recipient_id=reviewer_id,
+                actor_id=user.id,
+                kind="quotation_unlock_requested",
+                title=f"Revisar desbloqueo {request.folio}",
+                body=f"{quotation.folio} · {order.folio}",
+                event_id=event.id,
+            )
     write_audit_log(
         db,
         action="quotation.unlock_requested",
@@ -452,6 +505,21 @@ def request_change(
             "base_snapshot_number": snapshot.snapshot_number,
         },
     )
+    if auto_authorize:
+        write_audit_log(
+            db,
+            action="quotation.unlock_self_authorized",
+            entity="quotations",
+            entity_id=quotation.id,
+            user_id=user.id,
+            new_values={
+                "exception_folio": request.folio,
+                "quotation_folio": quotation.folio,
+                "service_order_folio": order.folio,
+                "validity_hours": DEFAULT_UNLOCK_VALIDITY_HOURS,
+                "authority": SELF_AUTHORIZE_PERMISSION,
+            },
+        )
     db.commit()
     return _resource(db, _get_request(db, request.folio), user)
 

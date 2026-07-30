@@ -203,6 +203,12 @@ Una cotización aprobada con ETS completamente virgen admite:
 → confirmar → crear revisión → eliminar ETS virgen → recrear con el mismo
 OSMYC → cerrar EXV`.
 
+Cuando el actor posee autoridad explícita de autoautorización —Administrador
+mediante `*`— el primer tramo se compacta a
+`registrar motivo y desbloquear → editar partidas`; no aparece una espera ni
+se requiere otro usuario. La solicitud y autorización siguen registrándose
+como dos evidencias institucionales dentro del mismo expediente.
+
 El ETS se vuelve a construir desde la revisión nueva. Si aparecen equipos,
 certificados, archivos, factura, firmas, resolución, OT ejecutada o un estado
 operativo, la confirmación se bloquea y no se aplica ninguna mutación.

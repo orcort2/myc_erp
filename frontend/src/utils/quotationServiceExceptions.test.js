@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   canShowQuotationServiceException,
+  canSelfAuthorizeQuotationUnlock,
   formatQuotationServiceOption,
   hasQuotationExceptionPermission,
   normalizeLinkedCertificatePrefix,
@@ -35,6 +36,25 @@ test('wildcard permission is accepted without exposing a technical id', () => {
       name: 'Calibración trazable'
     }),
     'SRV-CAL-002 · Calibración trazable'
+  );
+});
+
+test('administrator wildcard enables direct audited unlock', () => {
+  assert.equal(canSelfAuthorizeQuotationUnlock({ permissions: ['*'] }), true);
+  assert.equal(
+    canSelfAuthorizeQuotationUnlock({
+      permissions: ['quotations.exceptions.authorize_unlock']
+    }),
+    false
+  );
+  assert.equal(
+    canSelfAuthorizeQuotationUnlock({
+      permissions: [
+        'quotations.exceptions.authorize_unlock',
+        'quotations.exceptions.self_authorize_unlock'
+      ]
+    }),
+    true
   );
 });
 
