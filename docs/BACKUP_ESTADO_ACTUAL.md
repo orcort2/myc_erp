@@ -128,9 +128,14 @@
 
 - `quotation.controlled_unlock` reemplaza el cambio puntual: solicitud,
   autorización nominativa, edición directa, delta, nueva revisión y cierre.
-- Administrador registra el motivo y desbloquea directamente mediante su
-  autoridad `*`; no espera aprobación externa. La autoautorización mantiene
-  expediente `EXV`, vigencia de 72 horas, eventos, notificación y auditoría.
+- Administrador pulsa `Desbloquear cotización` y entra directamente a edición:
+  no aparece modal ni captura motivo u observación. El sistema registra un
+  motivo estándar y conserva expediente `EXV`, autoautorización, vigencia de
+  72 horas, eventos, notificación y auditoría.
+- En las excepciones operativas ETS existentes, Administrador también ejecuta
+  la acción desde el botón sin formulario; los perfiles de menor autoridad
+  conservan el diálogo de solicitud. Este ajuste es de UX y no cierra la deuda
+  de gobernanza del endpoint ETS legacy registrada en `TD-014`.
 - El validador bloquea cualquier ETS con evidencia operativa. Un ETS virgen se
   elimina físicamente y se recrea atómicamente con el mismo `OSMYC-…`.
 - Catálogo y snapshots distinguen `accredited`, `traceable` y `linked`; CAPYMET
@@ -176,8 +181,9 @@
 - Desbloqueo/servicios/folios: `9 passed` focalizados; incluye permisos,
   autoautorización administrativa, delta, rollback, reconstrucción física,
   bloqueos, linked, normalización y secuencias 2026/2027.
-- Frontend completo: `26 passed`, incluidas 5 pruebas del flujo; build Vite
-  correcto con `1703` módulos y advertencia no
+- Frontend completo: `29 passed`, incluidas las pruebas de ejecución
+  administrativa sin modal y solicitud para menor autoridad; build Vite
+  correcto con `1705` módulos y advertencia no
   bloqueante por tamaño del chunk.
 - `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios
   finales en CSS concurrente ajeno a Fase 14.

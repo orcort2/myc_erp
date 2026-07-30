@@ -9,7 +9,8 @@ import {
 import {
   canShowQuotationServiceException,
   canSelfAuthorizeQuotationUnlock,
-  hasQuotationExceptionPermission
+  hasQuotationExceptionPermission,
+  shouldOpenQuotationUnlockDialog
 } from '../../utils/quotationServiceExceptions.js';
 import './quotation-service-exceptions.css';
 
@@ -26,6 +27,7 @@ export function QuotationServiceExceptionAction({
   const [message, setMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const canSelfAuthorize = canSelfAuthorizeQuotationUnlock(currentUser);
+  const requiresRequestDialog = shouldOpenQuotationUnlockDialog(currentUser);
 
   async function loadContext() {
     if (!quotation?.folio || quotation.status !== 'accepted') {
@@ -63,6 +65,24 @@ export function QuotationServiceExceptionAction({
           : `Solicitud ${result.folio} enviada para autorización.`
       );
       setIsOpen(false);
+      await loadContext();
+      if (result.can_apply) onEnterExceptionalMode?.(result);
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function unlockDirectly() {
+    setMessage('');
+    setIsSaving(true);
+    try {
+      const result = await requestQuotationServiceChange(quotation.folio, {
+        reason: 'Desbloqueo administrativo directo desde la cotización.',
+        observation: null
+      });
+      setMessage(`${quotation.folio} desbloqueada mediante ${result.folio}.`);
       await loadContext();
       if (result.can_apply) onEnterExceptionalMode?.(result);
     } catch (error) {
@@ -130,12 +150,17 @@ export function QuotationServiceExceptionAction({
       ) : (
         <button
           className="table-button"
-          disabled={!context?.eligible}
-          onClick={() => setIsOpen(true)}
-          title={context?.reason || 'Solicitar desbloqueo controlado'}
+          disabled={!context?.eligible || isSaving}
+          onClick={requiresRequestDialog ? () => setIsOpen(true) : unlockDirectly}
+          title={
+            context?.reason ||
+            (canSelfAuthorize
+              ? 'Desbloquear y editar directamente'
+              : 'Solicitar desbloqueo controlado')
+          }
           type="button"
         >
-          Desbloquear cotización
+          {isSaving && canSelfAuthorize ? 'Desbloqueando…' : 'Desbloquear cotización'}
         </button>
       )}
       {!active && context?.reason ? (
@@ -143,7 +168,7 @@ export function QuotationServiceExceptionAction({
       ) : null}
       {message ? <span className="sales-exception-message">{message}</span> : null}
 
-      {isOpen ? (
+      {isOpen && requiresRequestDialog ? (
         <div className="sales-exception-dialog" role="dialog" aria-modal="true">
           <form onSubmit={submitRequest}>
             <div className="sales-exception-dialog__header">
@@ -157,11 +182,10 @@ export function QuotationServiceExceptionAction({
               </button>
             </div>
             <div className="sales-exception-impact">
-              <strong>{canSelfAuthorize ? 'Desbloqueo administrativo' : 'Alcance controlado'}</strong>
+              <strong>Alcance controlado</strong>
               <span>
-                {canSelfAuthorize
-                  ? 'Tu autoridad permite registrar el motivo y abrir inmediatamente la edición excepcional. La reconstrucción sólo procederá si el ETS continúa virgen.'
-                  : 'La autorización habilita la edición directa de partidas y reconstruye el ETS únicamente si continúa sin información operativa.'}
+                La autorización habilita la edición directa de partidas y reconstruye el ETS
+                únicamente si continúa sin información operativa.
               </span>
             </div>
             <label>
@@ -187,11 +211,7 @@ export function QuotationServiceExceptionAction({
                 Cancelar
               </button>
               <button className="primary-button" disabled={isSaving} type="submit">
-                {isSaving
-                  ? 'Procesando…'
-                  : canSelfAuthorize
-                    ? 'Registrar y desbloquear'
-                    : 'Solicitar desbloqueo'}
+                {isSaving ? 'Enviando…' : 'Solicitar desbloqueo'}
               </button>
             </div>
           </form>

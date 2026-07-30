@@ -24,36 +24,67 @@
 }
 
 .sales-exception-message {
-  border-left: 3px solid #1f6f5f;
+  background: color-mix(in srgb, var(--myc-primary, #0b6a75) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--myc-primary, #0b6a75) 28%, transparent);
+  border-radius: 10px;
+  color: var(--myc-text, #243235);
   padding: 0.65rem 0.85rem;
 }
 
 .sales-exception-dialog {
   align-items: center;
-  background: rgba(15, 23, 42, 0.52);
+  backdrop-filter: blur(12px);
+  background: rgba(4, 28, 34, 0.58);
   display: flex;
   inset: 0;
   justify-content: center;
-  padding: 1rem;
+  padding: clamp(16px, 4vw, 40px);
   position: fixed;
   z-index: 1100;
 }
 
 .sales-exception-dialog form {
-  background: var(--panel-bg, #fff);
-  border-radius: 18px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.97), rgba(238, 246, 247, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 20px;
+  box-shadow: 0 28px 80px rgba(2, 24, 30, 0.32);
   display: grid;
-  gap: 1rem;
-  max-height: 90vh;
-  max-width: 620px;
+  gap: 16px;
+  max-height: min(88vh, 760px);
+  max-width: 560px;
   overflow: auto;
-  padding: 1.25rem;
+  padding: clamp(20px, 3vw, 30px);
   width: 100%;
 }
 
 .sales-exception-dialog label {
+  color: var(--myc-text, #243235);
   display: grid;
-  gap: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 750;
+  gap: 7px;
+}
+
+.sales-exception-dialog textarea,
+.sales-exception-dialog input,
+.sales-exception-dialog select {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--myc-border, #c6d4d8);
+  border-radius: 10px;
+  color: var(--myc-text, #243235);
+  font: inherit;
+  min-height: 42px;
+  outline: none;
+  padding: 10px 12px;
+  resize: vertical;
+}
+
+.sales-exception-dialog textarea:focus,
+.sales-exception-dialog input:focus,
+.sales-exception-dialog select:focus {
+  border-color: var(--myc-primary, #0b6a75);
+  box-shadow: 0 0 0 3px rgba(11, 106, 117, 0.14);
 }
 
 .sales-exception-dialog__header,
@@ -61,6 +92,40 @@
   align-items: flex-start;
   display: flex;
   justify-content: space-between;
+}
+
+.sales-exception-dialog__header {
+  border-bottom: 1px solid var(--myc-divider, #d7e2e4);
+  gap: 18px;
+  padding-bottom: 15px;
+}
+
+.sales-exception-dialog__header p,
+.sales-exception-dialog__header h3,
+.sales-exception-dialog__header span {
+  margin: 0;
+}
+
+.sales-exception-dialog__header p {
+  color: var(--myc-primary, #0b6a75);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sales-exception-dialog__header h3 {
+  color: var(--myc-text, #243235);
+  font-size: 1.35rem;
+  margin-block: 3px;
+}
+
+.sales-exception-impact {
+  background: rgba(11, 106, 117, 0.07);
+  border: 1px solid rgba(11, 106, 117, 0.18);
+  border-radius: 12px;
+  color: var(--myc-text, #243235);
+  padding: 12px 14px;
 }
 
 .sales-exception-list {
@@ -102,4 +167,39 @@
 .sales-exception-inline-status {
   color: var(--muted-text, #64748b);
   font-size: 0.82rem;
+}
+
+:root[data-theme="dark"] .sales-exception-dialog form,
+body[data-theme="dark"] .sales-exception-dialog form {
+  background:
+    linear-gradient(145deg, rgba(12, 47, 53, 0.98), rgba(7, 35, 41, 0.98));
+  border-color: rgba(117, 199, 197, 0.2);
+}
+
+:root[data-theme="dark"] .sales-exception-dialog textarea,
+:root[data-theme="dark"] .sales-exception-dialog input,
+:root[data-theme="dark"] .sales-exception-dialog select,
+body[data-theme="dark"] .sales-exception-dialog textarea,
+body[data-theme="dark"] .sales-exception-dialog input,
+body[data-theme="dark"] .sales-exception-dialog select {
+  background: rgba(3, 26, 31, 0.7);
+  border-color: rgba(117, 199, 197, 0.24);
+}
+
+@media (max-width: 640px) {
+  .sales-exception-dialog {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .sales-exception-dialog form {
+    border-radius: 20px 20px 0 0;
+    max-height: 92vh;
+    max-width: none;
+  }
+
+  .sales-exception-dialog__header {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
 }

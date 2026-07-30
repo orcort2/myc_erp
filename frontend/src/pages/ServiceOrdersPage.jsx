@@ -97,9 +97,11 @@ import {
 } from '../constants/officialFieldSheetTemplates.js';
 import { suggestOfficialFieldSheetTemplate } from '../utils/fieldSheetTemplateResolver.js';
 import { formatDate, formatDateTime, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
+import { exceptionActionLabel, hasDirectExceptionAuthority } from '../utils/exceptionAuthority.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 import EtsBillingTab from '../components/ets-billing/EtsBillingTab.jsx';
+import '../components/service-order-exceptions.css';
 
 function safeNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -274,6 +276,7 @@ function ServiceOrdersPage({ user = null }) {
   const canUseQualityActions = hasStageAccess(user, 'quality');
   const canUseReleaseActions = canReleaseCertificates(user);
   const canUseAdminActions = canUseAdministrativeActions(user);
+  const canExecuteExceptionsDirectly = hasDirectExceptionAuthority(user);
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -845,7 +848,38 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
+  async function executeServiceOrderException(sourceStage, targetStage, reason) {
+    if (!selectedOrder) return;
+    setIsSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const updated = await createServiceOrderException(selectedOrder.id, {
+        source_stage: sourceStage,
+        target_stage: targetStage,
+        reason,
+      });
+      setSelectedOrder(updated);
+      setExceptionRequest(null);
+      setExceptionReason('');
+      setNotice(`Excepción aplicada: ${sourceStage} → ${targetStage}.`);
+      await loadServiceOrderData();
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
   function openExceptionRequest(sourceStage, targetStage) {
+    if (canExecuteExceptionsDirectly) {
+      void executeServiceOrderException(
+        sourceStage,
+        targetStage,
+        `Excepción administrativa directa: ${sourceStage} → ${targetStage}.`
+      );
+      return;
+    }
     setExceptionRequest({ sourceStage, targetStage });
     setExceptionReason('');
     setError('');
@@ -858,25 +892,11 @@ function ServiceOrdersPage({ user = null }) {
       setError('Captura el motivo de la excepcion.');
       return;
     }
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await createServiceOrderException(selectedOrder.id, {
-        source_stage: exceptionRequest.sourceStage,
-        target_stage: exceptionRequest.targetStage,
-        reason,
-      });
-      setSelectedOrder(updated);
-      setExceptionRequest(null);
-      setExceptionReason('');
-      setNotice(`Excepcion registrada: ${exceptionRequest.sourceStage} -> ${exceptionRequest.targetStage}`);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
+    await executeServiceOrderException(
+      exceptionRequest.sourceStage,
+      exceptionRequest.targetStage,
+      reason
+    );
   }
 
   function openTechnicianPicker() {
@@ -3144,7 +3164,7 @@ function ServiceOrdersPage({ user = null }) {
                   <label className="table-button table-button--file">Sube el ZIP generado por el ERP o los archivos Excel corregidos.<input accept=".xls,.xlsx,.xlsm,.zip" multiple onChange={(event) => handleCaptureFilesUpload(event.target.files, event.target)} type="file" /></label>
                   {canUseAdminActions ? (
                     <button className="table-button" onClick={() => openExceptionRequest('Captura', 'Hojas')} type="button">
-                      Solicitar excepcion
+                      {exceptionActionLabel(user)}
                     </button>
                   ) : null}
                 </div>
@@ -3192,7 +3212,7 @@ function ServiceOrdersPage({ user = null }) {
                     <div className="toolbar-actions">
                       {canUseAdminActions ? (
                         <button className="table-button" onClick={() => openExceptionRequest('Calidad', 'Captura')} type="button">
-                          Solicitar excepcion
+                          {exceptionActionLabel(user)}
                         </button>
                       ) : null}
                       <button className="table-button" disabled={isSaving} onClick={handleAuthenticateApprovedBatch} type="button">
@@ -4471,7 +4491,7 @@ function ServiceOrdersPage({ user = null }) {
 
       {exceptionRequest ? (
         <div className="modal-backdrop" role="presentation">
-          <section aria-modal="true" className="client-modal confirm-dialog" role="dialog">
+          <section aria-modal="true" className="client-modal confirm-dialog service-order-exception-dialog" role="dialog">
             <div className="section-heading confirm-dialog__header">
               <div>
                 <p>Excepcion operativa</p>
@@ -4552,7 +4572,7 @@ function ServiceOrdersPage({ user = null }) {
               }}
               type="button"
             >
-              Solicitar excepción
+              {exceptionActionLabel(user)}
             </button>
           </div>
         </section>

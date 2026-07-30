@@ -20,9 +20,11 @@ vinculados usan el formato compacto y contadores anuales; OT adopta los pisos
 2026/normal anual.
 
 Corrección UX posterior: Administrador no envía una petición a otro usuario.
-Al registrar el motivo, su autoridad `*` produce solicitud y autorización
-auditadas en el mismo comando y abre inmediatamente la edición excepcional.
-Comercial y cualquier rol sin `self_authorize_unlock` conservan la segregación.
+Al pulsar `Desbloquear cotización`, su autoridad `*` produce solicitud y
+autorización auditadas en el mismo comando y abre inmediatamente la edición
+excepcional, sin modal ni captura manual de motivo u observación. El sistema
+registra un motivo estándar. Comercial y cualquier rol sin
+`self_authorize_unlock` conservan la segregación y el formulario.
 
 Migraciones:
 
@@ -31,7 +33,7 @@ Migraciones:
 - `b03b4c5d6e7f`: pisos institucionales 2026.
 
 Validación registrada: backend completo `409 passed`, `19 subtests passed`
-(`9 passed` focalizados); frontend Node `26 passed`; Vite build correcto.
+(`9 passed` focalizados); frontend Node `29 passed`; Vite build correcto.
 Alembic local quedó en
 `b03b4c5d6e7f (head)`. En PostgreSQL temporal se validó
 `upgrade head → downgrade 9d0e1f2a3b4c → upgrade head` y después se eliminó

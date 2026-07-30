@@ -8,6 +8,7 @@ import {
   hasQuotationExceptionPermission,
   normalizeLinkedCertificatePrefix,
   serviceTypeLabel,
+  shouldOpenQuotationUnlockDialog,
   validateLinkedServiceFields
 } from './quotationServiceExceptions.js';
 
@@ -41,11 +42,18 @@ test('wildcard permission is accepted without exposing a technical id', () => {
 
 test('administrator wildcard enables direct audited unlock', () => {
   assert.equal(canSelfAuthorizeQuotationUnlock({ permissions: ['*'] }), true);
+  assert.equal(shouldOpenQuotationUnlockDialog({ permissions: ['*'] }), false);
   assert.equal(
     canSelfAuthorizeQuotationUnlock({
       permissions: ['quotations.exceptions.authorize_unlock']
     }),
     false
+  );
+  assert.equal(
+    shouldOpenQuotationUnlockDialog({
+      permissions: ['quotations.exceptions.authorize_unlock']
+    }),
+    true
   );
   assert.equal(
     canSelfAuthorizeQuotationUnlock({

@@ -19,6 +19,10 @@ export function canSelfAuthorizeQuotationUnlock(user) {
   );
 }
 
+export function shouldOpenQuotationUnlockDialog(user) {
+  return !canSelfAuthorizeQuotationUnlock(user);
+}
+
 export function formatQuotationServiceOption(item) {
   return item?.internalKey ? `${item.internalKey} · ${item.name}` : item?.name || 'Servicio';
 }

@@ -71,8 +71,9 @@ capacidad explícita. Si un mismo actor reúne `authorize_unlock`,
 `apply_unlock`, `rebuild_empty_service_order`, `inspect` y
 `self_authorize_unlock`, el comando de solicitud registra también la
 autorización, asignación y vigencia de 72 horas. Administrador entra por esta
-ruta mediante `*`: la interfaz dice `Registrar y desbloquear`, abre
-inmediatamente la edición y conserva eventos separados de solicitud y
+ruta mediante `*`: al pulsar `Desbloquear cotización`, la interfaz no abre
+modal ni solicita motivo u observación; envía un motivo institucional estándar,
+abre inmediatamente la edición y conserva eventos separados de solicitud y
 autorización, notificación y auditoría `quotation.unlock_self_authorized`.
 Si ya existía una solicitud administrativa pendiente creada por la versión
 anterior, la misma ficha ofrece `Autorizar y editar` y consume el endpoint de

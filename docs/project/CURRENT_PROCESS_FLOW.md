@@ -205,9 +205,16 @@ OSMYC → cerrar EXV`.
 
 Cuando el actor posee autoridad explícita de autoautorización —Administrador
 mediante `*`— el primer tramo se compacta a
-`registrar motivo y desbloquear → editar partidas`; no aparece una espera ni
-se requiere otro usuario. La solicitud y autorización siguen registrándose
-como dos evidencias institucionales dentro del mismo expediente.
+`Desbloquear cotización → editar partidas`: un solo clic, sin modal, motivo ni
+observación capturados al usuario. El sistema aporta un motivo estándar; la
+solicitud y autorización siguen registrándose como dos evidencias
+institucionales dentro del mismo expediente.
+
+La misma regla de interacción rige para los botones de excepción operativa del
+ETS: Administrador ejecuta directamente y los perfiles de menor autoridad
+conservan el formulario de solicitud. El endpoint ETS legacy aún no separa
+solicitud, autorización y ejecución; esa diferencia permanece abierta en
+`TD-014`.
 
 El ETS se vuelve a construir desde la revisión nueva. Si aparecen equipos,
 certificados, archivos, factura, firmas, resolución, OT ejecutada o un estado

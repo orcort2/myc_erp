@@ -37,7 +37,8 @@ Esta matriz documenta lo declarado en código. No garantiza que todos los endpoi
   `rebuild_empty_service_order`. La autoautorización exige
   `quotations.exceptions.self_authorize_unlock`, no asignado a roles
   ordinarios; Administrador la satisface mediante `*` y desbloquea
-  directamente después de registrar el motivo.
+  directamente con un clic, sin modal ni motivo manual. El sistema conserva
+  un motivo institucional para la auditoría.
 - Servicios/folios: `services.manage_service_type`,
   `services.manage_linked_company`, `services.manage_certificate_prefix` y
   `folios.manage_sequences`.

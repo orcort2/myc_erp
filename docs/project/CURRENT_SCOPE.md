@@ -22,9 +22,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
 - Primera excepción contextual de Ventas: una cotización aprobada con ETS
   integralmente virgen puede desbloquear todas sus partidas, guardar una nueva
-  revisión y reconstruir el ETS con el mismo folio. Administrador registra el
-  motivo y desbloquea directamente mediante autoridad `*`; otros roles
-  conservan solicitud y revisión segregadas.
+  revisión y reconstruir el ETS con el mismo folio. Administrador desbloquea
+  con un solo clic mediante autoridad `*`, sin modal ni captura manual de
+  motivo u observación; el sistema registra el motivo institucional. Otros
+  roles conservan solicitud y revisión segregadas.
 - ETS/Servicios, hitos de agenda/llamado, equipos, Órdenes de Trabajo y firmas por ciclo.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad, revisión consecutiva de certificados por contexto OT/ETS, autenticación, verificación pública y liberación.

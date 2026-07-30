@@ -1,0 +1,76 @@
+.service-order-exception-dialog {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(238, 246, 247, 0.97));
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: 20px;
+  box-shadow: 0 28px 80px rgba(2, 24, 30, 0.3);
+  max-width: 540px;
+  padding: clamp(20px, 3vw, 30px);
+  width: min(540px, calc(100vw - 32px));
+}
+
+.service-order-exception-dialog .confirm-dialog__header {
+  border-bottom: 1px solid var(--myc-divider, #d7e2e4);
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+}
+
+.service-order-exception-dialog .confirm-dialog__header p,
+.service-order-exception-dialog .confirm-dialog__header h2 {
+  margin: 0;
+}
+
+.service-order-exception-dialog .confirm-dialog__header p {
+  color: var(--myc-primary, #0b6a75);
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.service-order-exception-dialog .confirm-dialog__body {
+  display: grid;
+  gap: 12px;
+}
+
+.service-order-exception-dialog .confirm-dialog__body p {
+  color: var(--myc-muted, #5f7073);
+  line-height: 1.55;
+  margin: 0;
+}
+
+.service-order-exception-dialog textarea {
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid var(--myc-border, #c6d4d8);
+  border-radius: 10px;
+  color: var(--myc-text, #243235);
+  min-height: 112px;
+  padding: 12px;
+}
+
+.service-order-exception-dialog textarea:focus {
+  border-color: var(--myc-primary, #0b6a75);
+  box-shadow: 0 0 0 3px rgba(11, 106, 117, 0.14);
+  outline: none;
+}
+
+:root[data-theme="dark"] .service-order-exception-dialog,
+body[data-theme="dark"] .service-order-exception-dialog {
+  background:
+    linear-gradient(145deg, rgba(12, 47, 53, 0.98), rgba(7, 35, 41, 0.98));
+  border-color: rgba(117, 199, 197, 0.2);
+}
+
+:root[data-theme="dark"] .service-order-exception-dialog textarea,
+body[data-theme="dark"] .service-order-exception-dialog textarea {
+  background: rgba(3, 26, 31, 0.7);
+  border-color: rgba(117, 199, 197, 0.24);
+}
+
+@media (max-width: 640px) {
+  .service-order-exception-dialog {
+    border-radius: 18px;
+    padding: 20px;
+    width: calc(100vw - 20px);
+  }
+}
