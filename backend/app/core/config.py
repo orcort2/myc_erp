@@ -1,7 +1,9 @@
 from functools import lru_cache
+import math
+from collections import Counter
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,7 +16,7 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="postgresql+psycopg://localhost:5432/erp_myc"
     )
-    secret_key: str = "change-this-secret-key"
+    secret_key: str = "development-only-change-me"
     access_token_expire_minutes: int = 60 * 8
     refresh_token_expire_minutes: int = 60 * 24 * 30
     cors_origins: list[str] = [
@@ -38,6 +40,54 @@ class Settings(BaseSettings):
     facturama_production_url: str = ""
     facturama_timeout_seconds: float = Field(default=30, gt=0)
     resolution_center_organization_id: str = "myc"
+    enable_api_docs: bool = False
+    enable_developer_portal: bool = False
+
+    @model_validator(mode="after")
+    def validate_production_secret(self) -> "Settings":
+        if self.environment.strip().lower() not in {"production", "prod"}:
+            return self
+
+        secret = self.secret_key.strip()
+        rejected_values = {
+            "",
+            "change-this-secret-key",
+            "development-only-change-me",
+            "replace-me",
+            "replace-with-a-secure-random-secret",
+            "secret",
+            "password",
+        }
+        character_classes = sum(
+            any(check(character) for character in secret)
+            for check in (str.islower, str.isupper, str.isdigit, lambda value: not value.isalnum())
+        )
+        frequencies = Counter(secret)
+        entropy = -sum(
+            (count / len(secret)) * math.log2(count / len(secret))
+            for count in frequencies.values()
+        ) * len(secret) if secret else 0.0
+
+        if (
+            secret.lower() in rejected_values
+            or len(secret) < 32
+            or len(set(secret)) < 12
+            or character_classes < 3
+            or entropy < 100
+        ):
+            raise ValueError(
+                "SECRET_KEY inseguro para producción: configure un valor aleatorio "
+                "de al menos 32 caracteres y 100 bits estimados de entropía."
+            )
+        return self
+
+    @property
+    def uses_development_secret(self) -> bool:
+        return self.secret_key.strip().lower() in {
+            "",
+            "change-this-secret-key",
+            "development-only-change-me",
+        }
 
 
 @lru_cache
