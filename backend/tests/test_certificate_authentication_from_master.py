@@ -16,6 +16,7 @@ from app.core.db import get_db
 from app.main import app
 from app.models.certificate import Certificate, CertificatePdfVersion
 from app.routers.certificates import authenticate_certificate as authenticate_certificate_endpoint
+from app.security.api_access import enforce_api_access
 from app.services.certificate_authentication import (
     _convert_master_to_pdf,
     authenticate_certificate_pdf,
@@ -163,6 +164,7 @@ def test_authenticate_endpoint_returns_200_with_real_converter():
         "current_user"
     ].default.dependency
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[enforce_api_access] = lambda: None
     app.dependency_overrides[permission_dependency] = lambda: SimpleNamespace(id=4)
 
     with tempfile.TemporaryDirectory() as temporary:

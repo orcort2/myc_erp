@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings
 from app.main import app
 from app.routers.integrations import get_facturama_status
+from app.security.api_access import enforce_api_access
 from app.services.facturama.client import FacturamaClient
 from app.services.facturama.exceptions import FacturamaApiError
 from app.services.facturama.health import FacturamaHealthService
@@ -58,6 +59,7 @@ class FacturamaInfrastructureTests(unittest.TestCase):
             "current_user"
         ].default.dependency
         app.dependency_overrides[permission_dependency] = lambda: object()
+        app.dependency_overrides[enforce_api_access] = lambda: None
         try:
             with patch(
                 "app.routers.integrations.get_settings",

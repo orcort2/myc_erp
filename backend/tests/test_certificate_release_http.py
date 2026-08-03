@@ -9,6 +9,7 @@ from app.core.db import get_db
 from app.main import app
 from app.models.certificate import Certificate
 from app.routers.certificates import release_certificate_to_client
+from app.security.api_access import enforce_api_access
 
 
 def test_release_endpoint_accepts_authenticated_certificate_with_pending_match():
@@ -36,6 +37,7 @@ def test_release_endpoint_accepts_authenticated_certificate_with_pending_match()
         "current_user"
     ].default.dependency
     app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[enforce_api_access] = lambda: None
     app.dependency_overrides[permission_dependency] = lambda: SimpleNamespace(id=7)
 
     try:
