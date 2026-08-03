@@ -27,6 +27,7 @@ import {
 } from '../services/api.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { downloadCsv } from '../utils/csv.js';
+import { hasPermission } from '../utils/accessControl.js';
 import {
   getClientContact,
   getFirstValidationTab,
@@ -74,7 +75,7 @@ function getMissingClientFields(client) {
   return missing;
 }
 
-function ClientsPage() {
+function ClientsPage({ user = null }) {
   const [clients, setClients] = useState([]);
   const [satCatalogs, setSatCatalogs] = useState([]);
   const [selectedClientIds, setSelectedClientIds] = useState([]);
@@ -105,6 +106,8 @@ function ClientsPage() {
   const [notice, setNotice] = useState('');
   const [validationErrors, setValidationErrors] = useState({});
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
+  const canCreateClients = hasPermission(user, 'clients.create');
+  const canUpdateClients = hasPermission(user, 'clients.update');
 
   const importInputRef = useRef(null);
   const taxConstancyInputRef = useRef(null);
@@ -881,10 +884,12 @@ function ClientsPage() {
             <h2>{isLoading ? 'Cargando...' : paginationLabel}</h2>
           </div>
           <div className="toolbar-actions">
-            <button className="table-button" onClick={() => setIsClientImportOpen(true)} type="button">
-              <Upload size={16} />
-              Importar clientes
-            </button>
+            {canCreateClients ? (
+              <button className="table-button" onClick={() => setIsClientImportOpen(true)} type="button">
+                <Upload size={16} />
+                Importar clientes
+              </button>
+            ) : null}
             <button className="table-button" onClick={handleExportClients} type="button">
               <Download size={16} />
               Exportar Excel
@@ -893,9 +898,11 @@ function ClientsPage() {
               <FileSpreadsheet size={16} />
               Descargar plantilla
             </button>
-            <button className="primary-button" onClick={openNewClientModal} type="button">
-              Nuevo cliente
-            </button>
+            {canCreateClients ? (
+              <button className="primary-button" onClick={openNewClientModal} type="button">
+                Nuevo cliente
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -1420,12 +1427,14 @@ function ClientsPage() {
                 <button className="icon-text-button" disabled={isSaving} onClick={resetForm} type="button">
                   Cancelar
                 </button>
-                <button className="primary-button" disabled={isSaving} type="submit">
-                  {isSaving ? 'Guardando...' : editingClientId ? 'Guardar cambios' : 'Guardar cliente'}
-                </button>
+                {(editingClientId ? canUpdateClients : canCreateClients) ? (
+                  <button className="primary-button" disabled={isSaving} type="submit">
+                    {isSaving ? 'Guardando...' : editingClientId ? 'Guardar cambios' : 'Guardar cliente'}
+                  </button>
+                ) : null}
               </div>
 
-              {editingClientId ? (
+              {editingClientId && canUpdateClients ? (
                 <section className="danger-zone">
                   <div className="danger-zone__copy">
                     <p>Zona de eliminación</p>

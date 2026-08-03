@@ -4,6 +4,7 @@ import ActivityInboxWidget from '../components/activity/ActivityInboxWidget.jsx'
 import { defaultCounts, modules } from '../constants/navigation.js';
 import { getDashboardCounts } from '../services/api.js';
 import { navigate } from '../utils/routing.js';
+import { filterAccessibleEntries } from '../utils/accessControl.js';
 
 function getRoleLabel(user) {
   return user?.roles?.[0]?.name ?? 'Sin rol';
@@ -23,7 +24,7 @@ function DashboardHome({ user }) {
 
     async function loadCounts() {
       try {
-        const nextCounts = await getDashboardCounts();
+        const nextCounts = await getDashboardCounts(user);
         if (isMounted) {
           setCounts({ ...defaultCounts, ...nextCounts });
         }
@@ -43,7 +44,7 @@ function DashboardHome({ user }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [user]);
 
   const roleLabel = useMemo(() => getRoleLabel(user), [user]);
   const pendingItems = [
@@ -144,7 +145,7 @@ function DashboardHome({ user }) {
           <h2>Trabajo diario</h2>
         </div>
         <div className="modules-grid" aria-busy={isLoading} aria-label="Accesos rapidos">
-          {modules.map((module) => {
+          {filterAccessibleEntries(modules, user).map((module) => {
             const Icon = module.icon;
             const count = counts[module.key];
             const hasCount = typeof count === 'number';

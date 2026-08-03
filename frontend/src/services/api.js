@@ -31,13 +31,19 @@ async function request(path, options = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers
-  });
+  let response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch {
+    throw new Error('No fue posible conectar con el ERP. Verifica la red e inténtalo de nuevo.');
+  }
 
   if (!response.ok) {
-    let message = 'No se pudo completar la solicitud';
+    let message = response.status === 401
+      ? 'Tu sesión no es válida o expiró. Inicia sesión nuevamente.'
+      : response.status === 403
+        ? 'No tienes permiso para realizar esta acción.'
+        : 'No se pudo completar la solicitud';
     try {
       const payload = await response.json();
       if (typeof payload.detail === 'string') {
@@ -73,14 +79,23 @@ async function uploadRequest(path, formData, options = {}) {
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    method: options.method ?? 'POST',
-    headers,
-    body: formData
-  });
+  let response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      method: options.method ?? 'POST',
+      headers,
+      body: formData
+    });
+  } catch {
+    throw new Error('No fue posible conectar con el ERP. Verifica la red e inténtalo de nuevo.');
+  }
   if (!response.ok) {
-    let message = 'No se pudo completar la solicitud';
+    let message = response.status === 401
+      ? 'Tu sesión no es válida o expiró. Inicia sesión nuevamente.'
+      : response.status === 403
+        ? 'No tienes permiso para realizar esta acción.'
+        : 'No se pudo completar la solicitud';
     try {
       const payload = await response.json();
       message = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message ?? payload.message ?? message;
@@ -100,12 +115,18 @@ async function downloadRequest(path, options = {}) {
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers
-  });
+  let response;
+  try {
+    response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch {
+    throw new Error('No fue posible conectar con el ERP. Verifica la red e inténtalo de nuevo.');
+  }
   if (!response.ok) {
-    let message = 'No se pudo completar la solicitud';
+    let message = response.status === 401
+      ? 'Tu sesión no es válida o expiró. Inicia sesión nuevamente.'
+      : response.status === 403
+        ? 'No tienes permiso para realizar esta acción.'
+        : 'No se pudo completar la solicitud';
     try {
       const payload = await response.json();
       message = typeof payload.detail === 'string' ? payload.detail : payload.detail?.message ?? payload.message ?? message;
@@ -438,7 +459,7 @@ export async function importFieldSheetTemplate(payload) {
   });
 }
 
-export async function getDashboardCounts() {
+export async function getDashboardCounts(user = null) {
   const endpoints = [
     ['clients', '/clients'],
     ['quotations', '/quotations'],
@@ -446,18 +467,26 @@ export async function getDashboardCounts() {
     ['fieldSheets', '/field-sheets']
   ];
 
+  const permissions = new Set(user?.permissions || []);
+  const can = (permission) => permissions.has('*') || permissions.has(permission) || permissions.has(`${permission.split('.')[0]}.*`);
+  const guardedEndpoints = endpoints.filter(([key]) => can({
+    clients: 'clients.read',
+    quotations: 'quotations.read',
+    equipment: 'equipment.read',
+    fieldSheets: 'field_sheets.read',
+  }[key]));
   const results = await Promise.all(
-    endpoints.map(async ([key, path]) => {
+    guardedEndpoints.map(async ([key, path]) => {
       const items = await request(path);
       return [key, Array.isArray(items) ? items.length : 0];
     })
   );
 
-  const certificates = await request('/certificates');
+  const certificates = can('certificates.read') ? await request('/certificates') : [];
   const certificateItems = Array.isArray(certificates) ? certificates : [];
-  const serviceOrders = await request('/service-orders');
+  const serviceOrders = can('service_orders.read') ? await request('/service-orders') : [];
   const serviceOrderItems = Array.isArray(serviceOrders) ? serviceOrders : [];
-  const fieldSheets = await request('/field-sheets');
+  const fieldSheets = can('field_sheets.read') ? await request('/field-sheets') : [];
   const fieldSheetItems = Array.isArray(fieldSheets) ? fieldSheets : [];
   const openServiceOrders = serviceOrderItems.filter((item) => !['closed', 'cancelled'].includes(item.status));
   const etsProgressValues = openServiceOrders.map((order) => {
@@ -922,48 +951,17 @@ export function getOriginalCertificatePdfUrl(certificateId) {
 }
 
 export async function downloadAuthenticatedCertificatePdf(certificateId, folio = null, authenticationCode = null) {
-  const token = getAccessToken();
-  const headers = {};
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  const response = await fetch(getAuthenticatedCertificatePdfUrl(certificateId), { headers });
-  if (!response.ok) {
-    let message = 'No se pudo descargar el PDF autenticado';
-    try {
-      const payload = await response.json();
-      message = typeof payload.detail === 'string' ? payload.detail : message;
-    } catch {
-      // Keep default message.
-    }
-    throw new Error(message);
-  }
-  const disposition = response.headers.get('Content-Disposition') ?? '';
-  const filename =
-    getFilenameFromDisposition(disposition) ??
+  const result = await downloadRequest(`/certificates/${certificateId}/authenticated-pdf`);
+  const filename = result.filename ??
     `Certificado_${sanitizePdfFilenamePart(folio ?? certificateId)}_${sanitizePdfFilenamePart(authenticationCode ?? 'autenticado')}.pdf`;
-  return { blob: await response.blob(), filename };
+  return { blob: result.blob, filename };
 }
 
 export async function downloadOriginalCertificatePdf(certificateId, filename = null) {
-  const token = getAccessToken();
-  const headers = {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(getOriginalCertificatePdfUrl(certificateId), { headers });
-  if (!response.ok) {
-    let message = 'No se pudo abrir el PDF original';
-    try {
-      const payload = await response.json();
-      message = typeof payload.detail === 'string' ? payload.detail : message;
-    } catch {
-      // Keep default message.
-    }
-    throw new Error(message);
-  }
-  const disposition = response.headers.get('Content-Disposition') ?? '';
+  const result = await downloadRequest(`/certificates/${certificateId}/original-pdf`);
   return {
-    blob: await response.blob(),
-    filename: getFilenameFromDisposition(disposition) ?? filename ?? `Certificado_${certificateId}_original.pdf`
+    blob: result.blob,
+    filename: result.filename ?? filename ?? `Certificado_${certificateId}_original.pdf`
   };
 }
 

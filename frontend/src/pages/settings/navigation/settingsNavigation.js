@@ -18,6 +18,7 @@ import CompanyErpIdentity from '../company/CompanyErpIdentity.jsx';
 import CompanyIdentity from '../company/CompanyIdentity.jsx';
 import CompanyLocations from '../company/CompanyLocations.jsx';
 import ComingSoon from '../placeholders/ComingSoon.jsx';
+import { hasAnyPermission } from '../../../utils/accessControl.js';
 
 export const settingsNavigation = [
   {
@@ -25,6 +26,7 @@ export const settingsNavigation = [
     title: 'Empresa e identidad',
     description: 'Identidad institucional, presencia, documentos y representación de la empresa.',
     icon: Building2,
+    permissions: ['settings.institutional.read'],
     children: [
       {
         id: 'company-identity',
@@ -68,6 +70,7 @@ export const settingsNavigation = [
     title: 'Usuarios y seguridad',
     description: 'Usuarios, roles, accesos y controles de seguridad.',
     icon: Users,
+    permissions: ['users.manage'],
     children: [
       {
         id: 'user-management',
@@ -83,6 +86,7 @@ export const settingsNavigation = [
     title: 'Operación',
     description: 'Parámetros seguros que gobiernan la operación cotidiana.',
     icon: SlidersHorizontal,
+    permissions: ['settings.manage'],
     component: ComingSoon,
   },
   {
@@ -90,6 +94,7 @@ export const settingsNavigation = [
     title: 'Documentos y plantillas',
     description: 'Plantillas, familias documentales y herramientas de diseño.',
     icon: FileText,
+    permissions: ['field_sheet_templates.read'],
     children: [
       {
         id: 'field-sheet-templates',
@@ -105,6 +110,7 @@ export const settingsNavigation = [
     title: 'Facturación y pagos',
     description: 'Preferencias fiscales, financieras y de cobranza.',
     icon: Banknote,
+    permissions: ['invoices.manage'],
     component: ComingSoon,
   },
   {
@@ -112,6 +118,7 @@ export const settingsNavigation = [
     title: 'Integraciones',
     description: 'Conexiones con proveedores y servicios externos.',
     icon: PlugZap,
+    permissions: ['settings.manage'],
     component: ComingSoon,
   },
   {
@@ -119,6 +126,7 @@ export const settingsNavigation = [
     title: 'Gobierno y auditoría',
     description: 'Trazabilidad, supervisión y registro de cambios.',
     icon: ShieldCheck,
+    permissions: ['audit_logs.read'],
     children: [
       {
         id: 'audit-log',
@@ -134,6 +142,7 @@ export const settingsNavigation = [
     title: 'Sistema',
     description: 'Mantenimiento, comportamiento general y estado del ERP.',
     icon: Server,
+    permissions: ['settings.manage'],
     component: ComingSoon,
   },
 ];
@@ -147,8 +156,18 @@ export function findSettingsChild(sectionId, childId) {
   return section?.children?.find((child) => child.id === childId) ?? null;
 }
 
-export function getDefaultSection() {
-  return settingsNavigation[0] ?? null;
+export function getAccessibleSettingsNavigation(user) {
+  return settingsNavigation
+    .filter((section) => hasAnyPermission(user, section.permissions))
+    .map((section) => ({
+      ...section,
+      children: section.children?.filter((child) => hasAnyPermission(user, child.permissions || section.permissions)),
+    }))
+    .filter((section) => !section.children || section.children.length > 0);
+}
+
+export function getDefaultSection(navigation = settingsNavigation) {
+  return navigation[0] ?? null;
 }
 
 export function getDefaultChild(section) {

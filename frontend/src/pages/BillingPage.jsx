@@ -17,6 +17,7 @@ import {
   readInvoiceWorkbenchContext,
 } from '../utils/invoiceWorkbenchContext.js';
 import { formatMoney } from '../utils/formatters.js';
+import { hasPermission } from '../utils/accessControl.js';
 
 const MAIN_VIEWS = [
   { key: 'center', label: 'Centro de facturación', icon: FileText },
@@ -165,11 +166,9 @@ function BillingPage({ user = null }) {
     initialContext,
     onIssuerConfigurationRequired: () => setActiveView('settings'),
   });
-  const canManagePayments = Boolean(
-    user?.permissions?.includes('*') ||
-      user?.permissions?.includes('payments.*') ||
-      user?.permissions?.includes('payments.manage')
-  );
+  const canManageInvoices = hasPermission(user, 'invoices.manage');
+  const canManagePayments = hasPermission(user, 'payments.manage');
+  const availableViews = MAIN_VIEWS.filter((view) => view.key !== 'settings' || canManageInvoices);
 
   const invoiceByQuotationId = useMemo(() => {
     const result = new Map();
@@ -343,7 +342,7 @@ function BillingPage({ user = null }) {
 
       <section className="clients-list-panel">
         <div className="settings-tabs" role="tablist" aria-label="Facturación">
-          {MAIN_VIEWS.map((view) => {
+          {availableViews.map((view) => {
             const Icon = view.icon;
             return (
               <button
@@ -860,6 +859,7 @@ function BillingPage({ user = null }) {
         invoice={selectedInvoice}
         isSaving={isSaving}
         canIssue={Boolean(
+          canManageInvoices &&
           canIssueInvoiceAfterPayment(selectedInvoice) &&
             facturamaStatus?.connected
         )}

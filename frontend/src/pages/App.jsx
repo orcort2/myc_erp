@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 
 import AppLayout from '../components/AppLayout.jsx';
+import AccessDenied from '../components/AccessDenied.jsx';
 import BrandLockup from '../components/BrandLockup.jsx';
 import { modules } from '../constants/navigation.js';
 import { clearTokens, getAccessToken, getCurrentUser } from '../services/api.js';
@@ -28,6 +29,7 @@ import UncertaintyPage from './UncertaintyPage.jsx';
 import SignatureLabPage from './SignatureLabPage.jsx';
 import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
 import FieldSheetLabPage from './labs/FieldSheetLabPage.jsx';
+import { canAccessModule, hasAnyPermission } from '../utils/accessControl.js';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -53,10 +55,6 @@ export function App() {
     let isMounted = true;
 
     async function checkSession() {
-      if (path === '/dashboard/field-sheet-lab' || path === '/dashboard/field-sheet-preview') {
-        if (isMounted) setIsCheckingSession(false);
-        return;
-      }
       if (!getAccessToken()) {
         if (isMounted) {
           setIsCheckingSession(false);
@@ -111,10 +109,6 @@ export function App() {
     navigate('/login');
   }
 
-  if (path === '/dashboard/field-sheet-lab' || path === '/dashboard/field-sheet-preview') {
-    return <FieldSheetLabPage />;
-  }
-
   if (isCheckingSession) {
     return (
       <main className="loading-screen">
@@ -133,15 +127,6 @@ export function App() {
     return null;
   }
 
-  if (path === '/signature-lab') {
-    return <SignatureLabPage />;
-  }
-
-  if (path === '/document-designer-lab') {
-    return <DocumentDesignerLabPage />;
-  }
-
-
   const isCommunicationsCenter = path === '/communications' || path === '/notifications';
   const selectedModule = modules.find(
     (module) => path === module.path || module.legacyPaths?.includes(path)
@@ -152,6 +137,25 @@ export function App() {
     : isCommunicationsCenter
       ? 'Centro de comunicaciones'
       : 'Sistema principal';
+  const isAuthorizedModule = !selectedModule || canAccessModule(selectedModule, user);
+  const isLabPath = [
+    '/dashboard/field-sheet-lab',
+    '/dashboard/field-sheet-preview',
+    '/signature-lab',
+    '/document-designer-lab',
+  ].includes(path);
+  const canAccessLabs = hasAnyPermission(user, ['settings.manage']);
+
+  let content = null;
+  if ((selectedModule && !isAuthorizedModule) || (isLabPath && !canAccessLabs)) {
+    content = <AccessDenied />;
+  } else if (path === '/dashboard/field-sheet-lab' || path === '/dashboard/field-sheet-preview') {
+    content = <FieldSheetLabPage />;
+  } else if (path === '/signature-lab') {
+    content = <SignatureLabPage />;
+  } else if (path === '/document-designer-lab') {
+    content = <DocumentDesignerLabPage />;
+  }
 
   return (
     <AppLayout
@@ -160,20 +164,20 @@ export function App() {
       subtitle={layoutSubtitle}
       user={user}
     >
-      {isCommunicationsCenter ? (
+      {content || (isCommunicationsCenter ? (
         <CommunicationsPage user={user} />
       ) : selectedModule?.key === 'clients' ? (
-        <ClientsPage />
+        <ClientsPage user={user} />
       ) : selectedModule?.key === 'resolutions' ? (
         <ResolutionCenterPage />
       ) : selectedModule?.key === 'quotations' ? (
-        <QuotationsPage />
+        <QuotationsPage user={user} />
       ) : selectedModule?.key === 'serviceOrders' ? (
         <ServiceOrdersPage user={user} />
       ) : selectedModule?.key === 'equipment' ? (
         <EquipmentPage module={selectedModule} timestamp={now} />
       ) : selectedModule?.key === 'certificates' ? (
-        <CertificatesPage />
+        <CertificatesPage user={user} />
       ) : selectedModule?.key === 'capture' ? (
         <CapturePage />
       ) : selectedModule?.key === 'quality' ? (
@@ -196,7 +200,7 @@ export function App() {
         <ModulePage module={selectedModule} timestamp={now} />
       ) : (
         <DashboardHome user={user} />
-      )}
+      ))}
     </AppLayout>
   );
 }

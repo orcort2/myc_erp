@@ -1,16 +1,30 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import {
   getDefaultChild,
   getDefaultSection,
-  settingsNavigation,
+  getAccessibleSettingsNavigation,
 } from './settings/navigation/settingsNavigation.js';
 import SettingsLayout from './settings/shared/SettingsLayout.jsx';
 
 function SettingsPage({ user = null }) {
-  const initialSection = getDefaultSection();
+  const accessibleNavigation = useMemo(
+    () => getAccessibleSettingsNavigation(user),
+    [user],
+  );
+  const initialSection = getDefaultSection(accessibleNavigation);
   const [activeSection, setActiveSection] = useState(initialSection);
   const [activeChild, setActiveChild] = useState(getDefaultChild(initialSection));
+
+  useEffect(() => {
+    const availableSection = accessibleNavigation.find((section) => section.id === activeSection?.id)
+      || getDefaultSection(accessibleNavigation);
+    setActiveSection(availableSection);
+    setActiveChild((current) => (
+      availableSection?.children?.find((child) => child.id === current?.id)
+      || getDefaultChild(availableSection)
+    ));
+  }, [accessibleNavigation]);
 
   function handleSectionChange(section) {
     setActiveSection(section);
@@ -32,7 +46,7 @@ function SettingsPage({ user = null }) {
       </div>
 
       <SettingsLayout
-        navigation={settingsNavigation}
+        navigation={accessibleNavigation}
         activeSection={activeSection}
         activeChild={activeChild}
         onSectionChange={handleSectionChange}

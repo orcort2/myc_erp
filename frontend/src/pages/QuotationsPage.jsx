@@ -53,6 +53,7 @@ import {
 } from '../services/api.js';
 import { downloadCsv, parseDelimitedText } from '../utils/csv.js';
 import { getRowValue } from '../utils/clients.js';
+import { hasPermission } from '../utils/accessControl.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
 import { formatDate, formatMoney, getClientDisplayName, normalizeKey } from '../utils/formatters.js';
 import { validateLinkedServiceFields } from '../utils/quotationServiceExceptions.js';
@@ -405,11 +406,11 @@ function totalToSpanishText(value) {
   const amount = Number(value || 0);
   return `${formatMoney(amount)} MXN`;
 }
-function QuotationsPage() {
+function QuotationsPage({ user = null }) {
   const [salesTab, setSalesTab] = useState('quotations');
   const [quotationDetailTab, setQuotationDetailTab] = useState('info');
   const [quotations, setQuotations] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(user);
   const [clients, setClients] = useState([]);
   const [detailForm, setDetailForm] = useState(emptyQuotationForm);
   const [draftItems, setDraftItems] = useState([]);
@@ -496,8 +497,19 @@ function QuotationsPage() {
       }),
     [catalogFilters, catalogItems]
   );
+  const effectiveUser = currentUser || user;
+  const canCreateQuotations = hasPermission(effectiveUser, 'quotations.create');
+  const canUpdateQuotations = hasPermission(effectiveUser, 'quotations.update');
+  const canReadCatalog = hasPermission(effectiveUser, 'catalog_items.read');
+  const canManageCatalog = [
+    'catalog_items.create',
+    'catalog_items.update',
+    'catalog_items.delete',
+  ].some((permission) => hasPermission(effectiveUser, permission));
+  const canCreateServiceOrders = hasPermission(effectiveUser, 'service_orders.create');
   const canEditSelectedQuotation = Boolean(
     selectedQuotation &&
+      canUpdateQuotations &&
       (!isQuotationTerminal(selectedQuotation) || exceptionalUnlock?.can_apply)
   );
 
@@ -566,7 +578,7 @@ function QuotationsPage() {
   }, [quotations, isDetailOpen]);
 
   useEffect(() => {
-    if (!isDetailOpen || !selectedQuotation || isQuotationTerminal(selectedQuotation)) {
+    if (!isDetailOpen || !selectedQuotation || !canUpdateQuotations || isQuotationTerminal(selectedQuotation)) {
       return undefined;
     }
     if (skipNextAutosaveRef.current) {
@@ -1749,14 +1761,16 @@ function QuotationsPage() {
         >
           Cotizaciones
         </button>
-        <button
-          aria-selected={salesTab === 'catalog'}
-          className={salesTab === 'catalog' ? 'module-tab is-active' : 'module-tab'}
-          onClick={() => setSalesTab('catalog')}
-          type="button"
-        >
-          Catalogo
-        </button>
+        {canReadCatalog ? (
+          <button
+            aria-selected={salesTab === 'catalog'}
+            className={salesTab === 'catalog' ? 'module-tab is-active' : 'module-tab'}
+            onClick={() => setSalesTab('catalog')}
+            type="button"
+          >
+            Catalogo
+          </button>
+        ) : null}
         <button
           aria-selected={salesTab === 'template'}
           className={salesTab === 'template' ? 'module-tab is-active' : 'module-tab'}
@@ -1788,16 +1802,18 @@ function QuotationsPage() {
             <p>Listado de cotizaciones</p>
             <h2>{isLoading ? 'Cargando...' : `${quotations.length} cotizaciones`}</h2>
           </div>
-          <button
-            className="primary-button"
-            onClick={() => {
-              createDraftQuotationAndOpen();
-            }}
-            disabled={isSaving}
-            type="button"
-          >
-            {isSaving ? 'Creando...' : 'Nueva cotizacion'}
-          </button>
+          {canCreateQuotations ? (
+            <button
+              className="primary-button"
+              onClick={() => {
+                createDraftQuotationAndOpen();
+              }}
+              disabled={isSaving}
+              type="button"
+            >
+              {isSaving ? 'Creando...' : 'Nueva cotizacion'}
+            </button>
+          ) : null}
         </div>
 
         <div className="clients-table quotations-table" aria-busy={isLoading}>
@@ -1850,14 +1866,16 @@ function QuotationsPage() {
             <h2>{filteredCatalogItems.length} conceptos visibles</h2>
           </div>
           <div className="toolbar-actions">
-            <button
-              className="table-button"
-              onClick={openCatalogImportModal}
-              type="button"
-            >
-              <Upload size={16} />
-              Importar Excel
-            </button>
+            {canManageCatalog ? (
+              <button
+                className="table-button"
+                onClick={openCatalogImportModal}
+                type="button"
+              >
+                <Upload size={16} />
+                Importar Excel
+              </button>
+            ) : null}
             <button className="table-button" onClick={exportCatalog} type="button">
               <Download size={16} />
               Exportar Excel
@@ -1866,9 +1884,11 @@ function QuotationsPage() {
               <Download size={16} />
               Descargar plantilla
             </button>
-            <button className="primary-button" onClick={() => openProductModal()} type="button">
-              Nuevo producto/servicio
-            </button>
+            {canManageCatalog ? (
+              <button className="primary-button" onClick={() => openProductModal()} type="button">
+                Nuevo producto/servicio
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -2008,22 +2028,26 @@ function QuotationsPage() {
             <button className="table-button" onClick={openTemplatePdfPreview} type="button">
               Vista PDF de prueba
             </button>
-            <button
-              className="table-button"
-              disabled={isTemplateSaving}
-              onClick={handleRestoreTemplateDefaults}
-              type="button"
-            >
-              Restaurar valores
-            </button>
-            <button
-              className="primary-button"
-              disabled={isTemplateSaving}
-              form="quotation-template-form"
-              type="submit"
-            >
-              {isTemplateSaving ? 'Guardando...' : 'Guardar plantilla'}
-            </button>
+            {canUpdateQuotations ? (
+              <>
+                <button
+                  className="table-button"
+                  disabled={isTemplateSaving}
+                  onClick={handleRestoreTemplateDefaults}
+                  type="button"
+                >
+                  Restaurar valores
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={isTemplateSaving}
+                  form="quotation-template-form"
+                  type="submit"
+                >
+                  {isTemplateSaving ? 'Guardando...' : 'Guardar plantilla'}
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -2396,9 +2420,11 @@ function QuotationsPage() {
 
                   <div className="quotation-detail-save">
                     <span>{isDetailAutosaving ? 'Guardando automaticamente...' : autosaveStatus || 'Guardado automatico activo.'}</span>
-                    <button aria-label="Guardar" className="primary-button" disabled={isDetailSaving || isQuotationTerminal(selectedQuotation)} title="Guardar" type="submit">
-                      {isDetailSaving ? 'Guardando...' : <Save size={17} />}
-                    </button>
+                    {canUpdateQuotations ? (
+                      <button aria-label="Guardar" className="primary-button" disabled={isDetailSaving || isQuotationTerminal(selectedQuotation)} title="Guardar" type="submit">
+                        {isDetailSaving ? 'Guardando...' : <Save size={17} />}
+                      </button>
+                    ) : null}
                   </div>
                 </form>
 
@@ -2408,7 +2434,7 @@ function QuotationsPage() {
                     <h3>Flujo comercial</h3>
                   </div>
                   <div className="quotation-actions">
-                    {quotationActions.filter((action) => isActionAllowed(selectedQuotation, action)).map((action) => (
+                    {canUpdateQuotations ? quotationActions.filter((action) => isActionAllowed(selectedQuotation, action)).map((action) => (
                       <button
                         className="table-button"
                         key={action.key}
@@ -2417,15 +2443,15 @@ function QuotationsPage() {
                       >
                         {action.label}
                       </button>
-                    ))}
-                    <button
+                    )) : null}
+                    {canCreateServiceOrders ? <button
                       className="primary-button"
                       disabled={selectedQuotation.status !== 'accepted' || selectedQuotation.service_orders?.length > 0}
                       onClick={handleGenerateServiceOrder}
                       type="button"
                     >
                       Generar orden de servicio
-                    </button>
+                    </button> : null}
                     <QuotationServiceExceptionAction
                       currentUser={currentUser}
                       onEnterExceptionalMode={enterExceptionalMode}
@@ -2434,7 +2460,7 @@ function QuotationsPage() {
                   </div>
                 </section>
 
-                {!['rejected', 'expired', 'cancelled'].includes(selectedQuotation.status) ? (
+                {canUpdateQuotations && !['rejected', 'expired', 'cancelled'].includes(selectedQuotation.status) ? (
                 <section className="danger-zone">
                   <div className="danger-zone__copy">
                     <p>Eliminar</p>

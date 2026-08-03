@@ -13,6 +13,7 @@ import React, {
 
 import { navigation } from '../constants/navigation.js';
 import { navigate } from '../utils/routing.js';
+import { filterAccessibleEntries } from '../utils/accessControl.js';
 import BrandLockup from './BrandLockup.jsx';
 import NotificationBell from './notifications/NotificationBell.jsx';
 import { NotificationProvider } from './notifications/NotificationProvider.jsx';
@@ -149,7 +150,7 @@ function AppLayout({
                 aria-label="Navegación principal"
                 className="nav-list"
               >
-                {navigation.map((item) => {
+                {filterAccessibleEntries(navigation, user).map((item) => {
                   const Icon = item.icon;
 
                   return (

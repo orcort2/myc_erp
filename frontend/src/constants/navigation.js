@@ -14,17 +14,17 @@ import {
 } from 'lucide-react';
 
 export const navigation = [
-  { label: 'Dashboard', icon: Gauge, path: '/dashboard' },
-  { label: 'Resoluciones', icon: Network, path: '/resolutions' },
-  { label: 'Clientes', icon: Building2, path: '/dashboard#clientes' },
-  { label: 'Ventas / Cotizaciones', icon: FileText, path: '/dashboard#cotizaciones' },
+  { label: 'Dashboard', icon: Gauge, path: '/dashboard', permissions: [] },
+  { label: 'Resoluciones', icon: Network, path: '/resolutions', permissions: ['resolution_center.read'] },
+  { label: 'Clientes', icon: Building2, path: '/dashboard#clientes', permissions: ['clients.read'] },
+  { label: 'Ventas / Cotizaciones', icon: FileText, path: '/dashboard#cotizaciones', permissions: ['quotations.read'] },
   /*{ label: 'Catálogo MYC', icon: FileCheck2, path: '/dashboard#catalogo' },*/
-  { label: 'Servicios', icon: ShieldCheck, path: '/dashboard#servicios' },
-  { label: 'Control Documental', icon: Files, path: '/dashboard#control-documental' },
-  { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones' },
-  { label: 'Facturación', icon: Banknote, path: '/dashboard#facturacion' },
-  { label: 'Comunicaciones', icon: MessagesSquare, path: '/communications' },
-  { label: 'Ajustes', icon: Settings, path: '/dashboard#configuracion' }
+  { label: 'Servicios', icon: ShieldCheck, path: '/dashboard#servicios', permissions: ['service_orders.read'] },
+  { label: 'Control Documental', icon: Files, path: '/dashboard#control-documental', permissions: ['documents.read'] },
+  { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones', permissions: ['standards.read'] },
+  { label: 'Facturación', icon: Banknote, path: '/dashboard#facturacion', permissions: ['invoices.read'] },
+  { label: 'Comunicaciones', icon: MessagesSquare, path: '/communications', permissions: [] },
+  { label: 'Ajustes', icon: Settings, path: '/dashboard#configuracion', permissions: ['settings.institutional.read', 'users.read', 'users.manage', 'audit_logs.read', 'field_sheet_templates.read'] }
 ];
 
 export const modules = [
@@ -34,7 +34,8 @@ export const modules = [
     description: 'Consola institucional para operar y auditar resoluciones.',
     icon: Network,
     path: '/resolutions',
-    status: 'Activo'
+    status: 'Activo',
+    permissions: ['resolution_center.read']
   },
   {
     key: 'clients',
@@ -42,7 +43,8 @@ export const modules = [
     description: 'Base comercial para cuentas, contactos y seguimiento operativo.',
     icon: Building2,
     path: '/dashboard#clientes',
-    status: 'Activo'
+    status: 'Activo',
+    permissions: ['clients.read']
   },
   {
     key: 'quotations',
@@ -50,7 +52,8 @@ export const modules = [
     description: 'Propuestas, condiciones comerciales y origen de servicios.',
     icon: FileText,
     path: '/dashboard#cotizaciones',
-    status: 'Activo'
+    status: 'Activo',
+    permissions: ['quotations.read']
   },
   /*{
     key: 'catalog',
@@ -59,6 +62,7 @@ export const modules = [
     icon: FileCheck2,
     path: '/dashboard#catalogo',
     status: 'Activo'
+    ,permissions: ['service_orders.read']
   },*/
   {
     key: 'serviceOrders',
@@ -66,7 +70,8 @@ export const modules = [
     description: 'Expediente Tecnico del Servicio con equipos, hojas, captura, calidad y certificados.',
     icon: ShieldCheck,
     path: '/dashboard#servicios',
-    status: 'Activo'
+    status: 'Activo',
+    permissions: ['service_orders.read']
   },
   {
     key: 'documentControl',
@@ -75,7 +80,8 @@ export const modules = [
     icon: Files,
     path: '/dashboard#control-documental',
     legacyPaths: ['/dashboard#biblioteca-documental'],
-    status: 'Activo'
+    status: 'Activo',
+    permissions: ['documents.read']
   },
   {
     key: 'standards',
@@ -83,7 +89,8 @@ export const modules = [
     description: 'Gestion de equipos patron, vigencias e incertidumbres por rango.',
     icon: Ruler,
     path: '/dashboard#patrones',
-    status: 'Renovación'
+    status: 'Renovación',
+    permissions: ['standards.read']
   },
   {
     key: 'finance',
@@ -91,7 +98,8 @@ export const modules = [
     description: 'Facturas, pagos, cuentas por cobrar, notas de credito y configuracion fiscal administrativa.',
     icon: Banknote,
     path: '/dashboard#facturacion',
-    status: 'Activo'
+    status: 'Activo',
+    permissions: ['invoices.read']
   },
   {
     key: 'communications',
@@ -99,7 +107,8 @@ export const modules = [
     description: 'Notificaciones, mensajería interna y atención centralizada a clientes.',
     icon: MessagesSquare,
     path: '/communications',
-    status: 'Activo'
+    status: 'Activo',
+    permissions: []
   },
   {
     key: 'settings',
@@ -107,7 +116,8 @@ export const modules = [
     description: 'Identidad institucional, usuarios, seguridad y parametros administrables del sistema.',
     icon: Settings,
     path: '/dashboard#configuracion',
-    status: 'En desarrollo'
+    status: 'En desarrollo',
+    permissions: ['settings.institutional.read', 'users.read', 'users.manage', 'audit_logs.read', 'field_sheet_templates.read']
   }
 ];
 

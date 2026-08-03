@@ -18,6 +18,7 @@ import {
 import { formatDate, formatDateTime, getClientDisplayName } from '../utils/formatters.js';
 import { getCertificateReleasePresentation } from '../utils/etsStages.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
+import { hasPermission } from '../utils/accessControl.js';
 
 function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -30,7 +31,7 @@ function triggerDownload(blob, filename) {
   URL.revokeObjectURL(url);
 }
 
-export default function CertificatesPage() {
+export default function CertificatesPage({ user = null }) {
   const [certificates, setCertificates] = useState([]);
   const [orders, setOrders] = useState([]);
   const [equipment, setEquipment] = useState([]);
@@ -43,6 +44,7 @@ export default function CertificatesPage() {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const { confirmDialog, openConfirm, closeConfirm, handleConfirm } = useConfirmDialog();
+  const canRelease = hasPermission(user, 'release.manage');
 
   const ordersById = useMemo(() => new Map(orders.map((item) => [item.id, item])), [orders]);
   const equipmentById = useMemo(() => new Map(equipment.map((item) => [item.id, item])), [equipment]);
@@ -197,7 +199,7 @@ export default function CertificatesPage() {
         <div className="toolbar-actions">
           <button className="table-button" disabled={Boolean(loadingAction)} onClick={() => downloadAuthenticated(certificate)} type="button"><Download size={14} /> Descargar</button>
           <button className="table-button" onClick={() => openAuthentication(certificate)} type="button"><ShieldCheck size={14} /> Ver autenticación</button>
-          {released ? <span className="flow-action-complete">Liberado</span> : <button className="table-button table-button--primary" disabled={Boolean(loadingAction) || !releasePresentation.canRelease} onClick={() => releaseCertificate(certificate)} title={releasePresentation.canRelease ? 'Liberar al cliente' : releasePresentation.message} type="button">Liberar</button>}
+          {released ? <span className="flow-action-complete">Liberado</span> : canRelease ? <button className="table-button table-button--primary" disabled={Boolean(loadingAction) || !releasePresentation.canRelease} onClick={() => releaseCertificate(certificate)} title={releasePresentation.canRelease ? 'Liberar al cliente' : releasePresentation.message} type="button">Liberar</button> : null}
         </div>
       </article>
     );
