@@ -308,7 +308,12 @@ def _recalculate_totals(quotation: Quotation) -> None:
     quotation.total = _money(quotation.subtotal + quotation.tax_total)
 
 
-def list_quotations(db: Session, *, include_inactive: bool = False) -> list[Quotation]:
+def list_quotations(
+    db: Session,
+    *,
+    include_inactive: bool = False,
+    client_id: int | None = None,
+) -> list[Quotation]:
     query = (
         select(Quotation)
         .options(selectinload(Quotation.items), selectinload(Quotation.advisor))
@@ -316,6 +321,8 @@ def list_quotations(db: Session, *, include_inactive: bool = False) -> list[Quot
     )
     if not include_inactive:
         query = query.where(Quotation.is_active.is_(True))
+    if client_id is not None:
+        query = query.where(Quotation.client_id == client_id)
     return list(db.scalars(query).all())
 
 

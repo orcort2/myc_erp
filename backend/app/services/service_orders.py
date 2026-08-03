@@ -350,7 +350,10 @@ def _service_order_items_from_quotation(
 
 
 def list_service_orders(
-    db: Session, *, include_inactive: bool = False
+    db: Session,
+    *,
+    include_inactive: bool = False,
+    client_id: int | None = None,
 ) -> list[ServiceOrder]:
     query = (
         select(ServiceOrder)
@@ -370,6 +373,8 @@ def list_service_orders(
     )
     if not include_inactive:
         query = query.where(ServiceOrder.is_active.is_(True))
+    if client_id is not None:
+        query = query.where(ServiceOrder.client_id == client_id)
     return list(db.scalars(query).all())
 
 

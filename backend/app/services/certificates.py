@@ -256,6 +256,7 @@ def list_certificates(
     *,
     service_order_id: int | None = None,
     equipment_id: int | None = None,
+    client_id: int | None = None,
     client_visible: bool | None = None,
     include_inactive: bool = False,
 ) -> list[Certificate]:
@@ -264,6 +265,11 @@ def list_certificates(
         query = query.where(Certificate.service_order_id == service_order_id)
     if equipment_id is not None:
         query = query.where(Certificate.equipment_id == equipment_id)
+    if client_id is not None:
+        query = query.join(
+            ServiceOrder,
+            ServiceOrder.id == Certificate.service_order_id,
+        ).where(ServiceOrder.client_id == client_id)
     if client_visible is not None:
         query = query.where(Certificate.client_visible.is_(client_visible))
     if not include_inactive:
