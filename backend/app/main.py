@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi import Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
@@ -50,11 +50,18 @@ from app.routers import (
 )
 from app.routers import field_sheet_templates
 from app.resolution_public_api.errors import PublicApiError
+from app.security.api_access import assert_all_routes_classified, enforce_api_access
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Keep reusable external clients alive for the whole application lifetime."""
+    assert_all_routes_classified(app)
+    security_logger = logging.getLogger("app.startup.security")
+    if settings.uses_development_secret:
+        security_logger.warning(
+            "SECRET_KEY de desarrollo activo; esta configuración está prohibida en producción."
+        )
     app.state.facturama_client = FacturamaClient(settings)
     office_diagnostic = diagnose_office_converter()
     office_logger = logging.getLogger("app.startup.office_converter")
@@ -76,6 +83,9 @@ app = FastAPI(
     version=settings.app_version,
     description="API base para el sistema ERP MYC.",
     lifespan=lifespan,
+    docs_url="/docs" if settings.enable_api_docs else None,
+    redoc_url="/redoc" if settings.enable_api_docs else None,
+    openapi_url="/openapi.json" if settings.enable_api_docs else None,
 )
 
 app.add_middleware(
@@ -101,42 +111,50 @@ async def public_contract_headers(request: Request, call_next):
             response.headers["X-Correlation-ID"] = correlation_id
     return response
 
-app.include_router(health.router, prefix="/api")
-app.include_router(auth.router, prefix="/api")
-app.include_router(activity.router, prefix="/api")
-app.include_router(notifications.router, prefix="/api")
-app.include_router(audit_logs.router, prefix="/api")
-app.include_router(modules.router, prefix="/api")
-app.include_router(clients.router, prefix="/api")
-app.include_router(catalog_items.router, prefix="/api")
-app.include_router(documents.router, prefix="/api")
-app.include_router(document_interpretations.router, prefix="/api")
-app.include_router(document_templates.router, prefix="/api")
-app.include_router(reference_standards.router, prefix="/api")
-app.include_router(reference_standard_certificates.router, prefix="/api")
-app.include_router(resolution_center.router, prefix="/api")
-app.include_router(resolution_public_api.router, prefix="/api")
-app.include_router(calibration_procedures.router, prefix="/api")
-app.include_router(quotations.router, prefix="/api")
-app.include_router(quotation_service_changes.router, prefix="/api")
-app.include_router(service_orders.router, prefix="/api")
-app.include_router(technical_profiles.router, prefix="/api")
-app.include_router(equipment.router, prefix="/api")
-app.include_router(field_sheets.router, prefix="/api")
-app.include_router(certificates.router, prefix="/api")
-app.include_router(communications.router, prefix="/api")
-app.include_router(invoices.router, prefix="/api")
-app.include_router(integrations.router, prefix="/api")
-app.include_router(sat_catalogs.router, prefix="/api")
-app.include_router(institutional_configurations.router, prefix="/api")
-app.include_router(client_portal.router, prefix="/api")
-app.include_router(metrology.router, prefix="/api")
-app.include_router(operational_engines.router, prefix="/api")
-app.include_router(pattern_selection.router, prefix="/api")
-app.include_router(uncertainty.router, prefix="/api")
-app.include_router(users.router, prefix="/api")
-app.include_router(verification.router)
-app.include_router(field_sheet_templates.router, prefix="/api")
+def include_api_router(router, *, prefix: str = "") -> None:
+    app.include_router(
+        router,
+        prefix=prefix,
+        dependencies=[Depends(enforce_api_access)],
+    )
+
+
+include_api_router(health.router, prefix="/api")
+include_api_router(auth.router, prefix="/api")
+include_api_router(activity.router, prefix="/api")
+include_api_router(notifications.router, prefix="/api")
+include_api_router(audit_logs.router, prefix="/api")
+include_api_router(modules.router, prefix="/api")
+include_api_router(clients.router, prefix="/api")
+include_api_router(catalog_items.router, prefix="/api")
+include_api_router(documents.router, prefix="/api")
+include_api_router(document_interpretations.router, prefix="/api")
+include_api_router(document_templates.router, prefix="/api")
+include_api_router(reference_standards.router, prefix="/api")
+include_api_router(reference_standard_certificates.router, prefix="/api")
+include_api_router(resolution_center.router, prefix="/api")
+include_api_router(resolution_public_api.router, prefix="/api")
+include_api_router(calibration_procedures.router, prefix="/api")
+include_api_router(quotations.router, prefix="/api")
+include_api_router(quotation_service_changes.router, prefix="/api")
+include_api_router(service_orders.router, prefix="/api")
+include_api_router(technical_profiles.router, prefix="/api")
+include_api_router(equipment.router, prefix="/api")
+include_api_router(field_sheets.router, prefix="/api")
+include_api_router(certificates.router, prefix="/api")
+include_api_router(communications.router, prefix="/api")
+include_api_router(invoices.router, prefix="/api")
+include_api_router(integrations.router, prefix="/api")
+include_api_router(sat_catalogs.router, prefix="/api")
+include_api_router(institutional_configurations.router, prefix="/api")
+include_api_router(client_portal.router, prefix="/api")
+include_api_router(metrology.router, prefix="/api")
+include_api_router(operational_engines.router, prefix="/api")
+include_api_router(pattern_selection.router, prefix="/api")
+include_api_router(uncertainty.router, prefix="/api")
+include_api_router(users.router, prefix="/api")
+include_api_router(verification.router)
+include_api_router(field_sheet_templates.router, prefix="/api")
 
 
 @app.exception_handler(PublicApiError)
@@ -189,7 +207,7 @@ async def public_api_validation_error_handler(
     )
 
 
-@app.get("/")
+@app.get("/", dependencies=[Depends(enforce_api_access)])
 def root() -> dict[str, str]:
     return {
         "name": settings.app_name,

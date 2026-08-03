@@ -21,6 +21,13 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
+def get_optional_bearer_token(
+    token: str | None = Depends(optional_oauth2_scheme),
+) -> str | None:
+    """Expose the optional bearer value without assigning it any authority."""
+    return token
+
+
 def ensure_initial_roles(db: Session) -> None:
     existing_names = set(db.scalars(select(Role.name)).all())
     for name, description in INITIAL_ROLES.items():
@@ -77,7 +84,12 @@ def register_user(db: Session, payload: UserRegister) -> dict:
         )
 
     user_count = db.scalar(select(func.count(User.id))) or 0
-    role_names = ["Administrador"] if user_count == 0 else ["Cliente"]
+    if user_count > 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="El registro público sólo está disponible para el bootstrap inicial",
+        )
+    role_names = ["Administrador"]
     roles = _get_roles_by_names(db, role_names)
     primary_role = roles[0] if roles else None
 
@@ -143,6 +155,11 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
+    return resolve_access_token_user(db, token)
+
+
+def resolve_access_token_user(db: Session, token: str) -> User:
+    """Validate a strict access JWT and resolve current backend authority."""
     try:
         payload = decode_token(token)
         if payload.get("token_type") != "access":
@@ -153,22 +170,6 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token invalido",
         ) from exc
-    return _get_user(db, user_id)
-
-
-def get_optional_current_user(
-    token: str | None = Depends(optional_oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User | None:
-    if not token:
-        return None
-    try:
-        payload = decode_token(token)
-        if payload.get("token_type") != "access":
-            return None
-        user_id = int(payload["sub"])
-    except (KeyError, TypeError, ValueError):
-        return None
     return _get_user(db, user_id)
 
 

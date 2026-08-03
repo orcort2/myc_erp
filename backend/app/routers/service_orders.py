@@ -11,7 +11,7 @@ from app.schemas.service_order import (
     ServiceOrderUpdate,
 )
 from app.models.user import User
-from app.services.auth import get_optional_current_user, require_permission
+from app.services.auth import get_current_user, require_permission
 from app.schemas.certificate import CertificateBatchActionRead, CertificateBulkUploadRead
 from app.services.certificates import (
     authenticate_certificates_for_service_order,
@@ -163,14 +163,14 @@ STAGE_STATUS_MAP = {
 def confirm_service_order_signatures(
     service_order_id: int,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ServiceOrderRead:
     from app.services.service_orders import confirm_signature_cycle
 
     return confirm_signature_cycle(
         db,
         service_order_id,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
     )
 
 def _json_safe(value):
@@ -715,13 +715,13 @@ def create_service_order_exception(
     service_order_id: int,
     payload: ServiceOrderExceptionCreate,
     db: Session = Depends(get_db),
-    current_user: User | None = Depends(get_optional_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ServiceOrderRead:
     return register_service_order_exception(
         db,
         service_order_id,
         payload,
-        user_id=current_user.id if current_user else None,
+        user_id=current_user.id,
     )
 
 
