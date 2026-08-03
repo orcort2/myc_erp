@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-07-29
+> Corte verificado: 2026-08-03
 
 # Registro de decisiones vigentes
 
@@ -105,3 +105,18 @@ El ETS virgen se elimina físicamente y se recrea con su mismo folio; la
 evidencia vive en cotización, expediente, auditoría y Actividad. Los contadores
 institucionales se centralizan por tipo/prefijo/año. Esta decisión no amplía el
 Motor de Resoluciones ni autoriza reconstruir ETS con operación.
+
+## D-2026-08-03 — Contención transversal deny-by-default
+
+Toda ruta HTTP se clasifica en un registro central introspectable y se protege
+al incluir el router. Las excepciones públicas son una allowlist pequeña; el
+Motor público conserva su autenticación de consumidor y la verificación de
+certificados conserva su código firmado. Una ruta no clasificada falla al
+arrancar y en pruebas.
+
+El portal reutiliza el access JWT sólo junto con una frontera adicional: rol
+Cliente, `portal.read`, cliente único derivado en backend y ownership por
+recurso. En esta etapa sin migraciones, el vínculo se resuelve por correo
+principal/contacto activo y cualquier ambigüedad falla cerrada. Producción
+rechaza secretos JWT inseguros; el frontend usa permisos efectivos sólo para
+presentación y el backend conserva toda autoridad.

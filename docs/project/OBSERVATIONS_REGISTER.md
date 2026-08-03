@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de pendientes en auditorías, cierres, bitácoras y documentos archivados
 >
-> Corte verificado: 2026-07-28
+> Corte verificado: 2026-08-03
 
 # Registro consolidado de observaciones
 
@@ -22,7 +22,7 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-006 | Clientes | `city` y `legal_name` conservan compatibilidad legacy. | parcial | Cierre técnico Clientes; auditoría integral 2026-07-21 |
 | OBS-007 | Contactos | Falta decisión formal: quedar absorbido por Clientes o existir como módulo autónomo. | pendiente | Especificación V2; auditoría integral 2026-07-21 |
 | OBS-008 | Cotizaciones | Restaurar un snapshot no recupera las partidas aunque el snapshot las conserva. | parcial | Auditoría integral 2026-07-21 |
-| OBS-009 | Cotizaciones | CRUD, estados y PDF no aplican autenticación/permisos de manera uniforme. | pendiente | Auditoría integral 2026-07-21 |
+| OBS-009 | Cotizaciones | CRUD, estados y PDF ya exigen access JWT y permiso mínimo por operación mediante el guard transversal; las mutaciones dejaron de admitir actor opcional. | resuelta | Contención de Seguridad Etapa 1, inventario y pruebas 2026-08-03 |
 | OBS-010 | Agenda | No existe entidad, calendario, folio, estados, reprogramación ni recordatorios; sólo fecha dentro de ETS. | pendiente | Flujo histórico; auditoría integral 2026-07-21 |
 | OBS-011 | Llamados | No existe entidad, folio, bitácora ni captura de resultado; sólo hito dentro de ETS. | pendiente | Flujo histórico; auditoría integral 2026-07-21 |
 | OBS-012 | ETS | El router duplica materialmente la lógica del servicio y declara dos veces `confirm-signatures`. | pendiente | Auditoría integral 2026-07-21 |
@@ -43,13 +43,13 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-027 | Facturación | Pagos y CxC ya son operativos en el Workbench/Dashboard existentes. Notas de crédito y la experiencia especializada de documentos/historial dentro del expediente continúan parciales. | parcial | Auditorías de Facturación 2026-07-14/21 e integración de pagos 2026-07-29 |
 | OBS-028 | Facturación | Producción Facturama, cancelación/sustitución, complementos PPD y notas fiscales no están cerrados. | pendiente | Auditorías de Facturación 2026-07-14/21 |
 | OBS-029 | Facturación | Falta experiencia visible especializada para excepciones/intentos/historial e impresión E2E actual. | parcial | Auditoría integral 2026-07-21 |
-| OBS-030 | Catálogo MYC | No existe experiencia oficial independiente y sus endpoints están abiertos. | pendiente | Corte de verdad 2026-07-06; auditoría integral 2026-07-21 |
+| OBS-030 | Catálogo MYC | Los endpoints ya exigen permisos `catalog_items.*`; continúa pendiente sólo la experiencia oficial independiente. | parcial | Contención de Seguridad Etapa 1 e inventario 2026-08-03 |
 | OBS-031 | Catálogos SAT | APIs internas todavía admiten CSV/JSON y deben blindarse los roles consumidores/fuente oficial. | parcial | Arquitectura SAT; auditoría integral 2026-07-21 |
 | OBS-032 | Patrones/Procedimientos | Falta validar renovación, vigencia y selección extremo a extremo; Procedimientos permanece oculto. | parcial | Auditoría integral 2026-07-21 |
 | OBS-033 | Metrología/Incertidumbre | Los motores no están conectados como flujo vigente de Hojas de Campo y un router técnico está abierto. | pendiente | Auditoría integral 2026-07-21 |
-| OBS-034 | Administración | Roles/permisos viven en código, no hay CRUD; Configuración institucional/parámetros y pruebas están incompletos. | pendiente | Auditoría integral 2026-07-21 |
-| OBS-035 | Portal de cliente | No existe aislamiento por cliente ni UI; listados backend pueden devolver información global por estado. | pendiente | Auditoría integral 2026-07-21 |
-| OBS-036 | APIs/Seguridad | No existe política deny-by-default ni matriz verificada ruta→permiso con pruebas 401/403. | pendiente | Auditoría integral 2026-07-21 |
+| OBS-034 | Administración | Configuración institucional, usuarios y auditoría ya se clasifican como administrativas y la UI filtra sus secciones; roles/permisos siguen en código y no existe CRUD de roles. | parcial | Contención de Seguridad Etapa 1, matriz y pruebas 2026-08-03 |
+| OBS-035 | Portal de cliente | El backend exige identidad Cliente, deriva un vínculo único, filtra listados y valida ownership/IDOR en descargas; permanece pendiente la UI visible y un vínculo persistente futuro cuando se autoricen migraciones. | parcial | Pruebas de dos clientes y cierre Etapa 1 2026-08-03 |
+| OBS-036 | APIs/Seguridad | Las 306 operaciones tienen clasificación reproducible, guard deny-by-default y prueba de conformidad; 401/403/ownership se cubren en la suite. | resuelta | `API_ENDPOINT_INVENTORY_2026-08-03.csv` y cierre Etapa 1 |
 | OBS-037 | UX | Persisten alerta nativa, workbench/modal duplicados, páginas monolíticas y bundle principal grande. | parcial | Auditoría integral 2026-07-21 |
 | OBS-038 | Toolkit | `doctor.sh::check` ya conserva todos los argumentos y valida FastAPI/Alembic correctamente; permanece la contradicción entre el puerto 5173 configurado y el 5174 operativo frecuente. | parcial | Auditorías Toolkit y corrección LibreOffice 2026-07-21 |
 | OBS-039 | Infraestructura | CORS está duplicado, storage es local y faltan CI, observabilidad y prueba de despliegue. | parcial | Auditoría integral 2026-07-21 |
@@ -121,6 +121,10 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R55 | Servicios / Folios | Tipos y empresas vinculadas no tenían identidad/snapshot integral; certificados usaban formato con guiones y sin contador anual por prefijo. | resuelta | Arquitecturas de Servicios/Folios, `ServiceType`, `institutional_folio_sequences` y pruebas 2026/2027 |
 | OBS-R56 | Ventas / Desbloqueo | La interfaz obligaba al Administrador a enviar una solicitud y luego conservaba un modal para capturar motivo pese a poseer autoridad total `*`. El botón ahora ejecuta en un clic, sin modal ni texto manual; el sistema registra el motivo estándar, solicitud, autorización y auditoría antes de abrir la edición. Los roles ordinarios conservan segregación. | resuelta | Servicio propietario, UI contextual y pruebas backend/frontend 2026-07-29 |
 | OBS-R57 | Excepciones / UX | Los botones de excepción ETS mostraban el mismo formulario a Administrador y a perfiles bajos, y las superficies tenían estilos inconsistentes. Administrador ejecuta ahora directamente; los perfiles bajos conservan el formulario, con estilos aislados, responsive y modo oscuro. La gobernanza backend ETS legacy permanece en `TD-014`. | resuelta | `ServiceOrdersPage`, utilidades de autoridad, CSS y pruebas frontend 2026-07-29 |
+| OBS-R58 | Seguridad/API | La auditoría confirmó 74 operaciones públicas/no protegidas y 15 con sesión opcional. El guard transversal clasifica ahora 306/306, limita la allowlist, exige identidad/permiso y falla ante cualquier operación nueva sin política. | resuelta | AUD-001/AUD-013; inventario, conformidad y suite completa 2026-08-03 |
+| OBS-R59 | Portal cliente | Los listados globales y el PDF por ID entero permitían IDOR. La identidad Cliente deriva un único tenant en backend, filtra consultas, responde 404 ante certificado ajeno y audita descargas propias; A/B inverso y anónimo están probados. | resuelta | AUD-002; pruebas `test_security_containment_stage_1.py` 2026-08-03 |
+| OBS-R60 | Autenticación/JWT | Producción podía arrancar con un secreto conocido. La configuración rechaza valores ausentes, conocidos, cortos o de baja entropía; desarrollo conserva un valor explícito con warning y access/refresh mantienen separación estricta. | resuelta | AUD-003; configuración y pruebas negativas 2026-08-03 |
+| OBS-R61 | Frontend/Permisos | La navegación y las acciones principales se mostraban sin considerar autoridad. Dashboard, sidebar, rutas directas, Ajustes, Facturación, Clientes, Cotizaciones y liberación consumen ahora permisos efectivos de backend; 403/red tienen mensajes explícitos. | resuelta | AUD-011; utilidades/pruebas frontend y build 2026-08-03 |
 
 ## Regla de cierre
 

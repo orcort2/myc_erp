@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-07-29
+> Corte verificado: 2026-08-03
 
 # Índice único de documentación
 
@@ -50,6 +50,8 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/CATALOGOS_SAT.md`](../architecture/CATALOGOS_SAT.md) | Fuente, importación, versionado y consumo de Catálogos SAT. |
 | [`../architecture/FIELD_SHEET_FIELD_REGISTRY.md`](../architecture/FIELD_SHEET_FIELD_REGISTRY.md) | Claves y semántica canónica de campos de Hojas de Campo. |
 | [`../architecture/PERMISSIONS_MATRIX.md`](../architecture/PERMISSIONS_MATRIX.md) | Roles/permisos declarados y brechas de aplicación. |
+| [`../architecture/security/API_ACCESS_CONTROL.md`](../architecture/security/API_ACCESS_CONTROL.md) | Deny-by-default, clasificación de rutas, excepciones públicas, JWT, portal/ownership y relación backend/frontend. |
+| [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible de las 306 operaciones FastAPI y su política mínima verificable. |
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
@@ -94,6 +96,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/INTEGRACION_PAGOS_FACTURACION_2026-07-29.md`](../closures/INTEGRACION_PAGOS_FACTURACION_2026-07-29.md) | Integración del registro/historial de pagos, cartera, conservación al timbrar y refresco financiero dentro del Workbench único. |
 | [`../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md`](../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md) | Cierre técnico de Actividad transversal, pendiente de revisión formal. |
 | [`../closures/SALES_UNLOCK_AND_SERVICE_TYPES_2026-07-29.md`](../closures/SALES_UNLOCK_AND_SERVICE_TYPES_2026-07-29.md) | Cierre técnico del desbloqueo, reconstrucción ETS, tipos vinculados y folios institucionales. |
+| [`../closures/SECURITY_CONTAINMENT_STAGE_1_2026-08-03.md`](../closures/SECURITY_CONTAINMENT_STAGE_1_2026-08-03.md) | Cierre técnico en revisión de deny-by-default, JWT seguro, portal aislado, permisos frontend y pruebas 401/403/IDOR. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_0.md`](../closures/RESOLUTION_ENGINE_PHASE_0.md) | Ratificación, matriz, gates, validaciones y condición de aprobación de la Fase 0 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_1.md`](../closures/RESOLUTION_ENGINE_PHASE_1.md) | Contratos, catálogos, serialización canónica, runtime, registro versionado, aislamiento y validaciones de la Fase 1 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_2.md`](../closures/RESOLUTION_ENGINE_PHASE_2.md) | Modelo ORM, integridad, reconstrucción, inmutabilidad, migración reversible y validaciones de la Fase 2 del Motor de Resoluciones. |

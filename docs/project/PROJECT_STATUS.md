@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-07-29
+> Corte verificado: 2026-08-03
 
 # Estado actual del ERP MYC
 
@@ -32,14 +32,14 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 | Módulo | Pendiente real de cierre |
 | --- | --- |
-| Dashboard | Visibilidad por permisos y E2E autenticado con datos representativos. |
-| Clientes | Proteger todas las rutas y ejecutar el ciclo autenticado completo. |
+| Dashboard | La visibilidad por permisos está aplicada; falta E2E browser autenticado con datos representativos. |
+| Clientes | Las rutas y acciones principales están protegidas; falta ejecutar el ciclo E2E browser por rol. |
 | Cotizaciones | Servicios Compuestos conservan un concepto comercial y expanden el ETS. El desbloqueo controlado permite editar directamente partidas de una aprobada, compara revisiones y reconstruye físicamente un ETS virgen con el mismo folio; incluye tipos acreditado/trazable/vinculado, empresas, snapshots y pruebas. Falta completar restauración general desde snapshots, asegurar rutas legacy y ejecutar E2E autenticado en navegador hasta ETS. |
-| Órdenes de Trabajo | E2E multi-OT, permisos y encapsulado del número legacy. |
-| Equipos | La independencia del catálogo vivo y el snapshot operativo quedaron validados; falta proteger el router y completar el E2E autenticado dentro del ciclo multi-OT. |
+| Órdenes de Trabajo | E2E multi-OT por rol y encapsulado del número legacy. |
+| Equipos | La independencia del catálogo vivo, snapshot y protección del router quedaron validados; falta E2E autenticado dentro del ciclo multi-OT. |
 | Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada; falta retirar la superficie autenticadora duplicada de ETS y completar E2E de verificación pública. |
 | Plantillas Maestras | Descarga, carga, identificación, detección semántica por fingerprint, readiness y generación del PDF autenticado desde el Master quedaron validados; falta automatizar el E2E autenticado completo del retorno. |
-| Catálogos SAT | Blindar la fuente oficial y validar permisos de todos los consumidores. |
+| Catálogos SAT | Blindar la fuente oficial y completar E2E de consumidores autorizados. |
 | Base de datos y migraciones | Plan de retiro legacy, comparación metadata↔BD y prueba de upgrade desde respaldo. |
 
 ## Módulos en desarrollo
@@ -87,11 +87,15 @@ expediente y el vertical Certificados end-to-end; fue aprobada mediante
 `EN REVISIÓN`. La IA
 permanece como posibilidad futura opcional no autorizada.
 
-1. Seguridad y autorización incompletas en registro, tokens, routers y portal de cliente.
+1. La contención transversal de seguridad quedó terminada y en revisión:
+   deny-by-default, JWT productivo seguro, clasificación 306/306 y portal
+   aislado. Permanecen revocación/rotación, `localStorage`, rate limit, MFA y
+   E2E browser exhaustivo por rol.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
 3. Hojas de Campo sin cierre semántico, automatizaciones metrológicas y E2E de las 23 plantillas.
 4. Facturación ya integra en el Workbench único el registro e historial de pagos, comprobante PDF, saldos/estado en tiempo real, cartera y refresco del readiness financiero del ETS. Permanecen el borrador no autosalvado, notas/documentos internos y el flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
-5. Administración y roles sin gestión dinámica ni filtrado visual por permisos.
+5. Administración y roles sin gestión dinámica; el filtrado visual por
+   permisos efectivos ya está aplicado en navegación y acciones principales.
 6. Toolkit, infraestructura y UX con diagnósticos, puertos, pruebas de despliegue, páginas monolíticas y bundle pendientes.
 7. Actividad transversal está implementada con permisos, entidad genérica,
    atención, no leídos, adjuntos y eventos; permanece en desarrollo hasta
@@ -100,7 +104,7 @@ permanece como posibilidad futura opcional no autorizada.
 ## Módulos pendientes o no iniciados
 
 - **Contactos, Agenda y Llamados:** existen piezas absorbidas por Cliente o ETS, pero no los módulos autónomos acordados. Se requiere decisión formal de absorción o implementación.
-- **Catálogo MYC:** el editor embebido ya administra Servicios Simples/Compuestos mediante relación normalizada y expansión ETS; sigue pendiente una experiencia independiente cerrada y sus endpoints permanecen abiertos.
+- **Catálogo MYC:** el editor embebido ya administra Servicios Simples/Compuestos mediante relación normalizada y expansión ETS; sus endpoints exigen permisos, pero sigue pendiente una experiencia independiente cerrada.
 - **CRM/Leads, Encuestas y reporte final:** no se encontró implementación funcional.
 - **Google Drive:** no existe integración.
 
@@ -108,12 +112,12 @@ permanece como posibilidad futura opcional no autorizada.
 
 | Prioridad | Deuda |
 | --- | --- |
-| P0 | Extender autorización deny-by-default a las superficies generales del ERP, aislar portal por cliente y exigir secreto JWT seguro; escalación por registro y separación access/refresh ya fueron corregidas para habilitar el Motor. |
+| P1 | Completar seguridad de sesión fuera de la Etapa 1: rotación/revocación, almacenamiento de tokens, rate limit, MFA y E2E browser por rol. |
 | P0 | Eliminar lógica duplicada y ruta `confirm-signatures` repetida en ETS. |
 | P0 | Dejar a Calidad como único autenticador de certificados. |
 | P1 | Cerrar Hojas de Campo/Captura y su E2E operativo. |
 | P1 | Completar la persistencia y el flujo fiscal de Facturación. |
-| P1 | Alinear permisos, roles y navegación. |
+| P1 | Decidir gestión dinámica o congelamiento de roles y mantener alineada la matriz ya aplicada a backend/frontend. |
 | P2 | Retirar compatibilidad legacy verificada y reducir deuda de UX, bundle, scripts e infraestructura. |
 
 ## Regla de mantenimiento

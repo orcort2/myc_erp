@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-07-29
+> Corte verificado: 2026-08-03
 
 # Alcance actual del ERP MYC
 
@@ -16,7 +16,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 
 ## Dominios con implementación vigente
 
-- Autenticación, usuarios, roles estáticos y auditoría.
+- Autenticación, usuarios, roles estáticos, permisos efectivos, guard API
+  deny-by-default y auditoría.
 - Dashboard y navegación principal.
 - Clientes, contactos dependientes, datos fiscales, constancias e importación/exportación.
 - Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
@@ -34,7 +35,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Catálogos SAT locales versionados.
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
-- Backend parcial del portal de cliente.
+- Backend del portal de cliente autenticado y aislado por vínculo único de
+  correo principal/contacto; la experiencia frontend visible sigue pendiente.
 - Actividad institucional transversal sobre entidades existentes: conversación
   humana, eventos, menciones, adjuntos, atención, no leídos, bandeja y
   notificaciones, sin reemplazar auditoría ni datos técnicos.
@@ -104,7 +106,8 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - **Agenda:** fecha e información dentro del ETS; no hay entidad/calendario/folio propio.
 - **Llamados:** hito y transición dentro del ETS; no hay módulo ni bitácora autónoma.
 - **Catálogo MYC:** backend y editor embebido desde Cotizaciones, incluido el modelo normalizado de Servicios Compuestos; navegación independiente y autorización uniforme todavía no vigentes.
-- **Portal de cliente:** backend sin aislamiento por tenant ni experiencia visible.
+- **Portal de cliente:** backend aislado por cliente y descarga con ownership;
+  no existe todavía experiencia frontend visible ni vínculo persistente por FK.
 - **Google Drive:** mencionado como integración objetivo, sin implementación.
 
 ## Capacidades sin implementación funcional
@@ -127,7 +130,13 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 
 ## Criterio para versión estable 1.0
 
-La versión 1.0 requiere, como mínimo, cerrar los riesgos P0 de seguridad, eliminar duplicaciones que alteran el flujo, completar el circuito operativo Hojas de Campo→Captura→Calidad→Certificados, cerrar el flujo fiscal que se mantenga dentro de alcance y demostrar los recorridos críticos mediante pruebas autenticadas. Una capacidad no iniciada sólo será requisito de 1.0 si se confirma expresamente en este documento.
+La versión 1.0 requiere, como mínimo, conservar la contención transversal de
+seguridad verificada en la Etapa 1, cerrar los riesgos P0 restantes, eliminar
+duplicaciones que alteran el flujo, completar el circuito operativo Hojas de
+Campo→Captura→Calidad→Certificados, cerrar el flujo fiscal que se mantenga
+dentro de alcance y demostrar los recorridos críticos mediante pruebas
+autenticadas. Una capacidad no iniciada sólo será requisito de 1.0 si se
+confirma expresamente en este documento.
 
 ## Ampliación verificada 2026-07-29 — Ventas y folios
 

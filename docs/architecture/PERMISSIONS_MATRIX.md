@@ -6,24 +6,27 @@
 >
 > Prevalece sobre: `../archive/security/permisos.md` y matrices de las especificaciones V2/V3
 >
-> Corte auditado: 2026-07-29 contra `backend/app/core/permissions.py`
+> Corte auditado: 2026-08-03 contra `backend/app/core/permissions.py` y el inventario FastAPI
 
 # Matriz vigente de roles y permisos
 
-Esta matriz documenta lo declarado en código. No garantiza que todos los endpoints apliquen el permiso: las brechas de enforcement están en [`../project/TECHNICAL_DEBT.md`](../project/TECHNICAL_DEBT.md).
+Esta matriz documenta lo declarado en código. La aplicación transversal se
+rige por [`security/API_ACCESS_CONTROL.md`](security/API_ACCESS_CONTROL.md) y
+su inventario de 306 operaciones; cada servicio puede exigir controles más
+específicos además del mínimo central.
 
 ## Roles
 
 | Rol | Alcance declarado | Permisos principales exactos |
 | --- | --- | --- |
 | Administrador | Acceso total | `*` |
-| Comercial | Clientes, cotizaciones, catálogo, documentos, lectura de ETS/SAT y revisión de equipo adicional | Contribución completa a Actividad, `service_orders.additional_equipment.propose/commercial_review`, clasificación/empresa/prefijo y solicitud/aplicación/inspección/reconstrucción de desbloqueo |
-| Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | Permisos previos más contribución completa a Actividad y `service_orders.additional_equipment.propose/execute` |
-| Captura | Preparación, generación documental y resoluciones propias | Permisos operativos previos más contribución completa a Actividad |
-| Calidad | Revisión, aprobación, metrología, control documental y autorización de equipo adicional | Gobierno completo de Actividad y `service_orders.additional_equipment.authorize` |
-| Finanzas | Cobranza, facturación, liberación y resoluciones propias | Contribución/resolución de atención en Actividad más permisos financieros vigentes |
-| Cliente | Portal limitado previsto | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own` |
-| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno completo de Actividad, `resolution_center.*`, permisos técnicos, folios y solicitud/autorización/aplicación/inspección de desbloqueo |
+| Comercial | Clientes, cotizaciones, catálogo, documentos, creación/actualización de ETS y revisión de equipo adicional | Contribución completa a Actividad, CRUD comercial/catálogo, `service_orders.create/update` y permisos de desbloqueo |
+| Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | CRUD de equipos, ejecución de motores, contribución completa a Actividad y `service_orders.additional_equipment.propose/execute` |
+| Captura | Preparación, generación documental y resoluciones propias | Permisos operativos, ejecución de motores y contribución completa a Actividad |
+| Calidad | Revisión, aprobación, metrología, control documental, configuración institucional y autorización de equipo adicional | Gobierno completo de Actividad, lectura/actualización institucional y `service_orders.additional_equipment.authorize` |
+| Finanzas | Cobranza, facturación, lectura ETS, liberación y resoluciones propias | Contribución/resolución de atención en Actividad más permisos financieros vigentes |
+| Cliente | Portal aislado por cliente | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own`; el tenant se deriva en backend |
+| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno de Actividad, `resolution_center.*`, CRUD comercial/técnico, configuración institucional, motores, folios y desbloqueo |
 | Operador | Operación de resoluciones propias sin autorización | Contribución completa a Actividad, permisos del Centro y equipo adicional |
 | Auditor | Expediente institucional read-only | `activity.read`, `activity.view_audit` y permisos de auditoría vigentes |
 
@@ -65,14 +68,20 @@ Para Equipo adicional esto permite segregación real entre Comercial/Operador,
 Calidad y Técnico; para definiciones sin permiso vertical equivalente se
 conserva el permiso canónico `resolution_center.*` de la etapa.
 
-## Inconsistencias vigentes
+## Límites vigentes
 
-1. Hay strings usados en roles que no tienen constante paralela en `PERMISSIONS`, por ejemplo `certificates.generate`, `certificates.quality`, `certificates.release`, `payments.*`, `invoices.*`, `portal.*` y permisos `*_own`.
-2. Algunos routers no exigen los permisos declarados o están completamente abiertos.
-3. La navegación frontend no refleja de forma consistente las capacidades.
-4. Los roles se administran en código; no existe CRUD completo de roles/permisos.
+1. Hay strings usados en roles que no tienen constante paralela en
+   `PERMISSIONS`, por ejemplo `certificates.generate`, `payments.*`,
+   `invoices.*`, `portal.*` y permisos `*_own`.
+2. El guard central aplica el mínimo clasificado; ownership y reglas de estado
+   específicas continúan en el servicio propietario.
+3. Los roles se administran en código; no existe CRUD completo de
+   roles/permisos.
+4. El frontend filtra navegación y acciones principales, pero no constituye
+   autoridad y aún requiere E2E browser por rol para todos los módulos.
 
-Estas inconsistencias no cambian la matriz declarada; impiden considerarla plenamente aplicada.
+Estos límites no reabren el acceso anónimo: toda ruta interna exige identidad y
+su permiso mínimo antes de ejecutar el endpoint.
 
 ## Mantenimiento
 

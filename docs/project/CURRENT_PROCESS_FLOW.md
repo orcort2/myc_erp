@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-07-28
+> Corte verificado: 2026-08-03
 
 # Flujo operativo actual
 
@@ -180,10 +180,21 @@ leídos y atenciones, mientras Notifications conserva el aviso dirigido.
 
 El usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo
 access autentica solicitudes y refresh se utiliza únicamente para renovar el
-par. El registro público no acepta roles solicitados; el backend decide el rol
-bootstrap/base. La navegación autenticada carga el usuario actual y sus roles.
-Existen brechas de autorización documentadas fuera del Motor; este flujo no debe
-interpretarse como evidencia de que todos los endpoints están protegidos.
+par. El registro público no acepta roles solicitados y sólo crea el primer
+Administrador cuando no existe ningún usuario. La navegación autenticada carga
+los permisos efectivos calculados por backend y oculta módulos/acciones sin
+capacidad.
+
+Antes de entrar a cualquier router interno, el guard transversal clasifica la
+operación y exige access JWT, permiso u ownership conforme a su categoría. Las
+únicas excepciones anónimas están en una allowlist canónica; la API pública del
+Motor conserva su consumidor/organización independiente. Una ruta nueva sin
+clasificación impide el arranque y falla la prueba de conformidad.
+
+En el portal, el cliente no elige tenant: el backend exige rol `Cliente`,
+`portal.read` y una coincidencia única entre el correo de la cuenta y un cliente
+o contacto activo. Listados y descargas se filtran por ese cliente; un
+certificado ajeno responde 404 y un acceso válido queda auditado.
 
 ## 2. Cliente y Cotización
 
