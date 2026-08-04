@@ -28,9 +28,12 @@
   versión 1.0 quedó **APROBADA Y CONGELADA COMO AUTORIDAD FUNCIONAL**, con
   naturaleza, criticidad y alcance en las 657 microacciones, sin implementar
   administración dinámica de accesos ni cambiar permisos vigentes.
-- Bloqueadores dominantes restantes: cargas no acotadas, sesiones sin
-  revocación/rotación, CFDI productivo incompleto y ausencia de
-  CI/E2E/observabilidad.
+- Bloqueadores dominantes restantes: sesiones sin revocación/rotación, CFDI
+  productivo incompleto y ausencia de CI/E2E/observabilidad; almacenamiento
+  durable y antimalware requieren decisión operativa posterior a ETAPA 3.
+- ETAPA 3 de archivos y cargas quedó **TERMINADA, EN REVISIÓN**: centraliza
+  perfiles, ZIP/Office/PDF/XML/imagen, escritura atómica y entrega contenida;
+  retiró datos operativos/dump del índice sin borrar evidencia local.
 
 ## Árbol de trabajo preservado
 
@@ -90,7 +93,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 430 passed, 19 subtests, 3 warnings |
+| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 444 passed, 19 subtests, 3 warnings |
+| Pruebas dirigidas ETAPA 3 | 78 passed, 7 subtests |
 | Pruebas dirigidas de integridad de esquema | 3 passed, 1 warning deprecado de configuración Alembic |
 | Pruebas dirigidas de seguridad | 22 passed |
 | Frontend `node --test` | 31 passed |
@@ -149,7 +153,9 @@ los comandos vigentes de recuperación se documentan en
 - Navegación y acciones principales consumen permisos efectivos retornados por
   backend; acceso directo muestra denegación y 403/red tienen mensajes claros.
 - Access/refresh se guardan en `localStorage`; no existe revocación/rotación formal de sesiones.
-- Captura e imports no comparten límites robustos de tamaño/descompresión; Activity sí valida tamaño/MIME/firma.
+- Captura, imports, Actividad, Masters, PDFs y constancias comparten perfiles
+  con tamaño, MIME, estructura y defensas ZIP; Facturama valida XML/PDF antes
+  de publicar y las escrituras persistentes integradas son atómicas.
 - No existe CI/CD, E2E browser, despliegue declarativo, readiness real,
   métricas, tracing ni alertas. El restore drill local ya está documentado y
   validado, pero aún debe incorporarse a la operación periódica automatizada.
@@ -163,7 +169,8 @@ los comandos vigentes de recuperación se documentan en
    permiso institucional; no agregar claves directamente a `permissions.py`.
 3. Diseñar en una etapa posterior RBAC administrable y `PortalMembership`, sin
    confundirlos con defectos pendientes de las Etapas 1 o 2.
-4. Proteger uploads y retirar datos operativos del control de versiones con custodia recuperable.
+4. Aprobar la custodia durable/antimalware posterior; ETAPA 3 ya protegió
+   uploads y retiró datos operativos del índice conservando evidencia local.
 5. Completar CFDI productivo y E2E de ETS→Certificado y Facturación→Pago.
 6. Incorporar CI, observabilidad, despliegue reproducible y ejecución periódica del restore drill.
 7. Mantener el inventario/conformidad de rutas y completar E2E browser por rol.
@@ -185,3 +192,8 @@ identificadores y permisos. La aprobación institucional posterior clasificó
 las 657 microacciones, congeló la versión 1.0, estableció versionado estable y
 creó su cierre documental; flujo, reglas y deuda se revisaron sin requerir
 cambios.
+ETAPA 3 agregó el inventario de superficies, tres contratos de archivos y el
+cierre técnico; sincronizó alcance, decisiones, observaciones, deuda, estado,
+índice e inventario. No modificó esquema ni datos y, por ello, no regeneró el
+respaldo oficial: el archivo local conserva 74,539,344 bytes y head
+`f27f8a90b1c3`, aunque ya no se versiona en Git.

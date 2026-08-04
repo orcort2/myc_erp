@@ -122,6 +122,10 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 
 ## Fuera del alcance actual implementado
 
+- El Catálogo Institucional Funcional describe el ERP objetivo y reserva
+  capacidades futuras, pero esta validación documental no incorpora ninguna de
+  ellas al alcance implementado. Las marcas objetivo/reservadas sólo podrán
+  cambiar de categoría mediante decisión y etapa posterior aprobadas.
 - MYC Document Engine (MDE) completo, su diseñador documental general y el reemplazo transversal de renderizadores. Es un diseño futuro y no genera pendientes de cierre por sí mismo.
 - El historial transversal de un mismo activo del cliente a través de múltiples servicios. El modelo actual conserva cada equipo como ocurrencia del ETS, sus identificadores (`serial_number`, `internal_id`) y snapshots sin imponer unicidad global; una evolución futura podrá enlazarlo a una identidad de activo separada sin reescribir el expediente histórico.
 - Funcionalidades descritas únicamente en especificaciones archivadas que no estén confirmadas en [`BUSINESS_RULES.md`](BUSINESS_RULES.md), [`DECISIONS.md`](DECISIONS.md) o el código vigente.
@@ -154,3 +158,19 @@ confirma expresamente en este documento.
 - Certificados/OT: formatos compactos y contadores anuales con pisos 2026.
 - Fuera de alcance: actualización no destructiva de un ETS con operación y
   excepciones de otros módulos.
+
+## Infraestructura transversal verificada 2026-08-04 — Archivos
+
+- perfiles centrales para adjuntos, Captura, Plantillas Maestras, PDFs de
+  certificado, constancias fiscales e importación de Clientes;
+- validación acotada de tamaño, MIME, firma/estructura, ZIP/Office, PDF, XML e
+  imágenes antes de persistir o parsear;
+- almacenamiento local contenido, escritura atómica, checksum y entrega de
+  archivo regular después del permiso/ownership vigente;
+- recuperación Facturama valida base64/XML/PDF antes de publicar;
+- datos operativos, dump y paquetes generados quedan fuera del índice Git sin
+  borrar evidencia local.
+
+No forman parte de este alcance: RBAC dinámico, `PortalMembership`, cambios de
+estado/folio, almacenamiento remoto, antivirus externo, retención avanzada o
+las capacidades reservadas del catálogo funcional.

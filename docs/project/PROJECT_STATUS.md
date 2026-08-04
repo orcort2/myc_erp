@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-04 — Etapa 2 en revisión
+> Corte verificado: 2026-08-04 — Etapa 2 técnicamente cerrada; validación funcional del catálogo terminada y pendiente de aprobación institucional
 
 # Estado actual del ERP MYC
 
@@ -99,14 +99,17 @@ permanece como posibilidad futura opcional no autorizada.
    permisos efectivos ya está aplicado en navegación y acciones principales.
    La siguiente etapa de autoridad deberá implementar el diseño obligatorio
    de múltiples roles/grupos, overrides, alcances, temporalidad y protecciones
-   críticas, usando el catálogo institucional del 2026-08-04 sólo tras revisión.
+   críticas, usando el catálogo institucional funcional sólo después de su
+   aprobación y de una matriz explícita de compatibilidad.
 6. Toolkit, infraestructura y UX con diagnósticos, puertos, pruebas de despliegue, páginas monolíticas y bundle pendientes.
 7. Actividad transversal está implementada con permisos, entidad genérica,
    atención, no leídos, adjuntos y eventos; permanece en desarrollo hasta
    completar navegación directa a cada registro y revisión formal del cierre.
-8. Etapa 2A y 2B están técnicamente terminadas y en revisión: persistencia
-   converge en `f27f8a90b1c3` con recuperación reproducible; el Modelo
-   Institucional gobierna nuevas capacidades sin implementar todavía RBAC.
+8. Etapa 2A y 2B están técnicamente terminadas y cerradas: persistencia
+   converge en `f27f8a90b1c3` con recuperación reproducible. La validación
+   funcional previa a ETAPA 3 revisó 36/213/798 del snapshot y produjo la
+   autoridad aprobada y congelada de 42 módulos, 181 acciones y 657
+   microacciones. La aprobación no implementa RBAC ni modifica permisos.
 
 ## Módulos pendientes o no iniciados
 
@@ -124,8 +127,22 @@ permanece como posibilidad futura opcional no autorizada.
 | P0 | Dejar a Calidad como único autenticador de certificados. |
 | P1 | Cerrar Hojas de Campo/Captura y su E2E operativo. |
 | P1 | Completar la persistencia y el flujo fiscal de Facturación. |
-| P1 | Diseñar e implementar en una etapa separada PortalMembership persistente y RBAC administrable; `permissions.py` permanece bootstrap temporal y el catálogo 2026-08-04 requiere revisión previa. |
+| P1 | Diseñar e implementar en una etapa separada PortalMembership persistente y RBAC administrable; `permissions.py` permanece bootstrap temporal y el catálogo funcional validado requiere aprobación y matriz de compatibilidad previa. |
 | P2 | Retirar compatibilidad legacy verificada y reducir deuda de UX, bundle, scripts e infraestructura. |
+
+## Infraestructura transversal — Archivos y cargas
+
+**Estado de etapa:** `CASI SELLADO` — ETAPA 3 terminada técnicamente y en
+revisión. Los flujos vigentes conservan estados, permisos y ownership; las
+cargas críticas integradas usan perfiles centrales, los ZIP se inspeccionan
+con límites, las publicaciones son atómicas y los artefactos operativos fueron
+retirados del índice sin eliminar evidencia local. El cierre formal y la
+evidencia están en
+[`../closures/STAGE_3_FILES_AND_UPLOADS_2026-08-04.md`](../closures/STAGE_3_FILES_AND_UPLOADS_2026-08-04.md).
+
+Pendientes fuera del cierre técnico: antivirus/proveedor de cuarentena,
+almacenamiento durable remoto y streaming de paquetes de salida de gran
+volumen; requieren decisión operativa y etapa propia.
 
 ## Regla de mantenimiento
 

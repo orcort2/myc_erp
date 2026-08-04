@@ -203,3 +203,18 @@ Esta aprobación no crea roles, asignaciones o permisos; no implementa RBAC
 dinámico; no modifica `permissions.py`; y no altera backend, frontend, modelos,
 migraciones ni datos. La traducción a controles ejecutables continúa siendo
 una etapa posterior y separada.
+
+## D-2026-08-04 — Frontera institucional de archivos y cargas
+
+Toda entrada de archivo no confiable debe validarse mediante un perfil central
+antes de parsearse o persistirse. El perfil define formatos, MIME y límites; la
+validación comprueba nombre, firma/estructura y, para ZIP/Office, expansión,
+miembros, profundidad, cifrado, enlaces y rutas. Una escritura persistente se
+publica atómicamente dentro de `STORAGE_ROOT` y produce SHA-256.
+
+La ruta no concede acceso. Identidad, permiso, ownership, tenant, visibilidad y
+estado continúan bajo el servicio propietario y se revalidan antes de la
+frontera final de entrega. Los archivos operativos, respaldos y paquetes
+generados no se versionan en Git; retirarlos del índice no autoriza borrarlos ni
+reescribir historia. Esta decisión no crea permisos, modelos o migraciones y no
+implementa almacenamiento remoto ni antivirus externo.
