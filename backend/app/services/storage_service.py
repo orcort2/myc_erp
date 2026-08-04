@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from shutil import copyfileobj
+from hashlib import sha256
+import os
+from tempfile import NamedTemporaryFile
 
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException
 from sqlalchemy import Text, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.sqltypes import String
@@ -31,6 +33,8 @@ class StoredFile:
     absolute_path: Path
     relative_path: str
     original_filename: str
+    checksum_sha256: str | None = None
+    size_bytes: int | None = None
 
 
 def storage_root() -> Path:
@@ -61,6 +65,18 @@ def resolve_storage_path(path_value: str | Path | None) -> Path | None:
     return resolved
 
 
+def require_deliverable_file(path_value: str | Path | None, *, not_found_detail: str = "Archivo no disponible") -> Path:
+    """Resolve only a regular, non-symlink file below the institutional root.
+
+    Domain services must complete identity, permission and ownership checks
+    before calling this final delivery boundary.
+    """
+    resolved = resolve_storage_path(path_value)
+    if resolved is None or resolved.is_symlink() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail=not_found_detail)
+    return resolved
+
+
 def relative_storage_path(path: str | Path) -> str:
     resolved = resolve_storage_path(path)
     if resolved is None:
@@ -68,27 +84,34 @@ def relative_storage_path(path: str | Path) -> str:
     return resolved.relative_to(storage_root()).as_posix()
 
 
-def save_upload(
-    upload: UploadFile,
-    *,
-    directory: str | Path,
-    filename: str,
-    allowed_extensions: set[str] | None = None,
-) -> StoredFile:
-    original = upload.filename or filename
-    extension = Path(original).suffix.lower()
-    if allowed_extensions is not None and extension not in allowed_extensions:
-        allowed = ", ".join(sorted(allowed_extensions))
-        raise HTTPException(status_code=400, detail=f"Extension de archivo no permitida. Permitidas: {allowed}")
+def atomic_write(target: Path, content: bytes) -> None:
+    """Write beside the target and atomically replace only after fsync."""
+    resolved = resolve_storage_path(target)
+    if resolved is None:
+        raise HTTPException(status_code=400, detail="Ruta de almacenamiento inválida")
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name: str | None = None
+    try:
+        with NamedTemporaryFile(mode="wb", dir=resolved.parent, prefix=".upload-", delete=False) as temporary:
+            temporary_name = temporary.name
+            temporary.write(content)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_name, resolved)
+    finally:
+        if temporary_name:
+            Path(temporary_name).unlink(missing_ok=True)
 
+
+def save_validated_content(*, directory: str | Path, filename: str, content: bytes, original_filename: str) -> StoredFile:
     target = build_storage_path(directory=directory, filename=filename)
-    with target.open("wb") as buffer:
-        copyfileobj(upload.file, buffer)
-
+    atomic_write(target, content)
     return StoredFile(
         absolute_path=target,
-        relative_path=target.relative_to(storage_root()).as_posix(),
-        original_filename=original,
+        relative_path=relative_storage_path(target),
+        original_filename=original_filename,
+        checksum_sha256=sha256(content).hexdigest(),
+        size_bytes=len(content),
     )
 
 

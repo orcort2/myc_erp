@@ -26,6 +26,17 @@ class Settings(BaseSettings):
         "http://127.0.0.1:5174",
     ]
     storage_root: str = "storage"
+    upload_activity_max_bytes: int = Field(default=15 * 1024 * 1024, gt=0)
+    upload_capture_max_bytes: int = Field(default=40 * 1024 * 1024, gt=0)
+    upload_document_max_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
+    upload_certificate_pdf_max_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    upload_tax_constancy_max_bytes: int = Field(default=15 * 1024 * 1024, gt=0)
+    upload_archive_max_members: int = Field(default=250, gt=0)
+    upload_archive_max_uncompressed_bytes: int = Field(default=120 * 1024 * 1024, gt=0)
+    upload_archive_max_member_bytes: int = Field(default=25 * 1024 * 1024, gt=0)
+    upload_archive_max_ratio: float = Field(default=100, gt=1)
+    upload_archive_max_depth: int = Field(default=8, gt=0)
+    upload_image_max_pixels: int = Field(default=40_000_000, gt=0)
     libreoffice_executable: str = Field(
         default="",
         validation_alias=AliasChoices("LIBREOFFICE_EXECUTABLE", "OFFICE_CONVERTER_BINARY"),
