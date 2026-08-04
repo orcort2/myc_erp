@@ -17,6 +17,8 @@ from app.services.portal.registration_service import (
     resend_registration_verification,
     verify_registration_email,
 )
+from app.models.user import User
+from app.services.auth import require_permission
 
 
 router = APIRouter(
@@ -134,6 +136,7 @@ def resend_portal_registration_email(
 def get_portal_registration_status(
     registration_id: int,
     db: Session = Depends(get_db),
+    _current_user: User = Depends(require_permission("users.manage")),
 ) -> PortalRegistrationStatusRead:
     """
     Consulta temporal del estado del registro.

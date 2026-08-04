@@ -1,6 +1,8 @@
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api';
 const ACCESS_TOKEN_KEY = 'myc_access_token';
 const REFRESH_TOKEN_KEY = 'myc_refresh_token';
+const PORTAL_ACCESS_TOKEN_KEY = 'myc_portal_access_token';
+const PORTAL_REFRESH_TOKEN_KEY = 'myc_portal_refresh_token';
 
 export function getAccessToken() {
   return window.localStorage.getItem(ACCESS_TOKEN_KEY);
@@ -20,8 +22,22 @@ export function clearTokens() {
   window.localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
+export function getPortalAccessToken() {
+  return window.localStorage.getItem(PORTAL_ACCESS_TOKEN_KEY);
+}
+
+export function savePortalTokens({ access_token, refresh_token }) {
+  window.localStorage.setItem(PORTAL_ACCESS_TOKEN_KEY, access_token);
+  window.localStorage.setItem(PORTAL_REFRESH_TOKEN_KEY, refresh_token);
+}
+
+export function clearPortalTokens() {
+  window.localStorage.removeItem(PORTAL_ACCESS_TOKEN_KEY);
+  window.localStorage.removeItem(PORTAL_REFRESH_TOKEN_KEY);
+}
+
 async function request(path, options = {}) {
-  const token = getAccessToken();
+  const token = options.portal ? getPortalAccessToken() : getAccessToken();
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers ?? {})
@@ -108,7 +124,7 @@ async function uploadRequest(path, formData, options = {}) {
 }
 
 async function downloadRequest(path, options = {}) {
-  const token = getAccessToken();
+  const token = options.portal ? getPortalAccessToken() : getAccessToken();
   const headers = {
     ...(options.headers ?? {})
   };
@@ -1695,19 +1711,19 @@ export function sendCommunicationMessage(conversationId, body) {
 
 
 export function getClientPortalQuotations() {
-  return request('/client-portal/quotations');
+  return request('/client-portal/quotations', { portal: true });
 }
 
 export function getClientPortalServiceOrders() {
-  return request('/client-portal/service-orders');
+  return request('/client-portal/service-orders', { portal: true });
 }
 
 export function getClientPortalCertificates() {
-  return request('/client-portal/certificates');
+  return request('/client-portal/certificates', { portal: true });
 }
 
 export async function downloadClientPortalCertificate(certificate) {
-  const result = await downloadRequest(`/client-portal/certificates/${certificate.id}/pdf`);
+  const result = await downloadRequest(`/client-portal/certificates/${certificate.id}/pdf`, { portal: true });
   const url = window.URL.createObjectURL(result.blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -1717,3 +1733,45 @@ export async function downloadClientPortalCertificate(certificate) {
   anchor.remove();
   window.URL.revokeObjectURL(url);
 }
+
+export async function portalLogin(identifier, password) {
+  const tokens = await request('/portal/auth/login', { method: 'POST', body: JSON.stringify({ identifier, password }), portal: true });
+  savePortalTokens(tokens);
+  return getClientPortalProfile();
+}
+
+export function portalLogout() {
+  return request('/portal/auth/logout', { method: 'POST', portal: true }).finally(clearPortalTokens);
+}
+
+export function getClientPortalProfile() {
+  return request('/client-portal/profile', { portal: true });
+}
+
+export function createPortalRegistration(payload) {
+  return request('/portal/registration', { method: 'POST', body: JSON.stringify(payload), portal: true });
+}
+
+export function verifyPortalEmail(token) {
+  return request('/portal/registration/verify-email', { method: 'POST', body: JSON.stringify({ token }), portal: true });
+}
+
+export function validatePortalInvitation(token) {
+  return request(`/portal/invitations/${encodeURIComponent(token)}`, { portal: true });
+}
+
+export function acceptPortalInvitation(token, payload) {
+  return request(`/portal/invitations/${encodeURIComponent(token)}/accept`, { method: 'POST', body: JSON.stringify(payload), portal: true });
+}
+
+export function getClientPortalCompany() { return request('/client-portal/company', { portal: true }); }
+export function getClientPortalEquipment() { return request('/client-portal/equipment', { portal: true }); }
+export function getClientPortalInvoices() { return request('/client-portal/invoices', { portal: true }); }
+export function getClientPortalPayments() { return request('/client-portal/payments', { portal: true }); }
+
+export function listPortalMemberships(clientId) { return request(`/client-portal/memberships${clientId ? `?client_id=${clientId}` : ''}`); }
+export function listPortalInvitations(clientId) { return request(`/client-portal/invitations${clientId ? `?client_id=${clientId}` : ''}`); }
+export function createPortalInvitation(payload) { return request('/client-portal/invitations', { method: 'POST', body: JSON.stringify(payload) }); }
+export function listPortalRoles(clientId) { return request(`/client-portal/roles${clientId ? `?client_id=${clientId}` : ''}`); }
+export function listPortalRegistrations() { return request('/client-portal/registrations'); }
+export function listPortalLinkRequests() { return request('/client-portal/link-requests'); }

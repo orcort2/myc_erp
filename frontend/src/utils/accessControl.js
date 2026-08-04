@@ -21,6 +21,8 @@ export function canAccessModule(module, user) {
 }
 
 export function isClientPortalUser(user) {
+  if (user?.membership_id && user?.client_id) return true;
+  if (user?.account_type === 'client_portal') return true;
   const roleNames = Array.isArray(user?.roles)
     ? user.roles.map((role) => `${role?.name ?? ''}`.trim().toLowerCase())
     : [];

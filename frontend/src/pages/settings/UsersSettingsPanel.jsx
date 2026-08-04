@@ -11,6 +11,7 @@ import {
 } from '../../services/api.js';
 import useConfirmDialog from '../../utils/useConfirmDialog.js';
 import UserModal from './UserModal.jsx';
+import PortalAccessSettingsPanel from './PortalAccessSettingsPanel.jsx';
 
 const EMPTY_FORM = {
   full_name: '',
@@ -21,6 +22,7 @@ const EMPTY_FORM = {
 };
 
 function UsersSettingsPanel() {
+  const [accountScope, setAccountScope] = useState('internal');
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -218,7 +220,9 @@ function UsersSettingsPanel() {
   }
 
   return (
-    <section className="settings-panel">
+    <>{/* Los roles internos y los accesos externos conservan administraciones separadas. */}
+    <div className="client-modal-tabs" role="tablist"><button className={accountScope === 'internal' ? 'client-modal-tab is-active' : 'client-modal-tab'} onClick={() => setAccountScope('internal')} type="button">Usuarios internos</button><button className={accountScope === 'portal' ? 'client-modal-tab is-active' : 'client-modal-tab'} onClick={() => setAccountScope('portal')} type="button">Accesos de clientes</button></div>
+    {accountScope === 'portal' ? <PortalAccessSettingsPanel /> : <section className="settings-panel">
       {error ? <div className="form-error dashboard-error">{error}</div> : null}
       {notice ? <div className="form-notice dashboard-error">{notice}</div> : null}
 
@@ -324,7 +328,7 @@ function UsersSettingsPanel() {
         title={confirmDialog?.title}
         variant={confirmDialog?.variant}
       />
-    </section>
+    </section>}</>
   );
 }
 

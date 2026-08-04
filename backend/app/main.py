@@ -49,6 +49,7 @@ from app.routers import (
     verification,
 )
 from app.routers import field_sheet_templates
+from app.routers.portal import auth as portal_auth, configuration as portal_configuration, dashboard as portal_dashboard, invitations as portal_invitations, profile as portal_profile, registration as portal_registration, roles as portal_roles, users as portal_users
 from app.resolution_public_api.errors import PublicApiError
 from app.security.api_access import assert_all_routes_classified, enforce_api_access
 
@@ -56,6 +57,10 @@ from app.security.api_access import assert_all_routes_classified, enforce_api_ac
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Keep reusable external clients alive for the whole application lifetime."""
+    from app.core.db import SessionLocal
+    from app.services.portal.permission_service import ensure_portal_catalog
+    with SessionLocal() as portal_db:
+        ensure_portal_catalog(portal_db)
     assert_all_routes_classified(app)
     security_logger = logging.getLogger("app.startup.security")
     if settings.uses_development_secret:
@@ -148,6 +153,16 @@ include_api_router(integrations.router, prefix="/api")
 include_api_router(sat_catalogs.router, prefix="/api")
 include_api_router(institutional_configurations.router, prefix="/api")
 include_api_router(client_portal.router, prefix="/api")
+include_api_router(portal_auth.router, prefix="/api")
+include_api_router(portal_registration.router, prefix="/api")
+include_api_router(portal_invitations.admin_router, prefix="/api")
+include_api_router(portal_invitations.public_router, prefix="/api")
+include_api_router(portal_users.router, prefix="/api")
+include_api_router(portal_users.review_router, prefix="/api")
+include_api_router(portal_roles.router, prefix="/api")
+include_api_router(portal_configuration.router, prefix="/api")
+include_api_router(portal_profile.router, prefix="/api")
+include_api_router(portal_dashboard.router, prefix="/api")
 include_api_router(metrology.router, prefix="/api")
 include_api_router(operational_engines.router, prefix="/api")
 include_api_router(pattern_selection.router, prefix="/api")

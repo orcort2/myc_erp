@@ -14,6 +14,7 @@ from app.core.portal.constants import (
     UserAccountStatus,
 )
 from app.models.notification import Notification
+from app.services.portal.mail_service import send_verification_email
 from app.models.portal_registration import PortalRegistration
 from app.models.user import Role, User
 from app.schemas.portal.registration import PortalRegistrationCreate
@@ -66,6 +67,10 @@ class PortalRegistrationResendResult:
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
 def generate_verification_token() -> str:
@@ -378,6 +383,7 @@ def create_public_registration(
         db,
         registration.id,
     )
+    send_verification_email(email=registration.user.email, token=verification_token)
 
     return PortalRegistrationCreationResult(
         registration=registration,
@@ -421,7 +427,7 @@ def verify_registration_email(
 
     if (
         registration.verification_token_expires_at is None
-        or registration.verification_token_expires_at <= now
+        or as_utc(registration.verification_token_expires_at) <= now
     ):
         registration.status = (
             PortalRegistrationStatus.EXPIRED.value
@@ -601,6 +607,7 @@ def resend_registration_verification(
         db.rollback()
         raise
 
+    send_verification_email(email=registration.user.email, token=verification_token)
     return PortalRegistrationResendResult(
         registration=get_registration_or_404(
             db,

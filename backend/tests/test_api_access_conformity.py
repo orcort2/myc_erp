@@ -21,7 +21,7 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    assert len(operations) == 306
+    assert len(operations) == 344
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 
@@ -46,6 +46,11 @@ def test_public_allowlist_is_small_and_intentional():
         ("POST", "/api/auth/register"),
         ("POST", "/api/auth/login"),
         ("POST", "/api/auth/refresh"),
+        ("POST", "/api/portal/auth/login"),
+        ("POST", "/api/portal/auth/refresh"),
+        ("POST", "/api/portal/registration"),
+        ("POST", "/api/portal/registration/verify-email"),
+        ("POST", "/api/portal/registration/resend-verification"),
     }
 
 

@@ -13,6 +13,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import Role, User
+from app.core.portal.constants import PortalAccountType, UserAccountStatus
 from app.schemas.auth import UserLogin, UserRegister
 from app.services.audit_logs import write_audit_log
 
@@ -59,7 +60,7 @@ def _get_user_by_email(db: Session, email: str) -> User | None:
 
 def _build_tokens(user: User) -> dict:
     role_names = [role.name for role in user.roles if role.is_active]
-    claims = {"roles": role_names}
+    claims = {"roles": role_names, "auth_context": "internal"}
     return {
         "access_token": create_access_token(str(user.id), extra_claims=claims),
         "refresh_token": create_refresh_token(str(user.id), extra_claims=claims),
@@ -70,7 +71,7 @@ def _build_tokens(user: User) -> dict:
 
 def registration_status(db: Session) -> dict[str, bool]:
     """Public bootstrap state used only to label the login registration link."""
-    user_count = db.scalar(select(func.count(User.id))) or 0
+    user_count = db.scalar(select(func.count(User.id)).where(User.account_type == PortalAccountType.INTERNAL.value)) or 0
     return {"has_users": user_count > 0}
 
 
@@ -83,7 +84,7 @@ def register_user(db: Session, payload: UserRegister) -> dict:
             detail="El correo ya esta registrado",
         )
 
-    user_count = db.scalar(select(func.count(User.id))) or 0
+    user_count = db.scalar(select(func.count(User.id)).where(User.account_type == PortalAccountType.INTERNAL.value)) or 0
     if user_count > 0:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -94,9 +95,12 @@ def register_user(db: Session, payload: UserRegister) -> dict:
     primary_role = roles[0] if roles else None
 
     user = User(
+        username=payload.email.strip().lower(),
         email=payload.email,
         full_name=payload.full_name,
         hashed_password=hash_password(payload.password),
+        account_type=PortalAccountType.INTERNAL.value,
+        status=UserAccountStatus.ACTIVE.value,
         role_id=primary_role.id if primary_role else None,
     )
     user.roles = roles
@@ -124,7 +128,12 @@ def register_user(db: Session, payload: UserRegister) -> dict:
 
 def authenticate_user(db: Session, payload: UserLogin) -> dict:
     user = _get_user_by_email(db, payload.email)
-    if user is None or not user.is_active:
+    if (
+        user is None
+        or not user.is_active
+        or user.account_type != PortalAccountType.INTERNAL.value
+        or user.status != UserAccountStatus.ACTIVE.value
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales invalidas",
@@ -143,7 +152,12 @@ def _get_user(db: Session, user_id: int) -> User:
         .where(User.id == user_id)
         .options(selectinload(User.roles))
     )
-    if user is None or not user.is_active:
+    if (
+        user is None
+        or not user.is_active
+        or user.account_type != PortalAccountType.INTERNAL.value
+        or user.status != UserAccountStatus.ACTIVE.value
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no autenticado",
@@ -164,6 +178,8 @@ def resolve_access_token_user(db: Session, token: str) -> User:
         payload = decode_token(token)
         if payload.get("token_type") != "access":
             raise ValueError("Token no es access")
+        if payload.get("auth_context", "internal") != "internal":
+            raise ValueError("Token fuera del contexto interno")
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(
@@ -178,6 +194,8 @@ def refresh_tokens(db: Session, refresh_token: str) -> dict:
         payload = decode_token(refresh_token)
         if payload.get("token_type") != "refresh":
             raise ValueError("Token no es refresh")
+        if payload.get("auth_context", "internal") != "internal":
+            raise ValueError("Token fuera del contexto interno")
         user_id = int(payload["sub"])
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(

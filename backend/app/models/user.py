@@ -7,6 +7,7 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Table,
+    event,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -191,3 +192,14 @@ class User(
         back_populates="user",
         cascade="all, delete-orphan",
     )
+
+
+@event.listens_for(User, "before_insert")
+def _populate_legacy_internal_identity(_mapper, _connection, target: User) -> None:
+    """Conserva creadores internos históricos que todavía sólo proporcionan correo."""
+    if not target.username:
+        target.username = target.email.strip().lower()
+    if not target.account_type:
+        target.account_type = "internal"
+    if not target.status:
+        target.status = "active"

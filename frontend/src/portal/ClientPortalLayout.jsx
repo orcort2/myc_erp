@@ -1,15 +1,19 @@
-import { Award, FileText, Home, LogOut, Menu, UserRound, Wrench, X } from 'lucide-react';
+import { Award, BadgeDollarSign, Building2, FileText, Home, LogOut, Menu, PackageSearch, Receipt, UserRound, Wrench, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import BrandLockup from '../components/BrandLockup.jsx';
 import { navigate } from '../utils/routing.js';
 
 const entries = [
-  { path: '/portal', label: 'Inicio', icon: Home },
-  { path: '/portal/cotizaciones', label: 'Cotizaciones', icon: FileText },
-  { path: '/portal/servicios', label: 'Mis servicios', icon: Wrench },
-  { path: '/portal/certificados', label: 'Certificados', icon: Award },
-  { path: '/portal/perfil', label: 'Mi perfil', icon: UserRound },
+  { path: '/portal', label: 'Inicio', icon: Home, permission: 'portal.view' },
+  { path: '/portal/empresa', label: 'Mi empresa', icon: Building2, permission: 'client.view' },
+  { path: '/portal/cotizaciones', label: 'Cotizaciones', icon: FileText, permission: 'quotations.view' },
+  { path: '/portal/servicios', label: 'Mis servicios', icon: Wrench, permission: 'services.view' },
+  { path: '/portal/equipos', label: 'Equipos', icon: PackageSearch, permission: 'equipment.view' },
+  { path: '/portal/certificados', label: 'Certificados', icon: Award, permission: 'certificates.view' },
+  { path: '/portal/facturas', label: 'Facturas', icon: Receipt, permission: 'invoices.view' },
+  { path: '/portal/pagos', label: 'Pagos', icon: BadgeDollarSign, permission: 'payments.view' },
+  { path: '/portal/perfil', label: 'Mi perfil', icon: UserRound, permission: 'profile.view' },
 ];
 
 export default function ClientPortalLayout({ children, currentPath, onLogout, user }) {
@@ -37,7 +41,7 @@ export default function ClientPortalLayout({ children, currentPath, onLogout, us
           <button className="client-portal-mobile-close" aria-label="Cerrar menú" onClick={() => setIsOpen(false)} type="button"><X size={19} /></button>
         </div>
         <nav aria-label="Navegación del portal">
-          {entries.map(({ path, label, icon: Icon }) => (
+          {entries.filter((entry) => user?.permissions?.includes(entry.permission)).map(({ path, label, icon: Icon }) => (
             <button
               className={`client-portal-nav-item ${currentPath === path ? 'is-active' : ''}`}
               key={path}

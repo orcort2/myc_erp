@@ -18,6 +18,8 @@ import {
   getClientDeleteEligibility,
   listClients,
   listSatCatalogs,
+  listPortalMemberships,
+  listPortalInvitations,
   previewClientImport,
   previewClientTaxConstancy,
   restoreClient,
@@ -73,6 +75,17 @@ function getMissingClientFields(client) {
     missing.push('Razón social');
   }
   return missing;
+}
+
+function ClientPortalAccessSummary({ clientId }) {
+  const [memberships, setMemberships] = useState([]);
+  const [invitations, setInvitations] = useState([]);
+  useEffect(() => {
+    if (!clientId) return;
+    Promise.all([listPortalMemberships(clientId), listPortalInvitations(clientId)]).then(([users, invites]) => { setMemberships(users); setInvitations(invites); }).catch(() => { setMemberships([]); setInvitations([]); });
+  }, [clientId]);
+  if (!clientId) return <div className="clients-empty">Guarda el cliente antes de administrar accesos.</div>;
+  return <div className="portal-notice"><strong>Accesos del Portal del Cliente</strong><p>{memberships.length} cuenta(s) vinculada(s) · {invitations.filter((item) => item.status === 'pending').length} invitación(es) pendiente(s).</p>{memberships.map((item) => <div key={item.id}><span>{item.full_name} · {item.email} · {item.status}</span></div>)}</div>;
 }
 
 function ClientsPage({ user = null }) {
@@ -1413,6 +1426,8 @@ function ClientsPage({ user = null }) {
                   )}
                 </section>
               ) : null}
+
+              {clientModalTab === 'portal-access' ? <ClientPortalAccessSummary clientId={editingClientId} /> : null}
 
               {clientModalTab === 'activity' ? (
                 <section className="form-field--wide">

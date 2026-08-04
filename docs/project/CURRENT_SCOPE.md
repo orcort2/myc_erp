@@ -108,10 +108,13 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - **Agenda:** fecha e información dentro del ETS; no hay entidad/calendario/folio propio.
 - **Llamados:** hito y transición dentro del ETS; no hay módulo ni bitácora autónoma.
 - **Catálogo MYC:** backend y editor embebido desde Cotizaciones, incluido el modelo normalizado de Servicios Compuestos; navegación independiente y autorización uniforme todavía no vigentes.
-- **Portal de cliente:** backend aislado por cliente y descarga con ownership;
-  no existe todavía experiencia frontend visible ni vínculo persistente
-  `User`–`PortalMembership`–`Client`. Esa relación es trabajo obligatorio de
-  una etapa posterior y no un pendiente del alcance cerrado de la Etapa 1.
+- **Portal de cliente:** integración técnica terminada y en revisión. Incluye
+  identidad externa separada, registro, verificación, invitaciones, revisión y
+  vínculo persistente `User`–`ClientPortalMembership`–`Client`, roles propios,
+  administración desde Ajustes/Clientes y experiencia responsive para empresa,
+  cotizaciones, servicios, equipos, certificados, facturas y pagos. Correo
+  productivo, MFA, recuperación, sesiones revocables y comunicaciones
+  bidireccionales permanecen fuera de esta entrega.
 - **Google Drive:** mencionado como integración objetivo, sin implementación.
 
 ## Capacidades sin implementación funcional

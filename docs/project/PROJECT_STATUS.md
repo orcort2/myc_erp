@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-04 — Etapa 2 técnicamente cerrada; validación funcional del catálogo terminada y pendiente de aprobación institucional
+> Corte verificado: 2026-08-04 — Portal del Cliente terminado técnicamente y en revisión funcional
 
 # Estado actual del ERP MYC
 
@@ -43,6 +43,12 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 | Base de datos y migraciones | Integridad, drift, downgrade, upgrade histórico, respaldo y restore están validados; sólo permanece el plan independiente de retiro legacy. |
 
 ## Módulos en desarrollo
+
+El Portal del Cliente completó identidad externa, registro/verificación,
+invitaciones, membresías, roles propios, aislamiento por cliente, administración
+interna y superficies responsive. La entrega está **TERMINADA — EN REVISIÓN**;
+permanece en el estado canónico `EN DESARROLLO` hasta la revisión funcional y la
+conexión del correo productivo, sin declarar aptitud de producción.
 
 Las brechas que impiden su cierre están consolidadas en [`TECHNICAL_DEBT.md`](TECHNICAL_DEBT.md) y [`OBSERVATIONS_REGISTER.md`](OBSERVATIONS_REGISTER.md). Los bloqueos principales son:
 

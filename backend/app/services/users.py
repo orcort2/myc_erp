@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import hash_password
 from app.models.user import Role, User
+from app.core.portal.constants import PortalAccountType, UserAccountStatus
 from app.schemas.user import UserAdminCreate
 from app.services.audit_logs import write_audit_log
 from app.services.auth import ensure_initial_roles
@@ -72,6 +73,7 @@ def list_users(db: Session) -> list[User]:
     return list(
         db.scalars(
             select(User)
+            .where(User.account_type == PortalAccountType.INTERNAL.value)
             .options(selectinload(User.roles))
             .order_by(User.created_at.desc())
         ).all()
@@ -86,7 +88,7 @@ def list_roles(db: Session) -> list[Role]:
 def get_user_or_404(db: Session, user_id: int) -> User:
     user = db.scalar(
         select(User)
-        .where(User.id == user_id)
+        .where(User.id == user_id, User.account_type == PortalAccountType.INTERNAL.value)
         .options(selectinload(User.roles))
     )
     if user is None:
@@ -114,9 +116,12 @@ def create_user_admin(
 
     roles = _resolve_active_roles(db, payload.role_names)
     user = User(
+        username=normalized_email,
         email=normalized_email,
         full_name=normalized_name,
         hashed_password=hash_password(payload.password),
+        account_type=PortalAccountType.INTERNAL.value,
+        status=UserAccountStatus.ACTIVE.value,
         is_active=True,
     )
     _assign_roles(user, roles)

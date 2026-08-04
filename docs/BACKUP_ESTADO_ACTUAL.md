@@ -34,6 +34,11 @@
 - ETAPA 3 de archivos y cargas quedó **TERMINADA, EN REVISIÓN**: centraliza
   perfiles, ZIP/Office/PDF/XML/imagen, escritura atómica y entrega contenida;
   retiró datos operativos/dump del índice sin borrar evidencia local.
+- El Portal del Cliente quedó **TERMINADO, EN REVISIÓN** con autenticación
+  externa separada, registro/verificación, invitaciones, membresías y roles
+  propios, aislamiento persistente por cliente, administración interna y
+  experiencia frontend. Correo productivo, MFA, recuperación y revocación de
+  sesiones permanecen pendientes explícitos.
 
 ## Árbol de trabajo preservado
 
@@ -54,8 +59,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 ## Persistencia y migraciones
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
-- Head único oficial: `f27f8a90b1c3`.
-- Base local compartida: migrada y verificada en `f27f8a90b1c3`.
+- Head único oficial: `bd2270bc5282`.
+- Base local compartida: migrada y verificada en `bd2270bc5282`.
 - `alembic check`: **LIMPIO** tanto en la base local como en bases aisladas.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
@@ -80,9 +85,9 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 ## Respaldo oficial
 
 - Archivo: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño: 74,539,344 bytes.
-- `alembic_version` contenido: `f27f8a90b1c3`.
-- SHA-256: `7e3d332d93a04ebfa47b1dc78cfa0f5592e1a3386f4381f2d5ceb3d8b92e8e19`.
+- Tamaño: 74,261,144 bytes.
+- `alembic_version` contenido: `bd2270bc5282`.
+- SHA-256: `733f3eeaf0da12f0d8b9e5912c6e851fec1b9ade49090487f23a9b12b4ac019b`.
 - Estado: **ALINEADO CON EL HEAD OFICIAL**.
 - Restore drill: **CORRECTO** en PostgreSQL aislado; restauró 102 tablas,
   confirmó la revisión y dejó `alembic check` limpio. El procedimiento
@@ -100,13 +105,13 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 31 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Inventario FastAPI | 306/306 operaciones clasificadas; CSV coincide con runtime |
-| Aislamiento portal A/B | propias 200, ajenas 404, anónimo 401 |
+| Inventario FastAPI | 344/344 operaciones clasificadas; CSV coincide con runtime |
+| Aislamiento portal A/B | membresía propia 200, recurso ajeno 404, anónimo 401; autenticador interno rechaza token del portal |
 | `scripts/myc doctor` | dependencias locales principales disponibles |
 | Alembic ciclo vacío base→head→base→head | correcto en PostgreSQL aislado |
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
 | Alembic check | limpio en local, ciclo y restores aislados |
-| Restore del respaldo oficial regenerado | correcto; f27, 102 tablas |
+| Restore del respaldo oficial regenerado | último drill integral correcto en el corte f27; no repetido tras las migraciones ya aplicadas del portal |
 | Validador Catálogo Institucional/permissions/API | correcto (`--check`) |
 | Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
 | Metadatos Catálogo Funcional | 657/657 con naturaleza, criticidad y alcance; alineación completa |

@@ -4,7 +4,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import AccessDenied from '../components/AccessDenied.jsx';
 import BrandLockup from '../components/BrandLockup.jsx';
 import { modules } from '../constants/navigation.js';
-import { clearTokens, getAccessToken, getCurrentUser } from '../services/api.js';
+import { clearPortalTokens, clearTokens, getAccessToken, getClientPortalProfile, getCurrentUser, getPortalAccessToken, portalLogout } from '../services/api.js';
 import BillingPage from './BillingPage.jsx';
 import { formatModuleDateTime } from '../utils/formatters.js';
 import { getCurrentPath, navigate } from '../utils/routing.js';
@@ -31,6 +31,7 @@ import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
 import FieldSheetLabPage from './labs/FieldSheetLabPage.jsx';
 import { canAccessModule, hasAnyPermission, isClientPortalUser } from '../utils/accessControl.js';
 import ClientPortalApp from '../portal/ClientPortalApp.jsx';
+import PortalAccessPage from '../portal/PortalAccessPage.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -56,20 +57,27 @@ export function App() {
     let isMounted = true;
 
     async function checkSession() {
-      if (!getAccessToken()) {
+      const portalPath = path.startsWith('/portal');
+      const publicPortalPath = path === '/portal/login' || path === '/portal/registro' || path === '/portal/verificar-correo' || path.startsWith('/portal/invitacion/');
+      if (publicPortalPath) {
+        if (isMounted) setIsCheckingSession(false);
+        return;
+      }
+      const token = portalPath ? getPortalAccessToken() : getAccessToken();
+      if (!token) {
         if (isMounted) {
           setIsCheckingSession(false);
         }
 
         if (path !== '/login') {
-          navigate('/login');
+          navigate(portalPath ? '/portal/login' : '/login');
         }
 
         return;
       }
 
       try {
-        const currentUser = await getCurrentUser();
+        const currentUser = portalPath ? await getClientPortalProfile() : await getCurrentUser();
 
         if (isMounted) {
           setUser(currentUser);
@@ -79,11 +87,11 @@ export function App() {
           }
         }
       } catch {
-        clearTokens();
+        if (portalPath) clearPortalTokens(); else clearTokens();
 
         if (isMounted) {
           setUser(null);
-          navigate('/login');
+          navigate(portalPath ? '/portal/login' : '/login');
         }
       } finally {
         if (isMounted) {
@@ -105,9 +113,12 @@ export function App() {
   }, []);
 
   function handleLogout() {
-    clearTokens();
+    if (isClientPortalUser(user)) {
+      portalLogout().catch(() => clearPortalTokens());
+      clearPortalTokens();
+    } else clearTokens();
     setUser(null);
-    navigate('/login');
+    navigate(isClientPortalUser(user) ? '/portal/login' : '/login');
   }
 
   if (isCheckingSession) {
@@ -123,8 +134,12 @@ export function App() {
     return <LoginPage onAuthenticated={setUser} />;
   }
 
+  if (path === '/portal/login' || path === '/portal/registro' || path === '/portal/verificar-correo' || path.startsWith('/portal/invitacion/')) {
+    return <PortalAccessPage onAuthenticated={setUser} path={path} />;
+  }
+
   if (!user) {
-    navigate('/login');
+    navigate(path.startsWith('/portal') ? '/portal/login' : '/login');
     return null;
   }
 

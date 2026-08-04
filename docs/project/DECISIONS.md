@@ -218,3 +218,19 @@ frontera final de entrega. Los archivos operativos, respaldos y paquetes
 generados no se versionan en Git; retirarlos del índice no autoriza borrarlos ni
 reescribir historia. Esta decisión no crea permisos, modelos o migraciones y no
 implementa almacenamiento remoto ni antivirus externo.
+
+## D-2026-08-04 — Identidad, membresía y autoridad del Portal del Cliente
+
+El Portal del Cliente usa cuentas `client_portal`, autenticación y tokens con
+contexto propio; una cuenta externa no puede entrar por el autenticador interno.
+La única autoridad de ámbito es `User → ClientPortalMembership activa →
+client_id`. La coincidencia de correo con Cliente o Contacto queda retirada como
+mecanismo de acceso y ningún endpoint del portal acepta un `client_id` del
+consumidor para decidir ownership.
+
+Los roles y permisos del portal permanecen separados del RBAC interno, se
+normalizan mediante `ClientPortalRolePermission` y
+`ClientPortalMembershipRole`, y no admiten excepciones individuales en esta
+entrega. Una empresa puede tener varias cuentas y cada membresía varios roles;
+el último administrador activo no puede retirarse. Los tokens de verificación e
+invitación se conservan exclusivamente como hash y son de un solo uso.

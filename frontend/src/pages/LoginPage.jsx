@@ -104,7 +104,7 @@ function LoginPage({ onAuthenticated }) {
           </button>
         </form>
 
-        <button
+        {hasRegisteredUsers === false || mode === 'register' ? <button
           className="text-button"
           onClick={() => {
             setError('');
@@ -112,12 +112,9 @@ function LoginPage({ onAuthenticated }) {
           }}
           type="button"
         >
-          {mode === 'login'
-            ? hasRegisteredUsers === false
-              ? 'Crear primer usuario'
-              : 'Registrarse'
-            : 'Ya tengo usuario'}
-        </button>
+          {mode === 'login' ? 'Crear primer usuario' : 'Ya tengo usuario'}
+        </button> : null}
+        {mode === 'login' ? <button className="text-button" onClick={() => navigate('/portal/login')} type="button">Acceso al Portal del Cliente</button> : null}
       </section>
     </main>
   );

@@ -50,6 +50,11 @@ PUBLIC_OPERATIONS = {
     ("POST", "/api/auth/register"),
     ("POST", "/api/auth/login"),
     ("POST", "/api/auth/refresh"),
+    ("POST", "/api/portal/auth/login"),
+    ("POST", "/api/portal/auth/refresh"),
+    ("POST", "/api/portal/registration"),
+    ("POST", "/api/portal/registration/verify-email"),
+    ("POST", "/api/portal/registration/resend-verification"),
 }
 
 SIGNED_PUBLIC_OPERATIONS = {
@@ -252,11 +257,19 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
             actor="api_consumer",
             public_intentional=True,
         )
+    if path.startswith("/api/portal/invitations/"):
+        return AccessPolicy(AccessType.PUBLIC_SIGNED, "invitation_token", actor="anonymous", public_intentional=True)
+    if path.startswith("/api/portal/registration/"):
+        return _permission("users.manage", administrative=True)
+    if path.startswith("/api/portal/"):
+        return AccessPolicy(AccessType.PORTAL, "portal_access_jwt", permission="portal.view", ownership="membership.client_id", actor="portal_user")
+    if path.startswith(("/api/client-portal/invitations", "/api/client-portal/memberships", "/api/client-portal/roles", "/api/client-portal/registrations", "/api/client-portal/link-requests", "/api/client-portal/configuration")):
+        return _permission("users.manage", administrative=True)
     if path.startswith("/api/client-portal/"):
         return AccessPolicy(
             AccessType.PORTAL,
             "access_jwt+portal_client_context",
-            permission="portal.read",
+            permission="portal.view",
             ownership="client_id_derived_from_identity",
             actor="portal_user",
             finding="AUD-002",
@@ -307,6 +320,14 @@ def enforce_api_access(
         return
     if not token:
         raise _unauthorized()
+
+    if policy.access_type == AccessType.PORTAL:
+        from app.core.portal.security import resolve_portal_token
+        context = resolve_portal_token(db, token)
+        if policy.permission and policy.permission not in context.permissions:
+            raise HTTPException(status_code=403, detail="Permiso del portal insuficiente")
+        request.state.portal_context = context
+        return
 
     user = resolve_access_token_user(db, token)
     if policy.permission and not user_has_permission(user, policy.permission):

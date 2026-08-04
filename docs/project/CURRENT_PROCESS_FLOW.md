@@ -302,6 +302,19 @@ Control Documental V1 administra Lista Maestra, ficha, versiones, activación/pu
 
 El ETS puede avanzar a liberado y cerrado tras las compuertas operativas. Encuesta y reporte final no existen en el flujo implementado actual.
 
+## 10. Portal del Cliente
+
+El alta pública crea una cuenta externa pendiente, envía verificación y notifica
+a personal interno. La verificación confirma el buzón pero no concede datos de
+cliente. MYC revisa el registro, propone un cliente y aprueba o rechaza la
+solicitud; sólo la aprobación crea una membresía activa. Como alternativa, una
+invitación ya fija cliente y roles y crea la membresía al aceptarse.
+
+El inicio de sesión del portal resuelve una membresía activa única, calcula la
+unión de permisos de sus roles y emite un JWT de contexto `client_portal`. Cada
+consulta deriva el `client_id` de esa membresía. Suspender o revocar la
+membresía corta el siguiente acceso aun si el token no ha expirado.
+
 ## Excepciones y rutas laterales
 
 - Cotización aprobada + ETS realmente virgen permite solicitar
