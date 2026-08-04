@@ -20,8 +20,14 @@
   commits y la repetición de pruebas emitieron el dictamen **APROBADA Y
   CERRADA** el 2026-08-04.
 - La Etapa 2A corrigió y validó la integridad de esquema y recuperación; la
-  Etapa 2B formalizó el Catálogo Institucional como autoridad funcional sin
-  implementar RBAC dinámico ni cambiar permisos vigentes.
+  Etapa 2B formalizó el snapshot técnico del Catálogo Institucional. La
+  validación funcional posterior revisó 36 módulos, 213 acciones y 798 filas y
+  produjo el catálogo objetivo de 42 módulos, 181 acciones y 657
+  microacciones. Su nomenclatura fue revisada completamente para expresar
+  decisiones de negocio comprensibles por administración funcional y la
+  versión 1.0 quedó **APROBADA Y CONGELADA COMO AUTORIDAD FUNCIONAL**, con
+  naturaleza, criticidad y alcance en las 657 microacciones, sin implementar
+  administración dinámica de accesos ni cambiar permisos vigentes.
 - Bloqueadores dominantes restantes: cargas no acotadas, sesiones sin
   revocación/rotación, CFDI productivo incompleto y ausencia de
   CI/E2E/observabilidad.
@@ -98,6 +104,9 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Alembic check | limpio en local, ciclo y restores aislados |
 | Restore del respaldo oficial regenerado | correcto; f27, 102 tablas |
 | Validador Catálogo Institucional/permissions/API | correcto (`--check`) |
+| Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
+| Metadatos Catálogo Funcional | 657/657 con naturaleza, criticidad y alcance; alineación completa |
+| Identidad y permisos del catálogo | microacciones, marcas y celdas de permisos sin cambios frente al corte previo a metadatos |
 | `npm audit --omit=dev` | 1 vulnerabilidad alta PostCSS |
 | `pip check` | correcto |
 | Vulnerabilidades Python | NO VERIFICADAS; `pip-audit` ausente |
@@ -166,5 +175,13 @@ La auditoría conserva sus diez entregables como fotografía histórica. La Etap
 reconciliación y scripts reproducibles; migró la base local y regeneró el
 respaldo oficial. La Etapa 2B actualizó el Catálogo Institucional, documentó las
 brechas contra bootstrap/API y agregó un validador sin cambiar claves ni
-comportamiento de autorización. Se sincronizaron decisiones, flujo,
-observaciones, deuda, estado canónico, índice e inventario oficial.
+comportamiento de autorización. La validación funcional posterior separó ese
+snapshot de la autoridad objetivo, retiró 493 campos sintéticos del plano de
+capacidades y documentó diferencias, propuestas y reservas. Se sincronizaron
+decisiones, observaciones, alcance, estado canónico, índice e inventario
+oficial. La revisión semántica posterior reformuló únicamente los nombres
+funcionales de los 42 módulos, 181 acciones y 657 microacciones, conservando
+identificadores y permisos. La aprobación institucional posterior clasificó
+las 657 microacciones, congeló la versión 1.0, estableció versionado estable y
+creó su cierre documental; flujo, reglas y deuda se revisaron sin requerir
+cambios.

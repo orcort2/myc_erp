@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-08-03
+> Corte verificado: 2026-08-04
 
 # Registro de decisiones vigentes
 
@@ -74,6 +74,7 @@
 | ADR-060 | 2026-07-29 | Pagos se integra exclusivamente dentro del Resumen financiero de `InvoiceWorkbenchDialog`; no existe pestaña, controlador, modelo ni cálculo paralelo. El controlador único registra/refresca `Invoice`, descarga el recibo existente y notifica al ETS para volver a consultar readiness. Cuentas por cobrar permanece en el Dashboard vigente y abre el mismo expediente. | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md), servicios/endpoints existentes y cierre de integración de pagos | Conserva `Invoice` como fuente de verdad, respeta `payments.manage`, permite prepago y evita que el timbrado sobrescriba `partially_paid`/`paid`. |
 | ADR-062 | 2026-07-29 | La primera excepción contextual de Ventas usa un expediente acotado con folio `EXV-…` para solicitar, autorizar y consumir una única reconstrucción controlada de una cotización aprobada. La experiencia identifica Cotización/ETS por `MYC-…`/`OSMYC-…`, nunca por IDs internos, congela la revisión anterior, permite editar directamente las partidas y reconstruye físicamente sólo un ETS realmente virgen conservando su folio visible. La segregación sigue siendo la regla; un actor con autoridad explícita `self_authorize_unlock` puede autorizar en el mismo comando. Administrador la obtiene por `*`, sin pedir permiso a otro usuario. | [`../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md`](../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md) y suite específica | Mantiene revalidación transaccional, snapshots, Actividad, auditoría y notificaciones; la autoautorización queda explícita y auditable y no abre otra fase, definición ni máquina del Motor. |
 | ADR-063 | 2026-07-29 | Las excepciones no muestran un formulario de solicitud a Administrador: una acción explícita ejecuta directamente, sin modal ni texto capturado, y el sistema registra el motivo estándar exigido por auditoría. Los perfiles de menor autoridad conservan solicitud, motivo y revisión cuando el dominio los soporte. | UI contextual de Cotizaciones y ETS, utilidades de autoridad y pruebas frontend | La regla elimina fricción administrativa sin omitir evidencia. En ETS sólo corrige la interacción; `TD-014` continúa hasta separar solicitud, autorización y ejecución en su backend legacy. |
+| ADR-064 | 2026-08-04 | El Catálogo Institucional Funcional versión 1.0 queda aprobado y congelado como autoridad funcional con 42 módulos, 181 acciones y 657 microacciones, todas clasificadas por naturaleza, criticidad y alcance permitido. | [`../architecture/CATALOGO_INSTITUCIONAL_FUNCIONAL_ERP_MYC.md`](../architecture/CATALOGO_INSTITUCIONAL_FUNCIONAL_ERP_MYC.md) y cierre institucional 2026-08-04 | Las microacciones aprobadas son estables; un cambio de significado exige deprecación, nueva microacción y trazabilidad histórica. No implementa RBAC ni modifica permisos vigentes. |
 
 ## Decisiones expresamente no confirmadas
 
@@ -143,10 +144,12 @@ La autoridad administrativa futura se gestionará desde Ajustes mediante:
 compatibilidad temporal, no como el modelo administrativo definitivo. El
 archivo
 [`../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md`](../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md)
-se adopta como insumo funcional obligatorio para diseñar la etapa siguiente.
-Contiene capacidades existentes y permisos propuestos: ninguna clave, alcance
-o microacción se traslada automáticamente al código sin revisión funcional,
-reconciliación con el inventario ejecutable y aprobación arquitectónica.
+se conserva como snapshot técnico reproducible de ETAPA 2B. La autoridad
+funcional propuesta pasa a
+[`../architecture/CATALOGO_INSTITUCIONAL_FUNCIONAL_ERP_MYC.md`](../architecture/CATALOGO_INSTITUCIONAL_FUNCIONAL_ERP_MYC.md):
+ninguna clave, alcance o microacción se traslada automáticamente al código sin
+aprobación institucional, reconciliación con el inventario ejecutable y
+aprobación arquitectónica.
 
 Esta decisión no implementa Ajustes, modelos, migraciones ni claves nuevas; es
 un mandato de diseño para una etapa separada y no un defecto no atendido del
@@ -170,3 +173,33 @@ usuarios. El catálogo es autoridad funcional y no generador de código;
 `permissions.py` permanece bootstrap. El modelo posterior deberá soportar
 roles/grupos múltiples, herencia, allow/deny individual, ownership, scopes,
 temporalidad, capacidades protegidas y `PortalMembership` persistente.
+
+## D-2026-08-04 — Separación entre snapshot técnico y autoridad funcional
+
+El inventario de 36 superficies, 305 operaciones HTTP y 493 campos permanece
+congelado como evidencia reproducible de ETAPA 2B. La autoridad funcional se
+define por intención de negocio, no por endpoints o schemas, y adopta 42
+módulos, 181 acciones y 657 microacciones explícitas. Campos calculados,
+identificadores, timestamps, validaciones y efectos automáticos no son permisos
+independientes. Las capacidades futuras se reservan sin ampliar alcance. Esta
+decisión no renombra claves actuales ni autoriza implementación antes de la
+aprobación institucional y la matriz de compatibilidad.
+
+## D-2026-08-04 — Aprobación y congelamiento del Catálogo Institucional Funcional
+
+Se aprueba como autoridad funcional la versión 1.0 del catálogo con 42 módulos,
+181 acciones y 657 microacciones. Cada microacción declara naturaleza,
+criticidad y uno o más alcances permitidos. El estado del registro permanece
+como precondición funcional independiente y no forma parte del alcance. Los
+efectos automáticos usan naturaleza `efecto automático` y alcance `no aplica`.
+
+Toda microacción aprobada es estable. Si cambia su significado no puede
+reutilizarse silenciosamente: debe marcarse como deprecada, crearse una nueva
+microacción y conservarse la trazabilidad histórica. Una corrección editorial
+sólo conserva el identificador cuando no cambia significado, naturaleza,
+criticidad, alcance ni relación funcional.
+
+Esta aprobación no crea roles, asignaciones o permisos; no implementa RBAC
+dinámico; no modifica `permissions.py`; y no altera backend, frontend, modelos,
+migraciones ni datos. La traducción a controles ejecutables continúa siendo
+una etapa posterior y separada.
