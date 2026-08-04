@@ -1,4 +1,4 @@
-> Estado: TERMINADA — EN REVISIÓN
+> Estado: TERMINADA Y TÉCNICAMENTE CERRADA
 >
 > Fecha: 2026-08-04
 >
@@ -8,8 +8,8 @@
 
 ## Dictamen
 
-El catálogo fue revisado completamente y quedó establecido como autoridad
-funcional previa al código. La jerarquía obligatoria es
+El snapshot técnico fue revisado completamente y estableció el gobierno previo
+al código. La jerarquía obligatoria es
 `Módulo→Acción→Microacción`; un permiso nuevo debe existir y aprobarse en el
 catálogo antes de llegar a `permissions.py`, roles o usuarios. El catálogo no
 genera código y `permissions.py` continúa como bootstrap temporal.
@@ -43,6 +43,11 @@ implementado aquí.
 798 filas y falla si el catálogo, bootstrap o inventario cambian sin
 reconciliar el snapshot. La brecha completa, redundancias y amplitudes están en
 `CAPABILITY_MODEL_GAPS_2026-08-04.md`.
+
+La validación funcional posterior, previa a ETAPA 3, conservó este inventario
+como evidencia reproducible y trasladó la autoridad objetivo a
+`CATALOGO_INSTITUCIONAL_FUNCIONAL_ERP_MYC.md`. Esta precisión no reabre ni
+modifica el cierre técnico de ETAPA 2B.
 
 La regresión compartida cerró con 430 pruebas backend y 19 subtests, 31 pruebas
 frontend, compilación Python correcta y build frontend correcto.

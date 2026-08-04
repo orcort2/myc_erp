@@ -6,6 +6,7 @@
   --myc-primary-dark: #074c56;
   --myc-primary-hover: #095965;
   --myc-primary-active: #074c56;
+  --dashboard-title-color: #eaf4f2;
   --myc-accent: #3db7b3;
   --myc-accent-soft: rgba(61, 183, 179, 0.16);
 
@@ -931,13 +932,20 @@ button {
 }
 
 .module-card h2 {
-  color: var(--myc-navy);
+  color: var(--myc-primary);
   font-size: 22px;
   font-weight: 850;
   line-height: 1.2;
   margin: 0 0 10px;
   position: relative;
   z-index: 1;
+}
+.dashboard-control-panel__header h2,
+.dashboard-section-heading h2 {
+  color: var(--dashboard-title-color);
+  font-size: 20px;
+  line-height: 1.12;
+  margin: 0;
 }
 
 .module-card p {
@@ -1027,7 +1035,7 @@ button {
 
 .dashboard-control-panel__header h2,
 .dashboard-section-heading h2 {
-  color: var(--myc-navy);
+  color: var(--dashboard-title-color);
   font-size: 20px;
   line-height: 1.12;
   margin: 0;
@@ -6881,9 +6889,6 @@ textarea::placeholder {
 .module-workspace__hero h1,
 .module-workspace__panel h2,
 .section-heading h2,
-.dashboard-control-panel__header h2,
-.dashboard-section-heading h2,
-.module-card h2,
 .topbar__identity strong,
 .clients-table__head,
 .read-only-grid strong {
@@ -7599,9 +7604,6 @@ textarea,
 .module-workspace__hero h1,
 .module-workspace__panel h2,
 .section-heading h2,
-.dashboard-control-panel__header h2,
-.dashboard-section-heading h2,
-.module-card h2,
 .topbar__identity strong,
 .clients-table__head,
 .read-only-grid strong,
@@ -7988,4 +7990,429 @@ body[data-theme="dark"] .workspace-header > div:first-child > span:not(.workspac
     flex-basis: auto;
     width: 100%;
   }
+}
+
+/* ==========================================================================\n   MYC DESIGN SYSTEM V2.4 — LIQUID GLASS PANORÁMICO\n   Base visual compartida por todo el ERP.\n   ========================================================================== */
+
+:root {
+  --myc-page-gap: 18px;
+  --myc-page-radius: 20px;
+  --myc-page-glass: rgba(214, 228, 229, 0.48);
+  --myc-page-border: rgba(239, 250, 250, 0.30);
+  --myc-page-shadow: 0 24px 68px rgba(6, 31, 38, 0.16);
+}
+
+.app-shell--module {
+  grid-template-columns: 252px minmax(0, 1fr);
+}
+
+.app-shell--module.is-sidebar-collapsed {
+  grid-template-columns: 78px minmax(0, 1fr);
+}
+
+.sidebar {
+  padding: 20px 18px;
+}
+
+.workspace {
+  max-width: none;
+  padding: 18px clamp(18px, 1.8vw, 30px) 26px;
+  width: 100%;
+}
+
+.app-shell--dashboard .workspace {
+  max-width: none;
+}
+
+.topbar {
+  border-radius: 14px;
+  margin-bottom: 18px;
+  min-height: 70px;
+  overflow: visible;
+  padding: 10px 16px;
+  z-index: 100;
+}
+
+.workspace-header,
+.module-workspace__hero,
+.section-heading {
+  margin-bottom: 16px;
+}
+
+.workspace-header h1,
+.module-workspace__hero h1 {
+  letter-spacing: -0.035em;
+}
+
+/* Superficies principales con el mismo lenguaje de Comunicaciones. */
+.module-workspace__panel,
+.dashboard-control-panel,
+.dashboard-section-block,
+.clients-list-panel,
+.operations-band,
+.flow-strip,
+.module-tabs,
+.document-library-panel,
+.pattern-selection-panel {
+  border-radius: var(--myc-page-radius);
+  border-color: var(--myc-page-border);
+  box-shadow: var(--myc-page-shadow);
+}
+
+.module-card,
+.operations-band__metric,
+.ets-summary-card,
+.ets-equipment-card,
+.ets-work-order-folder,
+.glass-card-mini,
+.read-only-grid article {
+  border-radius: 14px;
+}
+
+/* El contenido aprovecha el ancho real del monitor. */
+.module-workspace,
+.dashboard-home,
+.clients-page,
+.billing-page,
+.settings-page,
+.resolution-center-page,
+.communications-page {
+  width: 100%;
+}
+
+/* Scrollbars discretas y consistentes. */
+* {
+  scrollbar-color: rgba(47, 127, 112, 0.48) rgba(255, 255, 255, 0.18);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  height: 9px;
+  width: 9px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(47, 127, 112, 0.42);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(47, 127, 112, 0.62);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+@media (max-width: 1100px) {
+  .app-shell--module {
+    grid-template-columns: 226px minmax(0, 1fr);
+  }
+
+  .workspace {
+    padding-inline: 18px;
+  }
+}
+
+/* ==========================================================================
+   MYC DESIGN SYSTEM V3.0 — REFINAMIENTO VISUAL INTEGRAL
+   Capa final deliberada: corrige densidad, jerarquía y uso del espacio sin
+   modificar la lógica funcional de los módulos.
+   ========================================================================== */
+
+:root {
+  --myc-layout-gap: clamp(22px, 2.1vw, 34px);
+  --myc-section-gap: clamp(28px, 3vw, 46px);
+  --myc-card-radius: 18px;
+  --myc-panel-radius: 24px;
+  --myc-control-height: 44px;
+  --myc-surface-border: rgba(239, 250, 250, 0.34);
+  --myc-surface-shadow: 0 22px 58px rgba(3, 28, 36, 0.15);
+}
+
+.workspace {
+  padding: 16px clamp(20px, 2.25vw, 38px) 38px;
+}
+
+.topbar {
+  min-height: 66px;
+  margin-bottom: clamp(22px, 2.3vw, 34px);
+  padding: 9px 15px;
+}
+
+.workspace > .workspace-header,
+.app-shell--dashboard .workspace-header,
+.app-shell--module .workspace-header {
+  align-items: flex-end;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  margin: 0 0 var(--myc-section-gap);
+  min-height: 104px;
+}
+
+.workspace-header > div:first-child {
+  display: grid;
+  gap: 7px;
+}
+
+.workspace > .workspace-header > div:first-child > p,
+.app-shell--dashboard .workspace-header > div:first-child > p,
+.app-shell--module .workspace-header > div:first-child > p {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.19em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.workspace > .workspace-header h1,
+.app-shell--dashboard .workspace-header h1,
+.app-shell--module .workspace-header h1 {
+  font-size: clamp(30px, 3vw, 46px);
+  line-height: 1.02;
+  margin: 0;
+}
+
+.workspace-header__welcome {
+  color: var(--myc-on-dark-muted);
+  display: block;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.workspace-header__summary {
+  border-radius: 18px;
+  min-width: 170px;
+  padding: 17px 20px;
+}
+
+.workspace-header__summary strong {
+  font-size: clamp(26px, 2.4vw, 36px);
+  line-height: 1;
+}
+
+.workspace-header__summary span {
+  font-size: 11px;
+  margin-top: 5px;
+}
+
+/* Se elimina visualmente cualquier remanente legado del flujo decorativo. */
+.flow-strip {
+  display: none !important;
+}
+
+.dashboard-control-panel {
+  border-radius: var(--myc-panel-radius);
+  margin: 0;
+  padding: clamp(22px, 2.25vw, 34px);
+}
+
+.dashboard-control-panel__header {
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.dashboard-control-panel__header p,
+.dashboard-section-heading p {
+  font-size: 10px;
+  letter-spacing: 0.17em;
+}
+
+.dashboard-control-panel__header h2,
+.dashboard-section-heading h2 {
+  font-size: clamp(20px, 1.85vw, 28px);
+  line-height: 1.15;
+}
+
+.dashboard-progress-summary {
+  min-width: 150px;
+}
+
+.dashboard-progress-summary strong {
+  font-size: clamp(25px, 2.35vw, 34px);
+}
+
+.dashboard-progress-bar {
+  margin-bottom: 24px;
+}
+
+.dashboard-section-block {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  margin-top: var(--myc-section-gap);
+  padding: 0;
+}
+
+.dashboard-section-heading {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 18px;
+}
+
+.operations-band.dashboard-executive-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+}
+
+.operations-band__metric {
+  min-height: 112px;
+  padding: 18px 16px;
+}
+
+.operations-band__metric strong {
+  font-size: clamp(24px, 2.2vw, 32px);
+  line-height: 1;
+}
+
+.operations-band__metric span {
+  font-size: 11px;
+  line-height: 1.35;
+  margin-top: 8px;
+}
+
+.dashboard-executive-grid--compact .operations-band__metric {
+  min-height: 100px;
+}
+
+.modules-grid {
+  gap: clamp(16px, 1.55vw, 24px);
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+
+.module-card {
+  border-radius: var(--myc-card-radius);
+  min-height: 225px;
+  padding: 20px;
+}
+
+.module-card__header {
+  margin-bottom: 20px;
+}
+
+.module-card__icon {
+  height: 44px;
+  width: 44px;
+}
+
+.module-card h2 {
+  font-size: 19px;
+  margin-bottom: 8px;
+}
+
+.module-card p {
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.module-card__footer {
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+/* Componentes compartidos: altura y respiración consistentes. */
+button,
+input,
+select,
+textarea {
+  scroll-margin-top: 96px;
+}
+
+.icon-text-button,
+.table-button,
+.primary-button,
+.secondary-button {
+  min-height: var(--myc-control-height);
+}
+
+.module-tabs {
+  gap: 7px;
+  padding: 7px;
+}
+
+.module-tabs button {
+  min-height: 40px;
+  padding-inline: 14px;
+}
+
+.modal-card,
+.modal-panel,
+.service-order-modal,
+.quotation-modal,
+.client-modal {
+  border-radius: var(--myc-panel-radius);
+}
+
+@media (max-width: 1180px) {
+  .workspace > .workspace-header,
+  .app-shell--dashboard .workspace-header,
+  .app-shell--module .workspace-header {
+    min-height: 94px;
+  }
+
+  .operations-band.dashboard-executive-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .workspace {
+    padding: 14px 14px 28px;
+  }
+
+  .topbar {
+    margin-bottom: 22px;
+  }
+
+  .workspace > .workspace-header,
+  .app-shell--dashboard .workspace-header,
+  .app-shell--module .workspace-header {
+    align-items: stretch;
+    display: grid;
+    margin-bottom: 28px;
+    min-height: 0;
+  }
+
+  .workspace-header__summary {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .dashboard-control-panel__header {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .operations-band.dashboard-executive-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .modules-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .operations-band.dashboard-executive-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .operations-band__metric,
+  .dashboard-executive-grid--compact .operations-band__metric {
+    min-height: 92px;
+  }
+}
+
+/* Título institucional compartido por los bloques y accesos del Dashboard. */
+.dashboard-control-panel__header .dashboard-title,
+.dashboard-section-heading .dashboard-title,
+.activity-inbox-widget .dashboard-title {
+  color: var(--dashboard-title-color);
 }

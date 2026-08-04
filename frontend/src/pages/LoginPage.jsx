@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import BrandLockup from '../components/BrandLockup.jsx';
 import { getRegistrationStatus, login, register } from '../services/api.js';
 import { navigate } from '../utils/routing.js';
+import { isClientPortalUser } from '../utils/accessControl.js';
 
 function LoginPage({ onAuthenticated }) {
   const [mode, setMode] = useState('login');
@@ -41,7 +42,7 @@ function LoginPage({ onAuthenticated }) {
           ? await login(email, password)
           : await register({ email, fullName, password });
       onAuthenticated(user);
-      navigate('/dashboard');
+      navigate(isClientPortalUser(user) ? '/portal' : '/dashboard');
     } catch (requestError) {
       setError(requestError.message);
     } finally {

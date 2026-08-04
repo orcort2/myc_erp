@@ -1,18 +1,10 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, Inbox, MessageSquare } from 'lucide-react';
+import { AlertCircle, ArrowRight, Inbox, MessageSquare } from 'lucide-react';
 
 import { listActivityInbox } from '../../services/api.js';
 import { navigate } from '../../utils/routing.js';
 
 import './activity-inbox.css';
-
-function formatDateTime(value) {
-  if (!value) return '';
-  return new Intl.DateTimeFormat('es-MX', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value));
-}
 
 export default function ActivityInboxWidget() {
   const [inbox, setInbox] = useState(null);
@@ -20,9 +12,10 @@ export default function ActivityInboxWidget() {
 
   useEffect(() => {
     let active = true;
+
     async function load() {
       try {
-        const result = await listActivityInbox({ limit: 8 });
+        const result = await listActivityInbox({ limit: 1 });
         if (active) {
           setInbox(result);
           setError('');
@@ -33,8 +26,10 @@ export default function ActivityInboxWidget() {
         }
       }
     }
+
     void load();
     const interval = window.setInterval(load, 60000);
+
     return () => {
       active = false;
       window.clearInterval(interval);
@@ -45,57 +40,48 @@ export default function ActivityInboxWidget() {
     return null;
   }
 
-  const items = inbox?.items ?? [];
+  const unreadCount = inbox?.unread_count ?? 0;
+  const pendingAttentionCount = inbox?.pending_attention_count ?? 0;
+  const hasPendingActivity = unreadCount > 0 || pendingAttentionCount > 0;
 
   return (
-    <section className="activity-inbox-widget" aria-label="Bandeja de Actividad">
-      <header>
+    <section className="activity-inbox-widget activity-inbox-widget--summary" aria-label="Resumen de Actividad interna">
+      <div className="activity-inbox-widget__summary-copy">
+        <span className="activity-inbox-widget__summary-icon" aria-hidden="true">
+          {hasPendingActivity ? <MessageSquare size={22} /> : <Inbox size={22} />}
+        </span>
         <div>
           <p>Comunicación interna</p>
-          <h2>Actividad pendiente</h2>
+          <h2 className="dashboard-title">Actividad</h2>
+          <span className="activity-inbox-widget__summary-text">
+            {hasPendingActivity
+              ? 'Tienes elementos pendientes de revisión.'
+              : 'No tienes actividad pendiente.'}
+          </span>
         </div>
-        <div className="activity-inbox-widget__totals">
+      </div>
+
+      <div className="activity-inbox-widget__summary-actions">
+        <div className="activity-inbox-widget__totals" aria-label="Contadores de Actividad">
           <span>
             <MessageSquare aria-hidden="true" size={15} />
-            {inbox?.unread_count ?? 0} sin leer
+            <strong>{unreadCount}</strong> sin leer
           </span>
           <span>
             <AlertCircle aria-hidden="true" size={15} />
-            {inbox?.pending_attention_count ?? 0} por atender
+            <strong>{pendingAttentionCount}</strong> por atender
           </span>
         </div>
-      </header>
 
-      {items.length === 0 ? (
-        <div className="activity-inbox-widget__empty">
-          <Inbox aria-hidden="true" size={25} />
-          <span>No tienes conversaciones pendientes.</span>
-        </div>
-      ) : (
-        <div className="activity-inbox-widget__list">
-          {items.map((item) => (
-            <button
-              key={item.thread_id}
-              onClick={() => navigate(item.entity.frontend_path)}
-              type="button"
-            >
-              <div>
-                <strong>{item.entity.reference}</strong>
-                <span>{item.last_message.body}</span>
-              </div>
-              <div>
-                <time>{formatDateTime(item.last_message.created_at)}</time>
-                <span>
-                  {item.unread_count ? `${item.unread_count} sin leer` : ''}
-                  {item.pending_attention_count
-                    ? ` · ${item.pending_attention_count} atención`
-                    : ''}
-                </span>
-              </div>
-            </button>
-          ))}
-        </div>
-      )}
+        <button
+          className="activity-inbox-widget__open"
+          onClick={() => navigate('/communications')}
+          type="button"
+        >
+          Ver actividad
+          <ArrowRight aria-hidden="true" size={17} />
+        </button>
+      </div>
     </section>
   );
 }

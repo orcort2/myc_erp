@@ -29,7 +29,8 @@ import UncertaintyPage from './UncertaintyPage.jsx';
 import SignatureLabPage from './SignatureLabPage.jsx';
 import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
 import FieldSheetLabPage from './labs/FieldSheetLabPage.jsx';
-import { canAccessModule, hasAnyPermission } from '../utils/accessControl.js';
+import { canAccessModule, hasAnyPermission, isClientPortalUser } from '../utils/accessControl.js';
+import ClientPortalApp from '../portal/ClientPortalApp.jsx';
 
 export function App() {
   const [path, setPath] = useState(getCurrentPath);
@@ -74,7 +75,7 @@ export function App() {
           setUser(currentUser);
 
           if (path === '/login') {
-            navigate('/dashboard');
+            navigate(isClientPortalUser(currentUser) ? '/portal' : '/dashboard');
           }
         }
       } catch {
@@ -124,6 +125,15 @@ export function App() {
 
   if (!user) {
     navigate('/login');
+    return null;
+  }
+
+  if (isClientPortalUser(user)) {
+    return <ClientPortalApp path={path} onLogout={handleLogout} user={user} />;
+  }
+
+  if (path.startsWith('/portal')) {
+    navigate('/dashboard');
     return null;
   }
 

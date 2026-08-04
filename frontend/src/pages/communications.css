@@ -1,82 +1,909 @@
-.communications-page { display:grid; gap:16px; min-height:calc(100vh - 150px); }
-.communications-page__header { align-items:flex-end; display:flex; justify-content:space-between; gap:18px; }
-.communications-page__header h1 { color:#eef8f6; margin:0; font-size:30px; }
-.communications-page__header p { color:rgba(238,248,246,.78); margin:6px 0 0; }
-.communications-primary-button { align-items:center; background:#f5fbfa; border:1px solid rgba(255,255,255,.42); border-radius:10px; color:#173f39; cursor:pointer; display:inline-flex; font-weight:800; gap:7px; min-height:40px; padding:0 14px; }
-.communications-shell { background:rgba(238,248,246,.84); border:1px solid rgba(255,255,255,.52); border-radius:18px; box-shadow:0 22px 70px rgba(5,42,56,.18); display:grid; grid-template-columns:330px minmax(0,1fr); min-height:610px; overflow:hidden; }
-.communications-shell:has(.communications-details) { grid-template-columns:330px minmax(0,1fr) 260px; }
-.communications-sidebar { background:rgba(240,249,247,.95); border-right:1px solid rgba(15,118,110,.14); display:flex; flex-direction:column; min-width:0; }
-.communications-sections { display:grid; gap:5px; padding:14px; }
-.communications-sections button { align-items:center; background:transparent; border:1px solid transparent; border-radius:10px; color:#45655f; cursor:pointer; display:grid; font:inherit; font-size:12px; font-weight:750; gap:9px; grid-template-columns:auto minmax(0,1fr) auto; min-height:40px; padding:0 11px; text-align:left; }
-.communications-sections button.is-active { background:#fff; border-color:rgba(15,118,110,.17); box-shadow:0 6px 18px rgba(22,87,76,.08); color:#155a4f; }
-.communications-sections button b { align-items:center; background:#c63f4d; border-radius:999px; color:#fff; display:inline-flex; font-size:9px; height:19px; justify-content:center; min-width:19px; padding:0 5px; }
-.communications-sections button small { color:#8aa09b; font-size:9px; }
-.communications-sections button.is-disabled { cursor:not-allowed; opacity:.5; }
-.communications-search { align-items:center; background:#fff; border:1px solid rgba(15,118,110,.16); border-radius:10px; color:#64827c; display:flex; gap:8px; min-height:40px; padding:0 11px; }
-.communications-search input { background:transparent; border:0; color:#173b35; font:inherit; min-width:0; outline:0; width:100%; }
-.communications-search--sidebar { margin:0 14px 12px; }
-.communications-list { border-top:1px solid rgba(15,118,110,.12); flex:1; min-height:0; overflow:auto; }
-.communications-list__toolbar { align-items:center; color:#315b53; display:flex; justify-content:space-between; padding:12px 14px 8px; }
-.communications-list__toolbar strong { font-size:12px; }
-.communications-list__toolbar button { background:transparent; border:0; color:#4d756d; cursor:pointer; }
-.communications-conversation-row { align-items:center; background:transparent; border:0; border-bottom:1px solid rgba(15,118,110,.08); color:#173b35; cursor:pointer; display:grid; gap:9px; grid-template-columns:auto minmax(0,1fr) auto; padding:12px 14px; text-align:left; width:100%; }
-.communications-conversation-row:hover,.communications-conversation-row.is-active { background:rgba(211,240,233,.72); }
-.communications-conversation-row > span:nth-child(2) { display:grid; gap:3px; min-width:0; }
-.communications-conversation-row strong,.communications-conversation-row small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.communications-conversation-row strong { font-size:12.5px; }
-.communications-conversation-row small { color:#6e8984; font-size:10.5px; }
-.communications-conversation-row time { color:#8a9e9a; font-size:8.5px; max-width:50px; text-align:right; }
-.communications-avatar { align-items:center; background:rgba(47,127,112,.13); border:1px solid rgba(47,127,112,.14); border-radius:11px; color:#2f7f70; display:inline-flex; flex:0 0 auto; height:38px; justify-content:center; width:38px; }
-.communications-avatar--large { height:44px; width:44px; }
-.communications-avatar--profile { height:64px; width:64px; }
-.communications-content { background-image:linear-gradient(rgba(242,250,249,.45),rgba(231,246,243,.48)),var(--communications-wallpaper); background-position:center; background-size:cover; min-width:0; position:relative; }
-.communications-content.has-conversation { background-image:linear-gradient(rgba(242,250,249,.76),rgba(231,246,243,.8)),var(--communications-wallpaper); }
-.communications-welcome { align-items:center; backdrop-filter:blur(2px); color:#456a63; display:flex; flex-direction:column; height:100%; justify-content:center; padding:40px; text-align:center; }
-.communications-welcome h2 { color:#194e45; margin:13px 0 6px; }
-.communications-welcome p { line-height:1.55; margin:0; max-width:430px; }
-.communications-welcome button { align-items:center; background:rgba(255,255,255,.9); border:1px solid rgba(15,118,110,.2); border-radius:10px; color:#28695e; cursor:pointer; display:inline-flex; font-weight:800; gap:7px; margin-top:16px; min-height:38px; padding:0 13px; }
-.communications-welcome__icon { align-items:center; backdrop-filter:blur(10px); background:rgba(255,255,255,.66); border:1px solid rgba(255,255,255,.75); border-radius:18px; color:#2f7f70; display:flex; height:70px; justify-content:center; width:70px; }
-.communications-chat { display:grid; grid-template-rows:auto minmax(0,1fr) auto; height:100%; min-height:610px; }
-.communications-chat__header { align-items:center; backdrop-filter:blur(14px); background:rgba(245,251,250,.88); border-bottom:1px solid rgba(15,118,110,.13); display:flex; gap:11px; padding:12px 16px; }
-.communications-chat__header > div { display:grid; gap:3px; }
-.communications-chat__header strong { color:#173f38; }
-.communications-chat__header span { color:#6d8984; font-size:10.5px; }
-.communications-chat__messages { display:flex; flex-direction:column; gap:9px; min-height:0; overflow-y:auto; padding:18px; }
-.communications-bubble { align-self:flex-start; background:rgba(255,255,255,.92); border:1px solid rgba(15,118,110,.1); border-radius:7px 15px 15px 15px; box-shadow:0 5px 16px rgba(23,63,56,.08); color:#234d46; max-width:min(72%,620px); padding:9px 11px 7px; }
-.communications-bubble.is-own { align-self:flex-end; background:rgba(210,240,232,.95); border-radius:15px 7px 15px 15px; }
-.communications-bubble strong { color:#2b7064; display:block; font-size:10px; margin-bottom:3px; }
-.communications-bubble p { font-size:12.5px; line-height:1.45; margin:0; white-space:pre-wrap; }
-.communications-bubble time { color:#819892; display:block; font-size:8.5px; margin-top:4px; text-align:right; }
-.communications-chat__empty,.communications-loading { align-self:center; background:rgba(255,255,255,.75); border-radius:999px; color:#6b8882; font-size:11px; margin:auto; padding:8px 13px; }
-.communications-composer { align-items:flex-end; backdrop-filter:blur(14px); background:rgba(239,249,247,.9); border-top:1px solid rgba(15,118,110,.12); display:flex; gap:9px; padding:11px 13px; }
-.communications-composer textarea { background:#fff; border:1px solid rgba(15,118,110,.16); border-radius:13px; color:#173b35; flex:1; font:inherit; line-height:1.45; max-height:120px; min-height:42px; outline:0; padding:10px 12px; resize:none; }
-.communications-composer button { align-items:center; background:#2f7f70; border:0; border-radius:12px; color:#fff; cursor:pointer; display:flex; height:42px; justify-content:center; width:42px; }
-.communications-composer button:disabled { cursor:default; opacity:.45; }
-.communications-details { background:rgba(246,251,250,.96); border-left:1px solid rgba(15,118,110,.13); color:#466b64; padding:24px 18px; text-align:center; }
-.communications-details h3 { color:#173f38; margin:12px 0 4px; }
-.communications-details > p { font-size:11px; margin:0 0 22px; overflow-wrap:anywhere; }
-.communications-details dl { border-top:1px solid rgba(15,118,110,.12); display:grid; margin:0; text-align:left; }
-.communications-details dl div { border-bottom:1px solid rgba(15,118,110,.09); display:flex; justify-content:space-between; padding:11px 0; }
-.communications-details dt { color:#839994; font-size:10px; }
-.communications-details dd { color:#345e56; font-size:10px; font-weight:750; margin:0; }
-.communications-details__note { background:rgba(223,242,237,.8); border-radius:10px; display:block; line-height:1.5; margin-top:18px; padding:11px; text-align:left; }
-.communications-empty-small { color:#78908b; font-size:11px; padding:25px 15px; text-align:center; }
-.communications-error { background:rgba(198,63,77,.12); border:1px solid rgba(198,63,77,.2); border-radius:10px; color:#9e3540; padding:10px 12px; }
-.communications-modal-backdrop { align-items:center; background:rgba(5,30,38,.45); display:flex; inset:0; justify-content:center; padding:20px; position:fixed; z-index:5000; }
-.communications-modal { background:#f5fbfa; border:1px solid rgba(255,255,255,.7); border-radius:18px; box-shadow:0 30px 100px rgba(4,30,39,.35); max-height:min(700px,90vh); overflow:hidden; width:min(520px,100%); }
-.communications-modal header { align-items:flex-start; border-bottom:1px solid rgba(15,118,110,.12); display:flex; justify-content:space-between; padding:17px; }
-.communications-modal header > div { display:grid; gap:3px; }
-.communications-modal header strong { color:#173f38; }
-.communications-modal header span { color:#708983; font-size:10.5px; }
-.communications-modal header button { background:transparent; border:0; color:#56736d; cursor:pointer; }
-.communications-modal__types { display:flex; gap:7px; padding:13px 15px 0; }
-.communications-modal__types button { align-items:center; background:transparent; border:1px solid rgba(15,118,110,.15); border-radius:9px; color:#66807b; cursor:pointer; display:inline-flex; gap:6px; padding:8px 10px; }
-.communications-modal__types button.is-active { background:#fff; color:#23675b; font-weight:800; }
-.communications-modal > .communications-search { margin:12px 15px; }
-.communications-modal__results { max-height:420px; overflow:auto; }
-.communications-modal__results > button { align-items:center; background:transparent; border:0; border-top:1px solid rgba(15,118,110,.08); color:#173b35; cursor:pointer; display:grid; gap:10px; grid-template-columns:auto minmax(0,1fr) auto; padding:11px 15px; text-align:left; width:100%; }
-.communications-modal__results > button:hover { background:rgba(218,241,235,.72); }
-.communications-modal__results > button > span:nth-child(2) { display:grid; gap:3px; }
-.communications-modal__results small { color:#78908b; font-size:10px; }
-@media (max-width:1100px) { .communications-shell,.communications-shell:has(.communications-details) { grid-template-columns:290px minmax(0,1fr); } .communications-details { display:none; } }
-@media (max-width:760px) { .communications-page__header { align-items:stretch; flex-direction:column; } .communications-shell,.communications-shell:has(.communications-details) { grid-template-columns:1fr; } .communications-sidebar { max-height:330px; } .communications-content { min-height:520px; } .communications-chat { min-height:520px; } }
+/* ==========================================================================\n   MYC — CENTRO DE COMUNICACIONES\n   Diseño panorámico: panel lateral compacto + área principal protagonista.\n   ========================================================================== */
+
+.communications-page {
+  display: grid;
+  gap: 16px;
+  min-height: calc(100vh - 126px);
+}
+
+.communications-page__header {
+  align-items: flex-end;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+}
+
+.communications-page__header h1 {
+  color: #eef8f6;
+  font-size: clamp(30px, 2.3vw, 38px);
+  letter-spacing: -0.035em;
+  line-height: 1;
+  margin: 0;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+}
+
+.communications-page__header p {
+  color: rgba(238, 248, 246, 0.82);
+  font-size: 13px;
+  margin: 7px 0 0;
+}
+
+.communications-primary-button {
+  align-items: center;
+  backdrop-filter: blur(16px) saturate(135%);
+  background: rgba(245, 251, 250, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(6, 42, 58, 0.12);
+  color: #173f39;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 850;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  transition: transform 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.communications-primary-button:hover {
+  background: #ffffff;
+  box-shadow: 0 16px 34px rgba(6, 42, 58, 0.17);
+  transform: translateY(-1px);
+}
+
+.communications-shell {
+  background: rgba(224, 239, 238, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  border-radius: 20px;
+  box-shadow: 0 28px 84px rgba(5, 42, 56, 0.22);
+  display: grid;
+  grid-template-columns: clamp(270px, 20vw, 320px) minmax(0, 1fr);
+  height: calc(100vh - 218px);
+  min-height: 690px;
+  overflow: hidden;
+  position: relative;
+}
+
+.communications-shell::before {
+  background: linear-gradient(90deg, rgba(255,255,255,.82), rgba(61,183,179,.24), transparent 70%);
+  content: "";
+  height: 1px;
+  left: 22px;
+  pointer-events: none;
+  position: absolute;
+  right: 22px;
+  top: 12px;
+  z-index: 4;
+}
+
+.communications-shell:has(.communications-details) {
+  grid-template-columns: clamp(270px, 19vw, 310px) minmax(0, 1fr) clamp(220px, 17vw, 280px);
+}
+
+.communications-sidebar {
+  backdrop-filter: blur(22px) saturate(138%);
+  background:
+    linear-gradient(180deg, rgba(244, 251, 249, 0.93), rgba(226, 242, 239, 0.88));
+  border-right: 1px solid rgba(15, 118, 110, 0.16);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  position: relative;
+  z-index: 2;
+}
+
+.communications-sections {
+  display: grid;
+  gap: 7px;
+  padding: 18px 16px 14px;
+}
+
+.communications-sections button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #45655f;
+  cursor: pointer;
+  display: grid;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 43px;
+  padding: 0 12px;
+  text-align: left;
+  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.communications-sections button:hover:not(.is-disabled) {
+  background: rgba(255, 255, 255, 0.62);
+  transform: translateX(2px);
+}
+
+.communications-sections button.is-active {
+  background: rgba(255, 255, 255, 0.94);
+  border-color: rgba(15, 118, 110, 0.19);
+  box-shadow: 0 8px 20px rgba(22, 87, 76, 0.09);
+  color: #155a4f;
+}
+
+.communications-sections button b {
+  align-items: center;
+  background: #c63f4d;
+  border-radius: 999px;
+  color: #fff;
+  display: inline-flex;
+  font-size: 9px;
+  height: 20px;
+  justify-content: center;
+  min-width: 20px;
+  padding: 0 5px;
+}
+
+.communications-sections button small {
+  color: #8aa09b;
+  font-size: 9px;
+}
+
+.communications-sections button.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.communications-search {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.91);
+  border: 1px solid rgba(15, 118, 110, 0.17);
+  border-radius: 11px;
+  color: #64827c;
+  display: flex;
+  gap: 8px;
+  min-height: 43px;
+  padding: 0 12px;
+}
+
+.communications-search input {
+  background: transparent;
+  border: 0;
+  color: #173b35;
+  font: inherit;
+  min-width: 0;
+  outline: 0;
+  width: 100%;
+}
+
+.communications-search--sidebar {
+  margin: 0 16px 14px;
+}
+
+.communications-list {
+  border-top: 1px solid rgba(15, 118, 110, 0.13);
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.communications-list__toolbar {
+  align-items: center;
+  color: #315b53;
+  display: flex;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+}
+
+.communications-list__toolbar strong {
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.communications-list__toolbar button {
+  background: transparent;
+  border: 0;
+  color: #4d756d;
+  cursor: pointer;
+}
+
+.communications-conversation-row {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(15, 118, 110, 0.08);
+  color: #173b35;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 13px 16px;
+  text-align: left;
+  width: 100%;
+}
+
+.communications-conversation-row:hover,
+.communications-conversation-row.is-active {
+  background: rgba(211, 240, 233, 0.76);
+}
+
+.communications-conversation-row > span:nth-child(2) {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.communications-conversation-row strong,
+.communications-conversation-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.communications-conversation-row strong {
+  font-size: 12.5px;
+}
+
+.communications-conversation-row small {
+  color: #6e8984;
+  font-size: 10.5px;
+}
+
+.communications-conversation-row time {
+  color: #8a9e9a;
+  font-size: 8.5px;
+  max-width: 54px;
+  text-align: right;
+}
+
+.communications-avatar {
+  align-items: center;
+  background: rgba(47, 127, 112, 0.13);
+  border: 1px solid rgba(47, 127, 112, 0.14);
+  border-radius: 12px;
+  color: #2f7f70;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 40px;
+  justify-content: center;
+  width: 40px;
+}
+
+.communications-avatar--large {
+  height: 46px;
+  width: 46px;
+}
+
+.communications-avatar--profile {
+  height: 68px;
+  width: 68px;
+}
+
+.communications-content {
+  background-image:
+    linear-gradient(rgba(236, 248, 246, 0.26), rgba(218, 241, 238, 0.30)),
+    var(--communications-wallpaper);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.communications-content::after {
+  background:
+    radial-gradient(circle at 50% 48%, rgba(255, 255, 255, 0.05), rgba(7, 76, 86, 0.10));
+  content: "";
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.communications-content.has-conversation {
+  background-image:
+    linear-gradient(rgba(235, 247, 245, 0.65), rgba(221, 241, 238, 0.70)),
+    var(--communications-wallpaper);
+}
+
+.communications-welcome {
+  align-items: center;
+  backdrop-filter: blur(1.5px);
+  color: #315e56;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  justify-content: center;
+  padding: 48px;
+  position: relative;
+  text-align: center;
+  z-index: 1;
+}
+
+.communications-welcome h2 {
+  color: #123f38;
+  font-size: clamp(26px, 2.2vw, 38px);
+  letter-spacing: -0.035em;
+  margin: 18px 0 8px;
+  text-shadow: 0 2px 14px rgba(255, 255, 255, 0.65);
+}
+
+.communications-welcome p {
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  max-width: 520px;
+}
+
+.communications-welcome button {
+  align-items: center;
+  backdrop-filter: blur(14px);
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(15, 118, 110, 0.20);
+  border-radius: 11px;
+  box-shadow: 0 10px 28px rgba(6, 42, 58, 0.10);
+  color: #28695e;
+  cursor: pointer;
+  display: inline-flex;
+  font-weight: 850;
+  gap: 7px;
+  margin-top: 18px;
+  min-height: 42px;
+  padding: 0 15px;
+}
+
+.communications-welcome__icon {
+  align-items: center;
+  backdrop-filter: blur(13px) saturate(140%);
+  background: rgba(255, 255, 255, 0.70);
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 22px;
+  box-shadow: 0 16px 42px rgba(6, 42, 58, 0.12);
+  color: #2f7f70;
+  display: flex;
+  height: 86px;
+  justify-content: center;
+  width: 86px;
+}
+
+.communications-chat {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 690px;
+  position: relative;
+  z-index: 1;
+}
+
+.communications-chat__header {
+  align-items: center;
+  backdrop-filter: blur(18px) saturate(140%);
+  background: rgba(241, 249, 248, 0.84);
+  border-bottom: 1px solid rgba(15, 118, 110, 0.14);
+  display: flex;
+  gap: 12px;
+  min-height: 70px;
+  padding: 12px 18px;
+}
+
+.communications-chat__header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.communications-chat__header strong {
+  color: #173f38;
+  font-size: 14px;
+}
+
+.communications-chat__header span {
+  color: #6d8984;
+  font-size: 10.5px;
+}
+
+.communications-chat__messages {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px clamp(18px, 3vw, 42px);
+}
+
+.communications-bubble {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.93);
+  border: 1px solid rgba(15, 118, 110, 0.10);
+  border-radius: 8px 17px 17px 17px;
+  box-shadow: 0 7px 20px rgba(23, 63, 56, 0.09);
+  color: #234d46;
+  max-width: min(70%, 720px);
+  padding: 10px 12px 8px;
+}
+
+.communications-bubble.is-own {
+  align-self: flex-end;
+  background: rgba(205, 239, 231, 0.96);
+  border-radius: 17px 8px 17px 17px;
+}
+
+.communications-bubble strong {
+  color: #2b7064;
+  display: block;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.communications-bubble p {
+  font-size: 13px;
+  line-height: 1.48;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.communications-bubble time {
+  color: #819892;
+  display: block;
+  font-size: 8.5px;
+  margin-top: 5px;
+  text-align: right;
+}
+
+.communications-chat__empty,
+.communications-loading {
+  align-self: center;
+  background: rgba(255, 255, 255, 0.78);
+  border-radius: 999px;
+  color: #6b8882;
+  font-size: 11px;
+  margin: auto;
+  padding: 9px 14px;
+}
+
+.communications-composer {
+  align-items: flex-end;
+  backdrop-filter: blur(18px) saturate(140%);
+  background: rgba(235, 247, 245, 0.88);
+  border-top: 1px solid rgba(15, 118, 110, 0.13);
+  display: flex;
+  gap: 10px;
+  padding: 13px 16px;
+}
+
+.communications-composer textarea {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(15, 118, 110, 0.17);
+  border-radius: 15px;
+  color: #173b35;
+  flex: 1;
+  font: inherit;
+  line-height: 1.45;
+  max-height: 140px;
+  min-height: 46px;
+  outline: 0;
+  padding: 12px 14px;
+  resize: none;
+}
+
+.communications-composer button {
+  align-items: center;
+  background: #2f7f70;
+  border: 0;
+  border-radius: 14px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  height: 46px;
+  justify-content: center;
+  width: 46px;
+}
+
+.communications-composer button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.communications-details {
+  backdrop-filter: blur(22px) saturate(135%);
+  background: rgba(241, 249, 248, 0.92);
+  border-left: 1px solid rgba(15, 118, 110, 0.14);
+  color: #466b64;
+  padding: 28px 20px;
+  text-align: center;
+  z-index: 2;
+}
+
+.communications-details h3 {
+  color: #173f38;
+  margin: 13px 0 5px;
+}
+
+.communications-details > p {
+  font-size: 11px;
+  margin: 0 0 24px;
+  overflow-wrap: anywhere;
+}
+
+.communications-details dl {
+  border-top: 1px solid rgba(15, 118, 110, 0.12);
+  display: grid;
+  margin: 0;
+  text-align: left;
+}
+
+.communications-details dl div {
+  border-bottom: 1px solid rgba(15, 118, 110, 0.09);
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 0;
+}
+
+.communications-details dt {
+  color: #839994;
+  font-size: 10px;
+}
+
+.communications-details dd {
+  color: #345e56;
+  font-size: 10px;
+  font-weight: 800;
+  margin: 0;
+}
+
+.communications-details__note {
+  background: rgba(223, 242, 237, 0.82);
+  border-radius: 11px;
+  display: block;
+  line-height: 1.5;
+  margin-top: 20px;
+  padding: 12px;
+  text-align: left;
+}
+
+.communications-empty-small {
+  color: #78908b;
+  font-size: 11px;
+  padding: 28px 16px;
+  text-align: center;
+}
+
+.communications-error {
+  background: rgba(198, 63, 77, 0.12);
+  border: 1px solid rgba(198, 63, 77, 0.20);
+  border-radius: 11px;
+  color: #9e3540;
+  padding: 11px 13px;
+}
+
+.communications-modal-backdrop {
+  align-items: center;
+  backdrop-filter: blur(8px);
+  background: rgba(5, 30, 38, 0.48);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 5000;
+}
+
+.communications-modal {
+  background: rgba(239, 248, 247, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  box-shadow: 0 34px 110px rgba(4, 30, 39, 0.40);
+  max-height: min(720px, 90vh);
+  overflow: hidden;
+  width: min(560px, 100%);
+}
+
+.communications-modal header {
+  align-items: flex-start;
+  border-bottom: 1px solid rgba(15, 118, 110, 0.12);
+  display: flex;
+  justify-content: space-between;
+  padding: 19px;
+}
+
+.communications-modal header > div {
+  display: grid;
+  gap: 3px;
+}
+
+.communications-modal header strong {
+  color: #173f38;
+}
+
+.communications-modal header span {
+  color: #708983;
+  font-size: 10.5px;
+}
+
+.communications-modal header button {
+  background: transparent;
+  border: 0;
+  color: #56736d;
+  cursor: pointer;
+}
+
+.communications-modal__types {
+  display: flex;
+  gap: 8px;
+  padding: 14px 17px 0;
+}
+
+.communications-modal__types button {
+  align-items: center;
+  background: transparent;
+  border: 1px solid rgba(15, 118, 110, 0.15);
+  border-radius: 10px;
+  color: #66807b;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 7px;
+  padding: 9px 11px;
+}
+
+.communications-modal__types button.is-active {
+  background: #fff;
+  color: #23675b;
+  font-weight: 850;
+}
+
+.communications-modal > .communications-search {
+  margin: 13px 17px;
+}
+
+.communications-modal__results {
+  max-height: 440px;
+  overflow: auto;
+}
+
+.communications-modal__results > button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid rgba(15, 118, 110, 0.08);
+  color: #173b35;
+  cursor: pointer;
+  display: grid;
+  gap: 11px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 12px 17px;
+  text-align: left;
+  width: 100%;
+}
+
+.communications-modal__results > button:hover {
+  background: rgba(218, 241, 235, 0.74);
+}
+
+.communications-modal__results > button > span:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+
+.communications-modal__results small {
+  color: #78908b;
+  font-size: 10px;
+}
+
+@media (max-width: 1280px) {
+  .communications-shell,
+  .communications-shell:has(.communications-details) {
+    grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .communications-details {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .communications-shell {
+    height: auto;
+    min-height: 680px;
+  }
+}
+
+@media (max-width: 760px) {
+  .communications-page__header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .communications-primary-button {
+    justify-content: center;
+  }
+
+  .communications-shell,
+  .communications-shell:has(.communications-details) {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  .communications-sidebar {
+    max-height: 360px;
+  }
+
+  .communications-content,
+  .communications-chat {
+    min-height: 560px;
+  }
+
+  .communications-welcome {
+    padding: 34px 20px;
+  }
+}
+
+/* ==========================================================================
+   MYC COMUNICACIONES V3.0 — MAYOR ESCALA Y APROVECHAMIENTO DEL VIEWPORT
+   ========================================================================== */
+
+.communications-page {
+  gap: 18px;
+  min-height: calc(100vh - 118px);
+}
+
+.communications-page__header {
+  min-height: 58px;
+}
+
+.communications-page__header h1 {
+  font-size: clamp(32px, 2.8vw, 46px);
+}
+
+.communications-shell {
+  border-radius: 24px;
+  grid-template-columns: clamp(248px, 18vw, 292px) minmax(0, 1fr);
+  height: calc(100vh - 188px);
+  min-height: 720px;
+}
+
+.communications-shell:has(.communications-details) {
+  grid-template-columns: clamp(240px, 17vw, 282px) minmax(0, 1fr) clamp(220px, 15vw, 260px);
+}
+
+.communications-sections {
+  padding: 22px 15px 15px;
+}
+
+.communications-sections button,
+.communications-search {
+  min-height: 46px;
+}
+
+.communications-conversation-row {
+  min-height: 70px;
+  padding: 14px 15px;
+}
+
+.communications-content {
+  background-position: center center;
+}
+
+.communications-welcome {
+  padding: clamp(32px, 5vw, 78px);
+}
+
+.communications-welcome__icon {
+  height: 104px;
+  width: 104px;
+}
+
+.communications-welcome h2 {
+  font-size: clamp(30px, 3vw, 48px);
+  margin-top: 22px;
+}
+
+.communications-welcome p {
+  font-size: 15px;
+  max-width: 620px;
+}
+
+.communications-chat {
+  min-height: 720px;
+}
+
+.communications-chat__header {
+  min-height: 76px;
+  padding-inline: 22px;
+}
+
+.communications-chat__messages {
+  padding: 26px clamp(24px, 4vw, 64px);
+}
+
+.communications-composer {
+  padding: 15px 20px;
+}
+
+.communications-composer textarea {
+  min-height: 50px;
+}
+
+@media (max-width: 1280px) {
+  .communications-shell,
+  .communications-chat {
+    min-height: 650px;
+  }
+
+  .communications-shell {
+    height: calc(100vh - 176px);
+  }
+}
+
+@media (max-width: 980px) {
+  .communications-shell,
+  .communications-shell:has(.communications-details) {
+    grid-template-columns: 250px minmax(0, 1fr);
+  }
+
+  .communications-details {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .communications-page__header {
+    align-items: stretch;
+    display: grid;
+  }
+
+  .communications-shell,
+  .communications-shell:has(.communications-details) {
+    grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+  }
+
+  .communications-sidebar {
+    border-bottom: 1px solid rgba(15, 118, 110, 0.16);
+    border-right: 0;
+    max-height: 360px;
+  }
+
+  .communications-content,
+  .communications-chat {
+    min-height: 620px;
+  }
+}
+
+/* ==========================================================================
+   CORRECCION DE SCROLL INTERNO — COMUNICACIONES
+   Los hijos del grid/flex deben poder reducirse dentro del alto del shell.
+   ========================================================================== */
+
+.communications-shell {
+  min-height: 0;
+}
+
+.communications-sidebar,
+.communications-content,
+.communications-chat {
+  min-height: 0;
+}
+
+.communications-sidebar {
+  height: 100%;
+  overflow: hidden;
+}
+
+.communications-list {
+  min-height: 0;
+  overscroll-behavior: contain;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.communications-content,
+.communications-chat {
+  height: 100%;
+}
+
+@media (min-width: 721px) {
+  .communications-shell {
+    height: calc(100dvh - 188px);
+    min-height: 560px;
+  }
+}

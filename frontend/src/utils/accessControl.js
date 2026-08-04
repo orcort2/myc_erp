@@ -19,3 +19,14 @@ export function filterAccessibleEntries(entries, user) {
 export function canAccessModule(module, user) {
   return Boolean(module && hasAnyPermission(user, module.permissions));
 }
+
+export function isClientPortalUser(user) {
+  const roleNames = Array.isArray(user?.roles)
+    ? user.roles.map((role) => `${role?.name ?? ''}`.trim().toLowerCase())
+    : [];
+  return (
+    roleNames.length > 0
+    && roleNames.every((roleName) => roleName === 'cliente')
+    && hasPermission(user, 'portal.read')
+  );
+}

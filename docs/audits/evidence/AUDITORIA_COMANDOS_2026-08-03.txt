@@ -1,0 +1,131 @@
+AUDITORÍA INTEGRAL ERP MYC — EVIDENCIA DE COMANDOS
+Corte: 2026-08-03 America/Mexico_City
+Repositorio: /Users/saulcortes/Desktop/myc_erp
+Regla: se omiten valores de secretos y datos personales. Los resultados son resúmenes fieles de la salida observada.
+
+[E01] Estado inicial
+Comando: git status --short
+Resultado: árbol sucio preexistente: 7 archivos frontend/docs modificados; 3 migraciones no rastreadas; backend/app.zip, frontend/src.zip y archivos storage no rastreados. Ninguno fue modificado por la auditoría.
+
+[E02] Inventario físico y rastreado
+Comandos:
+  find . -type f -not -path './.git/*' | wc -l
+  git ls-files | wc -l
+Resultado: 19,713 archivos físicos; 793 rutas rastreadas. El exceso corresponde principalmente a venv, node_modules, caches y artefactos.
+
+[E03] Inventario funcional
+Comandos:
+  find backend/migrations/versions -maxdepth 1 -type f -name '*.py' | wc -l
+  find backend/tests -type f -name 'test_*.py' | wc -l
+  find frontend/src -type f -name '*.test.js' | wc -l
+Resultado: 82 migraciones visibles (incluye 3 no rastreadas), 55 pruebas backend, 8 pruebas frontend.
+
+[E04] API ejecutable
+Comando: introspección Python de app.main.app y árboles FastAPI Depends.
+Resultado: 306 operaciones: GET 118, POST 137, PATCH 31, DELETE 19, PUT 1. Clasificación: 181 con permiso explícito; 32 sólo sesión; 15 sesión opcional; 4 consumidor público; 74 públicas/sin protección. La lista sin protección incluye Clientes, Catálogo, Cotizaciones, ETS, Equipos, portal y motores operativos.
+
+[E05] Persistencia ORM
+Comando: introspección de Base.metadata tras importar app.models.
+Resultado: 101 tablas, 1,670 columnas, 294 FKs, 458 índices y 76 UniqueConstraint declarados en metadata.
+
+[E06] Alembic heads/history
+Comandos:
+  cd backend && ../venv/bin/alembic heads
+  cd backend && ../venv/bin/alembic history --verbose
+Resultado: head único e16e7f8091a2; cadena con branch a0d2f4b6c8e1 y merge 4c7ef14e1391. Las revisiones c14/d15/e16 son no rastreadas en el estado inicial.
+
+[E07] Base aislada
+Comando: createdb erp_myc_audit_20260803
+Resultado: correcta. No se usó la base compartida para pruebas destructivas.
+
+[E08] Upgrade desde vacío
+Comando: DATABASE_URL=postgresql+psycopg://localhost:5432/erp_myc_audit_20260803 ../venv/bin/alembic upgrade head
+Resultado: correcto desde base vacía hasta e16e7f8091a2.
+
+[E09] Current aislado
+Comando: DATABASE_URL=postgresql+psycopg://localhost:5432/erp_myc_audit_20260803 ../venv/bin/alembic current
+Resultado: e16e7f8091a2 (head).
+
+[E10] Drift
+Comando: DATABASE_URL=postgresql+psycopg://localhost:5432/erp_myc_audit_20260803 ../venv/bin/alembic check
+Resultado: FALLÓ. Detectó operaciones nuevas: índices/constraints agregados o removidos y columnas is_active, deleted_at y deleted_by ausentes en uncertainty_formulas, entre otras divergencias.
+Clasificación: defecto/deuda preexistente confirmada, no problema de entorno.
+
+[E11] Downgrade real
+Comando: DATABASE_URL=postgresql+psycopg://localhost:5432/erp_myc_audit_20260803 ../venv/bin/alembic downgrade base
+Resultado: FALLÓ al bajar c3fb78821edc -> 27dad4c7a6c8; PostgreSQL UndefinedObject para ix_service_order_signatures_service_order_id. La transacción dejó la base en head.
+Clasificación: defecto real reproducible.
+
+[E12] Defaults reales de timestamps
+Comando: consulta information_schema.columns sobre la base aislada para created_at/updated_at.
+Resultado: 167 columnas timestamp auditadas; 16 sin DEFAULT en 8 tablas: activity_attention_requests, activity_thread_reads, linked_companies, uncertainty_calculations, uncertainty_components, uncertainty_formulas, uncertainty_model_exceptions y uncertainty_models.
+
+[E13] Suite backend
+Comando: cd backend && ../venv/bin/python -m pytest -q
+Resultado: 409 passed, 19 subtests passed, 2 warnings, 14.15 s. Warnings: deprecación Starlette/httpx y crypt de passlib.
+
+[E14] Suite frontend
+Comando: cd frontend && node --test $(find src -type f -name '*.test.js' | sort)
+Resultado: 29 tests, 29 pass, 0 fail.
+
+[E15] Build frontend
+Comando: cd frontend && npm run build
+Resultado: correcto; 1,706 módulos. JS 977.83 kB (gzip 249.42), CSS 331.85 kB (gzip 56.56), fondo 2,484.90 kB. Advertencia por chunk >500 kB.
+
+[E16] Dependencias frontend
+Comando: cd frontend && npm audit --omit=dev
+Resultado: 1 vulnerabilidad ALTA en postcss <=8.5.17 (GHSA-r28c-9q8g-f849), fix disponible.
+
+[E17] Dependencias backend
+Comandos:
+  venv/bin/pip check
+  venv/bin/python -m pip_audit --disable-pip
+Resultado: pip check correcto; pip-audit NO VERIFICADO porque el módulo no está instalado. Se contaron 65 distribuciones Python.
+
+[E18] Compilación/importación
+Comando: venv/bin/python -m compileall -q backend/app backend/myc_resolution_contracts backend/myc_resolution_sdk backend/tests
+Resultado: correcto.
+
+[E19] Diagnóstico operativo
+Comando: ./scripts/myc doctor
+Resultado: backend/frontend/venv/PostgreSQL/import FastAPI/Alembic/Node/npm correctos; LibreOffice 26.2.4.2 disponible; puertos declarados backend 8000/frontend 5173.
+
+[E20] Conflictos y formato
+Comandos:
+  rg -n '^<<<<<<< |^>>>>>>> ' ...
+  git diff --check
+Resultado: sin marcadores de conflicto; git diff --check FALLÓ por espacios finales preexistentes en frontend/src/pages/communications.css:738,871 y frontend/src/styles/global.css:8121.
+
+[E21] Artefactos
+Comandos:
+  git ls-files | rg '(storage|backups|dist|output|tmp|\.zip|\.sql|\.pdf|\.xlsx)'
+  find . -type f (...) | ...
+Resultado: 874 .DS_Store/._*/ZIP/pyc físicos fuera de dependencias; 55 rutas storage rastreadas; backup SQL rastreado de 74,299,864 bytes; docs.zip rastreado; ZIP dentro de storage rastreado; backend/app.zip y frontend/src.zip no rastreados.
+
+[E22] Backup/head
+Comando: rg -n 'COPY public.alembic_version|b03b4c5d6e7f|e16e7f8091a2' backup_erp_myc_antes_prueba.sql
+Resultado: el backup declara b03b4c5d6e7f; el código visible tiene head e16e7f8091a2. No se regeneró por prohibición expresa del usuario.
+
+[E23] Motor de Resoluciones
+Comandos: inspección de build_installed_resolution_integrations, registro del Centro y referencias de producción.
+Resultado: 85 archivos Python del Motor/Centro/integraciones/API/SDK; 29 archivos de prueba. Sólo 2 definiciones instaladas: certificate.resolve_incorrect_release@1.0 y service_order.resolve_additional_equipment@1.0. El productor request_additional_equipment_resolution sólo tiene consumidor en pruebas, no en routers/UI de origen.
+
+[E24] Código muerto/reachability
+Comando: búsqueda de símbolos/importaciones desde frontend/src.
+Resultado: NotificationCenterPage.jsx e InvoiceWorkbenchModal.jsx no tienen consumidor. CapturePage, CertificatesPage, EquipmentPage, QualityPage, ProceduresPage, UncertaintyPage y FlowTestPage son importadas por App, pero no tienen entrada correspondiente en modules; su operación principal está absorbida/oculta en ETS o es inaccesible por navegación.
+
+[E25] Complejidad
+Comando: wc -l sobre fuentes y sort -nr.
+Resultado: global.css 8,418 líneas; ServiceOrdersPage.jsx 4,598; QuotationsPage.jsx 3,449; invoice-workbench.css 3,213; api.js 1,696; clients.py 1,311; resolution_center/workflow.py 1,289.
+
+[E26] CI/E2E/despliegue
+Comando: find/rg de Playwright, Cypress, Selenium, Dockerfile, compose, workflows y observabilidad.
+Resultado: no se localizaron suites E2E, CI, Docker/Compose, métricas, tracing ni error tracking. /api/health sólo devuelve estado estático y no prueba BD, storage, LibreOffice, PAC ni worker.
+
+[E27] Secretos
+Comando: git grep -Il con patrones de nombres sensibles, excluyendo documentación/SQL/lockfile.
+Resultado: sólo backend/.env.example coincidió por nombres de variables; no se documentaron valores. NO VERIFICADO: escaneo de entropía/historial Git con herramienta especializada no disponible.
+
+[E28] Limpieza final de base aislada
+Comando: dropdb --if-exists erp_myc_audit_20260803
+Resultado: correcto. La base se creó sólo para esta auditoría, no recibió datos de producción y fue eliminada al concluir las validaciones.

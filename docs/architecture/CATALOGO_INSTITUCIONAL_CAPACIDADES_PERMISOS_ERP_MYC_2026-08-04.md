@@ -1,14 +1,20 @@
-# Catálogo institucional de capacidades, acciones, microacciones y permisos del ERP MYC
+# Snapshot técnico de capacidades, acciones, microacciones y permisos del ERP MYC
 
 > Corte técnico: 2026-08-04
 >
 > Fuente primaria: backend `app(22).zip`, incluyendo routers, schemas, servicios y política transversal de acceso de la Etapa 1.
 >
-> Estado: insumo funcional adoptado para diseñar la siguiente etapa. Distingue operaciones existentes y permisos granulares propuestos; no afirma que todos los permisos propuestos estén implementados ni autoriza aplicarlos automáticamente.
+> Estado: VIGENTE COMO SNAPSHOT TÉCNICO; sustituido como autoridad funcional por
+> [`CATALOGO_INSTITUCIONAL_FUNCIONAL_ERP_MYC.md`](CATALOGO_INSTITUCIONAL_FUNCIONAL_ERP_MYC.md).
+> Distingue operaciones existentes y permisos granulares propuestos; no afirma
+> que todos los permisos propuestos estén implementados ni autoriza aplicarlos
+> automáticamente.
 
-> Límite de autoridad: debe reconciliarse con `permissions.py`, el inventario
+> Límite de autoridad: conserva el inventario reproducible de ETAPA 2B y debe
+> reconciliarse con `permissions.py`, el inventario
 > FastAPI vigente y las reglas de ownership antes de aprobar claves. La matriz
-> actual continúa como bootstrap y compatibilidad temporal.
+> actual continúa como bootstrap y compatibilidad temporal. Sus 493 filas de
+> campos no son microacciones institucionales aprobadas.
 
 ## Resumen
 

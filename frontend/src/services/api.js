@@ -1692,3 +1692,28 @@ export function sendCommunicationMessage(conversationId, body) {
     body: JSON.stringify({ body }),
   });
 }
+
+
+export function getClientPortalQuotations() {
+  return request('/client-portal/quotations');
+}
+
+export function getClientPortalServiceOrders() {
+  return request('/client-portal/service-orders');
+}
+
+export function getClientPortalCertificates() {
+  return request('/client-portal/certificates');
+}
+
+export async function downloadClientPortalCertificate(certificate) {
+  const result = await downloadRequest(`/client-portal/certificates/${certificate.id}/pdf`);
+  const url = window.URL.createObjectURL(result.blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = result.filename || `${certificate.authentication_code || certificate.folio}.pdf`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.URL.revokeObjectURL(url);
+}

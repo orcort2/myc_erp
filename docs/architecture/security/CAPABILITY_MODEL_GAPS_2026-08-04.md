@@ -2,13 +2,13 @@
 >
 > Corte verificado: 2026-08-04
 >
-> Alcance: análisis institucional; no implementa RBAC ni cambia permisos
+> Alcance: brecha del snapshot técnico de ETAPA 2B; no implementa RBAC ni cambia permisos
 
-# Brechas entre el bootstrap actual y el Modelo Institucional de Capacidades
+# Brechas entre el bootstrap actual y el snapshot técnico de capacidades
 
 ## Dictamen
 
-El catálogo completo contiene 36 módulos, 213 acciones, 798 microacciones y
+El snapshot técnico contiene 36 módulos, 213 acciones, 798 filas y
 658 claves propuestas únicas. `permissions.py` resuelve actualmente 140
 permisos únicos entre constantes y roles; 61 coinciden literalmente con una
 propuesta y 79 requieren reconciliación funcional. El inventario HTTP utiliza
@@ -17,8 +17,9 @@ propuesta institucional y una clave catalogada
 (`reference_standard_certificates.delete`) no está declarada explícitamente en
 el bootstrap, por lo que hoy sólo Administrador la satisface mediante `*`.
 
-Estas diferencias no autorizan renombrar claves. Son el backlog obligatorio de
-revisión para la futura implementación administrativa.
+Estas diferencias no autorizan renombrar claves. La validación funcional
+posterior decide qué propuestas sobreviven; después de aprobación, una matriz
+de compatibilidad definirá el backlog de implementación administrativa.
 
 ## Permisos bootstrap pendientes de reconciliación
 

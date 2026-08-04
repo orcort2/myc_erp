@@ -377,145 +377,145 @@
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "f0e55e4a0b72da47f98a882ad3978009469803ccb9301830e6d8e3f3d03728c5",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 22,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "currencies",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "5f8874286f680a56eca1dc3feca6d1b7ec3545684133ffa70de42da73cfa2f18",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 183,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "voucher_types",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "aa67e633c4e969c1ae8d4ce5ad85c320b8bdbaa5af998111f496c5fa88a0cf7f",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 5,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "exports",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "cc3e9aa9eebdbb712e3483db3f473fab60b621ab9655e228efaade20bd31cb0e",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 4,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "payment_methods",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "15c61d185b91a45ba9e8d6e95983e4f8c2ce2c1e93316a34be8b811ae3011af3",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 2,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "postal_codes",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "1ec72a3ee0538d1b5e4ba075bafa1103381727e9d67a1234a7a0bef89d7262c3",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 95749,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "relation_types",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "223bea5116e7c67418b2747fc4b7f0e97b4b41560f6a0ac159ccbd5ee9634f23",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 7,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "fiscal_regimes",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "78b80ba64e33669444274fc01cfa011be6ff69112e5fff073cfb0340f4f63c19",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 19,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "countries",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "27f9078595884b80bdbb084f0cc64f843d848f19785fb7e58f85117e072a4dda",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 250,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "cfdi_uses",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "416f6943845e8e8eba5a339fb03488c4b9ea8d51fca86a7a9e17126c335a3baf",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 24,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "products_services",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "b38c4b7549945bb6332dd14be81458908786b239e408ba0104e6c57f9a2dab18",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 52513,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "units",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "f98a1d9e9a03e6e32f2d837624680e10f7ea83c249056b8a1cdb38caa1521e89",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 2418,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "tax_objects",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "bbe4c14299fc46d3f79172d75734efedbc0c97f3b436681253e7e8b35120c4e7",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 8,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "taxes",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "5fbbf2aaa5d723522b884fb2677e5deff1f85ccf4850b673d7ab1c592e91e96e",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 3,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "factor_types",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "c557c77ad840d33e8626dee436ff4c1d6b698245c735bd1e821c380491376727",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 3,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     },
     {
       "catalog": "tax_rates",
       "version": "20260703",
       "source_filename": "catalogo sat.xlsx",
       "checksum": "ebb30609333c377df887cf58313946f19d89d47a37a49e55f6c1d4cca77973cb",
-      "status": "skipped",
+      "status": "imported",
       "record_count": 19,
-      "message": "La fuente ya fue importada."
+      "message": "Importación completada."
     }
   ],
-  "elapsed_seconds": 44.629
+  "elapsed_seconds": 57.689
 }

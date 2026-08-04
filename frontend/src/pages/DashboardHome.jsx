@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import ActivityInboxWidget from '../components/activity/ActivityInboxWidget.jsx';
+import { ModuleCard } from '../components/ModuleCard.jsx';
 import { defaultCounts, modules } from '../constants/navigation.js';
 import { getDashboardCounts } from '../services/api.js';
 import { navigate } from '../utils/routing.js';
@@ -84,27 +85,13 @@ function DashboardHome({ user }) {
         </div>
       </section>
 
-      <section className="flow-strip" aria-label="Flujo principal">
-        <span>Cliente</span>
-        <span>Cotizacion</span>
-        <span>ETS</span>
-        <span>Equipo</span>
-        <span>Hoja</span>
-        <span>Captura</span>
-        <span>Calidad</span>
-        <span>Certificado autenticado</span>
-        <span>Cierre</span>
-      </section>
-
       {error ? <div className="form-error dashboard-error">{error}</div> : null}
-
-      <ActivityInboxWidget />
 
       <section className="dashboard-control-panel" aria-busy={isLoading}>
         <div className="dashboard-control-panel__header">
           <div>
             <p>Centro de control operativo</p>
-            <h2>Expedientes técnicos en operación</h2>
+            <h2 className="dashboard-title">Expedientes técnicos en operación</h2>
           </div>
           <div className="dashboard-progress-summary">
             <strong>{isLoading ? '-' : `${safeNumber(counts.etsAverageProgress)}%`}</strong>
@@ -127,7 +114,7 @@ function DashboardHome({ user }) {
       <section className="dashboard-section-block">
         <div className="dashboard-section-heading">
           <p>Indicadores ejecutivos</p>
-          <h2>Estado consolidado</h2>
+          <h2 className="dashboard-title">Estado consolidado</h2>
         </div>
         <div className="operations-band dashboard-executive-grid dashboard-executive-grid--compact" aria-busy={isLoading} aria-label="Indicadores ejecutivos">
           {indicatorItems.map(([label, value]) => (
@@ -139,46 +126,25 @@ function DashboardHome({ user }) {
         </div>
       </section>
 
+      <ActivityInboxWidget />
+
       <section className="dashboard-section-block">
         <div className="dashboard-section-heading">
           <p>Accesos rápidos</p>
-          <h2>Trabajo diario</h2>
+          <h2 className="dashboard-title">Trabajo diario</h2>
         </div>
         <div className="modules-grid" aria-busy={isLoading} aria-label="Accesos rapidos">
           {filterAccessibleEntries(modules, user).map((module) => {
-            const Icon = module.icon;
             const count = counts[module.key];
             const hasCount = typeof count === 'number';
             return (
-              <button
-                className="module-card"
-                id={module.path.split('#')[1]}
+              <ModuleCard
+                count={hasCount ? safeNumber(count) : undefined}
+                isLoading={isLoading}
                 key={module.key}
-                onClick={() => navigate(module.path)}
-                type="button"
-              >
-                <div className="module-card__shine" />
-                <div className="module-card__header">
-                  <span className="module-card__icon">
-                    <Icon size={24} />
-                  </span>
-                  <span className={`module-card__status status-${module.status.toLowerCase().replaceAll(' ', '-')}`}>
-                    {module.status}
-                  </span>
-                </div>
-                <h2>{module.name}</h2>
-                <p>{module.description}</p>
-                <div className="module-card__footer">
-                  {hasCount ? (
-                    <>
-                      <strong>{isLoading ? '-' : safeNumber(count)}</strong>
-                      <span>registros</span>
-                    </>
-                  ) : (
-                    <span>Preparado para navegacion</span>
-                  )}
-                </div>
-              </button>
+                module={module}
+                onOpen={() => navigate(module.path)}
+              />
             );
           })}
         </div>

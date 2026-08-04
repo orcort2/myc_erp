@@ -8,14 +8,39 @@ from app.models.activity import (
     ActivityThreadRead,
 )
 from app.models.audit_log import AuditLog
-from app.models.calibration_procedure import CalibrationProcedure
 from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
+from app.models.calibration_procedure import CalibrationProcedure
 from app.models.catalog_item import CatalogItem, CatalogItemComponent
-from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
-from app.models.certificate_resolution_operation import CertificateResolutionOperation
-from app.models.client import Client, ClientCertificateProfile, ClientContact
-from app.models.communication import CommunicationConversation, CommunicationMessage
-from app.models.document_template import DocumentTemplate
+from app.models.certificate import (
+    Certificate,
+    CertificateCaptureFile,
+    CertificatePdfVersion,
+)
+from app.models.certificate_resolution_operation import (
+    CertificateResolutionOperation,
+)
+from app.models.client import (
+    Client,
+    ClientCertificateProfile,
+    ClientContact,
+)
+from app.models.client_link_request import ClientLinkRequest
+from app.models.client_portal import ClientPortal
+from app.models.portal_invitation import PortalInvitation
+from app.models.portal_invitation_role import PortalInvitationRole
+from app.models.client_portal_membership import ClientPortalMembership
+from app.models.client_portal_membership_role import (
+    ClientPortalMembershipRole,
+)
+from app.models.client_portal_permission import ClientPortalPermission
+from app.models.client_portal_role import ClientPortalRole
+from app.models.client_portal_role_permission import (
+    ClientPortalRolePermission,
+)
+from app.models.communication import (
+    CommunicationConversation,
+    CommunicationMessage,
+)
 from app.models.controlled_document import (
     ControlledDocument,
     ControlledDocumentVersion,
@@ -23,17 +48,41 @@ from app.models.controlled_document import (
     TechnicalProfile,
     TechnicalProfileAllowedPattern,
 )
+from app.models.document_template import DocumentTemplate
 from app.models.equipment import Equipment
-from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSignature
-from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
-from app.models.institutional_configuration import InstitutionalConfiguration
-from app.models.invoice import CreditNote, FacturamaInvoiceAttempt, Invoice, InvoiceItem, InvoicePayment, InvoiceSettings
+from app.models.field_sheet import (
+    FieldSheet,
+    FieldSheetResult,
+    FieldSheetSignature,
+)
+from app.models.field_sheet_template_definition import (
+    FieldSheetTemplateDefinition,
+)
 from app.models.folio_sequence import InstitutionalFolioSequence
+from app.models.institutional_configuration import (
+    InstitutionalConfiguration,
+)
+from app.models.invoice import (
+    CreditNote,
+    FacturamaInvoiceAttempt,
+    Invoice,
+    InvoiceItem,
+    InvoicePayment,
+    InvoiceSettings,
+)
 from app.models.linked_company import LinkedCompany
 from app.models.notification import Notification
-from app.models.sat_catalog import SatCatalog, SatCatalogAlias, SatCatalogFavorite, SatCatalogRecord, SatCatalogVersion
-from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
-from app.models.quotation_service_change import QuotationServiceChangeRequest
+from app.models.portal_invitation import PortalInvitation
+from app.models.portal_invitation_role import PortalInvitationRole
+from app.models.portal_registration import PortalRegistration
+from app.models.quotation import (
+    Quotation,
+    QuotationItem,
+    QuotationSnapshot,
+)
+from app.models.quotation_service_change import (
+    QuotationServiceChangeRequest,
+)
 from app.models.reference_standard import (
     FieldSheetReferenceStandard,
     ReferenceStandard,
@@ -44,6 +93,13 @@ from app.models.reference_standard_certificate import (
     ReferenceStandardCertificateUncertainty,
 )
 from app.models.resolution_api_consumer import ResolutionApiConsumer
+from app.models.sat_catalog import (
+    SatCatalog,
+    SatCatalogAlias,
+    SatCatalogFavorite,
+    SatCatalogRecord,
+    SatCatalogVersion,
+)
 from app.models.service_order import (
     ServiceOrder,
     ServiceOrderItem,
@@ -85,6 +141,7 @@ from app.resolution_engine.infrastructure.persistence import (
     ResolutionWorkItem,
 )
 
+
 __all__ = [
     "ActivityAttachment",
     "ActivityAttentionRequest",
@@ -103,14 +160,25 @@ __all__ = [
     "CertificateResolutionOperation",
     "Client",
     "ClientCertificateProfile",
+    "ClientPortal",
+    "PortalInvitation",
+    "PortalInvitationRole",
     "ClientContact",
+    "ClientLinkRequest",
+    "ClientPortalMembership",
+    "ClientPortalMembershipRole",
+    "ClientPortalPermission",
+    "ClientPortalRole",
+    "ClientPortalRolePermission",
     "CommunicationConversation",
     "CommunicationMessage",
     "ControlledDocument",
     "ControlledDocumentVersion",
+    "CreditNote",
     "DocumentInterpretation",
     "DocumentTemplate",
     "Equipment",
+    "FacturamaInvoiceAttempt",
     "FieldSheet",
     "FieldSheetReferenceStandard",
     "FieldSheetResult",
@@ -118,30 +186,27 @@ __all__ = [
     "FieldSheetTemplateDefinition",
     "InstitutionalConfiguration",
     "InstitutionalFolioSequence",
+    "IntegerPkMixin",
     "Invoice",
     "InvoiceItem",
     "InvoicePayment",
-    "CreditNote",
     "InvoiceSettings",
-    "Notification",
     "LinkedCompany",
-    "SatCatalog",
-    "SatCatalogAlias",
-    "SatCatalogFavorite",
-    "SatCatalogRecord",
-    "SatCatalogVersion",
-    "IntegerPkMixin",
+    "Notification",
+    "PortalInvitation",
+    "PortalInvitationRole",
+    "PortalRegistration",
     "Quotation",
     "QuotationItem",
-    "QuotationSnapshot",
     "QuotationServiceChangeRequest",
+    "QuotationSnapshot",
     "ReferenceStandard",
     "ReferenceStandardCertificate",
     "ReferenceStandardCertificateUncertainty",
     "ReferenceStandardUncertainty",
     "Resolution",
-    "ResolutionApiConsumer",
     "ResolutionAnalysis",
+    "ResolutionApiConsumer",
     "ResolutionAuditEvent",
     "ResolutionAuthorizationDecision",
     "ResolutionAuthorizationRequest",
@@ -165,13 +230,18 @@ __all__ = [
     "ResolutionWorkEvent",
     "ResolutionWorkItem",
     "Role",
+    "SatCatalog",
+    "SatCatalogAlias",
+    "SatCatalogFavorite",
+    "SatCatalogRecord",
+    "SatCatalogVersion",
     "ServiceOrder",
     "ServiceOrderItem",
     "ServiceOrderSignatureCycle",
     "SoftDeleteMixin",
-    "TimestampMixin",
     "TechnicalProfile",
     "TechnicalProfileAllowedPattern",
+    "TimestampMixin",
     "UncertaintyCalculation",
     "UncertaintyComponent",
     "UncertaintyFormula",
