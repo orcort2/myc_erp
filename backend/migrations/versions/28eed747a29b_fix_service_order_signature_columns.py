@@ -59,16 +59,30 @@ def upgrade() -> None:
     """)
 
 def downgrade() -> None:
-    op.execute("DROP TABLE IF EXISTS service_order_signatures CASCADE")
-
-    op.drop_column("service_orders", "client_acceptance_signed_at")
-    op.drop_column("service_orders", "client_received_signed_at")
-    op.drop_column("service_orders", "technician_signed_at")
-
-    op.drop_column("service_orders", "client_acceptance_signed_name")
-    op.drop_column("service_orders", "client_received_signed_name")
-    op.drop_column("service_orders", "technician_signed_name")
-
-    op.drop_column("service_orders", "client_acceptance_signature_data_url")
-    op.drop_column("service_orders", "client_received_signature_data_url")
-    op.drop_column("service_orders", "technician_signature_data_url")
+    # The direct signature columns belong to `27dad4c7a6c8`; this revision only
+    # retires the duplicate table introduced by `c3fb78821edc`. Recreate that
+    # table when stepping back so each preceding downgrade can undo exactly
+    # the objects it owns.
+    op.create_table(
+        "service_order_signatures",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.Column("service_order_id", sa.Integer(), nullable=False),
+        sa.Column("signature_type", sa.String(length=50), nullable=False),
+        sa.Column("signer_name", sa.String(length=255), nullable=True),
+        sa.Column("signer_role", sa.String(length=100), nullable=True),
+        sa.Column("signature_data", sa.Text(), nullable=True),
+        sa.Column("signed_at", sa.DateTime(), nullable=True),
+        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["service_order_id"],
+            ["service_orders.id"],
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index(
+        "ix_service_order_signatures_service_order_id",
+        "service_order_signatures",
+        ["service_order_id"],
+    )

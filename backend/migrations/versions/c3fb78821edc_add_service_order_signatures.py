@@ -44,8 +44,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index(
-        "ix_service_order_signatures_service_order_id",
-        table_name="service_order_signatures",
-    )
-    op.drop_table("service_order_signatures")
+    # `28eed747a29b` retires this legacy table in its upgrade. During a complete
+    # downgrade it has therefore disappeared before this revision is reached.
+    # IF EXISTS preserves reversibility both for that canonical chain and for
+    # databases that stopped at this historical revision.
+    op.execute("DROP INDEX IF EXISTS ix_service_order_signatures_service_order_id")
+    op.execute("DROP TABLE IF EXISTS service_order_signatures")

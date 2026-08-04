@@ -5,6 +5,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -261,12 +262,15 @@ class ServiceOrderSignatureCycle(
 
 class ServiceWorkOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "service_work_orders"
+    __table_args__ = (
+        Index("ix_service_work_orders_work_order_number", "work_order_number"),
+    )
 
     service_order_id: Mapped[int] = mapped_column(
         ForeignKey("service_orders.id"),
         index=True,
     )
-    work_order_number: Mapped[int] = mapped_column(unique=True, index=True)
+    work_order_number: Mapped[int] = mapped_column(unique=True)
     sequence: Mapped[int] = mapped_column(Integer, default=1, index=True)
     status: Mapped[str] = mapped_column(String(60), default="pending", index=True)
     equipment_limit: Mapped[int] = mapped_column(Integer, default=10, nullable=False)

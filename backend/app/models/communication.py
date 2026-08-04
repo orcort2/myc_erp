@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Table, Column, Text, UniqueConstraint, func
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Table, Column, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -12,7 +12,7 @@ communication_participants = Table(
     Column("conversation_id", ForeignKey("communication_conversations.id", ondelete="CASCADE"), primary_key=True),
     Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
     Column("joined_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
-    UniqueConstraint("conversation_id", "user_id", name="uq_communication_participant"),
+    Index("ix_communication_participants_user_id", "user_id"),
 )
 
 
