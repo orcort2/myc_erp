@@ -151,3 +151,22 @@ reconciliación con el inventario ejecutable y aprobación arquitectónica.
 Esta decisión no implementa Ajustes, modelos, migraciones ni claves nuevas; es
 un mandato de diseño para una etapa separada y no un defecto no atendido del
 alcance cerrado de Contención de Seguridad Etapa 1.
+
+## D-2026-08-04 — Integridad reproducible de esquema y recuperación
+
+Toda evolución de persistencia debe conservar un head único, `alembic check`
+limpio, ciclo PostgreSQL `base→head→base→head`, upgrade desde respaldo histórico
+y restore del respaldo oficial. Los índices PostgreSQL especializados se
+declaran como propiedad explícita de migración para impedir propuestas
+destructivas de autogenerate; los índices ORM portables sí deben materializarse.
+Una revisión sólo revierte los objetos que posee.
+
+## D-2026-08-04 — Gobierno previo de capacidades
+
+Antes de implementar funcionalidad o permiso nuevo es obligatorio clasificar
+`Módulo→Acción→Microacción`. El flujo vinculante es Catálogo Institucional →
+revisión funcional → permiso institucional → `permissions.py` → roles/grupos →
+usuarios. El catálogo es autoridad funcional y no generador de código;
+`permissions.py` permanece bootstrap. El modelo posterior deberá soportar
+roles/grupos múltiples, herencia, allow/deny individual, ownership, scopes,
+temporalidad, capacidades protegidas y `PortalMembership` persistente.

@@ -185,6 +185,14 @@ Administrador cuando no existe ningún usuario. La navegación autenticada carga
 los permisos efectivos calculados por backend y oculta módulos/acciones sin
 capacidad.
 
+## Gobierno previo de nuevas capacidades
+
+Antes de iniciar una funcionalidad nueva se registra su módulo, acción y
+microacción en el Catálogo Institucional. La revisión funcional aprueba o
+rechaza la clave propuesta; sólo una clave aprobada puede incorporarse al
+bootstrap, roles y usuarios. Este flujo de gobierno no reemplaza las reglas de
+estado, ownership ni negocio del módulo.
+
 Antes de entrar a cualquier router interno, el guard transversal clasifica la
 operación y exige access JWT, permiso u ownership conforme a su categoría. Las
 únicas excepciones anónimas están en una allowlist canónica; la API pública del

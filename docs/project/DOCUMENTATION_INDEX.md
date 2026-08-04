@@ -50,12 +50,14 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/CATALOGOS_SAT.md`](../architecture/CATALOGOS_SAT.md) | Fuente, importación, versionado y consumo de Catálogos SAT. |
 | [`../architecture/FIELD_SHEET_FIELD_REGISTRY.md`](../architecture/FIELD_SHEET_FIELD_REGISTRY.md) | Claves y semántica canónica de campos de Hojas de Campo. |
 | [`../architecture/PERMISSIONS_MATRIX.md`](../architecture/PERMISSIONS_MATRIX.md) | Roles/permisos declarados y brechas de aplicación. |
-| [`../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md`](../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md) | Insumo funcional adoptado para diseñar PortalMembership y RBAC administrable en la siguiente etapa; contiene permisos propuestos y no modifica automáticamente claves ni contratos vigentes. |
+| [`../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md`](../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md) | Autoridad funcional para módulos, acciones, microacciones y capacidades; no genera código ni modifica automáticamente claves o contratos vigentes. |
+| [`../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md) | Brechas verificadas entre Catálogo Institucional, bootstrap `permissions.py` e inventario HTTP; base de revisión previa a cualquier RBAC dinámico. |
 | [`../architecture/security/API_ACCESS_CONTROL.md`](../architecture/security/API_ACCESS_CONTROL.md) | Deny-by-default, clasificación de rutas, excepciones públicas, JWT, portal/ownership y relación backend/frontend. |
 | [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible de las 306 operaciones FastAPI y su política mínima verificable. |
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
+| [`../architecture/database/SCHEMA_RECOVERY.md`](../architecture/database/SCHEMA_RECOVERY.md) | Contrato reproducible de ciclo Alembic, upgrade histórico, respaldo oficial y restore drill. |
 | [`../architecture/ACTIVITY_INSTITUTIONAL.md`](../architecture/ACTIVITY_INSTITUTIONAL.md) | Contrato genérico de conversación, eventos, menciones, adjuntos, atención, no leídos y permisos por entidad. |
 | [`../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md`](../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md) | Desbloqueo temporal, revisión/delta y reconstrucción física atómica del ETS virgen con el mismo folio. |
 | [`../architecture/services/SERVICE_TYPE_AND_LINKED_LABORATORIES.md`](../architecture/services/SERVICE_TYPE_AND_LINKED_LABORATORIES.md) | Taxonomía acreditado/trazable/vinculado, empresas, prefijos y snapshots. |
@@ -98,6 +100,8 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md`](../closures/ACTIVITY_INSTITUTIONAL_2026-07-29.md) | Cierre técnico de Actividad transversal, pendiente de revisión formal. |
 | [`../closures/SALES_UNLOCK_AND_SERVICE_TYPES_2026-07-29.md`](../closures/SALES_UNLOCK_AND_SERVICE_TYPES_2026-07-29.md) | Cierre técnico del desbloqueo, reconstrucción ETS, tipos vinculados y folios institucionales. |
 | [`../closures/SECURITY_CONTAINMENT_STAGE_1_2026-08-03.md`](../closures/SECURITY_CONTAINMENT_STAGE_1_2026-08-03.md) | Dictamen aprobado y cerrado de deny-by-default, JWT seguro, portal aislado, permisos frontend y pruebas 401/403/IDOR. |
+| [`../closures/SECURITY_STAGE_2A_SCHEMA_RECOVERY_2026-08-04.md`](../closures/SECURITY_STAGE_2A_SCHEMA_RECOVERY_2026-08-04.md) | Cierre técnico de integridad de esquema, reversibilidad Alembic, upgrade histórico, respaldo alineado y restore drill reproducible. |
+| [`../closures/SECURITY_STAGE_2B_CAPABILITY_MODEL_2026-08-04.md`](../closures/SECURITY_STAGE_2B_CAPABILITY_MODEL_2026-08-04.md) | Cierre técnico del modelo institucional de capacidades, gobernanza obligatoria y brechas frente al bootstrap/API, sin implementar RBAC. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_0.md`](../closures/RESOLUTION_ENGINE_PHASE_0.md) | Ratificación, matriz, gates, validaciones y condición de aprobación de la Fase 0 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_1.md`](../closures/RESOLUTION_ENGINE_PHASE_1.md) | Contratos, catálogos, serialización canónica, runtime, registro versionado, aislamiento y validaciones de la Fase 1 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_2.md`](../closures/RESOLUTION_ENGINE_PHASE_2.md) | Modelo ORM, integridad, reconstrucción, inmutabilidad, migración reversible y validaciones de la Fase 2 del Motor de Resoluciones. |
@@ -118,6 +122,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 
 | Documento | Fecha / autoridad |
 | --- | --- |
+| [`../audits/AUDITORIA_INTEGRAL_ERP_MYC_2026-08-03.md`](../audits/AUDITORIA_INTEGRAL_ERP_MYC_2026-08-03.md) | Corte integral 2026-08-03; informe principal de una suite de diez entregables diagnósticos, matrices, plan y evidencia reproducible. No modifica por sí mismo el canon. |
 | [`../auditorias/AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md`](../auditorias/AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md) | Corte transversal de excepciones 2026-07-22; ubicación solicitada expresamente para este entregable, con la misma autoridad de fotografía que `audits/`. |
 | [`../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md`](../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md) | Corte integral 2026-07-21; evidencia base del canon actual. |
 | [`../audits/AUDITORIA_PAQUETE_CAPTURA_2026-07-17.md`](../audits/AUDITORIA_PAQUETE_CAPTURA_2026-07-17.md) | Diagnóstico puntual de Captura al 2026-07-17. |

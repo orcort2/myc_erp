@@ -1,346 +1,170 @@
 > Estado: VIGENTE
 >
-> Tipo: Vigente (estado operativo)
+> Tipo: Vigente (estado operativo verificable)
 >
-> Autoridad: Media; resumen verificable de operación, migraciones y validaciones
+> Autoridad: Media; no sustituye los documentos canónicos de `project/`
 >
-> Prevalece sobre: versiones anteriores de este mismo corte operativo
->
-> No sustituye a: `project/PROJECT_STATUS.md` para avance ni a `project/DOCUMENTATION_INDEX.md` para jerarquía
->
-> Historial anterior: `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
->
-> Corte actualizado: 2026-07-29
+> Corte actualizado: 2026-08-04
 
 # Estado operativo actual del ERP MYC
 
-## Estado general
+## Dictamen del corte
 
-- Versión declarada del ERP: `0.4.0`.
-- Estado de avance autorizado: [`project/PROJECT_STATUS.md`](project/PROJECT_STATUS.md).
-- Único módulo `SELLADO`: Control Documental V1.
-- Equipos permanece `CASI SELLADO`: la trazabilidad del Master quedó desacoplada del catálogo vivo; continúan pendientes la protección uniforme del router y el E2E autenticado multi-OT.
-- Riesgos prioritarios transversales: autorización general de APIs y portal,
-  secreto JWT de despliegue, duplicación material en ETS y autenticación de
-  certificados duplicada fuera de Calidad. La escalación por registro y el uso
-  de refresh como access quedaron corregidos.
+- Versión declarada: `0.4.0`.
+- Estado canónico de módulos: [`project/PROJECT_STATUS.md`](project/PROJECT_STATUS.md); no fue modificado por la auditoría diagnóstica.
+- Auditoría integral vigente: [`audits/AUDITORIA_INTEGRAL_ERP_MYC_2026-08-03.md`](audits/AUDITORIA_INTEGRAL_ERP_MYC_2026-08-03.md).
+- Dictamen técnico del corte: **NO APTO PARA PRODUCCIÓN**, 49/100.
+- Hallazgos: 40 (3 críticos, 13 altos, 18 medios, 4 bajos y 2 informativos).
+- La Contención de Seguridad Etapa 1 cerró API sin protección uniforme, portal
+  sin aislamiento y secreto JWT productivo inseguro; la revisión de sus seis
+  commits y la repetición de pruebas emitieron el dictamen **APROBADA Y
+  CERRADA** el 2026-08-04.
+- La Etapa 2A corrigió y validó la integridad de esquema y recuperación; la
+  Etapa 2B formalizó el Catálogo Institucional como autoridad funcional sin
+  implementar RBAC dinámico ni cambiar permisos vigentes.
+- Bloqueadores dominantes restantes: cargas no acotadas, sesiones sin
+  revocación/rotación, CFDI productivo incompleto y ausencia de
+  CI/E2E/observabilidad.
 
-## Persistencia, migración y respaldo
+## Árbol de trabajo preservado
 
-- Motor: PostgreSQL con SQLAlchemy y Alembic.
-- Head único del código: `b03b4c5d6e7f`.
-- Head aplicado en la base PostgreSQL local compartida: `b03b4c5d6e7f`.
-- `ae1f2a3b4c5d` amplía el expediente `EXV-…` para desbloqueo controlado,
-  empresas vinculadas, tipo canónico, snapshots y contadores institucionales.
-- `af2a3b4c5d6e` agrega el snapshot fuente del ETS y restricciones de tipo/
-  contador; `b03b4c5d6e7f` fija sin disminuir los pisos 2026: certificados
-  8000 y OT 7000.
-- Tras el upgrade se regeneró `backup_erp_myc_antes_prueba.sql` y se confirmó
-  `alembic_version = b03b4c5d6e7f`.
-- `8c9d0e1f2a3b` institucionaliza Actividad con eventos idempotentes,
-  lecturas por usuario y solicitudes de atención. Su upgrade completo,
-  downgrade a `7b8c9d0e1f2a` y re-upgrade se validaron en PostgreSQL temporal.
-- `6ae1d4877cdb` incorpora Communications sobre el merge de Notificaciones y
-  Motor. Es trabajo previo/concurrente, no parte de Fase 14.
-- `7b8c9d0e1f2a` agrega a `equipment` el FK BIGINT restrictivo
-  `resolution_id`, la conciliación única y el hash de solicitud. Se validó en
-  PostgreSQL temporal mediante upgrade completo, downgrade a
-  `6ae1d4877cdb` y upgrade de retorno; la base temporal fue eliminada.
-- `9d3e5f7a1b2c` agrega las 21 tablas del modelo persistente del Motor de
-  Resoluciones, sus constraints, índices y triggers de inmutabilidad. Su revisión
-  padre `8c2d4e6f7a9b` conserva el snapshot operativo de Equipos.
-- `b4c6d8e0f2a3` agrega `resolution_security_decisions`, elimina once FKs del
-  Motor a `users.id` y migra identidad/autoridad a actor canónico, funciones y
-  snapshots.
-- `c5d7e9f1a3b4` agrega exclusivamente
-  `resolution_outbox_events.failed_at` para conservar evidencia temporal de
-  fallos de publicación.
-- `d6e8f0a2b4c5` amplía los estados raíz y agrega cuatro tablas generales de
-  compensación con FKs exactas, unicidad de efecto, índices y protección
-  histórica.
-- `e7f9a1b3c5d7` vincula decisiones de seguridad con revalidación exacta y
-  ejecuciones con su decisión institucional mediante FKs compuestas,
-  constraint de completitud e índice; las columnas son nulas para históricos.
-- `f8a0b2c4d6e8`, después de `fabc2cd495ef`, agrega modo, identidad,
-  payload/hash y consumo append-only de operación, además de congelar el lote
-  exacto de outbox.
-- `f9c1d3e5a7b9` agrega la evidencia propietaria append-only
-  `certificate_resolution_operations`, sus constraints, índices y trigger de
-  inmutabilidad para el primer vertical de Fase 9.
-- `a0d2f4b6c8e1` crea `resolution_api_consumers` para credenciales hasheadas,
-  organización, permisos, vigencia y revocación de consumidores de la API v1.
-- `c1e3f5a7b9d2` crea nodos, trabajos durables y eventos distribuidos, con
-  prioridad, intentos, leases cercados, índice parcial único por resolución e
-  índices de despacho/observabilidad; un trigger PostgreSQL protege los eventos
-  append-only. Su upgrade→downgrade→upgrade fue validado en una base PostgreSQL
-  temporal limpia, luego eliminada.
-- `d2f4a6b8c0e3` conserva inmutables identidad y contenido del plan y permite
-  únicamente sus transiciones canónicas; protege además cambios de activación
-  e invalidación. La cadena completa, downgrade a `c1e3f5a7b9d2` y upgrade de
-  retorno se validaron en PostgreSQL temporal, después eliminado.
-- El backfill histórico usa únicamente `service_order_items.catalog_item_id`, `quotation_items.catalog_item_id` o `equipment.certificate_master_document_id`; no compara nombres.
-- Respaldo vigente: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño verificado: 74,299,864 bytes.
-- SHA-256 verificado: `365a58c7c5f311837238c1138bbbec3ece9d7a44116cd332052ab7699dc4c3be`.
-- El respaldo contiene `alembic_version = b03b4c5d6e7f`,
-  `linked_companies`, `institutional_folio_sequences`, snapshots de servicio/
-  ETS/equipo y las estructuras previas de Actividad y Motor.
-- La integración de pagos no agrega migraciones ni modifica datos locales; por
-  ello no corresponde regenerar el respaldo SQL y su head permanece vigente.
+Al inicio de la Etapa 2 ya existían cambios y archivos no rastreados en
+frontend, documentación comprimida, auditorías y storage. Se preservaron como
+trabajo previo o concurrente y no forman parte de esta etapa.
 
-## Facturación y pagos
+Las tres migraciones locales pendientes fueron revisadas y adoptadas
+oficialmente en la cadena lineal:
 
-- `InvoicePayment` y los endpoints existentes se consumen desde el Resumen
-  financiero del Workbench único; no existe pestaña de Pagos.
-- El modal registra pagos antes o después del timbrado, valida importe positivo
-  y no mayor al saldo, evita doble envío y refresca `Invoice`, cartera y
-  readiness del ETS.
-- La factura muestra total, pagado, saldo, estado, historial y comprobante PDF.
-  Cuentas por cobrar vive en el Dashboard existente y abre el mismo expediente.
-- Facturama conserva la condición financiera: después del timbrado deriva
-  `issued`, `partially_paid` o `paid` desde los importes persistidos.
-- Saldo cero retira la factura de cartera y satisface la compuerta financiera
-  de certificados cuando `requires_payment=true`.
+- `backend/migrations/versions/c14c5d6e7f80_fix_quotation_service_change_timestamps.py`
+- `backend/migrations/versions/d15d6e7f8091_fix_notification_timestamp_defaults.py`
+- `backend/migrations/versions/e16e7f8091a2_fix_institutional_folio_timestamp_defaults.py`
 
-## Actividad institucional
+Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
+único y reversible.
 
-- El hilo genérico cubre 19 tipos de entidad existentes y exige permiso de
-  Actividad más lectura del módulo.
-- Comentarios, menciones, adjuntos, revisión/retiro lógico, no leídos, bandeja,
-  atención y eventos formales usan un único servicio y panel.
-- Cotización, ETS, Equipo, Hoja de Campo, Certificado y Factura publican
-  transiciones canónicas; pagos y notas de crédito agregan eventos relacionados.
-- Las notas técnicas/documentales continúan en sus agregados. La nota histórica
-  del ETS queda visible en sólo lectura y no se realizó backfill ambiguo.
-- Activity y Notifications usan JSON portable con variante PostgreSQL JSONB;
-  `TD-023` quedó retirado.
+## Persistencia y migraciones
 
-## Equipos y contexto de certificado
+- Motor: PostgreSQL, SQLAlchemy y Alembic.
+- Head único oficial: `f27f8a90b1c3`.
+- Base local compartida: migrada y verificada en `f27f8a90b1c3`.
+- `alembic check`: **LIMPIO** tanto en la base local como en bases aisladas.
+- Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
+  aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
+- Upgrade desde el respaldo histórico en `b03b4c5d6e7f` hasta el head:
+  **CORRECTO**, con 102 tablas públicas y `alembic check` limpio.
+- Se añadieron defaults de servidor `now()` a 16 columnas NOT NULL
+  `created_at`/`updated_at` en ocho tablas:
+  - `activity_attention_requests`
+  - `activity_thread_reads`
+  - `linked_companies`
+  - `uncertainty_calculations`
+  - `uncertainty_components`
+  - `uncertainty_formulas`
+  - `uncertainty_model_exceptions`
+  - `uncertainty_models`
+- Se reconciliaron índices y columnas faltantes del ORM; los índices parciales,
+  de expresión y de búsqueda administrados deliberadamente por migraciones
+  quedaron excluidos de autogeneración mediante una lista explícita.
+- Se corrigieron downgrades históricos de firmas de ETS y la denominación de
+  una FK de cotizaciones para asegurar la reversibilidad de la cadena completa.
 
-- Al crear el ETS, cada partida operativa congela el `expected_certificate_master_id` correspondiente a su identidad estable de catálogo.
-- Al dar de alta un equipo, `backend/app/services/equipment.py` consume exclusivamente ese valor de `ServiceOrderItem`; no importa `CatalogItem`, no consulta por `service_name` y no reabre la resolución en el catálogo.
-- El snapshot de equipo conserva el Master documental y su versión/archivo/hash/vigencia, además de un contexto JSON versionado con alcance, tipo de certificado, Master esperado, partida ETS y concepto operativo de origen.
-- El certificado esperado sigue generándose automáticamente con el mismo mapeo: `accredited_iso_17025 → acreditado`, `traceable → trazable`, `accredited_linked_lab → vinculado`.
-- El contador de avance usa internamente `FINISHED_STATUSES = {calibrated, labeled, not_done}`. No cambiaron estados, transiciones ni semántica operativa.
-- No se implementó historial transversal de activos. El equipo continúa siendo una ocurrencia del servicio y conserva serie/ID interno sin unicidad global, permitiendo enlazar en el futuro una identidad de activo separada sin reescribir históricos.
+## Respaldo oficial
 
-## Ventas, servicios vinculados y folios
-
-- `quotation.controlled_unlock` reemplaza el cambio puntual: solicitud,
-  autorización nominativa, edición directa, delta, nueva revisión y cierre.
-- Administrador pulsa `Desbloquear cotización` y entra directamente a edición:
-  no aparece modal ni captura motivo u observación. El sistema registra un
-  motivo estándar y conserva expediente `EXV`, autoautorización, vigencia de
-  72 horas, eventos, notificación y auditoría.
-- En las excepciones operativas ETS existentes, Administrador también ejecuta
-  la acción desde el botón sin formulario; los perfiles de menor autoridad
-  conservan el diálogo de solicitud. Este ajuste es de UX y no cierra la deuda
-  de gobernanza del endpoint ETS legacy registrada en `TD-014`.
-- El validador bloquea cualquier ETS con evidencia operativa. Un ETS virgen se
-  elimina físicamente y se recrea atómicamente con el mismo `OSMYC-…`.
-- Catálogo y snapshots distinguen `accredited`, `traceable` y `linked`; CAPYMET
-  y BESS son registros iniciales y “Otro” crea una empresa institucional.
-- Certificados usan `MYCA|MYCT|{prefijo} + AAMM + NNNN`, sin guiones. Los
-  contadores son transaccionales por año/prefijo/documento.
+- Archivo: `backup_erp_myc_antes_prueba.sql`.
+- Tamaño: 74,539,344 bytes.
+- `alembic_version` contenido: `f27f8a90b1c3`.
+- SHA-256: `7e3d332d93a04ebfa47b1dc78cfa0f5592e1a3386f4381f2d5ceb3d8b92e8e19`.
+- Estado: **ALINEADO CON EL HEAD OFICIAL**.
+- Restore drill: **CORRECTO** en PostgreSQL aislado; restauró 102 tablas,
+  confirmó la revisión y dejó `alembic check` limpio. El procedimiento
+  reproducible está en `architecture/database/SCHEMA_RECOVERY.md` y el comando
+  ejecutable en `scripts/toolkit/db/restore-drill.sh`.
 
 ## Validaciones ejecutadas
 
-- Integración de pagos: frontend Node `13 passed`; build Vite correcto con
-  `1695` módulos y advertencia no bloqueante por tamaño del chunk.
-- Backend focalizado de pagos, Facturación, documentos, Certificados y
-  readiness: `38 passed`; regresión adicional ETS/servicios/contratos:
-  `16 passed`, `12 subtests passed`.
-- Activity backend: `8 passed`; frontend Activity verifica rutas canónicas y
-  capacidades de edición/resolución.
-- Suite específica Fase 14: `7 passed`; incluye composición, resultados,
-  simulación, autorización granular, productor ERP idempotente, revalidación,
-  concurrencia, compensación y E2E completo por worker después de cerrar la
-  sesión.
-- Suites seleccionadas Fases 13–14: `15 passed`.
-- Suites seleccionadas Fases 11–14: `36 passed`.
-- Frontend dinámico: `3 passed`; build Vite correcto con `1693` módulos y
-  advertencia no bloqueante por tamaño del chunk.
-- Compilación de bytecode Python: correcta.
-- PostgreSQL temporal: `upgrade head → downgrade 6ae1d4877cdb → upgrade head`;
-  `current = 7b8c9d0e1f2a (head)`. Base temporal eliminada.
-- PostgreSQL local: se aplicó `6ae1d4877cdb → 7b8c9d0e1f2a` después de
-  detectar que el ORM de `Equipment` consultaba columnas todavía ausentes.
-  La consulta propietaria devuelve dos equipos y `list_field_sheets()` dos
-  Hojas de Campo sin excepción; `/api/health` responde `200` y
-  `/api/field-sheets` sin credenciales responde el `401` esperado, no `500`.
-- Regresión operativa de Hojas de Campo, plantillas y Fase 14: cubierta por la
-  suite backend completa.
-- `alembic check` continúa mostrando `TD-021`, pero no detecta operaciones
-  nuevas sobre `activity_*`, `notifications`, desbloqueo, clasificación,
-  snapshots, empresas vinculadas ni contadores institucionales.
-- PostgreSQL temporal del cambio vigente:
-  `upgrade head → downgrade 9d0e1f2a3b4c → upgrade head`; terminó en
-  `b03b4c5d6e7f (head)` y la base temporal fue eliminada.
-- Backend completo: `409 passed`, `19 subtests passed`; 2 warnings de
-  dependencias.
-- Desbloqueo/servicios/folios: `9 passed` focalizados; incluye permisos,
-  autoautorización administrativa, delta, rollback, reconstrucción física,
-  bloqueos, linked, normalización y secuencias 2026/2027.
-- Frontend completo: `29 passed`, incluidas las pruebas de ejecución
-  administrativa sin modal y solicitud para menor autoridad; build Vite
-  correcto con `1705` módulos y advertencia no
-  bloqueante por tamaño del chunk.
-- `git diff --check` se ejecuta sobre el cierre; el árbol contiene espacios
-  finales en CSS concurrente ajeno a Fase 14.
-- Tras migrar la base local se regeneró `backup_erp_myc_antes_prueba.sql`; su
-  `alembic_version` coincide con el head del código.
+| Validación | Resultado |
+| --- | --- |
+| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 430 passed, 19 subtests, 3 warnings |
+| Pruebas dirigidas de integridad de esquema | 3 passed, 1 warning deprecado de configuración Alembic |
+| Pruebas dirigidas de seguridad | 22 passed |
+| Frontend `node --test` | 31 passed |
+| Frontend `npm run build` | correcto; warning de chunk >500 kB |
+| Backend `compileall` | correcto |
+| Inventario FastAPI | 306/306 operaciones clasificadas; CSV coincide con runtime |
+| Aislamiento portal A/B | propias 200, ajenas 404, anónimo 401 |
+| `scripts/myc doctor` | dependencias locales principales disponibles |
+| Alembic ciclo vacío base→head→base→head | correcto en PostgreSQL aislado |
+| Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
+| Alembic check | limpio en local, ciclo y restores aislados |
+| Restore del respaldo oficial regenerado | correcto; f27, 102 tablas |
+| Validador Catálogo Institucional/permissions/API | correcto (`--check`) |
+| `npm audit --omit=dev` | 1 vulnerabilidad alta PostCSS |
+| `pip check` | correcto |
+| Vulnerabilidades Python | NO VERIFICADAS; `pip-audit` ausente |
+| `git diff --check` acotado a Etapa 2 | limpio; el árbol completo conserva espacios finales preexistentes en CSS ajeno a la etapa |
 
-## Pendientes vigentes
+La evidencia histórica de auditoría se conserva en
+[`audits/evidence/AUDITORIA_COMANDOS_2026-08-03.txt`](audits/evidence/AUDITORIA_COMANDOS_2026-08-03.txt);
+los comandos vigentes de recuperación se documentan en
+[`architecture/database/SCHEMA_RECOVERY.md`](architecture/database/SCHEMA_RECOVERY.md).
 
-1. Ejecutar el E2E autenticado de Equipos dentro de un expediente multi-OT con datos representativos.
-2. Aplicar autorización deny-by-default y permisos explícitos al router de Equipos.
-3. Resolver las deudas transversales vigentes en [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
-4. Implementar historial de activos sólo cuando se incorpore formalmente al alcance; no pertenece a esta entrega.
-5. Ejecutar el E2E autenticado Factura→pago→timbrado→liquidación→liberación con datos representativos cuando el backend vuelva a ser arrancable y exista configuración Sandbox.
-6. Ejecutar E2E autenticado de desbloqueo→delta→reconstrucción y alta de
-   empresa vinculada “Otro”; la suite de servicio y build ya son correctos.
-7. Diseñar por separado una actualización no destructiva para ETS con
-   operación; no relajar el validador vigente.
+## Estado funcional verificable
 
-## Documentación y trazabilidad
+- El ERP implementa clientes, catálogo, cotizaciones, ETS, OT, equipos, Hojas de Campo, Captura, Calidad, Certificados, Facturación, pagos, cartera, control documental, patrones, incertidumbre, Actividad, comunicaciones y ajustes con grados diferentes de cierre.
+- Control Documental V1 conserva el único estado canónico `SELLADO`, dentro de su alcance acotado; la seguridad transversal impide inferir aptitud productiva.
+- El Workbench de Facturación reutiliza el controlador único, el agregado `Invoice`, el contexto explícito y `EtsBillingTab`.
+- Servicios Compuestos usa `service_kind`, `catalog_item_components` y expansión al crear ETS.
+- La acreditación de calibración mantiene las claves canónicas del contrato.
+- Facturación dispone de borrador, snapshots, intentos PAC, XML/PDF, pagos y cartera, pero Facturama está configurado para Sandbox y faltan cancelación/sustitución, PPD/complemento y nota fiscal de egreso.
+- Actividad implementa threads, mensajes, menciones, adjuntos, atención y no
+  leídos; sus defaults de BD quedaron alineados y permanece pendiente la
+  operación externa/observable.
+- El Motor de Resoluciones tiene núcleo versionado, lifecycle, seguridad, idempotencia, locks, compensación, auditoría, outbox, cola/worker, API y SDK. Sólo dos definiciones están instaladas; la Fase 14 sigue pendiente de dictamen formal y el inicio desde módulos de origen no está cerrado.
 
-- Entrada única: [`project/DOCUMENTATION_INDEX.md`](project/DOCUMENTATION_INDEX.md).
-- Estado de módulos: [`project/PROJECT_STATUS.md`](project/PROJECT_STATUS.md).
-- Reglas: [`project/BUSINESS_RULES.md`](project/BUSINESS_RULES.md).
-- Decisiones: [`project/DECISIONS.md`](project/DECISIONS.md).
-- Observaciones: [`project/OBSERVATIONS_REGISTER.md`](project/OBSERVATIONS_REGISTER.md).
-- Contrato de alcance: [`architecture/CALIBRATION_SCOPE_CONTRACT.md`](architecture/CALIBRATION_SCOPE_CONTRACT.md).
-- Plantillas Maestras: [`modules/control-documental/PLANTILLAS_MAESTRAS.md`](modules/control-documental/PLANTILLAS_MAESTRAS.md).
+## Seguridad y operación
 
-## Motor de Resoluciones — Fases 9 a 14
+- Inventario introspectado: 306 operaciones HTTP; 6 públicas básicas, 1
+  verificación pública firmada, 1 portal técnico controlado por entorno, 4 de
+  consumidor del Motor, 6 autenticadas, 270 con permiso, 5 con ownership
+  interno, 4 de portal con ownership y 9 administrativas.
+- Toda ruta interna pasa por el guard deny-by-default y el arranque/prueba de
+  conformidad fallan si aparece una operación sin clasificación.
+- Clientes, Catálogo, Cotizaciones, ETS y Equipos exigen access JWT y permiso
+  mínimo; no queda dependencia opcional de usuario en routers internos.
+- Portal exige rol Cliente, `portal.read` y vínculo único derivado en backend;
+  filtra listados, rechaza PDF ajeno con 404 y audita descargas propias.
+- Producción rechaza secreto JWT ausente, conocido, corto o de entropía
+  insuficiente; desarrollo permite el valor local explícito con advertencia.
+- Refresh no autentica como access, access no renueva como refresh, el tipo es
+  obligatorio y usuario inactivo/firma/expiración se rechazan.
+- Navegación y acciones principales consumen permisos efectivos retornados por
+  backend; acceso directo muestra denegación y 403/red tienen mensajes claros.
+- Access/refresh se guardan en `localStorage`; no existe revocación/rotación formal de sesiones.
+- Captura e imports no comparten límites robustos de tamaño/descompresión; Activity sí valida tamaño/MIME/firma.
+- No existe CI/CD, E2E browser, despliegue declarativo, readiness real,
+  métricas, tracing ni alertas. El restore drill local ya está documentado y
+  validado, pero aún debe incorporarse a la operación periódica automatizada.
 
-- Estado: Fases 0 a 13 `APROBADAS`; Fase 14 — Expansión institucional de
-  integraciones `TERMINADA — EN REVISIÓN`. Fase 15 no iniciada.
-- El Motor conserva expediente, seguridad, Lifecycle y ejecución aprobados e
-  incorpora modelo/Engine, Planner, Executor, Runner, contratos, persistencia
-  y evidencia de compensación total/parcial síncrona.
-- Sólo inicia desde `ready_for_execution` con plan activo `authorized`,
-  autorización y revalidación exactas. Los cierres posibles son `completed`,
-  `partially_completed`, `failed` y `blocked`.
-- Sólo checkpoints originales `completed` y declarados compensables forman un
-  plan. La estrategia total cubre todos; la parcial exige selección explícita;
-  un punto de no retorno impide el flujo ordinario.
-- La decisión `resolution.compensate` debe pertenecer a ejecución, resolución,
-  organización y actor exactos. Se comprueba también antes de preparación,
-  ejecución y replay.
-- Lifecycle transita `completed|partially_completed|failed → compensating →
-  compensated|partially_compensated|compensation_failed`; ningún handler
-  modifica la raíz.
-- Cada acción persiste intención antes del handler y resultado después. El lock
-  se comprueba al volver y en el checkpoint; pérdida o incertidumbre bloquean
-  sin confirmar ni reinvocar.
-- Plan hash, claves de preparación/ejecución/paso y unicidad del checkpoint
-  fuente impiden conflicto, replay ajeno y compensación duplicada.
-- Una selección parcial debe incluir todos los dependientes confirmados activos,
-  directos o transitivos. La infracción se rechaza antes de persistir con error
-  estructurado; efectos sin confirmar o ya compensados no bloquean.
-- El outbox se publica sólo mediante una invocación explícita autorizada,
-  aislada por organización y un publicador idempotente por `event_key`; un
-  fallo conserva `failed_at`, intentos y error, sin scheduler ni reintento.
-- La API v1 autentica consumidor/organización, namespacia la clave idempotente
-  y delega creación en Lifecycle y consultas en auditoría.
-- Fase 9 incorpora exclusivamente provider read-only y gateways de ejecución y
-  compensación para Certificados; no agrega API, otros dominios, workers,
-  schedulers, procesamiento masivo, recuperación, conciliación, retries ni
-  compensación automática.
-- La Fase 7 incorpora modelo puro, `AuditEngine`, `EvidenceRegistry`,
-  `ResolutionTimeline`, consultas autorizadas y adaptador SQL read-only.
-  Verifica pertenencia, hashes reproducibles, vínculos exactos y secuencia; no
-  cambia Lifecycle, ejecución, compensación ni outbox.
-- La reconstrucción completa se materializa en un único snapshot transaccional:
-  `REPEATABLE READ` en PostgreSQL y `SERIALIZABLE` explícito en SQLite. La
-  prueba concurrente confirma que una transición intercalada nunca produce un
-  expediente híbrido.
-- Fase 8 agrega el catálogo integral dentro del evaluador de Fase 3. Lifecycle,
-  ejecución, compensación, auditoría y outbox comparten un único verificador de
-  decisiones persistidas y deniegan antes de replay, lectura o efecto.
-- El catálogo `1.1` declara `single_operation` para mutaciones y
-  `reusable_read` sólo para auditoría exacta. Creación liga `request_key` e
-  intención completa, Lifecycle incluye estado/versión y outbox congela IDs.
-  El consumo se confirma con la transacción; rollback no quema la concesión.
-- La autenticación futura/expirada, permisos fuera de contexto, downgrade de
-  permiso, recursos falsos y evidencia/hash alterados se rechazan.
-- La corrección de Fase 10 reemplaza el cursor Base64 firmado por un sobre
-  opaco `c1` AES-GCM. Versión, consumidor, organización, filtros, orden,
-  dirección, tamaño y posición keyset se cifran/autentican juntos; el formato
-  legacy inseguro se rechaza.
-- Fase 11 usa `resolution_work_items` como cola durable compartida,
-  `resolution_worker_nodes` para capacidad/heartbeat/drenado y
-  `resolution_work_events` como secuencia operacional append-only.
-- Claim usa prioridad/disponibilidad, `SKIP LOCKED`, exclusión de claims
-  existentes y un índice parcial único por `resolution_id`. Nodo, token,
-  versión y vigencia forman el fencing obligatorio.
-- El worker renueva lease y heartbeat durante el handler y delega en
-  `ResolutionExecutor` o `CompensationExecutor`; no interpreta planes,
-  Lifecycle, seguridad ni reglas propietarias.
-- Recovery reencola únicamente antes del posible efecto. Si
-  `effect_started_at` existe, bloquea por incertidumbre. Retry requiere
-  ausencia de efecto confirmada y usa backoff exponencial acotado sin jitter.
-- Las migraciones reversibles `f9c1d3e5a7b9` y `c1e3f5a7b9d2` fueron
-  probadas en upgrade→downgrade→upgrade. `alembic check` sólo muestra la deriva
-  histórica `TD-021` y ninguna operación sobre las tablas distribuidas.
-- Replay exacto de ejecución/compensación se resuelve antes del certificado
-  actual; una clave nueva usa segunda comprobación bajo lock y recuperación del
-  ganador concurrente. `after_snapshot` se construye después de
-  `flush/refresh`.
-- El respaldo SQL vigente coincide con el head aprobado y aplicado
-  `b03b4c5d6e7f`; su tamaño, hash y contenido verificable se describen en
-  Persistencia, migración y respaldo.
-- Apertura aprobada de Fase 8:
-  [`architecture/resolution-engine/21_PHASE_8_OPENING.md`](architecture/resolution-engine/21_PHASE_8_OPENING.md).
-- Contrato:
-  [`architecture/resolution-engine/22_INTEGRAL_SECURITY.md`](architecture/resolution-engine/22_INTEGRAL_SECURITY.md).
-- Cierre:
-  [`closures/RESOLUTION_ENGINE_PHASE_8.md`](closures/RESOLUTION_ENGINE_PHASE_8.md).
-- Commits aprobados de Fase 8: `73e437d` y
-  `661f43a5cbba9070b1f02babd9ebbd5149f62b2b`.
-- Apertura oficial de Fase 9:
-  [`architecture/resolution-engine/23_PHASE_9_OPENING.md`](architecture/resolution-engine/23_PHASE_9_OPENING.md).
-- Contrato implementado del primer vertical:
-  [`architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md`](architecture/resolution-engine/24_PHASE_9_CERTIFICATES_INTEGRATION.md).
-- Cierre aprobado de Fase 9:
-  [`closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md`](closures/RESOLUTION_ENGINE_PHASE_9_CERTIFICATES.md).
-- Commits aprobados de Fase 9: `5abfe2d` y `901bd85`.
-- Apertura oficial de Fase 10:
-  [`architecture/resolution-engine/25_PHASE_10_OPENING.md`](architecture/resolution-engine/25_PHASE_10_OPENING.md).
-- Contrato implementado de Fase 10:
-  [`architecture/resolution-engine/26_PUBLIC_API_SDK.md`](architecture/resolution-engine/26_PUBLIC_API_SDK.md).
-- Fase 10 fue aprobada mediante `dd9a84e`.
-- Apertura oficial de Fase 11:
-  [`architecture/resolution-engine/27_PHASE_11_OPENING.md`](architecture/resolution-engine/27_PHASE_11_OPENING.md).
-- Contrato implementado de Fase 11:
-  [`architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md`](architecture/resolution-engine/28_DISTRIBUTED_RUNTIME.md).
-- Cierre técnico:
-  [`closures/RESOLUTION_ENGINE_PHASE_11.md`](closures/RESOLUTION_ENGINE_PHASE_11.md).
-- Fase 11 fue aprobada mediante
-  `cbde51783870e4b06a4de84c27e05dc2b5ea3de1`.
-- Fase 12 expone `/resolutions`, API interna v1, catálogo controlado,
-  proyecciones de lista/expediente/timeline, flujo guiado y worker independiente
-  de sesión. La autoridad se confirma antes del enqueue; el token HTTP no forma
-  parte del trabajo durable y un `work_key` único impide doble despacho.
-- Contrato de Fase 12:
-  [`architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md`](architecture/resolution-engine/29_PHASE_12_RESOLUTION_CENTER.md).
-- Cierre técnico de Fase 12:
-  [`closures/RESOLUTION_ENGINE_PHASE_12.md`](closures/RESOLUTION_ENGINE_PHASE_12.md).
-- Fase 12 fue aprobada mediante `a7bf75f`.
-- Fase 13 incorpora registro institucional versionado, formularios dinámicos,
-  indicadores backend, expediente completo, rol Operador e integración
-  Certificados end-to-end:
-  [`architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](architecture/resolution-engine/30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md).
-- Cierre técnico de Fase 13:
-  [`closures/RESOLUTION_ENGINE_PHASE_13.md`](closures/RESOLUTION_ENGINE_PHASE_13.md).
-- Fase 13 fue aprobada mediante
-  `bb76e3bba9482517c9dfb870567d6bdfc7b9b135`.
-- Fase 14 agrega composición instalada única y el vertical
-  `service_order.resolve_additional_equipment@1.0`:
-  [`architecture/resolution-engine/31_PHASE_14_INTEGRATION_EXPANSION.md`](architecture/resolution-engine/31_PHASE_14_INTEGRATION_EXPANSION.md).
-- Cierre técnico de Fase 14:
-  [`closures/RESOLUTION_ENGINE_PHASE_14.md`](closures/RESOLUTION_ENGINE_PHASE_14.md).
-- Fase 14 queda `EN REVISIÓN`; Fase 15 no está abierta.
-- La IA es una posibilidad futura opcional y no constituye dependencia
-  arquitectónica u operativa del ERP o del Motor determinista.
+## Pendientes obligatorios antes de producción
+
+1. Programar las etapas posteriores de autoridad (`PortalMembership` y RBAC
+   administrable) y sesiones/rate limit; AUD-001, AUD-002 y AUD-003 quedaron
+   cerrados formalmente por evidencia sin ampliar la Etapa 1.
+2. Someter cualquier capacidad nueva al flujo Catálogo → revisión funcional →
+   permiso institucional; no agregar claves directamente a `permissions.py`.
+3. Diseñar en una etapa posterior RBAC administrable y `PortalMembership`, sin
+   confundirlos con defectos pendientes de las Etapas 1 o 2.
+4. Proteger uploads y retirar datos operativos del control de versiones con custodia recuperable.
+5. Completar CFDI productivo y E2E de ETS→Certificado y Facturación→Pago.
+6. Incorporar CI, observabilidad, despliegue reproducible y ejecución periódica del restore drill.
+7. Mantener el inventario/conformidad de rutas y completar E2E browser por rol.
+
+## Documentación de este corte
+
+La auditoría conserva sus diez entregables como fotografía histórica. La Etapa
+2A agregó el contrato de recuperación, el cierre técnico, la migración de
+reconciliación y scripts reproducibles; migró la base local y regeneró el
+respaldo oficial. La Etapa 2B actualizó el Catálogo Institucional, documentó las
+brechas contra bootstrap/API y agregó un validador sin cambiar claves ni
+comportamiento de autorización. Se sincronizaron decisiones, flujo,
+observaciones, deuda, estado canónico, índice e inventario oficial.

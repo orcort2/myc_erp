@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-04
+> Corte verificado: 2026-08-04 — Etapa 2 en revisión
 
 # Estado actual del ERP MYC
 
@@ -40,7 +40,7 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 | Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada; falta retirar la superficie autenticadora duplicada de ETS y completar E2E de verificación pública. |
 | Plantillas Maestras | Descarga, carga, identificación, detección semántica por fingerprint, readiness y generación del PDF autenticado desde el Master quedaron validados; falta automatizar el E2E autenticado completo del retorno. |
 | Catálogos SAT | Blindar la fuente oficial y completar E2E de consumidores autorizados. |
-| Base de datos y migraciones | Plan de retiro legacy, comparación metadata↔BD y prueba de upgrade desde respaldo. |
+| Base de datos y migraciones | Integridad, drift, downgrade, upgrade histórico, respaldo y restore están validados; sólo permanece el plan independiente de retiro legacy. |
 
 ## Módulos en desarrollo
 
@@ -104,6 +104,9 @@ permanece como posibilidad futura opcional no autorizada.
 7. Actividad transversal está implementada con permisos, entidad genérica,
    atención, no leídos, adjuntos y eventos; permanece en desarrollo hasta
    completar navegación directa a cada registro y revisión formal del cierre.
+8. Etapa 2A y 2B están técnicamente terminadas y en revisión: persistencia
+   converge en `f27f8a90b1c3` con recuperación reproducible; el Modelo
+   Institucional gobierna nuevas capacidades sin implementar todavía RBAC.
 
 ## Módulos pendientes o no iniciados
 
