@@ -13,9 +13,22 @@
 ## Resumen
 
 - Módulos o superficies clasificadas: **36**
-- Operaciones HTTP inventariadas como microacciones: **305**
+- Agrupaciones de acción: **213**
+- Microacciones totales revisadas: **798**
+- Operaciones HTTP inventariadas como microacciones existentes: **305**
 - Clases de schema inspeccionadas: **233**
-- Microacciones de campo propuestas: **598**
+- Microacciones de campo propuestas: **493**
+- Permisos institucionales propuestos únicos: **658**
+
+Snapshot de consistencia reproducible contra el bootstrap del 2026-08-04:
+
+- Permisos efectivos únicos declarados por `permissions.py`: **140**
+- Permisos actuales que coinciden con una propuesta institucional: **61**
+- Permisos actuales pendientes de reconciliación funcional: **79**
+- Permisos mínimos únicos usados por el inventario HTTP: **72**
+- Permisos HTTP actuales pendientes de reconciliación con el catálogo: **19**
+- Permisos HTTP catalogados sin declaración bootstrap explícita: **1**
+- Permisos propuestos aún no implementados: **597**
 
 ## Convención
 
@@ -32,6 +45,34 @@
 3. Los permisos heredados por rol pueden recibir `allow` o `deny` individual, salvo prohibiciones institucionales no delegables.
 4. Una autorización por Ticket debe ser temporal, contextual y consumible; no reemplaza un permiso permanente.
 5. Las microacciones sensibles deben exigir motivo, auditoría o Actividad según su gobierno posterior.
+
+## Gobierno obligatorio desde la Etapa 2
+
+Toda funcionalidad nueva debe clasificarse antes de implementarse mediante la
+jerarquía `Módulo → Acción → Microacción`. Ningún permiso nuevo puede agregarse
+directamente a `permissions.py`: primero debe existir aquí, superar revisión
+funcional y quedar aprobado como permiso institucional. Sólo después puede
+incorporarse al bootstrap, asignarse a roles y llegar a usuarios.
+
+```text
+Catálogo Institucional
+        ↓
+Revisión funcional
+        ↓
+Permiso institucional
+        ↓
+permissions.py (bootstrap temporal)
+        ↓
+Roles / grupos
+        ↓
+Usuarios
+```
+
+El catálogo no genera código. Ownership, scopes, denegaciones, temporalidad y
+protecciones críticas son dimensiones adicionales de autorización y nunca se
+reducen a mostrar u ocultar elementos frontend. Las diferencias verificadas
+contra el bootstrap y el guard HTTP se mantienen en
+[`security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](security/CAPABILITY_MODEL_GAPS_2026-08-04.md).
 
 # 1. API pública del Motor
 

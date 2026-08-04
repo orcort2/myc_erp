@@ -93,7 +93,17 @@ su permiso mínimo antes de ejecutar el endpoint.
 ## Mantenimiento
 
 Todo cambio a `backend/app/core/permissions.py` debe sincronizar este documento.
-El catálogo institucional del 2026-08-04 es insumo funcional de la siguiente
-etapa, no reemplazo automático de esta matriz: cada permiso propuesto debe
-revisarse contra claves vigentes, endpoint consumidor, ownership y cobertura
-401/403 antes de aprobarse.
+Además, ningún permiso nuevo puede agregarse directamente a ese archivo: debe
+existir primero en el Catálogo Institucional bajo la jerarquía
+`Módulo→Acción→Microacción`, superar revisión funcional y quedar aprobado como
+permiso institucional. El catálogo es autoridad funcional, pero no reemplaza
+ni genera automáticamente esta matriz ejecutable.
+
+La reconciliación verificable se ejecuta con
+`venv/bin/python scripts/validate_capability_catalog.py --check`. Al corte se
+identificaron 79 claves bootstrap pendientes de reconciliación documental, 19
+permisos HTTP sin coincidencia literal en el catálogo y una clave HTTP
+(`reference_standard_certificates.delete`) satisfecha sólo por el comodín
+administrativo. Estas brechas no autorizan renombrados ni cambios funcionales;
+su análisis está en
+[`security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](security/CAPABILITY_MODEL_GAPS_2026-08-04.md).
