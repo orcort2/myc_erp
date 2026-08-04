@@ -120,3 +120,34 @@ recurso. En esta etapa sin migraciones, el vínculo se resuelve por correo
 principal/contacto activo y cualquier ambigüedad falla cerrada. Producción
 rechaza secretos JWT inseguros; el frontend usa permisos efectivos sólo para
 presentación y el backend conserva toda autoridad.
+
+## D-2026-08-04 — Autoridad de portal y administración futura de permisos
+
+La Etapa 1 queda aprobada con su contención sin migraciones. La coincidencia
+normalizada por correo principal/contacto continúa únicamente como puente
+fail-closed de compatibilidad: no será la autoridad definitiva del portal. La
+siguiente etapa debe migrar a una relación persistente y auditable
+`User`–`PortalMembership`–`Client`; el cliente efectivo seguirá resolviéndose
+en backend y nunca desde un `client_id` suministrado por el consumidor.
+
+La autoridad administrativa futura se gestionará desde Ajustes mediante:
+
+- roles y grupos como conjuntos de permisos;
+- múltiples roles o grupos por usuario;
+- concesiones y denegaciones individuales;
+- alcances por registro;
+- permisos temporales;
+- protección de roles y capacidades críticas.
+
+`backend/app/core/permissions.py` queda reconocido como bootstrap ejecutable y
+compatibilidad temporal, no como el modelo administrativo definitivo. El
+archivo
+[`../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md`](../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md)
+se adopta como insumo funcional obligatorio para diseñar la etapa siguiente.
+Contiene capacidades existentes y permisos propuestos: ninguna clave, alcance
+o microacción se traslada automáticamente al código sin revisión funcional,
+reconciliación con el inventario ejecutable y aprobación arquitectónica.
+
+Esta decisión no implementa Ajustes, modelos, migraciones ni claves nuevas; es
+un mandato de diseño para una etapa separada y no un defecto no atendido del
+alcance cerrado de Contención de Seguridad Etapa 1.

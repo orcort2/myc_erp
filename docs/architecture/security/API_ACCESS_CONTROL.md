@@ -4,7 +4,7 @@
 >
 > Autoridad: Alta para clasificación y enforcement HTTP
 >
-> Corte verificado: 2026-08-03
+> Corte verificado: 2026-08-04
 
 # Control de acceso de la API
 
@@ -77,6 +77,11 @@ a exactamente un cliente activo, sea por correo principal o contacto activo.
 Cero o múltiples coincidencias fallan con 403; esta resolución fail-closed
 evita seleccionar tenant desde HTTP sin introducir una migración en esta etapa.
 
+Este mecanismo por correo es una compatibilidad transitoria de la Etapa 1, no
+la autoridad definitiva. La siguiente etapa deberá migrarlo a la relación
+persistente y auditable `User`–`PortalMembership`–`Client`, conservando la
+resolución backend, el fail-closed y el ownership por recurso.
+
 Todos los listados se filtran por el cliente derivado. La descarga de certificado
 comprueba primero `certificate.service_order.client_id`, visibilidad y archivo;
 una referencia ajena responde 404 para no revelar existencia. Una descarga
@@ -104,3 +109,8 @@ controles reducen confusión, pero el backend continúa siendo la única autorid
 Esta etapa no cambia almacenamiento de tokens, rotación/revocación/jti, rate
 limit, MFA, uploads, esquema ni migraciones. Esos controles permanecen en el
 registro canónico de deuda y no reducen el enforcement aquí documentado.
+
+Tampoco implementa el modelo administrable de permisos. La matriz de
+`permissions.py` continúa como bootstrap/compatibilidad y el catálogo
+institucional del 2026-08-04 sólo puede alimentar el diseño posterior después
+de revisión; no autoriza cambios automáticos de claves ni reglas vigentes.

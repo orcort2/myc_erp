@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `../archive/security/permisos.md` y matrices de las especificaciones V2/V3
 >
-> Corte auditado: 2026-08-03 contra `backend/app/core/permissions.py` y el inventario FastAPI
+> Corte auditado: 2026-08-04 contra `backend/app/core/permissions.py` y el inventario FastAPI
 
 # Matriz vigente de roles y permisos
 
@@ -14,6 +14,13 @@ Esta matriz documenta lo declarado en código. La aplicación transversal se
 rige por [`security/API_ACCESS_CONTROL.md`](security/API_ACCESS_CONTROL.md) y
 su inventario de 306 operaciones; cada servicio puede exigir controles más
 específicos además del mínimo central.
+
+`backend/app/core/permissions.py` es el bootstrap ejecutable y la capa de
+compatibilidad temporal de la autoridad actual. No es el modelo administrativo
+definitivo. La etapa posterior deberá sustituir su administración estática por
+roles/grupos múltiples, overrides allow/deny, alcances por registro, permisos
+temporales y protección de capacidades críticas sin cambiar claves por mera
+inferencia documental.
 
 ## Roles
 
@@ -75,8 +82,8 @@ conserva el permiso canónico `resolution_center.*` de la etapa.
    `invoices.*`, `portal.*` y permisos `*_own`.
 2. El guard central aplica el mínimo clasificado; ownership y reglas de estado
    específicas continúan en el servicio propietario.
-3. Los roles se administran en código; no existe CRUD completo de
-   roles/permisos.
+3. Los roles se administran en código como bootstrap temporal; la administración
+   definitiva desde Ajustes es trabajo obligatorio de la etapa posterior.
 4. El frontend filtra navegación y acciones principales, pero no constituye
    autoridad y aún requiere E2E browser por rol para todos los módulos.
 
@@ -85,4 +92,8 @@ su permiso mínimo antes de ejecutar el endpoint.
 
 ## Mantenimiento
 
-Todo cambio a `backend/app/core/permissions.py` debe sincronizar este documento. Una futura matriz generada puede sustituir esta tabla si conserva rol, permiso, endpoint consumidor y cobertura 401/403.
+Todo cambio a `backend/app/core/permissions.py` debe sincronizar este documento.
+El catálogo institucional del 2026-08-04 es insumo funcional de la siguiente
+etapa, no reemplazo automático de esta matriz: cada permiso propuesto debe
+revisarse contra claves vigentes, endpoint consumidor, ownership y cobertura
+401/403 antes de aprobarse.

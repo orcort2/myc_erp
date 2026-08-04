@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-03
+> Corte verificado: 2026-08-04
 
 # Estado actual del ERP MYC
 
@@ -87,15 +87,19 @@ expediente y el vertical Certificados end-to-end; fue aprobada mediante
 `EN REVISIÓN`. La IA
 permanece como posibilidad futura opcional no autorizada.
 
-1. La contención transversal de seguridad quedó terminada y en revisión:
+1. La Contención de Seguridad Etapa 1 quedó **APROBADA Y CERRADA**:
    deny-by-default, JWT productivo seguro, clasificación 306/306 y portal
-   aislado. Permanecen revocación/rotación, `localStorage`, rate limit, MFA y
-   E2E browser exhaustivo por rol.
+   aislado. PortalMembership, RBAC administrable, revocación/rotación,
+   `localStorage`, rate limit, MFA y E2E browser exhaustivo por rol pertenecen
+   a etapas posteriores y no reabren este cierre.
 2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
 3. Hojas de Campo sin cierre semántico, automatizaciones metrológicas y E2E de las 23 plantillas.
 4. Facturación ya integra en el Workbench único el registro e historial de pagos, comprobante PDF, saldos/estado en tiempo real, cartera y refresco del readiness financiero del ETS. Permanecen el borrador no autosalvado, notas/documentos internos y el flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
 5. Administración y roles sin gestión dinámica; el filtrado visual por
    permisos efectivos ya está aplicado en navegación y acciones principales.
+   La siguiente etapa de autoridad deberá implementar el diseño obligatorio
+   de múltiples roles/grupos, overrides, alcances, temporalidad y protecciones
+   críticas, usando el catálogo institucional del 2026-08-04 sólo tras revisión.
 6. Toolkit, infraestructura y UX con diagnósticos, puertos, pruebas de despliegue, páginas monolíticas y bundle pendientes.
 7. Actividad transversal está implementada con permisos, entidad genérica,
    atención, no leídos, adjuntos y eventos; permanece en desarrollo hasta
@@ -117,7 +121,7 @@ permanece como posibilidad futura opcional no autorizada.
 | P0 | Dejar a Calidad como único autenticador de certificados. |
 | P1 | Cerrar Hojas de Campo/Captura y su E2E operativo. |
 | P1 | Completar la persistencia y el flujo fiscal de Facturación. |
-| P1 | Decidir gestión dinámica o congelamiento de roles y mantener alineada la matriz ya aplicada a backend/frontend. |
+| P1 | Diseñar e implementar en una etapa separada PortalMembership persistente y RBAC administrable; `permissions.py` permanece bootstrap temporal y el catálogo 2026-08-04 requiere revisión previa. |
 | P2 | Retirar compatibilidad legacy verificada y reducir deuda de UX, bundle, scripts e infraestructura. |
 
 ## Regla de mantenimiento
