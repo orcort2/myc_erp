@@ -11,6 +11,19 @@ backend/resources/sat/*.xls
 backend/resources/sat/*.xlsx
 storage/temporales/*
 !storage/temporales/.gitkeep
+storage/*
+!storage/.gitkeep
+backup_erp_myc_antes_prueba.sql
+docs.zip
+backend/app.zip
+frontend/src.zip
+*.bak
+*.tmp
+._*
+/BytesIO
+/from
+/import
+/io
 
 venv/
 __pycache__/
