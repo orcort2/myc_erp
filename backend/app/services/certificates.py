@@ -27,7 +27,8 @@ from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.certificate_authentication import authenticate_certificate_pdf
 from app.services.certificate_matching_engine import validate_certificate_pdf_match
-from app.services.storage_service import delete_if_unreferenced, resolve_storage_path, safe_filename, save_upload
+from app.services.file_security import validate_upload
+from app.services.storage_service import delete_if_unreferenced, resolve_storage_path, safe_filename, save_validated_content
 
 
 TERMINAL_STATUSES = {"released_to_client", "released", "cancelled"}
@@ -678,15 +679,14 @@ def _storage_dir(certificate: Certificate) -> Path:
 
 
 def _save_upload(certificate: Certificate, upload: UploadFile, version_number: int) -> tuple[str, str]:
-    original = upload.filename or "certificado.pdf"
-    if not original.lower().endswith(".pdf"):
-        raise HTTPException(status_code=422, detail="Solo se permiten archivos PDF")
+    validated = validate_upload(upload, "certificate_pdf")
+    original = validated.original_filename
     filename = f"{certificate.expected_folio or certificate.folio}_v{version_number}_{safe_filename(original, fallback='certificado.pdf')}"
-    stored_file = save_upload(
-        upload,
+    stored_file = save_validated_content(
         directory=_storage_dir(certificate),
         filename=filename,
-        allowed_extensions={".pdf"},
+        content=validated.content,
+        original_filename=original,
     )
     return str(stored_file.absolute_path), original
 

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
-from zipfile import BadZipFile, ZipFile
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import Select, select
@@ -18,32 +17,19 @@ from app.schemas.controlled_document import (
     ControlledDocumentVersionCreate,
 )
 from app.services.audit_logs import write_audit_log
-from app.services.storage_service import build_storage_path
+from app.services.file_security import validate_upload
+from app.services.storage_service import save_validated_content
 
 
 MAX_MASTER_FILE_BYTES = 20 * 1024 * 1024
-
-
-def _validate_master_xlsx(upload: UploadFile, raw: bytes) -> None:
-    filename = upload.filename or ""
-    if Path(filename).suffix.lower() != ".xlsx":
-        raise HTTPException(status_code=422, detail="La Plantilla Maestra debe ser un archivo .xlsx")
-    if len(raw) > MAX_MASTER_FILE_BYTES:
-        raise HTTPException(status_code=422, detail="El archivo XLSX excede el máximo de 20 MB")
-    try:
-        with ZipFile(BytesIO(raw)) as archive:
-            if "[Content_Types].xml" not in archive.namelist() or "xl/workbook.xml" not in archive.namelist():
-                raise ValueError("estructura XLSX incompleta")
-    except (BadZipFile, ValueError) as exc:
-        raise HTTPException(status_code=422, detail="El archivo no es un XLSX válido") from exc
 
 
 def create_certificate_master(
     db: Session, *, code: str, name: str, description: str | None, revision: str,
     effective_date, expires_on, upload: UploadFile, user_id: int | None,
 ) -> ControlledDocument:
-    raw = upload.file.read()
-    _validate_master_xlsx(upload, raw)
+    validated = validate_upload(upload, "certificate_master")
+    raw = validated.content
     if expires_on and effective_date and expires_on <= effective_date:
         raise HTTPException(status_code=422, detail="La fecha de caducidad debe ser posterior a la vigencia")
     document = ControlledDocument(code=code.strip(), name=name.strip(), document_type="certificate_master",
@@ -52,10 +38,10 @@ def create_certificate_master(
     db.flush()
     original = upload.filename or f"{code}.xlsx"
     stored_name = f"{document.id}-{sha256(raw).hexdigest()[:12]}.xlsx"
-    target = build_storage_path(directory=f"certificate-masters/{document.id}", filename=stored_name)
-    target.write_bytes(raw)
+    stored = save_validated_content(directory=f"certificate-masters/{document.id}", filename=stored_name,
+        content=raw, original_filename=original)
     version = ControlledDocumentVersion(document_id=document.id, revision=revision.strip(),
-        file_path=f"certificate-masters/{document.id}/{target.name}", original_filename=original,
+        file_path=stored.relative_path, original_filename=original,
         mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", checksum=sha256(raw).hexdigest(),
         file_size_bytes=len(raw), effective_date=effective_date, expires_on=expires_on, status="draft", uploaded_by_id=user_id)
     document.versions.append(version)

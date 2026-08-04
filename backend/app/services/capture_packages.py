@@ -27,7 +27,8 @@ from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.audit_logs import write_audit_log
 from app.services.certificates import CAPTURE_READY_STATUSES
 from app.services.master_template_fingerprints import detect_service_type
-from app.services.storage_service import build_storage_path, resolve_storage_path
+from app.services.file_security import POLICIES, validate_content, validate_upload
+from app.services.storage_service import resolve_storage_path, save_validated_content
 
 
 EXCEL_EXTENSIONS = {".xlsx", ".xlsm", ".xls"}
@@ -334,8 +335,9 @@ def upload_capture_files(db: Session, service_order_id: int, files: list[UploadF
     ignored_auxiliary: list[str] = []
     ignored_unsupported: list[str] = []
     for upload in files:
-        raw = upload.file.read()
-        if (upload.filename or "").lower().endswith(".zip"):
+        validated = validate_upload(upload, "capture_package")
+        raw = validated.content
+        if validated.extension == ".zip":
             with zipfile.ZipFile(BytesIO(raw)) as archive:
                 for info in archive.infolist():
                     if info.is_dir():
@@ -347,7 +349,10 @@ def upload_capture_files(db: Session, service_order_id: int, files: list[UploadF
                     if Path(filename).suffix.lower() not in EXCEL_EXTENSIONS or filename.startswith("~$"):
                         ignored_unsupported.append(info.filename)
                         continue
-                    candidates.append((filename, archive.read(info)))
+                    member = archive.read(info)
+                    suffix = Path(filename).suffix.lower()
+                    validate_content(member, suffix, POLICIES["capture_package"])
+                    candidates.append((filename, member))
         else:
             filename = Path(upload.filename or "").name
             if _is_macos_auxiliary(upload.filename or ""):
@@ -365,9 +370,11 @@ def upload_capture_files(db: Session, service_order_id: int, files: list[UploadF
         record.validation_results = _validate_excel(raw, suffix, certificate) if certificate else {"file": {"status": "no_identificado", "message": "El nombre no coincide con un Excel entregado por el ERP"}}
         db.add(record)
         db.flush()
-        target = build_storage_path(directory=f"capture/{order.id}", filename=f"{record.id}-{filename}")
-        target.write_bytes(raw)
-        record.stored_path = f"capture/{order.id}/{target.name}"
+        stored = save_validated_content(
+            directory=f"capture/{order.id}", filename=f"{record.id}-{filename}",
+            content=raw, original_filename=filename,
+        )
+        record.stored_path = stored.relative_path
         if certificate:
             _mark_capture_started(db, certificate, user_id=user_id, filename=filename)
         warning_keys, mismatch_keys = _validation_issue_keys(record.validation_results)
@@ -378,6 +385,7 @@ def upload_capture_files(db: Session, service_order_id: int, files: list[UploadF
             "status": record.identification_status,
             "certificate_status": certificate.status if certificate else None,
             "validation": record.validation_results,
+            "checksum_sha256": stored.checksum_sha256,
             "warnings": warning_keys,
             "mismatches": mismatch_keys,
         })

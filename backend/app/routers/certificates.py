@@ -32,7 +32,7 @@ from app.services.certificates import (
     upload_certificate_pdf,
     validate_pdf_match,
 )
-from app.services.storage_service import resolve_storage_path
+from app.services.storage_service import require_deliverable_file
 from app.services.certificate_authentication import authenticate_certificate_pdf
 from app.services.auth import require_permission
 
@@ -152,9 +152,7 @@ def download_certificate_capture_master(
     master = readiness["master"]
     if master is None or not master["stored_path"]:
         raise HTTPException(status_code=404, detail="El certificado no tiene un Master identificado")
-    path = resolve_storage_path(master["stored_path"])
-    if path is None or not path.is_file():
-        raise HTTPException(status_code=404, detail="El archivo Master identificado no está disponible")
+    path = require_deliverable_file(master["stored_path"], not_found_detail="El archivo Master identificado no está disponible")
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -243,9 +241,7 @@ def get_authenticated_certificate_pdf(
     certificate = get_certificate(db, certificate_id)
     if not certificate.authenticated_pdf_path:
         raise HTTPException(status_code=404, detail="El certificado aun no tiene PDF autenticado")
-    path = resolve_storage_path(certificate.authenticated_pdf_path)
-    if path is None or not path.exists():
-        raise HTTPException(status_code=404, detail="PDF autenticado no encontrado")
+    path = require_deliverable_file(certificate.authenticated_pdf_path, not_found_detail="PDF autenticado no encontrado")
     folio = certificate.expected_folio or certificate.folio
     code = certificate.authentication_code or "sin-codigo"
     filename = f"Certificado_{folio}_{code}.pdf"
@@ -261,9 +257,7 @@ def get_original_certificate_pdf(
     certificate = get_certificate(db, certificate_id)
     if not certificate.final_pdf_path:
         raise HTTPException(status_code=404, detail="El certificado aun no tiene PDF original")
-    path = resolve_storage_path(certificate.final_pdf_path)
-    if path is None or not path.exists():
-        raise HTTPException(status_code=404, detail="PDF original no encontrado")
+    path = require_deliverable_file(certificate.final_pdf_path, not_found_detail="PDF original no encontrado")
     filename = certificate.final_pdf_original_filename or f"Certificado_{certificate.expected_folio or certificate.folio}.pdf"
     return FileResponse(path, media_type="application/pdf", filename=filename)
 

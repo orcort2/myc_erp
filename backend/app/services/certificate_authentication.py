@@ -23,7 +23,7 @@ from app.models.service_order import ServiceOrder
 from app.schemas.certificate import CertificateVerificationRead
 from app.services.audit_logs import write_audit_log
 from app.services.office_converter import resolve_office_converter
-from app.services.storage_service import build_storage_path, relative_storage_path, resolve_storage_path
+from app.services.storage_service import atomic_write, build_storage_path, relative_storage_path, resolve_storage_path
 
 
 logger = logging.getLogger(__name__)
@@ -377,8 +377,8 @@ def authenticate_certificate_pdf(
             document_hash=document_hash,
             url=url,
         )
-        shutil.copy2(generated_pdf, final_pdf_target)
-        shutil.copy2(temporary_authenticated, authenticated_target)
+        atomic_write(final_pdf_target, generated_pdf.read_bytes())
+        atomic_write(authenticated_target, temporary_authenticated.read_bytes())
 
     for version in certificate.pdf_versions:
         version.is_current = False

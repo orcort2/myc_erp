@@ -38,7 +38,8 @@ from app.schemas.client import (
 from app.services.audit_logs import write_audit_log
 from app.services.sat_catalogs.service import latest_version, get_catalog
 from app.services.sat_catalogs.normalizers import normalize_search
-from app.services.storage_service import delete_if_unreferenced, save_upload
+from app.services.file_security import validate_upload
+from app.services.storage_service import delete_if_unreferenced, save_validated_content
 
 
 CLIENT_IMPORT_COLUMNS = [
@@ -820,11 +821,10 @@ def _extract_tax_constancy_fields_from_pdf_bytes(data: bytes) -> dict[str, str |
 
 
 def preview_tax_constancy(upload: UploadFile) -> ClientTaxConstancyPreviewRead:
-    original_name = upload.filename or "constancia_fiscal.pdf"
-    extension = Path(original_name).suffix.lower()
-    data = upload.file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="La constancia fiscal esta vacia")
+    validated = validate_upload(upload, "tax_constancy")
+    original_name = validated.original_filename
+    extension = validated.extension
+    data = validated.content
     if extension != ".pdf":
         return ClientTaxConstancyPreviewRead(
             available=False,
@@ -874,16 +874,15 @@ def upload_tax_constancy(
     user_id: int | None = None,
 ) -> Client:
     client = get_client(db, client_id)
-    original_name = upload.filename or "constancia_fiscal.pdf"
-    extension = Path(original_name).suffix.lower()
-    if extension not in {".pdf", ".png", ".jpg", ".jpeg"}:
-        raise HTTPException(status_code=400, detail="La constancia fiscal debe ser PDF o imagen")
+    validated = validate_upload(upload, "tax_constancy")
+    original_name = validated.original_filename
+    extension = validated.extension
     filename = f"constancia_fiscal_{uuid4().hex}{extension}"
-    stored_file = save_upload(
-        upload,
+    stored_file = save_validated_content(
         directory=Path("clientes") / f"cliente_{client.id}",
         filename=filename,
-        allowed_extensions={".pdf", ".png", ".jpg", ".jpeg"},
+        content=validated.content,
+        original_filename=original_name,
     )
     previous = {
         "tax_constancy_filename": client.tax_constancy_filename,
@@ -919,11 +918,9 @@ def upload_tax_constancy(
 
 
 def _read_tabular_file(upload: UploadFile) -> tuple[list[str], list[dict[str, str]]]:
-    original_name = upload.filename or ""
-    suffix = Path(original_name).suffix.lower()
-    data = upload.file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="El archivo de importacion esta vacio")
+    validated = validate_upload(upload, "client_import")
+    suffix = validated.extension
+    data = validated.content
 
     if suffix in {".xlsx", ".xlsm", ".xltx", ".xltm"}:
         workbook = load_workbook(BytesIO(data), read_only=True, data_only=True)

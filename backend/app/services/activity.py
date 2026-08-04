@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
-from zipfile import BadZipFile, ZipFile
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, or_, select
@@ -47,8 +45,9 @@ from app.services.notifications import (
 from app.services.storage_service import (
     resolve_storage_path,
     safe_filename,
-    save_upload,
+    save_validated_content,
 )
+from app.services.file_security import validate_upload
 
 
 ALLOWED_EXTENSIONS = {
@@ -587,57 +586,27 @@ def add_attachment(
             detail="Cada mensaje admite como máximo 10 archivos",
         )
     original_name = upload.filename or "archivo"
-    extension = Path(original_name).suffix.lower()
-    content_type = (upload.content_type or "application/octet-stream").lower()
-    if extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Extensión de archivo no permitida",
-        )
-    if (
-        content_type not in ALLOWED_CONTENT_TYPES
-        and content_type not in GENERIC_CONTENT_TYPES
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Tipo de archivo no permitido",
-        )
-    if (
-        content_type not in GENERIC_CONTENT_TYPES
-        and content_type not in CONTENT_TYPES_BY_EXTENSION[extension]
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="El tipo declarado no coincide con la extensión",
-        )
-    raw = upload.file.read(MAX_ATTACHMENT_BYTES + 1)
-    if len(raw) > MAX_ATTACHMENT_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="El archivo supera el límite de 15 MB",
-        )
-    if not raw:
-        raise HTTPException(status_code=422, detail="El archivo está vacío")
-    _validate_file_signature(raw, extension)
-    upload.file.seek(0)
+    validated = validate_upload(upload, "activity_attachment")
+    content_type = validated.declared_mime
     stored_name = (
         f"{uuid4().hex}_"
         f"{safe_filename(original_name, fallback='archivo')}"
     )
-    saved = save_upload(
-        upload,
+    saved = save_validated_content(
         directory=(
             f"activity/{message.thread.entity_type}/"
             f"{message.thread.entity_id}/{message.id}"
         ),
         filename=stored_name,
+        content=validated.content,
+        original_filename=validated.original_filename,
     )
     attachment = ActivityAttachment(
         message_id=message.id,
         original_name=original_name,
         stored_path=saved.relative_path,
         content_type=content_type,
-        size_bytes=len(raw),
+        size_bytes=len(validated.content),
         uploaded_by_id=user.id,
     )
     db.add(attachment)
@@ -650,53 +619,13 @@ def add_attachment(
         new_values={
             "message_id": message.id,
             "filename": original_name,
-            "size_bytes": len(raw),
+            "size_bytes": len(validated.content),
+            "checksum_sha256": validated.checksum_sha256,
         },
     )
     db.commit()
     db.refresh(attachment)
     return attachment
-
-
-def _validate_file_signature(raw: bytes, extension: str) -> None:
-    valid = False
-    if extension == ".pdf":
-        valid = raw.startswith(b"%PDF-")
-    elif extension in {".jpg", ".jpeg"}:
-        valid = raw.startswith(b"\xff\xd8\xff")
-    elif extension == ".png":
-        valid = raw.startswith(b"\x89PNG\r\n\x1a\n")
-    elif extension == ".webp":
-        valid = raw.startswith(b"RIFF") and raw[8:12] == b"WEBP"
-    elif extension in {".txt", ".md", ".csv"}:
-        try:
-            raw.decode("utf-8")
-            valid = True
-        except UnicodeDecodeError:
-            valid = False
-    elif extension in {".zip", ".docx", ".xlsx", ".pptx"}:
-        try:
-            with ZipFile(BytesIO(raw)) as archive:
-                names = set(archive.namelist())
-                if extension == ".zip":
-                    valid = True
-                else:
-                    folder = {
-                        ".docx": "word/",
-                        ".xlsx": "xl/",
-                        ".pptx": "ppt/",
-                    }[extension]
-                    valid = (
-                        "[Content_Types].xml" in names
-                        and any(name.startswith(folder) for name in names)
-                    )
-        except BadZipFile:
-            valid = False
-    if not valid:
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="El contenido real del archivo no coincide con su extensión",
-        )
 
 
 def attachment_path(

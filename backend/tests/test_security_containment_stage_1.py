@@ -182,7 +182,7 @@ def test_portal_is_anonymous_safe_and_enforces_two_client_certificate_ownership(
 
     with (
         patch("app.routers.client_portal.get_certificate", side_effect=lambda _db, item_id: certificates[item_id]),
-        patch("app.routers.client_portal.resolve_storage_path", side_effect=lambda value: Path(value)),
+            patch("app.routers.client_portal.require_deliverable_file", side_effect=lambda value, **_: Path(value)),
         patch("app.routers.client_portal.write_audit_log") as audit,
     ):
         client_a_headers = bearer(security_session.client_a_user)

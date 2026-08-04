@@ -3,6 +3,7 @@ from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -214,21 +215,24 @@ def test_attachment_checks_declared_type_and_signature(
 
     monkeypatch.setattr(
         activity_service,
-        "save_upload",
+        "save_validated_content",
         lambda *args, **kwargs: SimpleNamespace(
             relative_path="activity/client/1/evidencia.png"
         ),
     )
+    png = BytesIO()
+    Image.new("RGB", (1, 1), color="white").save(png, format="PNG")
+    raw_png = png.getvalue()
     valid = UploadFile(
         filename="evidencia.png",
-        file=BytesIO(b"\x89PNG\r\n\x1a\nvalid"),
+        file=BytesIO(raw_png),
         headers={"content-type": "image/png"},
     )
     attachment = activity_service.add_attachment(
         db, message.id, valid, context.author
     )
     assert attachment.content_type == "image/png"
-    assert attachment.size_bytes == 13
+    assert attachment.size_bytes == len(raw_png)
 
 
 def test_attention_assignment_notification_and_resolution(db: Session, context):

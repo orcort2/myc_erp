@@ -81,12 +81,16 @@ def test_approved_master_generates_and_authenticates_without_pdf_or_match():
         def fake_stamp(_source, target, **_kwargs):
             target.write_bytes(b"authenticated-pdf")
 
+        def fake_atomic_write(target, content):
+            target.write_bytes(content)
+
         with (
             patch("app.services.certificate_authentication.resolve_storage_path", return_value=master),
             patch("app.services.certificate_authentication.relative_storage_path", return_value="capture/1/10-Master_MYCA-07-2026-0001.xlsx"),
             patch("app.services.certificate_authentication.build_storage_path", side_effect=[final_target, authenticated_target]),
             patch("app.services.certificate_authentication._convert_master_to_pdf", return_value=generated),
             patch("app.services.certificate_authentication._stamp_pdf", side_effect=fake_stamp),
+            patch("app.services.certificate_authentication.atomic_write", side_effect=fake_atomic_write),
             patch("app.services.certificate_authentication.write_audit_log") as audit,
         ):
             updated = authenticate_certificate_pdf(db, certificate, user_id=4)
@@ -187,8 +191,9 @@ def test_authenticate_endpoint_returns_200_with_real_converter():
                 patch("app.services.certificate_authentication._approved_capture_master", return_value=capture_file),
                 patch("app.services.certificate_authentication.resolve_storage_path", return_value=master),
                 patch("app.services.certificate_authentication.relative_storage_path", return_value="capture/1/Master_MYCA-07-2026-0001.xlsx"),
-                patch("app.services.certificate_authentication.build_storage_path", side_effect=[final_target, authenticated_target]),
-                patch("app.services.certificate_authentication.write_audit_log") as audit,
+                    patch("app.services.certificate_authentication.build_storage_path", side_effect=[final_target, authenticated_target]),
+                    patch("app.services.certificate_authentication.atomic_write", side_effect=lambda target, content: target.write_bytes(content)),
+                    patch("app.services.certificate_authentication.write_audit_log") as audit,
                 TestClient(app) as client,
             ):
                 response = client.post("/api/certificates/1/authenticate")

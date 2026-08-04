@@ -11,7 +11,7 @@ from app.services.certificates import get_certificate, list_certificates
 from app.services.client_portal import PortalClientContext, get_portal_client_context
 from app.services.quotations import list_quotations
 from app.services.service_orders import list_service_orders
-from app.services.storage_service import resolve_storage_path
+from app.services.storage_service import require_deliverable_file
 
 
 router = APIRouter(prefix="/client-portal", tags=["client-portal"])
@@ -66,9 +66,7 @@ def get_client_portal_certificate_pdf(
         or not certificate.authenticated_pdf_path
     ):
         raise HTTPException(status_code=404, detail="Certificado no disponible")
-    path = resolve_storage_path(certificate.authenticated_pdf_path)
-    if path is None or not path.exists():
-        raise HTTPException(status_code=404, detail="PDF autenticado no encontrado")
+    path = require_deliverable_file(certificate.authenticated_pdf_path, not_found_detail="PDF autenticado no encontrado")
     write_audit_log(
         db,
         action="client_portal.certificate_downloaded",

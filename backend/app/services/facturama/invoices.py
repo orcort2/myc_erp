@@ -22,7 +22,8 @@ from app.services.facturama.client import FacturamaClient, response_diagnostics
 from app.services.facturama.exceptions import FacturamaError, FacturamaProviderResponseError
 from app.services.facturama.health import FacturamaHealthService
 from app.services.facturama.invoice_mapper import InvoiceValidationError, map_invoice
-from app.services.storage_service import build_storage_path, relative_storage_path, resolve_storage_path
+from app.services.file_security import POLICIES, validate_content, validate_xml
+from app.services.storage_service import atomic_write, build_storage_path, relative_storage_path, require_deliverable_file
 
 
 # Only ``issue_rejected`` represents a confirmed 4xx rejection and may be
@@ -473,9 +474,13 @@ async def recover_documents(db: Session, invoice_id: int, *, user_id: int, clien
             continue
         try:
             data = (await client.get(f"/api/Cfdi/{fmt}/issued/{invoice.facturama_id}")).json()
-            content = base64.b64decode(data["Content"])
+            content = base64.b64decode(data["Content"], validate=True)
+            if fmt == "xml":
+                validate_xml(content)
+            else:
+                validate_content(content, ".pdf", POLICIES["certificate_pdf"])
             target = build_storage_path(directory=f"facturama/{invoice.id}", filename=f"{invoice.cfdi_uuid}.{fmt}")
-            target.write_bytes(content)
+            atomic_write(target, content)
             setattr(invoice, attribute, relative_storage_path(target))
             write_audit_log(db, action=f"facturama.{fmt}_recovered", entity="invoices", entity_id=invoice.id, user_id=user_id, new_values={"path": getattr(invoice, attribute), "mime_type": data.get("ContentType", mime)})
         except Exception:
@@ -488,7 +493,8 @@ def read_document(invoice: Invoice, kind: str) -> tuple[bytes, str, str]:
     path = invoice.facturama_xml_path if kind == "xml" else invoice.facturama_pdf_path
     if not path:
         _error("document_pending", f"{kind.upper()} pendiente de recuperación.", 404)
-    target = resolve_storage_path(path)
-    if target is None or not target.exists():
+    try:
+        target = require_deliverable_file(path, not_found_detail="El documento no se encuentra en almacenamiento.")
+    except HTTPException:
         _error("document_missing", "El documento no se encuentra en almacenamiento.", 404)
     return target.read_bytes(), target.name, "application/xml" if kind == "xml" else "application/pdf"

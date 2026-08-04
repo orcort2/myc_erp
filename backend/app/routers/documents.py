@@ -24,7 +24,7 @@ from app.services.controlled_documents import (
     update_document,
     create_certificate_master,
 )
-from app.services.storage_service import resolve_storage_path
+from app.services.storage_service import require_deliverable_file
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -54,9 +54,9 @@ def download_document_version(
 ) -> FileResponse:
     document = get_document(db, document_id)
     version = next((item for item in document.versions if item.id == version_id), None)
-    path = resolve_storage_path(version.file_path if version else None)
-    if version is None or path is None or not path.is_file():
+    if version is None:
         raise HTTPException(status_code=404, detail="Archivo documental no disponible")
+    path = require_deliverable_file(version.file_path, not_found_detail="Archivo documental no disponible")
     return FileResponse(path, media_type=version.mime_type or "application/octet-stream", filename=version.original_filename or path.name)
 
 
