@@ -31,7 +31,7 @@ def security_session():
         db.add_all([admin_role, normal_role]); db.flush()
         admin = User(username="admin", email="admin@example.test", full_name="Admin", hashed_password="x", account_type="internal", status="active", role_id=admin_role.id, roles=[admin_role])
         normal = User(username="normal", email="normal@example.test", full_name="Normal", hashed_password="x", account_type="internal", status="active", role_id=normal_role.id, roles=[normal_role])
-        disabled = User(username="disabled", email="disabled@example.test", full_name="Disabled", hashed_password="x", account_type="internal", status="active", is_active=False, role_id=admin_role.id, roles=[admin_role])
+        disabled = User(username="disabled", email="disabled@example.test", full_name="Disabled", hashed_password="x", account_type="internal", status="disabled", is_active=False, role_id=admin_role.id, roles=[admin_role])
         pa = User(username="portal-a", email="portal-a@example.test", full_name="Portal A", hashed_password="x", account_type="client_portal", status="active")
         pb = User(username="portal-b", email="portal-b@example.test", full_name="Portal B", hashed_password="x", account_type="client_portal", status="active")
         ca, cb = Client(client_type="persona_moral", legal_name="Cliente A"), Client(client_type="persona_moral", legal_name="Cliente B")

@@ -16,6 +16,11 @@ from app.models.user import Role, User
 from app.core.portal.constants import PortalAccountType, UserAccountStatus
 from app.schemas.auth import UserLogin, UserRegister
 from app.services.audit_logs import write_audit_log
+from app.core.login_policy import (
+    is_temporarily_locked,
+    register_failed_login,
+    register_successful_login,
+)
 
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
@@ -138,11 +143,13 @@ def authenticate_user(db: Session, payload: UserLogin) -> dict:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales invalidas",
         )
-    if not verify_password(payload.password, user.hashed_password):
+    if is_temporarily_locked(user) or not verify_password(payload.password, user.hashed_password):
+        register_failed_login(db, user, auth_context="internal")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciales invalidas",
         )
+    register_successful_login(db, user, auth_context="internal")
     return _build_tokens(user)
 
 

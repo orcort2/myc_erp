@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import SelectionActionBar from '../components/SelectionActionBar.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
+import PortalAccessSettingsPanel from './settings/PortalAccessSettingsPanel.jsx';
 import SatCatalogField from '../components/invoice-workbench/SatCatalogField.jsx';
 import { emptyClientForm } from '../constants/forms.js';
 import { clientModalTabs, clientTemplateColumns } from '../constants/templates.js';
@@ -18,8 +19,6 @@ import {
   getClientDeleteEligibility,
   listClients,
   listSatCatalogs,
-  listPortalMemberships,
-  listPortalInvitations,
   previewClientImport,
   previewClientTaxConstancy,
   restoreClient,
@@ -75,17 +74,6 @@ function getMissingClientFields(client) {
     missing.push('Razón social');
   }
   return missing;
-}
-
-function ClientPortalAccessSummary({ clientId }) {
-  const [memberships, setMemberships] = useState([]);
-  const [invitations, setInvitations] = useState([]);
-  useEffect(() => {
-    if (!clientId) return;
-    Promise.all([listPortalMemberships(clientId), listPortalInvitations(clientId)]).then(([users, invites]) => { setMemberships(users); setInvitations(invites); }).catch(() => { setMemberships([]); setInvitations([]); });
-  }, [clientId]);
-  if (!clientId) return <div className="clients-empty">Guarda el cliente antes de administrar accesos.</div>;
-  return <div className="portal-notice"><strong>Accesos del Portal del Cliente</strong><p>{memberships.length} cuenta(s) vinculada(s) · {invitations.filter((item) => item.status === 'pending').length} invitación(es) pendiente(s).</p>{memberships.map((item) => <div key={item.id}><span>{item.full_name} · {item.email} · {item.status}</span></div>)}</div>;
 }
 
 function ClientsPage({ user = null }) {
@@ -1427,7 +1415,7 @@ function ClientsPage({ user = null }) {
                 </section>
               ) : null}
 
-              {clientModalTab === 'portal-access' ? <ClientPortalAccessSummary clientId={editingClientId} /> : null}
+              {clientModalTab === 'portal-access' ? (editingClientId ? <PortalAccessSettingsPanel initialClientId={editingClientId} /> : <div className="clients-empty">Guarda el cliente antes de administrar accesos.</div>) : null}
 
               {clientModalTab === 'activity' ? (
                 <section className="form-field--wide">

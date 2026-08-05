@@ -315,6 +315,18 @@ unión de permisos de sus roles y emite un JWT de contexto `client_portal`. Cada
 consulta deriva el `client_id` de esa membresía. Suspender o revocar la
 membresía corta el siguiente acceso aun si el token no ha expirado.
 
+El personal autorizado administra en Ajustes una bandeja global que distingue
+cuenta, registro público, solicitud, membresía e invitación. Comercial propone
+un cliente con justificación; Administración toma la solicitud, la aprueba o
+rechaza y, sólo al aprobar, asigna uno o varios roles y crea la membresía. Las
+acciones de cliente, roles, contacto principal, suspensión, reactivación y
+revocación usan endpoints específicos y producen auditoría.
+
+Dentro del Portal, `users.view` habilita la sección Usuarios. `users.invite` y
+`users.manage` agregan acciones sin aceptar `client_id`: el backend deriva la
+empresa desde la membresía del actor, limita roles a los globales o propios de
+esa empresa y protege al último administrador activo.
+
 ## Excepciones y rutas laterales
 
 - Cotización aprobada + ETS realmente virgen permite solicitar

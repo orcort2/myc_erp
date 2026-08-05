@@ -111,8 +111,12 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - **Portal de cliente:** integración técnica terminada y en revisión. Incluye
   identidad externa separada, registro, verificación, invitaciones, revisión y
   vínculo persistente `User`–`ClientPortalMembership`–`Client`, roles propios,
-  administración desde Ajustes/Clientes y experiencia responsive para empresa,
-  cotizaciones, servicios, equipos, certificados, facturas y pagos. Correo
+  administración conjunta desde Ajustes/Clientes con buscador, filtros,
+  multirrol, registros públicos, solicitudes, membresías, invitaciones,
+  configuración, auditoría y modal de siete pestañas; además incluye la sección
+  Usuarios dentro del portal, acotada a la empresa derivada de la membresía, y
+  experiencia responsive para empresa, cotizaciones, servicios, equipos,
+  certificados, facturas y pagos. Correo
   productivo, MFA, recuperación, sesiones revocables y comunicaciones
   bidireccionales permanecen fuera de esta entrega.
 - **Google Drive:** mencionado como integración objetivo, sin implementación.

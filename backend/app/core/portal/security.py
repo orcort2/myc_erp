@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.db import get_db
 from app.core.portal.constants import ClientPortalMembershipStatus, PortalAccountType, UserAccountStatus
+from app.core.login_policy import is_temporarily_locked, register_failed_login, register_successful_login
 from app.core.security import create_access_token, create_refresh_token, decode_token, verify_password
 from app.models.client import Client
 from app.models.client_portal import ClientPortal
@@ -93,22 +94,18 @@ def authenticate_portal_user(db: Session, identifier: str, password: str) -> dic
         or user.status != UserAccountStatus.ACTIVE.value
         or not user.is_active
         or user.email_verified_at is None
-        or (user.locked_until is not None and _as_utc(user.locked_until) > now)
+        or (user is not None and is_temporarily_locked(user, now=now))
         or not verify_password(password, user.hashed_password)
     )
     if invalid:
         if user is not None and user.account_type == PortalAccountType.CLIENT_PORTAL.value:
-            user.failed_login_attempts += 1
-            db.commit()
+            register_failed_login(db, user, auth_context="client_portal")
         raise _unauthorized()
     membership = resolve_active_membership(db, user.id)
     permissions = resolve_permissions(db, membership.id)
     if "portal.view" not in permissions:
         raise HTTPException(status_code=403, detail="La membresía no autoriza acceso al portal")
-    user.failed_login_attempts = 0
-    user.locked_until = None
-    user.last_login_at = now
-    db.commit()
+    register_successful_login(db, user, auth_context="client_portal")
     return build_portal_tokens(user, membership, permissions)
 
 

@@ -1,9 +1,11 @@
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.security import hash_password
 from app.models.user import Role, User
+from app.models.audit_log import AuditLog
+from app.models.client_portal_membership import ClientPortalMembership
 from app.core.portal.constants import PortalAccountType, UserAccountStatus
 from app.schemas.user import UserAdminCreate
 from app.services.audit_logs import write_audit_log
@@ -50,6 +52,7 @@ def _assign_roles(user: User, roles: list[Role]) -> None:
 
 def _serialize_user_for_audit(user: User) -> dict:
     return {
+        "username": user.username,
         "email": user.email,
         "full_name": user.full_name,
         "is_active": user.is_active,
@@ -85,6 +88,27 @@ def list_roles(db: Session) -> list[Role]:
     return list(db.scalars(select(Role).order_by(Role.name)).all())
 
 
+def list_user_activity(db: Session, user_id: int) -> list[AuditLog]:
+    membership_ids = select(ClientPortalMembership.id).where(
+        ClientPortalMembership.user_id == user_id
+    )
+    return list(
+        db.scalars(
+            select(AuditLog)
+            .where(
+                or_(
+                    (AuditLog.entity == "users") & (AuditLog.entity_id == user_id),
+                    (AuditLog.entity == "client_portal_memberships")
+                    & (AuditLog.entity_id.in_(membership_ids)),
+                    AuditLog.user_id == user_id,
+                )
+            )
+            .order_by(AuditLog.created_at.desc())
+            .limit(100)
+        ).all()
+    )
+
+
 def get_user_or_404(db: Session, user_id: int) -> User:
     user = db.scalar(
         select(User)
@@ -105,18 +129,26 @@ def create_user_admin(
     current_user: User | None = None,
 ) -> User:
     normalized_email = payload.email.strip().lower()
+    normalized_username = payload.username.strip().lower()
     normalized_name = payload.full_name.strip()
 
-    existing_user = db.scalar(select(User).where(User.email == normalized_email))
+    existing_user = db.scalar(
+        select(User).where(
+            or_(
+                func.lower(User.email) == normalized_email,
+                func.lower(User.username) == normalized_username,
+            )
+        )
+    )
     if existing_user is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ya existe un usuario con ese correo.",
+            detail="Ya existe un usuario con ese correo o nombre de usuario.",
         )
 
     roles = _resolve_active_roles(db, payload.role_names)
     user = User(
-        username=normalized_email,
+        username=normalized_username,
         email=normalized_email,
         full_name=normalized_name,
         hashed_password=hash_password(payload.password),
@@ -205,6 +237,9 @@ def update_user_status(
                 detail="No puedes desactivar al último administrador activo.",
             )
 
+    user.status = (
+        UserAccountStatus.ACTIVE.value if is_active else UserAccountStatus.DISABLED.value
+    )
     user.is_active = is_active
     db.add(user)
     write_audit_log(
@@ -224,15 +259,31 @@ def update_user_status(
 def update_user_admin(
     db: Session,
     user_id: int,
+    username: str | None = None,
     email: str | None = None,
     full_name: str | None = None,
     role_names: list[str] | None = None,
     is_active: bool | None = None,
     current_user: User | None = None,
+    profile_values: dict | None = None,
 ) -> User:
     user = get_user_or_404(db, user_id)
     previous_values = _serialize_user_for_audit(user)
     changed_fields: set[str] = set()
+
+    if username is not None:
+        normalized_username = username.strip().lower()
+        collision = db.scalar(
+            select(User).where(
+                func.lower(User.username) == normalized_username,
+                User.id != user_id,
+            )
+        )
+        if collision is not None:
+            raise HTTPException(status_code=409, detail="El nombre de usuario ya está registrado.")
+        if user.username != normalized_username:
+            user.username = normalized_username
+            changed_fields.add("username")
 
     if email is not None:
         normalized_email = email.strip().lower()
@@ -253,6 +304,11 @@ def update_user_admin(
         if user.full_name != normalized_name:
             user.full_name = normalized_name
             changed_fields.add("full_name")
+
+    for key, value in (profile_values or {}).items():
+        if value is not None and getattr(user, key) != value:
+            setattr(user, key, value)
+            changed_fields.add(key)
 
     if is_active is not None and user.is_active != is_active:
         update_user_status(db, user_id, is_active, current_user)

@@ -1,4 +1,4 @@
-import { Award, BadgeDollarSign, Building2, FileText, Home, LogOut, Menu, PackageSearch, Receipt, UserRound, Wrench, X } from 'lucide-react';
+import { Award, BadgeDollarSign, Building2, FileText, Home, LogOut, Menu, PackageSearch, Receipt, UserRound, UsersRound, Wrench, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 
 import BrandLockup from '../components/BrandLockup.jsx';
@@ -13,6 +13,7 @@ const entries = [
   { path: '/portal/certificados', label: 'Certificados', icon: Award, permission: 'certificates.view' },
   { path: '/portal/facturas', label: 'Facturas', icon: Receipt, permission: 'invoices.view' },
   { path: '/portal/pagos', label: 'Pagos', icon: BadgeDollarSign, permission: 'payments.view' },
+  { path: '/portal/usuarios', label: 'Usuarios', icon: UsersRound, permission: 'users.view' },
   { path: '/portal/perfil', label: 'Mi perfil', icon: UserRound, permission: 'profile.view' },
 ];
 

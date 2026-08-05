@@ -234,3 +234,16 @@ normalizan mediante `ClientPortalRolePermission` y
 entrega. Una empresa puede tener varias cuentas y cada membresía varios roles;
 el último administrador activo no puede retirarse. Los tokens de verificación e
 invitación se conservan exclusivamente como hash y son de un solo uso.
+
+## D-2026-08-05 — Administración unificada de cuentas y estado de acceso
+
+La administración visual reúne usuarios internos, cuentas externas, registros,
+solicitudes e invitaciones, pero conserva separados sus dominios y roles. Toda
+mutación organizacional se ejecuta mediante endpoints de negocio de membresía,
+vinculación o invitación; un formulario genérico nunca cambia el cliente.
+
+`User.status` es la autoridad funcional y `is_active` su reflejo de
+habilitación. `role_id` continúa únicamente como compatibilidad primaria; la
+relación `user_roles` es la autoridad multirrol. El bloqueo de autenticación se
+centraliza en una política común de cinco intentos y quince minutos, con
+auditoría y respuesta genérica para los contextos interno y del portal.

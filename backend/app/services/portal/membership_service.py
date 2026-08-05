@@ -9,15 +9,17 @@ from app.models.client import Client
 from app.models.client_portal_membership import ClientPortalMembership
 from app.models.client_portal_membership_role import ClientPortalMembershipRole
 from app.models.client_portal_role import ClientPortalRole
+from app.models.client_portal_role_permission import ClientPortalRolePermission
 from app.models.user import User
 from app.services.audit_logs import write_audit_log
 from app.models.client_link_request import ClientLinkRequest
 from app.models.portal_registration import PortalRegistration
+from app.models.notification import Notification
 from app.core.portal.constants import ClientLinkRequestStatus, PortalRegistrationStatus
 
 
 def _load(db: Session, membership_id: int) -> ClientPortalMembership:
-    item = db.scalar(select(ClientPortalMembership).where(ClientPortalMembership.id == membership_id).options(selectinload(ClientPortalMembership.user), selectinload(ClientPortalMembership.membership_roles).selectinload(ClientPortalMembershipRole.role)))
+    item = db.scalar(select(ClientPortalMembership).where(ClientPortalMembership.id == membership_id).options(*_membership_options()))
     if item is None:
         raise HTTPException(status_code=404, detail="Membresía no encontrada")
     return item
@@ -31,11 +33,38 @@ def _roles(db: Session, client_id: int, codes: list[str]) -> list[ClientPortalRo
 
 
 def serialize(item: ClientPortalMembership) -> dict:
-    return {"id": item.id, "client_id": item.client_id, "user_id": item.user_id, "username": item.user.username, "email": item.user.email, "full_name": item.user.full_name, "status": item.status, "is_primary_contact": item.is_primary_contact, "role_codes": [link.role.code for link in item.membership_roles], "created_at": item.created_at}
+    permissions = sorted(
+        {
+            permission.permission.code
+            for link in item.membership_roles
+            for permission in link.role.role_permissions
+            if permission.permission.is_active
+        }
+    )
+    source = "administrative"
+    if item.source_link_request is not None:
+        source = "public_registration"
+    elif item.source_invitation is not None:
+        source = "invitation"
+    return {"id": item.id, "client_id": item.client_id, "client_name": item.client.commercial_name or item.client.legal_name, "client_legal_name": item.client.legal_name, "client_commercial_name": item.client.commercial_name, "user_id": item.user_id, "username": item.user.username, "email": item.user.email, "full_name": item.user.full_name, "account_status": item.user.status, "account_is_active": item.user.is_active, "email_verified_at": item.user.email_verified_at, "last_login_at": item.user.last_login_at, "password_changed_at": item.user.password_changed_at, "must_change_password": item.user.must_change_password, "failed_login_attempts": item.user.failed_login_attempts, "locked_until": item.user.locked_until, "status": item.status, "is_primary_contact": item.is_primary_contact, "role_codes": [link.role.code for link in item.membership_roles], "created_at": item.created_at, "approved_at": item.approved_at, "approved_by": item.approved_by, "approved_by_name": item.approved_by_user.full_name if item.approved_by_user else None, "source": source, "effective_permissions": permissions}
+
+
+def _membership_options():
+    return (
+        selectinload(ClientPortalMembership.user),
+        selectinload(ClientPortalMembership.client),
+        selectinload(ClientPortalMembership.approved_by_user),
+        selectinload(ClientPortalMembership.membership_roles)
+        .selectinload(ClientPortalMembershipRole.role)
+        .selectinload(ClientPortalRole.role_permissions)
+        .selectinload(ClientPortalRolePermission.permission),
+        selectinload(ClientPortalMembership.source_link_request),
+        selectinload(ClientPortalMembership.source_invitation),
+    )
 
 
 def list_memberships(db: Session, client_id: int | None = None) -> list[dict]:
-    query = select(ClientPortalMembership).options(selectinload(ClientPortalMembership.user), selectinload(ClientPortalMembership.membership_roles).selectinload(ClientPortalMembershipRole.role)).order_by(ClientPortalMembership.created_at.desc())
+    query = select(ClientPortalMembership).options(*_membership_options()).order_by(ClientPortalMembership.created_at.desc())
     if client_id is not None:
         query = query.where(ClientPortalMembership.client_id == client_id)
     return [serialize(item) for item in db.scalars(query).all()]
@@ -109,7 +138,8 @@ def set_primary(db: Session, membership_id: int, actor_id: int) -> dict:
 
 
 def serialize_link(item: ClientLinkRequest) -> dict:
-    return {"id": item.id, "portal_registration_id": item.portal_registration_id, "proposed_client_id": item.proposed_client_id, "status": item.status, "request_reason": item.request_reason, "resolution_reason": item.resolution_reason, "resulting_membership_id": item.resulting_membership_id, "created_at": item.created_at}
+    registration = item.portal_registration
+    return {"id": item.id, "portal_registration_id": item.portal_registration_id, "proposed_client_id": item.proposed_client_id, "status": item.status, "request_reason": item.request_reason, "resolution_reason": item.resolution_reason, "resulting_membership_id": item.resulting_membership_id, "created_at": item.created_at, "updated_at": item.updated_at, "registration_user_id": registration.user_id, "registration_username": registration.user.username, "registration_email": registration.user.email, "registration_full_name": registration.user.full_name, "declared_company_name": registration.declared_company_name, "declared_company_rfc": registration.declared_company_rfc, "proposed_client_name": item.proposed_client.commercial_name or item.proposed_client.legal_name, "requested_by": item.requested_by, "requested_by_name": item.requested_by_user.full_name, "reviewed_by": item.reviewed_by, "reviewed_by_name": item.reviewed_by_user.full_name if item.reviewed_by_user else None, "reviewed_at": item.reviewed_at, "resolved_by": item.resolved_by, "resolved_by_name": item.resolved_by_user.full_name if item.resolved_by_user else None, "resolved_at": item.resolved_at}
 
 
 def list_registrations(db: Session) -> list[PortalRegistration]:
@@ -117,7 +147,43 @@ def list_registrations(db: Session) -> list[PortalRegistration]:
 
 
 def list_link_requests(db: Session) -> list[dict]:
-    return [serialize_link(item) for item in db.scalars(select(ClientLinkRequest).order_by(ClientLinkRequest.created_at.desc())).all()]
+    query = select(ClientLinkRequest).options(
+        selectinload(ClientLinkRequest.portal_registration).selectinload(PortalRegistration.user),
+        selectinload(ClientLinkRequest.proposed_client),
+        selectinload(ClientLinkRequest.requested_by_user),
+        selectinload(ClientLinkRequest.reviewed_by_user),
+        selectinload(ClientLinkRequest.resolved_by_user),
+    ).order_by(ClientLinkRequest.created_at.desc())
+    return [serialize_link(item) for item in db.scalars(query).all()]
+
+
+def take_link_request_for_review(db: Session, request_id: int, actor_id: int) -> dict:
+    item = db.get(ClientLinkRequest, request_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if item.status != ClientLinkRequestStatus.PENDING.value:
+        raise HTTPException(status_code=409, detail="La solicitud no está pendiente")
+    item.status = ClientLinkRequestStatus.UNDER_REVIEW.value
+    item.reviewed_by = actor_id
+    item.reviewed_at = datetime.now(timezone.utc)
+    write_audit_log(db, action="portal.link_request.review_started", entity="client_link_requests", entity_id=item.id, user_id=actor_id)
+    db.commit()
+    return next(row for row in list_link_requests(db) if row["id"] == item.id)
+
+
+def cancel_link_request(db: Session, request_id: int, reason: str | None, actor_id: int) -> dict:
+    item = db.get(ClientLinkRequest, request_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if item.status not in {ClientLinkRequestStatus.PENDING.value, ClientLinkRequestStatus.UNDER_REVIEW.value}:
+        raise HTTPException(status_code=409, detail="La solicitud ya fue resuelta")
+    item.status = ClientLinkRequestStatus.CANCELLED.value
+    item.resolved_by = actor_id
+    item.resolved_at = datetime.now(timezone.utc)
+    item.resolution_reason = reason
+    write_audit_log(db, action="portal.link_request.cancelled", entity="client_link_requests", entity_id=item.id, user_id=actor_id, new_values={"reason": reason})
+    db.commit()
+    return next(row for row in list_link_requests(db) if row["id"] == item.id)
 
 
 def create_link_request(db: Session, registration_id: int, client_id: int, reason: str | None, actor_id: int) -> dict:
@@ -161,6 +227,30 @@ def resolve_link_request(db: Session, request_id: int, *, approve: bool, reason:
     else:
         item.status = ClientLinkRequestStatus.REJECTED.value
         registration.status = PortalRegistrationStatus.REJECTED.value
+    notification_recipients = {registration.user_id, item.requested_by} - {actor_id}
+    for recipient_id in notification_recipients:
+        db.add(
+            Notification(
+                recipient_user_id=recipient_id,
+                actor_user_id=actor_id,
+                notification_type="portal_link_resolved",
+                title=(
+                    "Vinculación del portal aprobada"
+                    if approve
+                    else "Vinculación del portal rechazada"
+                ),
+                body=reason,
+                entity_type="client_link_request",
+                entity_id=item.id,
+                activity_message_id=None,
+                priority="normal",
+                metadata_json={
+                    "status": item.status,
+                    "registration_id": registration.id,
+                    "membership_id": item.resulting_membership_id,
+                },
+            )
+        )
     write_audit_log(db, action="portal.link_request.approved" if approve else "portal.link_request.rejected", entity="client_link_requests", entity_id=item.id, user_id=actor_id, new_values={"reason": reason, "membership_id": item.resulting_membership_id})
     db.commit()
     return serialize_link(item)

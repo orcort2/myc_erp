@@ -4,10 +4,10 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.portal.constants import ClientPortalMembershipStatus
 from app.models.user import User
-from app.schemas.portal.user import PortalLinkRequestCreate, PortalLinkRequestRead, PortalLinkRequestResolve, PortalMembershipCreate, PortalMembershipRead, PortalMembershipReason, PortalMembershipRolesUpdate
+from app.schemas.portal.user import PortalLinkRequestCreate, PortalLinkRequestRead, PortalLinkRequestResolve, PortalLinkRequestReview, PortalMembershipCreate, PortalMembershipRead, PortalMembershipReason, PortalMembershipRolesUpdate
 from app.schemas.portal.registration import PortalRegistrationRead
 from app.services.auth import require_permission
-from app.services.portal.membership_service import create_link_request, create_membership, list_link_requests, list_memberships, list_registrations, replace_roles, resolve_link_request, set_primary, update_status
+from app.services.portal.membership_service import cancel_link_request, create_link_request, create_membership, list_link_requests, list_memberships, list_registrations, replace_roles, resolve_link_request, set_primary, take_link_request_for_review, update_status
 
 router = APIRouter(prefix="/client-portal/memberships", tags=["client-portal-memberships"])
 review_router = APIRouter(prefix="/client-portal", tags=["client-portal-registration-review"])
@@ -68,6 +68,16 @@ def approve_link_request(request_id: int, payload: PortalLinkRequestResolve, db:
     return resolve_link_request(db, request_id, approve=True, reason=payload.reason, role_codes=payload.role_codes, actor_id=actor.id)
 
 
+@review_router.post("/link-requests/{request_id}/review", response_model=PortalLinkRequestRead)
+def review_link_request(request_id: int, db: Session = Depends(get_db), actor: User = Depends(require_permission("users.manage"))):
+    return take_link_request_for_review(db, request_id, actor.id)
+
+
 @review_router.post("/link-requests/{request_id}/reject", response_model=PortalLinkRequestRead)
 def reject_link_request(request_id: int, payload: PortalLinkRequestResolve, db: Session = Depends(get_db), actor: User = Depends(require_permission("users.manage"))):
     return resolve_link_request(db, request_id, approve=False, reason=payload.reason, role_codes=payload.role_codes, actor_id=actor.id)
+
+
+@review_router.post("/link-requests/{request_id}/cancel", response_model=PortalLinkRequestRead)
+def cancel_request(request_id: int, payload: PortalLinkRequestReview, db: Session = Depends(get_db), actor: User = Depends(require_permission("users.manage"))):
+    return cancel_link_request(db, request_id, payload.reason, actor.id)

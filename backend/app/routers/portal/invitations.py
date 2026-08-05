@@ -5,7 +5,7 @@ from app.core.db import get_db
 from app.models.user import User
 from app.schemas.portal.invitation import PortalInvitationAccept, PortalInvitationAccepted, PortalInvitationCreate, PortalInvitationRead, PortalInvitationValidate
 from app.services.auth import require_permission
-from app.services.portal.invitation_service import accept_invitation, cancel_invitation, create_invitation, list_invitations, validate_invitation
+from app.services.portal.invitation_service import accept_invitation, cancel_invitation, create_invitation, list_invitations, resend_invitation, validate_invitation
 
 admin_router = APIRouter(prefix="/client-portal/invitations", tags=["client-portal-invitations"])
 public_router = APIRouter(prefix="/portal/invitations", tags=["portal-invitations-public"])
@@ -29,6 +29,11 @@ def post_cancel(invitation_id: int, db: Session = Depends(get_db), actor: User =
 @admin_router.post("/{invitation_id}/revoke", response_model=PortalInvitationRead)
 def post_revoke(invitation_id: int, db: Session = Depends(get_db), actor: User = Depends(require_permission("users.manage"))):
     return cancel_invitation(db, invitation_id, actor.id, revoke=True)
+
+
+@admin_router.post("/{invitation_id}/resend", response_model=PortalInvitationRead)
+def post_resend(invitation_id: int, db: Session = Depends(get_db), actor: User = Depends(require_permission("users.manage"))):
+    return resend_invitation(db, invitation_id, actor.id)
 
 
 @public_router.get("/{token}", response_model=PortalInvitationValidate)

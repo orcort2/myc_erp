@@ -20,6 +20,11 @@ class PortalInvitationRead(BaseModel):
     expires_at: datetime
     role_codes: list[str]
     invitation_url: str | None = None
+    notes: str | None = None
+    invited_by: int
+    invited_by_name: str
+    created_at: datetime
+    accepted_at: datetime | None = None
 
 
 class PortalInvitationValidate(BaseModel):

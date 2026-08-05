@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de `project/`
 >
-> Corte actualizado: 2026-08-04
+> Corte actualizado: 2026-08-05
 
 # Estado operativo actual del ERP MYC
 
@@ -36,9 +36,10 @@
   retiró datos operativos/dump del índice sin borrar evidencia local.
 - El Portal del Cliente quedó **TERMINADO, EN REVISIÓN** con autenticación
   externa separada, registro/verificación, invitaciones, membresías y roles
-  propios, aislamiento persistente por cliente, administración interna y
-  experiencia frontend. Correo productivo, MFA, recuperación y revocación de
-  sesiones permanecen pendientes explícitos.
+  propios, aislamiento persistente por cliente, administración conjunta
+  multirrol en Ajustes/Clientes, configuración, bandejas de vinculación y
+  sección Usuarios dentro del Portal. Correo productivo, MFA, recuperación y
+  revocación de sesiones permanecen pendientes explícitos.
 
 ## Árbol de trabajo preservado
 
@@ -59,8 +60,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 ## Persistencia y migraciones
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
-- Head único oficial: `bd2270bc5282`.
-- Base local compartida: migrada y verificada en `bd2270bc5282`.
+- Head único oficial: `c8a51e2d7f40`.
+- Base local compartida: migrada y verificada en `c8a51e2d7f40`.
 - `alembic check`: **LIMPIO** tanto en la base local como en bases aisladas.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
@@ -85,33 +86,32 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 ## Respaldo oficial
 
 - Archivo: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño: 74,261,144 bytes.
-- `alembic_version` contenido: `bd2270bc5282`.
-- SHA-256: `733f3eeaf0da12f0d8b9e5912c6e851fec1b9ade49090487f23a9b12b4ac019b`.
+- Tamaño: 74,262,087 bytes.
+- `alembic_version` contenido: `c8a51e2d7f40`.
+- SHA-256: `1759eb94244429533c2ec990dae11b2b77c301a038913173639715cc1ff2b1a7`.
 - Estado: **ALINEADO CON EL HEAD OFICIAL**.
-- Restore drill: **CORRECTO** en PostgreSQL aislado; restauró 102 tablas,
-  confirmó la revisión y dejó `alembic check` limpio. El procedimiento
-  reproducible está en `architecture/database/SCHEMA_RECOVERY.md` y el comando
-  ejecutable en `scripts/toolkit/db/restore-drill.sh`.
+- Restore drill: **CORRECTO** para `c8a51e2d7f40`; restauró el dump en una base
+  PostgreSQL aislada, confirmó 112 tablas públicas y dejó `alembic check`
+  limpio. El procedimiento está en `architecture/database/SCHEMA_RECOVERY.md`.
 
 ## Validaciones ejecutadas
 
 | Validación | Resultado |
 | --- | --- |
-| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 444 passed, 19 subtests, 3 warnings |
+| Backend `PYTHONPATH=. ../venv/bin/pytest -q` | 450 passed, 19 subtests, 3 warnings; incluye trazabilidad de organización/aprobador y notificación de resolución del portal |
 | Pruebas dirigidas ETAPA 3 | 78 passed, 7 subtests |
 | Pruebas dirigidas de integridad de esquema | 3 passed, 1 warning deprecado de configuración Alembic |
 | Pruebas dirigidas de seguridad | 22 passed |
-| Frontend `node --test` | 31 passed |
+| Frontend `node --test` | 40 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Inventario FastAPI | 344/344 operaciones clasificadas; CSV coincide con runtime |
+| Inventario FastAPI | 356/356 operaciones clasificadas; CSV coincide con runtime |
 | Aislamiento portal A/B | membresía propia 200, recurso ajeno 404, anónimo 401; autenticador interno rechaza token del portal |
 | `scripts/myc doctor` | dependencias locales principales disponibles |
 | Alembic ciclo vacío base→head→base→head | correcto en PostgreSQL aislado |
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
 | Alembic check | limpio en local, ciclo y restores aislados |
-| Restore del respaldo oficial regenerado | último drill integral correcto en el corte f27; no repetido tras las migraciones ya aplicadas del portal |
+| Restore del respaldo oficial regenerado | correcto en PostgreSQL aislado: `c8a51e2d7f40`, 112 tablas, `alembic check` limpio |
 | Validador Catálogo Institucional/permissions/API | correcto (`--check`) |
 | Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
 | Metadatos Catálogo Funcional | 657/657 con naturaleza, criticidad y alcance; alineación completa |
@@ -141,16 +141,15 @@ los comandos vigentes de recuperación se documentan en
 
 ## Seguridad y operación
 
-- Inventario introspectado: 306 operaciones HTTP; 6 públicas básicas, 1
-  verificación pública firmada, 1 portal técnico controlado por entorno, 4 de
-  consumidor del Motor, 6 autenticadas, 270 con permiso, 5 con ownership
-  interno, 4 de portal con ownership y 9 administrativas.
+- Inventario introspectado: 356 operaciones HTTP, todas clasificadas por el
+  guard deny-by-default; el CSV canónico coincide con runtime.
 - Toda ruta interna pasa por el guard deny-by-default y el arranque/prueba de
   conformidad fallan si aparece una operación sin clasificación.
 - Clientes, Catálogo, Cotizaciones, ETS y Equipos exigen access JWT y permiso
   mínimo; no queda dependencia opcional de usuario en routers internos.
-- Portal exige rol Cliente, `portal.read` y vínculo único derivado en backend;
-  filtra listados, rechaza PDF ajeno con 404 y audita descargas propias.
+- Portal exige contexto propio, permisos efectivos y vínculo único derivado en
+  backend; filtra listados y usuarios, rechaza recursos/membresías ajenos con
+  404 y audita mutaciones y descargas.
 - Producción rechaza secreto JWT ausente, conocido, corto o de entropía
   insuficiente; desarrollo permite el valor local explícito con advertencia.
 - Refresh no autentica como access, access no renueva como refresh, el tipo es
@@ -167,13 +166,12 @@ los comandos vigentes de recuperación se documentan en
 
 ## Pendientes obligatorios antes de producción
 
-1. Programar las etapas posteriores de autoridad (`PortalMembership` y RBAC
-   administrable) y sesiones/rate limit; AUD-001, AUD-002 y AUD-003 quedaron
-   cerrados formalmente por evidencia sin ampliar la Etapa 1.
+1. Programar sesiones revocables/rate limit y la evolución del RBAC
+   institucional; PortalMembership y su administración ya están integrados.
 2. Someter cualquier capacidad nueva al flujo Catálogo → revisión funcional →
    permiso institucional; no agregar claves directamente a `permissions.py`.
-3. Diseñar en una etapa posterior RBAC administrable y `PortalMembership`, sin
-   confundirlos con defectos pendientes de las Etapas 1 o 2.
+3. Diseñar en una etapa posterior el RBAC institucional dinámico sin mezclar
+   roles internos con los roles ya normalizados del Portal.
 4. Aprobar la custodia durable/antimalware posterior; ETAPA 3 ya protegió
    uploads y retiró datos operativos del índice conservando evidencia local.
 5. Completar CFDI productivo y E2E de ETS→Certificado y Facturación→Pago.

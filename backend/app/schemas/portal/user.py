@@ -13,14 +13,30 @@ class PortalMembershipCreate(BaseModel):
 class PortalMembershipRead(BaseModel):
     id: int
     client_id: int
+    client_name: str
+    client_legal_name: str
+    client_commercial_name: str | None = None
     user_id: int
     username: str
     email: str
     full_name: str
+    account_status: str
+    account_is_active: bool
+    email_verified_at: datetime | None = None
+    last_login_at: datetime | None = None
+    password_changed_at: datetime | None = None
+    must_change_password: bool
+    failed_login_attempts: int
+    locked_until: datetime | None = None
     status: str
     is_primary_contact: bool
     role_codes: list[str]
     created_at: datetime
+    approved_at: datetime | None = None
+    approved_by: int | None = None
+    approved_by_name: str | None = None
+    source: str
+    effective_permissions: list[str] = Field(default_factory=list)
 
 
 class PortalMembershipReason(BaseModel):
@@ -42,6 +58,10 @@ class PortalLinkRequestResolve(BaseModel):
     role_codes: list[str] = Field(default_factory=lambda: ["viewer"], min_length=1)
 
 
+class PortalLinkRequestReview(BaseModel):
+    reason: str | None = Field(default=None, max_length=1000)
+
+
 class PortalLinkRequestRead(BaseModel):
     id: int
     portal_registration_id: int
@@ -51,3 +71,26 @@ class PortalLinkRequestRead(BaseModel):
     resolution_reason: str | None
     resulting_membership_id: int | None
     created_at: datetime
+    updated_at: datetime
+    registration_user_id: int
+    registration_username: str
+    registration_email: str
+    registration_full_name: str
+    declared_company_name: str
+    declared_company_rfc: str | None
+    proposed_client_name: str
+    requested_by: int
+    requested_by_name: str
+    reviewed_by: int | None
+    reviewed_by_name: str | None
+    reviewed_at: datetime | None
+    resolved_by: int | None
+    resolved_by_name: str | None
+    resolved_at: datetime | None
+
+
+class PortalScopedInvitationCreate(BaseModel):
+    email: str
+    full_name: str | None = None
+    role_codes: list[str] = Field(min_length=1)
+    notes: str | None = Field(default=None, max_length=1000)

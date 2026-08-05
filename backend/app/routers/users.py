@@ -8,6 +8,7 @@ from app.schemas.user import (
     UserAdminCreate,
     UserAdminRead,
     UserAdminUpdate,
+    UserActivityRead,
     UserRolesUpdate,
     UserStatusUpdate,
 )
@@ -16,6 +17,7 @@ from app.services.users import (
     create_user_admin,
     list_roles,
     list_users,
+    list_user_activity,
     update_user_admin,
     update_user_roles,
     update_user_status,
@@ -23,6 +25,15 @@ from app.services.users import (
 
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get("/{user_id}/activity", response_model=list[UserActivityRead])
+def get_user_activity(
+    user_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_permission("users.read")),
+):
+    return list_user_activity(db, user_id)
 
 
 @router.post("", response_model=UserAdminRead, status_code=201)
@@ -44,11 +55,20 @@ def patch_user_admin(
     return update_user_admin(
         db=db,
         user_id=user_id,
+        username=payload.username,
         email=payload.email,
         full_name=payload.full_name,
         role_names=payload.role_names,
         is_active=payload.is_active,
         current_user=current_user,
+        profile_values={
+            "phone": payload.phone,
+            "job_title": payload.job_title,
+            "area": payload.area,
+            "language": payload.language,
+            "timezone": payload.timezone,
+            "must_change_password": payload.must_change_password,
+        },
     )
 
 @router.get("", response_model=list[UserAdminRead])

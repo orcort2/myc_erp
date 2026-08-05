@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, Field
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ClientPortalConfigurationUpdate(BaseModel):
@@ -18,6 +20,14 @@ class ClientPortalConfigurationUpdate(BaseModel):
     email_notifications_enabled: bool = True
     is_enabled: bool = True
 
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError("Zona horaria no válida.") from exc
+        return value
 
 class ClientPortalConfigurationRead(ClientPortalConfigurationUpdate):
     id: int

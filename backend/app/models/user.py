@@ -111,6 +111,14 @@ class User(
         nullable=False,
     )
 
+    phone: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    job_title: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    area: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    language: Mapped[str] = mapped_column(String(10), default="es-MX", nullable=False)
+    timezone: Mapped[str] = mapped_column(
+        String(80), default="America/Mexico_City", nullable=False
+    )
+
     hashed_password: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -202,4 +210,13 @@ def _populate_legacy_internal_identity(_mapper, _connection, target: User) -> No
     if not target.account_type:
         target.account_type = "internal"
     if not target.status:
-        target.status = "active"
+        # Compatibilidad con creadores históricos que sólo proporcionaban
+        # `is_active=False`; desde aquí `status` queda como autoridad.
+        target.status = "disabled" if target.is_active is False else "active"
+    target.is_active = target.status == "active"
+
+
+@event.listens_for(User, "before_update")
+def _synchronize_account_enabled_state(_mapper, _connection, target: User) -> None:
+    """`status` es la autoridad funcional; `is_active` refleja habilitación."""
+    target.is_active = target.status == "active"

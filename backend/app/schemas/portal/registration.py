@@ -242,6 +242,12 @@ class PortalRegistrationUserRead(BaseModel):
     account_type: str
     status: str
     email_verified_at: datetime | None = None
+    last_login_at: datetime | None = None
+    password_changed_at: datetime | None = None
+    must_change_password: bool
+    failed_login_attempts: int
+    locked_until: datetime | None = None
+    is_active: bool
     created_at: datetime
     updated_at: datetime
 

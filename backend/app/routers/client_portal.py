@@ -17,9 +17,96 @@ from app.models.invoice import Invoice, InvoicePayment
 from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder
 from sqlalchemy import select
+from app.schemas.portal.invitation import PortalInvitationRead
+from app.schemas.portal.role import PortalRoleRead
+from app.schemas.portal.user import PortalMembershipRead, PortalMembershipReason, PortalMembershipRolesUpdate, PortalScopedInvitationCreate
+from app.services.portal.invitation_service import create_invitation, list_invitations
+from app.services.portal.membership_service import list_memberships, replace_roles, set_primary, update_status
+from app.services.portal.role_service import list_roles
+from app.core.portal.constants import ClientPortalMembershipStatus
 
 
 router = APIRouter(prefix="/client-portal", tags=["client-portal"])
+
+
+@router.get("/users", response_model=list[PortalMembershipRead])
+def get_portal_company_users(
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("users.view")),
+):
+    return list_memberships(db, context.client.id)
+
+
+@router.get("/users/invitations", response_model=list[PortalInvitationRead])
+def get_portal_company_invitations(
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("users.view")),
+):
+    return list_invitations(db, context.client.id)
+
+
+@router.get("/users/roles", response_model=list[PortalRoleRead])
+def get_portal_company_roles(
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("roles.view")),
+):
+    return list_roles(db, context.client.id)
+
+
+@router.post("/users/invitations", response_model=PortalInvitationRead, status_code=201)
+def invite_portal_company_user(
+    payload: PortalScopedInvitationCreate,
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("users.invite")),
+):
+    return create_invitation(db, client_id=context.client.id, email=payload.email, full_name=payload.full_name, role_codes=payload.role_codes, notes=payload.notes, actor_id=context.user.id)
+
+
+def _ensure_membership_scope(db: Session, client_id: int, membership_id: int) -> None:
+    if not any(item["id"] == membership_id for item in list_memberships(db, client_id)):
+        raise HTTPException(status_code=404, detail="Membresía no encontrada")
+
+
+@router.patch("/users/{membership_id}/roles", response_model=PortalMembershipRead)
+def update_portal_company_user_roles(
+    membership_id: int,
+    payload: PortalMembershipRolesUpdate,
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("users.manage")),
+):
+    _ensure_membership_scope(db, context.client.id, membership_id)
+    return replace_roles(db, membership_id, payload.role_codes, context.user.id)
+
+
+@router.post("/users/{membership_id}/suspend", response_model=PortalMembershipRead)
+def suspend_portal_company_user(
+    membership_id: int,
+    payload: PortalMembershipReason,
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("users.manage")),
+):
+    _ensure_membership_scope(db, context.client.id, membership_id)
+    return update_status(db, membership_id, ClientPortalMembershipStatus.SUSPENDED.value, context.user.id, payload.reason)
+
+
+@router.post("/users/{membership_id}/reactivate", response_model=PortalMembershipRead)
+def reactivate_portal_company_user(
+    membership_id: int,
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("users.manage")),
+):
+    _ensure_membership_scope(db, context.client.id, membership_id)
+    return update_status(db, membership_id, ClientPortalMembershipStatus.ACTIVE.value, context.user.id, "Reactivación por administrador del cliente")
+
+
+@router.post("/users/{membership_id}/primary", response_model=PortalMembershipRead)
+def primary_portal_company_user(
+    membership_id: int,
+    db: Session = Depends(get_db),
+    context: PortalSecurityContext = Depends(require_portal_permission("users.manage")),
+):
+    _ensure_membership_scope(db, context.client.id, membership_id)
+    return set_primary(db, membership_id, context.user.id)
 
 
 @router.get("/quotations", response_model=list[QuotationRead])

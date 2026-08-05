@@ -42,7 +42,7 @@ def _get_by_token(db: Session, token: str) -> PortalInvitation:
 
 
 def serialize_invitation(invitation: PortalInvitation, token: str | None = None) -> dict:
-    return {"id": invitation.id, "client_id": invitation.client_id, "email": invitation.email, "full_name": invitation.full_name, "status": invitation.status, "expires_at": invitation.expires_at, "role_codes": [item.role.code for item in invitation.invitation_roles], "invitation_url": f"/portal/invitacion/{token}" if token and settings.environment.lower() not in {"production", "prod"} else None}
+    return {"id": invitation.id, "client_id": invitation.client_id, "email": invitation.email, "full_name": invitation.full_name, "status": invitation.status, "expires_at": invitation.expires_at, "role_codes": [item.role.code for item in invitation.invitation_roles], "invitation_url": f"/portal/invitacion/{token}" if token and settings.environment.lower() not in {"production", "prod"} else None, "notes": invitation.notes, "invited_by": invitation.invited_by, "invited_by_name": invitation.invited_by_user.full_name, "created_at": invitation.created_at, "accepted_at": invitation.accepted_at}
 
 
 def create_invitation(db: Session, *, client_id: int, email: str, full_name: str | None, role_codes: list[str], notes: str | None, actor_id: int) -> dict:
@@ -68,14 +68,14 @@ def create_invitation(db: Session, *, client_id: int, email: str, full_name: str
 
 
 def _get_invitation(db: Session, invitation_id: int) -> PortalInvitation:
-    invitation = db.scalar(select(PortalInvitation).where(PortalInvitation.id == invitation_id).options(selectinload(PortalInvitation.invitation_roles).selectinload(PortalInvitationRole.role)))
+    invitation = db.scalar(select(PortalInvitation).where(PortalInvitation.id == invitation_id).options(selectinload(PortalInvitation.invitation_roles).selectinload(PortalInvitationRole.role), selectinload(PortalInvitation.invited_by_user)))
     if invitation is None:
         raise HTTPException(status_code=404, detail="Invitación no encontrada")
     return invitation
 
 
 def list_invitations(db: Session, client_id: int | None = None) -> list[dict]:
-    query = select(PortalInvitation).options(selectinload(PortalInvitation.invitation_roles).selectinload(PortalInvitationRole.role)).order_by(PortalInvitation.created_at.desc())
+    query = select(PortalInvitation).options(selectinload(PortalInvitation.invitation_roles).selectinload(PortalInvitationRole.role), selectinload(PortalInvitation.invited_by_user)).order_by(PortalInvitation.created_at.desc())
     if client_id is not None:
         query = query.where(PortalInvitation.client_id == client_id)
     return [serialize_invitation(item) for item in db.scalars(query).all()]
@@ -94,6 +94,19 @@ def cancel_invitation(db: Session, invitation_id: int, actor_id: int, *, revoke:
     write_audit_log(db, action="portal.invitation.revoked" if revoke else "portal.invitation.cancelled", entity="portal_invitations", entity_id=invitation.id, user_id=actor_id)
     db.commit()
     return serialize_invitation(_get_invitation(db, invitation.id))
+
+
+def resend_invitation(db: Session, invitation_id: int, actor_id: int) -> dict:
+    invitation = _get_invitation(db, invitation_id)
+    if invitation.status != PortalInvitationStatus.PENDING.value:
+        raise HTTPException(status_code=409, detail="Sólo se pueden reenviar invitaciones pendientes")
+    token = secrets.token_urlsafe(48)
+    invitation.token_hash = _hash(token)
+    invitation.expires_at = datetime.now(timezone.utc) + timedelta(hours=72)
+    write_audit_log(db, action="portal.invitation.resent", entity="portal_invitations", entity_id=invitation.id, user_id=actor_id, new_values={"expires_at": invitation.expires_at.isoformat()})
+    db.commit()
+    send_invitation_email(email=invitation.email, token=token)
+    return serialize_invitation(_get_invitation(db, invitation.id), token)
 
 
 def validate_invitation(db: Session, token: str) -> PortalInvitation:

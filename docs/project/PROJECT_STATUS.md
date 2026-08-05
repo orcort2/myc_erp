@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-04 — Portal del Cliente terminado técnicamente y en revisión funcional
+> Corte verificado: 2026-08-05 — administración de usuarios y accesos del Portal terminada técnicamente y en revisión funcional
 
 # Estado actual del ERP MYC
 
@@ -46,7 +46,10 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 
 El Portal del Cliente completó identidad externa, registro/verificación,
 invitaciones, membresías, roles propios, aislamiento por cliente, administración
-interna y superficies responsive. La entrega está **TERMINADA — EN REVISIÓN**;
+interna unificada en Ajustes y Clientes, bandejas de registro/vinculación,
+configuración por cliente y la sección Usuarios autogestionada por permisos del
+portal. La entrega **AJUSTES → USUARIOS Y ACCESOS DEL PORTAL** está
+**TERMINADA — EN REVISIÓN**;
 permanece en el estado canónico `EN DESARROLLO` hasta la revisión funcional y la
 conexión del correo productivo, sin declarar aptitud de producción.
 

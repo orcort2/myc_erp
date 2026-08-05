@@ -8,6 +8,11 @@
 
 La integración operativa del Portal del Cliente quedó terminada sobre la arquitectura persistente existente y queda disponible para revisión funcional. Se conservaron las migraciones `120ab33b56f9` y `bd2270bc5282`; no fue necesaria una migración adicional.
 
+La ampliación administrativa posterior está documentada en
+[`PORTAL_USER_ACCESS_ADMINISTRATION_2026-08-05.md`](PORTAL_USER_ACCESS_ADMINISTRATION_2026-08-05.md)
+y agrega la migración `c8a51e2d7f40`; esta fotografía del 2026-08-04 se conserva
+como antecedente técnico.
+
 El acceso interno y el acceso del portal son contextos JWT separados. Las cuentas `client_portal` no pueden autenticarse en `/api/auth/*`; el portal usa `/api/portal/auth/*`. El cliente efectivo se deriva exclusivamente de una `ClientPortalMembership` activa y única. Se retiró la coincidencia de correo con `Client.email` o `ClientContact.email` como autoridad.
 
 ## Flujos integrados

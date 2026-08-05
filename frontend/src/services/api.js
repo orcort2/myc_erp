@@ -1049,6 +1049,10 @@ export async function updateUserStatus(userId, isActive) {
   });
 }
 
+export async function listUserActivity(userId) {
+  return request(`/users/${userId}/activity`);
+}
+
 export async function deleteQuotation(quotationId) {
   return request(`/quotations/${quotationId}`, {
     method: 'DELETE'
@@ -1775,3 +1779,27 @@ export function createPortalInvitation(payload) { return request('/client-portal
 export function listPortalRoles(clientId) { return request(`/client-portal/roles${clientId ? `?client_id=${clientId}` : ''}`); }
 export function listPortalRegistrations() { return request('/client-portal/registrations'); }
 export function listPortalLinkRequests() { return request('/client-portal/link-requests'); }
+export function createPortalLinkRequest(payload) { return request('/client-portal/link-requests', { method: 'POST', body: JSON.stringify(payload) }); }
+export function reviewPortalLinkRequest(requestId) { return request(`/client-portal/link-requests/${requestId}/review`, { method: 'POST' }); }
+export function approvePortalLinkRequest(requestId, payload) { return request(`/client-portal/link-requests/${requestId}/approve`, { method: 'POST', body: JSON.stringify(payload) }); }
+export function rejectPortalLinkRequest(requestId, payload) { return request(`/client-portal/link-requests/${requestId}/reject`, { method: 'POST', body: JSON.stringify(payload) }); }
+export function cancelPortalLinkRequest(requestId, reason) { return request(`/client-portal/link-requests/${requestId}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) }); }
+export function updatePortalMembershipRoles(membershipId, roleCodes) { return request(`/client-portal/memberships/${membershipId}/roles`, { method: 'PATCH', body: JSON.stringify({ role_codes: roleCodes }) }); }
+export function suspendPortalMembership(membershipId, reason) { return request(`/client-portal/memberships/${membershipId}/suspend`, { method: 'POST', body: JSON.stringify({ reason }) }); }
+export function reactivatePortalMembership(membershipId) { return request(`/client-portal/memberships/${membershipId}/reactivate`, { method: 'POST' }); }
+export function revokePortalMembership(membershipId, reason) { return request(`/client-portal/memberships/${membershipId}/revoke`, { method: 'POST', body: JSON.stringify({ reason }) }); }
+export function setPrimaryPortalMembership(membershipId) { return request(`/client-portal/memberships/${membershipId}/primary`, { method: 'POST' }); }
+export function cancelPortalInvitation(invitationId) { return request(`/client-portal/invitations/${invitationId}/cancel`, { method: 'POST' }); }
+export function revokePortalInvitation(invitationId) { return request(`/client-portal/invitations/${invitationId}/revoke`, { method: 'POST' }); }
+export function resendPortalInvitation(invitationId) { return request(`/client-portal/invitations/${invitationId}/resend`, { method: 'POST' }); }
+export function getPortalConfiguration(clientId) { return request(`/client-portal/configuration/${clientId}`); }
+export function savePortalConfiguration(clientId, payload) { return request(`/client-portal/configuration/${clientId}`, { method: 'PUT', body: JSON.stringify(payload) }); }
+
+export function getPortalCompanyUsers() { return request('/client-portal/users', { portal: true }); }
+export function getPortalCompanyInvitations() { return request('/client-portal/users/invitations', { portal: true }); }
+export function getPortalCompanyRoles() { return request('/client-portal/users/roles', { portal: true }); }
+export function invitePortalCompanyUser(payload) { return request('/client-portal/users/invitations', { method: 'POST', body: JSON.stringify(payload), portal: true }); }
+export function updatePortalCompanyUserRoles(membershipId, roleCodes) { return request(`/client-portal/users/${membershipId}/roles`, { method: 'PATCH', body: JSON.stringify({ role_codes: roleCodes }), portal: true }); }
+export function suspendPortalCompanyUser(membershipId, reason) { return request(`/client-portal/users/${membershipId}/suspend`, { method: 'POST', body: JSON.stringify({ reason }), portal: true }); }
+export function reactivatePortalCompanyUser(membershipId) { return request(`/client-portal/users/${membershipId}/reactivate`, { method: 'POST', portal: true }); }
+export function setPrimaryPortalCompanyUser(membershipId) { return request(`/client-portal/users/${membershipId}/primary`, { method: 'POST', portal: true }); }
