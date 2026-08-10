@@ -11,6 +11,7 @@ from app.core.db import Base
 from app.models.catalog_item import CatalogItem
 from app.models.client import Client
 from app.models.quotation import Quotation, QuotationItem
+from app.models.user import User
 from app.schemas.catalog_item import CatalogItemCreate, CatalogItemOut, CatalogItemUpdate
 from app.schemas.service_order import ServiceOrderCreate
 from app.services.catalog_items import create_catalog_item, update_catalog_item
@@ -22,6 +23,14 @@ class CompositeCatalogServiceTests(unittest.TestCase):
         self.engine = create_engine("sqlite+pysqlite:///:memory:")
         Base.metadata.create_all(self.engine)
         self.db = sessionmaker(bind=self.engine)()
+        self.actor = User(
+            username="composite-actor",
+            email="composite-actor@example.test",
+            full_name="Composite Actor",
+            hashed_password="unused",
+        )
+        self.db.add(self.actor)
+        self.db.commit()
 
     def tearDown(self):
         self.db.close()
@@ -196,6 +205,7 @@ class CompositeCatalogServiceTests(unittest.TestCase):
         service_order = create_service_order(
             self.db,
             ServiceOrderCreate(client_id=client.id, quotation_id=quotation.id),
+            user_id=self.actor.id,
         )
 
         self.assertEqual(len(quotation.items), 1)
@@ -247,6 +257,7 @@ class CompositeCatalogServiceTests(unittest.TestCase):
         service_order = create_service_order(
             self.db,
             ServiceOrderCreate(client_id=client.id, quotation_id=quotation.id),
+            user_id=self.actor.id,
         )
         self.assertEqual(len(service_order.items), 1)
         self.assertEqual(service_order.items[0].service_name, "Nombre congelado en cotización")

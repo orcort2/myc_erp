@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-08-04
+> Corte verificado: 2026-08-10
 
 # Alcance actual del ERP MYC
 
@@ -27,18 +27,20 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   con un solo clic mediante autoridad `*`, sin modal ni captura manual de
   motivo u observación; el sistema registra el motivo institucional. Otros
   roles conservan solicitud y revisión segregadas.
-- ETS/Servicios, hitos de agenda/llamado, equipos, Órdenes de Trabajo y firmas por ciclo.
+- ETS/Servicios con servicio de aplicación canónico, actor obligatorio desde
+  las mutaciones HTTP y excepciones persistentes
+  `requested → authorized → executed`; hitos de agenda/llamado, equipos,
+  Órdenes de Trabajo y firmas por ciclo.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
-- Calidad, revisión consecutiva de certificados por contexto OT/ETS, autenticación, verificación pública y liberación.
+- Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
 - Control Documental V1 y Plantillas Maestras de Certificado.
 - Facturación, resumen contextual dentro del ETS, Workbench compartido, registro e historial de pagos parciales/totales antes o después del timbrado, comprobante PDF, cuentas por cobrar, cobranza administrativa, Facturama Sandbox, XML y PDF institucional.
 - Catálogos SAT locales versionados.
 - Patrones, procedimientos, perfiles técnicos, metrología e incertidumbre, con exposición e integración todavía parciales.
 - Configuración, componentes reutilizables, APIs, scripts, infraestructura y almacenamiento local.
-- Backend del portal de cliente autenticado y aislado por vínculo único de
-  correo principal/contacto; esta resolución es una compatibilidad transitoria
-  fail-closed y la autoridad definitiva deberá ser `PortalMembership`. La
-  experiencia frontend visible sigue pendiente.
+- Portal del Cliente autenticado y aislado por vínculo persistente
+  `User`–`ClientPortalMembership`–`Client`, con registro, invitaciones, roles
+  propios, administración interna y experiencia frontend visible.
 - Actividad institucional transversal sobre entidades existentes: conversación
   humana, eventos, menciones, adjuntos, atención, no leídos, bandeja y
   notificaciones, sin reemplazar auditoría ni datos técnicos.
@@ -178,6 +180,7 @@ confirma expresamente en este documento.
 - datos operativos, dump y paquetes generados quedan fuera del índice Git sin
   borrar evidencia local.
 
-No forman parte de este alcance: RBAC dinámico, `PortalMembership`, cambios de
-estado/folio, almacenamiento remoto, antivirus externo, retención avanzada o
-las capacidades reservadas del catálogo funcional.
+No forman parte de este alcance: RBAC interno dinámico, cambios de estado/folio
+adicionales, almacenamiento remoto, antivirus externo, retención avanzada o
+las capacidades reservadas del catálogo funcional. `PortalMembership` sí está
+implementado y forma parte del alcance vigente.

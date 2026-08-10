@@ -15,6 +15,7 @@ from app.models.controlled_document import (
     ControlledDocumentVersion,
 )
 from app.models.quotation import Quotation, QuotationItem
+from app.models.user import User
 from app.schemas.equipment import EquipmentCreate
 from app.schemas.service_order import ServiceOrderCreate
 from app.services.equipment import FINISHED_STATUSES, create_equipment
@@ -26,6 +27,14 @@ class EquipmentCertificateContextTests(unittest.TestCase):
         self.engine = create_engine("sqlite+pysqlite:///:memory:")
         Base.metadata.create_all(self.engine)
         self.db = sessionmaker(bind=self.engine)()
+        self.actor = User(
+            username="equipment-context-actor",
+            email="equipment-context-actor@example.test",
+            full_name="Equipment Context Actor",
+            hashed_password="unused",
+        )
+        self.db.add(self.actor)
+        self.db.commit()
 
     def tearDown(self):
         self.db.close()
@@ -97,6 +106,7 @@ class EquipmentCertificateContextTests(unittest.TestCase):
                 client_id=client.id,
                 quotation_id=quotation.id,
             ),
+            user_id=self.actor.id,
         )
         service_order_item = service_order.items[0]
         self.assertEqual(

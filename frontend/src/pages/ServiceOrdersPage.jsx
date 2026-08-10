@@ -24,8 +24,6 @@ import {
   getCertificateStatusLabel
 } from '../constants/statuses.js';
 import {
-  authenticateCertificate,
-  authenticateApprovedCertificates,
   changeEquipmentStatus,
   changeCertificateStatus,
   completeFieldSheet,
@@ -97,7 +95,7 @@ import {
 } from '../constants/officialFieldSheetTemplates.js';
 import { suggestOfficialFieldSheetTemplate } from '../utils/fieldSheetTemplateResolver.js';
 import { formatDate, formatDateTime, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
-import { exceptionActionLabel, hasDirectExceptionAuthority } from '../utils/exceptionAuthority.js';
+import { exceptionActionLabel } from '../utils/exceptionAuthority.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 import EtsBillingTab from '../components/ets-billing/EtsBillingTab.jsx';
@@ -276,7 +274,6 @@ function ServiceOrdersPage({ user = null }) {
   const canUseQualityActions = hasStageAccess(user, 'quality');
   const canUseReleaseActions = canReleaseCertificates(user);
   const canUseAdminActions = canUseAdministrativeActions(user);
-  const canExecuteExceptionsDirectly = hasDirectExceptionAuthority(user);
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -848,21 +845,20 @@ function ServiceOrdersPage({ user = null }) {
     }
   }
 
-  async function executeServiceOrderException(sourceStage, targetStage, reason) {
+  async function requestServiceOrderException(sourceStage, targetStage, reason) {
     if (!selectedOrder) return;
     setIsSaving(true);
     setError('');
     setNotice('');
     try {
-      const updated = await createServiceOrderException(selectedOrder.id, {
+      const request = await createServiceOrderException(selectedOrder.id, {
         source_stage: sourceStage,
         target_stage: targetStage,
         reason,
       });
-      setSelectedOrder(updated);
       setExceptionRequest(null);
       setExceptionReason('');
-      setNotice(`Excepción aplicada: ${sourceStage} → ${targetStage}.`);
+      setNotice(`Excepción solicitada (${request.status}): ${sourceStage} → ${targetStage}.`);
       await loadServiceOrderData();
     } catch (requestError) {
       setError(requestError.message);
@@ -872,14 +868,6 @@ function ServiceOrdersPage({ user = null }) {
   }
 
   function openExceptionRequest(sourceStage, targetStage) {
-    if (canExecuteExceptionsDirectly) {
-      void executeServiceOrderException(
-        sourceStage,
-        targetStage,
-        `Excepción administrativa directa: ${sourceStage} → ${targetStage}.`
-      );
-      return;
-    }
     setExceptionRequest({ sourceStage, targetStage });
     setExceptionReason('');
     setError('');
@@ -892,7 +880,7 @@ function ServiceOrdersPage({ user = null }) {
       setError('Captura el motivo de la excepcion.');
       return;
     }
-    await executeServiceOrderException(
+    await requestServiceOrderException(
       exceptionRequest.sourceStage,
       exceptionRequest.targetStage,
       reason
@@ -2299,23 +2287,6 @@ function ServiceOrdersPage({ user = null }) {
     await executeCertificateWorkflow(request.certificate, request.action, request.message, reason);
   }
 
-  async function handleCertificateAuthentication(certificate) {
-    setIsSaving(true);
-    setError('');
-    setNotice('');
-    try {
-      const updated = await authenticateCertificate(certificate.id);
-      setCertificates((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      setNotice(`Certificado ${updated.folio} autenticado`);
-      setSelectedQualityCertificate(null);
-      await loadServiceOrderData();
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setIsSaving(false);
-    }
-  }
-
   async function openAuthenticatedCertificatePdf(certificate) {
     if (!certificate.authenticated_pdf_path) {
       setError('El certificado aun no tiene PDF autenticado.');
@@ -2371,28 +2342,6 @@ function ServiceOrdersPage({ user = null }) {
     const processed = result.results?.filter((item) => ['authenticated', 'released'].includes(item.status)).map((item) => item.folio).filter(Boolean) ?? [];
     const actionCount = result.authenticated ?? result.released ?? 0;
     return `${actionCount} procesados, ${result.skipped} omitidos, ${result.errors} errores${processed.length ? `: ${processed.join(', ')}` : ''}`;
-  }
-
-  function handleAuthenticateApprovedBatch() {
-    if (!selectedOrder) return;
-    openConfirm({
-      title: 'Autenticar aprobados',
-      message: 'Se generará y autenticará el PDF final de cada Master aprobado. El lote continuará aunque algún certificado falle.',
-      confirmText: 'Autenticar',
-      onConfirm: async () => {
-        setIsSaving(true);
-        setError('');
-        try {
-          const result = await authenticateApprovedCertificates(selectedOrder.id);
-          setNotice(`Autenticacion masiva: ${summarizeBatchResult(result)}`);
-          await loadServiceOrderData();
-        } catch (requestError) {
-          setError(requestError.message);
-        } finally {
-          setIsSaving(false);
-        }
-      }
-    });
   }
 
   function handleReleaseAuthenticatedBatch() {
@@ -3164,7 +3113,7 @@ function ServiceOrdersPage({ user = null }) {
                   <label className="table-button table-button--file">Sube el ZIP generado por el ERP o los archivos Excel corregidos.<input accept=".xls,.xlsx,.xlsm,.zip" multiple onChange={(event) => handleCaptureFilesUpload(event.target.files, event.target)} type="file" /></label>
                   {canUseAdminActions ? (
                     <button className="table-button" onClick={() => openExceptionRequest('Captura', 'Hojas')} type="button">
-                      {exceptionActionLabel(user)}
+                      {exceptionActionLabel()}
                     </button>
                   ) : null}
                 </div>
@@ -3212,12 +3161,9 @@ function ServiceOrdersPage({ user = null }) {
                     <div className="toolbar-actions">
                       {canUseAdminActions ? (
                         <button className="table-button" onClick={() => openExceptionRequest('Calidad', 'Captura')} type="button">
-                          {exceptionActionLabel(user)}
+                          {exceptionActionLabel()}
                         </button>
                       ) : null}
-                      <button className="table-button" disabled={isSaving} onClick={handleAuthenticateApprovedBatch} type="button">
-                        Autenticar aprobados
-                      </button>
                     </div>
                   ) : null}
                 </div>
@@ -4397,7 +4343,6 @@ function ServiceOrdersPage({ user = null }) {
         const captureFile = latestCaptureFileByCertificateId.get(certificate.id);
         const masterReadiness = authoritativeCaptureReadinessByCertificateId.get(certificate.id) || getCaptureMasterReadiness({ certificate, equipment: item, captureFile });
         const canApprove = ['ready_for_quality', 'quality_review'].includes(certificate.status) && masterReadiness.ready;
-        const canAuthenticate = ['quality_approved', 'approved'].includes(certificate.status);
         return (
           <div className="modal-backdrop" role="presentation">
             <section aria-modal="true" className="client-modal field-sheet-modal" role="dialog">
@@ -4425,7 +4370,6 @@ function ServiceOrdersPage({ user = null }) {
                 <button className="table-button" disabled={!captureFile} onClick={() => handleDownloadCaptureMaster(certificate)} type="button">1. Descargar Master XLSX</button>
                 <button className="table-button" disabled={!canApprove || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'quality-approve', `Master de ${certificate.folio} aprobado`)} type="button">2. Aprobar Master</button>
                 <button className="table-button" disabled={!['ready_for_quality', 'quality_review', 'match_validated', 'quality_approved'].includes(certificate.status) || isSaving} onClick={() => handleCertificateWorkflow(certificate, 'request-correction', `Certificado ${certificate.folio} regresado a Captura`)} type="button">3. Rechazar / regresar a Captura</button>
-                <button className="table-button table-button--primary" disabled={!canAuthenticate || isSaving} onClick={() => handleCertificateAuthentication(certificate)} type="button">4. Autenticar</button>
               </div>
               <div className="quotation-history-list">
                 <article><strong>Creado</strong><span>{certificate.created_at ? new Date(certificate.created_at).toLocaleString('es-MX') : '-'}</span></article>
@@ -4572,7 +4516,7 @@ function ServiceOrdersPage({ user = null }) {
               }}
               type="button"
             >
-              {exceptionActionLabel(user)}
+              {exceptionActionLabel()}
             </button>
           </div>
         </section>

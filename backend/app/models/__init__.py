@@ -83,6 +83,7 @@ from app.models.quotation import (
 from app.models.quotation_service_change import (
     QuotationServiceChangeRequest,
 )
+from app.models.service_order_exception import ServiceOrderExceptionRequest
 from app.models.reference_standard import (
     FieldSheetReferenceStandard,
     ReferenceStandard,

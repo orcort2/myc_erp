@@ -987,12 +987,6 @@ export async function bulkUploadCertificatePdfs(serviceOrderId, files) {
   return uploadRequest(`/service-orders/${serviceOrderId}/certificate-pdfs`, formData);
 }
 
-export async function authenticateApprovedCertificates(serviceOrderId) {
-  return request(`/service-orders/${serviceOrderId}/certificates/authenticate-approved`, {
-    method: 'POST'
-  });
-}
-
 export async function releaseAuthenticatedCertificates(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/certificates/release-authenticated`, {
     method: 'POST'

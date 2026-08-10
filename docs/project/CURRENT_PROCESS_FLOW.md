@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-08-03
+> Corte verificado: 2026-08-10
 
 # Flujo operativo actual
 
@@ -199,10 +199,11 @@ operación y exige access JWT, permiso u ownership conforme a su categoría. Las
 Motor conserva su consumidor/organización independiente. Una ruta nueva sin
 clasificación impide el arranque y falla la prueba de conformidad.
 
-En el portal, el cliente no elige tenant: el backend exige rol `Cliente`,
-`portal.read` y una coincidencia única entre el correo de la cuenta y un cliente
-o contacto activo. Listados y descargas se filtran por ese cliente; un
-certificado ajeno responde 404 y un acceso válido queda auditado.
+En el portal, el cliente no elige tenant: el backend exige un JWT de contexto
+`client_portal`, permiso `portal.view` y una membresía activa única. El
+`client_id` se deriva exclusivamente de `ClientPortalMembership`; listados y
+descargas se filtran por ese cliente, un certificado ajeno responde 404 y un
+acceso válido queda auditado.
 
 ## 2. Cliente y Cotización
 
@@ -229,11 +230,17 @@ observación capturados al usuario. El sistema aporta un motivo estándar; la
 solicitud y autorización siguen registrándose como dos evidencias
 institucionales dentro del mismo expediente.
 
-La misma regla de interacción rige para los botones de excepción operativa del
-ETS: Administrador ejecuta directamente y los perfiles de menor autoridad
-conservan el formulario de solicitud. El endpoint ETS legacy aún no separa
-solicitud, autorización y ejecución; esa diferencia permanece abierta en
-`TD-014`.
+Las excepciones operativas del ETS usan siempre tres acciones persistentes:
+`solicitar → autorizar → ejecutar`. La solicitud conserva etapa origen/destino,
+motivo, actor y estado ETS de referencia, pero no cambia el ETS ni toca
+facturas. La autorización agrega decisión, actor y fecha sin efectos
+operativos. Sólo la ejecución de un expediente `authorized`, después de
+comprobar que el estado ETS no cambió desde la solicitud, aplica la etapa
+destino y resincroniza exclusivamente facturas derivadas elegibles. La UI ETS
+crea solicitudes incluso para Administrador; autorización y ejecución son
+endpoints separados. El mismo Administrador puede ejecutar sucesivamente las
+tres acciones, pero el backend no compacta estados: conserva actor, timestamp,
+audit log y evento independientes en cada paso.
 
 El ETS se vuelve a construir desde la revisión nueva. Si aparecen equipos,
 certificados, archivos, factura, firmas, resolución, OT ejecutada o un estado
@@ -253,6 +260,11 @@ scheduled → confirmed → called/in_progress → technical_review
 ```
 
 `cancelled` es terminal y existen rutas alternativas permitidas por la máquina vigente. Al crear el expediente se generan Órdenes de Trabajo según los cupos; cada OT admite como máximo 10 equipos. Los ciclos de firma vinculan las OT activas pendientes del momento; una OT agregada después requiere un ciclo nuevo.
+
+El router ETS conserva sólo transporte HTTP, identidad, permisos, validación y
+respuesta. `backend/app/services/service_orders.py` es la única autoridad para
+crear, actualizar, transitar, cerrar, solicitar/autorizar/ejecutar excepciones y
+desactivar ETS; todas las mutaciones HTTP propagan el actor autenticado.
 
 ## 5. Hojas de Campo y Captura
 
@@ -278,7 +290,7 @@ expected/field_sheet_ready/capture_pending
 → released_to_client
 ```
 
-La habilitación de Autenticar depende exclusivamente de `quality_approved` o del alias legacy `approved`. No requiere PDF previo, `final_pdf_path`, carga manual, PDF validado ni `match_status`. La conversión usa el Master identificado más reciente, persiste actor/fecha/auditoría/referencia al Master y omite de la exportación las hojas auxiliares sin área de impresión; el XLSX original no se modifica. La implementación aún expone la misma acción desde ETS; retirar esa superficie duplicada continúa como deuda, sin cambiar la regla de que Calidad debe ser el único autenticador funcional.
+La habilitación de Autenticar depende exclusivamente de `quality_approved` o del alias legacy `approved`. No requiere PDF previo, `final_pdf_path`, carga manual, PDF validado ni `match_status`. Calidad es la única superficie funcional: el endpoint de Certificados delega en `certificate_authentication.authenticate_certificate`, que exige actor y origen, bloquea la fila, revalida, convierte el Master identificado más reciente y persiste versión, audit y evento antes de confirmar. ETS sólo proyecta estado/descargas/liberación y no expone autenticación individual o masiva. El XLSX original no se modifica.
 
 El modal de Calidad conserva la lista visible con la que se abrió y permite navegación secuencial no circular. Cuando la tarjeta pertenece a una agrupación OT, ésa es la frontera prioritaria; si no existe una OT resoluble, se usa el ETS y, en último término, la lista filtrada visible. Cada cambio vuelve a consultar certificado e historial, oculta el contenido anterior durante la carga y recalcula readiness y acciones. Aprobar, regresar a Captura o autenticar mantiene el modal y su posición contextual abiertos mientras refresca el registro activo, la lista y los contadores.
 

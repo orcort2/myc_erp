@@ -10,13 +10,13 @@ import app.models  # noqa: F401
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_stage_2a_revision_is_the_single_head() -> None:
+def test_current_revision_is_the_single_head() -> None:
     config = Config(ROOT / "backend" / "alembic.ini")
     config.set_main_option(
         "script_location", str(ROOT / "backend" / "migrations")
     )
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["c8a51e2d7f40"]
+    assert script.get_heads() == ["e7b62b8a9421"]
 
 
 def test_schema_metadata_matches_legacy_integrity_contracts() -> None:

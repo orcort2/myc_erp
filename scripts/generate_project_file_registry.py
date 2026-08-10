@@ -44,6 +44,13 @@ FORCE_RECLASSIFY = {
     "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md",
     "frontend/src/constants/catalog.js",
     "scripts/generate_project_file_registry.py",
+    "backend/app/routers/certificates.py",
+    "backend/app/services/certificate_authentication.py",
+    "backend/app/services/certificates.py",
+    "backend/tests/test_certificate_authentication_integrity.py",
+    "docs/closures/CERTIFICATE_AUTHENTICATION_INTEGRITY_SPRINT_2026-08-10.md",
+    "frontend/src/pages/ServiceOrdersPage.jsx",
+    "frontend/src/pages/certificateAuthenticationAuthority.test.js",
     "backend/app/resolution_engine/__init__.py",
     "backend/app/resolution_engine/application/__init__.py",
     "backend/app/resolution_engine/application/action_runner.py",
@@ -311,6 +318,25 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
 
+    # Contratos P0 cuya responsabilidad material debe prevalecer sobre cierres
+    # históricos que también clasifican estos archivos compartidos.
+    if value == "backend/app/services/certificates.py":
+        return (
+            "Lifecycle de certificados",
+            "Gestiona creación, revisión y liberación; no autentica ni conserva un flujo paralelo de autenticación. Toda mutación humana exige actor y la creación derivada admite actor técnico opcional.",
+            "Equipos, snapshots, auditoría, Facturación e institutional_folios",
+            "ETS, Calidad, Certificados y descargas",
+            "Crítico",
+        )
+    if value == "frontend/src/pages/ServiceOrdersPage.jsx":
+        return (
+            "Expediente integral ETS",
+            "Orquesta ETS y proyecta Captura, Calidad, estado autenticado, descarga, Facturación y liberación sin ofrecer ni ejecutar autenticación de certificados.",
+            "Componentes ETS, EtsBillingTab y APIs operativas",
+            "Usuarios operativos y administrativos del expediente",
+            "Alto",
+        )
+
     sales_exception_files = {
         "backend/app/core/folios.py": (
             "Compatibilidad de folios",
@@ -370,8 +396,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/models/service_order.py": (
             "Agregado ETS y snapshots",
-            "Conserva el snapshot fuente de la cotización y los snapshots por partida necesarios para reconstrucción y trazabilidad histórica.",
-            "SQLAlchemy, cotizaciones, partidas y órdenes de trabajo",
+            "Conserva snapshot fuente/partidas, OT, firmas y relación histórica con solicitudes persistentes de excepción.",
+            "SQLAlchemy, cotizaciones, partidas, órdenes de trabajo y excepciones ETS",
             "Servicios ETS, equipos, certificados, Facturación y auditoría",
             "Crítico",
         ),
@@ -425,10 +451,10 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
             "Crítico",
         ),
         "backend/app/services/certificates.py": (
-            "Emisión y folio de certificados",
-            "Crea certificados con contador anual central y prefijo congelado MYCA, MYCT o de empresa vinculada, rechazando vinculados sin configuración.",
-            "Equipos, snapshots y institutional_folios",
-            "Calidad, Certificados y descargas",
+            "Lifecycle y emisión de certificados",
+            "Gestiona estados, carga, autenticación y liberación; toda mutación humana exige actor y sólo la creación derivada conserva actor técnico opcional. Mantiene folio anual/prefijo congelado MYCA, MYCT o vinculado.",
+            "Equipos, snapshots, autenticación, auditoría, Facturación e institutional_folios",
+            "ETS, Calidad, Certificados y descargas",
             "Crítico",
         ),
         "backend/app/services/folio_engine.py": (
@@ -482,29 +508,29 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "frontend/src/components/service-order-exceptions.css": (
             "Estilos de excepciones ETS",
-            "Aísla y normaliza el diálogo de solicitud para perfiles de menor autoridad, con diseño responsive y modo oscuro.",
+            "Aísla y normaliza el diálogo obligatorio de solicitud ETS, con diseño responsive y modo oscuro.",
             "CSS y variables visuales del ERP",
             "ServiceOrdersPage",
             "Alto",
         ),
         "frontend/src/pages/ServiceOrdersPage.jsx": (
             "Expediente integral",
-            "Orquesta ETS y Captura→Calidad→Autenticación→Pago→Liberación; en excepciones legacy ejecuta directamente para Administrador y conserva el formulario de motivo para menor autoridad.",
-            "Componentes ETS, EtsBillingTab, APIs operativas y utilidades de autoridad",
+            "Orquesta ETS y Captura→Calidad→Autenticación→Pago→Liberación; toda excepción operativa crea una solicitud y nunca implica ejecución directa desde la UI.",
+            "Componentes ETS, EtsBillingTab, APIs operativas y etiqueta de solicitud",
             "Usuarios operativos y administrativos del expediente",
             "Alto",
         ),
         "frontend/src/utils/exceptionAuthority.js": (
-            "Política visual de autoridad excepcional",
-            "Distingue Administrador por permiso total o rol hidratado para elegir ejecución directa o solicitud sin duplicar condiciones en páginas.",
-            "JavaScript puro y sesión de usuario",
-            "Superficies frontend de excepciones",
+            "Etiqueta segura de excepción ETS",
+            "Expone únicamente la acción Solicitar excepción para evitar que la UI represente una solicitud como ejecución.",
+            "JavaScript puro",
+            "Superficie ETS de excepciones",
             "Alto",
         ),
         "frontend/src/utils/exceptionAuthority.test.js": (
-            "Pruebas de autoridad excepcional",
-            "Verifica ejecución directa de Administrador y permanencia del flujo de solicitud para perfiles de menor autoridad.",
-            "Node test y utilidad de autoridad",
+            "Prueba de etiqueta ETS",
+            "Verifica que ninguna autoridad reciba una etiqueta que implique ejecución directa desde la solicitud.",
+            "Node test y utilidad de etiqueta",
             "Gate frontend de excepciones",
             "Alto",
         ),
@@ -1915,6 +1941,60 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value in phase_5_files:
         return phase_5_files[value]
 
+    certificate_authentication_files = {
+        "backend/app/routers/certificates.py": (
+            "Router HTTP de Certificados",
+            "Expone la única operación HTTP de autenticación como adapter delgado de Calidad, exige permiso y propaga actor sin poseer negocio ni transacción.",
+            "FastAPI, permisos y certificate_authentication.py",
+            "QualityPage y clientes API autorizados",
+            "Crítico",
+        ),
+        "backend/app/services/certificate_authentication.py": (
+            "Autoridad de autenticación documental",
+            "Bloquea el certificado, valida actor y origen Calidad, genera/versiona el PDF autenticado y confirma estado, auditoría y evento idempotente en una sola transacción.",
+            "Certificate, Master XLSX, storage, LibreOffice, auditoría y Activity",
+            "Router de Certificados y pruebas de integridad",
+            "Crítico",
+        ),
+        "backend/app/services/certificates.py": (
+            "Lifecycle de certificados",
+            "Gestiona creación, revisión y liberación; no autentica ni conserva un flujo paralelo de autenticación. Toda mutación humana exige actor y la creación derivada admite actor técnico opcional.",
+            "Equipos, snapshots, auditoría, Facturación e institutional_folios",
+            "ETS, Calidad, Certificados y descargas",
+            "Crítico",
+        ),
+        "backend/tests/test_certificate_authentication_integrity.py": (
+            "Suite de autoridad de autenticación",
+            "Protege adapter delgado, ausencia de ruta ETS, actor/origen, lock, audit/evento, commit único y rechazo idempotente de una segunda autenticación.",
+            "Pytest, FastAPI, SQLAlchemy y servicios de Certificados",
+            "Gate backend del P0 de autenticación",
+            "Crítico",
+        ),
+        "frontend/src/pages/ServiceOrdersPage.jsx": (
+            "Expediente integral ETS",
+            "Orquesta ETS y proyecta Captura, Calidad, estado autenticado, descarga, Facturación y liberación sin ofrecer ni ejecutar autenticación de certificados.",
+            "Componentes ETS, EtsBillingTab y APIs operativas",
+            "Usuarios operativos y administrativos del expediente",
+            "Alto",
+        ),
+        "frontend/src/pages/certificateAuthenticationAuthority.test.js": (
+            "Prueba de superficie canónica",
+            "Impide reintroducir acciones de autenticación en ETS o un cliente masivo y confirma que Calidad conserva la única acción frontend.",
+            "Node test, QualityPage, ServiceOrdersPage y api.js",
+            "Gate frontend del P0 de autenticación",
+            "Alto",
+        ),
+        "docs/closures/CERTIFICATE_AUTHENTICATION_INTEGRITY_SPRINT_2026-08-10.md": (
+            "Cierre P0 de autenticación",
+            "Consolida superficies, divergencias, autoridad, lifecycle, concurrencia, actor, auditoría, eventos, Motor, regresión, capability gate y deuda restante.",
+            "Código, pruebas y documentación canónica de Certificados",
+            "Revisión técnica, QA, operación y auditoría",
+            "Alto",
+        ),
+    }
+    if value in certificate_authentication_files:
+        return certificate_authentication_files[value]
+
     if "/migrations/versions/" in value:
         return ("Migración Alembic", f"Aplica la revisión {subject} del esquema y conserva la evolución reproducible de PostgreSQL.", "Alembic, modelos ORM y base de datos", "Alembic durante upgrade/downgrade y despliegues", "Crítico")
     if value == "AGENTS.md":
@@ -1931,7 +2011,9 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         return ("Contrato Pydantic de Catálogo", "Valida partidas, restringe cada alcance a su categoría y consume las claves/leyendas compartidas sin aceptar contenido documental.", "service_scope.py, Pydantic y modelo CatalogItem", "Router, servicio de Catálogo, cotizaciones y frontend", "Crítico")
     if value == "backend/app/schemas/controlled_document.py":
         return ("Contrato Pydantic documental", "Valida documentos, interpretaciones y perfiles técnicos; reutiliza AccreditationScope para impedir una taxonomía paralela.", "service_scope.py, Pydantic y modelos documentales", "Control Documental, perfiles técnicos y motores operativos", "Alto")
-    if value in {"backend/app/schemas/quotation.py", "backend/app/schemas/service_order.py", "backend/app/schemas/equipment.py"}:
+    if value == "backend/app/schemas/service_order.py":
+        return ("Contrato Pydantic operacional", "Valida ETS y el lifecycle solicitado/autorizado/ejecutado de excepciones, propagando ServiceScope con claves canónicas.", "service_scope.py, Pydantic y modelos ORM", "Router/servicio ETS y cadena Catálogo→ETS→Certificado", "Alto")
+    if value in {"backend/app/schemas/quotation.py", "backend/app/schemas/equipment.py"}:
         return ("Contrato Pydantic operacional", f"Valida payloads y respuestas de {subject}, propagando ServiceScope con las claves canónicas de acreditación.", "service_scope.py, Pydantic y modelo ORM", "Routers, servicios y cadena Catálogo→ETS→Certificado", "Alto")
     if value == "backend/app/services/service_order_certificate_capacity.py":
         return ("Capacidad automática por acreditación", "Calcula cupos del ETS, resuelve automáticamente el alcance del equipo y mapea las tres claves canónicas a tipos de certificado sin inferir desde documentos.", "Partidas ETS, equipos, certificados y service_scope.py", "Alta/edición de equipos y presentación de capacidad del ETS", "Crítico")
@@ -1961,6 +2043,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         return ("Router HTTP", f"Expone las operaciones HTTP de {subject}, aplica permisos y delega la operación a servicios del dominio.", "FastAPI, schemas, servicios y permisos", "app.main y clientes frontend/API", "Crítico" if name in {"auth.py", "invoices.py", "service_orders.py"} else "Alto")
     if value == "backend/app/services/invoice_pdfs.py":
         return ("Servicio de impresión CFDI", "Genera la representación impresa institucional MYC de cada factura, combina XML fiscal y configuración institucional, resuelve las nomenclaturas SAT vigentes y preserva QR, sellos, certificados y cadena original.", "Factura, XML fiscal, configuración institucional, plantilla Jinja y catálogos SAT activos", "Router de facturas y endpoint de descarga del PDF institucional", "Crítico")
+    if value == "backend/app/services/service_orders.py":
+        return ("Autoridad única ETS", "Implementa creación, actualización, OT/firmas, estados, baja y lifecycle de excepciones; exige actor en toda mutación crítica y permite que el mismo Administrador recorra tres etapas auditables sin efectos antes de ejecutar.", "Modelos ETS/Invoice, schemas, folios, auditoría y Activity", "Router ETS, equipos, certificados, Facturación y pruebas", "Crítico")
     if "/services/" in value and path.suffix == ".py":
         detail = f"Implementa las reglas, validaciones y orquestación de {subject} sin acoplarlas al transporte HTTP."
         if "engine" in name:

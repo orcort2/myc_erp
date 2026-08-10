@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-08-03
+> Corte verificado: 2026-08-10
 
 # Reglas de negocio vigentes
 
@@ -20,6 +20,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-048 | Cotizaciones / ETS | El desbloqueo `quotation.controlled_unlock` permite editar directamente las partidas de una cotización aprobada sólo cuando su ETS pasa el validador integral de virginidad. Compara revisiones, crea snapshots nuevos y reconstruye físicamente el ETS con el mismo `OSMYC-…`; un cambio operativo bloquea sin mutación parcial. | [`../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md`](../architecture/sales/QUOTATION_CONTROLLED_UNLOCK.md) | 2026-07-29 |
 | BR-004 | ETS | `service_orders` es la raíz operativa del expediente y debe pertenecer a un cliente activo; una cotización vinculada debe ser coherente con ese cliente. | `backend/app/models/service_order.py`, `backend/app/services/service_orders.py` | V3, vigente 2026-07 |
 | BR-005 | ETS | El folio usa `OSMYC-AA-MM-####`; el estado sólo cambia mediante la máquina de transiciones vigente. | `backend/app/services/service_orders.py`, `backend/app/core/folios.py` | 2026-06 |
+| BR-049 | ETS / Excepciones | Toda excepción operativa ETS sigue `requested → authorized → executed`. Solicitar o autorizar sólo persiste el expediente, actor, timestamps, auditoría y evento; únicamente ejecutar una autorización vigente, tras revalidar el estado ETS congelado, puede cambiar el estado operativo o resincronizar facturas derivadas. Un mismo Administrador puede actuar en las tres etapas, pero cada transición y evidencia permanece separada. | `backend/app/models/service_order_exception.py`, `backend/app/services/service_orders.py`, pruebas de integridad ETS | 2026-08-10 |
 | BR-006 | OT/Equipos | Una OT agrupa como máximo 10 equipos; las OT usan consecutivo numérico único. | `WORK_ORDER_EQUIPMENT_LIMIT`, `ServiceWorkOrder` | 2026-07 |
 | BR-007 | Firmas ETS | Una captura de firmas cubre las OT activas pendientes del ciclo; una OT posterior requiere otro ciclo. | modelos/servicios de ciclos de firma; cierre ETS 2026-07-10 | 2026-07-10 |
 | BR-008 | Equipos | Los equipos adicionales fuera de capacidad requieren el tratamiento de excepción definido; los no realizados deben conservar motivo cuando ese estado se use. | servicios ETS/equipos y cierre ETS | 2026-07 |
@@ -28,7 +29,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-011 | Hojas de Campo | No hay fallback silencioso a plantilla General cuando no existe coincidencia segura; la selección debe ser explícita. | integración operativa auditada 2026-07-13 | 2026-07-13 |
 | BR-012 | Certificados | Cada certificado se vincula a un equipo y un ETS; usa `MYCA`/`MYCT` o el prefijo vinculado congelado, seguido por `AAMMNNNN` sin guiones. | `backend/app/services/institutional_folios.py`, arquitectura de folios | 2026-07-29 |
 | BR-013 | Calidad | La aprobación del Master XLSX es la única compuerta documental para autenticar. Desde `quality_approved` —o el alias legacy `approved`— Autenticar genera el PDF final desde el Master identificado, lo sella, conserva actor/fecha/auditoría/referencia al Master y pasa a `authenticated`. No exige PDF previo, `final_pdf_path` ni `match_status`; un rechazo de Calidad requiere comentario. | `backend/app/services/certificate_authentication.py`, pruebas de autenticación desde Master | 2026-07-21 |
-| BR-014 | Certificados | Calidad es el único autenticador funcional acordado; ETS sólo debe consultar el estado. La duplicación actual es un defecto, no una segunda regla. | auditoría integral 2026-07-21 | 2026-07 |
+| BR-014 | Certificados | Calidad es la única superficie funcional que puede solicitar autenticación; ETS sólo consulta el estado. `certificate_authentication.authenticate_certificate` es la autoridad transaccional única, exige actor/origen Calidad, bloquea el certificado y persiste audit/evento una sola vez. | `docs/modules/calidad/AUTENTICACION_CERTIFICADOS.md`, cierre P0 y pruebas de integridad | 2026-08-10 |
 | BR-015 | Certificados | La vista ordinaria de Certificados sólo muestra PDFs autenticados en estado autenticado o liberado. | frontend de Certificados y servicio de certificados | 2026-07 |
 | BR-016 | Liberación | Un certificado queda documentalmente listo cuando está `authenticated` y existe su PDF autenticado. La liberación no consulta `match_status`: si el ETS requiere pago, exige factura pagada y saldo cero; si no requiere pago, la compuerta financiera no bloquea. Autenticar no libera automáticamente. | `release_to_client`, readiness financiero y pruebas HTTP en `backend/app/services/certificates.py` | 2026-07-21 |
 | BR-017 | Facturación | Un borrador fiscal congela emisor, receptor, origen, partidas e impuestos para evitar cambios retroactivos. | modelos/servicios de facturación | 2026-07 |

@@ -33,7 +33,7 @@ from app.services.certificates import (
     validate_pdf_match,
 )
 from app.services.storage_service import require_deliverable_file
-from app.services.certificate_authentication import authenticate_certificate_pdf
+from app.services.certificate_authentication import authenticate_certificate as authenticate_certificate_service
 from app.services.auth import require_permission
 
 
@@ -226,10 +226,12 @@ def authenticate_certificate(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("certificates.approve")),
 ) -> CertificateRead:
-    certificate = get_certificate(db, certificate_id)
-    authenticate_certificate_pdf(db, certificate, user_id=current_user.id)
-    db.commit()
-    return get_certificate(db, certificate_id)
+    return authenticate_certificate_service(
+        db,
+        certificate_id,
+        user_id=current_user.id,
+        origin="quality",
+    )
 
 
 @router.get("/{certificate_id}/authenticated-pdf")

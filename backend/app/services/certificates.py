@@ -25,7 +25,6 @@ from app.schemas.certificate import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
-from app.services.certificate_authentication import authenticate_certificate_pdf
 from app.services.certificate_matching_engine import validate_certificate_pdf_match
 from app.services.file_security import validate_upload
 from app.services.storage_service import delete_if_unreferenced, resolve_storage_path, safe_filename, save_validated_content
@@ -185,7 +184,9 @@ def get_service_order_release_readiness(db: Session, service_order_id: int) -> d
     }
 
 
-def _ensure_payment_allows_release(db: Session, certificate: Certificate, *, user_id: int | None = None) -> None:
+def _ensure_payment_allows_release(
+    db: Session, certificate: Certificate, *, user_id: int
+) -> None:
     readiness = get_service_order_release_readiness(db, certificate.service_order_id)
     if readiness["release_allowed"]:
         return
@@ -287,6 +288,12 @@ def get_certificate(db: Session, certificate_id: int) -> Certificate:
     return certificate
 
 
+def _require_certificate_actor(user_id: int) -> int:
+    if user_id is None:
+        raise ValueError("Las mutaciones de certificados requieren un actor")
+    return user_id
+
+
 def create_certificate(
     db: Session,
     payload: CertificateCreate,
@@ -352,8 +359,9 @@ def update_certificate(
     certificate_id: int,
     payload: CertificateUpdate,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     if certificate.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=409, detail="No se puede editar un certificado liberado o cancelado")
@@ -382,10 +390,11 @@ def _set_status(
     new_status: str,
     *,
     action: str,
-    user_id: int | None = None,
+    user_id: int,
     comment: str | None = None,
     extra_values: dict | None = None,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     previous_status = certificate.status
     certificate.status = new_status
     write_audit_log(
@@ -423,8 +432,9 @@ def change_status(
     new_status: str,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     new_status = LEGACY_STATUS_MAP.get(new_status, new_status)
     certificate = get_certificate(db, certificate_id)
     allowed = ALLOWED_TRANSITIONS.get(certificate.status, set())
@@ -461,8 +471,9 @@ def start_capture(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     if certificate.status not in CAPTURE_READY_STATUSES:
         raise HTTPException(status_code=409, detail="El certificado no esta listo para captura")
@@ -550,8 +561,9 @@ def send_to_quality(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     readiness = capture_master_readiness(db, certificate)
     if not readiness["ready"]:
@@ -602,8 +614,9 @@ def quality_approve(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     if certificate.status not in QUALITY_READY_STATUSES:
         raise HTTPException(status_code=409, detail="El certificado no está en revisión de Calidad")
@@ -634,8 +647,9 @@ def quality_reject(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     # Ruta conservada sólo por compatibilidad; ya no existe un flujo de rechazo.
     return return_to_technician(db, certificate_id, payload, user_id=user_id)
 
@@ -645,8 +659,9 @@ def return_to_technician(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     if certificate.status not in QUALITY_READY_STATUSES | {"match_validated", "quality_approved"}:
         raise HTTPException(status_code=409, detail="El certificado no puede regresarse a Captura desde este estado")
@@ -696,9 +711,11 @@ def upload_certificate_pdf(
     certificate_id: int,
     upload: UploadFile,
     *,
-    user_id: int | None = None,
+    user_id: int,
     comment: str | None = None,
 ) -> Certificate:
+    if user_id is None:
+        raise ValueError("La carga de certificado requiere un actor")
     certificate = get_certificate(db, certificate_id)
     if certificate.authenticated_pdf_path or certificate.status in AUTHENTICATED_STATUSES | TERMINAL_STATUSES:
         raise HTTPException(status_code=409, detail="El PDF original no puede reemplazarse después de autenticar")
@@ -790,8 +807,9 @@ def validate_pdf_match(
     db: Session,
     certificate_id: int,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     if certificate.status not in QUALITY_READY_STATUSES:
         raise HTTPException(status_code=409, detail="El match solo puede validarse durante Calidad")
@@ -822,8 +840,9 @@ def manual_accept_match(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     if certificate.status != "match_validated":
         raise HTTPException(status_code=409, detail="Primero debe validarse el match en Calidad")
@@ -860,8 +879,10 @@ def release_to_client(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    if user_id is None:
+        raise ValueError("La liberación de certificado requiere un actor")
     certificate = get_certificate(db, certificate_id)
     if certificate.status in {"released_to_client", "released"} or certificate.client_visible:
         raise _release_conflict("already_released", "El certificado ya fue liberado al cliente.")
@@ -897,8 +918,9 @@ def request_correction(
     certificate_id: int,
     payload: CertificateStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     return quality_reject(db, certificate_id, payload, user_id=user_id)
 
 
@@ -907,8 +929,10 @@ def bulk_upload_certificate_pdfs(
     service_order_id: int,
     uploads: list[UploadFile],
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> CertificateBulkUploadRead:
+    if user_id is None:
+        raise ValueError("La carga masiva de certificados ETS requiere un actor")
     certificates = list_certificates(db, service_order_id=service_order_id)
     if not certificates:
         raise HTTPException(
@@ -971,83 +995,14 @@ def bulk_upload_certificate_pdfs(
     return summary
 
 
-def authenticate_certificates_for_service_order(
-    db: Session,
-    service_order_id: int,
-    *,
-    user_id: int | None = None,
-) -> CertificateBatchActionRead:
-    certificates = list_certificates(db, service_order_id=service_order_id)
-    results: list[CertificateBatchActionItemRead] = []
-    authenticated = 0
-    skipped = 0
-    errors = 0
-    allowed_statuses = QUALITY_APPROVED_STATUSES | {"quality_approved", "approved"}
-
-    for certificate in certificates:
-        folio = certificate.expected_folio or certificate.folio
-        if certificate.authenticated_pdf_path and certificate.status in AUTHENTICATED_STATUSES | {"released_to_client", "released"}:
-            skipped += 1
-            results.append(
-                CertificateBatchActionItemRead(
-                    certificate_id=certificate.id,
-                    folio=folio,
-                    status="skipped",
-                    authenticated_pdf_path=certificate.authenticated_pdf_path,
-                    error="Ya tiene PDF autenticado",
-                )
-            )
-            continue
-        if certificate.status not in allowed_statuses:
-            skipped += 1
-            results.append(
-                CertificateBatchActionItemRead(
-                    certificate_id=certificate.id,
-                    folio=folio,
-                    status="skipped",
-                    error="No está aprobado por Calidad",
-                )
-            )
-            continue
-        try:
-            updated = authenticate_certificate_pdf(db, certificate, user_id=user_id)
-            db.commit()
-            authenticated += 1
-            results.append(
-                CertificateBatchActionItemRead(
-                    certificate_id=updated.id,
-                    folio=folio,
-                    status="authenticated",
-                    authenticated_pdf_path=updated.authenticated_pdf_path,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 - batch mode must continue per certificate.
-            db.rollback()
-            errors += 1
-            results.append(
-                CertificateBatchActionItemRead(
-                    certificate_id=certificate.id,
-                    folio=folio,
-                    status="error",
-                    error=str(exc),
-                )
-            )
-
-    return CertificateBatchActionRead(
-        service_order_id=service_order_id,
-        authenticated=authenticated,
-        skipped=skipped,
-        errors=errors,
-        results=results,
-    )
-
-
 def release_authenticated_certificates_for_service_order(
     db: Session,
     service_order_id: int,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> CertificateBatchActionRead:
+    if user_id is None:
+        raise ValueError("La liberación masiva ETS requiere un actor")
     certificates = list_certificates(db, service_order_id=service_order_id)
     readiness = get_service_order_release_readiness(db, service_order_id)
     if not readiness["release_allowed"]:
@@ -1160,8 +1115,9 @@ def release_authenticated_certificates_for_service_order(
 
 
 def deactivate_certificate(
-    db: Session, certificate_id: int, *, user_id: int | None = None
+    db: Session, certificate_id: int, *, user_id: int
 ) -> Certificate:
+    user_id = _require_certificate_actor(user_id)
     certificate = get_certificate(db, certificate_id)
     if certificate.status in {"released_to_client", "released"}:
         raise HTTPException(status_code=409, detail="No se puede cancelar un certificado liberado")

@@ -293,7 +293,11 @@ def _validation_issue_keys(validation: dict | None) -> tuple[list[str], list[str
     return warnings, mismatches
 
 
-def _mark_capture_started(db: Session, certificate: Certificate, *, user_id: int | None, filename: str) -> None:
+def _mark_capture_started(
+    db: Session, certificate: Certificate, *, user_id: int, filename: str
+) -> None:
+    if user_id is None:
+        raise ValueError("La mutación de Captura ETS requiere un actor")
     if certificate.status not in CAPTURE_READY_STATUSES:
         return
     now = datetime.now(timezone.utc)
@@ -317,7 +321,15 @@ def _mark_capture_started(db: Session, certificate: Certificate, *, user_id: int
     )
 
 
-def upload_capture_files(db: Session, service_order_id: int, files: list[UploadFile], *, user_id: int | None) -> dict:
+def upload_capture_files(
+    db: Session,
+    service_order_id: int,
+    files: list[UploadFile],
+    *,
+    user_id: int,
+) -> dict:
+    if user_id is None:
+        raise ValueError("La carga de Captura ETS requiere un actor")
     order = db.get(ServiceOrder, service_order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="ETS no encontrado")

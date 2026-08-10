@@ -19,7 +19,7 @@ from app.routers.certificates import authenticate_certificate as authenticate_ce
 from app.security.api_access import enforce_api_access
 from app.services.certificate_authentication import (
     _convert_master_to_pdf,
-    authenticate_certificate_pdf,
+    _authenticate_certificate_pdf,
 )
 
 
@@ -62,7 +62,12 @@ def identified_master(path: Path):
 def test_authentication_requires_quality_approval_only():
     db = MagicMock()
     with pytest.raises(HTTPException, match="aprobados por calidad"):
-        authenticate_certificate_pdf(db, approved_certificate(status="quality_review"), user_id=4)
+        _authenticate_certificate_pdf(
+            db,
+            approved_certificate(status="quality_review"),
+            user_id=4,
+            origin="quality",
+        )
 
 
 def test_approved_master_generates_and_authenticates_without_pdf_or_match():
@@ -93,7 +98,12 @@ def test_approved_master_generates_and_authenticates_without_pdf_or_match():
             patch("app.services.certificate_authentication.atomic_write", side_effect=fake_atomic_write),
             patch("app.services.certificate_authentication.write_audit_log") as audit,
         ):
-            updated = authenticate_certificate_pdf(db, certificate, user_id=4)
+            updated = _authenticate_certificate_pdf(
+                db,
+                certificate,
+                user_id=4,
+                origin="quality",
+            )
 
     assert updated.status == "authenticated"
     assert updated.match_status == "pending"
@@ -134,7 +144,12 @@ def test_conversion_failure_does_not_authenticate_or_mutate_pdf_references():
             patch("app.services.certificate_authentication.write_audit_log") as audit,
         ):
             with pytest.raises(HTTPException, match="conversion failed"):
-                authenticate_certificate_pdf(db, certificate, user_id=4)
+                _authenticate_certificate_pdf(
+                    db,
+                    certificate,
+                    user_id=4,
+                    origin="quality",
+                )
 
     assert certificate.status == "quality_approved"
     assert certificate.final_pdf_path is None
@@ -164,6 +179,7 @@ def test_authenticate_endpoint_returns_200_with_real_converter():
     )
     certificate.pdf_versions = []
     db = MagicMock()
+    db.scalar.return_value = certificate
     permission_dependency = inspect.signature(authenticate_certificate_endpoint).parameters[
         "current_user"
     ].default.dependency
@@ -187,13 +203,13 @@ def test_authenticate_endpoint_returns_200_with_real_converter():
 
         try:
             with (
-                patch("app.routers.certificates.get_certificate", return_value=certificate),
                 patch("app.services.certificate_authentication._approved_capture_master", return_value=capture_file),
                 patch("app.services.certificate_authentication.resolve_storage_path", return_value=master),
                 patch("app.services.certificate_authentication.relative_storage_path", return_value="capture/1/Master_MYCA-07-2026-0001.xlsx"),
                     patch("app.services.certificate_authentication.build_storage_path", side_effect=[final_target, authenticated_target]),
                     patch("app.services.certificate_authentication.atomic_write", side_effect=lambda target, content: target.write_bytes(content)),
                     patch("app.services.certificate_authentication.write_audit_log") as audit,
+                    patch("app.services.certificate_authentication.publish_event") as event,
                 TestClient(app) as client,
             ):
                 response = client.post("/api/certificates/1/authenticate")
@@ -208,6 +224,8 @@ def test_authenticate_endpoint_returns_200_with_real_converter():
         assert authenticated_target.read_bytes().startswith(b"%PDF")
         assert audit.call_args.kwargs["user_id"] == 4
         assert audit.call_args.kwargs["new_values"]["capture_master_file_id"] == 10
+        assert audit.call_args.kwargs["new_values"]["origin"] == "quality"
+        assert event.call_args.kwargs["event_code"] == "certificate.authenticated"
 
 
 @pytest.mark.skipif(shutil.which("soffice") is None, reason="LibreOffice no está disponible")

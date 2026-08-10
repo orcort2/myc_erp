@@ -21,7 +21,7 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    assert len(operations) == 356
+    assert len(operations) == 357
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

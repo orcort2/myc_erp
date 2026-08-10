@@ -117,6 +117,31 @@ class ServiceOrderExceptionCreate(BaseModel):
     reason: str = Field(min_length=3, max_length=1000)
 
 
+class ServiceOrderExceptionAuthorize(BaseModel):
+    comment: str | None = Field(default=None, max_length=1000)
+
+
+class ServiceOrderExceptionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    service_order_id: int
+    requested_by_id: int
+    authorized_by_id: int | None = None
+    executed_by_id: int | None = None
+    status: str
+    source_stage: str
+    target_stage: str
+    target_status: str | None = None
+    service_order_status_at_request: str
+    reason: str
+    authorization_comment: str | None = None
+    authorized_at: datetime | None = None
+    executed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class ServiceOrderRead(ServiceOrderBase):
     model_config = ConfigDict(from_attributes=True)
 

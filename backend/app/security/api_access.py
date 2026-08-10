@@ -128,8 +128,6 @@ def _service_order_policy(method: str, path: str) -> AccessPolicy:
         return _permission(permission)
     if path.endswith("/confirm-signatures"):
         return _permission("service_orders.sign")
-    if "/certificates/authenticate-approved" in path:
-        return _permission("certificates.approve")
     if "/certificates/release-authenticated" in path:
         return _permission("release.manage")
     if path.endswith("/certificate-pdfs"):

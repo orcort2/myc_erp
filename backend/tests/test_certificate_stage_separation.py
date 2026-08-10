@@ -41,7 +41,7 @@ def test_quality_cannot_approve_without_a_ready_master():
         patch("app.services.certificates.capture_master_readiness", return_value={"ready": False, "reason": "El Master esperado no está identificado"}),
     ):
         with pytest.raises(HTTPException, match="Master esperado no está identificado"):
-            quality_approve(db, 10)
+            quality_approve(db, 10, user_id=7)
 
 
 def test_match_validation_is_rejected_outside_quality():
@@ -49,7 +49,7 @@ def test_match_validation_is_rejected_outside_quality():
     current = certificate(status="capture_in_progress")
     with patch("app.services.certificates.get_certificate", return_value=current):
         with pytest.raises(HTTPException, match="durante Calidad"):
-            validate_pdf_match(db, 10)
+            validate_pdf_match(db, 10, user_id=7)
 
 
 def test_match_validation_advances_the_single_certificate_state():
@@ -69,7 +69,7 @@ def test_manual_match_requires_prior_validation():
     db = MagicMock()
     with patch("app.services.certificates.get_certificate", return_value=certificate(match_status="mismatch")):
         with pytest.raises(HTTPException, match="Primero debe validarse"):
-            manual_accept_match(db, 10)
+            manual_accept_match(db, 10, user_id=7)
 
 
 def test_return_to_capture_keeps_the_linked_field_sheet_state():
@@ -93,7 +93,7 @@ def test_release_requires_an_authenticated_pdf():
     current = certificate(status="quality_approved", authenticated_pdf_path=None, match_status="matched")
     with patch("app.services.certificates.get_certificate", return_value=current):
         with pytest.raises(HTTPException) as exc_info:
-            release_to_client(db, 10)
+            release_to_client(db, 10, user_id=7)
     assert exc_info.value.detail["code"] == "certificate_not_authenticated"
 
 
@@ -106,7 +106,7 @@ def test_release_rejects_incomplete_legacy_authentication_state():
     )
     with patch("app.services.certificates.get_certificate", return_value=current):
         with pytest.raises(HTTPException) as exc_info:
-            release_to_client(db, 10)
+            release_to_client(db, 10, user_id=7)
     assert exc_info.value.detail["code"] == "certificate_not_authenticated"
 
 
@@ -142,7 +142,7 @@ def test_release_rejects_missing_authenticated_document_with_specific_code():
         patch("app.services.certificates._authenticated_document_exists", return_value=False),
     ):
         with pytest.raises(HTTPException) as exc_info:
-            release_to_client(db, 10)
+            release_to_client(db, 10, user_id=7)
     assert exc_info.value.detail["code"] == "authenticated_document_missing"
 
 
@@ -151,7 +151,7 @@ def test_release_rejects_already_released_with_specific_code():
     current = certificate(status="released_to_client", client_visible=True)
     with patch("app.services.certificates.get_certificate", return_value=current):
         with pytest.raises(HTTPException) as exc_info:
-            release_to_client(db, 10)
+            release_to_client(db, 10, user_id=7)
     assert exc_info.value.detail["code"] == "already_released"
 
 

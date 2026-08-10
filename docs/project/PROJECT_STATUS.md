@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-05 — administración de usuarios y accesos del Portal terminada técnicamente y en revisión funcional
+> Corte verificado: 2026-08-10 — auditoría integral de sólo lectura; sin cambio de clasificación global
 
 # Estado actual del ERP MYC
 
@@ -37,7 +37,7 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 | Cotizaciones | Servicios Compuestos conservan un concepto comercial y expanden el ETS. El desbloqueo controlado permite editar directamente partidas de una aprobada, compara revisiones y reconstruye físicamente un ETS virgen con el mismo folio; incluye tipos acreditado/trazable/vinculado, empresas, snapshots y pruebas. Falta completar restauración general desde snapshots, asegurar rutas legacy y ejecutar E2E autenticado en navegador hasta ETS. |
 | Órdenes de Trabajo | E2E multi-OT por rol y encapsulado del número legacy. |
 | Equipos | La independencia del catálogo vivo, snapshot y protección del router quedaron validados; falta E2E autenticado dentro del ciclo multi-OT. |
-| Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada; falta retirar la superficie autenticadora duplicada de ETS y completar E2E de verificación pública. |
+| Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada. Calidad es la única superficie autenticadora y la autoridad única usa lock/audit/evento; falta completar E2E browser de verificación pública. |
 | Plantillas Maestras | Descarga, carga, identificación, detección semántica por fingerprint, readiness y generación del PDF autenticado desde el Master quedaron validados; falta automatizar el E2E autenticado completo del retorno. |
 | Catálogos SAT | Blindar la fuente oficial y completar E2E de consumidores autorizados. |
 | Base de datos y migraciones | Integridad, drift, downgrade, upgrade histórico, respaldo y restore están validados; sólo permanece el plan independiente de retiro legacy. |
@@ -96,12 +96,20 @@ expediente y el vertical Certificados end-to-end; fue aprobada mediante
 `EN REVISIÓN`. La IA
 permanece como posibilidad futura opcional no autorizada.
 
+El sprint **Integridad ETS** está **APROBADO CON OBSERVACIONES**. El router ya no
+contiene reglas duplicadas, `services/service_orders.py` es la autoridad única,
+el lifecycle de excepción es `requested → authorized → executed` y todas las
+mutaciones críticas ETS exigen actor también en el contrato interno. Un mismo
+Administrador puede ocupar los tres roles sin omitir ninguna transición ni
+evidencia. ETS/Servicios conserva su clasificación
+global `EN DESARROLLO` por pendientes ajenos a este sprint.
+
 1. La Contención de Seguridad Etapa 1 quedó **APROBADA Y CERRADA**:
-   deny-by-default, JWT productivo seguro, clasificación 306/306 y portal
+   deny-by-default, JWT productivo seguro, clasificación 357/357 y portal
    aislado. PortalMembership, RBAC administrable, revocación/rotación,
    `localStorage`, rate limit, MFA y E2E browser exhaustivo por rol pertenecen
    a etapas posteriores y no reabren este cierre.
-2. Duplicación de lógica y acciones en ETS, Calidad y certificados.
+2. El P0 **Integridad de autenticación de Certificados** está **TERMINADO — EN REVISIÓN**: Calidad es la única superficie, el servicio canónico serializa doble autenticación y ETS queda sólo lectura/estado/liberación.
 3. Hojas de Campo sin cierre semántico, automatizaciones metrológicas y E2E de las 23 plantillas.
 4. Facturación ya integra en el Workbench único el registro e historial de pagos, comprobante PDF, saldos/estado en tiempo real, cartera y refresco del readiness financiero del ETS. Permanecen el borrador no autosalvado, notas/documentos internos y el flujo fiscal incompleto para Producción, cancelaciones, PPD y notas fiscales.
 5. Administración y roles sin gestión dinámica; el filtrado visual por
@@ -132,11 +140,10 @@ permanece como posibilidad futura opcional no autorizada.
 | Prioridad | Deuda |
 | --- | --- |
 | P1 | Completar seguridad de sesión fuera de la Etapa 1: rotación/revocación, almacenamiento de tokens, rate limit, MFA y E2E browser por rol. |
-| P0 | Eliminar lógica duplicada y ruta `confirm-signatures` repetida en ETS. |
-| P0 | Dejar a Calidad como único autenticador de certificados. |
 | P1 | Cerrar Hojas de Campo/Captura y su E2E operativo. |
 | P1 | Completar la persistencia y el flujo fiscal de Facturación. |
-| P1 | Diseñar e implementar en una etapa separada PortalMembership persistente y RBAC administrable; `permissions.py` permanece bootstrap temporal y el catálogo funcional validado requiere aprobación y matriz de compatibilidad previa. |
+| P1 | Implementar RBAC interno administrable; `PortalMembership` ya está integrado. Reconciliar catálogo, bootstrap interno, permisos del Portal e inventario HTTP porque el gate institucional actual falla. |
+| P1 | Exigir actor en las mutaciones auditables restantes fuera de ETS y corregir las vulnerabilidades altas de dependencias frontend. |
 | P2 | Retirar compatibilidad legacy verificada y reducir deuda de UX, bundle, scripts e infraestructura. |
 
 ## Infraestructura transversal — Archivos y cargas

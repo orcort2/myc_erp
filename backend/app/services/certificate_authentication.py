@@ -22,6 +22,7 @@ from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder
 from app.schemas.certificate import CertificateVerificationRead
 from app.services.audit_logs import write_audit_log
+from app.services.activity import publish_event
 from app.services.office_converter import resolve_office_converter
 from app.services.storage_service import atomic_write, build_storage_path, relative_storage_path, resolve_storage_path
 
@@ -334,12 +335,15 @@ def _stamp_pdf(source: Path, target: Path, *, code: str, folio: str, released_at
         writer.write(output)
 
 
-def authenticate_certificate_pdf(
+def _authenticate_certificate_pdf(
     db: Session,
     certificate: Certificate,
     *,
-    user_id: int | None = None,
+    user_id: int,
+    origin: str,
 ) -> Certificate:
+    if user_id is None:
+        raise ValueError("La autenticación de certificado requiere un actor")
     if certificate.status not in {"quality_approved", "approved"}:
         raise HTTPException(
             status_code=409,
@@ -442,10 +446,70 @@ def authenticate_certificate_pdf(
             "capture_master_file_id": capture_file.id,
             "capture_master_filename": capture_file.original_filename,
             "match_status": certificate.match_status,
+            "origin": origin,
         },
         comment="PDF final generado y autenticado desde el Master XLSX aprobado",
     )
     return certificate
+
+
+def authenticate_certificate(
+    db: Session,
+    certificate_id: int,
+    *,
+    user_id: int,
+    origin: str,
+) -> Certificate:
+    """Autoridad transaccional única para autenticar un certificado."""
+
+    if user_id is None:
+        raise ValueError("La autenticación de certificado requiere un actor")
+    if origin != "quality":
+        raise ValueError("El origen institucional de autenticación debe ser Calidad")
+
+    certificate = db.scalar(
+        select(Certificate)
+        .where(
+            Certificate.id == certificate_id,
+            Certificate.is_active.is_(True),
+        )
+        .options(selectinload(Certificate.pdf_versions))
+        .with_for_update()
+    )
+    if certificate is None:
+        raise HTTPException(status_code=404, detail="Certificado no encontrado")
+    if (
+        certificate.status == "authenticated"
+        or certificate.authenticated_pdf_path
+    ):
+        raise HTTPException(status_code=409, detail="El certificado ya fue autenticado")
+
+    previous_status = certificate.status
+    authenticated = _authenticate_certificate_pdf(
+        db,
+        certificate,
+        user_id=user_id,
+        origin=origin,
+    )
+    publish_event(
+        db,
+        entity_type="certificate",
+        entity_id=authenticated.id,
+        event_code="certificate.authenticated",
+        idempotency_key=f"certificate:{authenticated.id}:authenticated",
+        body=f"Certificado {authenticated.expected_folio or authenticated.folio} autenticado por Calidad.",
+        actor_id=user_id,
+        metadata={
+            "previous_status": previous_status,
+            "status": authenticated.status,
+            "origin": origin,
+            "authentication_code": authenticated.authentication_code,
+            "service_order_id": authenticated.service_order_id,
+        },
+    )
+    db.commit()
+    db.refresh(authenticated)
+    return authenticated
 
 
 def get_certificate_verification(db: Session, code: str) -> CertificateVerificationRead:

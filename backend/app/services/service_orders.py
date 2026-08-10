@@ -16,6 +16,7 @@ from app.models.service_order import (
     ServiceOrderSignatureCycle,
     ServiceOrderSignatureCycleWorkOrder,
 )
+from app.models.service_order_exception import ServiceOrderExceptionRequest
 from app.models.user import User
 from app.schemas.service_order import (
     ServiceOrderCreate,
@@ -65,6 +66,12 @@ STAGE_STATUS_MAP = {
     "billing": "pending_payment",
     "facturacion": "pending_payment",
 }
+
+
+def _require_actor_id(user_id: int) -> int:
+    if user_id is None:
+        raise ValueError("Las mutaciones ETS requieren un actor")
+    return user_id
 
 
 
@@ -401,8 +408,9 @@ def get_service_order(db: Session, service_order_id: int) -> ServiceOrder:
 
 
 def create_service_order(
-    db: Session, payload: ServiceOrderCreate, *, user_id: int | None = None
+    db: Session, payload: ServiceOrderCreate, *, user_id: int
 ) -> ServiceOrder:
+    user_id = _require_actor_id(user_id)
     _ensure_active_client(db, payload.client_id)
     _ensure_active_user(db, payload.advisor_id, "Asesor")
     _ensure_active_user(db, payload.technician_id, "Tecnico")
@@ -489,8 +497,9 @@ def update_service_order(
     service_order_id: int,
     payload: ServiceOrderUpdate,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> ServiceOrder:
+    user_id = _require_actor_id(user_id)
     service_order = get_service_order(db, service_order_id)
     if service_order.status in TERMINAL_STATUSES:
         raise HTTPException(
@@ -555,8 +564,9 @@ def confirm_signature_cycle(
     db: Session,
     service_order_id: int,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> ServiceOrder:
+    user_id = _require_actor_id(user_id)
     service_order = get_service_order(db, service_order_id)
 
     required_signature_fields = {
@@ -755,8 +765,9 @@ def change_status(
     new_status: str,
     payload: ServiceOrderStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> ServiceOrder:
+    user_id = _require_actor_id(user_id)
     service_order = get_service_order(db, service_order_id)
     allowed = ALLOWED_TRANSITIONS.get(service_order.status, set())
     if new_status not in allowed:
@@ -800,62 +811,234 @@ def close_service_order(
     service_order_id: int,
     payload: ServiceOrderStatusChange | None = None,
     *,
-    user_id: int | None = None,
+    user_id: int,
 ) -> ServiceOrder:
     return change_status(db, service_order_id, "closed", payload, user_id=user_id)
 
 
-def register_service_order_exception(
+def request_service_order_exception(
     db: Session,
     service_order_id: int,
     payload: ServiceOrderExceptionCreate,
     *,
-    user_id: int | None = None,
-) -> ServiceOrder:
+    user_id: int,
+) -> ServiceOrderExceptionRequest:
+    user_id = _require_actor_id(user_id)
     service_order = get_service_order(db, service_order_id)
     source_stage = payload.source_stage.strip()
     target_stage = payload.target_stage.strip()
     target_status = STAGE_STATUS_MAP.get(target_stage.lower())
-    previous_status = service_order.status
-
-    if target_status and previous_status not in TERMINAL_STATUSES:
-        service_order.status = target_status
-
-    # A draft/pending invoice is still derived from this commercial source.
-    # Emitted invoices are intentionally excluded by the invoice service.
-    from app.services.invoices import resync_invoices_for_service_exception
-
-    resync_invoices_for_service_exception(
-        db,
-        service_order.id,
-        comment=payload.reason,
-        user_id=user_id,
+    exception_request = ServiceOrderExceptionRequest(
+        service_order_id=service_order.id,
+        requested_by_id=user_id,
+        status="requested",
+        source_stage=source_stage,
+        target_stage=target_stage,
+        target_status=target_status,
+        service_order_status_at_request=service_order.status,
+        reason=payload.reason.strip(),
     )
+    db.add(exception_request)
+    db.flush()
 
     write_audit_log(
         db,
         action="service_order.exception_requested",
-        entity="service_orders",
-        entity_id=service_order.id,
+        entity="service_order_exceptions",
+        entity_id=exception_request.id,
         user_id=user_id,
-        previous_values={
-            "status": previous_status,
-            "source_stage": source_stage,
-        },
+        previous_values=None,
         new_values={
-            "status": service_order.status,
+            "status": "requested",
+            "service_order_id": service_order.id,
+            "service_order_status": service_order.status,
+            "source_stage": source_stage,
             "target_stage": target_stage,
             "target_status": target_status,
         },
         comment=payload.reason,
     )
+    publish_event(
+        db,
+        entity_type="service_order",
+        entity_id=service_order.id,
+        event_code="service_order.exception_requested",
+        idempotency_key=f"service_order_exception:{exception_request.id}:requested",
+        body=f"Excepción solicitada de {source_stage} a {target_stage}.",
+        actor_id=user_id,
+        metadata={
+            "exception_id": exception_request.id,
+            "status": "requested",
+            "source_stage": source_stage,
+            "target_stage": target_stage,
+            "target_status": target_status,
+            "service_order_status": service_order.status,
+        },
+    )
     db.commit()
-    return get_service_order(db, service_order.id)
+    db.refresh(exception_request)
+    return exception_request
+
+
+def _get_service_order_exception(
+    db: Session,
+    service_order_id: int,
+    exception_id: int,
+    *,
+    for_update: bool = False,
+) -> ServiceOrderExceptionRequest:
+    query = select(ServiceOrderExceptionRequest).where(
+        ServiceOrderExceptionRequest.id == exception_id,
+        ServiceOrderExceptionRequest.service_order_id == service_order_id,
+    )
+    if for_update:
+        query = query.with_for_update()
+    exception_request = db.scalar(query)
+    if exception_request is None:
+        raise HTTPException(
+            status_code=404, detail="Solicitud de excepción no encontrada"
+        )
+    return exception_request
+
+
+def authorize_service_order_exception(
+    db: Session,
+    service_order_id: int,
+    exception_id: int,
+    *,
+    user_id: int,
+    comment: str | None = None,
+) -> ServiceOrderExceptionRequest:
+    user_id = _require_actor_id(user_id)
+    exception_request = _get_service_order_exception(
+        db, service_order_id, exception_id, for_update=True
+    )
+    if exception_request.status != "requested":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Solo una solicitud en estado requested puede autorizarse",
+        )
+    authorized_at = datetime.now(timezone.utc)
+    exception_request.status = "authorized"
+    exception_request.authorized_by_id = user_id
+    exception_request.authorized_at = authorized_at
+    exception_request.authorization_comment = comment
+    write_audit_log(
+        db,
+        action="service_order.exception_authorized",
+        entity="service_order_exceptions",
+        entity_id=exception_request.id,
+        user_id=user_id,
+        previous_values={"status": "requested"},
+        new_values={
+            "status": "authorized",
+            "authorized_by_id": user_id,
+            "authorized_at": authorized_at.isoformat(),
+        },
+        comment=comment,
+    )
+    publish_event(
+        db,
+        entity_type="service_order",
+        entity_id=service_order_id,
+        event_code="service_order.exception_authorized",
+        idempotency_key=f"service_order_exception:{exception_request.id}:authorized",
+        body=(
+            f"Excepción autorizada de {exception_request.source_stage} "
+            f"a {exception_request.target_stage}."
+        ),
+        actor_id=user_id,
+        metadata={"exception_id": exception_request.id, "status": "authorized"},
+    )
+    db.commit()
+    db.refresh(exception_request)
+    return exception_request
+
+
+def execute_service_order_exception(
+    db: Session,
+    service_order_id: int,
+    exception_id: int,
+    *,
+    user_id: int,
+) -> ServiceOrderExceptionRequest:
+    user_id = _require_actor_id(user_id)
+    exception_request = _get_service_order_exception(
+        db, service_order_id, exception_id, for_update=True
+    )
+    if exception_request.status != "authorized":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Solo una excepción autorizada puede ejecutarse",
+        )
+    service_order = get_service_order(db, service_order_id)
+    previous_status = service_order.status
+    if previous_status != exception_request.service_order_status_at_request:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El ETS cambió desde la solicitud; la excepción debe reevaluarse",
+        )
+    if exception_request.target_status and previous_status not in TERMINAL_STATUSES:
+        service_order.status = exception_request.target_status
+
+    # Las facturas derivadas solo se resincronizan en la ejecución autorizada.
+    from app.services.invoices import resync_invoices_for_service_exception
+
+    resync_invoices_for_service_exception(
+        db,
+        service_order.id,
+        comment=exception_request.reason,
+        user_id=user_id,
+    )
+    executed_at = datetime.now(timezone.utc)
+    exception_request.status = "executed"
+    exception_request.executed_by_id = user_id
+    exception_request.executed_at = executed_at
+    write_audit_log(
+        db,
+        action="service_order.exception_executed",
+        entity="service_order_exceptions",
+        entity_id=exception_request.id,
+        user_id=user_id,
+        previous_values={
+            "status": "authorized",
+            "service_order_status": previous_status,
+        },
+        new_values={
+            "status": "executed",
+            "service_order_status": service_order.status,
+            "executed_by_id": user_id,
+            "executed_at": executed_at.isoformat(),
+        },
+        comment=exception_request.reason,
+    )
+    publish_event(
+        db,
+        entity_type="service_order",
+        entity_id=service_order.id,
+        event_code="service_order.exception_executed",
+        idempotency_key=f"service_order_exception:{exception_request.id}:executed",
+        body=(
+            f"Excepción ejecutada de {exception_request.source_stage} "
+            f"a {exception_request.target_stage}."
+        ),
+        actor_id=user_id,
+        metadata={
+            "exception_id": exception_request.id,
+            "status": "executed",
+            "previous_status": previous_status,
+            "service_order_status": service_order.status,
+        },
+    )
+    db.commit()
+    db.refresh(exception_request)
+    return exception_request
 
 
 def deactivate_service_order(
-    db: Session, service_order_id: int, *, user_id: int | None = None
+    db: Session, service_order_id: int, *, user_id: int
 ) -> ServiceOrder:
+    user_id = _require_actor_id(user_id)
     service_order = get_service_order(db, service_order_id)
     service_order.is_active = False
     service_order.deleted_at = datetime.now(timezone.utc)

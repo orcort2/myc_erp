@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-08-04
+> Corte verificado: 2026-08-10
 
 # Índice único de documentación
 
@@ -57,7 +57,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md`](../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md) | Snapshot técnico reproducible de ETAPA 2B: 36 superficies, 305 operaciones HTTP y 493 campos; no es autoridad funcional posterior a la validación. |
 | [`../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md) | Brechas verificadas entre Catálogo Institucional, bootstrap `permissions.py` e inventario HTTP; base de revisión previa a cualquier RBAC dinámico. |
 | [`../architecture/security/API_ACCESS_CONTROL.md`](../architecture/security/API_ACCESS_CONTROL.md) | Deny-by-default, clasificación de rutas, excepciones públicas, JWT, portal/ownership y relación backend/frontend. |
-| [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible de las 306 operaciones FastAPI y su política mínima verificable. |
+| [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible vigente de 357 operaciones FastAPI; conserva la fecha del archivo de origen y su política mínima verificable. |
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
@@ -110,6 +110,8 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/STAGE_3_FILES_AND_UPLOADS_2026-08-04.md`](../closures/STAGE_3_FILES_AND_UPLOADS_2026-08-04.md) | Cierre técnico de ETAPA 3: perfiles de carga, ZIP seguro, almacenamiento/entrega institucional, artefactos Git y validaciones; terminado y en revisión. |
 | [`../closures/CLIENT_PORTAL_INTEGRATION_2026-08-04.md`](../closures/CLIENT_PORTAL_INTEGRATION_2026-08-04.md) | Cierre técnico del Portal del Cliente: identidad separada, registro, invitaciones, membresías, roles, aislamiento, frontend y validaciones; terminado y en revisión. |
 | [`../closures/PORTAL_USER_ACCESS_ADMINISTRATION_2026-08-05.md`](../closures/PORTAL_USER_ACCESS_ADMINISTRATION_2026-08-05.md) | Cierre correctivo de administración conjunta, multirrol, vinculación, invitaciones, configuración, bloqueo y Usuarios dentro del Portal; terminado y en revisión. |
+| [`../closures/ETS_INTEGRITY_SPRINT_2026-08-10.md`](../closures/ETS_INTEGRITY_SPRINT_2026-08-10.md) | Cierre técnico y micro-sprint final de autoridad única ETS, lifecycle, actor obligatorio, autoautorización administrativa, auditoría/eventos y regresión; aprobado con observaciones. |
+| [`../closures/CERTIFICATE_AUTHENTICATION_INTEGRITY_SPRINT_2026-08-10.md`](../closures/CERTIFICATE_AUTHENTICATION_INTEGRITY_SPRINT_2026-08-10.md) | Cierre P0 de autenticación: Calidad única, autoridad transaccional, retiro ETS, actor/audit/evento, concurrencia y regresión; terminado y en revisión. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_0.md`](../closures/RESOLUTION_ENGINE_PHASE_0.md) | Ratificación, matriz, gates, validaciones y condición de aprobación de la Fase 0 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_1.md`](../closures/RESOLUTION_ENGINE_PHASE_1.md) | Contratos, catálogos, serialización canónica, runtime, registro versionado, aislamiento y validaciones de la Fase 1 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_2.md`](../closures/RESOLUTION_ENGINE_PHASE_2.md) | Modelo ORM, integridad, reconstrucción, inmutabilidad, migración reversible y validaciones de la Fase 2 del Motor de Resoluciones. |
@@ -130,6 +132,7 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 
 | Documento | Fecha / autoridad |
 | --- | --- |
+| [`../audits/auditoria_integral_2026_08_10/AUDITORIA_INTEGRAL_ERP_MYC_2026_08.md`](../audits/auditoria_integral_2026_08_10/AUDITORIA_INTEGRAL_ERP_MYC_2026_08.md) | Corte integral 2026-08-10; informe principal de ocho entregables con módulos, fases, deuda, seguridad, pruebas, inventario y plan. Fotografía diagnóstica; no sustituye los canónicos sincronizados. |
 | [`../audits/AUDITORIA_INTEGRAL_ERP_MYC_2026-08-03.md`](../audits/AUDITORIA_INTEGRAL_ERP_MYC_2026-08-03.md) | Corte integral 2026-08-03; informe principal de una suite de diez entregables diagnósticos, matrices, plan y evidencia reproducible. No modifica por sí mismo el canon. |
 | [`../audits/VALIDACION_FUNCIONAL_CATALOGO_INSTITUCIONAL_2026-08-04.md`](../audits/VALIDACION_FUNCIONAL_CATALOGO_INSTITUCIONAL_2026-08-04.md) | Revisión funcional completa previa a ETAPA 3; contrasta las 36 superficies técnicas con el ERP objetivo, documenta diferencias y fundamenta el catálogo funcional propuesto. |
 | [`../audits/FILE_SURFACE_INVENTORY_2026-08-04.md`](../audits/FILE_SURFACE_INVENTORY_2026-08-04.md) | Fotografía inicial de cargas, descargas, formatos, límites, ownership, rutas, artefactos y riesgos que fundamenta ETAPA 3. |
@@ -152,7 +155,10 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 ### Estado operativo y bitácora histórica
 
 - [`../BACKUP_ESTADO_ACTUAL.md`](../BACKUP_ESTADO_ACTUAL.md): corte operativo vigente requerido por `AGENTS.md`; sólo resume estado verificable, migraciones, validaciones y pendientes.
-- [`../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`](../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md): cronología acumulada anterior, conservada íntegra y sin autoridad actual.
+- `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`: referencia
+  histórica sin autoridad cuyo archivo no está presente en el workspace del
+  corte 2026-08-10; queda pendiente recuperar o retirar formalmente la
+  referencia, sin reconstruir contenido inexistente.
 
 ### Arquitectura histórica
 

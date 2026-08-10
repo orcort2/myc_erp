@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: descripciones históricas que exijan carga previa de PDF, `final_pdf_path` o matching PDF–Excel para autenticar
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-08-10
 
 # Autenticación de certificados desde Calidad
 
@@ -37,13 +37,22 @@ La misma operación:
 - aplica el autenticador lateral/QR existente y persiste el PDF autenticado;
 - registra código, hash, actor y fecha de autenticación;
 - transita a `authenticated`;
-- crea el evento `certificate.pdf_authenticated` con estado anterior/nuevo, rutas y referencia al Master.
+- crea el audit `certificate.pdf_authenticated` con estado anterior/nuevo,
+  rutas, referencia al Master y origen `quality`;
+- publica el evento formal idempotente `certificate.authenticated` con actor,
+  estado anterior/nuevo, código, ETS y origen.
+
+`authenticate_certificate` es la autoridad transaccional única: bloquea la
+fila del certificado con `FOR UPDATE`, revalida que continúe aprobado y no
+autenticado, ejecuta el generador documental privado y confirma audit/evento en
+la misma transacción. Un segundo intento espera el lock y responde 409 sin
+duplicar archivos, versiones, audit o evento.
 
 Una falla del conversor o un Master ausente cancela la operación con error; no se marca autenticado sin archivos válidos.
 
 ## Actualización visual
 
-Tras aprobar o autenticar, Calidad reemplaza el certificado seleccionado con la respuesta persistida y vuelve a consultar certificados, archivos/readiness y agregados. Así actualiza tarjeta, botón y contadores sin recarga manual. La vista ETS replica actualmente la acción y también refresca sus datos; esa duplicación está registrada como `TD-007` y no constituye una segunda regla funcional.
+Tras aprobar o autenticar, Calidad reemplaza el certificado seleccionado con la respuesta persistida y vuelve a consultar certificados, archivos/readiness y agregados. Así actualiza tarjeta, botón y contadores sin recarga manual. ETS sólo consulta/proyecta el estado y ya no contiene acción individual, lote, cliente API ni endpoint de autenticación.
 
 ### Navegación consecutiva dentro del modal
 
@@ -83,6 +92,9 @@ La operación usa lock e idempotencia propietaria, conserva snapshots y
 auditoría append-only en la misma transacción y puede compensarse restaurando
 la visibilidad sólo si el certificado no presenta deriva. No existe endpoint
 nuevo ni lógica del dominio dentro del adaptador del Motor.
+
+El Motor no llama al autenticador ni puede producir `authenticated`; su
+vertical permanece limitado a visibilidad de una liberación ya ocurrida.
 
 Un replay exacto de ejecución o compensación recupera el resultado append-only
 antes de consultar el certificado, incluso si después cambió o quedó inactivo.
