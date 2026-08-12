@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de `project/`
 >
-> Corte actualizado: 2026-08-10
+> Corte actualizado: 2026-08-12
 
 # Estado operativo actual del ERP MYC
 
@@ -33,6 +33,10 @@
   único, lifecycle persistente `requested → authorized → executed`, actor
   obligatorio en contratos críticos ETS y autoautorización administrativa en
   tres acciones auditables separadas; regresión completa verde.
+- La **Fase 1 ETS múltiple/evolucionado** está **EN REVISIÓN**: unidades
+  estables, etapas append-only, solicitud técnica, aprobación por partida,
+  Activity contextual, tareas `#tarea`, snapshot comercial acotado y alta
+  rápida de catálogo. No abre workflows técnicos de categorías posteriores.
 - El P0 **Integridad de autenticación de Certificados** está **TERMINADO — EN
   REVISIÓN**: Calidad es la única superficie mutante, ETS perdió endpoint/lote
   y acciones, y `certificate_authentication.authenticate_certificate` conserva
@@ -70,11 +74,13 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 ## Persistencia y migraciones
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
-- Head único oficial: `e7b62b8a9421`.
-- Base local compartida: migrada y verificada en `e7b62b8a9421`.
+- Head único oficial: `f4a1c9d2e710`.
+- Base local compartida: migrada y verificada en `f4a1c9d2e710`.
 - `e7b62b8a9421` incorpora `service_order_exception_requests` para conservar
   solicitud, autorización, ejecución, actores, timestamps y estado ETS de
   revalidación sin usar auditoría como almacenamiento de lifecycle.
+- `f4a1c9d2e710` incorpora el núcleo ETS múltiple/evolucionado, decisiones por
+  partida, solicitudes técnicas, tareas y backfill de equipos históricos con OT.
 - `alembic check`: **LIMPIO** tanto en la base local como en bases aisladas.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
@@ -99,12 +105,12 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 ## Respaldo oficial
 
 - Archivo: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño: 74,270,003 bytes.
-- `alembic_version` contenido: `e7b62b8a9421`.
-- SHA-256: `1f6d491f53ede4517592ddc5aa769923203697d9bfc1f7cd25ce2f485b41a14b`.
+- Tamaño: 74,306,112 bytes.
+- `alembic_version` contenido: `f4a1c9d2e710`.
+- SHA-256: `68659712d3b89803446ef8b2871ad53acb32ae02881ad1ddb7cc1e7df1d766ba`.
 - Estado: **ALINEADO CON EL HEAD OFICIAL**.
 - Restore drill histórico: **CORRECTO** para el respaldo anterior en
-  `c8a51e2d7f40`; el respaldo regenerado en `e7b62b8a9421` no fue restaurado en
+  `c8a51e2d7f40`; el respaldo regenerado en `f4a1c9d2e710` no fue restaurado en
   una base aislada durante este sprint. El procedimiento está en
   `architecture/database/SCHEMA_RECOVERY.md`.
 
@@ -112,7 +118,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 467 passed, 19 subtests, 3 warnings |
+| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 475 passed, 19 subtests, 3 warnings |
+| Escenarios Fase 1 ETS múltiple/evolucionado | 4 passed; cubren A–H, múltiple inicial, evolución, aprobación/rechazo parcial, bloqueo, Activity y tareas |
 | Autenticación real y autoridad canónica | 12 passed; LibreOffice real, adapter HTTP, lock, actor, audit/evento y doble autenticación |
 | Pruebas dirigidas Integridad ETS y módulos relacionados | 67 passed, 7 subtests; actor obligatorio, mismo Administrador en tres etapas, audit/eventos, no mutación en requested/authorized, ejecución autorizada, revalidación y router sin reglas |
 | Pruebas dirigidas ETAPA 3 | 78 passed, 7 subtests |
@@ -121,10 +128,11 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 41 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Inventario FastAPI | 357/357 operaciones clasificadas; CSV coincide con runtime |
+| Inventario FastAPI | 363/363 operaciones clasificadas; CSV coincide con runtime |
 | Aislamiento portal A/B | membresía propia 200, recurso ajeno 404, anónimo 401; autenticador interno rechaza token del portal |
 | `scripts/myc doctor` | dependencias locales principales disponibles |
 | Alembic ciclo vacío base→head→base→head | correcto en PostgreSQL aislado |
+| Migración Fase 1 reversible | base aislada `base → f4a1c9d2e710 → e7b62b8a9421 → f4a1c9d2e710`; current y check correctos |
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
 | Alembic check | limpio en local, ciclo y restores aislados |
 | Respaldo oficial regenerado | contiene `e7b62b8a9421`; restore drill no repetido en este sprint |
@@ -161,7 +169,7 @@ seguridad e inventario, se conserva en
 
 ## Seguridad y operación
 
-- Inventario introspectado: 357 operaciones HTTP, todas clasificadas por el
+- Inventario introspectado: 363 operaciones HTTP, todas clasificadas por el
   guard deny-by-default; el CSV canónico coincide con runtime.
 - Toda ruta interna pasa por el guard deny-by-default y el arranque/prueba de
   conformidad fallan si aparece una operación sin clasificación.

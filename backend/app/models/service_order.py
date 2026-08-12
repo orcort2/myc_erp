@@ -133,6 +133,10 @@ class ServiceOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         cascade="all, delete-orphan",
         order_by="ServiceOrderExceptionRequest.id.asc()",
     )
+    service_units: Mapped[list["ServiceUnit"]] = relationship(
+        back_populates="service_order",
+        order_by="ServiceUnit.id.asc()",
+    )
 
     @property
     def advisor_name(self) -> str | None:
@@ -286,6 +290,10 @@ class ServiceWorkOrder(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     equipment: Mapped[list["Equipment"]] = relationship(
         back_populates="work_order",
         order_by="Equipment.id.asc()",
+    )
+    service_units: Mapped[list["ServiceUnit"]] = relationship(
+        back_populates="work_order",
+        order_by="ServiceUnit.id.asc()",
     )
 
     signature_cycle_links: Mapped[

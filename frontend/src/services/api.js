@@ -735,6 +735,45 @@ export async function getServiceOrder(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}`);
 }
 
+export async function getServiceExecutionBoard(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/execution-board`);
+}
+
+export async function createServiceUnits(serviceOrderId, units) {
+  return request(`/service-orders/${serviceOrderId}/service-units`, {
+    method: 'POST',
+    body: JSON.stringify({ units })
+  });
+}
+
+export async function createServiceStage(serviceUnitId, payload) {
+  return request(`/service-orders/service-units/${serviceUnitId}/stages`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateServiceStage(serviceStageId, payload) {
+  return request(`/service-orders/stages/${serviceStageId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createTechnicalServiceRequest(serviceStageId, payload) {
+  return request(`/service-orders/stages/${serviceStageId}/technical-requests`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function decideQuotationItem(quotationId, itemId, payload) {
+  return request(`/quotations/${quotationId}/items/${itemId}/decision`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
 export async function updateServiceOrder(serviceOrderId, payload) {
   return request(`/service-orders/${serviceOrderId}`, {
     method: 'PATCH',

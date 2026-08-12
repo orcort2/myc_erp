@@ -9,6 +9,7 @@ from app.models.client import Client
 from app.models.catalog_item import CatalogItem
 from app.models.linked_company import LinkedCompany
 from app.models.quotation import Quotation, QuotationItem, QuotationSnapshot
+from app.models.service_execution import ServiceStage, ServiceUnit, TechnicalServiceRequest
 from app.schemas.quotation import (
     QuotationCreate,
     QuotationItemCreate,
@@ -154,6 +155,41 @@ def _quotation_item_values(
     existing_item: QuotationItem | None = None,
 ) -> dict:
     values = payload.model_dump(exclude_unset=True)
+    context_ids = (
+        values.get("source_service_order_id"),
+        values.get("source_service_unit_id"),
+        values.get("source_stage_id"),
+        values.get("technical_request_id"),
+    )
+    if any(value is not None for value in context_ids):
+        if not all(value is not None for value in context_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La partida derivada requiere ETS, unidad, etapa origen y solicitud técnica",
+            )
+        unit = db.get(ServiceUnit, values["source_service_unit_id"])
+        stage = db.get(ServiceStage, values["source_stage_id"])
+        request = db.get(TechnicalServiceRequest, values["technical_request_id"])
+        if (
+            unit is None
+            or stage is None
+            or request is None
+            or unit.service_order_id != values["source_service_order_id"]
+            or stage.service_unit_id != unit.id
+            or request.service_order_id != unit.service_order_id
+            or request.service_unit_id != unit.id
+            or request.source_stage_id != stage.id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="El contexto ETS de la partida derivada es inconsistente",
+            )
+        values["equipment_snapshot"] = {
+            "brand": unit.brand,
+            "model": unit.model,
+            "serial_number": unit.serial_number,
+        }
+        request.status = "quoted"
     catalog_item = _get_catalog_item(db, values.get("catalog_item_id"))
     if catalog_item is not None:
         values["operational_snapshot"] = _build_operational_snapshot(
@@ -316,7 +352,10 @@ def list_quotations(
 ) -> list[Quotation]:
     query = (
         select(Quotation)
-        .options(selectinload(Quotation.items), selectinload(Quotation.advisor))
+        .options(
+            selectinload(Quotation.items).selectinload(QuotationItem.decisions),
+            selectinload(Quotation.advisor),
+        )
         .order_by(Quotation.created_at.desc())
     )
     if not include_inactive:
@@ -330,7 +369,10 @@ def get_quotation(db: Session, quotation_id: int) -> Quotation:
     quotation = db.scalar(
         select(Quotation)
         .where(Quotation.id == quotation_id)
-        .options(selectinload(Quotation.items), selectinload(Quotation.advisor))
+        .options(
+            selectinload(Quotation.items).selectinload(QuotationItem.decisions),
+            selectinload(Quotation.advisor),
+        )
     )
     if quotation is None or not quotation.is_active:
         raise HTTPException(

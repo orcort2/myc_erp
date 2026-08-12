@@ -313,6 +313,11 @@ def create_message(
     db.flush()
     thread.updated_at = _now()
     _sync_mentions(db, message, payload.mentioned_user_ids, user)
+    # `#tarea` es sólo un atajo de captura; la tarea conserva identidad propia
+    # y el mensaje origen garantiza idempotencia.
+    from app.services.service_execution import task_from_activity_message
+
+    task_from_activity_message(db, message)
     write_audit_log(
         db,
         action="activity.message_created",

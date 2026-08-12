@@ -12,6 +12,10 @@ from app.schemas.quotation import (
     QuotationStatusChange,
     QuotationUpdate,
 )
+from app.schemas.service_execution import (
+    QuotationItemDecisionCreate,
+    QuotationItemDecisionRead,
+)
 from app.services.quotations import (
     add_quotation_item,
     change_quotation_status,
@@ -26,11 +30,32 @@ from app.services.quotations import (
     update_quotation_item,
 )
 from app.services.quotation_pdfs import generate_quotation_pdf
+from app.services.service_execution import decide_quotation_item
 from app.models.user import User
 from app.services.auth import get_current_user
 
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
+
+
+@router.post(
+    "/{quotation_id}/items/{item_id}/decision",
+    response_model=QuotationItemDecisionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_quotation_item_decision(
+    quotation_id: int,
+    item_id: int,
+    payload: QuotationItemDecisionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> QuotationItemDecisionRead:
+    decision, stage_ids = decide_quotation_item(
+        db, quotation_id, item_id, payload, user_id=current_user.id
+    )
+    return QuotationItemDecisionRead.model_validate(decision).model_copy(
+        update={"created_stage_ids": stage_ids}
+    )
 
 
 @router.get("", response_model=list[QuotationRead])

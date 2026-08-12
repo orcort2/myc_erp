@@ -16,6 +16,16 @@ from app.schemas.service_order import (
     ServiceOrderStatusChange,
     ServiceOrderUpdate,
 )
+from app.schemas.service_execution import (
+    ServiceExecutionBoardRead,
+    ServiceStageCreate,
+    ServiceStageRead,
+    ServiceStageUpdate,
+    ServiceUnitBatchCreate,
+    ServiceUnitRead,
+    TechnicalServiceRequestCreate,
+    TechnicalServiceRequestRead,
+)
 from app.services.auth import get_current_user, require_permission
 from app.services.capture_packages import (
     list_capture_files,
@@ -41,6 +51,13 @@ from app.services.service_orders import (
     request_service_order_exception,
     update_service_order,
 )
+from app.services.service_execution import (
+    add_service_stage,
+    create_service_units,
+    create_technical_request,
+    execution_board,
+    update_service_stage,
+)
 from app.services.work_order_pdfs import (
     generate_service_order_work_orders_pdf,
     generate_service_work_order_pdf,
@@ -49,6 +66,69 @@ from app.services.work_order_pdfs import (
 
 
 router = APIRouter(prefix="/service-orders", tags=["service-orders"])
+
+
+@router.get("/{service_order_id}/execution-board", response_model=ServiceExecutionBoardRead)
+def get_service_execution_board(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+) -> ServiceExecutionBoardRead:
+    return execution_board(db, service_order_id)
+
+
+@router.post(
+    "/{service_order_id}/service-units",
+    response_model=list[ServiceUnitRead],
+    status_code=status.HTTP_201_CREATED,
+)
+def post_service_units(
+    service_order_id: int,
+    payload: ServiceUnitBatchCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.update")),
+) -> list[ServiceUnitRead]:
+    return create_service_units(db, service_order_id, payload, user_id=current_user.id)
+
+
+@router.post(
+    "/service-units/{service_unit_id}/stages",
+    response_model=ServiceStageRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_service_stage(
+    service_unit_id: int,
+    payload: ServiceStageCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.update")),
+) -> ServiceStageRead:
+    return add_service_stage(db, service_unit_id, payload, user_id=current_user.id)
+
+
+@router.patch(
+    "/stages/{service_stage_id}",
+    response_model=ServiceStageRead,
+)
+def patch_service_stage(
+    service_stage_id: int,
+    payload: ServiceStageUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.update")),
+) -> ServiceStageRead:
+    return update_service_stage(db, service_stage_id, payload, user_id=current_user.id)
+
+
+@router.post(
+    "/stages/{service_stage_id}/technical-requests",
+    response_model=TechnicalServiceRequestRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def post_technical_service_request(
+    service_stage_id: int,
+    payload: TechnicalServiceRequestCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.update")),
+) -> TechnicalServiceRequestRead:
+    return create_technical_request(db, service_stage_id, payload, user_id=current_user.id)
 
 
 @router.get("/{service_order_id}/capture-package-summary")

@@ -399,6 +399,27 @@ function buildQuotationItemPayload(itemForm) {
   };
 }
 
+function catalogConceptToDraft(draft, item) {
+  return {
+    ...draft,
+    catalogItemId: item.id,
+    catalogSearch: item.name,
+    description: item.description || item.name,
+    observations: draft.observations || '',
+    unit: item.customInternalUnit || item.internalUnit || item.satUnit || 'Servicio',
+    unitPrice: String(item.finalPriceMxn ?? calculateFinalPriceMxn(item)),
+    currency: 'MXN',
+    satKey: item.satKey || '',
+    satUnit: item.satUnit || '',
+    internalUnit: item.internalUnit || '',
+    commodity: item.commodity || null,
+    calibrationScope: item.calibrationScope || null,
+    quotationLegend: item.quotationLegend || null,
+    taxObject: item.taxObject || 'iva_16',
+    taxRate: item.taxRate ?? 16
+  };
+}
+
 function isQuotationTerminal(quotation) {
   return ['accepted', 'rejected', 'expired', 'cancelled'].includes(quotation?.status);
 }
@@ -422,6 +443,7 @@ function QuotationsPage({ user = null }) {
   const [productForm, setProductForm] = useState(emptyProductForm);
   const [templateForm, setTemplateForm] = useState(defaultQuotationTemplate);
   const [editingProductId, setEditingProductId] = useState(null);
+  const [catalogCreationDraftId, setCatalogCreationDraftId] = useState(null);
   const [catalogFilters, setCatalogFilters] = useState({
     type: 'Todos',
     category: '',
@@ -1022,7 +1044,7 @@ function QuotationsPage({ user = null }) {
     }
   }
 
-  function openProductModal(item = null) {
+  function openProductModal(item = null, draftId = null) {
     setError('');
     setNotice('');
     if (item) {
@@ -1056,7 +1078,13 @@ function QuotationsPage({ user = null }) {
       });
     } else {
       setEditingProductId(null);
-      setProductForm(emptyProductForm);
+      const draft = draftItems.find((candidate) => candidate.id === draftId);
+      setCatalogCreationDraftId(draftId);
+      setProductForm({
+        ...emptyProductForm,
+        type: 'Servicio',
+        name: draft?.catalogSearch?.trim() || draft?.description?.trim() || ''
+      });
     }
     setIsProductModalOpen(true);
   }
@@ -1064,6 +1092,7 @@ function QuotationsPage({ user = null }) {
   function closeProductModal() {
     setIsProductModalOpen(false);
     setEditingProductId(null);
+    setCatalogCreationDraftId(null);
     setProductForm(emptyProductForm);
     setError('');
   }
@@ -1149,6 +1178,14 @@ function QuotationsPage({ user = null }) {
           ? current.map((item) => (item.id === editingProductId ? mapped : item))
           : [mapped, ...current]
       );
+      if (!editingProductId && catalogCreationDraftId) {
+        setDraftItems((current) => current.map((draft) => (
+          draft.id === catalogCreationDraftId
+            ? catalogConceptToDraft(draft, mapped)
+            : draft
+        )));
+        setActiveServicePickerId(null);
+      }
       setNotice(editingProductId ? 'Producto/servicio actualizado' : 'Producto/servicio agregado al catalogo');
       closeProductModal();
     } catch (requestError) {
@@ -1309,24 +1346,7 @@ function QuotationsPage({ user = null }) {
     setDraftItems((current) =>
       current.map((draft) =>
         draft.id === draftId
-          ? {
-              ...draft,
-              catalogItemId: item.id,
-              catalogSearch: item.name,
-              description: item.description || item.name,
-              observations: '',
-              unit: item.customInternalUnit || item.internalUnit || item.satUnit || 'Servicio',
-              unitPrice: String(item.finalPriceMxn ?? calculateFinalPriceMxn(item)),
-              currency: 'MXN',
-              satKey: item.satKey || '',
-              satUnit: item.satUnit || '',
-              internalUnit: item.internalUnit || '',
-              commodity: item.commodity || null,
-              calibrationScope: item.calibrationScope || null,
-              quotationLegend: item.quotationLegend || null,
-              taxObject: item.taxObject || 'iva_16',
-              taxRate: item.taxRate ?? 16
-            }
+          ? catalogConceptToDraft(draft, item)
           : draft
       )
     );
@@ -2733,8 +2753,19 @@ function QuotationsPage({ user = null }) {
                               type="text"
                               value={draft.catalogSearch || draft.description}
                             />
-                            {activeServicePickerId === draft.id && filteredConcepts.length ? <div className="quote-service-picker__menu" role="listbox">
+                            {activeServicePickerId === draft.id && draft.catalogSearch?.trim() ? <div className="quote-service-picker__menu" role="listbox">
                               {filteredConcepts.map((item) => <button key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => { selectDraftCatalogConcept(draft.id, item.id); setActiveServicePickerId(null); }} role="option" type="button"><strong>{item.name}</strong><small>{item.category} · {item.internalKey} · {formatMoney(item.finalPriceMxn)}</small></button>)}
+                              {!filteredConcepts.some((item) => normalizeKey(item.name) === normalizeKey(draft.catalogSearch)) && canManageCatalog ? (
+                                <button
+                                  onMouseDown={(event) => event.preventDefault()}
+                                  onClick={() => openProductModal(null, draft.id)}
+                                  role="option"
+                                  type="button"
+                                >
+                                  <strong>+ Crear / editar producto o servicio</strong>
+                                  <small>Se seleccionará automáticamente sin perder la cotización.</small>
+                                </button>
+                              ) : null}
                             </div> : null}
                             </div>
                             <textarea

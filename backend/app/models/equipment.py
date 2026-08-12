@@ -98,6 +98,10 @@ class Equipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         back_populates="equipment"
     )
 
+    service_unit: Mapped["ServiceUnit | None"] = relationship(
+        back_populates="equipment", uselist=False
+    )
+
     @property
     def work_order_number(self) -> int | None:
         if self.work_order is None:

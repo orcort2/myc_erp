@@ -252,6 +252,29 @@ Agenda y Llamado no son módulos autónomos actuales. La fecha de agenda vive en
 
 ## 4. ETS, OT, equipos y firmas
 
+### Núcleo múltiple/evolucionado Fase 1
+
+`Cotización inicial decidida por partida → ETS → ServiceUnit(s) →
+ServiceStage(s) autorizadas`, conservando el mismo `ServiceOrder` y la misma
+`ServiceWorkOrder` durante la intervención. Una unidad aparece una sola vez en
+backend aunque la UI futura la proyecte en varios tabs por categoría.
+
+Servicio General inicia como `ServiceUnit → diagnóstico`. Después:
+
+`Etapa origen → TechnicalServiceRequest → una o varias QuotationItem →
+QuotationItemDecision por partida → cero, una o varias ServiceStage nuevas`.
+
+Una aprobación crea únicamente las categorías declaradas; un rechazo no crea
+etapa ejecutable. Decisiones mixtas conservan `partially_approved`. La nueva
+etapa referencia a la anterior y no la convierte ni elimina. La ausencia
+física de marca/modelo/serie produce identificación parcial documentada sin
+bloquear el alta.
+
+Activity conserva threads directos para ETS, unidad y etapa. Un mensaje con
+`#tarea` materializa una tarea independiente, enlazada al mensaje y sus
+menciones mediante clave única. El snapshot comercial derivado incluye sólo
+marca, modelo y serie; la evidencia técnica permanece en ETS.
+
 El ETS usa la máquina de estados:
 
 ```text

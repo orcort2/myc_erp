@@ -31,6 +31,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   las mutaciones HTTP y excepciones persistentes
   `requested → authorized → executed`; hitos de agenda/llamado, equipos,
   Órdenes de Trabajo y firmas por ciclo.
+- Núcleo ETS múltiple/evolucionado Fase 1, `EN REVISIÓN`: unidades estables por
+  intervención, secuencias de etapas sin reemplazo histórico, identificación
+  parcial tolerante, solicitudes técnico→comercial, snapshot acotado del
+  equipo, decisión por partida, Activity contextual y tareas `#tarea`.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
 - Control Documental V1 y Plantillas Maestras de Certificado.
@@ -110,6 +114,9 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - **Agenda:** fecha e información dentro del ETS; no hay entidad/calendario/folio propio.
 - **Llamados:** hito y transición dentro del ETS; no hay módulo ni bitácora autónoma.
 - **Catálogo MYC:** backend y editor embebido desde Cotizaciones, incluido el modelo normalizado de Servicios Compuestos; navegación independiente y autorización uniforme todavía no vigentes.
+- **ETS múltiple/evolucionado:** el backend y los contratos frontend están
+  implementados; la composición visual por cards/tabs, deep-links y workflows
+  técnicos específicos de cada categoría no pertenecen a Fase 1.
 - **Portal de cliente:** integración técnica terminada y en revisión. Incluye
   identidad externa separada, registro, verificación, invitaciones, revisión y
   vínculo persistente `User`–`ClientPortalMembership`–`Client`, roles propios,

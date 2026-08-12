@@ -26,6 +26,7 @@ from app.models.reference_standard_certificate import (
     ReferenceStandardCertificate,
 )
 from app.models.service_order import ServiceOrder, ServiceWorkOrder
+from app.models.service_execution import ServiceStage, ServiceUnit
 from app.models.uncertainty import UncertaintyModel
 from app.resolution_engine.infrastructure.persistence import Resolution
 from app.services.auth import user_has_permission
@@ -84,6 +85,14 @@ _DEFINITIONS = (
     ActivityEntityDefinition(
         "work_order", "Orden de trabajo", ServiceWorkOrder,
         "service_orders.read", "/dashboard#servicios", ("work_order_number",),
+    ),
+    ActivityEntityDefinition(
+        "service_unit", "Unidad ETS", ServiceUnit,
+        "service_orders.read", "/dashboard#servicios", ("serial_number", "name"),
+    ),
+    ActivityEntityDefinition(
+        "service_stage", "Etapa ETS", ServiceStage,
+        "service_orders.read", "/dashboard#servicios", ("category", "id"),
     ),
     ActivityEntityDefinition(
         "field_sheet", "Hoja de Campo", FieldSheet, "field_sheets.read",

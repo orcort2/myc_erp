@@ -104,8 +104,15 @@ Administrador puede ocupar los tres roles sin omitir ninguna transición ni
 evidencia. ETS/Servicios conserva su clasificación
 global `EN DESARROLLO` por pendientes ajenos a este sprint.
 
+La **Fase 1 del núcleo ETS múltiple/evolucionado** está implementada y
+`EN REVISIÓN`. Añade unidades operativas estables, etapas append-only,
+solicitudes técnicas, decisión comercial por partida, Activity contextual y
+tareas `#tarea`, con migración `f4a1c9d2e710` y compatibilidad explícita con
+calibración. No cambia la clasificación global: faltan revisión funcional y
+arquitectónica, UI de cards/tabs, portal/app de aprobación y E2E autenticado.
+
 1. La Contención de Seguridad Etapa 1 quedó **APROBADA Y CERRADA**:
-   deny-by-default, JWT productivo seguro, clasificación 357/357 y portal
+   deny-by-default, JWT productivo seguro, clasificación 363/363 y portal
    aislado. PortalMembership, RBAC administrable, revocación/rotación,
    `localStorage`, rate limit, MFA y E2E browser exhaustivo por rol pertenecen
    a etapas posteriores y no reabren este cierre.

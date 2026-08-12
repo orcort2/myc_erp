@@ -1,7 +1,7 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, ForeignKey, JSON, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -59,12 +59,53 @@ class QuotationItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     calibration_scope: Mapped[str | None] = mapped_column(String(60))
     quotation_legend: Mapped[str | None] = mapped_column(Text)
     operational_snapshot: Mapped[dict | None] = mapped_column(JSON)
+    source_service_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_orders.id", ondelete="RESTRICT"), index=True
+    )
+    source_service_unit_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_units.id", ondelete="RESTRICT"), index=True
+    )
+    source_stage_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_stages.id", ondelete="RESTRICT"), index=True
+    )
+    technical_request_id: Mapped[int | None] = mapped_column(
+        ForeignKey("technical_service_requests.id", ondelete="RESTRICT"), index=True
+    )
+    equipment_snapshot: Mapped[dict | None] = mapped_column(JSON)
     tax_object: Mapped[str | None] = mapped_column(String(20))
     tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=16)
     tax_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
 
     quotation: Mapped[Quotation] = relationship(back_populates="items")
+    decisions: Mapped[list["QuotationItemDecision"]] = relationship(
+        back_populates="quotation_item",
+        order_by="QuotationItemDecision.created_at.asc()",
+    )
+
+
+class QuotationItemDecision(IntegerPkMixin, TimestampMixin, Base):
+    __tablename__ = "quotation_item_decisions"
+    __table_args__ = (
+        CheckConstraint(
+            "decision IN ('approved','rejected')",
+            name="ck_quotation_item_decisions_decision",
+        ),
+    )
+
+    quotation_item_id: Mapped[int] = mapped_column(
+        ForeignKey("quotation_items.id", ondelete="RESTRICT"), index=True
+    )
+    decision: Mapped[str] = mapped_column(String(20), index=True)
+    decided_by_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    source: Mapped[str] = mapped_column(String(30), default="internal")
+    comment: Mapped[str | None] = mapped_column(Text)
+    enabled_stage_categories: Mapped[list] = mapped_column(JSON, default=list)
+
+    quotation_item: Mapped[QuotationItem] = relationship(back_populates="decisions")
 
 
 class QuotationSnapshot(IntegerPkMixin, TimestampMixin, Base):

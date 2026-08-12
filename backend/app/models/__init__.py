@@ -78,7 +78,16 @@ from app.models.portal_registration import PortalRegistration
 from app.models.quotation import (
     Quotation,
     QuotationItem,
+    QuotationItemDecision,
     QuotationSnapshot,
+)
+from app.models.service_execution import (
+    ServiceStage,
+    ServiceStageDocument,
+    ServiceTask,
+    ServiceTaskAssignee,
+    ServiceUnit,
+    TechnicalServiceRequest,
 )
 from app.models.quotation_service_change import (
     QuotationServiceChangeRequest,
@@ -199,6 +208,7 @@ __all__ = [
     "PortalRegistration",
     "Quotation",
     "QuotationItem",
+    "QuotationItemDecision",
     "QuotationServiceChangeRequest",
     "QuotationSnapshot",
     "ReferenceStandard",
@@ -238,6 +248,12 @@ __all__ = [
     "SatCatalogVersion",
     "ServiceOrder",
     "ServiceOrderItem",
+    "ServiceStage",
+    "ServiceStageDocument",
+    "ServiceTask",
+    "ServiceTaskAssignee",
+    "ServiceUnit",
+    "TechnicalServiceRequest",
     "ServiceOrderSignatureCycle",
     "SoftDeleteMixin",
     "TechnicalProfile",

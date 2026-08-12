@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.service_scope import ServiceScope
+from app.schemas.service_execution import QuotationItemDecisionRead
 
 
 QuotationStatus = Literal[
@@ -35,6 +36,10 @@ class QuotationItemBase(BaseModel):
     quotation_legend: str | None = None
     tax_object: str | None = Field(default=None, max_length=20)
     tax_rate: Decimal = Field(default=Decimal("16.00"), ge=0)
+    source_service_order_id: int | None = None
+    source_service_unit_id: int | None = None
+    source_stage_id: int | None = None
+    technical_request_id: int | None = None
 
 
 class QuotationItemCreate(QuotationItemBase):
@@ -58,6 +63,10 @@ class QuotationItemUpdate(BaseModel):
     quotation_legend: str | None = None
     tax_object: str | None = Field(default=None, max_length=20)
     tax_rate: Decimal | None = Field(default=None, ge=0)
+    source_service_order_id: int | None = None
+    source_service_unit_id: int | None = None
+    source_stage_id: int | None = None
+    technical_request_id: int | None = None
 
 
 class QuotationItemRead(QuotationItemBase):
@@ -65,6 +74,8 @@ class QuotationItemRead(QuotationItemBase):
 
     id: int
     operational_snapshot: dict | None = None
+    equipment_snapshot: dict | None = None
+    decisions: list[QuotationItemDecisionRead] = Field(default_factory=list)
     tax_total: Decimal
     total: Decimal
     is_active: bool
