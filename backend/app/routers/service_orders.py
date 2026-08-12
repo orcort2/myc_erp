@@ -72,6 +72,7 @@ router = APIRouter(prefix="/service-orders", tags=["service-orders"])
 def get_service_execution_board(
     service_order_id: int,
     db: Session = Depends(get_db),
+    _current_user: User = Depends(require_permission("service_orders.read")),
 ) -> ServiceExecutionBoardRead:
     return execution_board(db, service_order_id)
 

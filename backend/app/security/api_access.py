@@ -110,7 +110,9 @@ def _catalog_policy(method: str, path: str) -> AccessPolicy:
     )
 
 
-def _quotation_policy(method: str, _path: str) -> AccessPolicy:
+def _quotation_policy(method: str, path: str) -> AccessPolicy:
+    if path.endswith("/decision"):
+        return _permission("quotations.update")
     return _permission(
         _method_permission(
             method,

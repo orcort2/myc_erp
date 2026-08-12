@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, JSON, Numeric, String, Text
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -90,6 +90,9 @@ class QuotationItemDecision(IntegerPkMixin, TimestampMixin, Base):
         CheckConstraint(
             "decision IN ('approved','rejected')",
             name="ck_quotation_item_decisions_decision",
+        ),
+        UniqueConstraint(
+            "quotation_item_id", name="uq_quotation_item_decisions_item"
         ),
     )
 

@@ -32,9 +32,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   `requested → authorized → executed`; hitos de agenda/llamado, equipos,
   Órdenes de Trabajo y firmas por ciclo.
 - Núcleo ETS múltiple/evolucionado Fase 1, `EN REVISIÓN`: unidades estables por
-  intervención, secuencias de etapas sin reemplazo histórico, identificación
-  parcial tolerante, solicitudes técnico→comercial, snapshot acotado del
-  equipo, decisión por partida, Activity contextual y tareas `#tarea`.
+  intervención con partida/categoría origen y capacidad evolutiva por unidad,
+  secuencias de etapas sin reemplazo histórico, identificación parcial
+  tolerante, solicitudes técnico→comercial separadas del estado técnico,
+  decisión interna autorizada por partida con categorías validadas, Activity
+  contextual y tareas `#tarea`.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
 - Control Documental V1 y Plantillas Maestras de Certificado.

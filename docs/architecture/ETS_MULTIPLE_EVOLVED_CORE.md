@@ -20,7 +20,7 @@
 
 ### `ServiceUnit`
 
-Identidad estable de una unidad/equipo durante una intervención. La card futura es sólo una proyección visual. La unidad pertenece a un ETS y a una OT, puede enlazar el `Equipment` de calibración y admite identificación parcial (`brand`, `model`, `serial_number`, notas y estado de identificación). No representa el activo histórico global del cliente.
+Identidad estable de una unidad/equipo durante una intervención. La card futura es sólo una proyección visual. La unidad pertenece a un ETS y a una OT, puede enlazar el `Equipment` de calibración y admite identificación parcial (`brand`, `model`, `serial_number`, notas y estado de identificación). `origin_service_order_item_id`, `initial_category` y `evolution_enabled` congelan el origen comercial/operativo de esa unidad: sólo una partida de Servicio General habilita evolución. No representa el activo histórico global del cliente.
 
 ### `ServiceStage`
 
@@ -40,7 +40,9 @@ El técnico describe la necesidad y categorías; no crea partidas aprobadas. La 
 
 ### Decisión por partida
 
-`QuotationItemDecision` es historial append-only. Una partida acepta una decisión `approved` o `rejected`; no se sobrescribe. La aprobación declara las categorías habilitadas. En partidas derivadas, el servicio crea `1..N` etapas autorizadas. El rechazo no crea etapas ejecutables.
+`QuotationItemDecision` es historial append-only. Una partida acepta una sola decisión inicial `approved` o `rejected`; una restricción única por `quotation_item_id` protege la invariancia incluso bajo concurrencia. La aprobación declara categorías que deben coincidir con el catálogo/snapshot comercial y, en partidas derivadas, con la solicitud técnica origen. El rechazo no crea etapas ejecutables.
+
+La ruta interna exige `quotations.update` y deriva siempre `source=internal` del contexto autenticado. `source` no concede autoridad: valores de portal/app se rechazan. Los futuros portal/app deberán usar endpoints y adaptadores propios con identidad y ownership de cliente; no reutilizarán inseguramente esta ruta interna.
 
 Una partida derivada guarda referencias internas a ETS, unidad, etapa y solicitud. El único snapshot comercial del equipo contiene marca, modelo y serie. No transporta fotografías, evidencias, diagnóstico, timeline ni estado mutable.
 
@@ -55,19 +57,21 @@ Las partidas de una cotización inicial pueden decidirse antes de existir unidad
 1. El ETS y la OT no cambian por evolución de categoría.
 2. La identidad de `ServiceUnit` permanece estable durante toda la intervención.
 3. La evolución agrega `ServiceStage`; no muta la categoría ni elimina historial.
-4. Sólo Servicio General puede iniciar ejecución dinámica con diagnóstico sin una aprobación derivada.
+4. Sólo una `ServiceUnit` cuyo origen persistido sea Servicio General tiene `evolution_enabled=true`; puede iniciar diagnóstico y seguir originando solicitudes desde etapas posteriores. La presencia de Servicio General en otra partida del ETS no contamina unidades de calibración, mantenimiento u otra categoría.
 5. Marca, modelo o serie ausentes no bloquean el alta; se registra identificación parcial.
 6. Una etapa `authorized`/`in_progress` debe estar respaldada por una decisión aprobada que incluya esa categoría, salvo el diagnóstico inicial anterior.
 7. Una decisión rechazada no habilita etapas.
-8. Una decisión existente no se revierte por overwrite; requiere futura rama formal validada.
+8. Una decisión existente no se revierte por overwrite; la base impide dos decisiones iniciales y cualquier corrección requiere futura rama formal validada.
 9. Activity se contextualiza directamente sobre ETS, unidad o etapa.
 10. Los objetos comerciales no reciben evidencia técnica mutable.
+11. Crear `TechnicalServiceRequest` sólo crea estado comercial `requested`; no cambia el estado técnico de la etapa. Pausar exige la transición formal `in_progress/authorized → paused`, y los estados terminales no regresan.
+12. `enabled_stage_categories` existe para representar una partida compuesta o una necesidad con varias categorías, pero nunca es autoridad por sí sola: se intersecta estrictamente con solicitud, catálogo y snapshot operativo.
 
 ## API Fase 1
 
 | Método y ruta | Responsabilidad |
 | --- | --- |
-| `GET /api/service-orders/{id}/execution-board` | Proyección única para vista Todos, tabs dinámicos, rutas, tareas y solicitudes. |
+| `GET /api/service-orders/{id}/execution-board` | Proyección interna protegida por access JWT y `service_orders.read`; vista Todos, tabs dinámicos, rutas, tareas y solicitudes. |
 | `POST /api/service-orders/{id}/service-units` | Alta por lote de unidades con etapas iniciales. |
 | `POST /api/service-orders/service-units/{id}/stages` | Agrega una etapa sin reemplazar las anteriores. |
 | `PATCH /api/service-orders/stages/{id}` | Aplica el lifecycle explícito de una etapa y registra resultado/evidencia. |
@@ -76,11 +80,11 @@ Las partidas de una cotización inicial pueden decidirse antes de existir unidad
 | `GET/POST /api/activity/service_unit/{id}` | Activity contextual de unidad. |
 | `GET/POST /api/activity/service_stage/{id}` | Activity contextual de etapa y atajo `#tarea`. |
 
-Las rutas reutilizan permisos `service_orders.read`, `service_orders.update`, `quotations.update` y los permisos vigentes de Activity. La Fase 1 no agrega claves de permiso.
+Las rutas reutilizan permisos `service_orders.read`, `service_orders.update`, `quotations.update` y los permisos vigentes de Activity. El board y la decisión declaran además la dependencia en el router, sin depender sólo del inventario transversal. La Fase 1 no agrega claves de permiso.
 
 ## Compatibilidad de calibración
 
-La migración crea una unidad y una etapa de calibración para cada `Equipment` histórico con OT. Traduce sólo el estado inicial de la nueva proyección y no altera `Equipment`, certificados, hojas, scopes, Masters ni estados anteriores. Los equipos sin OT no se inventan: permanecen pendientes de conciliación verificable.
+La migración base crea una unidad y una etapa de calibración para cada `Equipment` histórico con OT. La corrección `a7c2e5f8b1d4` enlaza su partida cuando existe, congela `initial_category=calibration` desde la primera etapa y deja `evolution_enabled=false`; sólo conserva `true` para unidades cuya etapa inicial ya tenía origen `general_service`. No infiere capacidad evolutiva por inspeccionar el ETS completo ni altera `Equipment`, certificados, hojas, scopes, Masters o estados anteriores.
 
 ## Frontend
 

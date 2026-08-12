@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
+import unicodedata
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.activity import ActivityMessage
@@ -57,23 +59,123 @@ def _work_order(db: Session, service_order_id: int, work_order_id: int | None) -
     return result
 
 
-def _is_general_service_order(db: Session, service_order_id: int) -> bool:
-    categories = list(
-        db.scalars(
-            select(CatalogItem.category)
-            .join(ServiceOrderItem, ServiceOrderItem.catalog_item_id == CatalogItem.id)
-            .where(ServiceOrderItem.service_order_id == service_order_id)
-        ).all()
+def _normalized_text(value: str | None) -> str:
+    value = unicodedata.normalize("NFKD", str(value or ""))
+    return " ".join(
+        value.encode("ascii", "ignore").decode().lower().replace("_", " ").split()
     )
-    names = list(
+
+
+_CATEGORY_ALIASES = {
+    "diagnosis": ("diagnosis", "diagnostico"),
+    "repair": ("repair", "reparacion"),
+    "maintenance": ("maintenance", "mantenimiento"),
+    "calibration": ("calibration", "calibracion"),
+    "verification": ("verification", "verificacion"),
+    "qualification": ("qualification", "calificacion"),
+    "validation": ("validation", "validacion"),
+    "training": ("training", "capacitacion"),
+    "consulting": ("consulting", "consultoria"),
+}
+
+
+def _categories_from_text(*values: str | None) -> set[str]:
+    text = " ".join(_normalized_text(value) for value in values)
+    return {
+        category
+        for category, aliases in _CATEGORY_ALIASES.items()
+        if any(alias in text for alias in aliases)
+    }
+
+
+def _catalog_category(catalog_item: CatalogItem | None) -> str | None:
+    if catalog_item is None:
+        return None
+    commodity = _normalized_text(catalog_item.commodity).replace(" ", "_")
+    if commodity == "general_service":
+        return "general_service"
+    categories = _categories_from_text(catalog_item.commodity, catalog_item.category, catalog_item.name)
+    return next(iter(categories)) if len(categories) == 1 else None
+
+
+def _resolve_unit_origin(
+    db: Session,
+    service_order_id: int,
+    unit_data,
+) -> tuple[ServiceOrderItem | None, str, bool]:
+    items = list(
         db.scalars(
-            select(ServiceOrderItem.service_name).where(
-                ServiceOrderItem.service_order_id == service_order_id
+            select(ServiceOrderItem).where(
+                ServiceOrderItem.service_order_id == service_order_id,
+                ServiceOrderItem.is_active.is_(True),
             )
         ).all()
     )
-    normalized = {str(value or "").strip().lower().replace("_", " ") for value in categories + names}
-    return any(value in {"servicio general", "general service"} for value in normalized)
+    origin = None
+    if unit_data.origin_service_order_item_id is not None:
+        origin = next(
+            (item for item in items if item.id == unit_data.origin_service_order_item_id),
+            None,
+        )
+        if origin is None:
+            raise HTTPException(status_code=422, detail="La partida origen no pertenece al ETS")
+    elif len(items) == 1:
+        origin = items[0]
+    else:
+        quotation_item_ids = {
+            stage.quotation_item_id
+            for stage in unit_data.initial_stages
+            if stage.quotation_item_id is not None
+        }
+        matches = [item for item in items if item.quotation_item_id in quotation_item_ids]
+        if len(matches) == 1:
+            origin = matches[0]
+        elif len(items) > 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Una unidad de un ETS mixto debe indicar su partida operativa origen",
+            )
+
+    catalog_item = db.get(CatalogItem, origin.catalog_item_id) if origin and origin.catalog_item_id else None
+    origin_category = _catalog_category(catalog_item)
+    if origin_category is None and origin is not None:
+        normalized_name = _normalized_text(origin.service_name)
+        if normalized_name in {"servicio general", "general service"}:
+            origin_category = "general_service"
+        else:
+            named_categories = _categories_from_text(origin.service_name)
+            if len(named_categories) == 1:
+                origin_category = next(iter(named_categories))
+    if origin_category is None:
+        initial = {stage.category for stage in unit_data.initial_stages}
+        origin_category = next(iter(initial)) if len(initial) == 1 else "multiple"
+    return origin, origin_category, origin_category == "general_service"
+
+
+def _quotation_item_categories(db: Session, item: QuotationItem) -> set[str]:
+    categories: set[str] = set()
+    catalog_item = db.get(CatalogItem, item.catalog_item_id) if item.catalog_item_id else None
+    catalog_category = _catalog_category(catalog_item)
+    if catalog_category:
+        categories.add("diagnosis" if catalog_category == "general_service" else catalog_category)
+    snapshot_items = (item.operational_snapshot or {}).get("operational_items") or []
+    for snapshot_item in snapshot_items:
+        component = (
+            db.get(CatalogItem, snapshot_item.get("catalog_item_id"))
+            if snapshot_item.get("catalog_item_id")
+            else None
+        )
+        component_category = _catalog_category(component)
+        if component_category and component_category != "general_service":
+            categories.add(component_category)
+        categories.update(
+            _categories_from_text(snapshot_item.get("service_name"))
+        )
+    if not categories:
+        categories.update(_categories_from_text(item.service_name))
+        if _normalized_text(item.service_name) in {"servicio general", "general service"}:
+            categories.add("diagnosis")
+    return categories
 
 
 def _identification_status(brand: str | None, model: str | None, serial: str | None) -> str:
@@ -133,9 +235,11 @@ def create_service_units(
     user_id: int,
 ) -> list[ServiceUnit]:
     _active_service_order(db, service_order_id)
-    general_service = _is_general_service_order(db, service_order_id)
     created: list[ServiceUnit] = []
     for unit_data in payload.units:
+        origin_item, initial_category, evolution_enabled = _resolve_unit_origin(
+            db, service_order_id, unit_data
+        )
         work_order = _work_order(db, service_order_id, unit_data.work_order_id)
         equipment = None
         if unit_data.equipment_id is not None:
@@ -146,7 +250,7 @@ def create_service_units(
             if existing is not None:
                 raise HTTPException(status_code=409, detail="El equipo ya tiene unidad operativa")
 
-        if general_service and any(stage.category != "diagnosis" for stage in unit_data.initial_stages):
+        if evolution_enabled and any(stage.category != "diagnosis" for stage in unit_data.initial_stages):
             raise HTTPException(
                 status_code=422,
                 detail="Servicio General inicia únicamente con diagnóstico; las demás etapas requieren flujo comercial",
@@ -155,6 +259,9 @@ def create_service_units(
             service_order_id=service_order_id,
             work_order_id=work_order.id,
             equipment_id=equipment.id if equipment else None,
+            origin_service_order_item_id=origin_item.id if origin_item else None,
+            initial_category=initial_category,
+            evolution_enabled=evolution_enabled,
             name=unit_data.name if equipment is None else equipment.name,
             brand=unit_data.brand if equipment is None else equipment.brand,
             model=unit_data.model if equipment is None else equipment.model,
@@ -171,7 +278,7 @@ def create_service_units(
         db.flush()
         for sequence, stage_data in enumerate(unit_data.initial_stages, start=1):
             initial_status = stage_data.status
-            if general_service and stage_data.category == "diagnosis":
+            if evolution_enabled and stage_data.category == "diagnosis":
                 initial_status = "authorized"
             decision = _approved_item_decision(
                 db,
@@ -181,7 +288,7 @@ def create_service_units(
                 source_stage_id=stage_data.source_stage_id,
             )
             if initial_status in {"authorized", "in_progress"} and not (
-                general_service and stage_data.category == "diagnosis"
+                evolution_enabled and stage_data.category == "diagnosis"
             ) and decision is None:
                 raise HTTPException(
                     status_code=409,
@@ -193,7 +300,7 @@ def create_service_units(
                     sequence=sequence,
                     category=stage_data.category,
                     status=initial_status,
-                    origin="general_service" if general_service else stage_data.origin,
+                    origin="general_service" if evolution_enabled else stage_data.origin,
                     source_stage_id=stage_data.source_stage_id,
                     quotation_item_id=stage_data.quotation_item_id,
                     commercial_decision_id=decision.id if decision else None,
@@ -238,6 +345,11 @@ def add_service_stage(
     if unit is None:
         raise HTTPException(status_code=404, detail="Unidad operativa no encontrada")
     _active_service_order(db, unit.service_order_id)
+    if not unit.evolution_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="La unidad no tiene origen comercial evolutivo",
+        )
     if payload.source_stage_id is not None:
         source = db.get(ServiceStage, payload.source_stage_id)
         if source is None or source.service_unit_id != unit.id:
@@ -252,7 +364,7 @@ def add_service_stage(
     )
     can_start_general_diagnosis = (
         payload.category == "diagnosis"
-        and _is_general_service_order(db, unit.service_order_id)
+        and unit.evolution_enabled
         and db.scalar(select(func.count(ServiceStage.id)).where(ServiceStage.service_unit_id == unit.id)) == 0
     )
     if payload.status in {"authorized", "in_progress"} and approved_decision is None and not can_start_general_diagnosis:
@@ -323,7 +435,11 @@ def update_service_stage(
             detail=f"Transición de etapa no permitida: {stage.status} → {payload.status}",
         )
     if payload.status in {"authorized", "in_progress"} and stage.status not in {"authorized", "in_progress"}:
-        general_diagnosis = stage.category == "diagnosis" and stage.origin == "general_service"
+        general_diagnosis = (
+            unit.evolution_enabled
+            and stage.category == "diagnosis"
+            and stage.origin == "general_service"
+        )
         decision = _approved_item_decision(
             db,
             quotation_item_id=stage.quotation_item_id,
@@ -385,6 +501,12 @@ def create_technical_request(
     if stage is None:
         raise HTTPException(status_code=404, detail="Etapa no encontrada")
     unit = db.get(ServiceUnit, stage.service_unit_id)
+    _active_service_order(db, unit.service_order_id)
+    if not unit.evolution_enabled:
+        raise HTTPException(
+            status_code=409,
+            detail="La unidad no tiene origen comercial evolutivo",
+        )
     if payload.source_message_id is not None:
         message = db.get(ActivityMessage, payload.source_message_id)
         if message is None:
@@ -407,8 +529,6 @@ def create_technical_request(
         status="requested",
     )
     db.add(request)
-    if stage.status not in {"completed", "cancelled", "exception_closed"}:
-        stage.status = "pending_quote"
     db.flush()
     publish_event(
         db,
@@ -439,7 +559,7 @@ def decide_quotation_item(
             QuotationItem.id == item_id,
             QuotationItem.quotation_id == quotation_id,
             QuotationItem.is_active.is_(True),
-        )
+        ).with_for_update()
     )
     if item is None:
         raise HTTPException(status_code=404, detail="Partida no encontrada")
@@ -448,6 +568,11 @@ def decide_quotation_item(
         raise HTTPException(
             status_code=409,
             detail="La partida sólo puede decidirse cuando la cotización fue enviada al cliente",
+        )
+    if payload.source != "internal":
+        raise HTTPException(
+            status_code=403,
+            detail="El origen de la decisión se deriva del contexto autenticado",
         )
     latest = db.scalar(
         select(QuotationItemDecision)
@@ -464,6 +589,14 @@ def decide_quotation_item(
         and item.source_stage_id is None
         and item.technical_request_id is None
     )
+    enabled_categories = set(payload.enabled_stage_categories)
+    if payload.decision == "approved":
+        item_categories = _quotation_item_categories(db, item)
+        if not enabled_categories.issubset(item_categories):
+            raise HTTPException(
+                status_code=422,
+                detail="La categoría habilitada no corresponde al servicio cotizado",
+            )
     source_stage = None
     if not is_initial_commercial_item:
         if item.source_service_unit_id is None or item.source_stage_id is None:
@@ -474,17 +607,44 @@ def decide_quotation_item(
         source_stage = db.get(ServiceStage, item.source_stage_id)
         if source_stage is None or source_stage.service_unit_id != item.source_service_unit_id:
             raise HTTPException(status_code=409, detail="El contexto ETS de la partida es inconsistente")
+        unit = db.get(ServiceUnit, item.source_service_unit_id)
+        if unit is None or not unit.evolution_enabled:
+            raise HTTPException(
+                status_code=409,
+                detail="La unidad no tiene origen comercial evolutivo",
+            )
+        technical_request = db.get(TechnicalServiceRequest, item.technical_request_id)
+        if (
+            technical_request is None
+            or technical_request.service_unit_id != unit.id
+            or technical_request.source_stage_id != source_stage.id
+        ):
+            raise HTTPException(status_code=409, detail="La solicitud técnica de la partida es inconsistente")
+        requested_categories = set(technical_request.requested_categories or [])
+        if not enabled_categories.issubset(requested_categories):
+            raise HTTPException(
+                status_code=422,
+                detail="La partida intenta habilitar una categoría no solicitada",
+            )
     decision = QuotationItemDecision(
         quotation_item_id=item.id,
         decision=payload.decision,
         decided_by_id=user_id,
         decided_at=datetime.now(timezone.utc),
-        source=payload.source,
+        source="internal",
         comment=payload.comment,
         enabled_stage_categories=list(dict.fromkeys(payload.enabled_stage_categories)),
     )
-    db.add(decision)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(decision)
+            db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="La partida ya tiene decisión; una corrección requiere una rama formal, no sobrescritura",
+        ) from exc
     created_ids: list[int] = []
     if payload.decision == "approved" and not is_initial_commercial_item:
         db.scalar(

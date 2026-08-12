@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -47,6 +48,13 @@ class ServiceUnit(IntegerPkMixin, TimestampMixin, Base):
     )
     equipment_id: Mapped[int | None] = mapped_column(
         ForeignKey("equipment.id", ondelete="RESTRICT"), index=True
+    )
+    origin_service_order_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("service_order_items.id", ondelete="RESTRICT"), index=True
+    )
+    initial_category: Mapped[str] = mapped_column(String(40), index=True)
+    evolution_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(180), default="Equipo")
     brand: Mapped[str | None] = mapped_column(String(120))

@@ -137,6 +137,7 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R68 | Ventas / Aprobación parcial | Cotización dependía del estado global y no conservaba decisión por partida ni vínculo completo con una necesidad técnica. `QuotationItemDecision` y el contexto derivado habilitan sólo partidas aprobadas y preservan la cadena hasta nuevas etapas. | resuelta | Escenarios D–H y migración `f4a1c9d2e710` 2026-08-12 |
 | OBS-R69 | Cotizaciones / UX | El modal de catálogo ya coexistía con la cotización, pero una búsqueda sin coincidencia no podía abrirlo ni seleccionar el concepto creado en la línea vigente. El flujo ahora preserva el borrador y reinyecta el alta sin recarga. | resuelta | `QuotationsPage.jsx` y build 2026-08-12 |
 | OBS-R70 | ETS / UX | El board backend ya expone unidades, rutas, categorías, tareas y solicitudes sin duplicar equipos; cards, tabs y deep-links todavía no están compuestos en la UI. | parcial | TD-031 y cierre Fase 1 2026-08-12 |
+| OBS-R72 | ETS / Seguridad e integridad | Board y decisión dependían de controles insuficientes; Servicio General se infería por ETS completo, la solicitud alteraba la etapa, categorías confiaban en payload y la unicidad de decisión no estaba en base. La corrección añade permisos efectivos, origen/capacidad por unidad, separación de lifecycles, validación comercial y constraint concurrente. | resuelta | Migración `a7c2e5f8b1d4`, arquitectura y suite negativa Fase 1 2026-08-12 |
 
 ## Regla de cierre
 

@@ -10,6 +10,8 @@
 
 Se agregó un núcleo normalizado para unidades persistentes, etapas append-only, solicitudes técnicas, tareas contextuales y decisiones comerciales por partida. `ServiceOrder`, `ServiceWorkOrder`, `Equipment`, `Quotation` y Activity se reutilizan; no se creó un ETS por categoría ni una OT por evolución.
 
+La revisión correctiva cerró los hallazgos de seguridad e integridad sin abrir Fase 2: board y decisión tienen permisos efectivos; el origen y capacidad evolutiva se congelan por unidad; solicitud comercial y lifecycle técnico quedan separados; las categorías se derivan/validan contra autoridades reales; y la base impide dos decisiones iniciales concurrentes.
+
 ## Arquitectura encontrada antes de modificar
 
 - ETS ya era `ServiceOrder`; sus partidas operativas se generaban desde Cotización y Servicios Compuestos.
@@ -33,13 +35,27 @@ El contrato detallado está en [`../architecture/ETS_MULTIPLE_EVOLVED_CORE.md`](
 
 ## Migración
 
-`f4a1c9d2e710` sucede a `e7b62b8a9421`, crea siete tablas nucleares, amplía `quotation_items`, índices, constraints y FKs. Backfill: cada equipo histórico con OT obtiene una unidad y etapa de calibración sin mutar el dominio legacy. Equipos históricos sin OT no se inventan.
+`f4a1c9d2e710` sucede a `e7b62b8a9421`, crea siete tablas nucleares, amplía `quotation_items`, índices, constraints y FKs. `a7c2e5f8b1d4` agrega a `ServiceUnit` la partida origen, categoría inicial y bandera evolutiva, y añade unicidad de decisión por partida. Su backfill sólo habilita evolución cuando una partida exacta identificable es Servicio General; no infiere por el ETS completo. Equipos históricos sin OT no se inventan.
 
 ## Endpoints afectados
 
 - Nuevos: board, unidades, alta/lifecycle de etapas, solicitudes técnicas y decisión por partida.
 - Activity acepta dos nuevos tipos de entidad.
-- No se agregaron permisos: se reutilizan `service_orders.read/update`, `quotations.update` y Activity.
+- No se agregaron permisos: board exige `service_orders.read`; decisión exige `quotations.update`; las mutaciones ETS conservan `service_orders.update` y Activity sus permisos vigentes.
+
+## Hallazgos corregidos y causa raíz
+
+1. **Board protegido:** la ruta no declaraba dependencia propia y confiaba sólo en el guard transversal. Ahora exige access JWT y `service_orders.read`; 401/403/200 quedan probados.
+2. **Autoridad de decisión:** bastaba autenticación y `source` venía del caller. Ahora la ruta interna exige `quotations.update`, deriva actor y `source=internal`, rechaza contexto portal/app y deja ownership del cliente para futuros endpoints propios.
+3. **Servicio General mixto:** se escaneaban todas las partidas del ETS. Ahora cada unidad conserva `origin_service_order_item_id`, `initial_category` y `evolution_enabled`; sólo la partida SG habilita evolución.
+4. **Evolución por unidad:** la etapa actual o la presencia global de SG podían abrir flujo. Ahora toda solicitud/etapa dinámica exige `unit.evolution_enabled`; una etapa posterior de esa unidad conserva la capacidad.
+5. **Lifecycle único:** `create_technical_request()` asignaba directamente `pending_quote`. Ahora sólo crea `TechnicalServiceRequest.status=requested`; pausar exige `update_service_stage()` y una transición declarada.
+6. **Categorías habilitadas:** el payload era autoridad suficiente. Ahora una aprobación debe ser subconjunto de la solicitud y coincidir con la categoría del catálogo, snapshot operativo/compuesto o nombre legacy inequívoco.
+7. **Concurrencia:** el patrón consultar→insertar carecía de constraint. Ahora se bloquea la partida y existe `UNIQUE(quotation_item_id)`; una colisión responde 409 sin sobrescribir historia.
+
+## Lifecycle resultante
+
+El estado técnico permanece en `ServiceStage` (`planned`, `authorized`, `in_progress`, `paused`, terminales, etc.). La necesidad adicional usa `TechnicalServiceRequest` (`requested`, `quoting`, `quoted`, `partially_approved`, `approved`, `rejected`, `cancelled`). Crear la segunda no cambia la primera. `completed` continúa terminal y no existe reset, delete ni transición implícita.
 
 ## Frontend
 
@@ -88,23 +104,31 @@ No cambiaron estados, servicios, schemas ni endpoints de `Equipment`; tampoco sc
 
 ## Catálogo de excepciones
 
-El catálogo completo, incluidos candidatos operativos, comerciales, documentales, de custodia, autorización, integración, corrección de datos y antipatrones, está en [`../audits/ETS_PHASE_1_EXCEPTION_CANDIDATES_2026-08-12.md`](../audits/ETS_PHASE_1_EXCEPTION_CANDIDATES_2026-08-12.md). Antipatrones explícitos: identificación parcial como excepción, overwrite/reset de decisiones, borrado de etapas, cotizaciones/OT usadas, documentos autenticados y procesos terminados.
+El catálogo completo está en [`../audits/ETS_PHASE_1_EXCEPTION_CANDIDATES_2026-08-12.md`](../audits/ETS_PHASE_1_EXCEPTION_CANDIDATES_2026-08-12.md). EX-002 quedó como flujo normal; EX-003 como operación prohibida; EX-005 separa custodia normal futura de cierre excepcional; EX-007 se trata primero como idempotencia/reconciliación; EX-008–011 son operaciones no válidas. No se implementó ninguna excepción.
 
 ## Validaciones
 
 | Validación | Resultado |
 | --- | --- |
-| Suite Fase 1 | 4 passed; escenarios A–H y nacimiento múltiple. |
-| Backend completo | 475 passed, 19 subtests, 3 warnings conocidos. |
+| Suite Fase 1 | 10 passed; escenarios A–H más seguridad, mixto SG/calibración/mantenimiento, evolución indebida/legítima posterior, lifecycle, categorías y constraint. |
+| Focal ETS/calibración/Activity/cotizaciones/permisos | 53 passed, 2 warnings. |
+| Backend completo | 501 passed, 19 subtests y 3 warnings; único fallo ajeno: test de head fijo detecta dos migraciones concurrentes no integradas en el working tree. |
 | Frontend unitario | 42 passed. |
 | Frontend build | correcto; warning conocido de chunk >500 kB. |
 | Compileall | correcto. |
-| API deny-by-default | 363/363 rutas clasificadas e inventario idéntico al runtime. |
-| Alembic PostgreSQL | base aislada `base → f4a1c9d2e710 → e7b62b8a9421 → f4a1c9d2e710`; current en head y check sin drift. |
-| Respaldo | regenerado, 74,306,112 bytes, `alembic_version=f4a1c9d2e710`. |
+| API deny-by-default | 371/371 rutas clasificadas; decisión regenerada canónicamente con `quotations.update`. |
+| Alembic PostgreSQL | base aislada `base → a7c2e5f8b1d4 → f4a1c9d2e710 → a7c2e5f8b1d4`; revisión ETS reversible. `head/check` global quedan pendientes de integrar la migración concurrente ajena `fdc1c503a353`. |
+| Respaldo | no regenerado todavía: la base principal no se modificó y permanece en `f4a1c9d2e710`. |
 | Catálogo de capacidades | consistente; 72 permisos HTTP, 19 diferencias gobernadas y 0 gaps bootstrap. |
 
-`alembic check` conserva un warning de ordenación por ciclos referenciales del
-grafo ETS/comercial, documentado como deuda de mantenimiento; no detecta
-operaciones nuevas. La fase permanece en revisión aunque las validaciones
-técnicas sean verdes.
+El grafo ETS/comercial conserva la deuda de ordenación documentada. Además, el
+working tree contiene una migración concurrente ajena de permisos individuales,
+también hija de `f4a1c9d2e710`; debe integrarse/linealizarse antes de declarar un
+head global o actualizar la base principal. La fase permanece en revisión.
+
+## Antipatrones confirmados
+
+No se añadieron delete de etapas, overwrite de decisión, reset de estado,
+regreso desde `completed`, `force-*`, eliminación de cotización/OT utilizada ni
+borrado de documentos/historia. Tampoco se construyó portal/app, workflow
+técnico de categorías, Motor de Resoluciones ni Fase 2.

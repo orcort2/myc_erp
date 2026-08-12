@@ -2,7 +2,7 @@
 
 > Fotografía: 2026-08-12
 >
-> Estado de todos los registros: `PENDIENTE DE VALIDACIÓN FUNCIONAL`
+> Estado general: `RECLASIFICADO`; ningún registro autoriza implementación.
 >
 > Este catálogo no autoriza endpoints, resets, borrados ni definiciones del Motor.
 
@@ -33,8 +33,8 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: los documentos posteriores deben mostrar ausencia documentada, no un valor inventado.
 - Reversibilidad/riesgo: editable al obtener dato; riesgo alto sólo si se falsifica identidad.
 - Alternativa sin excepción: captura parcial normal.
-- Propuesta/clasificación: no crear excepción; posible antipatrón / NO válida como excepción.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación: flujo normal no bloqueante; no es excepción.
+- Estado: `NO EXCEPCIÓN — FLUJO NORMAL`.
 
 ## EX-ETS-F1-003 — Etapa sin aprobación comercial
 
@@ -46,8 +46,8 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: costos no autorizados, reportes, custodia, facturación y responsabilidad contractual.
 - Reversibilidad/riesgo: baja reversibilidad una vez intervenido el equipo; riesgo alto.
 - Alternativa sin excepción: obtener aprobación, acotar diagnóstico autorizado o no ejecutar.
-- Propuesta/clasificación: candidato de autorización/comercial; no implementar hasta validación.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación: no existe excepción genérica para ejecutar sin aprobación.
+- Estado: `OPERACIÓN PROHIBIDA`.
 
 ## EX-ETS-F1-004 — Cierre documental imposible
 
@@ -62,7 +62,7 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Propuesta/clasificación: excepción documental; posible `exception_closed` sólo mediante resolución explícita futura.
 - Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
 
-## EX-ETS-F1-005 — Liberación de custodia con servicio pausado
+## EX-ETS-F1-005 — Custodia física y cierre operativo con servicio pausado
 
 - Módulo/entidad/estado actual: ETS/Custodia; unidad con etapa `paused`, `client_rejected` o `not_executable`.
 - Situación y operación solicitada: devolver físicamente el equipo sin declarar terminado el servicio.
@@ -72,8 +72,9 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: acuse de entrega, firmas, etapas abiertas y responsabilidades.
 - Reversibilidad/riesgo: nueva recepción sería otro evento; riesgo medio/alto de pérdida de jurisdicción.
 - Alternativa sin excepción: mantener pausado y documentar Activity, insuficiente como autoridad de custodia.
-- Propuesta/clasificación: excepción de custodia; requiere antes modelo/flujo de custodia.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación A: devolución/custodia física pertenece a un lifecycle normal futuro y no constituye excepción por sí sola.
+- Propuesta/clasificación B: cerrar operativamente con una etapa requerida no ejecutada sí puede ser candidato futuro a resolución; debe usar `cancelled_by_resolution` si el dominio lo incorpora o la autoridad vigente `exception_closed`, nunca `completed`.
+- Estado: `SEPARADO — A FLUJO NORMAL FUTURO / B CANDIDATO A RESOLUCIÓN`.
 
 ## EX-ETS-F1-006 — Error de vinculación de unidad, OT o etapa
 
@@ -98,8 +99,8 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: decisión por partida, etapas y notificación.
 - Reversibilidad/riesgo: nunca repetir a ciegas; riesgo de duplicar autorizaciones.
 - Alternativa sin excepción: clave idempotente y consulta de conciliación del proveedor.
-- Propuesta/clasificación: excepción de integración futura; priorizar conciliación determinista.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación: resolver primero como idempotencia, reconciliación, replay, retry y ownership de operación. Un timeout/reintento HTTP no es automáticamente excepción funcional del Motor.
+- Estado: `PROBLEMA TÉCNICO DE INTEGRACIÓN — NO EXCEPCIÓN AUTOMÁTICA`.
 
 ## EX-ETS-F1-008 — Revertir decisión comercial sobrescribiendo historial
 
@@ -111,8 +112,8 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: etapas, costos, PDF, aceptación e historial.
 - Reversibilidad/riesgo: alto; el trabajo físico puede ser irreversible.
 - Alternativa sin excepción: nueva versión/decisión formal compensatoria y cancelación de etapas no iniciadas.
-- Propuesta/clasificación: posible antipatrón / NO válida como reset; diseñar rama comercial formal.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación: antipatrón / NO válida como reset; diseñar rama comercial formal.
+- Estado: `OPERACIÓN NO VÁLIDA`.
 
 ## EX-ETS-F1-009 — Eliminar etapa histórica
 
@@ -124,8 +125,8 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: solicitudes, Activity, tareas, partidas, decisiones y reportes.
 - Reversibilidad/riesgo: no reversible; riesgo crítico de integridad.
 - Alternativa sin excepción: `cancelled`, `client_rejected`, sustitución o nueva etapa.
-- Propuesta/clasificación: posible antipatrón / NO válida como excepción.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación: antipatrón / NO válida como excepción.
+- Estado: `OPERACIÓN NO VÁLIDA`.
 
 ## EX-ETS-F1-010 — Eliminar cotización aprobada u OT utilizada
 
@@ -137,8 +138,8 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: todos los descendientes ETS, fiscales, técnicos y documentales.
 - Reversibilidad/riesgo: no reversible; riesgo crítico.
 - Alternativa sin excepción: cancelación, sustitución, revisión, reapertura controlada o compensación.
-- Propuesta/clasificación: posible antipatrón / NO válida como excepción.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación: antipatrón / NO válida como excepción.
+- Estado: `OPERACIÓN NO VÁLIDA`.
 
 ## EX-ETS-F1-011 — Borrar documento autenticado o resetear proceso terminado
 
@@ -150,9 +151,9 @@ Se registraron los puntos extraordinarios encontrados al auditar ETS, OT, Equipo
 - Efectos secundarios/documentos: autenticación pública, liberación, facturación y auditoría.
 - Reversibilidad/riesgo: crítico; afecta autenticidad e integridad.
 - Alternativa sin excepción: retiro futuro, sustitución, nueva versión o vertical existente de certificado incorrectamente liberado.
-- Propuesta/clasificación: posible antipatrón / NO válida como `force-delete/reset/close`.
-- Estado: `PENDIENTE DE VALIDACIÓN FUNCIONAL`.
+- Propuesta/clasificación: antipatrón / NO válida como `force-delete/reset/close`.
+- Estado: `OPERACIÓN NO VÁLIDA`.
 
 ## Antipatrones explícitos
 
-`EX-ETS-F1-002`, `008`, `009`, `010` y `011` están clasificados como posible antipatrón / NO válidos como excepción en su forma solicitada. Tampoco se autoriza ningún `force-delete`, `force-reset` o `force-close`.
+`EX-ETS-F1-008`, `009`, `010` y `011` son antipatrones explícitos y operaciones no válidas. `EX-ETS-F1-002` es flujo normal, no antipatrón ni excepción. Tampoco se autoriza ningún `force-delete`, `force-reset` o `force-close`.

@@ -32,7 +32,7 @@ from app.services.quotations import (
 from app.services.quotation_pdfs import generate_quotation_pdf
 from app.services.service_execution import decide_quotation_item
 from app.models.user import User
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, require_permission
 
 
 router = APIRouter(prefix="/quotations", tags=["quotations"])
@@ -48,7 +48,7 @@ def post_quotation_item_decision(
     item_id: int,
     payload: QuotationItemDecisionCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("quotations.update")),
 ) -> QuotationItemDecisionRead:
     decision, stage_ids = decide_quotation_item(
         db, quotation_id, item_id, payload, user_id=current_user.id

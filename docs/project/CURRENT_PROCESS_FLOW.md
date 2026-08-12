@@ -259,12 +259,18 @@ ServiceStage(s) autorizadas`, conservando el mismo `ServiceOrder` y la misma
 `ServiceWorkOrder` durante la intervención. Una unidad aparece una sola vez en
 backend aunque la UI futura la proyecte en varios tabs por categoría.
 
-Servicio General inicia como `ServiceUnit → diagnóstico`. Después:
+Cada unidad se liga a su partida operativa origen. Sólo la unidad nacida de
+Servicio General inicia como `ServiceUnit(evolution_enabled) → diagnóstico`;
+calibración, mantenimiento u otras partidas del mismo ETS conservan su flujo
+normal. Después, cualquier etapa de esa misma unidad evolutiva puede originar:
 
 `Etapa origen → TechnicalServiceRequest → una o varias QuotationItem →
 QuotationItemDecision por partida → cero, una o varias ServiceStage nuevas`.
 
-Una aprobación crea únicamente las categorías declaradas; un rechazo no crea
+La solicitud comercial queda `requested` sin cambiar el estado técnico de la
+etapa; una pausa real usa el lifecycle formal. Una aprobación interna exige
+`quotations.update`, deriva actor y `source=internal`, y crea únicamente las
+categorías que coinciden con solicitud y catálogo/snapshot; un rechazo no crea
 etapa ejecutable. Decisiones mixtas conservan `partially_approved`. La nueva
 etapa referencia a la anterior y no la convierte ni elimina. La ausencia
 física de marca/modelo/serie produce identificación parcial documentada sin

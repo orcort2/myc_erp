@@ -33,6 +33,7 @@ class ServiceStageUpdate(BaseModel):
 class ServiceUnitCreate(BaseModel):
     work_order_id: int | None = None
     equipment_id: int | None = None
+    origin_service_order_item_id: int | None = None
     name: str = Field(default="Equipo", min_length=1, max_length=180)
     brand: str | None = Field(default=None, max_length=120)
     model: str | None = Field(default=None, max_length=120)
@@ -80,6 +81,9 @@ class ServiceUnitRead(BaseModel):
     service_order_id: int
     work_order_id: int
     equipment_id: int | None = None
+    origin_service_order_item_id: int | None = None
+    initial_category: str
+    evolution_enabled: bool
     name: str
     brand: str | None = None
     model: str | None = None
@@ -137,8 +141,10 @@ class ServiceExecutionBoardRead(BaseModel):
 
 
 class QuotationItemDecisionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     decision: Literal["approved", "rejected"]
-    source: Literal["internal", "client_portal", "client_app"] = "internal"
+    source: Literal["internal"] = "internal"
     comment: str | None = Field(default=None, max_length=2000)
     enabled_stage_categories: list[ServiceStageCategory] = Field(default_factory=list)
 

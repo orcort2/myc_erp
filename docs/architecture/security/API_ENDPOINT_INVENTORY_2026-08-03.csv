@@ -248,7 +248,7 @@ POST,/api/quotations/{quotation_id}/expire,quotations,expire_quotation,authentic
 POST,/api/quotations/{quotation_id}/items,quotations,post_quotation_item,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 DELETE,/api/quotations/{quotation_id}/items/{item_id},quotations,delete_quotation_item,authenticated_permission,access_jwt,quotations.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 PATCH,/api/quotations/{quotation_id}/items/{item_id},quotations,patch_quotation_item,authenticated_permission,access_jwt,quotations.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
-POST,/api/quotations/{quotation_id}/items/{item_id}/decision,quotations,post_quotation_item_decision,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/quotations/{quotation_id}/items/{item_id}/decision,quotations,post_quotation_item_decision,authenticated_permission,access_jwt,quotations.update,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/quotations/{quotation_id}/pdf,quotations,get_quotation_pdf,authenticated_permission,access_jwt,quotations.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/reject,quotations,reject_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/quotations/{quotation_id}/send,quotations,send_quotation,authenticated_permission,access_jwt,quotations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
