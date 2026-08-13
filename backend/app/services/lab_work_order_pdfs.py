@@ -31,6 +31,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
         postal_code=work_order.postal_code,
         country=None,
     )
+    purchase_order = (work_order.purchase_order or "").strip()
     document = SimpleNamespace(
         created_at=work_order.reception_date,
         service_date=work_order.departure_date,
@@ -38,11 +39,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
         equipment=work_order.equipment,
         client=client,
         notes=work_order.notes,
-        quotation=(
-            SimpleNamespace(folio=work_order.purchase_order)
-            if work_order.purchase_order
-            else None
-        ),
+        quotation=SimpleNamespace(folio=purchase_order) if purchase_order else None,
         technician_signature_data_url=(technician.signature_data_url if technician else None),
         technician_signed_name=(technician.signer_name if technician else None),
         client_received_signature_data_url=(
@@ -59,6 +56,10 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
         document,
         work_order=lab_work_order,
         equipment_list=list(work_order.equipment),
+        client_address_override=work_order.address or "",
+        client_postal_code=work_order.postal_code or "",
+        client_city=work_order.city or "",
+        client_state=work_order.state_name or "",
     )
     return (
         HTML(string=html, base_url=str(APP_DIR)).write_pdf(),

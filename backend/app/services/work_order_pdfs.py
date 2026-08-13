@@ -153,6 +153,10 @@ def _render_html(
     *,
     work_order: ServiceWorkOrder | None = None,
     equipment_list: list[Equipment] | None = None,
+    client_address_override: str | None = None,
+    client_postal_code: str = "",
+    client_city: str = "",
+    client_state: str = "",
 ) -> str:
     client = service_order.client
     contact = next((item for item in client.contacts if item.is_active), None)
@@ -171,7 +175,14 @@ def _render_html(
         client=client,
         contact=contact,
         equipment_lines=_build_equipment_lines(equipment_list or service_order.equipment),
-        client_address=_client_address(client),
+        client_address=(
+            client_address_override
+            if client_address_override is not None
+            else _client_address(client)
+        ),
+        client_postal_code=client_postal_code,
+        client_city=client_city,
+        client_state=client_state,
         logo_uri=LOGO_PATH.as_uri() if LOGO_PATH.exists() else None,
     )
 

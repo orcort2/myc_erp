@@ -44,7 +44,9 @@
 - OT LAB móvil está **EN DESARROLLO** con implementación técnica completa:
   agregado aislado, folios 6400–6999, grupos raíz/adicional, máximo 10 equipos,
   una sesión de firma compartida, bloqueo posterior, PDF individual y
-  exportación ZIP. Falta aceptación física en iPhone/Expo Go.
+  exportación ZIP. La captura ya respeta safe area, agrupa los campos y oculta
+  teléfono/correo; el PDF separa Domicilio, C.P., Ciudad, Estado y orden de
+  compra sin `0` por ausencia. Falta aceptación física en iPhone/Expo Go.
 - El P0 **Integridad de autenticación de Certificados** está **TERMINADO — EN
   REVISIÓN**: Calidad es la única superficie mutante, ETS perdió endpoint/lote
   y acciones, y `certificate_authentication.authenticate_certificate` conserva
@@ -140,7 +142,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 509 passed, 1 skipped, 19 subtests passed, 3 warnings deprecados; sin fallos |
+| Backend canónico | 510 passed, 1 skipped, 19 subtests passed, 3 warnings deprecados: 493/1 sin arquitectura + 17/17 de arquitectura en copia temporal sin duplicados locales `* 2.py` |
 | Aislamiento móvil técnico | 21 passed; ETS/OT/Equipo/Hoja A/B, sin asignación, 401, 403 y doble permiso de hojas |
 | Escenarios Fase 1 ETS múltiple/evolucionado | 10 passed; A–H, permisos, mixto SG/calibración/mantenimiento, evolución indebida/posterior, lifecycle, categorías y unicidad |
 | Regresión focal ETS/calibración/Activity/cotizaciones/permisos | 53 passed, 2 warnings |
@@ -153,7 +155,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
 | Inventario FastAPI | 383/383 operaciones clasificadas; CSV coincide con runtime |
-| OT LAB backend/API/PDF/export | 7 passed SQLite + 1 passed concurrencia PostgreSQL; 38 passed y 1 skipped junto con conformidad API, integridad de esquema y scope móvil |
+| OT LAB backend/API/PDF/export | 8 passed SQLite + 1 passed concurrencia PostgreSQL; mapeo textual/visual de campos institucionales y orden de compra vacía cubiertos |
 | Migración LAB PostgreSQL temporal | `base → c6e8a1b4d2f9`; current correcto; `alembic check` sin operaciones nuevas; asignador concurrente `[6400, 6401]`; carrera de OT adicional: una `6403` y un rechazo `409`; base temporal eliminada |
 | `myc-mobile` TypeScript/lint | correcto / correcto |
 | `myc-mobile` Expo Doctor SDK 54 | 18/18 checks |

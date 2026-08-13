@@ -87,12 +87,25 @@ infraestructura WeasyPrint. Cada PDF muestra folio, datos manuales, hasta diez
 equipos, informe, ✓/X y las firmas compartidas. El binario y SHA-256 quedan en
 la OT para garantizar exportación futura.
 
+El adaptador LAB conserva separados los campos institucionales: `address` se
+imprime únicamente en DOMICILIO; `postal_code`, `city` y `state_name` se
+imprimen en C.P., CIUDAD y ESTADO; `purchase_order` alimenta ORDEN DE COMPRA /
+COTIZACIÓN y su ausencia produce una línea vacía, nunca `0`. Este override no
+altera el armado de domicilio de las OT productivas.
+
 `myc-mobile` usa Expo SDK 54 y componentes disponibles en Expo Go:
 
 - `expo-secure-store` para access/refresh token;
 - `react-native-webview` con canvas táctil para cada firma;
 - `expo-file-system`, `expo-print` y `expo-sharing` para PDF en iOS;
+- `react-native-safe-area-context` para respetar notch, status bar y home
+  indicator sin offsets por modelo;
 - una sola `Modal` nativa; el editor de equipo es un overlay interno.
+
+La captura principal no muestra teléfono ni correo; esos atributos permanecen
+opcionales únicamente por compatibilidad del contrato backend. Datos generales
+y firmas se agrupan en paneles con jerarquía, espaciado vertical y scrolling;
+el editor secundario conserva el patrón sheet sin anidar otro `Modal` nativo.
 
 ## API
 

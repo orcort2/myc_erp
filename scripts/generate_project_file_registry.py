@@ -302,6 +302,9 @@ def included(path: Path) -> bool:
     value = path.as_posix()
     return not (
         any(part in EXCLUDED_PARTS for part in path.parts)
+        # Copias locales creadas por el sistema con sufijo " 2" no son
+        # archivos funcionales ni deben contaminar inventario o validaciones.
+        or any(Path(part).stem.endswith(" 2") for part in path.parts)
         or path.name in EXCLUDED_NAMES
         or value.startswith(EXCLUDED_PREFIXES)
         or path.suffix in {".pyc", ".pyo", ".zip"}
@@ -357,11 +360,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/app/routers/lab_work_orders.py": ("API móvil OT LAB", "Expone CRUD temporal, adicionales, firma grupal, cierre, PDF y exportación bajo permisos explícitos.", "FastAPI, schemas, servicio LAB y auth interno", "myc-mobile y exportación administrativa", "Crítico"),
         "backend/app/schemas/lab_work_order.py": ("Contrato OT LAB", "Valida datos generales, equipos sin modelo, firmas PNG y respuestas agrupadas.", "Pydantic y modelos LAB", "Router, servicio y cliente móvil", "Alto"),
         "backend/app/services/lab_work_orders.py": ("Dominio OT LAB", "Orquesta folios 6400–6999, máximo 10, cadena adicional, firma única, bloqueo, cierre, auditoría y exportación verificable.", "SQLAlchemy, audit, PDF e institutional_folio_sequences", "Router LAB, pruebas y retiro futuro", "Crítico"),
-        "backend/app/services/lab_work_order_pdfs.py": ("PDF institucional OT LAB", "Adapta exclusivamente datos LAB al render institucional y produce un PDF individual por folio.", "WeasyPrint y work_order_pdfs", "Cierre grupal, descarga y exportación", "Alto"),
+        "backend/app/services/lab_work_order_pdfs.py": ("PDF institucional OT LAB", "Adapta datos LAB al render institucional, separa domicilio/C.P./ciudad/estado y normaliza la orden de compra opcional.", "WeasyPrint y work_order_pdfs", "Cierre grupal, descarga y exportación", "Alto"),
+        "backend/app/services/work_order_pdfs.py": ("Render institucional de OT", "Compone el contexto productivo y admite overrides explícitos de dirección desglosada usados sólo por el adaptador LAB.", "Jinja, modelos productivos y plantilla work_order_pdf", "Generadores PDF productivo y LAB", "Alto"),
+        "backend/app/templates/work_order_pdf.html": ("Plantilla institucional de OT", "Renderiza la cuadrícula institucional, incluidos valores independientes de domicilio, C.P., ciudad y estado cuando el adaptador los aporta.", "Jinja y work_order_pdfs", "PDF de OT productiva y temporal LAB", "Alto"),
         "backend/migrations/versions/c6e8a1b4d2f9_create_lab_work_orders.py": ("Migración OT LAB", "Fusiona los dos heads preservados y crea exclusivamente las cuatro tablas LAB, restricciones, índices y FKs trazables.", "Alembic, PostgreSQL, a7c2e5f8b1d4 y fdc1c503a353", "Despliegue, rollback y validación de esquema", "Crítico"),
-        "backend/tests/test_lab_work_orders.py": ("Suite OT LAB", "Prueba permisos, folios, límite, adicionales, firma compartida, bloqueo, PDF y exportación.", "Pytest, TestClient y SQLite aislado", "Gate backend del vertical LAB", "Crítico"),
-        "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo móvil OT LAB", "Implementa lista, captura agrupada, equipos, revisión, firma única, cierre, impresión y compartir en iPhone.", "Expo Router, AuthProvider, FileSystem, Print y Sharing", "Técnicos autorizados en Expo Go", "Crítico"),
-        "myc-mobile/src/components/SignaturePad.tsx": ("Firma táctil Expo Go", "Captura, limpia y confirma trazos PNG mediante canvas dentro de WebView sin módulo nativo personalizado.", "react-native-webview", "Flujo de firma grupal OT LAB", "Alto"),
+        "backend/tests/test_lab_work_orders.py": ("Suite OT LAB", "Prueba permisos, folios, límite, adicionales, firma compartida, bloqueo, mapeo PDF, vacíos y exportación.", "Pytest, TestClient, pypdf y SQLite aislado", "Gate backend del vertical LAB", "Crítico"),
+        "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo móvil OT LAB", "Implementa captura agrupada con safe area, equipos, revisión, firma única, cierre, impresión y compartir en iPhone.", "Expo Router, SafeAreaContext, AuthProvider, FileSystem, Print y Sharing", "Técnicos autorizados en Expo Go", "Crítico"),
+        "myc-mobile/app/_layout.tsx": ("Raíz de navegación móvil", "Provee safe area real a todas las rutas y mantiene la sesión autenticada alrededor del Stack de Expo Router.", "Expo Router, SafeAreaProvider y AuthProvider", "Todas las pantallas móviles", "Crítico"),
+        "myc-mobile/src/components/SignaturePad.tsx": ("Firma táctil Expo Go", "Captura, limpia y confirma trazos PNG en un panel móvil espaciado mediante canvas WebView sin módulo nativo.", "react-native-webview", "Flujo de firma grupal OT LAB", "Alto"),
         "myc-mobile/src/auth/AuthProvider.tsx": ("Sesión interna móvil", "Restaura, refresca y limpia tokens internos y ofrece fetch autenticado con reintento único ante 401.", "SecureStore, auth.service y React Context", "Rutas técnicas y OT LAB", "Crítico"),
         "myc-mobile/src/storage/secure-storage.ts": ("Custodia de tokens móvil", "Guarda access/refresh token en SecureStore y elimina sesiones inválidas o cerradas.", "expo-secure-store", "AuthProvider", "Crítico"),
         "docs/architecture/LAB_WORK_ORDERS.md": ("Contrato OT LAB", "Documenta aislamiento, grupo, firma única, folios, API, PDF, exportación y retiro controlado.", "Código y pruebas LAB", "Desarrollo, operación, auditoría y retiro", "Alto"),

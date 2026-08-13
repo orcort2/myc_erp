@@ -24,6 +24,7 @@ from app.main import app
 from app.models.folio_sequence import InstitutionalFolioSequence
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.user import Role, User
+from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.lab_work_orders import _allocate_folio, create_additional_work_order
 
 
@@ -236,9 +237,18 @@ def test_additional_work_orders_inherit_and_keep_group_chain(lab_context):
 def test_one_signature_session_completes_and_locks_entire_group(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
+    mapping_payload = create_payload("CLIENTE PRUEBA")
+    mapping_payload.update(
+        address="Avenida Ejemplo 123",
+        contact_name="Persona Prueba",
+        postal_code="45601",
+        city="Tlaquepaque",
+        state_name="Jalisco",
+        purchase_order="OC-TEST-001",
+    )
     root = client.post(
         "/api/mobile/v1/technician/lab-work-orders",
-        json=create_payload(),
+        json=mapping_payload,
         headers=headers,
     ).json()
     for index in range(1, 11):
@@ -297,6 +307,14 @@ def test_one_signature_session_completes_and_locks_entire_group(lab_context):
         assert expected_instrument in rendered_text
         assert "Técnico LAB" in rendered_text
         assert "Cliente LAB" in rendered_text
+        assert "CLIENTE PRUEBA" in rendered_text
+        assert rendered_text.count("Avenida Ejemplo 123") == 1
+        assert "Persona Prueba" in rendered_text
+        assert "45601" in rendered_text
+        assert "Tlaquepaque" in rendered_text
+        assert "Jalisco" in rendered_text
+        assert "OC-TEST-001" in rendered_text
+        assert "Avenida Ejemplo 123, Tlaquepaque" not in rendered_text
 
 
 def test_requires_equipment_and_both_valid_signatures(lab_context):
@@ -372,6 +390,31 @@ def test_export_manifest_matches_persisted_counts(lab_context):
         equipment = json.loads(archive.read("equipment.json"))
     assert manifest["work_order_count"] == len(work_orders) == 1
     assert manifest["equipment_count"] == len(equipment) == 1
+
+
+def test_lab_pdf_leaves_missing_purchase_order_empty():
+    payload = create_payload("CLIENTE SIN ORDEN")
+    payload["purchase_order"] = None
+    payload["reception_date"] = date.fromisoformat(payload["reception_date"])
+    payload["departure_date"] = date.fromisoformat(payload["departure_date"])
+    work_order = LabWorkOrder(
+        folio=6400,
+        sequence_number=1,
+        created_by_user_id=1,
+        status="draft",
+        **payload,
+    )
+    work_order.equipment = [
+        LabWorkOrderEquipment(position=1, **equipment_payload(1))
+    ]
+
+    pdf, _filename = generate_lab_work_order_pdf(work_order)
+    rendered_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+
+    assert "ORDEN DE COMPRA /COTIZACIÓN" in rendered_text
+    assert "ORDEN DE COMPRA /COTIZACIÓN 0" not in rendered_text
 
 
 @pytest.mark.skipif(

@@ -410,6 +410,12 @@ Login interno técnico
 → iOS abre impresión o compartir para el folio seleccionado
 ```
 
+La captura móvil muestra Cliente, Domicilio, Atención, C.P., Ciudad, Estado,
+Orden de compra/cotización, Observaciones y fechas en grupos desplazables que
+respetan el safe area de iOS; teléfono y correo no forman parte de esta vista.
+Al generar cada PDF, Domicilio, C.P., Ciudad y Estado se transportan a campos
+institucionales independientes y una orden de compra ausente queda vacía.
+
 El retiro futuro sigue `detener altas → exportar → validar conteos/checksums →
 custodiar → retirar consumidores/modelos → migración controlada de tablas`. No
 existe eliminación automática ni dependencia desde el flujo productivo.
