@@ -18,17 +18,39 @@ TARGET = ROOT / "docs/PROJECT_FILE_REGISTRY.md"
 EXCLUDED_PARTS = {
     ".git", ".pytest_cache", "__pycache__", "node_modules", "dist", "build",
     "output", "tmp", "storage", "backups", "venv", ".venv",
+    "myc-mobile-sdk57-backup",
 }
 EXCLUDED_NAMES = {
     ".DS_Store", "backup_erp_myc_antes_prueba.sql", "BytesIO",
     ".tmp_field_sheet_templates.json", "package-lock.json", "from", "import", "io",
     "BACKUP_ESTADO_ACTUAL (1).md", "resolution_engine.zip",
+    "backend.zip",
 }
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
 FORCE_RECLASSIFY = {
     "AGENTS.md",
     "backend/app/main.py",
+    "backend/app/models/lab_work_order.py",
+    "backend/app/routers/lab_work_orders.py",
+    "backend/app/schemas/lab_work_order.py",
+    "backend/app/services/lab_work_order_pdfs.py",
+    "backend/app/services/lab_work_orders.py",
+    "backend/migrations/versions/c6e8a1b4d2f9_create_lab_work_orders.py",
+    "backend/tests/test_lab_work_orders.py",
+    "docs/architecture/LAB_WORK_ORDERS.md",
+    "docs/closures/LAB_WORK_ORDERS_VERTICAL_SLICE_2026-08-13.md",
+    "myc-mobile/app/(auth)/login.tsx",
+    "myc-mobile/app/(technician)/index.tsx",
+    "myc-mobile/app/(technician)/work-orders.tsx",
+    "myc-mobile/src/api/client.ts",
+    "myc-mobile/src/auth/AuthProvider.tsx",
+    "myc-mobile/src/components/SignaturePad.tsx",
+    "myc-mobile/src/config/environment.ts",
+    "myc-mobile/src/services/auth.service.ts",
+    "myc-mobile/src/storage/secure-storage.ts",
+    "myc-mobile/src/types/auth.ts",
+    "myc-mobile/src/types/lab-work-order.ts",
     "backend/app/models/__init__.py",
     "backend/app/schemas/catalog_item.py",
     "backend/app/schemas/controlled_document.py",
@@ -51,6 +73,18 @@ FORCE_RECLASSIFY = {
     "docs/closures/CERTIFICATE_AUTHENTICATION_INTEGRITY_SPRINT_2026-08-10.md",
     "frontend/src/pages/ServiceOrdersPage.jsx",
     "frontend/src/pages/certificateAuthenticationAuthority.test.js",
+    "backend/app/core/permissions.py",
+    "backend/app/core/portal/constants.py",
+    "backend/app/core/portal/security.py",
+    "backend/app/routers/reference_standard_certificates.py",
+    "backend/app/security/api_access.py",
+    "backend/app/services/portal/permission_service.py",
+    "backend/tests/test_capability_gate_reconciliation.py",
+    "backend/tests/test_client_portal_integration.py",
+    "docs/closures/TD_027_CAPABILITY_GATE_RECONCILIATION_2026-08-11.md",
+    "frontend/src/portal/ClientPortalLayout.jsx",
+    "frontend/src/portal/portalCapability.test.js",
+    "scripts/validate_capability_catalog.py",
     "backend/app/resolution_engine/__init__.py",
     "backend/app/resolution_engine/application/__init__.py",
     "backend/app/resolution_engine/application/action_runner.py",
@@ -317,6 +351,95 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "En desarrollo"
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
+
+    capability_reconciliation_files = {
+        "backend/app/core/permissions.py": (
+            "Matriz ejecutable de permisos",
+            "Declara el bootstrap interno y asigna la baja lógica de incertidumbre de certificados de patrón sólo a Calidad/Desarrollador, preservando Administrador por comodín.",
+            "Roles internos, catálogo funcional y nombres de capacidades",
+            "Guard API, routers, autenticación, frontend y administración",
+            "Crítico",
+        ),
+        "backend/app/core/portal/constants.py": (
+            "Catálogo de Portal",
+            "Declara `portal.read` como capacidad base institucional y las capacidades específicas del Portal sin conservar `portal.view` como clave asignable.",
+            "Enums y contratos de identidad del Portal",
+            "Seguridad, bootstrap y frontend del Portal",
+            "Crítico",
+        ),
+        "backend/app/core/portal/security.py": (
+            "Autenticación y ownership del Portal",
+            "Autentica contexto externo, deriva membresía/cliente y normaliza la clave persistida legacy `portal.view` hacia `portal.read` antes de autorizar y emitir permisos.",
+            "JWT, membresías, roles/permisos y login_policy",
+            "Routers `/portal` y `/client-portal`",
+            "Crítico",
+        ),
+        "backend/app/services/portal/permission_service.py": (
+            "Bootstrap conciliado del Portal",
+            "Siembra `portal.read`, migra idempotentemente asignaciones legacy, desactiva `portal.view` y conserva roles personalizados sin ampliar facultades.",
+            "Modelos de permisos/roles Portal y PortalPermissionCode",
+            "Lifespan FastAPI, administración y pruebas Portal",
+            "Crítico",
+        ),
+        "backend/app/routers/reference_standard_certificates.py": (
+            "API de certificados de patrón",
+            "Expone lifecycle y CRUD delegado; la baja lógica de incertidumbre exige explícitamente `reference_standard_certificates.delete` y propaga actor.",
+            "FastAPI, schemas, servicio de certificados de patrón y permisos",
+            "Calidad, Patrones y clientes API internos",
+            "Crítico",
+        ),
+        "backend/app/security/api_access.py": (
+            "Política transversal de acceso",
+            "Clasifica 357 operaciones deny-by-default; usa `portal.read` con ownership y alinea delete de incertidumbre de certificado de patrón con el bootstrap catalogado.",
+            "FastAPI, auth, catálogo de permisos e inventario CSV",
+            "Middleware, arranque, generador y pruebas de conformidad",
+            "Crítico",
+        ),
+        "backend/tests/test_capability_gate_reconciliation.py": (
+            "Suite de conciliación TD-027",
+            "Prueba baseline 19/0, cobertura completa bootstrap, sustitución Portal y asignación de delete sólo a roles autorizados.",
+            "Validador, catálogo, inventario, permisos y política API",
+            "Gate backend de seguridad institucional",
+            "Crítico",
+        ),
+        "backend/tests/test_client_portal_integration.py": (
+            "Suite integral del Portal",
+            "Verifica registro, vínculo, login, ownership, `portal.read` y migración idempotente de roles persistidos desde `portal.view` sin pérdida de acceso.",
+            "TestClient, SQLite, identidad, membresías y bootstrap Portal",
+            "Regresión de Portal y seguridad",
+            "Crítico",
+        ),
+        "frontend/src/portal/ClientPortalLayout.jsx": (
+            "Layout y navegación del Portal",
+            "Renderiza navegación responsive filtrada por permisos efectivos y usa `portal.read` como capacidad institucional de entrada.",
+            "lucide-react, routing y permisos del perfil",
+            "ClientPortalApp y usuarios externos",
+            "Alto",
+        ),
+        "frontend/src/portal/portalCapability.test.js": (
+            "Prueba de capability Portal",
+            "Impide reintroducir `portal.view` en la navegación y exige la capacidad institucional `portal.read`.",
+            "Node test y ClientPortalLayout",
+            "Gate frontend TD-027",
+            "Alto",
+        ),
+        "scripts/validate_capability_catalog.py": (
+            "Validador institucional de capacidades",
+            "Contrasta catálogo técnico, bootstrap e inventario y fija el baseline conciliado 141/62/79 y 72 permisos HTTP con brechas 19/0.",
+            "Catálogo Institucional, permissions.py e inventario API",
+            "Arquitectura, seguridad, revisiones y CI futura",
+            "Crítico",
+        ),
+        "docs/closures/TD_027_CAPABILITY_GATE_RECONCILIATION_2026-08-11.md": (
+            "Cierre técnico TD-027",
+            "Documenta matriz 20/2, clasificación A–H, correcciones Portal/delete, baseline 19/0, regresión y decisiones institucionales bloqueantes.",
+            "Catálogo Funcional, snapshot 2B, código, inventario y pruebas",
+            "Dirección, seguridad, arquitectura, QA y auditoría",
+            "Alto",
+        ),
+    }
+    if value in capability_reconciliation_files:
+        return capability_reconciliation_files[value]
 
     # Contratos P0 cuya responsabilidad material debe prevalecer sobre cierres
     # históricos que también clasifican estos archivos compartidos.

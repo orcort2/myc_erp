@@ -32,7 +32,7 @@ Snapshot de consistencia reproducible contra el bootstrap del 2026-08-04:
 - Permisos actuales que coinciden con una propuesta institucional: **61**
 - Permisos actuales pendientes de reconciliación funcional: **79**
 - Permisos mínimos únicos usados por el inventario HTTP: **72**
-- Permisos HTTP actuales pendientes de reconciliación con el catálogo: **19**
+- Permisos HTTP actuales pendientes de reconciliación con el catálogo: **20**
 - Permisos HTTP catalogados sin declaración bootstrap explícita: **1**
 - Permisos propuestos aún no implementados: **597**
 

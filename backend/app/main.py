@@ -46,6 +46,8 @@ from app.routers import (
     technical_profiles,
     uncertainty,
     users,
+    mobile_technician,
+    lab_work_orders,
     verification,
 )
 from app.routers import field_sheet_templates
@@ -170,6 +172,8 @@ include_api_router(uncertainty.router, prefix="/api")
 include_api_router(users.router, prefix="/api")
 include_api_router(verification.router)
 include_api_router(field_sheet_templates.router, prefix="/api")
+include_api_router(mobile_technician.router, prefix="/api")
+include_api_router(lab_work_orders.router, prefix="/api")
 
 
 @app.exception_handler(PublicApiError)

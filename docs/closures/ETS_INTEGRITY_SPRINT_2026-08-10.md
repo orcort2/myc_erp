@@ -197,6 +197,8 @@ actual.
 
 El gate conserva como brechas de bootstrap `portal.view` y
 `reference_standard_certificates.delete`; es `TD-027`, independiente de ETS.
+El cierre posterior `TD_027_CAPABILITY_GATE_RECONCILIATION_2026-08-11.md`
+reemplaza este resultado histórico con gate verde 19/0 y decisiones pendientes.
 No hubo cambio de esquema o datos en el micro-sprint, por lo que no correspondió
 regenerar el respaldo ya alineado con `e7b62b8a9421`.
 

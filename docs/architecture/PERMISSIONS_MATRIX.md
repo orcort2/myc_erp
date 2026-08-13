@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `../archive/security/permisos.md` y matrices de las especificaciones V2/V3
 >
-> Corte auditado: 2026-08-04 contra `backend/app/core/permissions.py` y el inventario FastAPI
+> Corte auditado: 2026-08-11 contra `backend/app/core/permissions.py` y el inventario FastAPI
 
 # Matriz vigente de roles y permisos
 
@@ -30,10 +30,10 @@ inferencia documental.
 | Comercial | Clientes, cotizaciones, catálogo, documentos, creación/actualización de ETS y revisión de equipo adicional | Contribución completa a Actividad, CRUD comercial/catálogo, `service_orders.create/update` y permisos de desbloqueo |
 | Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | CRUD de equipos, ejecución de motores, contribución completa a Actividad y `service_orders.additional_equipment.propose/execute` |
 | Captura | Preparación, generación documental y resoluciones propias | Permisos operativos, ejecución de motores y contribución completa a Actividad |
-| Calidad | Revisión, aprobación, metrología, control documental, configuración institucional y autorización de equipo adicional | Gobierno completo de Actividad, lectura/actualización institucional y `service_orders.additional_equipment.authorize` |
+| Calidad | Revisión, aprobación, metrología, control documental, configuración institucional y autorización de equipo adicional | Gobierno completo de Actividad, lectura/actualización institucional, `reference_standard_certificates.delete` y `service_orders.additional_equipment.authorize` |
 | Finanzas | Cobranza, facturación, lectura ETS, liberación y resoluciones propias | Contribución/resolución de atención en Actividad más permisos financieros vigentes |
 | Cliente | Portal aislado por cliente | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own`; el tenant se deriva en backend |
-| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno de Actividad, `resolution_center.*`, CRUD comercial/técnico, configuración institucional, motores, folios y desbloqueo |
+| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno de Actividad, `resolution_center.*`, CRUD comercial/técnico, baja lógica de incertidumbre de certificado de patrón, configuración institucional, motores, folios y desbloqueo |
 | Operador | Operación de resoluciones propias sin autorización | Contribución completa a Actividad, permisos del Centro y equipo adicional |
 | Auditor | Expediente institucional read-only | `activity.read`, `activity.view_audit` y permisos de auditoría vigentes |
 
@@ -101,9 +101,10 @@ ni genera automáticamente esta matriz ejecutable.
 
 La reconciliación verificable se ejecuta con
 `venv/bin/python scripts/validate_capability_catalog.py --check`. Al corte se
-identificaron 79 claves bootstrap pendientes de reconciliación documental, 19
-permisos HTTP sin coincidencia literal en el catálogo y una clave HTTP
-(`reference_standard_certificates.delete`) satisfecha sólo por el comodín
-administrativo. Estas brechas no autorizan renombrados ni cambios funcionales;
-su análisis está en
+mantienen 79 claves bootstrap pendientes de reconciliación documental y 19
+permisos HTTP de compatibilidad sin coincidencia literal en el snapshot
+técnico. Las 72 claves HTTP están declaradas en bootstrap:
+`reference_standard_certificates.delete` se asigna a Calidad/Desarrollador y
+Portal usa `portal.read`. Las brechas restantes no autorizan renombrados;
+su clasificación está en el cierre TD-027 y en
 [`security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](security/CAPABILITY_MODEL_GAPS_2026-08-04.md).

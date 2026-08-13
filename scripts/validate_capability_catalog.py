@@ -118,13 +118,13 @@ def main() -> int:
         "existing": 305,
         "granular": 493,
         "catalog_permissions": 658,
-        "current_permissions": 140,
-        "current_matches": 61,
-        "current_gaps": 79,
-        "inventory_permissions": 72,
-        "inventory_catalog_gaps": 19,
-        "inventory_bootstrap_gaps": 1,
-        "future_permissions": 597,
+        "current_permissions": 142,
+        "current_matches": 62,
+        "current_gaps": 80,
+        "inventory_permissions": 73,
+        "inventory_catalog_gaps": 20,
+        "inventory_bootstrap_gaps": 0,
+        "future_permissions": 596,
     }
 
     for key, value in facts.items():

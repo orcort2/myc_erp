@@ -164,6 +164,8 @@ No hubo cambio de esquema o datos; el respaldo oficial permanece alineado con
   `reference_standard_certificates.delete`), mientras el snapshot espera 19/1.
   La retirada de la ruta ETS no añadió permisos y esta deuda global queda fuera
   del P0.
+  La conciliación posterior `TD_027_CAPABILITY_GATE_RECONCILIATION_2026-08-11.md`
+  dejó el gate verde en 19/0 y bloqueó únicamente las decisiones institucionales.
 - La liberación individual y el lote ETS comparten semántica, pero el lote aún
   implementa su propio loop en vez de delegar en `release_to_client`. Es deuda
   separada y no reabre autenticación.

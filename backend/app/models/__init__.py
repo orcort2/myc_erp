@@ -71,6 +71,12 @@ from app.models.invoice import (
     InvoiceSettings,
 )
 from app.models.linked_company import LinkedCompany
+from app.models.lab_work_order import (
+    LabWorkOrder,
+    LabWorkOrderEquipment,
+    LabWorkOrderSignature,
+    LabWorkOrderSignatureSession,
+)
 from app.models.notification import Notification
 from app.models.portal_invitation import PortalInvitation
 from app.models.portal_invitation_role import PortalInvitationRole
@@ -124,6 +130,7 @@ from app.models.uncertainty import (
     UncertaintyModelVersion,
 )
 from app.models.user import Role, User
+from app.models.user_permission_override import UserPermissionOverride
 from app.resolution_engine.infrastructure.persistence import (
     Resolution,
     ResolutionAnalysis,
@@ -202,6 +209,10 @@ __all__ = [
     "InvoicePayment",
     "InvoiceSettings",
     "LinkedCompany",
+    "LabWorkOrder",
+    "LabWorkOrderEquipment",
+    "LabWorkOrderSignature",
+    "LabWorkOrderSignatureSession",
     "Notification",
     "PortalInvitation",
     "PortalInvitationRole",
@@ -266,4 +277,5 @@ __all__ = [
     "UncertaintyModelException",
     "UncertaintyModelVersion",
     "User",
+    "UserPermissionOverride",
 ]

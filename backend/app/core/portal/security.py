@@ -23,6 +23,8 @@ from app.models.user import User
 
 portal_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/portal/auth/login")
 
+PORTAL_PERMISSION_ALIASES = {"portal.view": "portal.read"}
+
 
 @dataclass(frozen=True, slots=True)
 class PortalSecurityContext:
@@ -70,7 +72,7 @@ def resolve_permissions(db: Session, membership_id: int) -> frozenset[str]:
             ClientPortalPermission.is_active.is_(True),
         )
     ).all()
-    return frozenset(values)
+    return frozenset(PORTAL_PERMISSION_ALIASES.get(value, value) for value in values)
 
 
 def build_portal_tokens(user: User, membership: ClientPortalMembership, permissions: frozenset[str]) -> dict:
@@ -103,7 +105,7 @@ def authenticate_portal_user(db: Session, identifier: str, password: str) -> dic
         raise _unauthorized()
     membership = resolve_active_membership(db, user.id)
     permissions = resolve_permissions(db, membership.id)
-    if "portal.view" not in permissions:
+    if "portal.read" not in permissions:
         raise HTTPException(status_code=403, detail="La membresía no autoriza acceso al portal")
     register_successful_login(db, user, auth_context="client_portal")
     return build_portal_tokens(user, membership, permissions)

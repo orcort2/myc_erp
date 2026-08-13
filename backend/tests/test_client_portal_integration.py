@@ -10,6 +10,9 @@ from app.core.db import Base, get_db
 from app.core.security import create_access_token, hash_password
 from app.main import app
 from app.models.client import Client
+from app.models.client_portal_permission import ClientPortalPermission
+from app.models.client_portal_role import ClientPortalRole
+from app.models.client_portal_role_permission import ClientPortalRolePermission
 from app.models.portal_registration import PortalRegistration
 from app.models.user import Role, User
 from app.services.portal.mail_service import development_outbox
@@ -64,6 +67,8 @@ def test_registration_review_membership_login_and_scope(portal_api):
 
     login = api.post("/api/portal/auth/login", json={"identifier": "cliente.portal", "password": password})
     assert login.status_code == 200
+    assert "portal.read" in login.json()["permissions"]
+    assert "portal.view" not in login.json()["permissions"]
     portal_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
     profile = api.get("/api/client-portal/profile", headers=portal_headers)
     assert profile.status_code == 200
@@ -75,3 +80,37 @@ def test_registration_review_membership_login_and_scope(portal_api):
 def test_registration_status_is_not_public(portal_api):
     api, *_ = portal_api
     assert api.get("/api/portal/registration/1/status").status_code == 401
+
+
+def test_portal_catalog_migrates_legacy_view_assignments(portal_api):
+    _, db, *_ = portal_api
+    viewer = db.scalar(select(ClientPortalRole).where(ClientPortalRole.code == "viewer"))
+    canonical = db.scalar(
+        select(ClientPortalPermission).where(ClientPortalPermission.code == "portal.read")
+    )
+    legacy = ClientPortalPermission(
+        code="portal.view",
+        name="Portal View",
+        description="Legacy",
+        module="portal",
+    )
+    db.add(legacy)
+    db.flush()
+    db.add(ClientPortalRolePermission(role_id=viewer.id, permission_id=legacy.id))
+    db.commit()
+
+    ensure_portal_catalog(db)
+    db.refresh(legacy)
+
+    assert legacy.is_active is False
+    assert not db.scalars(
+        select(ClientPortalRolePermission).where(
+            ClientPortalRolePermission.permission_id == legacy.id
+        )
+    ).all()
+    assert db.scalar(
+        select(ClientPortalRolePermission).where(
+            ClientPortalRolePermission.role_id == viewer.id,
+            ClientPortalRolePermission.permission_id == canonical.id,
+        )
+    ) is not None

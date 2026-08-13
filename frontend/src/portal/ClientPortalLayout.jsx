@@ -5,7 +5,7 @@ import BrandLockup from '../components/BrandLockup.jsx';
 import { navigate } from '../utils/routing.js';
 
 const entries = [
-  { path: '/portal', label: 'Inicio', icon: Home, permission: 'portal.view' },
+  { path: '/portal', label: 'Inicio', icon: Home, permission: 'portal.read' },
   { path: '/portal/empresa', label: 'Mi empresa', icon: Building2, permission: 'client.view' },
   { path: '/portal/cotizaciones', label: 'Cotizaciones', icon: FileText, permission: 'quotations.view' },
   { path: '/portal/servicios', label: 'Mis servicios', icon: Wrench, permission: 'services.view' },

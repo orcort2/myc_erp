@@ -37,6 +37,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   tolerante, solicitudes técnico→comercial separadas del estado técnico,
   decisión interna autorizada por partida con categorías validadas, Activity
   contextual y tareas `#tarea`.
+- Acceso móvil backend de sólo lectura para técnicos: ETS, OT, Equipos y Hojas
+  de Campo heredan exclusivamente `ServiceOrder.technician_id`, con 404 ante
+  recursos ajenos o sin asignación. La aplicación `myc-mobile` no forma parte
+  del alcance de esta implementación.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
 - Control Documental V1 y Plantillas Maestras de Certificado.
@@ -137,6 +141,22 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - CRM/Leads y conversión de prospectos.
 - Encuestas de satisfacción.
 - Reporte final de servicio/rentabilidad acordado en documentos tempranos.
+
+## Ampliación temporal verificada 2026-08-13 — OT LAB móvil
+
+- Login interno JWT y almacenamiento de tokens en SecureStore.
+- Alta/listado/detalle manual de OT LAB sin entidades productivas.
+- Folios backend 6400–6999 con namespace y lock independientes.
+- Hasta 10 equipos por OT, edición/eliminación antes de firma y OT adicional
+  encadenada con datos generales heredados.
+- Una sesión de firma técnico/cliente para todo el grupo; la firma bloquea altas
+  y edición y la finalización genera un PDF institucional por OT.
+- Impresión/compartir mediante APIs Expo Go y exportación administrativa ZIP
+  con manifiesto, relaciones, firmas, PDFs y checksums.
+
+Permanece fuera del alcance implementado aplicar la migración a producción,
+retirar el LAB, migrar sus datos a entidades productivas o declarar aceptación
+física sin ejecutar el recorrido real en iPhone.
 
 ## Fuera del alcance actual implementado
 

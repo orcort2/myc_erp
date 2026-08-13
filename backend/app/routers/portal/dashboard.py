@@ -14,7 +14,7 @@ router = APIRouter(prefix="/client-portal/dashboard", tags=["client-portal-dashb
 
 
 @router.get("", response_model=PortalDashboardRead)
-def dashboard(context: PortalSecurityContext = Depends(require_portal_permission("portal.view")), db: Session = Depends(get_db)):
+def dashboard(context: PortalSecurityContext = Depends(require_portal_permission("portal.read")), db: Session = Depends(get_db)):
     client_id = context.client.id
     return PortalDashboardRead(
         client_id=client_id,

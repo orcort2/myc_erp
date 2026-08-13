@@ -257,25 +257,50 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
             actor="api_consumer",
             public_intentional=True,
         )
+
     if path.startswith("/api/portal/invitations/"):
         return AccessPolicy(AccessType.PUBLIC_SIGNED, "invitation_token", actor="anonymous", public_intentional=True)
     if path.startswith("/api/portal/registration/"):
         return _permission("users.manage", administrative=True)
     if path.startswith("/api/portal/"):
-        return AccessPolicy(AccessType.PORTAL, "portal_access_jwt", permission="portal.view", ownership="membership.client_id", actor="portal_user")
+        return AccessPolicy(AccessType.PORTAL, "portal_access_jwt", permission="portal.read", ownership="membership.client_id", actor="portal_user")
     if path.startswith(("/api/client-portal/invitations", "/api/client-portal/memberships", "/api/client-portal/roles", "/api/client-portal/registrations", "/api/client-portal/link-requests", "/api/client-portal/configuration")):
         return _permission("users.manage", administrative=True)
     if path.startswith("/api/client-portal/"):
         return AccessPolicy(
             AccessType.PORTAL,
             "access_jwt+portal_client_context",
-            permission="portal.view",
+            permission="portal.read",
             ownership="client_id_derived_from_identity",
             actor="portal_user",
             finding="AUD-002",
         )
     if key == ("GET", "/api/auth/me"):
         return AccessPolicy(AccessType.AUTHENTICATED, "access_jwt")
+
+    if path.startswith("/api/mobile/v1/technician/field-sheets"):
+        return AccessPolicy(
+            AccessType.PERMISSION,
+            "internal_access_jwt",
+            permission="field_sheets.read",
+            ownership="service_order.technician_id=current_user.id; also requires service_orders.read_assigned",
+            actor="internal_user",
+        )
+
+    if path == "/api/mobile/v1/technician/lab-work-orders/export":
+        return _permission("lab_work_orders.export")
+
+    if path.startswith("/api/mobile/v1/technician/lab-work-orders"):
+        return _permission("lab_work_orders.use")
+
+    if path.startswith("/api/mobile/v1/technician/"):
+        return AccessPolicy(
+            AccessType.PERMISSION,
+            "internal_access_jwt",
+            permission="service_orders.read_assigned",
+            ownership="technician_id=current_user.id",
+            actor="internal_user",
+        )
 
     tag_list = list(tags)
     if len(tag_list) != 1:

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-10 — auditoría integral de sólo lectura; sin cambio de clasificación global
+> Corte verificado: 2026-08-11 — conciliación TD-027; sin cambio de clasificación global
 
 # Estado actual del ERP MYC
 
@@ -114,8 +114,12 @@ bajo concurrencia, conservando compatibilidad con calibración. No cambia la
 clasificación global: faltan revisión funcional y
 arquitectónica, UI de cards/tabs, portal/app de aprobación y E2E autenticado.
 
+El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho rutas de
+sólo lectura cubren ETS, OT, Equipos y Hojas de Campo con ownership por técnico,
+404 opaco y permisos compuestos. No modifica el ERP web ni `myc-mobile`.
+
 1. La Contención de Seguridad Etapa 1 quedó **APROBADA Y CERRADA**:
-   deny-by-default, JWT productivo seguro, clasificación 363/363 y portal
+   deny-by-default, JWT productivo seguro, clasificación 371/371 y portal
    aislado. PortalMembership, RBAC administrable, revocación/rotación,
    `localStorage`, rate limit, MFA y E2E browser exhaustivo por rol pertenecen
    a etapas posteriores y no reabren este cierre.
@@ -152,7 +156,7 @@ arquitectónica, UI de cards/tabs, portal/app de aprobación y E2E autenticado.
 | P1 | Completar seguridad de sesión fuera de la Etapa 1: rotación/revocación, almacenamiento de tokens, rate limit, MFA y E2E browser por rol. |
 | P1 | Cerrar Hojas de Campo/Captura y su E2E operativo. |
 | P1 | Completar la persistencia y el flujo fiscal de Facturación. |
-| P1 | Implementar RBAC interno administrable; `PortalMembership` ya está integrado. Reconciliar catálogo, bootstrap interno, permisos del Portal e inventario HTTP porque el gate institucional actual falla. |
+| P1 | Implementar RBAC interno administrable; `PortalMembership` ya está integrado. El gate institucional queda verde y bootstrap/inventario están conciliados, pero TD-027 permanece bloqueado por decisiones de granularización sobre 20 claves de compatibilidad. |
 | P1 | Exigir actor en las mutaciones auditables restantes fuera de ETS y corregir las vulnerabilidades altas de dependencias frontend. |
 | P2 | Retirar compatibilidad legacy verificada y reducir deuda de UX, bundle, scripts e infraestructura. |
 
@@ -169,6 +173,18 @@ evidencia están en
 Pendientes fuera del cierre técnico: antivirus/proveedor de cuarentena,
 almacenamiento durable remoto y streaming de paquetes de salida de gran
 volumen; requieren decisión operativa y etapa propia.
+
+## OT LAB temporal móvil — `EN DESARROLLO`
+
+El vertical backend/móvil está terminado técnicamente: agregado aislado, folios
+6400–6999, máximo 10 equipos, adicionales encadenadas, firma única compartida,
+bloqueo grupal, PDFs individuales y exportación verificable. Las pruebas LAB,
+conformidad API, PostgreSQL, TypeScript, lint y Expo Doctor están verdes.
+
+No se marca `CASI SELLADO` ni `SELLADO`: falta la aceptación completa en iPhone
+físico con Expo Go, teclado, firma táctil, AirPrint y hoja de compartir. El LAB
+es provisional y debe retirarse sólo después de exportación íntegra verificada.
+No cambia el estado ni el contrato de las OT/firmas productivas.
 
 ## Regla de mantenimiento
 

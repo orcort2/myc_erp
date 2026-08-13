@@ -37,7 +37,7 @@ def security_session():
         ca, cb = Client(client_type="persona_moral", legal_name="Cliente A"), Client(client_type="persona_moral", legal_name="Cliente B")
         db.add_all([admin, normal, disabled, pa, pb, ca, cb]); db.flush()
         permissions = []
-        for code in ["portal.view", "quotations.view", "services.view", "certificates.view", "certificates.download"]:
+        for code in ["portal.read", "quotations.view", "services.view", "certificates.view", "certificates.download"]:
             permission = ClientPortalPermission(code=code, name=code, module=code.split('.')[0]); db.add(permission); permissions.append(permission)
         role = ClientPortalRole(code="portal_administrator", name="Administrador", is_system=True); db.add(role); db.flush()
         for permission in permissions: db.add(ClientPortalRolePermission(role_id=role.id, permission_id=permission.id))

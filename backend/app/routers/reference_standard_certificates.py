@@ -130,7 +130,7 @@ def patch_reference_standard_certificate_uncertainty(
 def delete_reference_standard_certificate_uncertainty(
     uncertainty_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("reference_standard_certificates.update")),
+    current_user: User = Depends(require_permission("reference_standard_certificates.delete")),
 ) -> Response:
     deactivate_certificate_uncertainty(db, uncertainty_id, user_id=current_user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

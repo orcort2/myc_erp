@@ -55,7 +55,7 @@ class PortalRoleScope(StrEnum):
 
 
 class PortalPermissionCode(StrEnum):
-    PORTAL_VIEW = "portal.view"
+    PORTAL_READ = "portal.read"
 
     PROFILE_VIEW = "profile.view"
     PROFILE_UPDATE = "profile.update"

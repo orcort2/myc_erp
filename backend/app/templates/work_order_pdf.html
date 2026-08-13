@@ -450,8 +450,8 @@
             <td>{{ line.internal_id }}</td>
             <td>{{ line.serial_number }}</td>
             <td>{{ line.certificate_folio }}</td>
-            <td></td>
-            <td></td>
+            <td class="center">{% if line.is_good_condition is sameas true %}✓{% endif %}</td>
+            <td class="center">{% if line.is_good_condition is sameas false %}X{% endif %}</td>
           </tr>
           {% endfor %}
           <tr class="observaciones-row">

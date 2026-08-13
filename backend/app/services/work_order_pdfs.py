@@ -34,6 +34,7 @@ class WorkOrderEquipmentLine:
     internal_id: str
     serial_number: str
     certificate_folio: str
+    is_good_condition: bool | None = None
 
 
 def _filename(value: str) -> str:
@@ -92,10 +93,14 @@ def _build_equipment_lines(equipment_list: list[Equipment]) -> list[WorkOrderEqu
                 internal_id=equipment.internal_id or "",
                 serial_number=equipment.serial_number or "",
                 certificate_folio=(
-                    (certificate.expected_folio or certificate.folio)
-                    if certificate
-                    else ""
+                    getattr(equipment, "report_number", None)
+                    or (
+                        (certificate.expected_folio or certificate.folio)
+                        if certificate
+                        else ""
+                    )
                 ),
+                is_good_condition=getattr(equipment, "is_good_condition", None),
             )
         )
 
@@ -109,6 +114,7 @@ def _build_equipment_lines(equipment_list: list[Equipment]) -> list[WorkOrderEqu
                 internal_id="",
                 serial_number="",
                 certificate_folio="",
+                is_good_condition=None,
             )
         )
 

@@ -12,7 +12,7 @@ El snapshot técnico contiene 36 módulos, 213 acciones, 798 filas y
 658 claves propuestas únicas. `permissions.py` resuelve actualmente 140
 permisos únicos entre constantes y roles; 61 coinciden literalmente con una
 propuesta y 79 requieren reconciliación funcional. El inventario HTTP utiliza
-72 permisos mínimos únicos: 19 todavía usan una clave bootstrap distinta de la
+73 permisos mínimos únicos: 20 todavía usan una clave bootstrap distinta de la
 propuesta institucional y una clave catalogada
 (`reference_standard_certificates.delete`) no está declarada explícitamente en
 el bootstrap, por lo que hoy sólo Administrador la satisface mediante `*`.
@@ -41,7 +41,7 @@ de compatibilidad definirá el backlog de implementación administrativa.
 | Liberación | 1 | `release.manage` |
 | Centro de Resoluciones | 10 | `resolution_center.*`, `resolution_center.analyze`, `resolution_center.audit`, `resolution_center.authorize`, `resolution_center.execute`, `resolution_center.infrastructure`, `resolution_center.plan`, `resolution_center.prepare`, `resolution_center.read_all`, `resolution_center.simulate` |
 | SAT | 3 | `sat_catalogs.manage`, `sat_catalogs.manage_aliases`, `sat_catalogs.manage_favorites` |
-| ETS | 8 | `service_orders.additional_equipment.audit`, `service_orders.additional_equipment.authorize`, `service_orders.additional_equipment.commercial_review`, `service_orders.additional_equipment.execute`, `service_orders.additional_equipment.propose`, `service_orders.read_own`, `service_orders.sign`, `service_orders.signatures.reopen` |
+| ETS | 9 | `service_orders.additional_equipment.audit`, `service_orders.additional_equipment.authorize`, `service_orders.additional_equipment.commercial_review`, `service_orders.additional_equipment.execute`, `service_orders.additional_equipment.propose`, `service_orders.read_assigned`, `service_orders.read_own`, `service_orders.sign`, `service_orders.signatures.reopen` |
 | Servicios | 3 | `services.manage_certificate_prefix`, `services.manage_linked_company`, `services.manage_service_type` |
 | Ajustes | 5 | `settings.manage`, `settings.master_catalogs.manage`, `settings.read`, `settings.system_parameters.read`, `settings.system_parameters.update` |
 | Incertidumbre | 6 | `uncertainty.execute`, `uncertainty_models.approve`, `uncertainty_models.create`, `uncertainty_models.exception`, `uncertainty_models.read`, `uncertainty_models.update` |
@@ -102,3 +102,14 @@ venv/bin/python scripts/validate_capability_catalog.py --check
 El gate analiza todas las tablas del catálogo y falla si cambian sus conteos,
 si aparece una clave inválida o si `permissions.py`/inventario cambian sin
 actualizar el snapshot institucional.
+
+## Conciliación posterior — 2026-08-11
+
+El cierre `TD_027_CAPABILITY_GATE_RECONCILIATION_2026-08-11.md` preserva esta
+fotografía de Etapa 2B y concilia el drift posterior. `portal.view` se reemplazó
+por la capacidad funcional existente `portal.read`; la clave catalogada
+`reference_standard_certificates.delete` se declaró y asignó con menor
+privilegio. El gate queda verde con 141 permisos actuales, 62 coincidencias,
+80 gaps actuales, 73 permisos HTTP, 20 diferencias literales catálogo, 0 gaps
+bootstrap y 596 permisos propuestos aún no implementados. Las diferencias de
+compatibilidad no se migran sin decisión institucional.

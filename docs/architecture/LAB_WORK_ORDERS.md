@@ -1,0 +1,135 @@
+> Estado: VIGENTE
+>
+> Corte verificado: 2026-08-13
+>
+> Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
+
+# Órdenes de Trabajo LAB
+
+## Autoridad y aislamiento
+
+El LAB resuelve captura operativa temporal desde iPhone sin crear ni modificar
+`ServiceOrder`, `ServiceWorkOrder`, `Equipment`, `Client`, `Certificate`, Hojas
+de Campo, Facturación ni entidades del Motor de Resoluciones. El flujo
+productivo no puede depender de tablas, rutas o tipos LAB.
+
+El namespace protegido es
+`/api/mobile/v1/technician/lab-work-orders`. `lab_work_orders.use` habilita el
+flujo operativo a Técnicos y `lab_work_orders.export` reserva la exportación
+integral a autoridad administrativa. El guard transversal conserva
+deny-by-default y JWT interno; no existe autenticador LAB alterno.
+
+## Agregado persistente
+
+- `LabWorkOrder`: datos generales manuales, folio, cadena de grupo, estado y
+  PDF final inmutable.
+- `LabWorkOrderEquipment`: hasta diez equipos exclusivos de la OT; sólo
+  instrumento, marca, identificación, serie, informe opcional y condición
+  física booleana.
+- `LabWorkOrderSignatureSession`: una sesión por grupo, con actor y fecha del
+  servidor.
+- `LabWorkOrderSignature`: exactamente una firma de técnico y una de cliente,
+  con nombre, fecha declarada, versión y PNG data URL.
+
+Sólo `created_by_user_id` y `signed_by_user_id` referencian `users` para
+trazabilidad. No hay FK a agregados productivos.
+
+## Grupo de captura y firma
+
+La OT raíz se autorreferencia mediante `root_work_order_id`. Las adicionales
+conservan además `previous_work_order_id` y `sequence_number`; el folio visible
+nunca se usa como FK. Los datos generales se capturan una vez y toda edición
+previa a firma se propaga al grupo.
+
+Una OT adicional sólo puede nacer desde la última OT del grupo cuando contiene
+10 equipos. Hereda datos generales, empieza con 0/10 y recibe su folio en el
+backend. Cada OT conserva su PDF individual.
+
+La firma se captura una sola vez después de revisar todo el grupo. Una única
+`LabWorkOrderSignatureSession` conserva los dos binarios y cada OT referencia
+esa misma sesión. En cuanto se firma, todas las OT pasan a
+`ready_for_signatures`; desde ese momento se rechazan nuevas OT, equipos,
+ediciones o eliminaciones. La finalización genera y congela todos los PDFs y
+transiciona el grupo completo a `completed`.
+
+Este contrato es una excepción temporal y aislada a los ciclos de firma del
+ETS productivo descritos por ADR-004/BR-007; no los modifica.
+
+## Folios y concurrencia
+
+El LAB reutiliza `institutional_folio_sequences` con namespace independiente:
+
+```text
+document_type = lab_work_order
+prefix = LAB
+year = 0
+range = 6400..6999
+```
+
+PostgreSQL serializa la asignación mediante advisory transaction lock y lock
+de fila del contador. También contrasta el máximo persistido. `6999` es válido;
+el siguiente alta responde `409` y nunca usa `7000`. La secuencia productiva
+`work_order/OT/año` permanece intacta.
+
+## Estados
+
+```text
+draft → ready_for_signatures → completed
+```
+
+No existe reapertura en este LAB. `is_good_condition` es condición física y no
+forma parte del lifecycle.
+
+## PDF y app móvil
+
+El render reutiliza el formato institucional `work_order_pdf.html` y su
+infraestructura WeasyPrint. Cada PDF muestra folio, datos manuales, hasta diez
+equipos, informe, ✓/X y las firmas compartidas. El binario y SHA-256 quedan en
+la OT para garantizar exportación futura.
+
+`myc-mobile` usa Expo SDK 54 y componentes disponibles en Expo Go:
+
+- `expo-secure-store` para access/refresh token;
+- `react-native-webview` con canvas táctil para cada firma;
+- `expo-file-system`, `expo-print` y `expo-sharing` para PDF en iOS;
+- una sola `Modal` nativa; el editor de equipo es un overlay interno.
+
+## API
+
+| Método | Ruta relativa | Efecto |
+| --- | --- | --- |
+| POST / GET | `/lab-work-orders` | crear raíz / listar |
+| GET / PATCH | `/lab-work-orders/{id}` | detalle de grupo / propagar generales |
+| POST | `/{id}/equipment` | agregar hasta 10 |
+| PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / eliminar antes de firma |
+| POST | `/{id}/additional` | crear la siguiente OT del grupo |
+| POST | `/{id}/signatures` | crear una sesión y bloquear el grupo |
+| POST | `/{id}/complete` | generar todos los PDFs y completar |
+| GET | `/{id}/pdf` | entregar PDF individual final |
+| GET | `/export` | ZIP integral administrativo |
+
+## Exportación y retiro controlado
+
+`GET .../export` genera un ZIP en memoria con:
+
+```text
+manifest.json
+work_orders.json
+equipment.json
+signatures/session-{id}.json
+signatures/session-{id}-{type}.png
+pdf/OT-{folio}.pdf
+```
+
+El manifiesto registra totales, folios y SHA-256 de PDFs/firmas. Antes de
+retirar el LAB se debe: bloquear nuevas altas; exportar; comparar total de OT y
+equipos; verificar checksums y abrir muestras; custodiar el ZIP; después
+retirar app, rutas, servicios, permisos y modelos; y sólo al final ejecutar una
+migración explícita de drop. La migración actual nunca elimina datos.
+
+## Límites verificados
+
+La suite automatizada cubre contratos backend y PDF. Permanece pendiente el
+recorrido de aceptación completo en iPhone físico con Expo Go, backend
+accesible por LAN y una cuenta Técnica real. Hasta esa evidencia el módulo se
+mantiene `EN DESARROLLO`, no `SELLADO`.

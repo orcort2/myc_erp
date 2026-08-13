@@ -198,6 +198,7 @@ Fuente revisada: `backend/app/core/permissions.py` del ZIP `app(23).zip`.
 |---|---|---|---|
 | `reference_standard_certificates.approve` | `REFERENCE_STANDARD_CERTIFICATES_APPROVE` | Calidad, Desarrollador | Declarado y asignado |
 | `reference_standard_certificates.create` | `REFERENCE_STANDARD_CERTIFICATES_CREATE` | Calidad, Desarrollador | Declarado y asignado |
+| `reference_standard_certificates.delete` | `REFERENCE_STANDARD_CERTIFICATES_DELETE` | Calidad, Desarrollador | Declarado y asignado |
 | `reference_standard_certificates.read` | `REFERENCE_STANDARD_CERTIFICATES_READ` | Calidad, Captura, Desarrollador, Tecnico | Declarado y asignado |
 | `reference_standard_certificates.update` | `REFERENCE_STANDARD_CERTIFICATES_UPDATE` | Calidad, Desarrollador | Declarado y asignado |
 

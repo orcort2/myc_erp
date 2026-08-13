@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-08-10
+> Corte verificado: 2026-08-11
 
 # Flujo operativo actual
 
@@ -178,6 +178,13 @@ leídos y atenciones, mientras Notifications conserva el aviso dirigido.
 
 ## 1. Acceso
 
+El namespace `/api/mobile/v1/technician` reutiliza el access JWT interno, pero
+aplica `service_orders.read_assigned` y ownership en cada consulta. ETS filtra
+por técnico; OT y Equipo heredan por `service_order_id`; Hoja de Campo hereda
+por `equipment_id → service_order_id` y exige además `field_sheets.read`.
+Recursos ajenos, inactivos o sin asignación responden 404. Este flujo no cambia
+las rutas internas consumidas por el ERP web.
+
 El usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo
 access autentica solicitudes y refresh se utiliza únicamente para renovar el
 par. El registro público no acepta roles solicitados y sólo crea el primer
@@ -200,7 +207,9 @@ Motor conserva su consumidor/organización independiente. Una ruta nueva sin
 clasificación impide el arranque y falla la prueba de conformidad.
 
 En el portal, el cliente no elige tenant: el backend exige un JWT de contexto
-`client_portal`, permiso `portal.view` y una membresía activa única. El
+`client_portal`, permiso base institucional `portal.read` y una membresía activa
+única. Los permisos persistidos legacy `portal.view` se normalizan a
+`portal.read` al resolver la sesión; el
 `client_id` se deriva exclusivamente de `ClientPortalMembership`; listados y
 descargas se filtran por ese cliente, un certificado ajeno responde 404 y un
 acceso válido queda auditado.
@@ -383,4 +392,25 @@ esa empresa y protege al último administrador activo.
 - Equipos adicionales pueden bloquearse y registrar una solicitud/comentario, pero la excepción no es todavía un agregado persistente especializado.
 - Estados legacy de certificados se normalizan para compatibilidad.
 - Las firmas directas y el número de OT en `service_orders` siguen presentes como compatibilidad junto a las estructuras vigentes por ciclos y `service_work_orders`.
+
+## Flujo temporal OT LAB móvil
+
+```text
+Login interno técnico
+→ OT's → Generar orden
+→ backend asigna folio LAB 6400..6999
+→ datos generales manuales una sola vez
+→ equipos compactos (máximo 10 por OT)
+→ al llenar 10: backend crea OT adicional y hereda generales
+→ navegación por todas las OT del mismo root_work_order_id
+→ revisión del grupo completo
+→ firma técnico + cliente una sola vez
+→ sesión compartida bloquea inmediatamente todo el grupo
+→ finalizar genera y congela un PDF por OT
+→ iOS abre impresión o compartir para el folio seleccionado
+```
+
+El retiro futuro sigue `detener altas → exportar → validar conteos/checksums →
+custodiar → retirar consumidores/modelos → migración controlada de tablas`. No
+existe eliminación automática ni dependencia desde el flujo productivo.
 - Certificados sin pago pueden liberarse sólo cuando el ETS no requiere pago; no se documentó una excepción financiera general independiente del modelo actual.
