@@ -109,7 +109,16 @@ El cierre `TD_027_CAPABILITY_GATE_RECONCILIATION_2026-08-11.md` preserva esta
 fotografía de Etapa 2B y concilia el drift posterior. `portal.view` se reemplazó
 por la capacidad funcional existente `portal.read`; la clave catalogada
 `reference_standard_certificates.delete` se declaró y asignó con menor
-privilegio. El gate queda verde con 141 permisos actuales, 62 coincidencias,
+privilegio. El gate queda verde con 142 permisos actuales, 62 coincidencias,
 80 gaps actuales, 73 permisos HTTP, 20 diferencias literales catálogo, 0 gaps
-bootstrap y 596 permisos propuestos aún no implementados. Las diferencias de
+de bootstrap y 596 permisos propuestos aún no implementados. Las diferencias de
 compatibilidad no se migran sin decisión institucional.
+
+## Ampliación temporal — 2026-08-13
+
+El vertical removible OT LAB agrega `lab_work_orders.use` y
+`lab_work_orders.export`. El baseline reproducible pasa a 144 permisos actuales,
+82 diferencias frente al catálogo objetivo, 75 permisos HTTP, 22 diferencias
+literales y 0 gaps de bootstrap. Estas dos claves no se promueven al Catálogo
+Institucional permanente: deben desaparecer con el retiro controlado del LAB
+después de su exportación íntegra.

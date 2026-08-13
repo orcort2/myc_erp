@@ -49,8 +49,10 @@
   REVISIÓN**: Calidad es la única superficie mutante, ETS perdió endpoint/lote
   y acciones, y `certificate_authentication.authenticate_certificate` conserva
   lock, actor, origen, audit, evento y commit únicos.
-- La conciliación **TD-027** deja el capability gate **VERDE** en 20/0 y el
-  bootstrap cubre 73/73 permisos HTTP. Portal usa `portal.read`; la clave legacy
+- La conciliación **TD-027** deja el capability gate **VERDE** en 22/0 y el
+  bootstrap cubre 75/75 permisos HTTP. Las dos diferencias nuevas son
+  `lab_work_orders.use/export`, explícitamente temporales. Portal usa
+  `portal.read`; la clave legacy
   `portal.view` quedó inactiva y sin asignaciones, y
   `reference_standard_certificates.delete` se asigna con menor privilegio.
   TD-027 permanece **BLOQUEADO POR DECISIÓN** para granularización institucional.
@@ -138,7 +140,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend `PYTHONPATH=. ../venv/bin/python -m pytest -q` | 501 passed, 19 subtests, 3 warnings; 1 fallo por multi-head concurrente no integrado |
+| Backend `PYTHONPATH=backend venv/bin/pytest -q backend/tests` | 509 passed, 1 skipped, 19 subtests passed, 3 warnings deprecados; sin fallos |
 | Aislamiento móvil técnico | 21 passed; ETS/OT/Equipo/Hoja A/B, sin asignación, 401, 403 y doble permiso de hojas |
 | Escenarios Fase 1 ETS múltiple/evolucionado | 10 passed; A–H, permisos, mixto SG/calibración/mantenimiento, evolución indebida/posterior, lifecycle, categorías y unicidad |
 | Regresión focal ETS/calibración/Activity/cotizaciones/permisos | 53 passed, 2 warnings |
@@ -151,8 +153,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
 | Inventario FastAPI | 383/383 operaciones clasificadas; CSV coincide con runtime |
-| OT LAB backend/API/PDF/export | 7 passed; 32 passed junto con conformidad API y scope móvil |
-| Migración LAB PostgreSQL temporal | `base → c6e8a1b4d2f9`; current correcto; `alembic check` sin operaciones nuevas; base temporal eliminada |
+| OT LAB backend/API/PDF/export | 7 passed SQLite + 1 passed concurrencia PostgreSQL; 38 passed y 1 skipped junto con conformidad API, integridad de esquema y scope móvil |
+| Migración LAB PostgreSQL temporal | `base → c6e8a1b4d2f9`; current correcto; `alembic check` sin operaciones nuevas; asignador concurrente `[6400, 6401]`; carrera de OT adicional: una `6403` y un rechazo `409`; base temporal eliminada |
 | `myc-mobile` TypeScript/lint | correcto / correcto |
 | `myc-mobile` Expo Doctor SDK 54 | 18/18 checks |
 | Aislamiento portal A/B | membresía propia 200, recurso ajeno 404, anónimo 401; autenticador interno rechaza token del portal |
@@ -162,7 +164,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
 | Alembic current/check | base principal no modificada en `f4a1c9d2e710`; head de código `c6e8a1b4d2f9` validado limpio en base aislada |
 | Respaldo oficial regenerado | 74,306,112 bytes; contiene `f4a1c9d2e710`; restore drill no repetido en esta fase |
-| Validador Catálogo Institucional/permissions/API | VERDE: 73 permisos HTTP, baseline gobernado 20 brechas literales y 0 de bootstrap; TD-027 bloqueado por decisión |
+| Validador Catálogo Institucional/permissions/API | VERDE: 75 permisos HTTP, baseline gobernado 22 brechas literales y 0 de bootstrap; dos son capacidades removibles LAB |
 | Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
 | Metadatos Catálogo Funcional | 657/657 con naturaleza, criticidad y alcance; alineación completa |
 | Identidad y permisos del catálogo | microacciones, marcas y celdas de permisos sin cambios frente al corte previo a metadatos |
@@ -195,7 +197,7 @@ seguridad e inventario, se conserva en
 
 ## Seguridad y operación
 
-- Inventario introspectado: 371 operaciones HTTP, todas clasificadas por el
+- Inventario introspectado: 383 operaciones HTTP, todas clasificadas por el
   guard deny-by-default; el CSV canónico coincide con runtime.
 - Toda ruta interna pasa por el guard deny-by-default y el arranque/prueba de
   conformidad fallan si aparece una operación sin clasificación.

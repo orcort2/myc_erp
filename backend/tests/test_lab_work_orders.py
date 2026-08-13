@@ -3,11 +3,16 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
+import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pypdf import PdfReader
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -17,8 +22,9 @@ from app.core.db import Base, get_db
 from app.core.security import create_access_token
 from app.main import app
 from app.models.folio_sequence import InstitutionalFolioSequence
-from app.models.lab_work_order import LabWorkOrder
+from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.user import Role, User
+from app.services.lab_work_orders import _allocate_folio, create_additional_work_order
 
 
 PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(
@@ -274,13 +280,23 @@ def test_one_signature_session_completes_and_locks_entire_group(lab_context):
     )
     assert completed.status_code == 200, completed.text
     assert all(item["status"] == "completed" for item in completed.json()["related_work_orders"])
-    for work_order_id in (root["id"], extra["id"]):
+    for work_order_id, expected_folio, expected_instrument in (
+        (root["id"], "6400", "Instrumento 1"),
+        (extra["id"], "6401", "Instrumento 11"),
+    ):
         pdf = client.get(
             f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}/pdf",
             headers=headers,
         )
         assert pdf.status_code == 200
         assert pdf.content.startswith(b"%PDF")
+        rendered_text = "\n".join(
+            page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf.content)).pages
+        )
+        assert expected_folio in rendered_text
+        assert expected_instrument in rendered_text
+        assert "Técnico LAB" in rendered_text
+        assert "Cliente LAB" in rendered_text
 
 
 def test_requires_equipment_and_both_valid_signatures(lab_context):
@@ -356,3 +372,75 @@ def test_export_manifest_matches_persisted_counts(lab_context):
         equipment = json.loads(archive.read("equipment.json"))
     assert manifest["work_order_count"] == len(work_orders) == 1
     assert manifest["equipment_count"] == len(equipment) == 1
+
+
+@pytest.mark.skipif(
+    not os.getenv("LAB_POSTGRES_TEST_URL"),
+    reason="requiere PostgreSQL temporal para probar advisory/row lock real",
+)
+def test_postgresql_concurrent_folio_allocation_is_unique():
+    engine = create_engine(os.environ["LAB_POSTGRES_TEST_URL"])
+    factory = sessionmaker(bind=engine)
+
+    def allocate() -> int:
+        with factory() as db:
+            with db.begin():
+                value = _allocate_folio(db)
+                time.sleep(0.1)
+                return value
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        values = sorted(pool.map(lambda _index: allocate(), range(2)))
+
+    assert values == [6400, 6401]
+
+    with factory() as db:
+        role = Role(name="Tecnico LAB concurrente", description="Prueba LAB")
+        user = User(
+            username="lab-concurrent-tech",
+            email="lab-concurrent-tech@example.test",
+            full_name="Técnico LAB concurrente",
+            hashed_password="unused",
+            account_type="internal",
+            status="active",
+            is_active=True,
+            role=role,
+            roles=[role],
+        )
+        db.add(user)
+        db.flush()
+        root = LabWorkOrder(
+            folio=6402,
+            sequence_number=1,
+            created_by_user_id=user.id,
+            **create_payload(),
+        )
+        db.add(root)
+        db.flush()
+        root.root_work_order_id = root.id
+        root.equipment = [
+            LabWorkOrderEquipment(position=index, **equipment_payload(index))
+            for index in range(1, 11)
+        ]
+        db.commit()
+        root_id = root.id
+        user_id = user.id
+
+    def create_additional() -> tuple[str, int]:
+        with factory() as db:
+            user = db.get(User, user_id)
+            assert user is not None
+            try:
+                result = create_additional_work_order(db, root_id, user)
+                return "created", result.folio
+            except HTTPException as exc:
+                db.rollback()
+                return "rejected", exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(lambda _index: create_additional(), range(2)))
+
+    assert sorted(outcomes) == [("created", 6403), ("rejected", 409)]
+    with factory() as db:
+        folios = list(db.scalars(select(LabWorkOrder.folio).order_by(LabWorkOrder.folio)))
+    assert folios == [6402, 6403]

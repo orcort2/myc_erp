@@ -6,13 +6,13 @@
 >
 > Prevalece sobre: `../archive/security/permisos.md` y matrices de las especificaciones V2/V3
 >
-> Corte auditado: 2026-08-11 contra `backend/app/core/permissions.py` y el inventario FastAPI
+> Corte auditado: 2026-08-13 contra `backend/app/core/permissions.py` y el inventario FastAPI
 
 # Matriz vigente de roles y permisos
 
 Esta matriz documenta lo declarado en código. La aplicación transversal se
 rige por [`security/API_ACCESS_CONTROL.md`](security/API_ACCESS_CONTROL.md) y
-su inventario de 306 operaciones; cada servicio puede exigir controles más
+su inventario de 383 operaciones; cada servicio puede exigir controles más
 específicos además del mínimo central.
 
 `backend/app/core/permissions.py` es el bootstrap ejecutable y la capa de
@@ -28,12 +28,12 @@ inferencia documental.
 | --- | --- | --- |
 | Administrador | Acceso total | `*` |
 | Comercial | Clientes, cotizaciones, catálogo, documentos, creación/actualización de ETS y revisión de equipo adicional | Contribución completa a Actividad, CRUD comercial/catálogo, `service_orders.create/update` y permisos de desbloqueo |
-| Técnico | Equipos, Hojas de Campo, motores, firmas ETS y equipo adicional | CRUD de equipos, ejecución de motores, contribución completa a Actividad y `service_orders.additional_equipment.propose/execute` |
+| Técnico | Equipos, Hojas de Campo, motores, firmas ETS, equipo adicional y captura OT LAB temporal | CRUD de equipos, ejecución de motores, contribución completa a Actividad, `service_orders.additional_equipment.propose/execute` y `lab_work_orders.use` |
 | Captura | Preparación, generación documental y resoluciones propias | Permisos operativos, ejecución de motores y contribución completa a Actividad |
 | Calidad | Revisión, aprobación, metrología, control documental, configuración institucional y autorización de equipo adicional | Gobierno completo de Actividad, lectura/actualización institucional, `reference_standard_certificates.delete` y `service_orders.additional_equipment.authorize` |
 | Finanzas | Cobranza, facturación, lectura ETS, liberación y resoluciones propias | Contribución/resolución de atención en Actividad más permisos financieros vigentes |
 | Cliente | Portal aislado por cliente | `portal.read`, `quotations.read_own`, `certificates.read_own`, `service_orders.read_own`; el tenant se deriva en backend |
-| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno de Actividad, `resolution_center.*`, CRUD comercial/técnico, baja lógica de incertidumbre de certificado de patrón, configuración institucional, motores, folios y desbloqueo |
+| Desarrollador | Soporte técnico amplio sin comodín global | Gobierno de Actividad, `resolution_center.*`, CRUD comercial/técnico, baja lógica de incertidumbre de certificado de patrón, configuración institucional, motores, folios, desbloqueo y `lab_work_orders.use/export` |
 | Operador | Operación de resoluciones propias sin autorización | Contribución completa a Actividad, permisos del Centro y equipo adicional |
 | Auditor | Expediente institucional read-only | `activity.read`, `activity.view_audit` y permisos de auditoría vigentes |
 
@@ -60,6 +60,9 @@ inferencia documental.
 - Plantillas de Hojas de Campo: lectura, creación, actualización, aprobación, archivo, exportación e importación.
 - Configuración: lectura/actualización de parámetros y administración de catálogos maestros.
 - ETS: firma y reapertura de ciclos de firma.
+- OT LAB temporal: `lab_work_orders.use` para captura y
+  `lab_work_orders.export` para retiro verificable. No forman parte del dominio
+  productivo y deben eliminarse con el módulo temporal.
 - SAT: lectura, administración, favoritos y alias.
 - Centro de Resoluciones: `read`, `read_all`, `create`, `prepare`, `analyze`,
   `plan`, `simulate`, `authorize`, `execute`, `audit` e `infrastructure`.
@@ -97,13 +100,15 @@ Además, ningún permiso nuevo puede agregarse directamente a ese archivo: debe
 existir primero en el Catálogo Institucional bajo la jerarquía
 `Módulo→Acción→Microacción`, superar revisión funcional y quedar aprobado como
 permiso institucional. El catálogo es autoridad funcional, pero no reemplaza
-ni genera automáticamente esta matriz ejecutable.
+ni genera automáticamente esta matriz ejecutable. Las dos capacidades LAB son
+la excepción temporal, explícita y removible de ADR-071; se gobiernan como
+brecha de compatibilidad y no alteran el catálogo objetivo permanente.
 
 La reconciliación verificable se ejecuta con
 `venv/bin/python scripts/validate_capability_catalog.py --check`. Al corte se
-mantienen 79 claves bootstrap pendientes de reconciliación documental y 19
+mantienen 82 claves bootstrap pendientes de reconciliación documental y 22
 permisos HTTP de compatibilidad sin coincidencia literal en el snapshot
-técnico. Las 72 claves HTTP están declaradas en bootstrap:
+técnico. Las 75 claves HTTP están declaradas en bootstrap:
 `reference_standard_certificates.delete` se asigna a Calidad/Desarrollador y
 Portal usa `portal.read`. Las brechas restantes no autorizan renombrados;
 su clasificación está en el cierre TD-027 y en

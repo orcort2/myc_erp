@@ -119,7 +119,7 @@ sólo lectura cubren ETS, OT, Equipos y Hojas de Campo con ownership por técnic
 404 opaco y permisos compuestos. No modifica el ERP web ni `myc-mobile`.
 
 1. La Contención de Seguridad Etapa 1 quedó **APROBADA Y CERRADA**:
-   deny-by-default, JWT productivo seguro, clasificación 371/371 y portal
+   deny-by-default, JWT productivo seguro, clasificación 383/383 y portal
    aislado. PortalMembership, RBAC administrable, revocación/rotación,
    `localStorage`, rate limit, MFA y E2E browser exhaustivo por rol pertenecen
    a etapas posteriores y no reabren este cierre.
