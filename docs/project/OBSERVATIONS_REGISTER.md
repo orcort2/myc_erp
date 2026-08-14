@@ -141,6 +141,8 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R73 | Móvil / OT LAB | La necesidad temporal de captura podía contaminar ETS/OT productivas y repetir firmas por folio. Se aisló en cuatro tablas LAB, rango 6400–6999 y una sesión de firma compartida por grupo; exportación, bloqueo y PDFs individuales quedaron cubiertos. | resuelta | Arquitectura/cierre LAB y suite focal 2026-08-13 |
 | OBS-049 | Móvil / OT LAB | El recorrido automatizado no sustituye la aceptación en iPhone físico con Expo Go, teclado, trazo, impresión y compartir. | parcial | TD-037 y cierre LAB 2026-08-13 |
 | OBS-R72 | ETS / Seguridad e integridad | Board y decisión dependían de controles insuficientes; Servicio General se infería por ETS completo, la solicitud alteraba la etapa, categorías confiaban en payload y la unicidad de decisión no estaba en base. La corrección añade permisos efectivos, origen/capacidad por unidad, separación de lifecycles, validación comercial y constraint concurrente. | resuelta | Migración `a7c2e5f8b1d4`, arquitectura y suite negativa Fase 1 2026-08-12 |
+| OBS-R74 | Móvil / Búsqueda OT | La lista descargaba el universo LAB y no ofrecía filtros estructurados. Ahora `folio` y `client` se combinan en SQL con estado, debounce y paginación. | resuelta | Suite LAB, API e interfaz móvil 2026-08-14 |
+| OBS-R75 | Móvil / Reapertura documental | Una OT cerrada no tenía reapertura trazable. Ticket, snapshot, PDF histórico y reglas backend de firma ya preservan cada revisión; falta aceptación física del sprint nuevo. | parcial | Migración `d4e7a9c2b6f1`, contrato y cierre técnico 2026-08-14 |
 
 ## Regla de cierre
 

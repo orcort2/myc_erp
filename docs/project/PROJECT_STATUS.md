@@ -181,10 +181,18 @@ El vertical backend/móvil está terminado técnicamente: agregado aislado, foli
 bloqueo grupal, PDFs individuales y exportación verificable. Las pruebas LAB,
 conformidad API, PostgreSQL, TypeScript, lint y Expo Doctor están verdes.
 
-No se marca `CASI SELLADO` ni `SELLADO`: falta la aceptación completa en iPhone
-físico con Expo Go, teclado, firma táctil, AirPrint y hoja de compartir. El LAB
-es provisional y debe retirarse sólo después de exportación íntegra verificada.
+No se marca `CASI SELLADO` ni `SELLADO`: la versión operativa anterior fue
+validada físicamente, pero el sprint nuevo requiere repetir teclado, firma,
+AirPrint, compartir, filtros y Tickets en Android/iPhone. El LAB es provisional
+y debe retirarse sólo después de exportación íntegra verificada.
 No cambia el estado ni el contrato de las OT/firmas productivas.
+
+Desde el corte 2026-08-14 el LAB incorpora búsqueda SQL por folio/cliente,
+estado y paginación; Tickets propios/globales; aprobación y rechazo por
+permisos; snapshots, PDF por revisión, preservación condicionada e invalidación
+automática de firmas, auditoría y control optimista. Permanece **EN
+DESARROLLO** hasta repetir el checklist físico del nuevo sprint; no se publicó
+una nueva build TestFlight.
 
 ## Regla de mantenimiento
 

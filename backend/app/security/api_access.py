@@ -290,6 +290,13 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
     if path == "/api/mobile/v1/technician/lab-work-orders/export":
         return _permission("lab_work_orders.export")
 
+    if path.startswith("/api/mobile/v1/technician/tickets"):
+        if path.endswith("/approve") or path.endswith("/reject"):
+            return _permission("tickets.review")
+        if method.upper() == "POST":
+            return _permission("tickets.create")
+        return _permission("tickets.view_own")
+
     if path.startswith("/api/mobile/v1/technician/lab-work-orders"):
         return _permission("lab_work_orders.use")
 

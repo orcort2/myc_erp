@@ -122,3 +122,13 @@ El vertical removible OT LAB agrega `lab_work_orders.use` y
 literales y 0 gaps de bootstrap. Estas dos claves no se promueven al Catálogo
 Institucional permanente: deben desaparecer con el retiro controlado del LAB
 después de su exportación íntegra.
+
+## Ampliación temporal — 2026-08-14
+
+Tickets y reapertura LAB agregan siete permisos actuales. Tres aparecen como
+mínimo HTTP (`tickets.create`, `tickets.view_own`, `tickets.review`) y cuatro
+gobiernan decisiones internas (`tickets.view_all`, `work_orders.reopen` y las
+dos políticas de firma). El baseline pasa a 151 permisos actuales, 89
+diferencias frente al catálogo congelado, 78 permisos HTTP, 25 diferencias
+literales y 0 gaps de bootstrap. No se promueven automáticamente al Catálogo
+Institucional porque pertenecen al vertical temporal.

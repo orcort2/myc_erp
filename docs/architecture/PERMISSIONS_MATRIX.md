@@ -28,7 +28,7 @@ inferencia documental.
 | --- | --- | --- |
 | Administrador | Acceso total | `*` |
 | Comercial | Clientes, cotizaciones, catálogo, documentos, creación/actualización de ETS y revisión de equipo adicional | Contribución completa a Actividad, CRUD comercial/catálogo, `service_orders.create/update` y permisos de desbloqueo |
-| Técnico | Equipos, Hojas de Campo, motores, firmas ETS, equipo adicional y captura OT LAB temporal | CRUD de equipos, ejecución de motores, contribución completa a Actividad, `service_orders.additional_equipment.propose/execute` y `lab_work_orders.use` |
+| Técnico | Equipos, Hojas de Campo, motores, firmas ETS, equipo adicional y captura OT LAB temporal | CRUD de equipos, ejecución de motores, Actividad, `service_orders.additional_equipment.propose/execute`, `lab_work_orders.use` y Tickets propios `create/view_own` |
 | Captura | Preparación, generación documental y resoluciones propias | Permisos operativos, ejecución de motores y contribución completa a Actividad |
 | Calidad | Revisión, aprobación, metrología, control documental, configuración institucional y autorización de equipo adicional | Gobierno completo de Actividad, lectura/actualización institucional, `reference_standard_certificates.delete` y `service_orders.additional_equipment.authorize` |
 | Finanzas | Cobranza, facturación, lectura ETS, liberación y resoluciones propias | Contribución/resolución de atención en Actividad más permisos financieros vigentes |
@@ -63,6 +63,11 @@ inferencia documental.
 - OT LAB temporal: `lab_work_orders.use` para captura y
   `lab_work_orders.export` para retiro verificable. No forman parte del dominio
   productivo y deben eliminarse con el módulo temporal.
+- Tickets/reapertura LAB: `tickets.create`, `tickets.view_own`,
+  `tickets.view_all`, `tickets.review`, `work_orders.reopen`,
+  `work_orders.reopen_preserve_signatures` y
+  `work_orders.reopen_invalidate_signatures`. Técnico crea/consulta propios;
+  Calidad revisa todos y decide política; backend conserva autoridad final.
 - SAT: lectura, administración, favoritos y alias.
 - Centro de Resoluciones: `read`, `read_all`, `create`, `prepare`, `analyze`,
   `plan`, `simulate`, `authorize`, `execute`, `audit` e `infrastructure`.

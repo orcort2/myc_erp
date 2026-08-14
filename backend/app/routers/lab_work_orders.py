@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Response
+from typing import Literal
+
+from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -11,6 +13,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderRead,
     LabWorkOrderUpdate,
 )
+from app.schemas.operational_ticket import LabRevisionRead
 from app.services.auth import require_permission
 from app.services.lab_work_orders import (
     add_equipment,
@@ -26,6 +29,7 @@ from app.services.lab_work_orders import (
     update_equipment,
     update_work_order,
 )
+from app.services.operational_tickets import get_revision_pdf, list_revisions
 
 
 router = APIRouter(
@@ -45,10 +49,22 @@ def create_lab_work_order(
 
 @router.get("", response_model=list[LabWorkOrderListItem])
 def list_lab_work_orders(
+    folio: str | None = Query(default=None, max_length=20),
+    client: str | None = Query(default=None, max_length=255),
+    status: Literal["all", "open", "completed"] = "all",
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
     _current_user: User = Depends(require_permission("lab_work_orders.use")),
 ) -> list[LabWorkOrderListItem]:
-    return list_work_orders(db)
+    return list_work_orders(
+        db,
+        folio=folio,
+        client=client,
+        work_order_status=status,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/export")
@@ -108,10 +124,17 @@ def patch_lab_equipment(
 def remove_lab_equipment(
     work_order_id: int,
     equipment_id: int,
+    expected_edit_version: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("lab_work_orders.use")),
 ) -> LabWorkOrderRead:
-    return delete_equipment(db, work_order_id, equipment_id, current_user)
+    return delete_equipment(
+        db,
+        work_order_id,
+        equipment_id,
+        current_user,
+        expected_edit_version=expected_edit_version,
+    )
 
 
 @router.post("/{work_order_id}/additional", response_model=LabWorkOrderRead, status_code=201)
@@ -149,6 +172,30 @@ def get_lab_pdf(
     _current_user: User = Depends(require_permission("lab_work_orders.use")),
 ) -> Response:
     content, filename = get_pdf(db, work_order_id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/{work_order_id}/revisions", response_model=list[LabRevisionRead])
+def get_lab_revisions(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_permission("lab_work_orders.use")),
+) -> list[LabRevisionRead]:
+    return list_revisions(db, work_order_id)
+
+
+@router.get("/{work_order_id}/revisions/{revision_number}/pdf")
+def get_lab_revision_pdf(
+    work_order_id: int,
+    revision_number: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_permission("lab_work_orders.use")),
+) -> Response:
+    content, filename = get_revision_pdf(db, work_order_id, revision_number)
     return Response(
         content=content,
         media_type="application/pdf",

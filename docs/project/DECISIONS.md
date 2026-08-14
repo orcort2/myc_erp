@@ -254,3 +254,12 @@ habilitación. `role_id` continúa únicamente como compatibilidad primaria; la
 relación `user_roles` es la autoridad multirrol. El bloqueo de autenticación se
 centraliza en una política común de cinco intentos y quince minutos, con
 auditoría y respuesta genérica para los contextos interno y del portal.
+
+## D-2026-08-14 — Reapertura versionada del LAB
+
+Se adopta `OperationalTicket` como solicitud extensible y
+`LabWorkOrderRevision` como snapshot documental, sin conectar el LAB al ETS
+productivo. Aprobar el Ticket es el único camino de reapertura. La política
+humana de preservación queda subordinada a una clasificación determinista
+backend. Se preserva el folio y se versionan PDF/sesión de firma; auditoría no
+es el almacenamiento único del lifecycle.

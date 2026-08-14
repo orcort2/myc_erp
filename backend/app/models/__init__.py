@@ -77,6 +77,8 @@ from app.models.lab_work_order import (
     LabWorkOrderSignature,
     LabWorkOrderSignatureSession,
 )
+from app.models.lab_work_order_revision import LabWorkOrderRevision
+from app.models.operational_ticket import OperationalTicket
 from app.models.notification import Notification
 from app.models.portal_invitation import PortalInvitation
 from app.models.portal_invitation_role import PortalInvitationRole
@@ -213,6 +215,8 @@ __all__ = [
     "LabWorkOrderEquipment",
     "LabWorkOrderSignature",
     "LabWorkOrderSignatureSession",
+    "LabWorkOrderRevision",
+    "OperationalTicket",
     "Notification",
     "PortalInvitation",
     "PortalInvitationRole",

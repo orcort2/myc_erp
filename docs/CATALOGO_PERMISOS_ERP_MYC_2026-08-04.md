@@ -3,9 +3,9 @@
 Fuente revisada: `backend/app/core/permissions.py` del ZIP `app(23).zip`.
 
 - Roles definidos: **10**
-- Permisos declarados en `PERMISSIONS`: **104**
-- Permisos concretos usados por roles: **138**
-- Permisos usados por roles pero ausentes de `PERMISSIONS`: **35**
+- Permisos declarados en `PERMISSIONS`: **112**
+- Permisos concretos usados por roles: **150**
+- Permisos usados por roles pero ausentes de `PERMISSIONS`: **39**
 - Permisos declarados sin asignación directa: **1**
 
 > El catálogo actual no es completamente canónico: `ROLE_PERMISSIONS` utiliza permisos que `PERMISSIONS` no registra.
@@ -249,6 +249,30 @@ Fuente revisada: `backend/app/core/permissions.py` del ZIP `app(23).zip`.
 | `service_orders.sign` | `SERVICE_ORDERS_SIGN` | Desarrollador, Tecnico | Declarado y asignado |
 | `service_orders.signatures.reopen` | `SERVICE_ORDERS_SIGNATURES_REOPEN` | Calidad, Desarrollador | Declarado y asignado |
 | `service_orders.update` | `SERVICE_ORDERS_UPDATE` | Comercial, Desarrollador, Tecnico | Declarado y asignado |
+
+## lab_work_orders
+
+| Permiso | Constante | Roles directos | Estado |
+|---|---|---|---|
+| `lab_work_orders.export` | `—` | Desarrollador | Usado por roles, ausente de PERMISSIONS |
+| `lab_work_orders.use` | `—` | Desarrollador, Tecnico | Usado por roles, ausente de PERMISSIONS |
+
+## tickets
+
+| Permiso | Constante | Roles directos | Estado |
+|---|---|---|---|
+| `tickets.create` | `TICKETS_CREATE` | Desarrollador, Tecnico | Declarado y asignado |
+| `tickets.review` | `TICKETS_REVIEW` | Calidad, Desarrollador | Declarado y asignado |
+| `tickets.view_all` | `TICKETS_VIEW_ALL` | Calidad, Desarrollador | Declarado y asignado |
+| `tickets.view_own` | `TICKETS_VIEW_OWN` | Calidad, Desarrollador, Tecnico | Declarado y asignado |
+
+## work_orders
+
+| Permiso | Constante | Roles directos | Estado |
+|---|---|---|---|
+| `work_orders.reopen` | `WORK_ORDERS_REOPEN` | Calidad, Desarrollador | Declarado y asignado |
+| `work_orders.reopen_invalidate_signatures` | `WORK_ORDERS_REOPEN_INVALIDATE_SIGNATURES` | Calidad, Desarrollador | Declarado y asignado |
+| `work_orders.reopen_preserve_signatures` | `WORK_ORDERS_REOPEN_PRESERVE_SIGNATURES` | Calidad, Desarrollador | Declarado y asignado |
 
 ## services
 

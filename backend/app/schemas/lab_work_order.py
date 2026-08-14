@@ -43,9 +43,10 @@ class LabWorkOrderUpdate(BaseModel):
     state_name: str | None = Field(default=None, max_length=120)
     purchase_order: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=4000)
+    expected_edit_version: int | None = Field(default=None, ge=1)
 
 
-class LabEquipmentWrite(BaseModel):
+class LabEquipmentBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     instrument: str = Field(min_length=1, max_length=255)
@@ -56,7 +57,11 @@ class LabEquipmentWrite(BaseModel):
     is_good_condition: bool
 
 
-class LabEquipmentRead(LabEquipmentWrite):
+class LabEquipmentWrite(LabEquipmentBase):
+    expected_edit_version: int | None = Field(default=None, ge=1)
+
+
+class LabEquipmentRead(LabEquipmentBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -142,6 +147,11 @@ class LabWorkOrderRead(BaseModel):
     completed_at: datetime | None
     final_pdf_sha256: str | None
     final_pdf_generated_at: datetime | None
+    revision_number: int
+    edit_version: int
+    reopen_ticket_id: int | None
+    signature_required: bool
+    signature_preserved: bool
     created_at: datetime
     updated_at: datetime
     equipment: list[LabEquipmentRead]
@@ -159,3 +169,5 @@ class LabWorkOrderListItem(BaseModel):
     status: str
     equipment_count: int
     created_at: datetime
+    revision_number: int
+    signature_required: bool

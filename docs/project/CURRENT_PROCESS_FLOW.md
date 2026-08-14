@@ -419,4 +419,11 @@ institucionales independientes y una orden de compra ausente queda vacía.
 El retiro futuro sigue `detener altas → exportar → validar conteos/checksums →
 custodiar → retirar consumidores/modelos → migración controlada de tablas`. No
 existe eliminación automática ni dependencia desde el flujo productivo.
+
+Desde 2026-08-14, una OT `completed` sólo vuelve a edición mediante Ticket. El
+técnico solicita; la OT sigue cerrada; Calidad/autoridad rechaza o aprueba una
+política de firma; el backend crea snapshots del grupo y abre revisión N+1;
+cada edición valida `edit_version`; los cambios estructurales invalidan la
+firma activa; el cierre exige firma válida, genera PDF nuevo y resuelve el
+Ticket. El PDF y firma anteriores permanecen consultables.
 - Certificados sin pago pueden liberarse sólo cuando el ETS no requiere pago; no se documentó una excepción financiera general independiente del modelo actual.

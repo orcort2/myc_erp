@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-08-13
+> Corte verificado: 2026-08-14
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -26,8 +26,10 @@ deny-by-default y JWT interno; no existe autenticador LAB alterno.
 - `LabWorkOrderEquipment`: hasta diez equipos exclusivos de la OT; sólo
   instrumento, marca, identificación, serie, informe opcional y condición
   física booleana.
-- `LabWorkOrderSignatureSession`: una sesión por grupo, con actor y fecha del
-  servidor.
+- `LabWorkOrderSignatureSession`: una sesión versionada por grupo, con actor y
+  fecha del servidor.
+- `OperationalTicket` y `LabWorkOrderRevision`: solicitud operativa y snapshot
+  documental inmutable de cada cierre anterior.
 - `LabWorkOrderSignature`: exactamente una firma de técnico y una de cliente,
   con nombre, fecha declarada, versión y PNG data URL.
 
@@ -45,7 +47,7 @@ Una OT adicional sólo puede nacer desde la última OT del grupo cuando contiene
 10 equipos. Hereda datos generales, empieza con 0/10 y recibe su folio en el
 backend. Cada OT conserva su PDF individual.
 
-La firma se captura una sola vez después de revisar todo el grupo. Una única
+En el cierre inicial, la firma se captura una sola vez después de revisar todo el grupo. Una única
 `LabWorkOrderSignatureSession` conserva los dos binarios y cada OT referencia
 esa misma sesión. En cuanto se firma, todas las OT pasan a
 `ready_for_signatures`; desde ese momento se rechazan nuevas OT, equipos,
@@ -71,14 +73,19 @@ de fila del contador. También contrasta el máximo persistido. `6999` es válid
 el siguiente alta responde `409` y nunca usa `7000`. La secuencia productiva
 `work_order/OT/año` permanece intacta.
 
-## Estados
+## Estados y reapertura
 
 ```text
 draft → ready_for_signatures → completed
+                              ↓ Ticket aprobado
+                   snapshot → draft (revisión N+1)
 ```
 
-No existe reapertura en este LAB. `is_good_condition` es condición física y no
-forma parte del lifecycle.
+La reapertura sólo ocurre al aprobar un Ticket y afecta coherentemente al grupo.
+El PDF y la firma anteriores permanecen en la revisión histórica. La política
+`preserve` admite cambios no sustantivos; cualquier cambio estructural invalida
+automáticamente la firma activa y exige una nueva sesión. El contrato detallado
+está en `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
 
 ## PDF y app móvil
 
@@ -111,7 +118,7 @@ el editor secundario conserva el patrón sheet sin anidar otro `Modal` nativo.
 
 | Método | Ruta relativa | Efecto |
 | --- | --- | --- |
-| POST / GET | `/lab-work-orders` | crear raíz / listar |
+| POST / GET | `/lab-work-orders` | crear raíz / listar con `folio`, `client`, `status`, `offset`, `limit` |
 | GET / PATCH | `/lab-work-orders/{id}` | detalle de grupo / propagar generales |
 | POST | `/{id}/equipment` | agregar hasta 10 |
 | PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / eliminar antes de firma |
@@ -119,6 +126,8 @@ el editor secundario conserva el patrón sheet sin anidar otro `Modal` nativo.
 | POST | `/{id}/signatures` | crear una sesión y bloquear el grupo |
 | POST | `/{id}/complete` | generar todos los PDFs y completar |
 | GET | `/{id}/pdf` | entregar PDF individual final |
+| GET | `/{id}/revisions` | historial documental |
+| GET | `/{id}/revisions/{revision}/pdf` | PDF histórico inmutable |
 | GET | `/export` | ZIP integral administrativo |
 
 ## Exportación y retiro controlado
@@ -142,7 +151,7 @@ migración explícita de drop. La migración actual nunca elimina datos.
 
 ## Límites verificados
 
-La suite automatizada cubre contratos backend y PDF. Permanece pendiente el
-recorrido de aceptación completo en iPhone físico con Expo Go, backend
-accesible por LAN y una cuenta Técnica real. Hasta esa evidencia el módulo se
+La versión operativa previa fue validada en Android/iPhone físicos y TestFlight.
+El sprint 2026-08-14 de filtros, Tickets y reapertura requiere repetir ese
+recorrido antes de distribuirse. Hasta esa evidencia nueva el módulo se
 mantiene `EN DESARROLLO`, no `SELLADO`.

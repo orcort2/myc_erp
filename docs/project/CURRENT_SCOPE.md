@@ -213,3 +213,17 @@ No forman parte de este alcance: RBAC interno dinámico, cambios de estado/folio
 adicionales, almacenamiento remoto, antivirus externo, retención avanzada o
 las capacidades reservadas del catálogo funcional. `PortalMembership` sí está
 implementado y forma parte del alcance vigente.
+
+## Alcance implementado 2026-08-14 — Tickets/reapertura móvil
+
+- Filtros backend y móviles separados por folio y cliente, combinables,
+  case-insensitive para cliente, con estado, debounce y paginación.
+- Tickets `REOPEN_WORK_ORDER`, bandeja propia/global y revisión por permiso.
+- Reapertura del grupo LAB con folio estable, revisión incremental, snapshot,
+  PDF histórico y nueva generación al cerrar.
+- Preservación de firma para cambios menores e invalidación backend obligatoria
+  para cambios estructurales; las firmas históricas nunca se eliminan.
+- Control `edit_version`, auditoría e idempotencia de decisiones/reintentos.
+
+Quedan fuera push notifications, IA, cálculos metrológicos, otros tipos de
+Ticket, publicación EAS y extensión al agregado productivo ETS.

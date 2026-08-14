@@ -392,6 +392,199 @@ def test_export_manifest_matches_persisted_counts(lab_context):
     assert manifest["equipment_count"] == len(equipment) == 1
 
 
+def test_work_order_structured_filters_are_combinable_paginated_and_protected(lab_context):
+    client, _factory, tokens = lab_context
+    url = "/api/mobile/v1/technician/lab-work-orders"
+    headers = auth(tokens["tech"])
+    for client_name in ("Susana Industrial", "SUSANA Metrología", "Cliente Distinto"):
+        response = client.post(url, json=create_payload(client_name), headers=headers)
+        assert response.status_code == 201
+
+    assert client.get(url, params={"folio": "6401"}, headers=headers).json()[0]["folio"] == 6401
+    assert {item["folio"] for item in client.get(url, params={"folio": "640"}, headers=headers).json()} == {
+        6400, 6401, 6402
+    }
+    assert len(client.get(url, params={"client": "Susana Industrial"}, headers=headers).json()) == 1
+    assert len(client.get(url, params={"client": "susana"}, headers=headers).json()) == 2
+    combined = client.get(
+        url,
+        params={"folio": "6401", "client": "susana"},
+        headers=headers,
+    )
+    assert [item["folio"] for item in combined.json()] == [6401]
+    assert client.get(url, params={"client": "inexistente"}, headers=headers).json() == []
+    first_page = client.get(url, params={"limit": 2, "offset": 0}, headers=headers).json()
+    second_page = client.get(url, params={"limit": 2, "offset": 2}, headers=headers).json()
+    assert [item["folio"] for item in first_page] == [6402, 6401]
+    assert [item["folio"] for item in second_page] == [6400]
+    assert client.get(url).status_code == 401
+    assert client.get(url, headers=auth(tokens["capture"])).status_code == 403
+
+
+def _completed_work_order(client: TestClient, token: str, name: str = "Cliente Ticket") -> dict:
+    headers = auth(token)
+    root = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload(name),
+        headers=headers,
+    ).json()
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root['id']}"
+    client.post(f"{endpoint}/equipment", json=equipment_payload(1), headers=headers)
+    client.post(f"{endpoint}/signatures", json=signatures_payload(), headers=headers)
+    completed = client.post(f"{endpoint}/complete", headers=headers)
+    assert completed.status_code == 200, completed.text
+    return completed.json()
+
+
+def test_ticket_preserves_minor_change_and_versions_pdf(lab_context):
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    work_order = _completed_work_order(client, tokens["tech"])
+    ticket_url = "/api/mobile/v1/technician/tickets"
+    payload = {
+        "work_order_id": work_order["id"],
+        "reason": "Folio de certificado",
+        "description": "Se recibió el folio después del cierre.",
+        "requested_signature_policy": "preserve",
+    }
+    assert client.post(ticket_url, json=payload).status_code == 401
+    assert client.post(ticket_url, json=payload, headers=auth(tokens["capture"])).status_code == 403
+    created = client.post(ticket_url, json=payload, headers=tech_headers)
+    assert created.status_code == 201, created.text
+    ticket = created.json()
+    assert ticket["status"] == "pending"
+    still_closed = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}", headers=tech_headers
+    ).json()
+    assert still_closed["status"] == "completed"
+
+    approved = client.post(
+        f"{ticket_url}/{ticket['id']}/approve",
+        json={"signature_policy": "preserve", "comment": "Cambio administrativo"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "in_progress"
+    reopened = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}", headers=tech_headers
+    ).json()
+    assert reopened["revision_number"] == 2
+    assert reopened["signature_preserved"] is True
+    assert reopened["signature_session_id"] == work_order["signature_session_id"]
+
+    changed = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}",
+        json={"notes": "Folio de certificado CERT-2026-1", "expected_edit_version": reopened["edit_version"]},
+        headers=tech_headers,
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["signature_preserved"] is True
+    assert client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}",
+        json={"notes": "request obsoleto", "expected_edit_version": reopened["edit_version"]},
+        headers=tech_headers,
+    ).status_code == 409
+
+    closed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}/complete",
+        headers=tech_headers,
+    )
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["revision_number"] == 2
+    assert client.get(f"{ticket_url}/{ticket['id']}", headers=tech_headers).json()["status"] == "resolved"
+    history = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}/revisions",
+        headers=tech_headers,
+    ).json()
+    assert [item["revision_number"] for item in history] == [1, 2]
+    historical_pdf = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}/revisions/1/pdf",
+        headers=tech_headers,
+    )
+    assert historical_pdf.status_code == 200
+    assert historical_pdf.content.startswith(b"%PDF")
+
+
+def test_structural_change_invalidates_signature_and_requires_new_signature(lab_context):
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    work_order = _completed_work_order(client, tokens["tech"], "Cliente Estructural")
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": work_order["id"],
+            "reason": "Agregar equipo",
+            "description": "El cliente entregó un equipo adicional.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=tech_headers,
+    ).json()
+    reopened = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=admin_headers,
+    )
+    assert reopened.status_code == 200
+    detail = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}", headers=tech_headers
+    ).json()
+    changed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}/equipment",
+        json={**equipment_payload(2), "expected_edit_version": detail["edit_version"]},
+        headers=tech_headers,
+    )
+    assert changed.status_code == 201, changed.text
+    assert changed.json()["signature_required"] is True
+    assert changed.json()["signature_session_id"] is None
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}"
+    assert client.post(f"{endpoint}/complete", headers=tech_headers).status_code == 409
+    resigned = client.post(
+        f"{endpoint}/signatures", json=signatures_payload(), headers=tech_headers
+    )
+    assert resigned.status_code == 200, resigned.text
+    assert resigned.json()["signature_session_id"] != work_order["signature_session_id"]
+    assert client.post(f"{endpoint}/complete", headers=tech_headers).status_code == 200
+
+
+def test_ticket_rejection_and_invalid_lifecycle(lab_context):
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    open_order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload("Abierta"),
+        headers=tech_headers,
+    ).json()
+    payload = {
+        "work_order_id": open_order["id"],
+        "reason": "No aplica",
+        "description": "La orden todavía está abierta.",
+        "requested_signature_policy": "invalidate",
+    }
+    assert client.post(
+        "/api/mobile/v1/technician/tickets", json=payload, headers=tech_headers
+    ).status_code == 409
+    closed = _completed_work_order(client, tokens["tech"], "Para rechazo")
+    payload["work_order_id"] = closed["id"]
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets", json=payload, headers=tech_headers
+    ).json()
+    rejected = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/reject",
+        json={"comment": "No se acreditó la necesidad"},
+        headers=admin_headers,
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+    assert client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/approve",
+        json={"signature_policy": "invalidate"},
+        headers=admin_headers,
+    ).status_code == 409
+
+
 def test_lab_pdf_leaves_missing_purchase_order_empty():
     payload = create_payload("CLIENTE SIN ORDEN")
     payload["purchase_order"] = None

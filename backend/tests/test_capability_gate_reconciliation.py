@@ -13,18 +13,19 @@ validator = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(validator)
 
 
-def test_inventory_has_only_the_22_governed_compatibility_gaps():
+def test_inventory_has_only_the_25_governed_compatibility_gaps():
     catalog_permissions, *_ = validator.parse_catalog()
     current = validator.current_permissions()
     inventory = validator.inventory_permissions()
 
-    assert len(inventory - catalog_permissions) == 22
+    assert len(inventory - catalog_permissions) == 25
     assert inventory <= current
     assert "portal.view" not in inventory
     assert "portal.read" in inventory & catalog_permissions & current
     assert "service_orders.read_assigned" in inventory & current
     assert "service_orders.read_assigned" not in catalog_permissions
     assert {"lab_work_orders.use", "lab_work_orders.export"} <= inventory - catalog_permissions
+    assert {"tickets.create", "tickets.view_own", "tickets.review"} <= inventory - catalog_permissions
 
 
 def test_portal_uses_cataloged_read_and_normalizes_the_legacy_code():

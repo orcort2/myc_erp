@@ -37,6 +37,11 @@ export type LabWorkOrder = {
   purchase_order: string | null;
   notes: string | null;
   status: 'draft' | 'ready_for_signatures' | 'completed';
+  revision_number: number;
+  edit_version: number;
+  reopen_ticket_id: number | null;
+  signature_required: boolean;
+  signature_preserved: boolean;
   equipment: LabEquipment[];
   related_work_orders: LabRelatedWorkOrder[];
 };
@@ -48,6 +53,8 @@ export type LabListItem = {
   reception_date: string;
   status: string;
   equipment_count: number;
+  revision_number: number;
+  signature_required: boolean;
 };
 
 export type GeneralData = {

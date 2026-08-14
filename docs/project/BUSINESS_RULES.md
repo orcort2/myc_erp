@@ -122,3 +122,14 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    solicitante/revisor, vigencia, Actividad, notificación y auditoría de
    autoautorización. Los roles sin esa combinación mantienen la revisión
    segregada y su formulario de solicitud.
+
+## Reglas de Tickets y reapertura móvil — 2026-08-14
+
+1. Una OT LAB cerrada no es editable ni cambia a borrador sin Ticket aprobado.
+2. Aprobar crea revisión nueva del grupo sin cambiar folios ni sobrescribir PDF.
+3. `preserve` sólo conserva firma mientras no cambien cliente, fechas,
+   domicilio, composición o identidad/condición del equipo; el backend invalida
+   ante esos cambios aunque el revisor haya solicitado preservar.
+4. `signature_required=true` impide cerrar sin una sesión de firma nueva.
+5. Los filtros `folio` y `client` son independientes, combinables y se ejecutan
+   en base de datos; limpiar uno no altera el otro.

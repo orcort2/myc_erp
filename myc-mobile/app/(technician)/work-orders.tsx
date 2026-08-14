@@ -31,6 +31,7 @@ import type {
 } from '@/src/types/lab-work-order';
 
 const today = () => new Date().toISOString().slice(0, 10);
+const PAGE_SIZE = 25;
 const emptyGeneral = (): GeneralData => ({
   reception_date: today(),
   departure_date: today(),
@@ -104,6 +105,14 @@ export default function WorkOrdersScreen() {
   const { authorizedFetch, isLoading: authLoading, session, user } = useAuth();
   const [items, setItems] = useState<LabListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [listError, setListError] = useState('');
+  const [hasMore, setHasMore] = useState(false);
+  const [folioFilter, setFolioFilter] = useState('');
+  const [clientFilter, setClientFilter] = useState('');
+  const [debouncedFolio, setDebouncedFolio] = useState('');
+  const [debouncedClient, setDebouncedClient] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'completed'>('all');
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>('general');
@@ -115,6 +124,9 @@ export default function WorkOrdersScreen() {
   const [clientName, setClientName] = useState('');
   const [technicianSignature, setTechnicianSignature] = useState('');
   const [clientSignature, setClientSignature] = useState('');
+  const [ticketOpen, setTicketOpen] = useState(false);
+  const [ticketReason, setTicketReason] = useState('');
+  const [ticketDescription, setTicketDescription] = useState('');
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -124,19 +136,43 @@ export default function WorkOrdersScreen() {
     return response.json() as Promise<T>;
   }, [authorizedFetch]);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (reset = true) => {
+    if (reset) setLoading(true);
+    else setLoadingMore(true);
+    setListError('');
     try {
-      setItems(await request<LabListItem[]>('/mobile/v1/technician/lab-work-orders'));
+      const offset = reset ? 0 : items.length;
+      const query = [
+        `limit=${PAGE_SIZE}`,
+        `offset=${offset}`,
+        `status=${statusFilter}`,
+        debouncedFolio ? `folio=${encodeURIComponent(debouncedFolio)}` : '',
+        debouncedClient ? `client=${encodeURIComponent(debouncedClient)}` : '',
+      ].filter(Boolean).join('&');
+      const next = await request<LabListItem[]>(`/mobile/v1/technician/lab-work-orders?${query}`);
+      setItems((current) => reset ? next : [...current, ...next]);
+      setHasMore(next.length === PAGE_SIZE);
     } catch (error) {
-      Alert.alert('No fue posible cargar las OT', error instanceof Error ? error.message : 'Intenta nuevamente');
+      setListError(error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
-      setLoading(false);
+      if (reset) setLoading(false);
+      else setLoadingMore(false);
     }
-  }, [request]);
+  }, [debouncedClient, debouncedFolio, items.length, request, statusFilter]);
 
   useEffect(() => {
-    if (user) refresh();
-  }, [refresh, user]);
+    const timer = setTimeout(() => {
+      setDebouncedFolio(folioFilter.trim());
+      setDebouncedClient(clientFilter.trim());
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [clientFilter, folioFilter]);
+
+  useEffect(() => {
+    if (user) refresh(true);
+    // refresh also depends on the current item count for pagination; filters are the trigger here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedClient, debouncedFolio, statusFilter, user]);
 
   const editable = workOrder?.status === 'draft';
   const canSaveEquipment = useMemo(
@@ -153,6 +189,36 @@ export default function WorkOrdersScreen() {
     setTechnicianSignature('');
     setClientSignature('');
     setOpen(true);
+  }
+
+  function clearFilters() {
+    setFolioFilter('');
+    setClientFilter('');
+    setStatusFilter('all');
+  }
+
+  async function requestReopening() {
+    if (!workOrder || !ticketReason.trim() || !ticketDescription.trim()) return;
+    setBusy(true);
+    try {
+      await request('/mobile/v1/technician/tickets', {
+        method: 'POST',
+        body: JSON.stringify({
+          work_order_id: workOrder.id,
+          reason: ticketReason.trim(),
+          description: ticketDescription.trim(),
+          requested_signature_policy: 'preserve',
+        }),
+      });
+      setTicketOpen(false);
+      setTicketReason('');
+      setTicketDescription('');
+      Alert.alert('Solicitud enviada', 'La OT seguirá cerrada hasta que un usuario autorizado apruebe el ticket.');
+    } catch (error) {
+      Alert.alert('No fue posible crear el ticket', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function openExisting(id: number) {
@@ -189,8 +255,11 @@ export default function WorkOrdersScreen() {
     if (!general.client_name.trim()) return;
     setBusy(true);
     try {
-      const detail = await request<LabWorkOrder>('/mobile/v1/technician/lab-work-orders', {
-        method: 'POST',
+      const path = workOrder
+        ? `/mobile/v1/technician/lab-work-orders/${workOrder.id}`
+        : '/mobile/v1/technician/lab-work-orders';
+      const detail = await request<LabWorkOrder>(path, {
+        method: workOrder ? 'PATCH' : 'POST',
         body: JSON.stringify({
           ...general,
           contact_name: general.contact_name || null,
@@ -201,6 +270,7 @@ export default function WorkOrdersScreen() {
           state_name: general.state_name || null,
           purchase_order: general.purchase_order || null,
           notes: general.notes || null,
+          ...(workOrder ? { expected_edit_version: workOrder.edit_version } : {}),
         }),
       });
       setWorkOrder(detail);
@@ -245,7 +315,7 @@ export default function WorkOrdersScreen() {
     try {
       const detail = await request<LabWorkOrder>(path, {
         method: equipmentEditor === 'new' ? 'POST' : 'PATCH',
-        body: JSON.stringify(equipment),
+        body: JSON.stringify({ ...equipment, expected_edit_version: workOrder.edit_version }),
       });
       setWorkOrder(detail);
       setEquipmentEditor(null);
@@ -261,7 +331,7 @@ export default function WorkOrdersScreen() {
     setBusy(true);
     try {
       const detail = await request<LabWorkOrder>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipmentEditor.id}`,
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipmentEditor.id}?expected_edit_version=${workOrder.edit_version}`,
         { method: 'DELETE' },
       );
       setWorkOrder(detail);
@@ -363,16 +433,65 @@ export default function WorkOrdersScreen() {
         <Text style={styles.title}>Órdenes de Trabajo</Text>
         <Text style={styles.subtitle}>LAB temporal · folios 6400–6999</Text>
       </View>
+      <View style={styles.filters}>
+        <View style={styles.filterField}>
+          <Text style={styles.filterLabel}>Folio de OT</Text>
+          <TextInput
+            keyboardType="number-pad"
+            onChangeText={setFolioFilter}
+            placeholder="Ej. 6401"
+            style={styles.filterInput}
+            value={folioFilter}
+          />
+        </View>
+        <View style={styles.filterField}>
+          <Text style={styles.filterLabel}>Cliente</Text>
+          <TextInput
+            autoCapitalize="words"
+            onChangeText={setClientFilter}
+            placeholder="Ej. Susana"
+            style={styles.filterInput}
+            value={clientFilter}
+          />
+        </View>
+        <View style={styles.statusFilters}>
+          {([
+            ['all', 'Todas'], ['open', 'Abiertas'], ['completed', 'Finalizadas'],
+          ] as const).map(([value, label]) => (
+            <Pressable
+              key={value}
+              onPress={() => setStatusFilter(value)}
+              style={[styles.statusChip, statusFilter === value && styles.statusChipActive]}
+            >
+              <Text style={[styles.statusChipText, statusFilter === value && styles.statusChipTextActive]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable onPress={clearFilters} style={styles.clearFilters}>
+          <Text style={styles.clearFiltersText}>Limpiar filtros</Text>
+        </Pressable>
+      </View>
       <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>
       {loading ? <ActivityIndicator style={styles.loader} /> : (
         <ScrollView contentContainerStyle={styles.list}>
+          {!!listError && (
+            <View style={styles.errorState}>
+              <Text style={styles.errorText}>{listError}</Text>
+              <Pressable onPress={() => refresh(true)}><Text style={styles.retry}>Reintentar</Text></Pressable>
+            </View>
+          )}
           {items.map((item) => (
             <Pressable key={item.id} style={styles.card} onPress={() => openExisting(item.id)}>
               <View><Text style={styles.folio}>OT {item.folio}</Text><Text style={styles.client}>{item.client_name}</Text></View>
               <View style={styles.cardRight}><Text style={styles.count}>{item.equipment_count}/10</Text><Text style={styles.status}>{item.status}</Text></View>
             </Pressable>
           ))}
-          {!items.length && <Text style={styles.empty}>Aún no hay órdenes LAB.</Text>}
+          {!items.length && !listError && <Text style={styles.empty}>No hay órdenes que coincidan con los filtros.</Text>}
+          {hasMore && (
+            <Pressable disabled={loadingMore} onPress={() => refresh(false)} style={styles.loadMore}>
+              {loadingMore ? <ActivityIndicator /> : <Text style={styles.secondaryText}>Cargar más</Text>}
+            </Pressable>
+          )}
         </ScrollView>
       )}
 
@@ -389,8 +508,8 @@ export default function WorkOrdersScreen() {
               {step === 'general' && (
                 <>
                   <View style={styles.sectionIntro}>
-                    <Text style={styles.sectionEyebrow}>NUEVA ORDEN</Text>
-                    <Text style={styles.sectionTitle}>Datos generales</Text>
+                    <Text style={styles.sectionEyebrow}>{workOrder ? `REVISIÓN ${workOrder.revision_number}` : 'NUEVA ORDEN'}</Text>
+                    <Text style={styles.sectionTitle}>{workOrder ? 'Editar datos generales' : 'Datos generales'}</Text>
                     <Text style={styles.sectionDescription}>Captura esta información una sola vez. Las OT adicionales la heredarán automáticamente.</Text>
                   </View>
                   <FormSection title="Servicio y cliente">
@@ -407,7 +526,7 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  <Pressable disabled={!general.client_name.trim() || busy} style={styles.primary} onPress={createWorkOrder}><Text style={styles.primaryText}>Crear OT y capturar equipos</Text></Pressable>
+                  <Pressable disabled={!general.client_name.trim() || busy} style={styles.primary} onPress={createWorkOrder}><Text style={styles.primaryText}>{workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
                 </>
               )}
 
@@ -427,6 +546,11 @@ export default function WorkOrdersScreen() {
 
               {workOrder && step === 'capture' && (
                 <>
+                  {!!workOrder.reopen_ticket_id && editable && (
+                    <Pressable style={styles.secondary} onPress={() => setStep('general')}>
+                      <Text style={styles.secondaryText}>Editar datos generales</Text>
+                    </Pressable>
+                  )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => (
                     <Pressable key={item.id} style={styles.equipmentRow} onPress={() => editable && showEquipmentEditor(item)}>
@@ -484,6 +608,7 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
                   <Pressable style={styles.primary} onPress={() => downloadPdf('print')}><Text style={styles.primaryText}>Ver / imprimir OT {workOrder.folio}</Text></Pressable>
                   <Pressable style={styles.secondary} onPress={() => downloadPdf('share')}><Text style={styles.secondaryText}>Compartir OT {workOrder.folio}</Text></Pressable>
+                  <Pressable style={styles.secondary} onPress={() => setTicketOpen(true)}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>
                 </>
               )}
             </ScrollView>
@@ -516,6 +641,24 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
+          {ticketOpen && (
+            <View style={styles.overlay}>
+              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlayCard}>
+                <ScrollView contentContainerStyle={styles.overlayContent} keyboardShouldPersistTaps="handled">
+                  <View style={styles.overlayHandle} />
+                  <Text style={styles.sectionEyebrow}>TICKET DE REAPERTURA</Text>
+                  <Text style={styles.sectionTitle}>¿Por qué necesitas modificar esta orden?</Text>
+                  <Text style={styles.sectionDescription}>La OT permanecerá cerrada hasta que la solicitud sea aprobada.</Text>
+                  <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
+                  <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />
+                  <View style={styles.actionRow}>
+                    <Pressable style={styles.cancel} onPress={() => setTicketOpen(false)}><Text>Cancelar</Text></Pressable>
+                    <Pressable disabled={!ticketReason.trim() || !ticketDescription.trim()} style={styles.save} onPress={requestReopening}><Text style={styles.primaryText}>Enviar solicitud</Text></Pressable>
+                  </View>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            </View>
+          )}
         </SafeAreaView>
         </SafeAreaProvider>
       </Modal>
@@ -526,9 +669,14 @@ export default function WorkOrdersScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 }, center: { alignItems: 'center', flex: 1, justifyContent: 'center' }, screen: { backgroundColor: '#f4f7fa', flex: 1 },
   header: { paddingBottom: 8, paddingHorizontal: 20, paddingTop: 18 }, back: { color: '#0067a8', fontSize: 17, marginBottom: 18 }, title: { color: '#142b3a', fontSize: 29, fontWeight: '800' }, subtitle: { color: '#667582', marginTop: 7 },
+  filters: { backgroundColor: '#fff', borderColor: '#dbe4ea', borderRadius: 14, borderWidth: 1, gap: 10, marginHorizontal: 20, padding: 14 },
+  filterField: { gap: 6 }, filterLabel: { color: '#344553', fontSize: 13, fontWeight: '700' }, filterInput: { backgroundColor: '#f8fafb', borderColor: '#b9c8d2', borderRadius: 10, borderWidth: 1, fontSize: 16, minHeight: 46, paddingHorizontal: 12 },
+  statusFilters: { flexDirection: 'row', gap: 7 }, statusChip: { alignItems: 'center', backgroundColor: '#e9eef2', borderRadius: 18, flex: 1, paddingVertical: 9 }, statusChipActive: { backgroundColor: '#0067a8' }, statusChipText: { color: '#425563', fontSize: 12, fontWeight: '700' }, statusChipTextActive: { color: '#fff' },
+  clearFilters: { alignSelf: 'flex-end', paddingHorizontal: 4, paddingVertical: 4 }, clearFiltersText: { color: '#0067a8', fontSize: 14, fontWeight: '700' },
   primary: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 12, justifyContent: 'center', marginTop: 18, minHeight: 52, paddingHorizontal: 18 }, primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' }, screenPrimary: { marginHorizontal: 20 },
   secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1.5, justifyContent: 'center', marginTop: 14, minHeight: 50 }, secondaryText: { color: '#0067a8', fontSize: 16, fontWeight: '700' }, disabled: { opacity: 0.4 },
   loader: { marginTop: 40 }, list: { gap: 10, padding: 20, paddingTop: 0 }, card: { alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', padding: 16 }, folio: { color: '#0067a8', fontSize: 18, fontWeight: '800' }, client: { color: '#334451', marginTop: 3 }, cardRight: { alignItems: 'flex-end' }, count: { fontWeight: '700' }, status: { color: '#70808d', fontSize: 12, marginTop: 3 }, empty: { color: '#70808d', paddingVertical: 22, textAlign: 'center' },
+  errorState: { alignItems: 'center', backgroundColor: '#fff0f0', borderRadius: 12, padding: 16 }, errorText: { color: '#8d1f2d', textAlign: 'center' }, retry: { color: '#0067a8', fontWeight: '800', marginTop: 10 }, loadMore: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' },
   modalScreen: { backgroundColor: '#f4f7f9', flex: 1 }, modalHeader: { alignItems: 'center', backgroundColor: '#fff', borderBottomColor: '#dce3e9', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 18 }, modalTitle: { color: '#142b3a', fontSize: 21, fontWeight: '800' }, modalHint: { color: '#637280', fontSize: 12, marginTop: 5 }, close: { color: '#0067a8', fontSize: 16, fontWeight: '700', paddingVertical: 8 }, modalContent: { paddingBottom: 72, paddingHorizontal: 20, paddingTop: 26 }, sectionIntro: { marginBottom: 20 }, sectionEyebrow: { color: '#008f87', fontSize: 12, fontWeight: '800', letterSpacing: 1.1, marginBottom: 7 }, sectionTitle: { color: '#142b3a', fontSize: 24, fontWeight: '800', marginBottom: 8 }, sectionDescription: { color: '#637280', fontSize: 15, lineHeight: 21 }, sectionRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, counter: { color: '#0067a8', fontSize: 18, fontWeight: '800' },
   formSection: { backgroundColor: '#fff', borderColor: '#dbe4ea', borderRadius: 16, borderWidth: 1, marginBottom: 16, paddingHorizontal: 16, paddingTop: 18 }, formSectionTitle: { color: '#173746', fontSize: 16, fontWeight: '800', marginBottom: 16 }, field: { marginBottom: 18 }, fieldLabel: { color: '#344553', fontSize: 14, fontWeight: '700', marginBottom: 8 }, input: { backgroundColor: '#fbfcfd', borderColor: '#b9c8d2', borderRadius: 11, borderWidth: 1, fontSize: 16, minHeight: 50, paddingHorizontal: 14 }, multiline: { minHeight: 86, paddingTop: 13, textAlignVertical: 'top' },
   related: { marginBottom: 14 }, relatedChip: { backgroundColor: '#e5ebf0', borderRadius: 10, marginRight: 8, minWidth: 78, padding: 10 }, relatedActive: { backgroundColor: '#0067a8' }, relatedFolio: { fontSize: 16, fontWeight: '800' }, relatedCount: { color: '#556571', fontSize: 12 }, relatedActiveText: { color: '#fff' }, summary: { backgroundColor: '#eef3f6', borderRadius: 10, marginBottom: 20, padding: 14 }, summaryClient: { fontSize: 18, fontWeight: '800' }, summaryLine: { color: '#53636f', marginTop: 4 },

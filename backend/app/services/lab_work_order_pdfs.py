@@ -32,13 +32,26 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
         country=None,
     )
     purchase_order = (work_order.purchase_order or "").strip()
+    notes = work_order.notes or ""
+    revision_number = work_order.revision_number or 1
+    if revision_number > 1 and work_order.reopen_ticket_id:
+        reopening_note = (
+            f"Revisión {revision_number}: reapertura autorizada mediante "
+            f"Ticket #{work_order.reopen_ticket_id}. "
+            + (
+                "Firma de la revisión anterior preservada."
+                if work_order.signature_preserved
+                else "Se recabaron nuevas firmas para esta revisión."
+            )
+        )
+        notes = f"{notes}\n{reopening_note}".strip()
     document = SimpleNamespace(
         created_at=work_order.reception_date,
         service_date=work_order.departure_date,
         work_order_number=work_order.folio,
         equipment=work_order.equipment,
         client=client,
-        notes=work_order.notes,
+        notes=notes,
         quotation=SimpleNamespace(folio=purchase_order) if purchase_order else None,
         technician_signature_data_url=(technician.signature_data_url if technician else None),
         technician_signed_name=(technician.signer_name if technician else None),
@@ -63,5 +76,5 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
     )
     return (
         HTML(string=html, base_url=str(APP_DIR)).write_pdf(),
-        f"OT-{work_order.folio}-{_filename(work_order.client_name)}.pdf",
+        f"OT-{work_order.folio}-r{revision_number}-{_filename(work_order.client_name)}.pdf",
     )

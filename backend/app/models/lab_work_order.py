@@ -79,6 +79,24 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     final_pdf: Mapped[bytes | None] = mapped_column(LargeBinary)
     final_pdf_sha256: Mapped[str | None] = mapped_column(String(64))
     final_pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    edit_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    reopened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reopened_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    reopen_ticket_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "operational_tickets.id",
+            ondelete="RESTRICT",
+            name="fk_lab_work_orders_reopen_ticket_id",
+            use_alter=True,
+        ),
+        nullable=True,
+        index=True,
+    )
+    signature_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    signature_preserved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     equipment: Mapped[list["LabWorkOrderEquipment"]] = relationship(
         back_populates="work_order",
@@ -88,6 +106,11 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     signature_session: Mapped["LabWorkOrderSignatureSession | None"] = relationship(
         back_populates="work_orders",
         foreign_keys=[signature_session_id],
+    )
+    revisions: Mapped[list["LabWorkOrderRevision"]] = relationship(
+        back_populates="work_order",
+        cascade="all, delete-orphan",
+        order_by="LabWorkOrderRevision.revision_number",
     )
 
 
@@ -128,7 +151,7 @@ class LabWorkOrderSignatureSession(IntegerPkMixin, TimestampMixin, Base):
     __tablename__ = "lab_work_order_signature_sessions"
     __table_args__ = (
         UniqueConstraint(
-            "root_work_order_id", name="uq_lab_signature_session_root"
+            "root_work_order_id", "version", name="uq_lab_signature_session_root_version"
         ),
     )
 
@@ -171,3 +194,6 @@ class LabWorkOrderSignature(IntegerPkMixin, TimestampMixin, Base):
     signature_data_url: Mapped[str] = mapped_column(Text, nullable=False)
 
     session: Mapped[LabWorkOrderSignatureSession] = relationship(back_populates="signatures")
+
+
+from app.models.lab_work_order_revision import LabWorkOrderRevision  # noqa: E402

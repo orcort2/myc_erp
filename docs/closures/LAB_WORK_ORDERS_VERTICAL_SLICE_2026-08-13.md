@@ -1,8 +1,12 @@
 # Cierre técnico — vertical slice OT LAB
 
 **Fecha:** 2026-08-13  
-**Estado:** TERMINADO TÉCNICAMENTE — EN REVISIÓN OPERATIVA  
+**Estado:** TERMINADO — VERSIÓN OPERATIVA TEMPORAL VALIDADA
 **Estado canónico del módulo:** `EN DESARROLLO`
+
+La aceptación posterior confirmó Android/iPhone físicos y TestFlight para este
+corte. El sprint 2026-08-14 se documenta y valida por separado; no modifica la
+evidencia histórica de esta versión operativa.
 
 ## Entrega
 

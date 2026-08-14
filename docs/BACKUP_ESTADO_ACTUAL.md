@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de `project/`
 >
-> Corte actualizado: 2026-08-13
+> Corte actualizado: 2026-08-14
 
 # Estado operativo actual del ERP MYC
 
@@ -44,16 +44,20 @@
 - OT LAB móvil está **EN DESARROLLO** con implementación técnica completa:
   agregado aislado, folios 6400–6999, grupos raíz/adicional, máximo 10 equipos,
   una sesión de firma compartida, bloqueo posterior, PDF individual y
-  exportación ZIP. La captura ya respeta safe area, agrupa los campos y oculta
+  exportación ZIP. Desde el corte 2026-08-14 agrega filtros SQL separados por
+  folio/cliente, estado y paginación; Tickets, revisión autorizada, snapshots,
+  PDFs por revisión, firma histórica/activa, invalidación automática y control
+  optimista. La captura ya respeta safe area, agrupa los campos y oculta
   teléfono/correo; el PDF separa Domicilio, C.P., Ciudad, Estado y orden de
   compra sin `0` por ausencia. Falta aceptación física en iPhone/Expo Go.
 - El P0 **Integridad de autenticación de Certificados** está **TERMINADO — EN
   REVISIÓN**: Calidad es la única superficie mutante, ETS perdió endpoint/lote
   y acciones, y `certificate_authentication.authenticate_certificate` conserva
   lock, actor, origen, audit, evento y commit únicos.
-- La conciliación **TD-027** deja el capability gate **VERDE** en 22/0 y el
-  bootstrap cubre 75/75 permisos HTTP. Las dos diferencias nuevas son
-  `lab_work_orders.use/export`, explícitamente temporales. Portal usa
+- La conciliación **TD-027** deja el capability gate **VERDE** en 25/0 y el
+  bootstrap cubre 78/78 permisos HTTP. Las diferencias móviles nuevas incluyen
+  `lab_work_orders.use/export` y `tickets.create/view_own/review`,
+  explícitamente temporales. Portal usa
   `portal.read`; la clave legacy
   `portal.view` quedó inactiva y sin asignaciones, y
   `reference_standard_certificates.delete` se asigna con menor privilegio.
@@ -91,8 +95,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 ## Persistencia y migraciones
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
-- Head aplicado a la base local compartida: `f4a1c9d2e710`.
-- Base local compartida: migrada y verificada en `f4a1c9d2e710`.
+- Head aplicado a la base local compartida: `c6e8a1b4d2f9`.
+- Head del código: `d4e7a9c2b6f1`.
 - `e7b62b8a9421` incorpora `service_order_exception_requests` para conservar
   solicitud, autorización, ejecución, actores, timestamps y estado ETS de
   revalidación sin usar auditoría como almacenamiento de lifecycle.
@@ -104,7 +108,9 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
   `fdc1c503a353`, también hija de `f4a1c9d2e710`. La migración LAB
   `c6e8a1b4d2f9` preserva y fusiona ambos heads mientras crea exclusivamente
   tablas LAB; en PostgreSQL temporal quedó como head único y `alembic check`
-  limpio. La base compartida permanece en `f4a1c9d2e710`.
+  limpio. `d4e7a9c2b6f1` agrega Tickets/revisiones LAB y fue validada con
+  upgrade/downgrade/upgrade en PostgreSQL aislado; la base compartida permanece
+  en `c6e8a1b4d2f9` y no fue modificada por este sprint.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
 - Upgrade desde el respaldo histórico en `b03b4c5d6e7f` hasta el head:
@@ -127,22 +133,21 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 ## Respaldo oficial
 
-- Archivo: `backup_erp_myc_antes_prueba.sql`.
-- Tamaño: 74,306,112 bytes.
-- `alembic_version` contenido: `f4a1c9d2e710`.
-- SHA-256: `68659712d3b89803446ef8b2871ad53acb32ae02881ad1ddb7cc1e7df1d766ba`.
-- Estado: **ALINEADO CON LA BASE PRINCIPAL**, pendiente de regenerarse después
-  de integrar las dos migraciones locales y aplicar el nuevo head único.
-- Restore drill histórico: **CORRECTO** para el respaldo anterior en
-  `c8a51e2d7f40`; el respaldo regenerado en `f4a1c9d2e710` no fue restaurado en
-  una base aislada durante este sprint. El procedimiento está en
+- `backup_erp_myc_antes_prueba.sql` no está presente actualmente ni en la raíz
+  ni en `backend/`; los metadatos históricos de tamaño/hash dejan de describir
+  un artefacto verificable local.
+- Este sprint no modificó la base compartida (`c6e8a1b4d2f9`), por lo que no
+  regeneró un dump. Antes de aplicar `d4e7a9c2b6f1` a esa base debe generarse el
+  respaldo oficial y, después del upgrade, confirmar que `alembic_version`
+  coincida con el head.
+- El procedimiento vigente permanece en
   `architecture/database/SCHEMA_RECOVERY.md`.
 
 ## Validaciones ejecutadas
 
 | Validación | Resultado |
 | --- | --- |
-| Backend canónico | 510 passed, 1 skipped, 19 subtests passed, 3 warnings deprecados: 493/1 sin arquitectura + 17/17 de arquitectura en copia temporal sin duplicados locales `* 2.py` |
+| Backend canónico | 514 passed, 1 skipped, 19 subtests passed, 3 warnings deprecados; incluye filtros, Tickets, reapertura, revisiones y regresión completa |
 | Aislamiento móvil técnico | 21 passed; ETS/OT/Equipo/Hoja A/B, sin asignación, 401, 403 y doble permiso de hojas |
 | Escenarios Fase 1 ETS múltiple/evolucionado | 10 passed; A–H, permisos, mixto SG/calibración/mantenimiento, evolución indebida/posterior, lifecycle, categorías y unicidad |
 | Regresión focal ETS/calibración/Activity/cotizaciones/permisos | 53 passed, 2 warnings |
@@ -154,19 +159,19 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 42 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Inventario FastAPI | 383/383 operaciones clasificadas; CSV coincide con runtime |
-| OT LAB backend/API/PDF/export | 8 passed SQLite + 1 passed concurrencia PostgreSQL; mapeo textual/visual de campos institucionales y orden de compra vacía cubiertos |
+| Inventario FastAPI | 390/390 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
+| OT LAB backend/API/PDF/export/Tickets | 12 passed, 1 skipped opcional de concurrencia PostgreSQL; cubre filtros exactos/parciales/combinados/case-insensitive, paginación, permisos, lifecycle, control optimista, firma preservada/invalidada, nueva firma y PDF histórico |
 | Migración LAB PostgreSQL temporal | `base → c6e8a1b4d2f9`; current correcto; `alembic check` sin operaciones nuevas; asignador concurrente `[6400, 6401]`; carrera de OT adicional: una `6403` y un rechazo `409`; base temporal eliminada |
-| `myc-mobile` TypeScript/lint | correcto / correcto |
+| `myc-mobile` TypeScript/lint | correcto / correcto; Expo Doctor del corte previo fue 18/18, su repetición quedó sin resultado por espera externa y se canceló sin modificar dependencias |
 | `myc-mobile` Expo Doctor SDK 54 | 18/18 checks |
 | Aislamiento portal A/B | membresía propia 200, recurso ajeno 404, anónimo 401; autenticador interno rechaza token del portal |
 | `scripts/myc doctor` | dependencias locales principales disponibles |
 | Alembic ciclo vacío base→head→base→head | correcto en PostgreSQL aislado |
 | Migración correctiva Fase 1 reversible | base aislada `base → a7c2e5f8b1d4 → f4a1c9d2e710 → a7c2e5f8b1d4`; current ETS correcto |
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
-| Alembic current/check | base principal no modificada en `f4a1c9d2e710`; head de código `c6e8a1b4d2f9` validado limpio en base aislada |
+| Alembic current/check | base principal no modificada en `c6e8a1b4d2f9`; head de código `d4e7a9c2b6f1` validado limpio en base aislada; warning cíclico ETS preexistente |
 | Respaldo oficial regenerado | 74,306,112 bytes; contiene `f4a1c9d2e710`; restore drill no repetido en esta fase |
-| Validador Catálogo Institucional/permissions/API | VERDE: 75 permisos HTTP, baseline gobernado 22 brechas literales y 0 de bootstrap; dos son capacidades removibles LAB |
+| Validador Catálogo Institucional/permissions/API | VERDE: 78 permisos HTTP, baseline gobernado 25 brechas literales y 0 de bootstrap; cinco diferencias HTTP pertenecen al vertical móvil temporal LAB/Tickets |
 | Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
 | Metadatos Catálogo Funcional | 657/657 con naturaleza, criticidad y alcance; alineación completa |
 | Identidad y permisos del catálogo | microacciones, marcas y celdas de permisos sin cambios frente al corte previo a metadatos |

@@ -8,7 +8,7 @@ import zipfile
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select, text, update
+from sqlalchemy import String, cast, func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.folio_sequence import InstitutionalFolioSequence
@@ -18,6 +18,7 @@ from app.models.lab_work_order import (
     LabWorkOrderSignature,
     LabWorkOrderSignatureSession,
 )
+from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.schemas.lab_work_order import (
     LabEquipmentWrite,
@@ -50,6 +51,10 @@ GENERAL_FIELDS = (
     "purchase_order",
     "notes",
 )
+CRITICAL_GENERAL_FIELDS = {"reception_date", "departure_date", "client_name", "address"}
+CRITICAL_EQUIPMENT_FIELDS = {
+    "instrument", "brand", "identification", "serial_number", "is_good_condition"
+}
 
 
 def _query_with_relations():
@@ -85,11 +90,60 @@ def _group(db: Session, work_order: LabWorkOrder, *, lock: bool = False) -> list
 
 
 def _ensure_group_editable(group: list[LabWorkOrder]) -> None:
-    if any(item.signature_session_id is not None or item.status != "draft" for item in group):
+    if any(item.status != "draft" for item in group):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="INVALID_STATE_TRANSITION: el grupo no está disponible para edición",
+        )
+    if any(
+        item.signature_session_id is not None
+        and not (item.reopen_ticket_id and item.signature_preserved)
+        for item in group
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="El grupo ya fue firmado y no admite nuevas OT ni equipos",
         )
+
+
+def _check_edit_version(group: list[LabWorkOrder], expected: int | None) -> None:
+    if not any(item.reopen_ticket_id for item in group):
+        return
+    current = max(item.edit_version for item in group)
+    if expected is None or expected != current:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "REVISION_CONFLICT", "current_edit_version": current},
+        )
+
+
+def _bump_edit_version(group: list[LabWorkOrder]) -> None:
+    next_version = max(item.edit_version for item in group) + 1
+    for item in group:
+        item.edit_version = next_version
+
+
+def invalidate_group_signatures(
+    db: Session, group: list[LabWorkOrder], user: User, *, fields: list[str]
+) -> None:
+    if not any(item.signature_session_id is not None for item in group):
+        return
+    previous_session_ids = sorted(
+        {item.signature_session_id for item in group if item.signature_session_id is not None}
+    )
+    for item in group:
+        item.signature_session_id = None
+        item.signature_required = True
+        item.signature_preserved = False
+    write_audit_log(
+        db,
+        action="lab_work_order.signatures_invalidated",
+        entity="lab_work_orders",
+        entity_id=_root_id(group[0]),
+        user_id=user.id,
+        previous_values={"signature_session_ids": previous_session_ids},
+        new_values={"critical_fields": fields, "signature_required": True},
+    )
 
 
 def _allocate_folio(db: Session) -> int:
@@ -164,8 +218,29 @@ def create_work_order(db: Session, payload: LabWorkOrderCreate, user: User) -> L
     return _read(db, _get(db, work_order.id))
 
 
-def list_work_orders(db: Session) -> list[LabWorkOrderListItem]:
-    items = list(db.scalars(_query_with_relations().order_by(LabWorkOrder.folio.desc())).all())
+def list_work_orders(
+    db: Session,
+    *,
+    folio: str | None = None,
+    client: str | None = None,
+    work_order_status: str | None = None,
+    offset: int = 0,
+    limit: int = 25,
+) -> list[LabWorkOrderListItem]:
+    query = _query_with_relations()
+    if folio and folio.strip():
+        query = query.where(cast(LabWorkOrder.folio, String).contains(folio.strip()))
+    if client and client.strip():
+        query = query.where(LabWorkOrder.client_name.ilike(f"%{client.strip()}%"))
+    if work_order_status == "open":
+        query = query.where(LabWorkOrder.status.in_(("draft", "ready_for_signatures")))
+    elif work_order_status == "completed":
+        query = query.where(LabWorkOrder.status == "completed")
+    items = list(
+        db.scalars(
+            query.order_by(LabWorkOrder.folio.desc()).offset(offset).limit(limit)
+        ).all()
+    )
     return [
         LabWorkOrderListItem(
             id=item.id,
@@ -177,6 +252,8 @@ def list_work_orders(db: Session) -> list[LabWorkOrderListItem]:
             status=item.status,
             equipment_count=len(item.equipment),
             created_at=item.created_at,
+            revision_number=item.revision_number,
+            signature_required=item.signature_required,
         )
         for item in items
     ]
@@ -193,13 +270,22 @@ def update_work_order(
     group = _group(db, work_order, lock=True)
     _ensure_group_editable(group)
     updates = payload.model_dump(exclude_unset=True)
+    expected_edit_version = updates.pop("expected_edit_version", None)
+    _check_edit_version(group, expected_edit_version)
     reception = updates.get("reception_date", work_order.reception_date)
     departure = updates.get("departure_date", work_order.departure_date)
     if departure < reception:
         raise HTTPException(status_code=422, detail="La salida no puede ser anterior a la recepción")
+    changed_fields = sorted(
+        key for key, value in updates.items() if getattr(work_order, key) != value
+    )
+    if CRITICAL_GENERAL_FIELDS.intersection(changed_fields):
+        invalidate_group_signatures(db, group, user, fields=changed_fields)
     for item in group:
         for key, value in updates.items():
             setattr(item, key, value)
+    if changed_fields:
+        _bump_edit_version(group)
     write_audit_log(
         db,
         action="lab_work_order.group_updated",
@@ -216,7 +302,13 @@ def add_equipment(
     db: Session, work_order_id: int, payload: LabEquipmentWrite, user: User
 ) -> LabWorkOrderRead:
     work_order = _get(db, work_order_id, lock=True)
-    _ensure_group_editable(_group(db, work_order, lock=True))
+    group = _group(db, work_order, lock=True)
+    _ensure_group_editable(group)
+    values = payload.model_dump()
+    expected_edit_version = values.pop("expected_edit_version", None)
+    _check_edit_version(group, expected_edit_version)
+    if any(item.reopen_ticket_id for item in group):
+        invalidate_group_signatures(db, group, user, fields=["equipment.added"])
     count = db.scalar(
         select(func.count(LabWorkOrderEquipment.id)).where(
             LabWorkOrderEquipment.work_order_id == work_order.id
@@ -225,10 +317,11 @@ def add_equipment(
     if count >= 10:
         raise HTTPException(status_code=409, detail="La OT ya contiene el máximo de 10 equipos")
     equipment = LabWorkOrderEquipment(
-        work_order_id=work_order.id, position=count + 1, **payload.model_dump()
+        work_order_id=work_order.id, position=count + 1, **values
     )
     db.add(equipment)
     db.flush()
+    _bump_edit_version(group)
     write_audit_log(
         db,
         action="lab_work_order.equipment_added",
@@ -249,7 +342,11 @@ def update_equipment(
     user: User,
 ) -> LabWorkOrderRead:
     work_order = _get(db, work_order_id, lock=True)
-    _ensure_group_editable(_group(db, work_order, lock=True))
+    group = _group(db, work_order, lock=True)
+    _ensure_group_editable(group)
+    values = payload.model_dump()
+    expected_edit_version = values.pop("expected_edit_version", None)
+    _check_edit_version(group, expected_edit_version)
     equipment = db.scalar(
         select(LabWorkOrderEquipment).where(
             LabWorkOrderEquipment.id == equipment_id,
@@ -258,8 +355,15 @@ def update_equipment(
     )
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
-    for key, value in payload.model_dump().items():
+    changed_fields = sorted(
+        key for key, value in values.items() if getattr(equipment, key) != value
+    )
+    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields):
+        invalidate_group_signatures(db, group, user, fields=changed_fields)
+    for key, value in values.items():
         setattr(equipment, key, value)
+    if changed_fields:
+        _bump_edit_version(group)
     write_audit_log(
         db,
         action="lab_work_order.equipment_updated",
@@ -273,10 +377,17 @@ def update_equipment(
 
 
 def delete_equipment(
-    db: Session, work_order_id: int, equipment_id: int, user: User
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    user: User,
+    *,
+    expected_edit_version: int | None = None,
 ) -> LabWorkOrderRead:
     work_order = _get(db, work_order_id, lock=True)
-    _ensure_group_editable(_group(db, work_order, lock=True))
+    group = _group(db, work_order, lock=True)
+    _ensure_group_editable(group)
+    _check_edit_version(group, expected_edit_version)
     equipment = db.scalar(
         select(LabWorkOrderEquipment).where(
             LabWorkOrderEquipment.id == equipment_id,
@@ -285,6 +396,8 @@ def delete_equipment(
     )
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    if any(item.reopen_ticket_id for item in group):
+        invalidate_group_signatures(db, group, user, fields=["equipment.deleted"])
     removed_position = equipment.position
     work_order.equipment.remove(equipment)
     db.flush()
@@ -297,6 +410,7 @@ def delete_equipment(
         .values(position=LabWorkOrderEquipment.position - 1)
     )
     db.expire(work_order, ["equipment"])
+    _bump_edit_version(group)
     write_audit_log(
         db,
         action="lab_work_order.equipment_deleted",
@@ -313,6 +427,8 @@ def create_additional_work_order(db: Session, work_order_id: int, user: User) ->
     source = _get(db, work_order_id, lock=True)
     group = _group(db, source, lock=True)
     _ensure_group_editable(group)
+    if any(item.reopen_ticket_id for item in group):
+        invalidate_group_signatures(db, group, user, fields=["work_order.additional"])
     latest = group[-1]
     if latest.id != source.id:
         raise HTTPException(status_code=409, detail="Sólo la última OT del grupo puede generar una adicional")
@@ -325,10 +441,18 @@ def create_additional_work_order(db: Session, work_order_id: int, user: User) ->
         previous_work_order_id=source.id,
         sequence_number=source.sequence_number + 1,
         created_by_user_id=user.id,
+        revision_number=source.revision_number,
+        edit_version=source.edit_version,
+        reopened_at=source.reopened_at,
+        reopened_by_user_id=source.reopened_by_user_id,
+        reopen_ticket_id=source.reopen_ticket_id,
+        signature_required=source.signature_required,
+        signature_preserved=False,
         **values,
     )
     db.add(additional)
     db.flush()
+    _bump_edit_version([*group, additional])
     write_audit_log(
         db,
         action="lab_work_order.additional_created",
@@ -362,16 +486,25 @@ def sign_group(
     work_order = _get(db, work_order_id, lock=True)
     group = _group(db, work_order, lock=True)
     _ensure_group_editable(group)
+    if all(item.signature_session_id is not None for item in group) and not any(
+        item.signature_required for item in group
+    ):
+        raise HTTPException(status_code=409, detail="El grupo ya conserva una firma válida")
     if any(not item.equipment for item in group):
         raise HTTPException(status_code=409, detail="Todas las OT del grupo deben tener al menos un equipo")
     _decode_signature(payload.technician.signature_data_url)
     _decode_signature(payload.client.signature_data_url)
     now = datetime.now(timezone.utc)
+    latest_version = db.scalar(
+        select(func.max(LabWorkOrderSignatureSession.version)).where(
+            LabWorkOrderSignatureSession.root_work_order_id == _root_id(work_order)
+        )
+    ) or 0
     session = LabWorkOrderSignatureSession(
         root_work_order_id=_root_id(work_order),
         signed_by_user_id=user.id,
         signed_at=now,
-        version=1,
+        version=latest_version + 1,
         signatures=[
             LabWorkOrderSignature(signature_type="technician", **payload.technician.model_dump()),
             LabWorkOrderSignature(signature_type="client", **payload.client.model_dump()),
@@ -382,6 +515,8 @@ def sign_group(
     for item in group:
         item.signature_session_id = session.id
         item.status = "ready_for_signatures"
+        item.signature_required = False
+        item.signature_preserved = False
     write_audit_log(
         db,
         action="lab_work_order.group_signed",
@@ -397,8 +532,12 @@ def sign_group(
 def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
     work_order = _get(db, work_order_id, lock=True)
     group = _group(db, work_order, lock=True)
-    if any(item.status != "ready_for_signatures" or item.signature_session_id is None for item in group):
+    if all(item.status == "completed" for item in group):
+        return _read(db, work_order)
+    if any(item.signature_session_id is None or item.signature_required for item in group):
         raise HTTPException(status_code=409, detail="El grupo requiere las firmas de técnico y cliente")
+    if any(item.status not in {"draft", "ready_for_signatures"} for item in group):
+        raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
     session_ids = {item.signature_session_id for item in group}
     if len(session_ids) != 1:
         raise HTTPException(status_code=409, detail="El grupo no comparte una única sesión de firma")
@@ -410,6 +549,17 @@ def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderR
         item.final_pdf_generated_at = completed_at
         item.completed_at = completed_at
         item.status = "completed"
+        item.signature_preserved = bool(item.reopen_ticket_id and item.signature_preserved)
+    ticket_ids = {item.reopen_ticket_id for item in group if item.reopen_ticket_id}
+    if ticket_ids:
+        tickets = list(
+            db.scalars(
+                select(OperationalTicket).where(OperationalTicket.id.in_(ticket_ids)).with_for_update()
+            )
+        )
+        for ticket in tickets:
+            ticket.status = "resolved"
+            ticket.resolved_at = completed_at
     write_audit_log(
         db,
         action="lab_work_order.group_completed",
@@ -426,7 +576,10 @@ def get_pdf(db: Session, work_order_id: int) -> tuple[bytes, str]:
     work_order = _get(db, work_order_id)
     if work_order.status != "completed" or not work_order.final_pdf:
         raise HTTPException(status_code=409, detail="La OT LAB aún no tiene PDF final")
-    return work_order.final_pdf, f"OT-{work_order.folio}.pdf"
+    return (
+        work_order.final_pdf,
+        f"OT-{work_order.folio}-r{work_order.revision_number}.pdf",
+    )
 
 
 def export_all(db: Session) -> tuple[bytes, str]:
