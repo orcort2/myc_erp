@@ -5,6 +5,7 @@ import io
 import json
 import os
 import time
+import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
@@ -13,7 +14,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -24,8 +25,10 @@ from app.main import app
 from app.models.folio_sequence import InstitutionalFolioSequence
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.user import Role, User
+from app.schemas.operational_ticket import TicketReject, TicketReview
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.lab_work_orders import _allocate_folio, create_additional_work_order
+from app.services.operational_tickets import approve_reopen_ticket, reject_ticket
 
 
 PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(
@@ -88,6 +91,75 @@ def lab_context():
         yield client, factory, tokens
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def postgres_lab_context():
+    database_url = os.getenv("LAB_POSTGRES_TEST_URL")
+    if not database_url:
+        pytest.skip("requiere LAB_POSTGRES_TEST_URL para probar locks PostgreSQL reales")
+
+    schema = f"ticket_lock_{uuid.uuid4().hex}"
+    admin_engine = create_engine(database_url)
+    with admin_engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+
+    engine = create_engine(
+        database_url,
+        connect_args={"options": f"-csearch_path={schema}"},
+    )
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as db:
+        roles = {
+            name: Role(name=name, description=name)
+            for name in ("Tecnico", "Captura", "Administrador")
+        }
+        db.add_all(roles.values())
+        db.flush()
+        users = {}
+        for key, role_name in (
+            ("tech", "Tecnico"),
+            ("capture", "Captura"),
+            ("admin", "Administrador"),
+        ):
+            role = roles[role_name]
+            user = User(
+                username=f"postgres-{key}",
+                email=f"postgres-{key}@example.test",
+                full_name=f"PostgreSQL {key}",
+                hashed_password="unused",
+                account_type="internal",
+                status="active",
+                is_active=True,
+                role_id=role.id,
+                roles=[role],
+            )
+            users[key] = user
+            db.add(user)
+        db.commit()
+
+    def override_db():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+    tokens = {
+        key: create_access_token(
+            str(user.id),
+            extra_claims={"roles": [user.roles[0].name], "auth_context": "internal"},
+        )
+        for key, user in users.items()
+    }
+    try:
+        yield client, factory, tokens
+    finally:
+        app.dependency_overrides.clear()
+        engine.dispose()
+        with admin_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin_engine.dispose()
 
 
 def auth(token: str) -> dict[str, str]:
@@ -583,6 +655,130 @@ def test_ticket_rejection_and_invalid_lifecycle(lab_context):
         json={"signature_policy": "invalidate"},
         headers=admin_headers,
     ).status_code == 409
+
+
+@pytest.mark.parametrize("signature_policy", ["preserve", "invalidate"])
+def test_postgresql_ticket_approval_locks_only_ticket_row(
+    postgres_lab_context, signature_policy
+):
+    client, _factory, tokens = postgres_lab_context
+    work_order = _completed_work_order(
+        client, tokens["tech"], f"PostgreSQL {signature_policy}"
+    )
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": work_order["id"],
+            "reason": "Corrección posterior al cierre",
+            "description": "Validación del bloqueo de ticket en PostgreSQL.",
+            "requested_signature_policy": signature_policy,
+        },
+        headers=auth(tokens["tech"]),
+    ).json()
+
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/approve",
+        json={"signature_policy": signature_policy},
+        headers=auth(tokens["admin"]),
+    )
+
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["status"] == "in_progress"
+    reopened = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}",
+        headers=auth(tokens["tech"]),
+    ).json()
+    assert reopened["signature_preserved"] is (signature_policy == "preserve")
+    assert reopened["signature_required"] is (signature_policy == "invalidate")
+    assert reopened["signature_session_id"] == (
+        work_order["signature_session_id"] if signature_policy == "preserve" else None
+    )
+
+
+def test_postgresql_ticket_rejection_cannot_be_resolved_again(postgres_lab_context):
+    client, _factory, tokens = postgres_lab_context
+    work_order = _completed_work_order(client, tokens["tech"], "PostgreSQL rechazo")
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": work_order["id"],
+            "reason": "Solicitud improcedente",
+            "description": "Se valida el rechazo definitivo del ticket.",
+            "requested_signature_policy": "invalidate",
+        },
+        headers=auth(tokens["tech"]),
+    ).json()
+    endpoint = f"/api/mobile/v1/technician/tickets/{ticket['id']}"
+
+    rejected = client.post(
+        f"{endpoint}/reject",
+        json={"comment": "No procede la reapertura"},
+        headers=auth(tokens["admin"]),
+    )
+
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["status"] == "rejected"
+    assert client.post(
+        f"{endpoint}/reject",
+        json={"comment": "Segundo rechazo"},
+        headers=auth(tokens["admin"]),
+    ).status_code == 409
+    assert client.post(
+        f"{endpoint}/approve",
+        json={"signature_policy": "preserve"},
+        headers=auth(tokens["admin"]),
+    ).status_code == 409
+
+
+def test_postgresql_concurrent_ticket_resolution_allows_one_winner(
+    postgres_lab_context,
+):
+    client, factory, tokens = postgres_lab_context
+    work_order = _completed_work_order(client, tokens["tech"], "PostgreSQL carrera")
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": work_order["id"],
+            "reason": "Resolución concurrente",
+            "description": "Dos revisores intentan resolver el mismo ticket.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=auth(tokens["tech"]),
+    ).json()
+
+    def resolve(action: str) -> tuple[str, int]:
+        with factory() as db:
+            admin = db.scalar(select(User).where(User.username == "postgres-admin"))
+            assert admin is not None
+            try:
+                if action == "approve":
+                    approve_reopen_ticket(
+                        db,
+                        ticket["id"],
+                        TicketReview(signature_policy="preserve"),
+                        admin,
+                    )
+                else:
+                    reject_ticket(
+                        db,
+                        ticket["id"],
+                        TicketReject(comment="Resolución concurrente rechazada"),
+                        admin,
+                    )
+                return action, 200
+            except HTTPException as exc:
+                db.rollback()
+                return action, exc.status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(resolve, ("approve", "reject")))
+
+    assert sorted(status for _action, status in outcomes) == [200, 409]
+    detail = client.get(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}",
+        headers=auth(tokens["admin"]),
+    ).json()
+    assert detail["status"] in {"in_progress", "rejected"}
 
 
 def test_lab_pdf_leaves_missing_purchase_order_empty():

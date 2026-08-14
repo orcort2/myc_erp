@@ -52,10 +52,15 @@ def _read(ticket: OperationalTicket) -> TicketRead:
 
 
 def _get_ticket(db: Session, ticket_id: int, *, lock: bool = False) -> OperationalTicket:
-    query = _ticket_query().where(OperationalTicket.id == ticket_id)
     if lock:
-        query = query.with_for_update()
-    ticket = db.scalar(query)
+        locked_ticket_id = db.scalar(
+            select(OperationalTicket.id)
+            .where(OperationalTicket.id == ticket_id)
+            .with_for_update()
+        )
+        if locked_ticket_id is None:
+            raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    ticket = db.scalar(_ticket_query().where(OperationalTicket.id == ticket_id))
     if ticket is None:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
     return ticket
@@ -176,8 +181,6 @@ def approve_reopen_ticket(
     db: Session, ticket_id: int, payload: TicketReview, user: User
 ) -> TicketRead:
     ticket = _get_ticket(db, ticket_id, lock=True)
-    if ticket.status == "in_progress":
-        return _read(ticket)
     if ticket.status != "pending":
         raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
     required_permission = (
@@ -252,8 +255,6 @@ def reject_ticket(
     db: Session, ticket_id: int, payload: TicketReject, user: User
 ) -> TicketRead:
     ticket = _get_ticket(db, ticket_id, lock=True)
-    if ticket.status == "rejected":
-        return _read(ticket)
     if ticket.status != "pending":
         raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
     ticket.status = "rejected"

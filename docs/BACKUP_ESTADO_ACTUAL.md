@@ -47,7 +47,11 @@
   exportación ZIP. Desde el corte 2026-08-14 agrega filtros SQL separados por
   folio/cliente, estado y paginación; Tickets, revisión autorizada, snapshots,
   PDFs por revisión, firma histórica/activa, invalidación automática y control
-  optimista. La captura ya respeta safe area, agrupa los campos y oculta
+  optimista. La resolución de Tickets conserva `FOR UPDATE` exclusivamente
+  sobre la fila del ticket y rechaza con 409 cualquier segunda decisión; la
+  regresión real PostgreSQL cubre ambas políticas de firma, rechazo y carrera
+  con un único ganador. La captura y el detalle de Tickets ya respetan safe
+  area, agrupan los campos y ocultan
   teléfono/correo; el PDF separa Domicilio, C.P., Ciudad, Estado y orden de
   compra sin `0` por ausencia. Falta aceptación física en iPhone/Expo Go.
 - El P0 **Integridad de autenticación de Certificados** está **TERMINADO — EN
@@ -147,7 +151,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend canónico | 514 passed, 1 skipped, 19 subtests passed, 3 warnings deprecados; incluye filtros, Tickets, reapertura, revisiones y regresión completa |
+| Backend canónico | 514 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados; los cuatro skips nuevos requieren `LAB_POSTGRES_TEST_URL` y fueron ejecutados separadamente contra PostgreSQL real |
 | Aislamiento móvil técnico | 21 passed; ETS/OT/Equipo/Hoja A/B, sin asignación, 401, 403 y doble permiso de hojas |
 | Escenarios Fase 1 ETS múltiple/evolucionado | 10 passed; A–H, permisos, mixto SG/calibración/mantenimiento, evolución indebida/posterior, lifecycle, categorías y unicidad |
 | Regresión focal ETS/calibración/Activity/cotizaciones/permisos | 53 passed, 2 warnings |
@@ -160,9 +164,10 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
 | Inventario FastAPI | 390/390 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
-| OT LAB backend/API/PDF/export/Tickets | 12 passed, 1 skipped opcional de concurrencia PostgreSQL; cubre filtros exactos/parciales/combinados/case-insensitive, paginación, permisos, lifecycle, control optimista, firma preservada/invalidada, nueva firma y PDF histórico |
+| OT LAB backend/API/PDF/export/Tickets | 12 passed, 5 skipped sin URL PostgreSQL; cubre filtros, permisos, lifecycle, control optimista, firma preservada/invalidada, nueva firma y PDF histórico |
+| Tickets sobre PostgreSQL real | 4 passed en dos bases temporales eliminadas al finalizar: approve preserve, approve invalidate, rechazo definitivo y carrera approve/reject con un único 200 y un 409 |
 | Migración LAB PostgreSQL temporal | `base → c6e8a1b4d2f9`; current correcto; `alembic check` sin operaciones nuevas; asignador concurrente `[6400, 6401]`; carrera de OT adicional: una `6403` y un rechazo `409`; base temporal eliminada |
-| `myc-mobile` TypeScript/lint | correcto / correcto; Expo Doctor del corte previo fue 18/18, su repetición quedó sin resultado por espera externa y se canceló sin modificar dependencias |
+| `myc-mobile` TypeScript/lint | correcto / correcto después de incorporar `SafeAreaProvider` propio al modal de detalle de Tickets; Expo Doctor del corte previo fue 18/18 |
 | `myc-mobile` Expo Doctor SDK 54 | 18/18 checks |
 | Aislamiento portal A/B | membresía propia 200, recurso ajeno 404, anónimo 401; autenticador interno rechaza token del portal |
 | `scripts/myc doctor` | dependencias locales principales disponibles |

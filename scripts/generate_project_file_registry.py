@@ -28,6 +28,9 @@ EXCLUDED_NAMES = {
 }
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
+STATUS_OVERRIDES = {
+    "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md": "En revisión",
+}
 FORCE_RECLASSIFY = {
     "AGENTS.md",
     "backend/app/main.py",
@@ -38,6 +41,10 @@ FORCE_RECLASSIFY = {
     "backend/app/services/lab_work_orders.py",
     "backend/migrations/versions/c6e8a1b4d2f9_create_lab_work_orders.py",
     "backend/tests/test_lab_work_orders.py",
+    "backend/app/services/operational_tickets.py",
+    "myc-mobile/app/(technician)/tickets.tsx",
+    "docs/architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md",
+    "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md",
     "docs/architecture/LAB_WORK_ORDERS.md",
     "docs/closures/LAB_WORK_ORDERS_VERTICAL_SLICE_2026-08-13.md",
     "myc-mobile/app/(auth)/login.tsx",
@@ -356,16 +363,21 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         status = "Obsoleto"
 
     lab_files = {
-        "backend/app/models/lab_work_order.py": ("Agregado persistente OT LAB", "Modela OT, equipos, sesión de firma compartida y firmas sin FKs a dominios productivos.", "SQLAlchemy, users e infraestructura de folios", "Servicio LAB, Alembic, PDF, exportación y pruebas", "Crítico"),
-        "backend/app/routers/lab_work_orders.py": ("API móvil OT LAB", "Expone CRUD temporal, adicionales, firma grupal, cierre, PDF y exportación bajo permisos explícitos.", "FastAPI, schemas, servicio LAB y auth interno", "myc-mobile y exportación administrativa", "Crítico"),
+        "backend/app/models/lab_work_order.py": ("Agregado persistente OT LAB", "Modela OT, equipos, sesiones de firma versionadas, revisión activa, control optimista y vínculo de reapertura sin conectar dominios productivos.", "SQLAlchemy, users, Tickets e infraestructura de folios", "Servicios LAB/Tickets, Alembic, PDF, exportación y pruebas", "Crítico"),
+        "backend/app/routers/lab_work_orders.py": ("API móvil OT LAB", "Expone filtros/paginación, CRUD, adicionales, firma/cierre, PDF actual e historial/PDF por revisión bajo permisos explícitos.", "FastAPI, schemas, servicios LAB/Tickets y auth interno", "myc-mobile y exportación administrativa", "Crítico"),
         "backend/app/schemas/lab_work_order.py": ("Contrato OT LAB", "Valida datos generales, equipos sin modelo, firmas PNG y respuestas agrupadas.", "Pydantic y modelos LAB", "Router, servicio y cliente móvil", "Alto"),
-        "backend/app/services/lab_work_orders.py": ("Dominio OT LAB", "Orquesta folios 6400–6999, máximo 10, cadena adicional, firma única, bloqueo, cierre, auditoría y exportación verificable.", "SQLAlchemy, audit, PDF e institutional_folio_sequences", "Router LAB, pruebas y retiro futuro", "Crítico"),
-        "backend/app/services/lab_work_order_pdfs.py": ("PDF institucional OT LAB", "Adapta datos LAB al render institucional, separa domicilio/C.P./ciudad/estado y normaliza la orden de compra opcional.", "WeasyPrint y work_order_pdfs", "Cierre grupal, descarga y exportación", "Alto"),
+        "backend/app/services/lab_work_orders.py": ("Dominio OT LAB", "Orquesta folios, filtros SQL paginados, grupo/equipos, firma versionada, invalidación crítica, control optimista, cierre, Ticket resuelto, auditoría y exportación.", "SQLAlchemy, audit, PDF, Tickets e institutional_folio_sequences", "Router LAB, servicio Tickets, pruebas y retiro futuro", "Crítico"),
+        "backend/app/services/lab_work_order_pdfs.py": ("PDF institucional OT LAB", "Adapta LAB al render institucional e incorpora número de revisión y aclaración auditable de reapertura/firma preservada o renovada.", "WeasyPrint, work_order_pdfs y estado de revisión", "Cierre grupal, descarga histórica y exportación", "Alto"),
         "backend/app/services/work_order_pdfs.py": ("Render institucional de OT", "Compone el contexto productivo y admite overrides explícitos de dirección desglosada usados sólo por el adaptador LAB.", "Jinja, modelos productivos y plantilla work_order_pdf", "Generadores PDF productivo y LAB", "Alto"),
         "backend/app/templates/work_order_pdf.html": ("Plantilla institucional de OT", "Renderiza la cuadrícula institucional, incluidos valores independientes de domicilio, C.P., ciudad y estado cuando el adaptador los aporta.", "Jinja y work_order_pdfs", "PDF de OT productiva y temporal LAB", "Alto"),
         "backend/migrations/versions/c6e8a1b4d2f9_create_lab_work_orders.py": ("Migración OT LAB", "Fusiona los dos heads preservados y crea exclusivamente las cuatro tablas LAB, restricciones, índices y FKs trazables.", "Alembic, PostgreSQL, a7c2e5f8b1d4 y fdc1c503a353", "Despliegue, rollback y validación de esquema", "Crítico"),
-        "backend/tests/test_lab_work_orders.py": ("Suite OT LAB", "Prueba permisos, folios, límite, adicionales, firma compartida, bloqueo, mapeo PDF, vacíos y exportación.", "Pytest, TestClient, pypdf y SQLite aislado", "Gate backend del vertical LAB", "Crítico"),
-        "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo móvil OT LAB", "Implementa captura agrupada con safe area, equipos, revisión, firma única, cierre, impresión y compartir en iPhone.", "Expo Router, SafeAreaContext, AuthProvider, FileSystem, Print y Sharing", "Técnicos autorizados en Expo Go", "Crítico"),
+        "backend/tests/test_lab_work_orders.py": ("Suite OT LAB/Tickets", "Prueba filtros, paginación, permisos, lifecycle, firmas, PDFs y resolución única de Tickets, incluida concurrencia approve/reject con locks reales.", "Pytest, TestClient, pypdf, SQLite y PostgreSQL aislados", "Gate backend del vertical móvil", "Crítico"),
+        "backend/app/services/operational_tickets.py": ("Lifecycle de Tickets/reapertura", "Crea, lista y resuelve Tickets con visibilidad propia/global, lock PostgreSQL exclusivo sobre su fila, un único ganador concurrente, snapshots, firmas, historial y auditoría.", "SQLAlchemy, modelos Ticket/LAB, permisos y auditoría", "Routers móviles, cierre LAB, revisores y pruebas PostgreSQL", "Crítico"),
+        "myc-mobile/app/(technician)/index.tsx": ("Home técnica móvil", "Navega a OT y Tickets y muestra conteo pendiente según permisos efectivos.", "AuthProvider, API, permisos y Expo Router", "Técnicos y revisores móviles", "Alto"),
+        "myc-mobile/app/(technician)/tickets.tsx": ("Bandeja móvil de Tickets", "Lista, busca, filtra y pagina solicitudes; muestra detalle con safe area propio y habilita aprobación preservando/invalidando o rechazo según permiso.", "Expo Router, SafeAreaContext, AuthProvider, API y permisos", "Técnicos, Calidad y administradores", "Crítico"),
+        "docs/architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md": ("Contrato Tickets/reapertura", "Define lifecycle, locks, resolución única, revisiones, firma histórica/activa, cambios críticos, control optimista, API, búsqueda y auditoría.", "Implementación backend/móvil y reglas LAB", "Desarrollo, QA, seguridad y operación", "Crítico"),
+        "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md": ("Cierre técnico Tickets móvil", "Registra filtros, reapertura, corrección de lock PostgreSQL, safe area y validaciones del sprint.", "Contrato, implementación y pruebas PostgreSQL/móvil", "Dirección, QA y operación móvil", "Alto"),
+        "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo móvil OT LAB", "Implementa filtros separados con debounce/paginación, captura/firma/cierre/PDF y solicitud/edición de reapertura con control de versión.", "Expo Router, AuthProvider, FileSystem, Print, Sharing y Tickets API", "Técnicos autorizados en Expo Go/TestFlight", "Crítico"),
         "myc-mobile/app/_layout.tsx": ("Raíz de navegación móvil", "Provee safe area real a todas las rutas y mantiene la sesión autenticada alrededor del Stack de Expo Router.", "Expo Router, SafeAreaProvider y AuthProvider", "Todas las pantallas móviles", "Crítico"),
         "myc-mobile/src/components/SignaturePad.tsx": ("Firma táctil Expo Go", "Captura, limpia y confirma trazos PNG en un panel móvil espaciado mediante canvas WebView sin módulo nativo.", "react-native-webview", "Flujo de firma grupal OT LAB", "Alto"),
         "myc-mobile/src/auth/AuthProvider.tsx": ("Sesión interna móvil", "Restaura, refresca y limpia tokens internos y ofrece fetch autenticado con reintento único ante 401.", "SecureStore, auth.service y React Context", "Rutas técnicas y OT LAB", "Crítico"),
@@ -379,7 +391,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     capability_reconciliation_files = {
         "backend/app/core/permissions.py": (
             "Matriz ejecutable de permisos",
-            "Declara el bootstrap interno y asigna la baja lógica de incertidumbre de certificados de patrón sólo a Calidad/Desarrollador, preservando Administrador por comodín.",
+            "Declara bootstrap interno, capacidades de Tickets/reapertura/firma LAB y asignación Técnico/Calidad/Desarrollador, preservando Administrador por comodín.",
             "Roles internos, catálogo funcional y nombres de capacidades",
             "Guard API, routers, autenticación, frontend y administración",
             "Crítico",
@@ -414,7 +426,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/security/api_access.py": (
             "Política transversal de acceso",
-            "Clasifica 357 operaciones deny-by-default; usa `portal.read` con ownership y alinea delete de incertidumbre de certificado de patrón con el bootstrap catalogado.",
+            "Clasifica 390 operaciones deny-by-default, incluidos Tickets móviles y revisiones LAB, y conserva permisos/ownership de superficies existentes.",
             "FastAPI, auth, catálogo de permisos e inventario CSV",
             "Middleware, arranque, generador y pruebas de conformidad",
             "Crítico",
@@ -2310,7 +2322,15 @@ def render(paths: list[Path], preserved: dict[str, str]) -> str:
                 lines.append(preserved[value])
                 continue
             function, responsibility, dependencies, consumers, criticality = classify(path)
-            cells = (path.as_posix(), module(path), function, responsibility, dependencies, consumers, criticality, "Experimental" if "/labs/" in path.as_posix() or "Lab" in path.name else ("En desarrollo" if "facturama" in path.as_posix().lower() or path.name == "integrations.py" else ("Obsoleto" if "/legacy/" in path.as_posix() or ".pre-toolkit" in path.name else "Estable")))
+            status = STATUS_OVERRIDES.get(
+                value,
+                "Experimental" if "/labs/" in value or "Lab" in path.name else (
+                    "En desarrollo" if "facturama" in value.lower() or path.name == "integrations.py" else (
+                        "Obsoleto" if "/legacy/" in value or ".pre-toolkit" in path.name else "Estable"
+                    )
+                ),
+            )
+            cells = (path.as_posix(), module(path), function, responsibility, dependencies, consumers, criticality, status)
             lines.append("| " + " | ".join(markdown_cell(cell) for cell in cells) + " |")
         lines.append("")
     lines.extend(["## Validación del inventario", "", "- El generador sólo emite rutas existentes y aplica las exclusiones descritas.", "- Antes de integrar cambios, ejecutar `python3 scripts/generate_project_file_registry.py`, revisar las filas afectadas y ejecutar `git diff --check`.", ""])

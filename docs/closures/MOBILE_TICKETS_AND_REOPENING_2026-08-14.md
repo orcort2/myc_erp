@@ -13,6 +13,14 @@ La migración `d4e7a9c2b6f1` fue probada en PostgreSQL aislado mediante
 backend cubre filtros, seguridad, lifecycle, firma histórica, nueva firma y
 PDF histórico. TypeScript y Expo lint quedan verdes.
 
+La corrección PostgreSQL del 2026-08-14 conserva el bloqueo pesimista del
+ticket, pero separa el `SELECT ... FOR UPDATE` de la carga eager de OT y
+usuarios para evitar locks sobre el lado nullable de `LEFT OUTER JOIN`. Pruebas
+en PostgreSQL real cubren aprobación `preserve`, aprobación `invalidate`,
+rechazo, segunda resolución 409 y carrera approve/reject con un solo ganador.
+El modal de detalle móvil incorpora su propio `SafeAreaProvider` y respeta los
+cuatro bordes en iOS sin cambiar jerarquía ni acciones.
+
 Pendiente antes de distribuir: checklist manual completo en Android/iPhone,
 incluyendo dos sesiones concurrentes, impresión/compartir de revisión anterior
 y actual, y UX de bandeja con cuentas Técnico y Calidad. No se ejecutó

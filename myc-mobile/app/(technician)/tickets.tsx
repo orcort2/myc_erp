@@ -11,7 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
@@ -145,27 +145,29 @@ export default function TicketsScreen() {
       )}
 
       <Modal animationType="slide" onRequestClose={() => setSelected(null)} visible={!!selected}>
-        <SafeAreaView style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Ticket #{selected?.id}</Text>
-            <Pressable onPress={() => setSelected(null)}><Text style={styles.close}>Cerrar</Text></Pressable>
-          </View>
-          {selected && <ScrollView contentContainerStyle={styles.modalContent}>
-            <Text style={styles.folio}>OT {selected.work_order_folio} · {selected.client_name}</Text>
-            <Text style={styles.detailStatus}>{STATUS_LABELS[selected.status]}</Text>
-            <Text style={styles.detailLabel}>Motivo</Text><Text style={styles.detail}>{selected.reason}</Text>
-            <Text style={styles.detailLabel}>Descripción</Text><Text style={styles.detail}>{selected.description}</Text>
-            <Text style={styles.detailLabel}>Solicitante</Text><Text style={styles.detail}>{selected.requested_by_name}</Text>
-            {!!selected.decision_comment && <><Text style={styles.detailLabel}>Decisión</Text><Text style={styles.detail}>{selected.decision_comment}</Text></>}
-            {canReview && selected.status === 'pending' && <>
-              <Text style={styles.warning}>Si durante la edición se realiza un cambio estructural, el backend invalidará automáticamente las firmas existentes.</Text>
-              <TextInput multiline onChangeText={setComment} placeholder="Comentario de decisión" style={[styles.input, styles.comment]} value={comment} />
-              <Pressable disabled={busy} onPress={() => review('approve', 'preserve')} style={styles.primary}><Text style={styles.primaryText}>Aprobar conservando firma</Text></Pressable>
-              <Pressable disabled={busy} onPress={() => review('approve', 'invalidate')} style={styles.secondary}><Text style={styles.secondaryText}>Aprobar y requerir nuevas firmas</Text></Pressable>
-              <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
-            </>}
-          </ScrollView>}
-        </SafeAreaView>
+        <SafeAreaProvider>
+          <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Ticket #{selected?.id}</Text>
+              <Pressable onPress={() => setSelected(null)}><Text style={styles.close}>Cerrar</Text></Pressable>
+            </View>
+            {selected && <ScrollView contentContainerStyle={styles.modalContent}>
+              <Text style={styles.folio}>OT {selected.work_order_folio} · {selected.client_name}</Text>
+              <Text style={styles.detailStatus}>{STATUS_LABELS[selected.status]}</Text>
+              <Text style={styles.detailLabel}>Motivo</Text><Text style={styles.detail}>{selected.reason}</Text>
+              <Text style={styles.detailLabel}>Descripción</Text><Text style={styles.detail}>{selected.description}</Text>
+              <Text style={styles.detailLabel}>Solicitante</Text><Text style={styles.detail}>{selected.requested_by_name}</Text>
+              {!!selected.decision_comment && <><Text style={styles.detailLabel}>Decisión</Text><Text style={styles.detail}>{selected.decision_comment}</Text></>}
+              {canReview && selected.status === 'pending' && <>
+                <Text style={styles.warning}>Si durante la edición se realiza un cambio estructural, el backend invalidará automáticamente las firmas existentes.</Text>
+                <TextInput multiline onChangeText={setComment} placeholder="Comentario de decisión" style={[styles.input, styles.comment]} value={comment} />
+                <Pressable disabled={busy} onPress={() => review('approve', 'preserve')} style={styles.primary}><Text style={styles.primaryText}>Aprobar conservando firma</Text></Pressable>
+                <Pressable disabled={busy} onPress={() => review('approve', 'invalidate')} style={styles.secondary}><Text style={styles.secondaryText}>Aprobar y requerir nuevas firmas</Text></Pressable>
+                <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
+              </>}
+            </ScrollView>}
+          </SafeAreaView>
+        </SafeAreaProvider>
       </Modal>
     </SafeAreaView>
   );

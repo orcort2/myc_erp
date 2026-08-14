@@ -93,12 +93,16 @@ para no romper la build TestFlight vigente; el móvil pagina con bloques de 25
 y acción “Cargar más”. Los dos inputs tienen debounce de 400 ms y limpieza
 independiente o conjunta.
 
-## Auditoría e idempotencia
+## Auditoría y concurrencia
 
 Se auditan creación, rechazo, aprobación/reapertura, campos modificados,
-invalidación automática, firma, cierre y actores. Aprobar nuevamente un ticket
-ya `in_progress`, rechazar nuevamente uno ya rechazado y cerrar un grupo ya
-cerrado son reintentos idempotentes. Transiciones incompatibles responden 409.
+invalidación automática, firma, cierre y actores. La resolución adquiere un
+`FOR UPDATE` exclusivamente sobre la fila de `operational_tickets`; las
+relaciones eager-loaded se consultan después dentro de la misma transacción y
+no forman parte del lock. Sólo un ticket `pending` puede resolverse: cualquier
+segundo approve/reject, incluso si esperó el lock de otra transacción, responde
+409 `TICKET_ALREADY_RESOLVED`. El cierre repetido del grupo permanece
+idempotente.
 
 ## Límite vigente
 
