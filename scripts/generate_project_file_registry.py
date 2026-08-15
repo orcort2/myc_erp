@@ -30,6 +30,7 @@ EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
 STATUS_OVERRIDES = {
     "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md": "En revisión",
+    "docs/closures/MOBILE_NOTIFICATIONS_V1_2026-08-14.md": "En revisión",
 }
 FORCE_RECLASSIFY = {
     "AGENTS.md",
@@ -44,6 +45,23 @@ FORCE_RECLASSIFY = {
     "backend/app/services/operational_tickets.py",
     "myc-mobile/app/(technician)/tickets.tsx",
     "docs/architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md",
+    "docs/architecture/MOBILE_NOTIFICATIONS_V1.md",
+    "docs/closures/MOBILE_NOTIFICATIONS_V1_2026-08-14.md",
+    "backend/app/models/notification.py",
+    "backend/app/routers/notifications.py",
+    "backend/app/schemas/notification.py",
+    "backend/app/services/notification_events.py",
+    "backend/app/services/push_notifications.py",
+    "backend/migrations/versions/e6b8c0d2f4a6_add_mobile_push_notifications.py",
+    "backend/tests/test_mobile_notifications.py",
+    "myc-mobile/app/(technician)/notifications.tsx",
+    "myc-mobile/src/notifications/NotificationSyncProvider.tsx",
+    "myc-mobile/src/notifications/refresh-policy.ts",
+    "myc-mobile/src/notifications/refresh-policy.test.ts",
+    "myc-mobile/src/services/push-notifications.ts",
+    "myc-mobile/src/types/notification.ts",
+    "myc-mobile/app.json",
+    "myc-mobile/package.json",
     "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md",
     "docs/architecture/LAB_WORK_ORDERS.md",
     "docs/closures/LAB_WORK_ORDERS_VERTICAL_SLICE_2026-08-13.md",
@@ -362,6 +380,28 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
 
+    notification_files = {
+        "backend/app/models/notification.py": ("Persistencia de notificaciones push", "Extiende la bandeja institucional con event_key, estado de entrega y dispositivos Expo multiusuario/multidispositivo con ownership.", "SQLAlchemy, users y Alembic", "Activity, Tickets, API y MYC Mobile", "Crítico"),
+        "backend/app/routers/notifications.py": ("API de notificaciones y dispositivos", "Expone bandeja propia, no leídos, lectura idempotente y alta/baja autenticada de PushDevice sin aceptar user_id del cliente.", "FastAPI, auth y servicios Notifications/Push", "MYC Mobile y Activity", "Crítico"),
+        "backend/app/schemas/notification.py": ("Contratos de Notifications V1", "Valida respuestas de notificación, estado de entrega y registro de token Expo para iOS/Android.", "Pydantic", "Routers y cliente móvil", "Alto"),
+        "backend/app/services/notification_events.py": ("Eventos operativos de notificación", "Centraliza destinatarios por permiso y crea eventos idempotentes de Tickets/OT con metadata mínima.", "Permisos, OperationalTicket, Notification y push queue", "Servicios Tickets/LAB y pruebas", "Crítico"),
+        "backend/app/services/push_notifications.py": ("Entrega Expo Push", "Registra/desactiva devices y entrega best-effort después del commit, desactiva DeviceNotRegistered y evita rollback del dominio.", "HTTPX, Expo, Notification y PushDevice", "Eventos operativos, API y pruebas", "Crítico"),
+        "backend/migrations/versions/e6b8c0d2f4a6_add_mobile_push_notifications.py": ("Migración Notifications V1", "Agrega idempotencia/telemetría de entrega a notifications y crea push_devices con índices, FK y plataforma validada.", "Alembic, PostgreSQL y d4e7a9c2b6f1", "Despliegue, rollback y validación de esquema", "Crítico"),
+        "backend/tests/test_mobile_notifications.py": ("Suite Notifications V1", "Prueba devices, ownership, lectura/paginación, eventos Ticket, firma, multiusuario y resiliencia Expo sin Internet.", "Pytest, TestClient, SQLAlchemy y mocks Expo", "Gate backend móvil", "Crítico"),
+        "myc-mobile/app/(technician)/notifications.tsx": ("Centro móvil de notificaciones", "Lista y pagina notificaciones propias, distingue lectura, filtra no leídas, refresca, marca lectura y navega al recurso.", "Expo Router, AuthProvider y NotificationSyncProvider", "Usuarios internos móviles", "Crítico"),
+        "myc-mobile/src/notifications/NotificationSyncProvider.tsx": ("Orquestador de sincronización móvil", "Registra listeners push/AppState, badge, deep links pendientes e invalidaciones foreground/locales sin polling.", "Expo Notifications, Expo Router, AuthProvider y API", "Tickets, OT, centro y home móvil", "Crítico"),
+        "myc-mobile/src/notifications/refresh-policy.ts": ("Política de refresco móvil", "Clasifica eventos Tickets/OT y aplica deduplicación y throttle para evitar loops o ráfagas.", "Tipos NotificationSyncEvent", "Pantallas Tickets/OT y pruebas", "Alto"),
+        "myc-mobile/src/notifications/refresh-policy.test.ts": ("Pruebas de sincronización móvil", "Verifica invalidación de Tickets/OT, foreground, deduplicación y refresh forzado tras mutación propia.", "Node test, tsx y refresh-policy", "Gate móvil Notifications", "Alto"),
+        "myc-mobile/src/services/push-notifications.ts": ("Registro Expo del dispositivo", "Solicita permisos sin bloquear, crea canal Android, obtiene token en device físico y registra/desactiva la asociación autenticada.", "Expo Notifications/Device/Constants, SecureStore y API", "AuthProvider y NotificationSyncProvider", "Crítico"),
+        "myc-mobile/src/types/notification.ts": ("Contrato móvil Notifications", "Tipifica bandeja, devices y metadata de eventos/deep links.", "TypeScript", "Centro, sincronización y pantallas operativas", "Alto"),
+        "myc-mobile/app.json": ("Configuración Expo móvil", "Conserva identidad EAS/bundle/package y habilita el plugin oficial expo-notifications sin alterar branding.", "Expo SDK 54 y EAS projectId", "Builds manuales iOS/Android y runtime móvil", "Crítico"),
+        "myc-mobile/package.json": ("Dependencias y gates móviles", "Fija dependencias Expo SDK 54 para notifications/device y scripts TypeScript, lint y pruebas de sincronización.", "npm, Expo SDK 54 y tsx", "Desarrollo, validación y builds manuales", "Crítico"),
+        "docs/architecture/MOBILE_NOTIFICATIONS_V1.md": ("Contrato Notifications V1", "Documenta fuente de verdad, eventos, destinatarios, devices, Expo, seguridad, deep links, refresco y límites.", "Código backend/móvil y pruebas", "Desarrollo, seguridad, QA y operación", "Crítico"),
+        "docs/closures/MOBILE_NOTIFICATIONS_V1_2026-08-14.md": ("Cierre técnico Notifications V1", "Registra entrega, evidencia automática, límites y aceptación física pendiente.", "Arquitectura, implementación y validaciones", "Dirección, QA y operación móvil", "Alto"),
+    }
+    if value in notification_files:
+        return notification_files[value]
+
     lab_files = {
         "backend/app/models/lab_work_order.py": ("Agregado persistente OT LAB", "Modela OT, equipos, sesiones de firma versionadas, revisión activa, control optimista y vínculo de reapertura sin conectar dominios productivos.", "SQLAlchemy, users, Tickets e infraestructura de folios", "Servicios LAB/Tickets, Alembic, PDF, exportación y pruebas", "Crítico"),
         "backend/app/routers/lab_work_orders.py": ("API móvil OT LAB", "Expone filtros/paginación, CRUD, adicionales, firma/cierre, PDF actual e historial/PDF por revisión bajo permisos explícitos.", "FastAPI, schemas, servicios LAB/Tickets y auth interno", "myc-mobile y exportación administrativa", "Crítico"),
@@ -372,15 +412,15 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/app/templates/work_order_pdf.html": ("Plantilla institucional de OT", "Renderiza la cuadrícula institucional, incluidos valores independientes de domicilio, C.P., ciudad y estado cuando el adaptador los aporta.", "Jinja y work_order_pdfs", "PDF de OT productiva y temporal LAB", "Alto"),
         "backend/migrations/versions/c6e8a1b4d2f9_create_lab_work_orders.py": ("Migración OT LAB", "Fusiona los dos heads preservados y crea exclusivamente las cuatro tablas LAB, restricciones, índices y FKs trazables.", "Alembic, PostgreSQL, a7c2e5f8b1d4 y fdc1c503a353", "Despliegue, rollback y validación de esquema", "Crítico"),
         "backend/tests/test_lab_work_orders.py": ("Suite OT LAB/Tickets", "Prueba filtros, paginación, permisos, lifecycle, firmas, PDFs y resolución única de Tickets, incluida concurrencia approve/reject con locks reales.", "Pytest, TestClient, pypdf, SQLite y PostgreSQL aislados", "Gate backend del vertical móvil", "Crítico"),
-        "backend/app/services/operational_tickets.py": ("Lifecycle de Tickets/reapertura", "Crea, lista y resuelve Tickets con visibilidad propia/global, lock PostgreSQL exclusivo sobre su fila, un único ganador concurrente, snapshots, firmas, historial y auditoría.", "SQLAlchemy, modelos Ticket/LAB, permisos y auditoría", "Routers móviles, cierre LAB, revisores y pruebas PostgreSQL", "Crítico"),
-        "myc-mobile/app/(technician)/index.tsx": ("Home técnica móvil", "Navega a OT y Tickets y muestra conteo pendiente según permisos efectivos.", "AuthProvider, API, permisos y Expo Router", "Técnicos y revisores móviles", "Alto"),
-        "myc-mobile/app/(technician)/tickets.tsx": ("Bandeja móvil de Tickets", "Lista, busca, filtra y pagina solicitudes; muestra detalle con safe area propio y habilita aprobación preservando/invalidando o rechazo según permiso.", "Expo Router, SafeAreaContext, AuthProvider, API y permisos", "Técnicos, Calidad y administradores", "Crítico"),
+        "backend/app/services/operational_tickets.py": ("Lifecycle de Tickets/reapertura", "Crea, lista y resuelve Tickets con visibilidad propia/global, lock PostgreSQL exclusivo sobre su fila, un único ganador concurrente, snapshots, firmas, historial, auditoría y eventos persistentes.", "SQLAlchemy, modelos Ticket/LAB, permisos, auditoría y Notifications", "Routers móviles, cierre LAB, revisores y pruebas PostgreSQL", "Crítico"),
+        "myc-mobile/app/(technician)/index.tsx": ("Home técnica móvil", "Navega a OT, Tickets y Notificaciones; muestra conteos pendientes y badge no leído según permisos efectivos.", "AuthProvider, API, permisos, NotificationSyncProvider y Expo Router", "Técnicos y revisores móviles", "Alto"),
+        "myc-mobile/app/(technician)/tickets.tsx": ("Bandeja móvil de Tickets", "Lista, busca, filtra y pagina solicitudes; muestra detalle safe-area, resuelve por permiso y refresca por foco, foreground, push o mutación local.", "Expo Router, SafeAreaContext, AuthProvider, API, permisos y NotificationSyncProvider", "Técnicos, Calidad y administradores", "Crítico"),
         "docs/architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md": ("Contrato Tickets/reapertura", "Define lifecycle, locks, resolución única, revisiones, firma histórica/activa, cambios críticos, control optimista, API, búsqueda y auditoría.", "Implementación backend/móvil y reglas LAB", "Desarrollo, QA, seguridad y operación", "Crítico"),
         "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md": ("Cierre técnico Tickets móvil", "Registra filtros, reapertura, corrección de lock PostgreSQL, safe area y validaciones del sprint.", "Contrato, implementación y pruebas PostgreSQL/móvil", "Dirección, QA y operación móvil", "Alto"),
-        "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo móvil OT LAB", "Implementa filtros separados con debounce/paginación, captura/firma/cierre/PDF y solicitud/edición de reapertura con control de versión.", "Expo Router, AuthProvider, FileSystem, Print, Sharing y Tickets API", "Técnicos autorizados en Expo Go/TestFlight", "Crítico"),
-        "myc-mobile/app/_layout.tsx": ("Raíz de navegación móvil", "Provee safe area real a todas las rutas y mantiene la sesión autenticada alrededor del Stack de Expo Router.", "Expo Router, SafeAreaProvider y AuthProvider", "Todas las pantallas móviles", "Crítico"),
+        "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo móvil OT LAB", "Implementa filtros con debounce/paginación, captura/firma/cierre/PDF, reapertura versionada y refresco por foco, foreground, push o mutación local.", "Expo Router, AuthProvider, Notifications, FileSystem, Print, Sharing y Tickets API", "Técnicos autorizados en Expo Go/TestFlight", "Crítico"),
+        "myc-mobile/app/_layout.tsx": ("Raíz de navegación móvil", "Provee safe area, sesión y sincronización global de Notifications alrededor del Stack de Expo Router.", "Expo Router, SafeAreaProvider, AuthProvider y NotificationSyncProvider", "Todas las pantallas móviles", "Crítico"),
         "myc-mobile/src/components/SignaturePad.tsx": ("Firma táctil Expo Go", "Captura, limpia y confirma trazos PNG en un panel móvil espaciado mediante canvas WebView sin módulo nativo.", "react-native-webview", "Flujo de firma grupal OT LAB", "Alto"),
-        "myc-mobile/src/auth/AuthProvider.tsx": ("Sesión interna móvil", "Restaura, refresca y limpia tokens internos y ofrece fetch autenticado con reintento único ante 401.", "SecureStore, auth.service y React Context", "Rutas técnicas y OT LAB", "Crítico"),
+        "myc-mobile/src/auth/AuthProvider.tsx": ("Sesión interna móvil", "Restaura/refresca tokens, ofrece fetch autenticado y desactiva best-effort el PushDevice antes de limpiar logout.", "SecureStore, auth.service, push-notifications y React Context", "Rutas técnicas, OT LAB y Notifications", "Crítico"),
         "myc-mobile/src/storage/secure-storage.ts": ("Custodia de tokens móvil", "Guarda access/refresh token en SecureStore y elimina sesiones inválidas o cerradas.", "expo-secure-store", "AuthProvider", "Crítico"),
         "docs/architecture/LAB_WORK_ORDERS.md": ("Contrato OT LAB", "Documenta aislamiento, grupo, firma única, folios, API, PDF, exportación y retiro controlado.", "Código y pruebas LAB", "Desarrollo, operación, auditoría y retiro", "Alto"),
         "docs/closures/LAB_WORK_ORDERS_VERTICAL_SLICE_2026-08-13.md": ("Cierre técnico OT LAB", "Registra alcance, evidencia, límites preservados y aceptación física pendiente.", "Contrato, implementación y validaciones LAB", "Dirección, QA y operación móvil", "Alto"),
@@ -426,7 +466,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/security/api_access.py": (
             "Política transversal de acceso",
-            "Clasifica 390 operaciones deny-by-default, incluidos Tickets móviles y revisiones LAB, y conserva permisos/ownership de superficies existentes.",
+            "Clasifica 392 operaciones deny-by-default, incluidos devices push, Tickets móviles y revisiones LAB, y conserva permisos/ownership de superficies existentes.",
             "FastAPI, auth, catálogo de permisos e inventario CSV",
             "Middleware, arranque, generador y pruebas de conformidad",
             "Crítico",

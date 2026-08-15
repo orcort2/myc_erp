@@ -1,10 +1,12 @@
-import { Redirect, router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,6 +18,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { hasPermission } from '@/src/permissions/permissions';
+import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
+import { affectsTickets, RefreshGate } from '@/src/notifications/refresh-policy';
 import type { OperationalTicket, SignaturePolicy, TicketStatus } from '@/src/types/operational-ticket';
 
 const PAGE_SIZE = 25;
@@ -30,6 +34,8 @@ const STATUS_LABELS: Record<TicketStatus, string> = {
 
 export default function TicketsScreen() {
   const { authorizedFetch, isLoading: authLoading, user } = useAuth();
+  const { publishLocalChange, subscribe } = useNotificationSync();
+  const params = useLocalSearchParams<{ ticketId?: string }>();
   const [items, setItems] = useState<OperationalTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -41,6 +47,9 @@ export default function TicketsScreen() {
   const [selected, setSelected] = useState<OperationalTicket | null>(null);
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const itemCount = useRef(0);
+  const refreshGate = useRef(new RefreshGate());
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -56,19 +65,36 @@ export default function TicketsScreen() {
     try {
       const query = [
         `limit=${PAGE_SIZE}`,
-        `offset=${reset ? 0 : items.length}`,
+        `offset=${reset ? 0 : itemCount.current}`,
         status !== 'all' ? `status=${status}` : '',
         debouncedSearch ? `search=${encodeURIComponent(debouncedSearch)}` : '',
       ].filter(Boolean).join('&');
       const next = await request<OperationalTicket[]>(`/mobile/v1/technician/tickets?${query}`);
-      setItems((current) => reset ? next : [...current, ...next]);
+      setItems((current) => {
+        const updated = reset ? next : [...current, ...next];
+        itemCount.current = updated.length;
+        return updated;
+      });
       setHasMore(next.length === PAGE_SIZE);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Intenta nuevamente');
     } finally {
       if (reset) setLoading(false); else setLoadingMore(false);
     }
-  }, [debouncedSearch, items.length, request, status]);
+  }, [debouncedSearch, request, status]);
+
+  const refreshSelected = useCallback(async (ticketId?: number) => {
+    const id = ticketId ?? selected?.id;
+    if (!id) return;
+    try { setSelected(await request<OperationalTicket>(`/mobile/v1/technician/tickets/${id}`)); } catch { /* ownership or deletion is reflected by the list */ }
+  }, [request, selected?.id]);
+
+  const refreshActive = useCallback(async (force = false) => {
+    if (!refreshGate.current.shouldRefresh(Date.now(), force)) return;
+    setRefreshing(true);
+    await Promise.all([load(true), refreshSelected()]);
+    setRefreshing(false);
+  }, [load, refreshSelected]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -79,6 +105,20 @@ export default function TicketsScreen() {
     if (user) load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, status, user]);
+
+  useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));
+
+  useEffect(() => subscribe((event) => {
+    if (!affectsTickets(event)) return;
+    refreshActive(event.source === 'local');
+    const ticketId = event.ticket_id ?? (event.entity_type === 'ticket' ? event.entity_id ?? undefined : undefined);
+    if (ticketId && selected?.id === ticketId) refreshSelected(ticketId);
+  }), [refreshActive, refreshSelected, selected?.id, subscribe]);
+
+  useEffect(() => {
+    const id = Number(params.ticketId);
+    if (id > 0 && user) refreshSelected(id);
+  }, [params.ticketId, refreshSelected, user]);
 
   async function review(action: 'approve' | 'reject', signaturePolicy?: SignaturePolicy) {
     if (!selected) return;
@@ -94,6 +134,13 @@ export default function TicketsScreen() {
       setSelected(updated);
       setComment('');
       await load(true);
+      publishLocalChange({
+        event_type: `ticket.${action === 'approve' ? 'approved' : 'rejected'}`,
+        entity_type: 'ticket',
+        entity_id: updated.id,
+        ticket_id: updated.id,
+        work_order_id: updated.work_order_id,
+      });
     } catch (reviewError) {
       Alert.alert('No fue posible revisar el ticket', reviewError instanceof Error ? reviewError.message : 'Intenta nuevamente');
     } finally {
@@ -126,7 +173,7 @@ export default function TicketsScreen() {
         </ScrollView>
       </View>
       {loading ? <ActivityIndicator style={styles.loader} /> : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
           {!!error && <Text style={styles.error}>{error}</Text>}
           {items.map((ticket) => (
             <Pressable key={ticket.id} onPress={() => { setSelected(ticket); setComment(''); }} style={styles.card}>

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-08-10
+> Corte verificado: 2026-08-14
 
 # Reglas de negocio vigentes
 
@@ -133,3 +133,18 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 4. `signature_required=true` impide cerrar sin una sesión de firma nueva.
 5. Los filtros `folio` y `client` son independientes, combinables y se ejecutan
    en base de datos; limpiar uno no altera el otro.
+
+## Reglas de notificaciones móviles V1 — 2026-08-14
+
+1. El push sólo identifica un recurso; `Notification` y la API autenticada son
+   la fuente de verdad.
+2. `ticket.created` se entrega a usuarios internos activos con permiso efectivo
+   `tickets.review`; las demás transiciones notifican al solicitante.
+3. `event_key` hace idempotente cada evento/destinatario y `read_at` es la única
+   autoridad de lectura y badge.
+4. Un usuario sólo lista/lee sus notificaciones y administra sus dispositivos;
+   el `user_id` nunca se acepta desde el payload.
+5. Una falla de Expo ocurre después del commit y nunca revierte Ticket, OT,
+   firma ni notificación persistente. `DeviceNotRegistered` desactiva el token.
+6. La app refresca por evento, foreground, foco y mutación local, con
+   deduplicación/throttle y pull-to-refresh; se prohíbe polling agresivo.

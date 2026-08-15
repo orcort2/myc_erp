@@ -278,6 +278,9 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
     if key == ("GET", "/api/auth/me"):
         return AccessPolicy(AccessType.AUTHENTICATED, "access_jwt")
 
+    if path.startswith("/api/mobile/v1/notifications"):
+        return AccessPolicy(AccessType.AUTHENTICATED, "internal_access_jwt")
+
     if path.startswith("/api/mobile/v1/technician/field-sheets"):
         return AccessPolicy(
             AccessType.PERMISSION,

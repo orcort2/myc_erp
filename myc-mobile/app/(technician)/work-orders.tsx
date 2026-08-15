@@ -1,8 +1,9 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Redirect, router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ActivityIndicator,
@@ -11,6 +12,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,6 +24,8 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { SignaturePad } from '@/src/components/SignaturePad';
+import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
+import { affectsWorkOrders, RefreshGate } from '@/src/notifications/refresh-policy';
 import type {
   EquipmentData,
   GeneralData,
@@ -103,6 +107,8 @@ function FormSection({
 
 export default function WorkOrdersScreen() {
   const { authorizedFetch, isLoading: authLoading, session, user } = useAuth();
+  const { publishLocalChange, subscribe } = useNotificationSync();
+  const params = useLocalSearchParams<{ workOrderId?: string }>();
   const [items, setItems] = useState<LabListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -127,6 +133,9 @@ export default function WorkOrdersScreen() {
   const [ticketOpen, setTicketOpen] = useState(false);
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const itemCount = useRef(0);
+  const refreshGate = useRef(new RefreshGate());
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -141,7 +150,7 @@ export default function WorkOrdersScreen() {
     else setLoadingMore(true);
     setListError('');
     try {
-      const offset = reset ? 0 : items.length;
+      const offset = reset ? 0 : itemCount.current;
       const query = [
         `limit=${PAGE_SIZE}`,
         `offset=${offset}`,
@@ -150,7 +159,11 @@ export default function WorkOrdersScreen() {
         debouncedClient ? `client=${encodeURIComponent(debouncedClient)}` : '',
       ].filter(Boolean).join('&');
       const next = await request<LabListItem[]>(`/mobile/v1/technician/lab-work-orders?${query}`);
-      setItems((current) => reset ? next : [...current, ...next]);
+      setItems((current) => {
+        const updated = reset ? next : [...current, ...next];
+        itemCount.current = updated.length;
+        return updated;
+      });
       setHasMore(next.length === PAGE_SIZE);
     } catch (error) {
       setListError(error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -158,7 +171,14 @@ export default function WorkOrdersScreen() {
       if (reset) setLoading(false);
       else setLoadingMore(false);
     }
-  }, [debouncedClient, debouncedFolio, items.length, request, statusFilter]);
+  }, [debouncedClient, debouncedFolio, request, statusFilter]);
+
+  const refreshActive = useCallback(async (force = false) => {
+    if (!refreshGate.current.shouldRefresh(Date.now(), force)) return;
+    setRefreshing(true);
+    await refresh(true);
+    setRefreshing(false);
+  }, [refresh]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -173,6 +193,29 @@ export default function WorkOrdersScreen() {
     // refresh also depends on the current item count for pagination; filters are the trigger here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedClient, debouncedFolio, statusFilter, user]);
+
+  useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));
+
+  useEffect(() => subscribe((event) => {
+    if (!affectsWorkOrders(event)) return;
+    refreshActive(event.source === 'local');
+    const targetId = event.work_order_id;
+    if (workOrder && (!targetId || targetId === workOrder.id)) {
+      request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`)
+        .then((detail) => {
+          setWorkOrder(detail);
+          setStep(detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+        })
+        .catch(() => undefined);
+    }
+  }), [refreshActive, request, subscribe, workOrder]);
+
+  useEffect(() => {
+    const id = Number(params.workOrderId);
+    if (id > 0 && user) openExisting(id);
+    // openExisting is intentionally invoked only for a new deep-link id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.workOrderId, user]);
 
   const editable = workOrder?.status === 'draft';
   const canSaveEquipment = useMemo(
@@ -213,6 +256,9 @@ export default function WorkOrdersScreen() {
       setTicketOpen(false);
       setTicketReason('');
       setTicketDescription('');
+      publishLocalChange({
+        event_type: 'ticket.created', entity_type: 'ticket', work_order_id: workOrder.id,
+      });
       Alert.alert('Solicitud enviada', 'La OT seguirá cerrada hasta que un usuario autorizado apruebe el ticket.');
     } catch (error) {
       Alert.alert('No fue posible crear el ticket', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -276,6 +322,9 @@ export default function WorkOrdersScreen() {
       setWorkOrder(detail);
       setClientName(detail.contact_name ?? '');
       setStep('capture');
+      publishLocalChange({
+        event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id,
+      });
     } catch (error) {
       Alert.alert('No fue posible crear la OT', error instanceof Error ? error.message : 'Revisa los datos');
     } finally {
@@ -319,6 +368,7 @@ export default function WorkOrdersScreen() {
       });
       setWorkOrder(detail);
       setEquipmentEditor(null);
+      publishLocalChange({ event_type: detail.signature_required ? 'ticket.signature_required' : 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
       Alert.alert('No fue posible guardar el equipo', error instanceof Error ? error.message : 'Revisa los datos');
     } finally {
@@ -336,6 +386,7 @@ export default function WorkOrdersScreen() {
       );
       setWorkOrder(detail);
       setEquipmentEditor(null);
+      publishLocalChange({ event_type: detail.signature_required ? 'ticket.signature_required' : 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
       Alert.alert('No fue posible eliminar el equipo', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -347,10 +398,12 @@ export default function WorkOrdersScreen() {
     if (!workOrder) return;
     setBusy(true);
     try {
-      setWorkOrder(await request<LabWorkOrder>(
+      const detail = await request<LabWorkOrder>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/additional`,
         { method: 'POST' },
-      ));
+      );
+      setWorkOrder(detail);
+      publishLocalChange({ event_type: detail.signature_required ? 'ticket.signature_required' : 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
       Alert.alert('No fue posible asignar la OT extra', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -363,7 +416,7 @@ export default function WorkOrdersScreen() {
     setBusy(true);
     const signedAt = new Date().toISOString();
     try {
-      setWorkOrder(await request<LabWorkOrder>(
+      const detail = await request<LabWorkOrder>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/signatures`,
         {
           method: 'POST',
@@ -372,7 +425,9 @@ export default function WorkOrdersScreen() {
             client: { signer_name: clientName, signed_at: signedAt, version: 1, signature_data_url: clientSignature },
           }),
         },
-      ));
+      );
+      setWorkOrder(detail);
+      publishLocalChange({ event_type: 'work_order.signatures_updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
       Alert.alert('No fue posible aplicar las firmas', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -384,12 +439,14 @@ export default function WorkOrdersScreen() {
     if (!workOrder) return;
     setBusy(true);
     try {
-      setWorkOrder(await request<LabWorkOrder>(
+      const detail = await request<LabWorkOrder>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/complete`,
         { method: 'POST' },
-      ));
+      );
+      setWorkOrder(detail);
       setStep('completed');
       await refresh();
+      publishLocalChange({ event_type: 'work_order.completed', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
       Alert.alert('No fue posible finalizar el grupo', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -473,7 +530,7 @@ export default function WorkOrdersScreen() {
       </View>
       <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>
       {loading ? <ActivityIndicator style={styles.loader} /> : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
           {!!listError && (
             <View style={styles.errorState}>
               <Text style={styles.errorText}>{listError}</Text>

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-08-11
+> Corte verificado: 2026-08-14
 
 # Flujo operativo actual
 
@@ -427,3 +427,23 @@ cada edición valida `edit_version`; los cambios estructurales invalidan la
 firma activa; el cierre exige firma válida, genera PDF nuevo y resuelve el
 Ticket. El PDF y firma anteriores permanecen consultables.
 - Certificados sin pago pueden liberarse sólo cuando el ETS no requiere pago; no se documentó una excepción financiera general independiente del modelo actual.
+
+## Flujo de notificaciones operativas móviles V1
+
+```text
+Ticket creado/aprobado/rechazado/resuelto o firma requerida
+→ resolver destinatarios por permiso/solicitante
+→ persistir Notification con event_key único
+→ commit de dominio y notificación
+→ intentar Expo Push sobre PushDevice activos
+→ MYC Mobile invalida lista, detalle y badge
+→ API autenticada devuelve el estado actual
+```
+
+Al login/restaurar sesión se registra el token Expo del dispositivo físico. Al
+logout se desactiva esa asociación. En foreground el evento actualiza los
+recursos activos; al volver desde background o recuperar foco se hace un
+refetch acotado; una mutación local invalida inmediatamente. El toque de un
+push conserva el destino durante la restauración de sesión, pero nunca usa el
+payload como detalle permanente. Pull-to-refresh sigue disponible y no existe
+polling global.

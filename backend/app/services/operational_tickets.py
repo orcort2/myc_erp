@@ -20,6 +20,12 @@ from app.schemas.operational_ticket import (
 from app.services.audit_logs import write_audit_log
 from app.services.auth import user_has_permission
 from app.services.lab_work_orders import _get, _group, _root_id
+from app.services.notification_events import (
+    notify_ticket_approved,
+    notify_ticket_created,
+    notify_ticket_rejected,
+)
+from app.services.push_notifications import commit_and_dispatch_notifications
 
 
 def _ticket_query():
@@ -106,7 +112,8 @@ def create_reopen_ticket(
         user_id=user.id,
         new_values={"type": ticket.type, "work_order_id": work_order.id},
     )
-    db.commit()
+    notify_ticket_created(db, ticket, user)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 
@@ -247,7 +254,8 @@ def approve_reopen_ticket(
             "revision": work_order.revision_number,
         },
     )
-    db.commit()
+    notify_ticket_approved(db, ticket, user, signature_required=not preserve)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 
@@ -270,7 +278,8 @@ def reject_ticket(
         previous_values={"status": "pending"},
         new_values={"status": "rejected"},
     )
-    db.commit()
+    notify_ticket_rejected(db, ticket, user)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 

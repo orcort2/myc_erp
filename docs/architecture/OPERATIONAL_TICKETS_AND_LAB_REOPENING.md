@@ -104,6 +104,15 @@ segundo approve/reject, incluso si esperó el lock de otra transacción, respond
 409 `TICKET_ALREADY_RESOLVED`. El cierre repetido del grupo permanece
 idempotente.
 
+## Eventos de notificación
+
+Las transiciones válidas publican, dentro de su misma transacción,
+`ticket.created`, `ticket.approved`, `ticket.rejected`, `ticket.resolved` y,
+cuando corresponde, `ticket.signature_required`. Notifications consume el
+resultado sin cambiar locks, policies de firma, revisiones ni resolución
+única. La entrega Expo ocurre después del commit conforme al contrato
+[`MOBILE_NOTIFICATIONS_V1.md`](MOBILE_NOTIFICATIONS_V1.md).
+
 ## Límite vigente
 
 Este contrato se aplica al agregado temporal OT LAB. No cambia ServiceOrder,

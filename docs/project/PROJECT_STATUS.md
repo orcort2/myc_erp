@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-11 — conciliación TD-027; sin cambio de clasificación global
+> Corte verificado: 2026-08-14 — Notifications V1; sin cambio de clasificación global
 
 # Estado actual del ERP MYC
 
@@ -193,6 +193,13 @@ permisos; snapshots, PDF por revisión, preservación condicionada e invalidaci�
 automática de firmas, auditoría y control optimista. Permanece **EN
 DESARROLLO** hasta repetir el checklist físico del nuevo sprint; no se publicó
 una nueva build TestFlight.
+
+Notifications V1 también está **TERMINADO TÉCNICAMENTE — EN REVISIÓN** dentro
+de Actividad/Notificaciones/Communications: persiste eventos de Tickets,
+registra múltiples dispositivos, entrega por Expo sin revertir dominio y añade
+centro, badge, deep links y refresco automático de Tickets/OT. Conserva el
+estado canónico `EN DESARROLLO` hasta el checklist físico iOS/Android y la
+decisión posterior sobre cola durable/receipts; no hubo build EAS ni despliegue.
 
 ## Regla de mantenimiento
 

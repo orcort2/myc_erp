@@ -31,6 +31,11 @@ from app.schemas.lab_work_order import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
+from app.services.notification_events import (
+    notify_ticket_resolved,
+    notify_ticket_signature_required,
+)
+from app.services.push_notifications import commit_and_dispatch_notifications
 
 
 LAB_FOLIO_MIN = 6400
@@ -144,6 +149,11 @@ def invalidate_group_signatures(
         previous_values={"signature_session_ids": previous_session_ids},
         new_values={"critical_fields": fields, "signature_required": True},
     )
+    ticket_id = next((item.reopen_ticket_id for item in group if item.reopen_ticket_id), None)
+    if ticket_id is not None:
+        ticket = db.scalar(select(OperationalTicket).where(OperationalTicket.id == ticket_id))
+        if ticket is not None:
+            notify_ticket_signature_required(db, ticket, user)
 
 
 def _allocate_folio(db: Session) -> int:
@@ -214,7 +224,7 @@ def create_work_order(db: Session, payload: LabWorkOrderCreate, user: User) -> L
         user_id=user.id,
         new_values={"folio": work_order.folio, "root_work_order_id": work_order.id},
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
 
 
@@ -294,7 +304,7 @@ def update_work_order(
         user_id=user.id,
         new_values={"fields": sorted(updates), "group_size": len(group)},
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order_id))
 
 
@@ -330,7 +340,7 @@ def add_equipment(
         user_id=user.id,
         new_values={"work_order_id": work_order.id, "position": equipment.position},
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order_id))
 
 
@@ -372,7 +382,7 @@ def update_equipment(
         user_id=user.id,
         new_values={"work_order_id": work_order.id},
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order_id))
 
 
@@ -419,7 +429,7 @@ def delete_equipment(
         user_id=user.id,
         previous_values={"work_order_id": work_order.id, "position": removed_position},
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order_id))
 
 
@@ -466,7 +476,7 @@ def create_additional_work_order(db: Session, work_order_id: int, user: User) ->
             "sequence_number": additional.sequence_number,
         },
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, additional.id))
 
 
@@ -525,7 +535,7 @@ def sign_group(
         user_id=user.id,
         new_values={"signature_session_id": session.id, "work_order_ids": [item.id for item in group]},
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order_id))
 
 
@@ -560,6 +570,7 @@ def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderR
         for ticket in tickets:
             ticket.status = "resolved"
             ticket.resolved_at = completed_at
+            notify_ticket_resolved(db, ticket, user)
     write_audit_log(
         db,
         action="lab_work_order.group_completed",
@@ -568,7 +579,7 @@ def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderR
         user_id=user.id,
         new_values={"work_order_ids": [item.id for item in group], "completed_at": completed_at.isoformat()},
     )
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order_id))
 
 

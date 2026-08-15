@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
 import { login as loginRequest, refresh as refreshRequest } from '@/src/services/auth.service';
+import { deactivateCurrentDevice } from '@/src/services/push-notifications';
 import { clearSession, readSession, writeSession } from '@/src/storage/secure-storage';
 import type { AuthUser, TokenPair } from '@/src/types/auth';
 
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return next.user;
     },
     async logout() {
+      if (session) await deactivateCurrentDevice(session.access_token).catch(() => undefined);
       await clearSession();
       setSession(null);
     },

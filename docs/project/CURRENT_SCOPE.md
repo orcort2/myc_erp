@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-08-10
+> Corte verificado: 2026-08-14
 
 # Alcance actual del ERP MYC
 
@@ -225,5 +225,20 @@ implementado y forma parte del alcance vigente.
   para cambios estructurales; las firmas históricas nunca se eliminan.
 - Control `edit_version`, auditoría e idempotencia de decisiones/reintentos.
 
-Quedan fuera push notifications, IA, cálculos metrológicos, otros tipos de
-Ticket, publicación EAS y extensión al agregado productivo ETS.
+Quedan fuera IA, cálculos metrológicos, otros tipos de Ticket, publicación EAS
+y extensión al agregado productivo ETS.
+
+## Alcance implementado 2026-08-14 — Notificaciones móviles V1
+
+- Notificación persistente propia con lectura, paginación y badge derivado de
+  `read_at`; dispositivos Expo autenticados, idempotentes y multi-dispositivo.
+- Eventos `ticket.created`, `ticket.approved`, `ticket.rejected`,
+  `ticket.resolved` y `ticket.signature_required`, con revisores resueltos por
+  permiso efectivo `tickets.review` y respuestas dirigidas al solicitante.
+- Centro MYC Mobile, deep links a Ticket/OT y refresco por push, foreground,
+  foco, mutación local y pull-to-refresh, sin polling periódico.
+- Entrega Expo best-effort posterior al commit; falla externa nunca revierte el
+  dominio ni elimina la notificación persistente.
+
+Quedan fuera de V1 retries durables/receipts, preferencias, quiet hours,
+agrupación, APNs/FCM directos, canales no push y aceptación física iOS/Android.

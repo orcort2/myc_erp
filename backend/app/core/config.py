@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     resolution_center_organization_id: str = "myc"
     enable_api_docs: bool = False
     enable_developer_portal: bool = False
+    expo_push_url: str = "https://exp.host/--/api/v2/push/send"
+    expo_push_timeout_seconds: float = Field(default=5, gt=0)
 
     @model_validator(mode="after")
     def validate_production_secret(self) -> "Settings":

@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -71,6 +72,10 @@ class Notification(TimestampMixin, Base):
         index=True,
     )
 
+    event_key: Mapped[str | None] = mapped_column(
+        String(220), nullable=True, unique=True, index=True
+    )
+
     title: Mapped[str] = mapped_column(
         String(180),
         nullable=False,
@@ -123,6 +128,13 @@ class Notification(TimestampMixin, Base):
         index=True,
     )
 
+    delivery_status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="pending", server_default="pending", index=True
+    )
+    push_attempted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    push_delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    error_code: Mapped[str | None] = mapped_column(String(80))
+
     dismissed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -146,3 +158,25 @@ class Notification(TimestampMixin, Base):
     activity_message: Mapped["ActivityMessage | None"] = relationship(
         foreign_keys=[activity_message_id],
     )
+
+
+class PushDevice(TimestampMixin, Base):
+    __tablename__ = "push_devices"
+    __table_args__ = (Index("ix_push_devices_user_active", "user_id", "is_active"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=False)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    expo_push_token: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    platform: Mapped[str] = mapped_column(String(20), nullable=False)
+    device_name: Mapped[str | None] = mapped_column(String(160))
+    app_version: Mapped[str | None] = mapped_column(String(40))
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true", index=True
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-08-11
+> Corte verificado: 2026-08-14
 
 # Registro de decisiones vigentes
 
@@ -263,3 +263,14 @@ productivo. Aprobar el Ticket es el único camino de reapertura. La política
 humana de preservación queda subordinada a una clasificación determinista
 backend. Se preserva el folio y se versionan PDF/sesión de firma; auditoría no
 es el almacenamiento único del lifecycle.
+
+## D-2026-08-14 — Notificaciones persistentes y Expo best-effort
+
+Se extiende el modelo `Notification` existente y se agrega `PushDevice`; no se
+crea una bandeja paralela. El evento y su notificación se confirman junto con
+la transición de dominio, y Expo se invoca sólo después del commit. Como el
+repositorio no tiene una cola genérica canónica, V1 usa un intento síncrono
+best-effort acotado; no reutiliza el outbox/worker del Motor de Resoluciones,
+cuya responsabilidad es exclusiva del Motor. La app invalida recursos por
+eventos y lifecycle de navegación, sin polling. Cola durable, receipts y
+preferencias requieren una fase posterior explícita.

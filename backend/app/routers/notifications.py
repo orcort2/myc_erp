@@ -8,6 +8,8 @@ from app.schemas.notification import (
     NotificationMarkRead,
     NotificationRead,
     NotificationUnreadCountRead,
+    PushDeviceCreate,
+    PushDeviceRead,
 )
 from app.services.auth import get_current_user
 from app.services.notifications import (
@@ -16,11 +18,35 @@ from app.services.notifications import (
     mark_all_notifications_read,
     mark_notification_read,
 )
+from app.services.push_notifications import deactivate_push_device, register_push_device
 
 router = APIRouter(
     prefix="/notifications",
     tags=["notifications"],
 )
+
+mobile_router = APIRouter(
+    prefix="/mobile/v1/notifications",
+    tags=["mobile-notifications"],
+)
+
+
+@mobile_router.post("/devices", response_model=PushDeviceRead, status_code=201)
+def post_push_device(
+    payload: PushDeviceCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return register_push_device(db, payload, current_user)
+
+
+@mobile_router.delete("/devices/{device_id}", response_model=PushDeviceRead)
+def delete_push_device(
+    device_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return deactivate_push_device(db, device_id, current_user)
 
 
 @router.get(

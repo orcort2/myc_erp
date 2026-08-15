@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: propuestas de refactorización o riesgos contenidos en auditorías y documentos históricos
 >
-> Corte verificado: 2026-08-11
+> Corte verificado: 2026-08-14
 
 # Deuda técnica vigente
 
@@ -41,6 +41,8 @@ No incluye funcionalidades futuras. Cada elemento corresponde a una condición p
 | TD-035 | P1 | El namespace móvil reutiliza access JWT interno y no tiene todavía sesión/revocación móvil, permisos individuales ni asignación multi-técnico por OT. | `mobile_technician.py`, autenticación interna y futura aplicación móvil | Diseñar esas capacidades en fases separadas sin relajar ownership ni cambiar las rutas web actuales. |
 | TD-036 | P1 | Portal/app todavía no exponen un endpoint de decisión por partida con identidad de cliente, ownership de organización/cotización, idempotencia externa y conciliación. La ruta interna rechaza esos orígenes y sólo deriva `internal`. | futuro adapter de portal/app sobre `QuotationItemDecision` | Diseñar el contrato explícito en una fase posterior; no aceptar `source`, `client_id` ni ownership desde payload y no reutilizar el endpoint interno. |
 | TD-037 | P1 | La versión operativa anterior de OT LAB fue validada físicamente, pero el sprint nuevo de Tickets, filtros, reapertura y revisiones aún no tiene repetición Android/iPhone/TestFlight ni pruebas automatizadas de componentes React Native. Custodia del ZIP y vulnerabilidades npm siguen pendientes. | `myc-mobile`, servicios LAB/Tickets y contratos | Ejecutar checklist físico nuevo, incorporar harness móvil compatible con Expo 54 y definir custodia/doble verificación antes de declarar cierre. |
+| TD-038 | P1 | Notifications V1 persiste antes de Expo y tolera fallos, pero el intento sigue en la petición, sin cola durable, retry ni consulta de receipts; `push_delivered_at` sólo representa aceptación de Expo. Tampoco existen preferencias, quiet hours o agrupación. | `push_notifications.py`, `Notification`, `PushDevice`, MYC Mobile | Validar físicamente iOS/Android y diseñar en fase propia una cola genérica/retry/receipts y preferencias; no reutilizar el worker del Motor ni volver el push fuente de verdad. |
+| TD-039 | P1 | `myc-mobile` reporta 23 advisories npm (11 moderados y 12 altos) después de instalar dependencias Expo SDK 54 compatibles; no se aplicó un fix mayor automático. | `myc-mobile/package-lock.json` | Auditar rutas transitivas, actualizar de forma compatible con Expo y repetir TypeScript, lint, Expo Doctor y pruebas físicas antes de release. |
 
 ## Criterio de retiro
 

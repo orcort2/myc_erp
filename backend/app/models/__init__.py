@@ -79,7 +79,7 @@ from app.models.lab_work_order import (
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
 from app.models.operational_ticket import OperationalTicket
-from app.models.notification import Notification
+from app.models.notification import Notification, PushDevice
 from app.models.portal_invitation import PortalInvitation
 from app.models.portal_invitation_role import PortalInvitationRole
 from app.models.portal_registration import PortalRegistration

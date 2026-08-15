@@ -54,6 +54,11 @@
   area, agrupan los campos y ocultan
   teléfono/correo; el PDF separa Domicilio, C.P., Ciudad, Estado y orden de
   compra sin `0` por ausencia. Falta aceptación física en iPhone/Expo Go.
+- Notifications V1 está **TERMINADO TÉCNICAMENTE — EN REVISIÓN FÍSICA**:
+  reutiliza `Notification`, registra `PushDevice`, persiste cinco eventos de
+  Tickets con destinatarios por permiso/solicitante, entrega Expo posterior al
+  commit y agrega centro, badge, deep links y refresco automático sin polling.
+  No hubo build EAS, despliegue ni migración de base compartida.
 - El P0 **Integridad de autenticación de Certificados** está **TERMINADO — EN
   REVISIÓN**: Calidad es la única superficie mutante, ETS perdió endpoint/lote
   y acciones, y `certificate_authentication.authenticate_certificate` conserva
@@ -100,7 +105,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
 - Head aplicado a la base local compartida: `c6e8a1b4d2f9`.
-- Head del código: `d4e7a9c2b6f1`.
+- Head del código: `e6b8c0d2f4a6`.
 - `e7b62b8a9421` incorpora `service_order_exception_requests` para conservar
   solicitud, autorización, ejecución, actores, timestamps y estado ETS de
   revalidación sin usar auditoría como almacenamiento de lifecycle.
@@ -115,6 +120,10 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
   limpio. `d4e7a9c2b6f1` agrega Tickets/revisiones LAB y fue validada con
   upgrade/downgrade/upgrade en PostgreSQL aislado; la base compartida permanece
   en `c6e8a1b4d2f9` y no fue modificada por este sprint.
+- `e6b8c0d2f4a6` agrega idempotencia/estado de entrega a `notifications` y la
+  tabla `push_devices`. En PostgreSQL aislado quedó como head único,
+  `alembic check` limpio y navegó `d4e7a9c2b6f1 → e6b8c0d2f4a6 →
+  d4e7a9c2b6f1 → e6b8c0d2f4a6`.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
 - Upgrade desde el respaldo histórico en `b03b4c5d6e7f` hasta el head:
@@ -141,7 +150,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
   ni en `backend/`; los metadatos históricos de tamaño/hash dejan de describir
   un artefacto verificable local.
 - Este sprint no modificó la base compartida (`c6e8a1b4d2f9`), por lo que no
-  regeneró un dump. Antes de aplicar `d4e7a9c2b6f1` a esa base debe generarse el
+  regeneró un dump. Antes de aplicar `e6b8c0d2f4a6` a esa base debe generarse el
   respaldo oficial y, después del upgrade, confirmar que `alembic_version`
   coincida con el head.
 - El procedimiento vigente permanece en
@@ -151,7 +160,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend canónico | 514 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados; los cuatro skips nuevos requieren `LAB_POSTGRES_TEST_URL` y fueron ejecutados separadamente contra PostgreSQL real |
+| Backend canónico | 518 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
 | Aislamiento móvil técnico | 21 passed; ETS/OT/Equipo/Hoja A/B, sin asignación, 401, 403 y doble permiso de hojas |
 | Escenarios Fase 1 ETS múltiple/evolucionado | 10 passed; A–H, permisos, mixto SG/calibración/mantenimiento, evolución indebida/posterior, lifecycle, categorías y unicidad |
 | Regresión focal ETS/calibración/Activity/cotizaciones/permisos | 53 passed, 2 warnings |
@@ -163,18 +172,21 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 42 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Inventario FastAPI | 390/390 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
+| Inventario FastAPI | 392/392 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
 | OT LAB backend/API/PDF/export/Tickets | 12 passed, 5 skipped sin URL PostgreSQL; cubre filtros, permisos, lifecycle, control optimista, firma preservada/invalidada, nueva firma y PDF histórico |
 | Tickets sobre PostgreSQL real | 4 passed en dos bases temporales eliminadas al finalizar: approve preserve, approve invalidate, rechazo definitivo y carrera approve/reject con un único 200 y un 409 |
+| Notifications/Tickets/OT focal | 23 passed, 5 skipped; devices idempotentes/multiusuario, ownership, lectura/paginación, eventos create/approve/reject/resolve/signature-required, Expo mock y resiliencia |
+| Notifications backend específica | 4 passed; incluye éxito, `DeviceNotRegistered`, proveedor caído y persistencia del dominio/notificación |
 | Migración LAB PostgreSQL temporal | `base → c6e8a1b4d2f9`; current correcto; `alembic check` sin operaciones nuevas; asignador concurrente `[6400, 6401]`; carrera de OT adicional: una `6403` y un rechazo `409`; base temporal eliminada |
-| `myc-mobile` TypeScript/lint | correcto / correcto después de incorporar `SafeAreaProvider` propio al modal de detalle de Tickets; Expo Doctor del corte previo fue 18/18 |
+| `myc-mobile` TypeScript/lint | correcto / correcto con centro, badge, deep links y refresco automático |
+| `myc-mobile` política de refresco | 4 passed; eventos, foreground, deduplicación y throttle/mutación local |
 | `myc-mobile` Expo Doctor SDK 54 | 18/18 checks |
 | Aislamiento portal A/B | membresía propia 200, recurso ajeno 404, anónimo 401; autenticador interno rechaza token del portal |
 | `scripts/myc doctor` | dependencias locales principales disponibles |
 | Alembic ciclo vacío base→head→base→head | correcto en PostgreSQL aislado |
 | Migración correctiva Fase 1 reversible | base aislada `base → a7c2e5f8b1d4 → f4a1c9d2e710 → a7c2e5f8b1d4`; current ETS correcto |
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
-| Alembic current/check | base principal no modificada en `c6e8a1b4d2f9`; head de código `d4e7a9c2b6f1` validado limpio en base aislada; warning cíclico ETS preexistente |
+| Alembic current/check | base principal no modificada en `c6e8a1b4d2f9`; head de código `e6b8c0d2f4a6` validado limpio en base aislada |
 | Respaldo oficial regenerado | 74,306,112 bytes; contiene `f4a1c9d2e710`; restore drill no repetido en esta fase |
 | Validador Catálogo Institucional/permissions/API | VERDE: 78 permisos HTTP, baseline gobernado 25 brechas literales y 0 de bootstrap; cinco diferencias HTTP pertenecen al vertical móvil temporal LAB/Tickets |
 | Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
@@ -209,7 +221,7 @@ seguridad e inventario, se conserva en
 
 ## Seguridad y operación
 
-- Inventario introspectado: 383 operaciones HTTP, todas clasificadas por el
+- Inventario introspectado: 392 operaciones HTTP, todas clasificadas por el
   guard deny-by-default; el CSV canónico coincide con runtime.
 - Toda ruta interna pasa por el guard deny-by-default y el arranque/prueba de
   conformidad fallan si aparece una operación sin clasificación.

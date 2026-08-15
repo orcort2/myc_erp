@@ -204,6 +204,8 @@ POST,/api/invoices/{invoice_id}/source-change,invoices,invoice_source_change_rou
 POST,/api/invoices/{invoice_id}/status,invoices,change_status_route,authenticated_permission,access_jwt,invoices.manage,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/metrology/calculate-preview,metrology,post_calculate_preview,authenticated_permission,access_jwt,metrology.execute,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/metrology/profiles,metrology,get_profiles,authenticated_permission,access_jwt,metrology.execute,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
+POST,/api/mobile/v1/notifications/devices,mobile-notifications,post_push_device,authenticated,internal_access_jwt,,,internal_user,no,required,not_applicable,not_applicable,
+DELETE,/api/mobile/v1/notifications/devices/{device_id},mobile-notifications,delete_push_device,authenticated,internal_access_jwt,,,internal_user,no,required,not_applicable,not_applicable,
 GET,/api/mobile/v1/technician/equipment,mobile-technician,get_my_equipment,authenticated_permission,internal_access_jwt,service_orders.read_assigned,technician_id=current_user.id,internal_user,no,required,required,required,
 GET,/api/mobile/v1/technician/equipment/{equipment_id},mobile-technician,get_my_equipment_item,authenticated_permission,internal_access_jwt,service_orders.read_assigned,technician_id=current_user.id,internal_user,no,required,required,required,
 GET,/api/mobile/v1/technician/field-sheets,mobile-technician,get_my_field_sheets,authenticated_permission,internal_access_jwt,field_sheets.read,service_order.technician_id=current_user.id; also requires service_orders.read_assigned,internal_user,no,required,required,required,
