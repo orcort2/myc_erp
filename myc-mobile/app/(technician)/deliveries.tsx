@@ -45,7 +45,7 @@ export default function SaleDeliveriesScreen() {
       {item.status === 'technician_requested' ? <Pressable disabled={busy} style={styles.primary} onPress={() => action(`/mobile/v1/technician/sale-deliveries/${item.id}/accept`, { scheduled_for: new Date().toISOString() })}><Text style={styles.primaryText}>Aceptar y agendar ahora</Text></Pressable> : <>
         <TextInput onChangeText={setReceiver} placeholder="Nombre de quien recibe" style={styles.input} value={receiver} />
         <TextInput onChangeText={setEvidence} placeholder="Evidencia / referencia de entrega" style={styles.input} value={evidence} />
-        <Pressable disabled={busy || !receiver.trim() || !evidence.trim()} style={styles.primary} onPress={() => action(`/mobile/v1/technician/sale-deliveries/${item.id}/receive`, { receiver_name: receiver, evidence: { note: evidence } })}><Text style={styles.primaryText}>Confirmar entrega</Text></Pressable>
+        <Pressable disabled={busy || !receiver.trim() || !evidence.trim()} style={styles.primary} onPress={() => action(`/mobile/v1/technician/sale-deliveries/${item.id}/receive`, { receiver_name: receiver, evidence: { type: 'technician_attestation', note: evidence } })}><Text style={styles.primaryText}>Confirmar entrega</Text></Pressable>
       </>}
     </View>)}
     {!items.length ? <Text style={styles.empty}>No tienes entregas de Venta pendientes.</Text> : null}

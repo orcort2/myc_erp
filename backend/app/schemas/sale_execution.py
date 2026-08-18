@@ -1,4 +1,7 @@
 from datetime import date, datetime
+import base64
+import binascii
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -119,6 +122,7 @@ class SaleWarrantyReturnCreate(BaseModel):
 
 
 class SaleUnitResolution(BaseModel):
+    resolution: Literal["return_to_flow", "replacement", "commercial_cancellation"] = "return_to_flow"
     reason: str = Field(min_length=3, max_length=2000)
 
 
@@ -167,13 +171,37 @@ class SaleDeliveryAccept(BaseModel):
     scheduled_for: datetime
 
 
+class SaleTechnicianEvidence(BaseModel):
+    type: Literal["technician_attestation"]
+    note: str = Field(min_length=3, max_length=1000)
+    reference: str | None = Field(default=None, max_length=160)
+
+
 class SaleDeliveryConfirm(BaseModel):
     receiver_name: str = Field(min_length=2, max_length=180)
-    signature_data_url: str | None = None
-    evidence: dict | None = None
+    signature_data_url: str | None = Field(default=None, max_length=350_000)
+    evidence: SaleTechnicianEvidence | None = None
 
     @model_validator(mode="after")
-    def require_evidence(self):
+    def validate_confirmation(self):
         if not self.signature_data_url and not self.evidence:
-            raise ValueError("Se requiere firma o evidencia de recepción")
+            raise ValueError("Se requiere firma o evidencia técnica de recepción")
+        if self.signature_data_url:
+            match = re.fullmatch(
+                r"data:image/(png|jpeg);base64,([A-Za-z0-9+/]+={0,2})",
+                self.signature_data_url,
+            )
+            if match is None:
+                raise ValueError("La firma debe ser una imagen PNG/JPEG en data URL base64")
+            try:
+                binary = base64.b64decode(match.group(2), validate=True)
+            except (binascii.Error, ValueError) as exc:
+                raise ValueError("La firma contiene base64 inválido") from exc
+            if not binary or len(binary) > 256_000:
+                raise ValueError("La firma debe contener entre 1 byte y 250 KiB")
+            image_type = match.group(1)
+            if image_type == "png" and not binary.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise ValueError("La firma declarada como PNG no contiene un PNG válido")
+            if image_type == "jpeg" and not binary.startswith(b"\xff\xd8\xff"):
+                raise ValueError("La firma declarada como JPEG no contiene un JPEG válido")
         return self

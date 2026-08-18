@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from html import escape
 
 from fastapi import HTTPException, status
 from sqlalchemy import delete, func, or_, select
@@ -137,7 +138,7 @@ def initialize_sale_execution(db: Session, order: ServiceOrder, *, user_id: int)
                 work_order_id=work_order.id,
                 origin_service_order_item_id=service_item.id,
                 initial_category="sale",
-                evolution_enabled=True,
+                evolution_enabled=False,
                 name=service_item.service_name,
                 brand=config.get("brand"),
                 model=config.get("model"),
@@ -231,27 +232,28 @@ def _calibration_closed(db: Session, state: SaleUnitState) -> bool:
 def _refresh_statuses(db: Session, service_order_id: int) -> None:
     for item in db.scalars(_sale_item_query(service_order_id)).all():
         if item.requires_individual_identification:
-            for unit in item.units:
+            fulfillment_units = [unit for unit in item.units if unit.status != "replaced"]
+            for unit in fulfillment_units:
                 if unit.status == "calibration_pending" and _calibration_closed(db, unit):
                     unit.status = "ready_for_delivery"
-            item.arrived_quantity = sum(unit.arrived_at is not None for unit in item.units)
-            item.delivered_quantity = sum(unit.status == "delivered" for unit in item.units)
-            item.resolved_quantity = sum(unit.status == "resolved" for unit in item.units)
-            statuses = {unit.status for unit in item.units}
-            if statuses <= TERMINAL_UNIT_STATUSES and len(item.units) == item.ordered_quantity:
+            item.arrived_quantity = sum(unit.arrived_at is not None for unit in fulfillment_units)
+            item.delivered_quantity = sum(unit.status == "delivered" for unit in fulfillment_units)
+            item.resolved_quantity = sum(unit.status == "resolved" for unit in fulfillment_units)
+            statuses = {unit.status for unit in fulfillment_units}
+            if statuses <= TERMINAL_UNIT_STATUSES and len(fulfillment_units) == item.ordered_quantity:
                 item.status = "delivered" if statuses == {"delivered"} else "resolved"
             elif "commercial_review" in statuses:
                 item.status = "commercial_review"
             elif "warranty_return" in statuses:
                 item.status = "warranty_return"
-            elif any(unit.calibration_stage_id and not _calibration_closed(db, unit) for unit in item.units):
+            elif any(unit.calibration_stage_id and not _calibration_closed(db, unit) for unit in fulfillment_units):
                 item.status = "calibration_pending"
             elif item.delivered_quantity or item.resolved_quantity:
                 item.status = "partially_delivered"
             elif item.arrived_quantity:
                 item.status = "ready_for_delivery" if all(
                     unit.status in {"ready_for_delivery", "delivery_prepared"}
-                    for unit in item.units if unit.arrived_at is not None
+                    for unit in fulfillment_units if unit.arrived_at is not None
                 ) else "partially_arrived"
             else:
                 item.status = "pending_arrival"
@@ -282,6 +284,8 @@ def sale_blockers(db: Session, service_order_id: int) -> list[str]:
         if pending > 0:
             blockers.append(f"Partida {item.service_order_item_id}: {pending} unidad(es) pendientes")
         for unit in item.units:
+            if unit.status == "replaced":
+                continue
             if unit.status == "commercial_review":
                 blockers.append(f"Unidad {unit.id}: revisión comercial pendiente")
             if unit.status == "warranty_return":
@@ -331,13 +335,14 @@ def _matches(expected: str | None, actual: str | None) -> bool:
 
 def _consume_authorization(
     db: Session, authorization_id: int | None, *, expected_type: str, actor_id: int,
-    sale_item_id: int | None = None, unit_state_id: int | None = None,
+    service_order_id: int, sale_item_id: int | None = None, unit_state_id: int | None = None,
 ) -> SaleAuthorization | None:
     if authorization_id is None:
         return None
     authorization = db.get(SaleAuthorization, authorization_id)
     if (
         authorization is None or authorization.status != "authorized"
+        or authorization.service_order_id != service_order_id
         or authorization.authorization_type != expected_type
         or (sale_item_id is not None and authorization.sale_order_item_id != sale_item_id)
         or (unit_state_id is not None and authorization.sale_unit_state_id != unit_state_id)
@@ -406,7 +411,7 @@ def register_arrival(
     if discrepancy:
         authorization = _consume_authorization(
             db, payload.substitution_authorization_id, expected_type="substitution",
-            actor_id=actor.id, sale_item_id=item.id,
+            actor_id=actor.id, service_order_id=order.id, sale_item_id=item.id,
             unit_state_id=state.id if state else None,
         )
         if authorization is None:
@@ -516,18 +521,67 @@ def mark_warranty_return(db: Session, service_order_id: int, unit_state_id: int,
     return sale_board(db, order.id)
 
 
-def resolve_warranty_return(db: Session, service_order_id: int, unit_state_id: int, reason: str, *, actor: User):
+def resolve_warranty_return(
+    db: Session, service_order_id: int, unit_state_id: int, resolution: str,
+    reason: str, *, actor: User,
+):
     if not user_has_permission(actor, "service_orders.sales.authorize"):
         raise HTTPException(status_code=403, detail="La resolución de garantía requiere autorización administrativa")
     order = _active_sale_order(db, service_order_id)
     state = db.get(SaleUnitState, unit_state_id)
     if state is None or state.sale_order_item.service_order_id != order.id or state.status != "warranty_return":
         raise HTTPException(status_code=409, detail="La unidad no tiene un retorno por garantía abierto")
-    state.status = "resolved"
-    state.discrepancy_reason = f"Garantía resuelta: {reason}"
+    if resolution == "return_to_flow":
+        state.status = "ready_for_delivery" if _calibration_closed(db, state) else "calibration_pending"
+    elif resolution == "replacement":
+        original_unit = db.get(ServiceUnit, state.service_unit_id)
+        if state.calibration_stage_id and not _calibration_closed(db, state):
+            stage = db.get(ServiceStage, state.calibration_stage_id)
+            stage.status = "not_executable"
+            stage.result = {**(stage.result or {}), "warranty_resolution": "replacement"}
+        state.status = "replaced"
+        replacement = ServiceUnit(
+            service_order_id=order.id,
+            work_order_id=original_unit.work_order_id,
+            origin_service_order_item_id=original_unit.origin_service_order_item_id,
+            initial_category="sale",
+            evolution_enabled=False,
+            name=original_unit.name,
+            brand=original_unit.brand,
+            model=original_unit.model,
+            identification_status="pending",
+            identification_notes=f"Reemplazo en garantía de unidad Venta {state.id}",
+            status="pending_arrival",
+        )
+        db.add(replacement)
+        db.flush()
+        db.add(ServiceStage(
+            service_unit_id=replacement.id,
+            sequence=1,
+            category="sale",
+            status="planned",
+            origin="warranty_replacement",
+            quotation_item_id=db.get(ServiceOrderItem, state.sale_order_item.service_order_item_id).quotation_item_id,
+        ))
+        replacement_state = SaleUnitState(
+            service_unit_id=replacement.id,
+            status="pending_arrival",
+            discrepancy_reason=f"Reemplaza unidad {state.id}",
+        )
+        state.sale_order_item.units.append(replacement_state)
+    elif resolution == "commercial_cancellation":
+        if state.calibration_stage_id and not _calibration_closed(db, state):
+            stage = db.get(ServiceStage, state.calibration_stage_id)
+            stage.status = "not_executable"
+            stage.result = {**(stage.result or {}), "warranty_resolution": "commercial_cancellation"}
+        state.status = "resolved"
+    else:
+        raise HTTPException(status_code=422, detail="Resolución de garantía no soportada")
+    state.discrepancy_reason = f"Garantía {resolution}: {reason}"
     _refresh_statuses(db, order.id)
     write_audit_log(db, action="sale.warranty_resolved", entity="sale_unit_states",
-                    entity_id=state.id, user_id=actor.id, new_values={"reason": reason})
+                    entity_id=state.id, user_id=actor.id,
+                    new_values={"resolution": resolution, "reason": reason})
     db.commit()
     return sale_board(db, order.id)
 
@@ -539,6 +593,10 @@ def request_authorization(db: Session, service_order_id: int, payload: SaleAutho
         item = db.get(SaleOrderItem, payload.sale_order_item_id)
         if item is None or item.service_order_id != order.id:
             raise HTTPException(status_code=404, detail="Partida de Venta no encontrada")
+    if payload.sale_unit_state_id is not None:
+        state = db.get(SaleUnitState, payload.sale_unit_state_id)
+        if state is None or state.sale_order_item.service_order_id != order.id:
+            raise HTTPException(status_code=404, detail="Unidad de Venta no encontrada")
     authorization = SaleAuthorization(
         service_order_id=order.id, sale_order_item_id=payload.sale_order_item_id,
         sale_unit_state_id=payload.sale_unit_state_id,
@@ -586,14 +644,14 @@ def individualize_sale_item(db: Session, service_order_id: int, sale_item_id: in
     if item.arrived_quantity or item.delivered_quantity or item.resolved_quantity:
         raise HTTPException(status_code=409, detail="No se puede convertir una partida con movimiento previo")
     _consume_authorization(db, authorization_id, expected_type="individual_identification",
-                           actor_id=actor.id, sale_item_id=item.id)
+                           actor_id=actor.id, service_order_id=order.id, sale_item_id=item.id)
     work_order = sorted(order.work_orders, key=lambda value: value.sequence)[0]
     service_item = db.get(ServiceOrderItem, item.service_order_item_id)
     for sequence in range(item.ordered_quantity):
         unit = ServiceUnit(
             service_order_id=order.id, work_order_id=work_order.id,
             origin_service_order_item_id=service_item.id, initial_category="sale",
-            evolution_enabled=True, name=service_item.service_name,
+            evolution_enabled=False, name=service_item.service_name,
             identification_status="pending", status="pending_arrival",
         )
         db.add(unit); db.flush()
@@ -619,15 +677,27 @@ def add_later_calibration(db: Session, service_order_id: int, unit_state_id: int
         raise HTTPException(status_code=409, detail="La unidad ya tiene calibración asociada")
     if quotation_item_id is not None:
         quotation_item = db.get(QuotationItem, quotation_item_id)
+        belongs_to_sale = quotation_item is not None and (
+            quotation_item.quotation_id == order.quotation_id
+            or (
+                quotation_item.source_service_order_id == order.id
+                and quotation_item.source_service_unit_id in {None, state.service_unit_id}
+            )
+        )
         decision = db.scalar(select(QuotationItemDecision).where(
             QuotationItemDecision.quotation_item_id == quotation_item_id,
             QuotationItemDecision.decision == "approved",
         ))
-        if quotation_item is None or quotation_item.operational_category != "calibration" or decision is None:
+        if (
+            quotation_item is None
+            or not belongs_to_sale
+            or quotation_item.operational_category != "calibration"
+            or decision is None
+        ):
             raise HTTPException(status_code=409, detail="La calibración con costo requiere partida comercial aprobada")
     else:
         _consume_authorization(db, authorization_id, expected_type="zero_cost_calibration",
-                               actor_id=actor.id, unit_state_id=state.id)
+                               actor_id=actor.id, service_order_id=order.id, unit_state_id=state.id)
     item = state.sale_order_item
     unit = db.get(ServiceUnit, state.service_unit_id)
     next_sequence = int(db.scalar(select(func.max(ServiceStage.sequence)).where(ServiceStage.service_unit_id == unit.id)) or 0) + 1
@@ -775,9 +845,15 @@ def confirm_delivery(db: Session, service_order_id: int, delivery_id: int, paylo
         raise HTTPException(status_code=403, detail="No puedes confirmar esta recepción")
     if delivery.status not in {"pickup_notified", "scheduled", "delivery_reported"}:
         raise HTTPException(status_code=409, detail="La entrega aún no puede recibirse")
+    if delivery.mode in {"courier", "client_pickup"} and not payload.signature_data_url:
+        raise HTTPException(status_code=422, detail="Paquetería y recolección requieren firma del receptor")
+    if delivery.mode == "myc_technician" and not payload.signature_data_url:
+        if payload.evidence is None or payload.evidence.type != "technician_attestation":
+            raise HTTPException(status_code=422, detail="La entrega técnica requiere firma o atestación del técnico")
     now = _now(); delivery.status = "delivered"; delivery.receiver_name = payload.receiver_name
     delivery.received_at = now; delivery.received_by_user_id = actor.id
-    delivery.signature_data_url = payload.signature_data_url; delivery.evidence = payload.evidence
+    delivery.signature_data_url = payload.signature_data_url
+    delivery.evidence = payload.evidence.model_dump(exclude_none=True) if payload.evidence else None
     delivery.confirmed_by_id = actor.id
     for line in delivery.lines:
         item = db.get(SaleOrderItem, line.sale_order_item_id)
@@ -840,9 +916,13 @@ def delivery_note_pdf(db: Session, service_order_id: int, delivery_id: int) -> t
         item = db.get(SaleOrderItem, line.sale_order_item_id)
         service_item = db.get(ServiceOrderItem, item.service_order_item_id)
         unit = db.get(SaleUnitState, line.sale_unit_state_id) if line.sale_unit_state_id else None
-        rows.append(f"<tr><td>{service_item.service_name}</td><td>{line.quantity}</td><td>{unit.serial_number if unit else '-'}</td></tr>")
+        rows.append(
+            f"<tr><td>{escape(str(service_item.service_name), quote=True)}</td>"
+            f"<td>{escape(str(line.quantity), quote=True)}</td>"
+            f"<td>{escape(str(unit.serial_number if unit and unit.serial_number else '-'), quote=True)}</td></tr>"
+        )
     html = f"""<html><body style='font-family:sans-serif'><h1>Nota de entrega</h1>
-    <p><strong>ETS:</strong> {order.folio}</p><p><strong>Modalidad:</strong> {delivery.mode}</p>
+    <p><strong>ETS:</strong> {escape(str(order.folio), quote=True)}</p><p><strong>Modalidad:</strong> {escape(str(delivery.mode), quote=True)}</p>
     <table style='width:100%;border-collapse:collapse' border='1'><tr><th>Concepto</th><th>Cantidad</th><th>Serie</th></tr>{''.join(rows)}</table>
-    <p>Receptor: {delivery.receiver_name or 'Pendiente'} &nbsp; Fecha: {delivery.received_at or 'Pendiente'}</p></body></html>"""
+    <p>Receptor: {escape(str(delivery.receiver_name or 'Pendiente'), quote=True)} &nbsp; Fecha: {escape(str(delivery.received_at or 'Pendiente'), quote=True)}</p></body></html>"""
     return HTML(string=html).write_pdf(), f"{order.folio}-NOTA-ENTREGA-{delivery.id}.pdf"

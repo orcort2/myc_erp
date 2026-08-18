@@ -233,6 +233,11 @@ recolección, paquetería o técnico; calibración incluida continúa sobre la m
 `ServiceUnit`/`Equipment` y bloquea la entrega hasta quedar cerrada. Portal y
 MYC Mobile confirman recepción con evidencia según ownership.
 
+La revisión tester quedó corregida: Venta usa unidades no evolutivas;
+Calibración posterior rechaza cotizaciones cruzadas; garantía separa retorno,
+reemplazo y cancelación; recepción valida firma/atestación acotada; y la nota
+PDF escapa todo dato dinámico. La regresión completa permanece verde.
+
 No se marca aceptado ni sellado: falta aceptación funcional en navegador y en
 dispositivo físico, y permanecen las deudas TD-043/TD-044. No se abrieron
 workflows de otras categorías.

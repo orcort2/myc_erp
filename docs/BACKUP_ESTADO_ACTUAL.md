@@ -47,7 +47,10 @@
   materializa unidades o cantidades desde snapshot, registra arribo exclusivo
   del asesor, discrepancias/autorizaciones, calibración sobre la misma unidad,
   garantía y entregas parciales por recolección, paquetería o técnico. Portal y
-  MYC Mobile confirman recepción con evidencia; falta aceptación física/browser.
+  MYC Mobile confirman recepción con evidencia. La auditoría tester quedó
+  corregida: unidades no evolutivas, vínculo comercial estricto de calibración,
+  garantía no terminal por defecto, firma/atestación acotada y PDF escapado.
+  Falta aceptación física/browser.
 - El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho
   lecturas conservan ownership y tres rutas Venta permiten sólo listar, aceptar
   y confirmar entregas asignadas con evidencia. La app LAB no consume
@@ -137,7 +140,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
 - Head aplicado a la base local compartida: `f7c9d1e3a5b7`.
-- Head del código: `b9d1f3a5c7e9`.
+- Head del código: `c0e2f4a6b8d1`.
 - `e7b62b8a9421` incorpora `service_order_exception_requests` para conservar
   solicitud, autorización, ejecución, actores, timestamps y estado ETS de
   revalidación sin usar auditoría como almacenamiento de lifecycle.
@@ -169,6 +172,10 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
   ciclo aislado `base → head → base → head` y `alembic check` fueron correctos.
   La base compartida y el respaldo permanecen deliberadamente en
   `f7c9d1e3a5b7`; no se modificaron ni regeneraron en este trabajo.
+- `c0e2f4a6b8d1` desactiva evolución genérica exclusivamente para unidades
+  Venta históricas. No cambia esquema; el ciclo PostgreSQL
+  `base → head → base → head` y `alembic check` quedaron correctos contra este
+  nuevo head; la base temporal fue eliminada.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
 - Upgrade desde el respaldo histórico en `b03b4c5d6e7f` hasta el head:
@@ -204,7 +211,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend canónico | 560 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
+| Backend canónico | 564 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
 | Identidad operativa/snapshot focal | 38 passed, 12 subtests; congelamiento, reapertura, categorías conocidas/Servicio General, compuestos, calibración y Hojas de Campo |
 | Comunicaciones/realtime focal | 14 passed; persistencia→evento, deduplicación, sync, recibos, menciones, IDOR, typing y multi-dispositivo |
 | Concurrencia Comunicaciones PostgreSQL | 5 escritores conservaron secuencias 1–5; 2 reintentos simultáneos compartieron un solo mensaje/sequence 6; base temporal eliminada |
@@ -219,8 +226,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 43 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Backend suite completa del corte | 560 passed, 5 skipped y 19 subtests; head esperado sincronizado en `b9d1f3a5c7e9` |
-| ETS Venta focal | 12 passed; snapshot, serial/cantidad, parciales, calibración, discrepancia/autorización, garantía, tres entregas, aceptación automática, compatibilidad histórica y ETS mixto |
+| Backend suite completa del corte | 564 passed, 5 skipped y 19 subtests; head esperado sincronizado en `c0e2f4a6b8d1` |
+| ETS Venta/identidad/evolución focal | 31 passed; evolución exclusiva de Servicio General, vínculo comercial de calibración, garantía, evidencia acotada, PDF escapado, Portal/Mobile, parciales y snapshot |
 | Inventario FastAPI | 419/419 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
 | Eliminación OT productiva dirigida | 43 passed; admin/403/404, estados, dependencias, bloqueo por evidencia inmutable, firma compartida, factura, lectura móvil y rollback de base/archivo |
 | Frontend eliminación OT | 5 passed; capacidad exacta, ocultamiento sin permiso y regresión de access control/autenticación |
@@ -353,5 +360,5 @@ Comunicaciones lo llevaron finalmente a `f7c9d1e3a5b7`. El respaldo oficial
 vigente conserva 75,050,260 bytes, coincide con ese head y superó restore
 drill, sin versionarse en Git.
 La identidad operativa y ETS Venta elevaron el head del código a
-`b9d1f3a5c7e9`; ambos ciclos se validaron en PostgreSQL temporal sin tocar la
+`c0e2f4a6b8d1`; los ciclos se validaron en PostgreSQL temporal sin tocar la
 base compartida ni el respaldo oficial. El vertical queda **EN REVISIÓN**.

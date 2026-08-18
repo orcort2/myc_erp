@@ -45,6 +45,11 @@ Al aprobar una cotización con al menos una partida `sale` se crea idempotenteme
 
 La proyección automática sin movimientos se considera derivada y reconstruible. Cualquier arribo, autorización o entrega bloquea la reconstrucción física controlada del ETS.
 
+Toda `ServiceUnit` de Venta usa `evolution_enabled=false`. La posibilidad de
+agregar Calibración pertenece exclusivamente a `add_later_calibration()` y no
+habilita `add_service_stage()` ni el diagnóstico evolutivo genérico. Sólo una
+unidad nacida de `general_service` conserva `evolution_enabled=true`.
+
 ## Arribo
 
 Sólo el asesor asignado —o una autoridad administrativa— registra arribos. El alta compara marca, modelo y especificación con el snapshot. Una discrepancia persiste `commercial_review` y bloquea el alta hasta consumir una autorización de sustitución; nunca modifica el catálogo histórico.
@@ -55,11 +60,22 @@ Una unidad serializada crea un único `Equipment` y enlaza ese mismo ID a `Servi
 
 Una calibración incluida agrega una etapa `calibration/authorized` sobre la misma `ServiceUnit`, conserva el mismo `Equipment` y genera el único certificado esperado del componente de Calibración. La Venta pura no genera certificado.
 
-La entrega queda bloqueada mientras esa etapa no termine en `completed`, `not_executable` o `exception_closed`. Una calibración posterior con costo requiere una partida `calibration` aprobada; una de costo cero consume autorización administrativa auditada.
+La entrega queda bloqueada mientras esa etapa no termine en `completed`,
+`not_executable` o `exception_closed`. Una calibración posterior con costo
+requiere una partida `calibration` aprobada de la cotización del ETS o de una
+cotización posterior cuyo `source_service_order_id` y, cuando aplique,
+`source_service_unit_id` apunten a esta operación. Una partida aprobada de otra
+cotización se rechaza. Una calibración de costo cero consume autorización del
+mismo ETS y unidad.
 
 ## Garantía, entrega y recepción
 
-`warranty_return` conserva el arribo/equipo y bloquea entrega/cierre. Su resolución formal es administrativa y deja la unidad `resolved` con auditoría.
+`warranty_return` conserva el arribo/equipo y bloquea entrega/cierre. Su
+resolución administrativa distingue: `return_to_flow`, que devuelve la unidad
+a liberación/calibración y no descuenta obligación; `replacement`, que conserva
+la unidad defectuosa como `replaced` y crea otra unidad Venta pendiente; y
+`commercial_cancellation`, única resolución definitiva que incrementa la
+cantidad formalmente resuelta.
 
 Las modalidades persistidas son:
 
@@ -69,11 +85,22 @@ Las modalidades persistidas son:
 
 No hay mapas, Waze, tracking externo ni Gmail. La nota se genera como PDF institucional básico desde el agregado de entrega.
 
-`SaleDeliveryLine` enlaza una unidad serializada o una cantidad no serializada. La recepción registra persona, fecha, actor, modalidad, firma/evidencia y actualiza únicamente esas líneas; por ello admite entregas parciales.
+`SaleDeliveryLine` enlaza una unidad serializada o una cantidad no serializada.
+Paquetería y recolección requieren firma PNG/JPEG real. Entrega MYC requiere
+firma o una atestación estructurada `technician_attestation` del técnico
+asignado. Las firmas aceptan sólo data URL base64 PNG/JPEG válido, máximo 250
+KiB; la atestación limita tipo, nota y referencia. JSON arbitrario no satisface
+recepción. Portal conserva firma y Mobile envía la atestación tipada.
+
+El HTML de la nota escapa folio, modalidad, conceptos, cantidades, series,
+receptor y fecha antes de invocar WeasyPrint.
 
 ## Estados y cierre
 
-La operación conserva estado en ETS, partida, unidad y entrega. Los estados de unidad relevantes son `pending_arrival`, `commercial_review`, `arrived`, `calibration_pending`, `ready_for_delivery`, `delivery_prepared`, `warranty_return`, `delivered` y `resolved`.
+La operación conserva estado en ETS, partida, unidad y entrega. Los estados de
+unidad relevantes incluyen `pending_arrival`, `commercial_review`, `arrived`,
+`calibration_pending`, `ready_for_delivery`, `delivery_prepared`,
+`warranty_return`, `replaced`, `delivered` y `resolved`.
 
 El cierre exige simultáneamente:
 
@@ -103,3 +130,7 @@ proyección conserva su estado al consultarse; el asesor puede inicializarlo
 explícita e idempotentemente desde su snapshot. No se aplicó la migración a la
 base local compartida durante esta entrega; el respaldo oficial conserva el
 head anterior hasta el despliegue controlado.
+
+La migración de datos `c0e2f4a6b8d1` sigue a `b9d1f3a5c7e9` y corrige las
+unidades Venta ya materializadas estableciendo `evolution_enabled=false` sólo
+cuando `initial_category='sale'`. No cambia esquema ni toca Servicio General.

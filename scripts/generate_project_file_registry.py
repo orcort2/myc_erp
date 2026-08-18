@@ -40,6 +40,7 @@ STATUS_OVERRIDES = {
     "backend/app/schemas/sale_execution.py": "En revisión",
     "backend/app/services/sale_execution.py": "En revisión",
     "backend/migrations/versions/b9d1f3a5c7e9_add_sale_ets_execution.py": "En revisión",
+    "backend/migrations/versions/c0e2f4a6b8d1_disable_sale_generic_evolution.py": "En revisión",
     "backend/tests/test_sale_ets_execution.py": "En revisión",
     "docs/architecture/SALE_ETS_EXECUTION.md": "En revisión",
     "frontend/src/components/ets-sales/SaleEtsTab.jsx": "En revisión",
@@ -338,6 +339,7 @@ FORCE_RECLASSIFY.update({
     "backend/app/schemas/sale_execution.py",
     "backend/app/services/sale_execution.py",
     "backend/migrations/versions/b9d1f3a5c7e9_add_sale_ets_execution.py",
+    "backend/migrations/versions/c0e2f4a6b8d1_disable_sale_generic_evolution.py",
     "backend/tests/test_sale_ets_execution.py",
     "docs/architecture/SALE_ETS_EXECUTION.md",
     "frontend/src/components/ets-sales/SaleEtsTab.jsx",
@@ -504,15 +506,16 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
 
     sale_files = {
         "backend/app/models/sale_execution.py": ("Persistencia ETS Venta", "Modela partidas congeladas, estado por unidad, autorizaciones y entregas/líneas parciales con integridad relacional.", "SQLAlchemy, ETS, ServiceUnit, usuarios y Alembic", "Servicio Venta, routers, Portal, móvil y pruebas", "Crítico"),
-        "backend/app/schemas/sale_execution.py": ("Contratos ETS Venta", "Valida arribos, autorizaciones, garantía, entregas, recepción con evidencia y proyección del board.", "Pydantic", "Routers web/Portal/móvil y frontend", "Crítico"),
-        "backend/app/services/sale_execution.py": ("Autoridad ETS Venta", "Materializa desde snapshot, gobierna arribo, discrepancia, calibración, garantía, entregas parciales, evidencia y cierre sin consultar catálogo vigente.", "Modelos Venta/ETS/Equipo/Certificado, auditoría y notificaciones", "Routers, frontend, Portal, MYC Mobile y pruebas", "Crítico"),
+        "backend/app/schemas/sale_execution.py": ("Contratos ETS Venta", "Valida arribos, autorizaciones, tres resoluciones de garantía y recepción con firma PNG/JPEG acotada o atestación técnica tipada.", "Pydantic, base64 y contratos Venta", "Routers web/Portal/móvil y frontend", "Crítico"),
+        "backend/app/services/sale_execution.py": ("Autoridad ETS Venta", "Materializa unidades no evolutivas, valida vínculo comercial de Calibración, gobierna garantía no terminal, evidencia por modalidad, PDF escapado y cierre.", "Modelos Venta/ETS/Equipo/Certificado, auditoría, HTML seguro y notificaciones", "Routers, frontend, Portal, MYC Mobile y pruebas", "Crítico"),
         "backend/migrations/versions/b9d1f3a5c7e9_add_sale_ets_execution.py": ("Migración ETS Venta", "Agrega configuración de catálogo, etapa sale y tablas normalizadas de ejecución Venta con constraints e índices reversibles.", "Alembic, PostgreSQL y a8c0e2f4b6d8", "Despliegue, rollback y validación de esquema", "Crítico"),
-        "backend/tests/test_sale_ets_execution.py": ("Suite ETS Venta", "Cubre snapshot, serial/cantidad, parciales, calibración, discrepancia, garantía, entregas, creación automática, histórico explícito y ETS mixto.", "Pytest, SQLAlchemy y servicios Venta/ETS", "Gate backend ETS Venta", "Crítico"),
-        "frontend/src/components/ets-sales/SaleEtsTab.jsx": ("Workbench ETS Venta", "Presenta partidas/unidades, arribo, garantía, entregas, evidencia, bloqueantes e inicialización histórica explícita.", "React, API compartida y estilos ETS Venta", "Asesores y usuarios ETS web", "Crítico"),
+        "backend/migrations/versions/c0e2f4a6b8d1_disable_sale_generic_evolution.py": ("Corrección de datos ETS Venta", "Desactiva evolución genérica en ServiceUnit históricas cuya categoría inicial es sale, con downgrade acotado y sin cambiar esquema.", "Alembic, PostgreSQL y b9d1f3a5c7e9", "Despliegue, rollback y compatibilidad histórica", "Crítico"),
+        "backend/tests/test_sale_ets_execution.py": ("Suite ETS Venta", "Cubre snapshot, evolución desactivada, calibración comercial propia/ajena, garantía diferenciada, firma/evidencia acotada, PDF escapado, Portal/Mobile y parciales.", "Pytest, Pydantic, SQLAlchemy y servicios Venta/ETS", "Gate backend ETS Venta", "Crítico"),
+        "frontend/src/components/ets-sales/SaleEtsTab.jsx": ("Workbench ETS Venta", "Presenta arribo, autorizaciones, tres resoluciones de garantía, entregas y firma/atestación según modalidad con bloqueantes visibles.", "React, API compartida y estilos ETS Venta", "Asesores y usuarios ETS web", "Crítico"),
         "frontend/src/components/ets-sales/sale-ets.css": ("Estilos ETS Venta", "Compone layout responsive de partidas, unidades, formularios, entregas y cierre dentro del lenguaje visual vigente.", "CSS y clases compartidas frontend", "SaleEtsTab", "Medio"),
-        "myc-mobile/app/(technician)/deliveries.tsx": ("Entregas Venta móviles", "Lista entregas asignadas y permite aceptar/agendar y confirmar recepción con evidencia sin operar arribos ni catálogo.", "Expo Router, AuthProvider y API móvil", "Técnicos MYC", "Crítico"),
+        "myc-mobile/app/(technician)/deliveries.tsx": ("Entregas Venta móviles", "Lista entregas asignadas y permite aceptar/agendar y confirmar recepción mediante atestación técnica estructurada, sin operar arribos ni catálogo.", "Expo Router, AuthProvider y API móvil", "Técnicos MYC", "Crítico"),
         "myc-mobile/src/types/sale-delivery.ts": ("Contrato móvil de entregas Venta", "Tipifica entrega, líneas, estados y payloads de aceptación/recepción.", "TypeScript", "Pantalla y cliente API móvil", "Alto"),
-        "docs/architecture/SALE_ETS_EXECUTION.md": ("Contrato arquitectónico ETS Venta", "Documenta autoridad snapshot, granularidad, arribos, calibración, garantía, entregas, seguridad, compatibilidad y cierre.", "Código, migración y pruebas Venta", "Arquitectura, desarrollo, QA y operación", "Crítico"),
+        "docs/architecture/SALE_ETS_EXECUTION.md": ("Contrato arquitectónico ETS Venta", "Documenta snapshot, frontera no evolutiva, vínculo comercial de Calibración, garantía diferenciada, evidencia acotada, PDF seguro y cierre.", "Código, migración y pruebas Venta", "Arquitectura, desarrollo, QA y operación", "Crítico"),
     }
     if value in sale_files:
         return sale_files[value]

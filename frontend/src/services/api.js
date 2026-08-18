@@ -756,6 +756,10 @@ export async function returnSaleWarranty(serviceOrderId, unitStateId, reason) {
   return request(`/service-orders/${serviceOrderId}/sale/units/${unitStateId}/warranty`, { method: 'POST', body: JSON.stringify({ reason }) });
 }
 
+export async function resolveSaleWarranty(serviceOrderId, unitStateId, payload) {
+  return request(`/service-orders/${serviceOrderId}/sale/units/${unitStateId}/warranty/resolve`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
 export function requestSaleAuthorization(serviceOrderId, payload) {
   return request(`/service-orders/${serviceOrderId}/sale/authorizations`, { method: 'POST', body: JSON.stringify(payload) });
 }

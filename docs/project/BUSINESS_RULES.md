@@ -164,10 +164,15 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    identificable conserva cantidades agregadas y parciales.
 3. Sólo el asesor asignado registra arribos. Una discrepancia contra los datos
    congelados bloquea hasta autorización.
-4. La calibración incluida agrega una etapa al mismo equipo/unidad y bloquea
-   su entrega hasta el cierre técnico vigente.
-5. Toda entrega parcial exige receptor y firma o evidencia para completarse.
-6. Garantías y revisiones abiertas bloquean el cierre; completar Venta en un
+4. Venta nunca habilita evolución genérica. Sólo Servicio General inicia con
+   diagnóstico evolutivo; Calibración posterior usa el contrato Venta y exige
+   partida aprobada vinculada al ETS/unidad o autorización del mismo ETS.
+5. Paquetería y recolección exigen firma PNG/JPEG válida de máximo 250 KiB.
+   Entrega técnica admite firma o atestación tipada del técnico asignado; JSON
+   arbitrario no es evidencia.
+6. Garantía distingue retorno al flujo, reemplazo pendiente y cancelación
+   comercial definitiva. Sólo la última descuenta la obligación sin entrega.
+   Garantías y revisiones abiertas bloquean el cierre; completar Venta en un
    ETS mixto no cierra partidas de otras categorías.
 7. La inicialización histórica es explícita, idempotente, auditada y usa sólo
    el snapshot, nunca el catálogo actual.

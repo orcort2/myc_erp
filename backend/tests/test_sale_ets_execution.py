@@ -14,7 +14,7 @@ from app.models.client import Client
 from app.models.certificate import Certificate
 from app.models.client_portal_membership import ClientPortalMembership
 from app.models.notification import Notification
-from app.models.quotation import Quotation, QuotationItem
+from app.models.quotation import Quotation, QuotationItem, QuotationItemDecision
 from app.models.sale_execution import SaleAuthorization, SaleDelivery, SaleOrderItem
 from app.models.service_execution import ServiceStage, ServiceUnit
 from app.models.service_order import ServiceOrder, ServiceOrderItem
@@ -33,6 +33,7 @@ from app.schemas.service_order import ServiceOrderCreate
 from app.services.quotations import _build_operational_snapshot, change_quotation_status
 from app.services.sale_execution import (
     accept_technician_delivery,
+    add_later_calibration,
     close_sale,
     confirm_delivery,
     create_delivery,
@@ -43,9 +44,17 @@ from app.services.sale_execution import (
     report_courier_delivery,
     request_authorization,
     resolve_authorization,
+    resolve_warranty_return,
     sale_board,
+    delivery_note_pdf,
 )
 from app.services.service_orders import create_service_order
+
+
+VALID_SIGNATURE = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
 
 
 @pytest.fixture()
@@ -117,6 +126,9 @@ def test_serialized_sale_freezes_configuration_and_materializes_independent_unit
     assert len(projection.units) == 3
     assert {unit.status for unit in projection.units} == {"pending_arrival"}
     assert db.query(ServiceUnit).filter(ServiceUnit.service_order_id == order.id).count() == 3
+    assert all(unit.evolution_enabled is False for unit in db.query(ServiceUnit).filter(
+        ServiceUnit.service_order_id == order.id
+    ))
 
     catalog.requires_individual_identification = False
     catalog.sale_model = "CATALOGO-NUEVO"
@@ -147,8 +159,8 @@ def test_nonserialized_partial_arrival_delivery_and_close(ctx):
         Notification.notification_type == "sale_ready_for_pickup",
     )) is not None
     confirmed = confirm_delivery(db, order.id, delivery_id, SaleDeliveryConfirm(
-        receiver_name="Compras Cliente", evidence={"folio": "REC-1"}
-    ), actor=advisor)
+        receiver_name="Compras Cliente", signature_data_url=VALID_SIGNATURE,
+    ), actor=portal_user, portal_client_id=client.id)
     assert confirmed["items"][0].delivered_quantity == 60
     assert any("40 unidad" in blocker for blocker in confirmed["blockers"])
     with pytest.raises(HTTPException):
@@ -161,7 +173,7 @@ def test_nonserialized_partial_arrival_delivery_and_close(ctx):
     ), actor=advisor)
     second_id = second["deliveries"][0].id
     dispatch_delivery(db, order.id, second_id, actor=advisor)
-    confirm_delivery(db, order.id, second_id, SaleDeliveryConfirm(receiver_name="Almacén", signature_data_url="data:image/png;base64,AA=="), actor=advisor)
+    confirm_delivery(db, order.id, second_id, SaleDeliveryConfirm(receiver_name="Almacén", signature_data_url=VALID_SIGNATURE), actor=advisor)
     assert close_sale(db, order.id, actor=advisor)["status"] == "closed"
 
 
@@ -247,6 +259,11 @@ def test_courier_and_technician_delivery_contracts_and_notifications(ctx):
     accepted = accept_technician_delivery(db, order.id, technician_delivery.id,
                                           SaleDeliveryAccept(scheduled_for=datetime.now(timezone.utc)), actor=technician)
     assert next(delivery for delivery in accepted["deliveries"] if delivery.id == technician_delivery.id).status == "scheduled"
+    received = confirm_delivery(db, order.id, technician_delivery.id, SaleDeliveryConfirm(
+        receiver_name="Cliente en sitio",
+        evidence={"type": "technician_attestation", "note": "Identidad del receptor verificada"},
+    ), actor=technician)
+    assert next(delivery for delivery in received["deliveries"] if delivery.id == technician_delivery.id).status == "delivered"
 
 
 def test_accepting_sale_quote_creates_single_sale_ets_and_audits(ctx):
@@ -298,9 +315,151 @@ def test_closing_sale_does_not_close_mixed_ets_with_open_non_sale_item(ctx):
     delivery_id = delivery["deliveries"][0].id
     dispatch_delivery(db, order.id, delivery_id, actor=advisor)
     confirm_delivery(db, order.id, delivery_id, SaleDeliveryConfirm(
-        receiver_name="Almacén", evidence={"folio": "MIX-1"},
+        receiver_name="Almacén", signature_data_url=VALID_SIGNATURE,
     ), actor=advisor)
 
     result = close_sale(db, order.id, actor=advisor)
     assert result["status"] != "closed"
     assert order.items[0].status == "completed"
+
+
+def test_later_calibration_rejects_approved_item_from_unrelated_quotation(ctx):
+    db, _, advisor, _, client = ctx
+    sale_catalog = _catalog(db, "Venta para calibración posterior", serial=True)
+    calibration = _calibration(db)
+    order = _order(db, client, advisor, sale_catalog, folio="COT-SALE-OWN")
+    sale_item = db.scalar(select(SaleOrderItem).where(SaleOrderItem.service_order_id == order.id))
+    state = sale_item.units[0]
+    register_arrival(db, order.id, sale_item.id, SaleArrivalCreate(
+        catalog_item_id=sale_catalog.id, serial_number="OWN-1", brand="MYC",
+        model="M-1", specification="Exacta",
+    ), actor=advisor, sale_unit_state_id=state.id)
+
+    foreign_quote = Quotation(
+        folio="COT-FOREIGN-CAL", client_id=client.id, advisor_id=advisor.id,
+        status="accepted", subtotal=Decimal("50"), tax_total=Decimal("8"), total=Decimal("58"),
+    )
+    foreign_item = QuotationItem(
+        catalog_item_id=calibration.id, service_name=calibration.name,
+        operational_category="calibration", commodity="calibration", quantity=1,
+        unit_price=Decimal("50"), discount_percent=Decimal("0"), tax_rate=Decimal("16"),
+        tax_total=Decimal("8"), total=Decimal("50"),
+    )
+    foreign_quote.items = [foreign_item]
+    db.add(foreign_quote); db.flush()
+    db.add(QuotationItemDecision(
+        quotation_item_id=foreign_item.id, decision="approved", decided_by_id=advisor.id,
+        decided_at=datetime.now(timezone.utc), source="internal", enabled_stage_categories=["calibration"],
+    ))
+    db.commit()
+
+    with pytest.raises(HTTPException, match="partida comercial aprobada"):
+        add_later_calibration(
+            db, order.id, state.id, actor=advisor, quotation_item_id=foreign_item.id,
+        )
+
+
+def test_warranty_return_replacement_and_commercial_cancellation_have_distinct_closure(ctx):
+    db, admin, advisor, _, client = ctx
+    catalog = _catalog(db, "Venta con garantía", serial=True)
+    order = _order(db, client, advisor, catalog, folio="COT-WARRANTY-FLOW")
+    item = db.scalar(select(SaleOrderItem).where(SaleOrderItem.service_order_id == order.id))
+    state = item.units[0]
+    register_arrival(db, order.id, item.id, SaleArrivalCreate(
+        catalog_item_id=catalog.id, serial_number="W-1", brand="MYC", model="M-1", specification="Exacta",
+    ), actor=advisor, sale_unit_state_id=state.id)
+    mark_warranty_return(db, order.id, state.id, "Falla inicial", actor=advisor)
+    returned = resolve_warranty_return(
+        db, order.id, state.id, "return_to_flow", "Unidad reparada", actor=admin,
+    )
+    assert returned["items"][0].units[0].status == "ready_for_delivery"
+    assert returned["items"][0].resolved_quantity == 0
+    with pytest.raises(HTTPException):
+        close_sale(db, order.id, actor=advisor)
+
+    mark_warranty_return(db, order.id, state.id, "Falla recurrente", actor=advisor)
+    replacement = resolve_warranty_return(
+        db, order.id, state.id, "replacement", "Proveedor reemplaza unidad", actor=admin,
+    )
+    statuses = {unit.status for unit in replacement["items"][0].units}
+    assert statuses == {"replaced", "pending_arrival"}
+    assert replacement["items"][0].resolved_quantity == 0
+    with pytest.raises(HTTPException):
+        close_sale(db, order.id, actor=advisor)
+
+    cancel_order = _order(db, client, advisor, catalog, folio="COT-WARRANTY-CANCEL")
+    cancel_item = db.scalar(select(SaleOrderItem).where(SaleOrderItem.service_order_id == cancel_order.id))
+    cancel_state = cancel_item.units[0]
+    register_arrival(db, cancel_order.id, cancel_item.id, SaleArrivalCreate(
+        catalog_item_id=catalog.id, serial_number="W-2", brand="MYC", model="M-1", specification="Exacta",
+    ), actor=advisor, sale_unit_state_id=cancel_state.id)
+    mark_warranty_return(db, cancel_order.id, cancel_state.id, "Sin reemplazo disponible", actor=advisor)
+    cancelled = resolve_warranty_return(
+        db, cancel_order.id, cancel_state.id, "commercial_cancellation",
+        "Cancelación comercial autorizada", actor=admin,
+    )
+    assert cancelled["items"][0].resolved_quantity == 1
+    assert close_sale(db, cancel_order.id, actor=advisor)["status"] == "closed"
+
+
+def test_delivery_confirmation_rejects_unstructured_or_oversized_evidence(ctx):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        SaleDeliveryConfirm(receiver_name="Cliente", evidence={"note": "texto libre"})
+    with pytest.raises(ValidationError):
+        SaleDeliveryConfirm(
+            receiver_name="Cliente",
+            signature_data_url="data:image/png;base64," + ("A" * 350_004),
+        )
+
+    db, _, advisor, technician, client = ctx
+    catalog = _catalog(db, "Entrega con evidencia")
+    order = _order(db, client, advisor, catalog, folio="COT-EVIDENCE")
+    item = db.scalar(select(SaleOrderItem).where(SaleOrderItem.service_order_id == order.id))
+    register_arrival(db, order.id, item.id, SaleArrivalCreate(
+        quantity=1, catalog_item_id=catalog.id, brand="MYC", model="M-1", specification="Exacta",
+    ), actor=advisor)
+    board = create_delivery(db, order.id, SaleDeliveryCreate(
+        mode="client_pickup", lines=[SaleDeliveryLineCreate(sale_order_item_id=item.id, quantity=1)],
+    ), actor=advisor)
+    delivery_id = board["deliveries"][0].id
+    dispatch_delivery(db, order.id, delivery_id, actor=advisor)
+    with pytest.raises(HTTPException, match="requieren firma"):
+        confirm_delivery(db, order.id, delivery_id, SaleDeliveryConfirm(
+            receiver_name="Cliente",
+            evidence={"type": "technician_attestation", "note": "Entrega observada"},
+        ), actor=advisor)
+
+
+def test_delivery_pdf_escapes_dynamic_values(ctx, monkeypatch):
+    from app.services import sale_execution as sale_service
+
+    db, _, advisor, _, client = ctx
+    catalog = _catalog(db, "<script>alert('catalog')</script>")
+    order = _order(db, client, advisor, catalog, folio="COT-PDF-SAFE")
+    item = db.scalar(select(SaleOrderItem).where(SaleOrderItem.service_order_id == order.id))
+    register_arrival(db, order.id, item.id, SaleArrivalCreate(
+        quantity=1, catalog_item_id=catalog.id, brand="MYC", model="M-1", specification="Exacta",
+    ), actor=advisor)
+    board = create_delivery(db, order.id, SaleDeliveryCreate(
+        mode="client_pickup", lines=[SaleDeliveryLineCreate(sale_order_item_id=item.id, quantity=1)],
+    ), actor=advisor)
+    delivery = board["deliveries"][0]
+    delivery.receiver_name = "<img src=x onerror=alert(1)>"
+    captured = {}
+
+    class FakeHTML:
+        def __init__(self, *, string):
+            captured["html"] = string
+
+        def write_pdf(self):
+            return b"%PDF-escaped"
+
+    monkeypatch.setattr(sale_service, "HTML", FakeHTML)
+    content, _ = delivery_note_pdf(db, order.id, delivery.id)
+    assert content == b"%PDF-escaped"
+    assert "<script>" not in captured["html"]
+    assert "&lt;script&gt;" in captured["html"]
+    assert "<img src=x" not in captured["html"]
+    assert "&lt;img src=x" in captured["html"]

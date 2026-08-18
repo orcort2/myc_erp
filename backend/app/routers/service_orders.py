@@ -142,7 +142,9 @@ def post_sale_warranty_resolution(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("service_orders.sales.authorize")),
 ):
-    return resolve_warranty_return(db, service_order_id, unit_state_id, payload.reason, actor=current_user)
+    return resolve_warranty_return(
+        db, service_order_id, unit_state_id, payload.resolution, payload.reason, actor=current_user,
+    )
 
 
 @router.post("/{service_order_id}/sale/authorizations", response_model=SaleAuthorizationRead, status_code=201)

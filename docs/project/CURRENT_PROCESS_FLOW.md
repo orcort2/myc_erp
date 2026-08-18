@@ -538,11 +538,14 @@ cotización aceptada con operational_category=sale
 → arribo exclusivo del asesor
 → coincidencia con snapshot o revisión comercial/autorización
 → calibración incluida sobre la misma unidad/equipo, cuando aplica
+→ garantía: retorno al flujo / reemplazo pendiente / cancelación comercial
 → entrega parcial: recolección / paquetería / técnico MYC
-→ firma o evidencia de recepción
+→ firma obligatoria o atestación técnica estructurada según modalidad
 → cierre de Venta; el ETS sólo cierra si no quedan partidas ajenas abiertas
 ```
 
 Un ETS histórico sin proyección de Venta no se modifica al consultarlo. El
 asesor ejecuta una inicialización explícita que usa únicamente el snapshot. La
 propuesta/selección de Hojas de Campo continúa en su servicio vigente.
+Venta conserva `evolution_enabled=false`; Calibración posterior valida el
+vínculo comercial exacto y no pasa por el motor evolutivo de Servicio General.

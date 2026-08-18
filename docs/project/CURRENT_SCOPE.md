@@ -285,6 +285,9 @@ queda **EN REVISIÓN**.
   técnico MYC, con nota PDF, Portal y superficie móvil acotada.
 - Inicialización de ETS históricos sólo mediante acción explícita y desde el
   snapshot. En ETS mixtos, cerrar Venta no cierra otras partidas.
+- Endurecimiento tester: Venta sin evolución genérica, Calibración posterior
+  ligada al ETS/cotización, tres resultados de garantía, firma/evidencia
+  tipada y acotada, y escape integral del HTML de nota de entrega.
 
 Quedan fuera mapas/rastreo externo, Gmail, una plantilla institucional avanzada
 de nota, aceptación física y workflows de categorías distintas. El frente

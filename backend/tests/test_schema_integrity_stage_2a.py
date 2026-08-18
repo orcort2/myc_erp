@@ -16,7 +16,7 @@ def test_current_revision_is_the_single_head() -> None:
         "script_location", str(ROOT / "backend" / "migrations")
     )
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["b9d1f3a5c7e9"]
+    assert script.get_heads() == ["c0e2f4a6b8d1"]
 
 
 def test_schema_metadata_matches_legacy_integrity_contracts() -> None:
