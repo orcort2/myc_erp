@@ -36,6 +36,11 @@ export const catalogKindByCategory = {
   Calibracion: 'calibration',
   Mantenimiento: 'maintenance',
   Reparacion: 'repair',
+  Verificacion: 'verification',
+  Calificacion: 'qualification',
+  Validacion: 'validation',
+  Capacitacion: 'training',
+  Consultoria: 'consulting',
   Venta: 'sale',
   'Servicio general': 'general_service'
 };
@@ -65,6 +70,7 @@ export const serviceCategories = [
   'Calibracion',
   'Mantenimiento',
   'Reparacion',
+  'Verificacion',
   'Calificacion',
   'Validacion',
   'Capacitacion',

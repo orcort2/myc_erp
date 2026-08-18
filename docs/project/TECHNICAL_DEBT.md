@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: propuestas de refactorización o riesgos contenidos en auditorías y documentos históricos
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-18
 
 # Deuda técnica vigente
 
@@ -34,7 +34,7 @@ No incluye funcionalidades futuras. Cada elemento corresponde a una condición p
 | TD-028 | P1 | El frontend conserva advisories altos en `nanoid` y `postcss`. | `frontend/package-lock.json` | Actualizar dependencias de forma controlada y repetir auditoría, tests y build. |
 | TD-029 | P2 | El startup de FastAPI inserta permisos/roles base del Portal y hace commit; el despliegue tiene una mutación de catálogo implícita. | `backend/app/main.py`, `services/portal/permission_service.py` | Mover la siembra a un bootstrap/migración explícito, idempotente y observable. |
 | TD-030 | P1 | La liberación individual usa `release_to_client`, pero el lote ETS conserva un loop transaccional propio con la misma decisión y puede divergir en futuros cambios. No autentica ni fusiona la compuerta financiera. | `backend/app/services/certificates.py`, routers ETS/Certificados | Hacer que el lote delegue en una operación propietaria sin commit interno durante un sprint separado, preservando resultado parcial y actor. |
-| TD-031 | P1 | El núcleo ETS múltiple/evolucionado tiene persistencia y API, pero no UI de cards/tabs, deep-link por notificación, E2E browser ni workflows técnicos de categoría. | `service_execution.py`, `service_orders.py`, `api.js`, futura UI ETS | Validar Fase 1, componer el board sin duplicar entidades y abrir cada workflow en fases explícitas posteriores. |
+| TD-031 | P1 | El núcleo ETS múltiple/evolucionado ya congela identidad/configuración y evita fallback a Servicio General, pero no tiene UI de cards/tabs, deep-link por notificación, E2E browser ni workflows técnicos de categoría. | `service_execution.py`, `service_orders.py`, `api.js`, futura UI ETS | Revisar Fase 1, componer el board sin duplicar entidades y abrir cada workflow en fases explícitas posteriores. |
 | TD-032 | P1 | `ServiceTask` sólo materializa el atajo idempotente `#tarea`; faltan lifecycle de edición/cierre, fechas, reasignación y políticas de visibilidad. | modelos/servicio de ejecución y Activity | Diseñar el contrato transversal de tareas sobre la entidad existente, sin convertir Activity en gestor de tareas ni agregar NLP. |
 | TD-033 | P1 | Las decisiones por partida tienen origen interno; portal/app aún no aportan autenticación de intención, clave idempotente externa ni conciliación de respuestas inciertas. | Cotizaciones, Portal y futuro cliente móvil | Implementar adaptadores sobre `QuotationItemDecision`, con ownership, idempotencia y conciliación; no crear otra máquina comercial. |
 | TD-034 | P2 | El grafo referencial ETS/comercial es íntegro, pero Alembic advierte que no puede ordenar globalmente el ciclo `ServiceStage ↔ QuotationItemDecision/QuotationItem ↔ TechnicalServiceRequest/ServiceUnit`; hoy `alembic check` queda limpio, pero una versión futura de SQLAlchemy podría endurecer el warning. | modelos/migración Fase 1 y `migrations/env.py` | Evaluar `use_alter`/nombres explícitos o exclusión dirigida para autogenerate sin retirar FKs ni degradar reconstrucción histórica. |

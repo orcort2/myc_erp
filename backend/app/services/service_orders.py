@@ -238,11 +238,11 @@ def _build_work_orders_for_service_order(db: Session, service_order: ServiceOrde
     ]
 
 
-def _expected_certificate_master_id(
+def _legacy_expected_certificate_master_id(
     db: Session,
     catalog_item_id: int | None,
 ) -> int | None:
-    """Resolve a Master by immutable catalog identity while the ETS is created."""
+    """Compatibility lookup only when no quotation snapshot froze the Master."""
     if catalog_item_id is None:
         return None
     return db.scalar(
@@ -278,25 +278,41 @@ def _service_order_items_from_quotation(
                     * int(quotation_item.quantity)
                 )
 
+                service_snapshot = (
+                    snapshot_item.get("service_snapshot")
+                    or snapshot.get("commercial_service_snapshot")
+                    or {}
+                )
+                template_snapshot = service_snapshot.get("template_snapshot") or {}
+                frozen_master_present = (
+                    "expected_certificate_master_id" in snapshot_item
+                    or "expected_certificate_master_id" in template_snapshot
+                )
                 item_values = {
                     "catalog_item_id": snapshot_item.get("catalog_item_id"),
                     "service_name": (
                         snapshot_item.get("service_name")
                         or quotation_item.service_name
                     ),
-                    "calibration_scope": snapshot_item.get(
-                        "calibration_scope"
+                    "calibration_scope": snapshot_item.get("calibration_scope"),
+                    "operational_category": (
+                        snapshot_item.get("operational_category")
+                        or service_snapshot.get(
+                            "operational_category_snapshot"
+                        )
                     ),
-                    "expected_certificate_master_id": _expected_certificate_master_id(
-                        db,
-                        snapshot_item.get("catalog_item_id"),
+                    "expected_certificate_master_id": (
+                        snapshot_item.get("expected_certificate_master_id")
+                        if "expected_certificate_master_id" in snapshot_item
+                        else template_snapshot.get("expected_certificate_master_id")
+                        if frozen_master_present
+                        else _legacy_expected_certificate_master_id(
+                            db, snapshot_item.get("catalog_item_id")
+                        )
                     ),
                     "quantity": operational_quantity,
                     "status": snapshot_item.get("status", "pending"),
-                    "service_snapshot": (
-                        snapshot_item.get("service_snapshot")
-                        or snapshot.get("commercial_service_snapshot")
-                    ),
+                    "service_snapshot": service_snapshot,
                 }
 
                 operational_items.append(
@@ -342,9 +358,13 @@ def _service_order_items_from_quotation(
                     quotation_item_id=quotation_item.id,
                     catalog_item_id=quotation_item.catalog_item_id,
                     service_name=quotation_item.service_name,
+                    operational_category=(
+                        quotation_item.operational_category
+                        or (catalog_item.operational_category if catalog_item is not None else None)
+                    ),
                     calibration_scope=quotation_item.calibration_scope,
                     expected_certificate_master_id=(
-                        catalog_item.expected_certificate_master_id
+                        _legacy_expected_certificate_master_id(db, catalog_item.id)
                         if catalog_item is not None
                         else None
                     ),
@@ -475,8 +495,17 @@ def create_service_order(
     if payload.items:
         service_order.items = [
             ServiceOrderItem(
-                **item.model_dump(),
-                expected_certificate_master_id=_expected_certificate_master_id(
+                **item.model_dump(exclude={"operational_category"}),
+                operational_category=(
+                    item.operational_category
+                    or (
+                        db.get(CatalogItem, item.catalog_item_id).operational_category
+                        if item.catalog_item_id is not None
+                        and db.get(CatalogItem, item.catalog_item_id) is not None
+                        else None
+                    )
+                ),
+                expected_certificate_master_id=_legacy_expected_certificate_master_id(
                     db,
                     item.catalog_item_id,
                 ),

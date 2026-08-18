@@ -15,11 +15,15 @@ from app.schemas.service_type import (
     normalize_certificate_prefix,
     normalize_service_type,
 )
+from app.schemas.operational_category import OperationalCategory
 
 
 CatalogItemType = Literal["product", "service"]
 CatalogServiceKind = Literal["simple", "composite"]
-CatalogCommodity = Literal["calibration", "maintenance", "repair", "sale", "general_service"]
+CatalogCommodity = Literal[
+    "calibration", "maintenance", "repair", "verification", "qualification",
+    "validation", "training", "consulting", "sale", "general_service",
+]
 InternalUnit = Literal[
     "service",
     "piece",
@@ -51,6 +55,11 @@ CATEGORY_TO_COMMODITY = {
     "reparacion": "repair",
     "venta": "sale",
     "servicio general": "general_service",
+    "verificacion": "verification",
+    "calificacion": "qualification",
+    "validacion": "validation",
+    "capacitacion": "training",
+    "consultoria": "consulting",
 }
 
 CATEGORY_LEGENDS = {
@@ -91,6 +100,7 @@ class CatalogItemBase(BaseModel):
     service_kind: CatalogServiceKind = "simple"
     commodity: CatalogCommodity
     category: str = Field(min_length=1, max_length=120)
+    operational_category: OperationalCategory | None = None
     name: str = Field(min_length=1, max_length=180)
     description: str | None = None
     sat_key: str | None = Field(default=None, max_length=40)
@@ -177,6 +187,7 @@ class CatalogItemUpdate(BaseModel):
     components: list[CatalogItemComponentCreate] | None = None
     commodity: CatalogCommodity | None = None
     category: str | None = Field(default=None, min_length=1, max_length=120)
+    operational_category: OperationalCategory | None = None
     name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = None
     sat_key: str | None = Field(default=None, max_length=40)

@@ -387,6 +387,7 @@ class ServiceOrderItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         index=True,
     )
     service_name: Mapped[str] = mapped_column(String(180))
+    operational_category: Mapped[str | None] = mapped_column(String(40), index=True)
     calibration_scope: Mapped[str | None] = mapped_column(String(60))
     service_snapshot: Mapped[dict | None] = mapped_column(JSON)
     quantity: Mapped[int] = mapped_column(default=1)

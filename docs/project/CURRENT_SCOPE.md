@@ -20,7 +20,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   deny-by-default y auditoría.
 - Dashboard y navegación principal.
 - Clientes, contactos dependientes, datos fiscales, constancias e importación/exportación.
-- Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
+- Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. `operational_category` distingue las categorías soportadas y el snapshot conserva identidad/configuración por componente sin refresco silencioso al reabrir o editar. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
 - Primera excepción contextual de Ventas: una cotización aprobada con ETS
   integralmente virgen puede desbloquear todas sus partidas, guardar una nueva
   revisión y reconstruir el ETS con el mismo folio. Administrador desbloquea
@@ -37,7 +37,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   maestros, Motor y ciclos de firma todavía compartidos, y deja auditoría
   mínima. MYC Mobile no consume esta operación productiva.
 - Núcleo ETS múltiple/evolucionado Fase 1, `EN REVISIÓN`: unidades estables por
-  intervención con partida/categoría origen y capacidad evolutiva por unidad,
+  intervención con partida/categoría canónica congelada y capacidad evolutiva exclusivamente para Servicio General,
   secuencias de etapas sin reemplazo histórico, identificación parcial
   tolerante, solicitudes técnico→comercial separadas del estado técnico,
   decisión interna autorizada por partida con categorías validadas, Activity
@@ -127,7 +127,8 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - **Catálogo MYC:** backend y editor embebido desde Cotizaciones, incluido el modelo normalizado de Servicios Compuestos; navegación independiente y autorización uniforme todavía no vigentes.
 - **ETS múltiple/evolucionado:** el backend y los contratos frontend están
   implementados; la composición visual por cards/tabs, deep-links y workflows
-  técnicos específicos de cada categoría no pertenecen a Fase 1.
+  técnicos específicos de cada categoría no pertenecen a Fase 1. La propuesta
+  de Hojas de Campo conserva el resolver frontend actual y no fue redefinida.
 - **Portal de cliente:** integración técnica terminada y en revisión. Incluye
   identidad externa separada, registro, verificación, invitaciones, revisión y
   vínculo persistente `User`–`ClientPortalMembership`–`Client`, roles propios,

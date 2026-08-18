@@ -2,7 +2,7 @@
 >
 > Tipo: Arquitectura funcional y técnica
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-08-18
 
 # Servicios compuestos del Catálogo MYC
 
@@ -39,7 +39,7 @@ QuotationItem: 2 × Equipo Especial
 
 La expansión es recursiva para permitir composición reutilizable, agrega hojas repetidas dentro de una misma partida comercial y multiplica cantidades en cada nivel. Un ciclo detectado en configuración o en datos bloquea la operación. Un componente inactivo o un compuesto sin componentes activos también bloquea la creación del ETS para evitar un expediente incompleto.
 
-Los servicios simples siguen copiando el nombre, alcance y cantidad congelados en la partida de cotización; por tanto, el comportamiento histórico no cambia. Las cotizaciones sin `catalog_item_id` también conservan el flujo anterior.
+Los servicios simples siguen copiando nombre, alcance, identidad operativa, Master esperado y cantidad congelados en la partida de cotización. Los compuestos congelan esos mismos datos por componente dentro de `operational_items`; la creación del ETS no vuelve a interpretarlos desde el catálogo vigente. Las cotizaciones sin `catalog_item_id` conservan el adaptador legacy.
 
 ## Integración downstream
 
@@ -71,6 +71,7 @@ Migración: `ff7a8b9c0d1e_add_composite_catalog_services.py`.
 
 - El padre compuesto nunca debe aparecer como partida técnica del ETS.
 - Los componentes nunca deben aparecer en Cotización, PDF comercial o Invoice.
+- Cada componente debe conservar su `operational_category` y configuración desde el snapshot de la cotización.
 - La expansión pertenece al servicio canónico de creación del ETS; no debe copiarse a frontend, router, Equipos o Facturación.
 - Una composición inválida debe bloquear la creación del ETS, no degradarse silenciosamente al concepto padre.
 - No sustituir la tabla normalizada por JSON.

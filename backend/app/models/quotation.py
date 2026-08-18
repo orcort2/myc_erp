@@ -56,6 +56,7 @@ class QuotationItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     discount_percent: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=0)
     currency: Mapped[str | None] = mapped_column(String(3))
     commodity: Mapped[str | None] = mapped_column(String(40))
+    operational_category: Mapped[str | None] = mapped_column(String(40), index=True)
     calibration_scope: Mapped[str | None] = mapped_column(String(60))
     quotation_legend: Mapped[str | None] = mapped_column(Text)
     operational_snapshot: Mapped[dict | None] = mapped_column(JSON)

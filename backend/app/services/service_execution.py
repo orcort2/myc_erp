@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-import unicodedata
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -28,6 +27,7 @@ from app.schemas.service_execution import (
 )
 from app.services.activity import publish_event
 from app.services.audit_logs import write_audit_log
+from app.schemas.operational_category import operational_category_from_structured_fields
 
 
 def _active_service_order(db: Session, service_order_id: int) -> ServiceOrder:
@@ -59,43 +59,28 @@ def _work_order(db: Session, service_order_id: int, work_order_id: int | None) -
     return result
 
 
-def _normalized_text(value: str | None) -> str:
-    value = unicodedata.normalize("NFKD", str(value or ""))
-    return " ".join(
-        value.encode("ascii", "ignore").decode().lower().replace("_", " ").split()
-    )
-
-
-_CATEGORY_ALIASES = {
-    "diagnosis": ("diagnosis", "diagnostico"),
-    "repair": ("repair", "reparacion"),
-    "maintenance": ("maintenance", "mantenimiento"),
-    "calibration": ("calibration", "calibracion"),
-    "verification": ("verification", "verificacion"),
-    "qualification": ("qualification", "calificacion"),
-    "validation": ("validation", "validacion"),
-    "training": ("training", "capacitacion"),
-    "consulting": ("consulting", "consultoria"),
-}
-
-
-def _categories_from_text(*values: str | None) -> set[str]:
-    text = " ".join(_normalized_text(value) for value in values)
-    return {
-        category
-        for category, aliases in _CATEGORY_ALIASES.items()
-        if any(alias in text for alias in aliases)
-    }
-
-
 def _catalog_category(catalog_item: CatalogItem | None) -> str | None:
     if catalog_item is None:
         return None
-    commodity = _normalized_text(catalog_item.commodity).replace(" ", "_")
-    if commodity == "general_service":
-        return "general_service"
-    categories = _categories_from_text(catalog_item.commodity, catalog_item.category, catalog_item.name)
-    return next(iter(categories)) if len(categories) == 1 else None
+    return catalog_item.operational_category or operational_category_from_structured_fields(
+        item_type=catalog_item.item_type,
+        category=catalog_item.category,
+        commodity=catalog_item.commodity,
+    )
+
+
+def _service_order_item_category(
+    origin: ServiceOrderItem | None,
+    catalog_item: CatalogItem | None,
+) -> str | None:
+    if origin is None:
+        return None
+    snapshot = origin.service_snapshot or {}
+    return (
+        origin.operational_category
+        or snapshot.get("operational_category_snapshot")
+        or _catalog_category(catalog_item)
+    )
 
 
 def _resolve_unit_origin(
@@ -137,15 +122,7 @@ def _resolve_unit_origin(
             )
 
     catalog_item = db.get(CatalogItem, origin.catalog_item_id) if origin and origin.catalog_item_id else None
-    origin_category = _catalog_category(catalog_item)
-    if origin_category is None and origin is not None:
-        normalized_name = _normalized_text(origin.service_name)
-        if normalized_name in {"servicio general", "general service"}:
-            origin_category = "general_service"
-        else:
-            named_categories = _categories_from_text(origin.service_name)
-            if len(named_categories) == 1:
-                origin_category = next(iter(named_categories))
+    origin_category = _service_order_item_category(origin, catalog_item)
     if origin_category is None:
         initial = {stage.category for stage in unit_data.initial_stages}
         origin_category = next(iter(initial)) if len(initial) == 1 else "multiple"
@@ -154,27 +131,45 @@ def _resolve_unit_origin(
 
 def _quotation_item_categories(db: Session, item: QuotationItem) -> set[str]:
     categories: set[str] = set()
-    catalog_item = db.get(CatalogItem, item.catalog_item_id) if item.catalog_item_id else None
-    catalog_category = _catalog_category(catalog_item)
-    if catalog_category:
-        categories.add("diagnosis" if catalog_category == "general_service" else catalog_category)
-    snapshot_items = (item.operational_snapshot or {}).get("operational_items") or []
-    for snapshot_item in snapshot_items:
-        component = (
-            db.get(CatalogItem, snapshot_item.get("catalog_item_id"))
-            if snapshot_item.get("catalog_item_id")
-            else None
+    snapshot = item.operational_snapshot or {}
+    item_category = (
+        item.operational_category
+        or snapshot.get("operational_category")
+        or (snapshot.get("commercial_service_snapshot") or {}).get(
+            "operational_category_snapshot"
         )
-        component_category = _catalog_category(component)
+    )
+    if item_category:
+        categories.add("diagnosis" if item_category == "general_service" else item_category)
+    snapshot_items = snapshot.get("operational_items") or []
+    for snapshot_item in snapshot_items:
+        component_category = (
+            snapshot_item.get("operational_category")
+            or (snapshot_item.get("service_snapshot") or {}).get(
+                "operational_category_snapshot"
+            )
+        )
         if component_category and component_category != "general_service":
             categories.add(component_category)
-        categories.update(
-            _categories_from_text(snapshot_item.get("service_name"))
-        )
     if not categories:
-        categories.update(_categories_from_text(item.service_name))
-        if _normalized_text(item.service_name) in {"servicio general", "general service"}:
-            categories.add("diagnosis")
+        catalog_item = db.get(CatalogItem, item.catalog_item_id) if item.catalog_item_id else None
+        catalog_category = _catalog_category(catalog_item)
+        if catalog_category:
+            categories.add("diagnosis" if catalog_category == "general_service" else catalog_category)
+    if not categories:
+        # Adaptador legacy exacto para partidas previas al campo canónico. No se
+        # buscan palabras ni descripciones y nunca prevalece sobre el snapshot.
+        legacy_category = operational_category_from_structured_fields(
+            item_type=None,
+            category=item.service_name,
+            commodity=item.service_name,
+        )
+        if legacy_category:
+            categories.add("diagnosis" if legacy_category == "general_service" else legacy_category)
+    if not categories and item.technical_request_id is not None:
+        request = db.get(TechnicalServiceRequest, item.technical_request_id)
+        if request is not None:
+            categories.update(request.requested_categories or [])
     return categories
 
 

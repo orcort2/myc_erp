@@ -31,6 +31,11 @@ OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
 STATUS_OVERRIDES = {
     "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md": "En revisión",
     "docs/closures/MOBILE_NOTIFICATIONS_V1_2026-08-14.md": "En revisión",
+    "backend/app/schemas/operational_category.py": "En revisión",
+    "backend/app/services/service_execution.py": "En revisión",
+    "backend/migrations/versions/a8c0e2f4b6d8_add_canonical_operational_category.py": "En revisión",
+    "backend/tests/test_operational_identity_snapshot.py": "En revisión",
+    "docs/architecture/OPERATIONAL_SERVICE_IDENTITY.md": "En revisión",
 }
 FORCE_RECLASSIFY = {
     "AGENTS.md",
@@ -289,6 +294,24 @@ FORCE_RECLASSIFY = {
     "docs/closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md",
 }
 FORCE_RECLASSIFY.update({
+    "backend/app/models/catalog_item.py",
+    "backend/app/models/quotation.py",
+    "backend/app/models/service_order.py",
+    "backend/app/schemas/operational_category.py",
+    "backend/app/schemas/catalog_item.py",
+    "backend/app/schemas/quotation.py",
+    "backend/app/schemas/service_order.py",
+    "backend/app/services/catalog_items.py",
+    "backend/app/services/quotations.py",
+    "backend/app/services/service_orders.py",
+    "backend/app/services/service_execution.py",
+    "backend/migrations/versions/a8c0e2f4b6d8_add_canonical_operational_category.py",
+    "backend/tests/test_operational_identity_snapshot.py",
+    "backend/tests/test_schema_integrity_stage_2a.py",
+    "frontend/src/constants/catalog.js",
+    "docs/architecture/OPERATIONAL_SERVICE_IDENTITY.md",
+    "docs/architecture/COMPOSITE_CATALOG_SERVICES.md",
+    "docs/architecture/ETS_MULTIPLE_EVOLVED_CORE.md",
     "backend/app/routers/service_orders.py",
     "backend/app/security/api_access.py",
     "backend/app/services/service_orders.py",
@@ -462,7 +485,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     work_order_deletion_files = {
         "backend/app/routers/service_orders.py": ("API ETS/OT", "Expone la eliminación física de una OT productiva con permiso exacto y delegación al servicio propietario, además de las rutas vigentes del expediente.", "FastAPI, auth, schemas y service_orders", "Frontend ETS y clientes API", "Crítico"),
         "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica 398 operaciones deny-by-default y separa los permisos DELETE de OT productiva y OT LAB.", "FastAPI, auth, catálogo de permisos e inventario CSV", "Middleware, arranque, generador y pruebas de conformidad", "Crítico"),
-        "backend/app/services/service_orders.py": ("Autoridad única ETS/OT", "Orquesta lifecycle ETS y eliminación transaccional de OT con mapa explícito de dependencias, conservación compartida, auditoría y staging reversible de archivos.", "Modelos operativos/financieros, storage, auditoría y Activity", "Router ETS, frontend, móvil productivo y pruebas", "Crítico"),
+        "backend/app/services/service_orders.py": ("Autoridad única ETS/OT", "Orquesta lifecycle ETS, consume identidad/configuración congelada por componente al crear partidas operativas y elimina OT con mapa de dependencias, conservación compartida, auditoría y staging reversible.", "Modelos operativos/financieros, snapshots, storage, auditoría y Activity", "Router ETS, frontend, móvil productivo y pruebas", "Crítico"),
         "backend/tests/test_api_access_conformity.py": ("Prueba de conformidad API", "Exige clasificación de las 398 operaciones y coincidencia exacta entre runtime e inventario CSV.", "app.main, security.api_access e inventario CSV", "Suite backend y revisión de API", "Crítico"),
         "backend/tests/test_service_work_order_deletion.py": ("Suite de eliminación OT", "Prueba admin, 403/404, estados, dependencias, firma compartida, conservación financiera, lectura móvil y rollback de base/archivo.", "Pytest, FastAPI, SQLAlchemy y agregado ETS/OT", "Gate backend de eliminación destructiva", "Crítico"),
         "frontend/src/pages/ServiceOrdersPage.jsx": ("Expediente integral ETS", "Añade la acción confirmada de eliminación de OT sólo con capacidad exacta y refresca el expediente sin duplicar reglas destructivas.", "Componentes ETS, cliente API y workOrderDeletion", "Usuarios operativos y Administrador", "Crítico"),
@@ -691,15 +714,22 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/models/catalog_item.py": (
             "Clasificación comercial del catálogo",
-            "Modela composición y tipo formal acreditado, trazable o vinculado, con empresa y prefijo institucional cuando corresponde.",
-            "SQLAlchemy, ServiceType y LinkedCompany",
+            "Modela composición, operational_category y tipo formal acreditado, trazable o vinculado, con empresa y prefijo institucional cuando corresponde.",
+            "SQLAlchemy, identidad operativa, ServiceType y LinkedCompany",
             "Catálogo, Cotizaciones, ETS y certificados",
+            "Crítico",
+        ),
+        "backend/app/models/quotation.py": (
+            "Agregado comercial y snapshots",
+            "Persiste cotizaciones, partidas, operational_category, snapshots históricos y decisiones append-only con referencias ETS para partidas derivadas.",
+            "SQLAlchemy, catálogo, identidad operativa, ServiceUnit/Stage y migraciones",
+            "Ventas, ETS, Facturación, PDFs y APIs",
             "Crítico",
         ),
         "backend/app/models/service_order.py": (
             "Agregado ETS y snapshots",
-            "Conserva snapshot fuente/partidas, OT, firmas y relación histórica con solicitudes persistentes de excepción.",
-            "SQLAlchemy, cotizaciones, partidas, órdenes de trabajo y excepciones ETS",
+            "Conserva operational_category/configuración por partida, snapshot fuente, OT, firmas y relación histórica con solicitudes persistentes de excepción.",
+            "SQLAlchemy, cotizaciones, identidad operativa, órdenes de trabajo y excepciones ETS",
             "Servicios ETS, equipos, certificados, Facturación y auditoría",
             "Crítico",
         ),
@@ -775,8 +805,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/services/quotations.py": (
             "Dominio de cotizaciones",
-            "Gestiona CRUD, estados, partidas, importes y snapshots; devuelve la revisión creada para vincular cambios excepcionales.",
-            "SQLAlchemy, catálogo, Actividad y auditoría",
+            "Gestiona CRUD, estados, partidas e importes; congela identidad/configuración por componente en snapshot esquema 2 y sólo lo refresca ante sustitución explícita de catálogo.",
+            "SQLAlchemy, catálogo, identidad operativa, Actividad y auditoría",
             "Router, PDFs, ETS y excepción contextual",
             "Crítico",
         ),
@@ -2297,6 +2327,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value in certificate_authentication_files:
         return certificate_authentication_files[value]
 
+    if value == "backend/migrations/versions/a8c0e2f4b6d8_add_canonical_operational_category.py":
+        return ("Migración de identidad operativa", "Agrega operational_category a catálogo, cotización y partida ETS, crea índices y congela backfill desde campos/vínculos estructurados existentes.", "Alembic, PostgreSQL y head f7c9d1e3a5b7", "Despliegues, recuperación y servicios ETS", "Crítico")
     if "/migrations/versions/" in value:
         return ("Migración Alembic", f"Aplica la revisión {subject} del esquema y conserva la evolución reproducible de PostgreSQL.", "Alembic, modelos ORM y base de datos", "Alembic durante upgrade/downgrade y despliegues", "Crítico")
     if value == "AGENTS.md":
@@ -2307,6 +2339,16 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         return ("Contrato de alcance de calibración", "Define las tres claves canónicas de acreditación, su propagación automática, mapeo a certificado, validación por categoría y normalización de alias legacy.", "Schemas Pydantic, catálogo, ETS, equipos, certificados, frontend y migración", "Desarrollo de Catálogo, ETS, Captura, Calidad y Certificados", "Crítico")
     if value == "backend/app/schemas/service_scope.py":
         return ("Contrato Pydantic compartido", "Centraliza las claves de acreditación, los alcances de servicio por categoría y las leyendas persistentes sin aceptar texto documental como dominio.", "Pydantic y reglas canónicas de Catálogo/ETS", "Schemas operacionales, perfiles técnicos y servicios de certificados", "Crítico")
+    if value == "backend/app/schemas/operational_category.py":
+        return ("Identidad operativa canónica", "Declara categorías operativas persistentes y el adaptador exacto de campos estructurados legacy; nunca inspecciona nombres o descripciones libres.", "Contratos Catálogo/Cotización/ETS", "Schemas, servicios de Catálogo, Cotizaciones y ejecución ETS", "Crítico")
+    if value == "backend/app/services/service_execution.py":
+        return ("Ejecución ETS por unidad", "Resuelve origen desde operational_category/snapshot, conserva Servicio General evolutivo y crea unidades/etapas append-only sin seleccionar Hojas de Campo ni inferir por texto libre.", "ServiceUnit, ServiceStage, Cotizaciones, catálogo y Activity", "Router ETS, board, decisiones y pruebas Fase 1", "Crítico")
+    if value == "backend/app/services/catalog_items.py":
+        return ("Dominio del Catálogo MYC", "Deriva y persiste identidad operativa estructurada, valida servicios simples/compuestos y congela configuración por hoja durante su expansión comercial→operativa.", "CatalogItem, componentes, scopes, tipos y documentos", "Router de Catálogo, Cotizaciones y creación ETS", "Crítico")
+    if value == "backend/tests/test_operational_identity_snapshot.py":
+        return ("Regresión de identidad/snapshot", "Prueba catálogo conocido sin fallback, congelamiento ante cambio/reapertura, Servicio General evolutivo, componentes, calibración y resolver vigente de Hojas de Campo.", "Pytest, SQLAlchemy, Node y dominios Catálogo/Cotización/ETS", "Gate de revisión de identidad operativa", "Crítico")
+    if value == "docs/architecture/OPERATIONAL_SERVICE_IDENTITY.md":
+        return ("Contrato de identidad operativa", "Define operational_category, autoridad del snapshot esquema 2, compatibilidad legacy, Servicios Compuestos y frontera que preserva el selector actual de Hojas de Campo.", "Modelos, migración y servicios Catálogo/Cotización/ETS", "Desarrollo, revisión arquitectónica y QA", "Crítico")
     if value == "backend/tests/test_service_scope_contract.py":
         return ("Prueba de contrato transversal", "Verifica las tres modalidades canónicas, rechazo de texto documental, categorías, respuestas del catálogo y mapeo bidireccional a certificados.", "Schemas de catálogo, cotización, ETS, equipo y control documental", "CI y desarrollo de la cadena de calibración", "Alto")
     if value == "backend/app/schemas/catalog_item.py":

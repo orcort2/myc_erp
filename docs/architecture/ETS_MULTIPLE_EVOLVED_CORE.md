@@ -2,7 +2,7 @@
 
 > Estado: VIGENTE, implementación `EN REVISIÓN`
 >
-> Corte: 2026-08-12
+> Corte: 2026-08-18
 >
 > Alcance: contratos persistentes y de aplicación; no implementa la lógica técnica completa de cada categoría.
 
@@ -15,6 +15,7 @@
 - Activity conserva el único sistema de conversación, menciones, eventos y notificaciones.
 - El Motor de Resoluciones no se duplicó ni recibió excepciones nuevas.
 - `catalog_items.service_kind` y `catalog_item_components` conservan la única expansión de Servicios Compuestos al crear el ETS.
+- `operational_category` y el snapshot esquema 2 son la autoridad del origen; nombres y descripciones no deciden la ruta.
 
 ## Modelo añadido
 
@@ -57,7 +58,7 @@ Las partidas de una cotización inicial pueden decidirse antes de existir unidad
 1. El ETS y la OT no cambian por evolución de categoría.
 2. La identidad de `ServiceUnit` permanece estable durante toda la intervención.
 3. La evolución agrega `ServiceStage`; no muta la categoría ni elimina historial.
-4. Sólo una `ServiceUnit` cuyo origen persistido sea Servicio General tiene `evolution_enabled=true`; puede iniciar diagnóstico y seguir originando solicitudes desde etapas posteriores. La presencia de Servicio General en otra partida del ETS no contamina unidades de calibración, mantenimiento u otra categoría.
+4. Sólo una `ServiceUnit` cuyo `operational_category` congelado sea `general_service` tiene `evolution_enabled=true`; puede iniciar diagnóstico y seguir originando solicitudes desde etapas posteriores. La presencia textual o en otra partida no contamina unidades de calibración, mantenimiento u otra categoría conocida.
 5. Marca, modelo o serie ausentes no bloquean el alta; se registra identificación parcial.
 6. Una etapa `authorized`/`in_progress` debe estar respaldada por una decisión aprobada que incluya esa categoría, salvo el diagnóstico inicial anterior.
 7. Una decisión rechazada no habilita etapas.

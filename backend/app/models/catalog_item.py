@@ -26,6 +26,7 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     )
     commodity: Mapped[str] = mapped_column(String(40), index=True)
     category: Mapped[str] = mapped_column(String(120), index=True)
+    operational_category: Mapped[str | None] = mapped_column(String(40), index=True)
     internal_key: Mapped[str | None] = mapped_column(String(80), index=True)
     name: Mapped[str] = mapped_column(String(180), index=True)
     description: Mapped[str | None] = mapped_column(Text)

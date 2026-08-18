@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de `project/`
 >
-> Corte actualizado: 2026-08-17
+> Corte actualizado: 2026-08-18
 
 # Estado operativo actual del ERP MYC
 
@@ -38,6 +38,11 @@
   técnico separado de solicitudes comerciales, decisión interna autorizada y
   única por partida, categorías validadas, Activity contextual y tareas
   `#tarea`. No abre workflows técnicos de categorías posteriores.
+- La corrección fundacional de identidad operativa está **EN REVISIÓN**:
+  `operational_category` distingue categorías conocidas, la cotización congela
+  snapshot esquema 2 por componente y editar/reabrir con el mismo concepto no
+  consulta el catálogo vigente. Sólo `general_service` habilita diagnóstico
+  evolutivo. La propuesta de Hojas de Campo permanece en el resolver frontend.
 - El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho
   lecturas aplican asignación ETS, ownership heredado, 404 opaco y doble
   permiso para Hojas de Campo. La app LAB actual no consume listado, detalle,
@@ -127,7 +132,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
 - Head aplicado a la base local compartida: `f7c9d1e3a5b7`.
-- Head del código: `f7c9d1e3a5b7`.
+- Head del código: `a8c0e2f4b6d8`.
 - `e7b62b8a9421` incorpora `service_order_exception_requests` para conservar
   solicitud, autorización, ejecución, actores, timestamps y estado ETS de
   revalidación sin usar auditoría como almacenamiento de lifecycle.
@@ -149,6 +154,11 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 - `f7c9d1e3a5b7` completa Comunicaciones con secuencia/idempotencia, grupos,
   cursores de participante, recibos y menciones normalizados y relación
   opcional a Tickets. El ciclo aislado y `alembic check` quedaron limpios.
+- `a8c0e2f4b6d8` agrega identidad operativa canónica a Catálogo, Cotizaciones y
+  partidas ETS; el ciclo aislado `base → head → f7c9d1e3a5b7 → head` fue
+  correcto y `alembic check` no detectó operaciones nuevas; la base temporal
+  fue eliminada. La base local compartida se
+  conserva en `f7c9d1e3a5b7`; por ello no se regeneró el respaldo oficial.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
 - Upgrade desde el respaldo histórico en `b03b4c5d6e7f` hasta el head:
@@ -184,7 +194,8 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend canónico | 547 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
+| Backend canónico | 552 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
+| Identidad operativa/snapshot focal | 38 passed, 12 subtests; congelamiento, reapertura, categorías conocidas/Servicio General, compuestos, calibración y Hojas de Campo |
 | Comunicaciones/realtime focal | 14 passed; persistencia→evento, deduplicación, sync, recibos, menciones, IDOR, typing y multi-dispositivo |
 | Concurrencia Comunicaciones PostgreSQL | 5 escritores conservaron secuencias 1–5; 2 reintentos simultáneos compartieron un solo mensaje/sequence 6; base temporal eliminada |
 | Aislamiento móvil técnico | 21 passed; ETS/OT/Equipo/Hoja A/B, sin asignación, 401, 403 y doble permiso de hojas |
@@ -198,7 +209,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 43 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Backend suite completa del corte | 547 passed, 5 skipped y 19 subtests; head esperado sincronizado en `f7c9d1e3a5b7` |
+| Backend suite completa del corte | 552 passed, 5 skipped y 19 subtests; head esperado sincronizado en `a8c0e2f4b6d8` |
 | Inventario FastAPI | 398/398 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime; cuatro rutas concurrentes corresponden a Comunicaciones |
 | Eliminación OT productiva dirigida | 43 passed; admin/403/404, estados, dependencias, bloqueo por evidencia inmutable, firma compartida, factura, lectura móvil y rollback de base/archivo |
 | Frontend eliminación OT | 5 passed; capacidad exacta, ocultamiento sin permiso y regresión de access control/autenticación |
@@ -220,7 +231,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Alembic ciclo vacío base→head→base→head | correcto en PostgreSQL aislado |
 | Migración correctiva Fase 1 reversible | base aislada `base → a7c2e5f8b1d4 → f4a1c9d2e710 → a7c2e5f8b1d4`; current ETS correcto |
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
-| Alembic current/check | base principal y head de código en `f7c9d1e3a5b7`; check sin operaciones nuevas |
+| Alembic current/check | base principal en `f7c9d1e3a5b7`; código y base aislada en `a8c0e2f4b6d8`; check aislado sin operaciones nuevas |
 | Respaldo oficial regenerado/restaurado | 75,050,260 bytes; SHA-256 `f2280b0e…b81b14`; restore drill con 130 tablas y head `f7c9d1e3a5b7` |
 | Validador Catálogo Institucional/permissions/API | VERDE: 80 permisos HTTP, baseline gobernado 26 brechas literales y 0 de bootstrap; seis diferencias HTTP pertenecen al vertical móvil temporal LAB/Tickets |
 | Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
@@ -246,6 +257,7 @@ seguridad e inventario, se conserva en
 - Control Documental V1 conserva el único estado canónico `SELLADO`, dentro de su alcance acotado; la seguridad transversal impide inferir aptitud productiva.
 - El Workbench de Facturación reutiliza el controlador único, el agregado `Invoice`, el contexto explícito y `EtsBillingTab`.
 - Servicios Compuestos usa `service_kind`, `catalog_item_components` y expansión al crear ETS.
+- Cotizaciones/ETS usan `operational_category` y snapshot operativo como autoridad histórica; Servicio General mantiene semántica evolutiva exclusiva.
 - La acreditación de calibración mantiene las claves canónicas del contrato.
 - Facturación dispone de borrador, snapshots, intentos PAC, XML/PDF, pagos y cartera, pero Facturama está configurado para Sandbox y faltan cancelación/sustitución, PPD/complemento y nota fiscal de egreso.
 - Actividad implementa threads, mensajes, menciones, adjuntos, atención y no

@@ -21,6 +21,7 @@ from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
 from app.schemas.service_type import normalize_service_type
+from app.schemas.operational_category import operational_category_from_structured_fields
 
 TERMINAL_STATUSES = {"accepted", "rejected", "expired", "cancelled"}
 ALLOWED_TRANSITIONS = {
@@ -96,6 +97,7 @@ def _build_operational_snapshot(
             "service_description_snapshot": item.description,
             "service_type_snapshot": service_type.value if service_type else None,
             "calibration_scope_snapshot": item.calibration_scope,
+            "operational_category_snapshot": item.operational_category,
             "linked_company_id": item.linked_company_id,
             "linked_company_name_snapshot": company.name if company else None,
             "certificate_prefix_snapshot": item.linked_certificate_prefix,
@@ -132,6 +134,7 @@ def _build_operational_snapshot(
                 "catalog_item_id": catalog_item.id,
                 "service_name": catalog_item.name,
                 "calibration_scope": catalog_item.calibration_scope,
+                "operational_category": catalog_item.operational_category,
                 "quantity": 1,
                 "status": "pending",
                 "service_snapshot": snapshot_for(catalog_item),
@@ -139,8 +142,9 @@ def _build_operational_snapshot(
         ]
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "service_kind": catalog_item.service_kind,
+        "operational_category": catalog_item.operational_category,
         "commercial_catalog_item_id": catalog_item.id,
         "commercial_service_name": catalog_item.name,
         "commercial_service_snapshot": snapshot_for(catalog_item),
@@ -190,12 +194,22 @@ def _quotation_item_values(
             "serial_number": unit.serial_number,
         }
         request.status = "quoted"
+    catalog_item_id_was_provided = "catalog_item_id" in values
     catalog_item = _get_catalog_item(db, values.get("catalog_item_id"))
     if catalog_item is not None:
-        values["operational_snapshot"] = _build_operational_snapshot(
-            db,
-            catalog_item,
-        )    
+        catalog_changed = (
+            existing_item is None
+            or (
+                catalog_item_id_was_provided
+                and catalog_item.id != existing_item.catalog_item_id
+            )
+        )
+        if catalog_changed:
+            values["operational_snapshot"] = _build_operational_snapshot(
+                db,
+                catalog_item,
+            )
+            values["operational_category"] = catalog_item.operational_category
         values.setdefault("service_name", catalog_item.name)
         values.setdefault("description", catalog_item.description)
         values.setdefault(
@@ -210,10 +224,18 @@ def _quotation_item_values(
         values.setdefault("unit_price", catalog_item.final_price_mxn)
         values.setdefault("currency", "MXN")
         values.setdefault("commodity", catalog_item.commodity)
+        if existing_item is None:
+            values.setdefault("operational_category", catalog_item.operational_category)
         values.setdefault("calibration_scope", catalog_item.calibration_scope)
         values.setdefault("quotation_legend", catalog_item.quotation_legend)
         values.setdefault("tax_object", catalog_item.tax_object)
         values.setdefault("tax_rate", catalog_item.tax_rate)
+    elif existing_item is None and values.get("operational_category") is None:
+        values["operational_category"] = operational_category_from_structured_fields(
+            item_type=None,
+            category=None,
+            commodity=values.get("commodity"),
+        )
     if "currency" in values and values["currency"]:
         values["currency"] = values["currency"].upper()
     if existing_item is None and values.get("tax_object") is None:
@@ -228,6 +250,7 @@ def _quotation_item_values(
         and values["catalog_item_id"] is None
     ):
         values["commodity"] = None
+        values["operational_category"] = None
         values["calibration_scope"] = None
         values["quotation_legend"] = None
         values["sat_key"] = None
@@ -277,6 +300,7 @@ def _quotation_snapshot_data(quotation: Quotation) -> dict:
                     "service_name": item.service_name,
                     "description": item.description,
                     "calibration_scope": item.calibration_scope,
+                    "operational_category": item.operational_category,
                     "quotation_legend": item.quotation_legend,
                     "tax_object": item.tax_object,
                     "tax_rate": item.tax_rate,

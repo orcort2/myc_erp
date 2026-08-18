@@ -105,11 +105,14 @@ evidencia. ETS/Servicios conserva su clasificación
 global `EN DESARROLLO` por pendientes ajenos a este sprint.
 
 La **Fase 1 del núcleo ETS múltiple/evolucionado** está implementada y
-`EN REVISIÓN`. Añade unidades operativas estables, etapas append-only,
+`EN REVISIÓN`. Añade unidades operativas estables, identidad canónica
+`operational_category`, snapshots operativos congelados, etapas append-only,
 solicitudes técnicas, decisión comercial por partida, Activity contextual y
-tareas `#tarea`, con migraciones `f4a1c9d2e710` y `a7c2e5f8b1d4`. La corrección
+tareas `#tarea`, con migraciones `f4a1c9d2e710`, `a7c2e5f8b1d4` y
+`a8c0e2f4b6d8`. La corrección
 persiste origen/capacidad por unidad, separa lifecycle técnico/comercial,
-protege board/decisión, valida categorías y blinda una única decisión inicial
+protege board/decisión, evita fallback accidental a Servicio General, valida
+categorías y blinda una única decisión inicial
 bajo concurrencia, conservando compatibilidad con calibración. No cambia la
 clasificación global: faltan revisión funcional y
 arquitectónica, UI de cards/tabs, portal/app de aprobación y E2E autenticado.

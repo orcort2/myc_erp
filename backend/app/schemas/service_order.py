@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.service_scope import ServiceScope
+from app.schemas.operational_category import OperationalCategory
 
 
 ServiceOrderStatus = Literal[
@@ -51,6 +52,7 @@ class ServiceOrderItemBase(BaseModel):
     quotation_item_id: int | None = None
     catalog_item_id: int | None = None
     service_name: str = Field(min_length=1, max_length=180)
+    operational_category: OperationalCategory | None = None
     calibration_scope: ServiceScope | None = None
     quantity: int = Field(default=1, ge=1)
     status: str = Field(default="pending", max_length=60)

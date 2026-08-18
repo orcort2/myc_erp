@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.service_scope import ServiceScope
 from app.schemas.service_execution import QuotationItemDecisionRead
+from app.schemas.operational_category import OperationalCategory
 
 
 QuotationStatus = Literal[
@@ -73,6 +74,7 @@ class QuotationItemRead(QuotationItemBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    operational_category: OperationalCategory | None = None
     operational_snapshot: dict | None = None
     equipment_snapshot: dict | None = None
     decisions: list[QuotationItemDecisionRead] = Field(default_factory=list)

@@ -27,6 +27,7 @@ from app.schemas.catalog_item import (
     calculate_final_price_mxn,
 )
 from app.services.audit_logs import write_audit_log
+from app.schemas.operational_category import operational_category_from_structured_fields
 
 
 def _json_safe(value):
@@ -120,6 +121,11 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
     values["commodity"] = _commodity_from_category(
         values.get("item_type"), values.get("category"), values.get("commodity")
     )
+    values["operational_category"] = operational_category_from_structured_fields(
+        item_type=values.get("item_type"),
+        category=values.get("category"),
+        commodity=values.get("commodity"),
+    ) or "other"
     values["tax_object"] = values.get("tax_object") or "iva_16"
     values["tax_rate"] = TAX_RATE_BY_OBJECT[values["tax_object"]]
 
@@ -457,6 +463,7 @@ def expand_catalog_item_for_operations(
                     "catalog_item_id": item.id,
                     "service_name": item.name,
                     "calibration_scope": item.calibration_scope,
+                    "operational_category": item.operational_category,
                     "expected_certificate_master_id": (
                         item.expected_certificate_master_id
                     ),
@@ -471,6 +478,7 @@ def expand_catalog_item_for_operations(
                             service_type.value if service_type else None
                         ),
                         "calibration_scope_snapshot": item.calibration_scope,
+                        "operational_category_snapshot": item.operational_category,
                         "linked_company_id": item.linked_company_id,
                         "linked_company_name_snapshot": (
                             company.name if company else None
@@ -585,6 +593,7 @@ def update_catalog_item(
         "service_kind": item.service_kind,
         "commodity": item.commodity,
         "category": item.category,
+        "operational_category": item.operational_category,
         "name": item.name,
         "description": item.description,
         "sat_key": item.sat_key,
@@ -648,6 +657,8 @@ def update_catalog_item(
         "internal_key",
         "quotation_legend",
         "tax_rate",
+        "commodity",
+        "operational_category",
     }
     for key in keys_to_apply:
         setattr(item, key, prepared[key])

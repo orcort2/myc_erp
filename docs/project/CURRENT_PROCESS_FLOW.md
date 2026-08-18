@@ -153,6 +153,7 @@ modifica Lifecycle ni contiene reglas propietarias.
 Autenticación
   → Cliente y datos fiscales
   → Cotización y partidas
+  → Snapshot operativo congelado por partida/componente
   → Expansión de Servicios Compuestos en partidas operativas del ETS
   → ETS/Servicio vinculado a cliente y opcionalmente a cotización
   → Órdenes de Trabajo (máximo 10 equipos por OT)
@@ -271,7 +272,14 @@ backend aunque la UI futura la proyecte en varios tabs por categoría.
 Cada unidad se liga a su partida operativa origen. Sólo la unidad nacida de
 Servicio General inicia como `ServiceUnit(evolution_enabled) → diagnóstico`;
 calibración, mantenimiento u otras partidas del mismo ETS conservan su flujo
-normal. Después, cualquier etapa de esa misma unidad evolutiva puede originar:
+normal.
+
+La ruta se decide por `operational_category` congelado en cotización/partida
+ETS. Reabrir o editar con el mismo concepto no consulta el catálogo vigente;
+una sustitución explícita sí construye un snapshot nuevo. La propuesta de Hoja
+de Campo continúa en el resolver frontend vigente y no pertenece a este flujo.
+
+Después, cualquier etapa de esa misma unidad evolutiva puede originar:
 
 `Etapa origen → TechnicalServiceRequest → una o varias QuotationItem →
 QuotationItemDecision por partida → cero, una o varias ServiceStage nuevas`.

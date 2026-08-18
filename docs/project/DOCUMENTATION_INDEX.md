@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-08-17
+> Corte verificado: 2026-08-18
 
 # Índice único de documentación
 
@@ -61,6 +61,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
+| [`../architecture/OPERATIONAL_SERVICE_IDENTITY.md`](../architecture/OPERATIONAL_SERVICE_IDENTITY.md) | Identidad operativa canónica, autoridad histórica del snapshot, compatibilidad legacy y frontera de Hojas de Campo. |
 | [`../architecture/ETS_MULTIPLE_EVOLVED_CORE.md`](../architecture/ETS_MULTIPLE_EVOLVED_CORE.md) | Contrato de Fase 1 para unidades estables, etapas append-only, solicitudes, decisiones por partida, tareas y compatibilidad de calibración. |
 | [`../architecture/MOBILE_TECHNICIAN_ACCESS.md`](../architecture/MOBILE_TECHNICIAN_ACCESS.md) | Contrato de autenticación, permisos, ownership heredado, 404 opaco y frontera productiva que la app LAB actual no consume. |
 | [`../architecture/MOBILE_NOTIFICATIONS_V1.md`](../architecture/MOBILE_NOTIFICATIONS_V1.md) | Contrato de persistencia, dispositivos, eventos, destinatarios, entrega Expo, deep links y sincronización móvil V1. |
