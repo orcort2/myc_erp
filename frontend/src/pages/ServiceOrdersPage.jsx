@@ -7,6 +7,7 @@ import CaptureProcessingSummary from '../components/CaptureProcessingSummary.jsx
 import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import SaleEtsTab from '../components/ets-sales/SaleEtsTab.jsx';
+import MaintenanceEtsTab from '../components/ets-maintenance/MaintenanceEtsTab.jsx';
 import {
   emptyServiceOrderForm,
   emptyEquipmentForm,
@@ -290,6 +291,10 @@ function ServiceOrdersPage({ user = null }) {
   );
   const selectedOrderHasSale = useMemo(
     () => Boolean((selectedOrder?.items || []).some((item) => item.operational_category === 'sale')),
+    [selectedOrder]
+  );
+  const selectedOrderHasMaintenance = useMemo(
+    () => Boolean((selectedOrder?.items || []).some((item) => item.operational_category === 'maintenance')),
     [selectedOrder]
   );
 
@@ -2677,6 +2682,7 @@ function ServiceOrdersPage({ user = null }) {
             <div className="ets-folder-tabs" role="tablist" aria-label="Carpetas del expediente">
               {[
                 ['info', 'Resumen'],
+                ...(selectedOrderHasMaintenance ? [['maintenance', 'Mantenimiento']] : []),
                 ...(selectedOrderHasSale ? [['sale', 'Venta']] : []),
                 ['equipment', 'Equipos'],
                 ['field-sheet', 'Hojas de Campo'],
@@ -2877,6 +2883,10 @@ function ServiceOrdersPage({ user = null }) {
 
             {activeTab === 'sale' && selectedOrderHasSale ? (
               <SaleEtsTab order={selectedOrder} user={user} users={users} />
+            ) : null}
+
+            {activeTab === 'maintenance' && selectedOrderHasMaintenance ? (
+              <MaintenanceEtsTab order={selectedOrder} user={user} users={users} />
             ) : null}
 
             {activeTab === 'equipment' ? (

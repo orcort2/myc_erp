@@ -127,6 +127,18 @@ def _quotation_policy(method: str, path: str) -> AccessPolicy:
 def _service_order_policy(method: str, path: str) -> AccessPolicy:
     if method == "DELETE" and path.startswith("/api/service-orders/work-orders/"):
         return _permission("service_orders.delete")
+    if "/maintenance/" in path or path.endswith("/maintenance"):
+        if method == "GET" and path.endswith("/maintenance"):
+            return _permission("service_orders.read")
+        if path.endswith("/signature"):
+            return _permission("service_orders.maintenance.sign")
+        if path.endswith("/close"):
+            return _permission("service_orders.maintenance.close")
+        if "/changes/" in path and path.endswith("/resolve") or path.endswith("/investigation/resolve"):
+            return _permission("service_orders.maintenance.authorize")
+        if any(fragment in path for fragment in ("/field-accept", "/start", "/capture", "/pauses", "/materials", "/changes", "/technical-complete")):
+            return _permission("service_orders.maintenance.execute")
+        return _permission("service_orders.maintenance.manage")
     if "/sale/" in path or path.endswith("/sale"):
         if method == "GET":
             return _permission("service_orders.read")

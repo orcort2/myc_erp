@@ -739,6 +739,24 @@ export async function getServiceExecutionBoard(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/execution-board`);
 }
 
+export const getMaintenanceBoard = (serviceOrderId) => request(`/service-orders/${serviceOrderId}/maintenance`);
+export const registerMaintenanceArrival = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/arrival`, { method: 'POST', body: JSON.stringify(payload) });
+export const registerMaintenanceFieldEquipment = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/field-equipment`, { method: 'POST', body: JSON.stringify(payload) });
+export const prepareMaintenance = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/prepare`, { method: 'POST', body: JSON.stringify(payload) });
+export const acceptMaintenanceFieldVisit = (serviceOrderId, executionId, scheduledFor) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/field-accept?scheduled_for=${encodeURIComponent(scheduledFor)}`, { method: 'POST' });
+export const startMaintenance = (serviceOrderId, executionId) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/start`, { method: 'POST' });
+export const saveMaintenanceCapture = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/capture`, { method: 'PUT', body: JSON.stringify(payload) });
+export const addMaintenancePause = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/pauses`, { method: 'POST', body: JSON.stringify(payload) });
+export const resolveMaintenancePause = (serviceOrderId, executionId, pauseId, resolution) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/pauses/${pauseId}/resolve`, { method: 'POST', body: JSON.stringify({ resolution }) });
+export const addMaintenanceMaterial = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/materials`, { method: 'POST', body: JSON.stringify(payload) });
+export const requestMaintenanceChange = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/changes`, { method: 'POST', body: JSON.stringify(payload) });
+export const resolveMaintenanceChange = (serviceOrderId, executionId, changeId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/changes/${changeId}/resolve`, { method: 'POST', body: JSON.stringify(payload) });
+export const resolveMaintenanceInvestigation = (serviceOrderId, executionId, resolution) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/investigation/resolve`, { method: 'POST', body: JSON.stringify({ resolution }) });
+export const completeMaintenanceTechnical = (serviceOrderId, executionId) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/technical-complete`, { method: 'POST' });
+export const downloadMaintenanceReport = (serviceOrderId, executionId) => downloadRequest(`/service-orders/${serviceOrderId}/maintenance/${executionId}/report.pdf`);
+export const signMaintenanceReport = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/signature`, { method: 'POST', body: JSON.stringify(payload) });
+export const closeMaintenance = (serviceOrderId, executionId) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/close`, { method: 'POST' });
+
 export async function getSaleBoard(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/sale`);
 }

@@ -51,6 +51,12 @@
   corregida: unidades no evolutivas, vínculo comercial estricto de calibración,
   garantía no terminal por defecto, firma/atestación acotada y PDF escapado.
   Falta aceptación física/browser.
+- El vertical **ETS Mantenimiento** está **TERMINADO TÉCNICAMENTE — EN REVISIÓN**:
+  crea unidades/etapas no evolutivas desde snapshot, cubre preventivo/correctivo,
+  laboratorio/campo, OT/equipo, pausas, captura estructurada, materiales,
+  decisión comercial, investigación, reporte versionado, firma y cierre. Los
+  bloqueantes web son visibles y navegables; faltan aceptación física/browser
+  y las integraciones futuras de Compras/Almacén.
 - El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho
   lecturas conservan ownership y tres rutas Venta permiten sólo listar, aceptar
   y confirmar entregas asignadas con evidencia. La app LAB no consume
@@ -140,7 +146,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
 - Head aplicado a la base local compartida: `f7c9d1e3a5b7`.
-- Head del código: `c0e2f4a6b8d1`.
+- Head del código: `d1f3a5c7e9b2`.
 - `e7b62b8a9421` incorpora `service_order_exception_requests` para conservar
   solicitud, autorización, ejecución, actores, timestamps y estado ETS de
   revalidación sin usar auditoría como almacenamiento de lifecycle.
@@ -176,6 +182,10 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
   Venta históricas. No cambia esquema; el ciclo PostgreSQL
   `base → head → base → head` y `alembic check` quedaron correctos contra este
   nuevo head; la base temporal fue eliminada.
+- `d1f3a5c7e9b2` agrega configuración congelable de Mantenimiento y las tablas
+  normalizadas de ejecución, pausas, materiales y cambios de alcance. El ciclo
+  PostgreSQL `base → head → base → head` y `alembic check` quedaron correctos;
+  la base temporal fue eliminada y la base compartida/respaldo no se tocaron.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
 - Upgrade desde el respaldo histórico en `b03b4c5d6e7f` hasta el head:
@@ -211,7 +221,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend canónico | 564 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
+| Backend canónico | 575 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
 | Identidad operativa/snapshot focal | 38 passed, 12 subtests; congelamiento, reapertura, categorías conocidas/Servicio General, compuestos, calibración y Hojas de Campo |
 | Comunicaciones/realtime focal | 14 passed; persistencia→evento, deduplicación, sync, recibos, menciones, IDOR, typing y multi-dispositivo |
 | Concurrencia Comunicaciones PostgreSQL | 5 escritores conservaron secuencias 1–5; 2 reintentos simultáneos compartieron un solo mensaje/sequence 6; base temporal eliminada |
@@ -226,9 +236,10 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 43 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Backend suite completa del corte | 564 passed, 5 skipped y 19 subtests; head esperado sincronizado en `c0e2f4a6b8d1` |
+| Backend suite completa del corte | 575 passed, 5 skipped y 19 subtests; head esperado sincronizado en `d1f3a5c7e9b2` |
 | ETS Venta/identidad/evolución focal | 31 passed; evolución exclusiva de Servicio General, vínculo comercial de calibración, garantía, evidencia acotada, PDF escapado, Portal/Mobile, parciales y snapshot |
-| Inventario FastAPI | 419/419 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
+| ETS Mantenimiento focal | 11 passed; preventivo/correctivo, laboratorio/campo, OT/equipo, pausas, materiales, alcance, Reparación separada, investigación, reporte, firma, cierre, snapshot y ETS múltiple |
+| Inventario FastAPI | 436/436 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
 | Eliminación OT productiva dirigida | 43 passed; admin/403/404, estados, dependencias, bloqueo por evidencia inmutable, firma compartida, factura, lectura móvil y rollback de base/archivo |
 | Frontend eliminación OT | 5 passed; capacidad exacta, ocultamiento sin permiso y regresión de access control/autenticación |
 | OT LAB backend/API/PDF/export/Tickets/eliminación | 26 passed, 5 skipped sin URL PostgreSQL; cubre autorización, estados, datos exclusivos, raíz/intermedia, hermanas, firma/ticket/revisión compartidos, rollback y conformidad |
@@ -359,6 +370,7 @@ elevó primero el esquema a `f4a1c9d2e710`; los sprints LAB, Notifications y
 Comunicaciones lo llevaron finalmente a `f7c9d1e3a5b7`. El respaldo oficial
 vigente conserva 75,050,260 bytes, coincide con ese head y superó restore
 drill, sin versionarse en Git.
-La identidad operativa y ETS Venta elevaron el head del código a
-`c0e2f4a6b8d1`; los ciclos se validaron en PostgreSQL temporal sin tocar la
-base compartida ni el respaldo oficial. El vertical queda **EN REVISIÓN**.
+La identidad operativa, ETS Venta y ETS Mantenimiento elevaron el head del
+código a `d1f3a5c7e9b2`; los ciclos se validaron en PostgreSQL temporal sin
+tocar la base compartida ni el respaldo oficial. Ambos verticales quedan
+**EN REVISIÓN**.

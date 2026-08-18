@@ -17,7 +17,6 @@ depends_on = None
 
 _CATEGORY_CASE = """
 CASE
-  WHEN item_type = 'product' THEN 'sale'
   WHEN lower(trim(category)) IN ('calibracion', 'calibración') THEN 'calibration'
   WHEN lower(trim(category)) = 'mantenimiento' THEN 'maintenance'
   WHEN lower(trim(category)) IN ('reparacion', 'reparación') THEN 'repair'

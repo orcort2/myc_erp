@@ -10,7 +10,9 @@
 
 `operational_category` es la identidad operativa explícita. Los valores vigentes son `calibration`, `maintenance`, `repair`, `verification`, `qualification`, `validation`, `training`, `consulting`, `general_service`, `sale` y `other`.
 
-`category` conserva la etiqueta estructurada del catálogo, `commodity` conserva la clasificación comercial/API y `calibration_scope` conserva la modalidad o configuración aplicable; ninguno debe reconstruirse desde nombres o descripciones durante la ejecución. La categoría se persiste en `CatalogItem`, `QuotationItem` y `ServiceOrderItem`; `ServiceUnit.initial_category` congela el origen de la unidad y `ServiceStage.category` conserva cada etapa append-only.
+`item_type` (`product`/`service`) conserva exclusivamente la clasificación comercial/fiscal. No crea, restringe ni reinterpreta identidad ETS: Producto no implica `sale` y Servicio admite `sale`. `category` conserva la etiqueta estructurada del catálogo, `commodity` conserva la clasificación comercial/API y `calibration_scope` conserva la modalidad o configuración aplicable; ninguno debe reconstruirse desde nombres o descripciones durante la ejecución. La categoría se persiste en `CatalogItem`, `QuotationItem` y `ServiceOrderItem`; `ServiceUnit.initial_category` congela el origen de la unidad y `ServiceStage.category` conserva cada etapa append-only.
+
+Todo concepto nuevo debe enviar `operational_category` explícita. El formulario presenta una sola lista operacional, independiente de Tipo; esa selección gobierna también la aparición de la configuración Venta ya existente. El backend valida correspondencia exacta entre la etiqueta estructurada y la clave canónica, pero nunca sustituye la clave a partir de `item_type`, nombre o descripción.
 
 `general_service` es especial: sólo ese origen habilita `ServiceUnit.evolution_enabled` e inicia en diagnóstico. Una categoría conocida nunca se degrada a Servicio General por falta de coincidencia textual.
 
@@ -24,7 +26,7 @@ Servicios Compuestos congelan la identidad de cada hoja dentro de `operational_i
 
 ## Compatibilidad
 
-La migración `a8c0e2f4b6d8` agrega y rellena las tres columnas desde categoría/commodity estructurados y vínculos existentes. Las columnas permanecen nullable para expedientes legacy ambiguos; el adaptador acepta coincidencias exactas de campos históricos y nunca hace búsqueda por fragmentos en nombre/descripción. `ServiceUnit`, `ServiceStage`, calibración y Servicio General no se reescriben.
+La migración `a8c0e2f4b6d8` agrega y rellena las tres columnas desde categoría/commodity estructurados y vínculos existentes, sin una rama por `item_type`. La corrección `e2a4c6d8f0b1` realinea únicamente el catálogo vivo cuya categoría histórica exacta demuestra la identidad; no modifica `QuotationItem`, `ServiceOrderItem` ni snapshots. Las columnas permanecen nullable para expedientes legacy ambiguos; el adaptador acepta coincidencias exactas de categoría/commodity históricos y nunca usa `item_type`, nombre o descripción. `ServiceUnit`, `ServiceStage`, calibración y Servicio General no se reescriben.
 
 ## Frontera de Hojas de Campo
 
@@ -33,5 +35,6 @@ La propuesta de plantilla permanece en `frontend/src/utils/fieldSheetTemplateRes
 ## Pendientes
 
 - Revisión funcional/arquitectónica y E2E autenticado antes de aprobar.
+- Revisar manualmente conceptos legacy de categoría no reconocida cuya intención no pueda demostrarse; no se reclasifican por haber sido Producto.
 - Los workflows particulares de mantenimiento, reparación, validación, calificación, capacitación, consultoría y demás categorías quedan fuera de esta entrega.
 - La restauración general de partidas desde `QuotationSnapshot` continúa en OBS-008; esta entrega garantiza que reabrir/editar no refresque el snapshot operativo silenciosamente.

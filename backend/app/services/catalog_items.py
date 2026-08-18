@@ -80,9 +80,7 @@ def _normalize_category_key(category: str | None) -> str:
     return (category or "").strip().lower()
 
 
-def _commodity_from_category(item_type: str | None, category: str | None, fallback: str | None = None) -> str:
-    if item_type == "product":
-        return "sale"
+def _commodity_from_category(category: str | None, fallback: str | None = None) -> str:
     return CATEGORY_TO_COMMODITY.get(_normalize_category_key(category), fallback or "general_service")
 
 
@@ -119,31 +117,52 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
     values["origin_currency"] = _normalize_currency(values.get("origin_currency"))
     values["cost_currency"] = _normalize_currency(values.get("cost_currency"))
     values["commodity"] = _commodity_from_category(
-        values.get("item_type"), values.get("category"), values.get("commodity")
+        values.get("category"), values.get("commodity")
     )
-    values["operational_category"] = operational_category_from_structured_fields(
-        item_type=values.get("item_type"),
+    operational_category = values.get("operational_category")
+    if operational_category is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Selecciona explícitamente la categoría operacional",
+        )
+    structured_category = operational_category_from_structured_fields(
         category=values.get("category"),
-        commodity=values.get("commodity"),
-    ) or "other"
+        commodity=None,
+    )
+    if structured_category is not None and structured_category != operational_category:
+        raise HTTPException(
+            status_code=422,
+            detail="La categoría y operational_category no corresponden",
+        )
+    values["operational_category"] = operational_category
     if values["operational_category"] != "sale":
         values["requires_individual_identification"] = False
         values["sale_brand"] = None
         values["sale_model"] = None
         values["sale_specification"] = None
         values["included_calibration_catalog_item_id"] = None
+    if values["operational_category"] != "maintenance":
+        values["maintenance_type"] = None
+        values["maintenance_location"] = None
+        values["maintenance_base_materials"] = []
+    else:
+        if values.get("calibration_scope") not in {"preventive", "corrective"}:
+            raise HTTPException(status_code=422, detail="Selecciona Mantenimiento preventivo o correctivo")
+        values["maintenance_type"] = values["calibration_scope"]
+        if values.get("maintenance_location") not in {"laboratory", "field"}:
+            raise HTTPException(status_code=422, detail="Selecciona Mantenimiento en laboratorio o campo")
+        materials = values.get("maintenance_base_materials") or []
+        if values["calibration_scope"] != "corrective" and materials:
+            raise HTTPException(status_code=422, detail="Los materiales base sólo aplican al Mantenimiento correctivo")
+        if any(not isinstance(material, dict) or not material.get("name") for material in materials):
+            raise HTTPException(status_code=422, detail="Cada material base requiere al menos name")
     values["tax_object"] = values.get("tax_object") or "iva_16"
     values["tax_rate"] = TAX_RATE_BY_OBJECT[values["tax_object"]]
 
     values["quotation_legend"] = _quotation_legend(values)
     if values.get("item_type") == "product":
         values["service_kind"] = "simple"
-        values["calibration_scope"] = None
-        values["expected_certificate_master_id"] = None
-        values["service_type"] = None
-        values["linked_company_id"] = None
-        values["linked_certificate_prefix"] = None
-    if values.get("item_type") == "service" and values.get("category") == "Calibracion":
+    if values.get("operational_category") == "calibration":
         service_type = normalize_service_type(
             values.get("service_type"),
             calibration_scope=values.get("calibration_scope"),
@@ -169,7 +188,7 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
         else:
             values["linked_company_id"] = None
             values["linked_certificate_prefix"] = None
-    if values.get("category") != "Calibracion":
+    if values.get("operational_category") != "calibration":
         values["expected_certificate_master_id"] = None
     if values.get("internal_unit") != "other":
         values["custom_internal_unit"] = None
@@ -201,12 +220,11 @@ def _ensure_included_calibration(db: Session, values: dict) -> None:
     if (
         calibration is None
         or not calibration.is_active
-        or calibration.item_type != "service"
         or calibration.operational_category != "calibration"
     ):
         raise HTTPException(
             status_code=422,
-            detail="La calibración incluida debe ser un servicio activo de Calibración",
+            detail="La calibración incluida debe ser un concepto activo de Calibración",
         )
 
 
@@ -625,6 +643,9 @@ def update_catalog_item(
         "sale_model": item.sale_model,
         "sale_specification": item.sale_specification,
         "included_calibration_catalog_item_id": item.included_calibration_catalog_item_id,
+        "maintenance_type": item.maintenance_type,
+        "maintenance_location": item.maintenance_location,
+        "maintenance_base_materials": item.maintenance_base_materials,
         "name": item.name,
         "description": item.description,
         "sat_key": item.sat_key,
@@ -691,6 +712,9 @@ def update_catalog_item(
         "tax_rate",
         "commodity",
         "operational_category",
+        "maintenance_type",
+        "maintenance_location",
+        "maintenance_base_materials",
     }
     for key in keys_to_apply:
         setattr(item, key, prepared[key])

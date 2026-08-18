@@ -10,6 +10,19 @@
 
 # Reglas de negocio vigentes
 
+## ETS Mantenimiento
+
+- Nace exclusivamente de `operational_category=maintenance`; sus unidades no usan evolución genérica.
+- Tipo, modalidad y materiales base quedan congelados en snapshot.
+- Campo no registra arribo; laboratorio sí y conserva custodia MYC durante pausas por refacción.
+- Preventivo no cambia a correctivo sin partida aprobada vinculada o override administrativo auditado.
+- Mantenimiento no ejecuta Reparación: sólo documenta y vincula un ETS independiente.
+- Condición final inoperable bloquea terminación/cierre hasta resolver investigación.
+- Material utilizado y requerido son distintos; costos internos nunca aparecen en el reporte del cliente.
+- Terminación técnica, reporte, firma y cierre son hitos distintos; la firma identifica la versión.
+- Recomendación rechazada no bloquea si el alcance original terminó, quedó documentada y se firmó el reporte vigente.
+- Todo bloqueante indica mensaje, sección y campo y debe ser visible/navegable en frontend.
+
 Sólo se incluyen reglas verificadas en la implementación o en una decisión vigente. Las reglas históricas no confirmadas quedan fuera de este documento.
 
 | ID | Módulo | Regla vigente | Evidencia principal | Decisión aproximada |
@@ -46,7 +59,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-028 | Captura/Calidad | El envío individual a Calidad exige Master esperado e identificado y cero `mismatch`/`no_coincide`; `no_encontrado` es advertencia permitida. La transición es `capture_in_progress → quality_review`, audita actor/fecha/Master y no exige PDF ni modifica `match_status`. | readiness, transición y pruebas del flujo Master | 2026-07-21 |
 | BR-029 | Captura | El tipo de servicio del Master se valida como `accredited` o `traceable` mediante similitud estructural con el snapshot asignado: hojas, dimensiones, fusiones, estilos, fórmulas, etiquetas posicionadas, imágenes y área de impresión. La leyenda o número de acreditación no son identificadores del dominio. | `master_template_fingerprints.py`, parser de paquetes y pruebas | 2026-07-21 |
 | BR-030 | Catálogo/ETS/Certificados | Las modalidades canónicas de acreditación son `accredited_iso_17025`, `traceable` y `accredited_linked_lab`. Se configuran en el servicio, se propagan automáticamente por cotización→ETS→equipo y se mapean a certificado `acreditado`, `trazable` o `vinculado`; una leyenda documental nunca sustituye la clave de negocio. | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md), schemas y servicio de capacidad | 2026-07-22 |
-| BR-053 | Catálogo/Cotizaciones/ETS | `operational_category` es la identidad operativa canónica y viaja catálogo→snapshot→partida ETS→unidad/etapa. Sólo `general_service` habilita diagnóstico evolutivo; categorías conocidas no se infieren por fragmentos de nombre ni caen a ese flujo. | [`../architecture/OPERATIONAL_SERVICE_IDENTITY.md`](../architecture/OPERATIONAL_SERVICE_IDENTITY.md) | 2026-08-18 |
+| BR-053 | Catálogo/Cotizaciones/ETS | `operational_category` es la identidad operativa canónica y viaja catálogo→snapshot→partida ETS→unidad/etapa. `item_type` sólo clasifica Producto/Servicio comercial/fiscal: no implica ni bloquea `sale`. Sólo `general_service` habilita diagnóstico evolutivo; categorías no se infieren por tipo, nombre o descripción. | [`../architecture/OPERATIONAL_SERVICE_IDENTITY.md`](../architecture/OPERATIONAL_SERVICE_IDENTITY.md) | 2026-08-18 |
 | BR-031 | Autenticación | Sólo un JWT con `token_type=access` autentica solicitudes; un refresh se acepta únicamente en el endpoint de renovación. El registro público no recibe ni decide roles solicitados por el cliente. | `backend/app/core/security.py`, `backend/app/services/auth.py`, schemas y pruebas de seguridad | 2026-07-24 |
 | BR-032 | Motor de Resoluciones | Toda operación protegida se deniega si falta identidad activa, autenticación vigente, política aplicable, permiso exacto o evidencia consistente. Una denegación explícita y una incompatibilidad de segregación prevalecen aun cuando existan permisos. | [`../architecture/resolution-engine/15_SECURITY_GOVERNANCE.md`](../architecture/resolution-engine/15_SECURITY_GOVERNANCE.md) y pruebas de Fase 3 | 2026-07-24 |
 | BR-033 | Motor de Resoluciones | Sólo un expediente listo, con plan autorizado y revalidación exacta, puede ejecutarse. Idempotencia y lock se reservan antes del primer efecto; el token se comprueba después del handler y en el checkpoint. Expiración, sustitución o respuesta incierta bloquean y no autorizan repetición automática. | [`../architecture/resolution-engine/17_EXECUTION_RUNTIME.md`](../architecture/resolution-engine/17_EXECUTION_RUNTIME.md) y pruebas de Fase 5 | 2026-07-28 |

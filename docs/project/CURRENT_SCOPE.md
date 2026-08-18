@@ -10,6 +10,10 @@
 
 # Alcance actual del ERP MYC
 
+## ETS Mantenimiento — TERMINADO, EN REVISIÓN (2026-08-18)
+
+Incluye preventivo/correctivo, laboratorio/campo, unidad/equipo/OT institucional, asignación y visita, captura Antes–Intervención–Después–Futuro, pausas tipadas, materiales utilizados/requeridos, cambio comercial preventivo→correctivo, referencia separada a Reparación, investigación por equipo inoperable, reporte automático versionado, firma, liberación, permisos y bloqueantes UX accionables. Excluye Compras, Almacén, mapas/tracking externos y ejecución de Reparación.
+
 ## Propósito vigente
 
 El ERP controla el expediente operativo de servicios metrológicos desde Cliente y Cotización hasta ETS, equipos, Hojas de Campo, Captura, Calidad, certificados, facturación, pago, liberación y trazabilidad documental. `service_orders` es la raíz operativa del expediente; Cliente y Cotización son sus antecedentes comerciales.
@@ -20,7 +24,7 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   deny-by-default y auditoría.
 - Dashboard y navegación principal.
 - Clientes, contactos dependientes, datos fiscales, constancias e importación/exportación.
-- Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. `operational_category` distingue las categorías soportadas y el snapshot conserva identidad/configuración por componente sin refresco silencioso al reabrir o editar. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
+- Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Tipo Producto/Servicio es comercial/fiscal e independiente de `operational_category`; Venta puede seleccionarse con ambos tipos y un Producto con otra categoría no se convierte en `sale`. El snapshot conserva identidad/configuración por componente sin refresco silencioso al reabrir o editar. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
 - Primera excepción contextual de Ventas: una cotización aprobada con ETS
   integralmente virgen puede desbloquear todas sus partidas, guardar una nueva
   revisión y reconstruir el ETS con el mismo folio. Administrador desbloquea

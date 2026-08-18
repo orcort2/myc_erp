@@ -530,9 +530,11 @@ def create_service_order(
     _build_work_orders_for_service_order(db, service_order)
     db.flush()
 
+    from app.services.maintenance_execution import initialize_maintenance_execution
     from app.services.sale_execution import initialize_sale_execution
 
     initialize_sale_execution(db, service_order, user_id=user_id)
+    initialize_maintenance_execution(db, service_order, user_id=user_id)
     db.flush()
 
     write_audit_log(

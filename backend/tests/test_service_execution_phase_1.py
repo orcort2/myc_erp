@@ -350,7 +350,8 @@ def test_initial_multiple_quote_decisions_can_seed_authorized_unit_stages(db: Se
     items = []
     for category in ("maintenance", "calibration"):
         item = QuotationItem(
-            quotation_id=quotation.id, service_name=category, quantity=1,
+            quotation_id=quotation.id, service_name=category,
+            operational_category=category, quantity=1,
             unit_price=Decimal("100"), discount_percent=Decimal("0"),
             tax_rate=Decimal("16"), tax_total=Decimal("16"), total=Decimal("100"),
         )
@@ -422,7 +423,8 @@ def test_item_decision_derives_internal_actor_and_rejects_unauthorized_contexts(
     db.add(quotation)
     db.flush()
     item = QuotationItem(
-        quotation_id=quotation.id, service_name="Reparación", quantity=1,
+        quotation_id=quotation.id, service_name="Reparación",
+        operational_category="repair", quantity=1,
         unit_price=Decimal("100"), discount_percent=Decimal("0"),
         tax_rate=Decimal("16"), tax_total=Decimal("16"), total=Decimal("100"),
     )
@@ -581,6 +583,8 @@ def test_approved_categories_must_match_request_and_quotation_item(db: Session, 
     quotation, item = _derived_item(
         db, context, unit, request, folio="MYC-08-26-8601", name="Mantenimiento"
     )
+    item.operational_category = "maintenance"
+    db.commit()
     with pytest.raises(HTTPException) as mismatched_item:
         decide_quotation_item(
             db, quotation.id, item.id,
@@ -589,6 +593,7 @@ def test_approved_categories_must_match_request_and_quotation_item(db: Session, 
         )
     assert mismatched_item.value.status_code == 422
     item.service_name = "Reparación"
+    item.operational_category = "repair"
     db.commit()
     with pytest.raises(HTTPException) as unrequested:
         decide_quotation_item(

@@ -1,4 +1,5 @@
 from io import BytesIO
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -37,6 +38,18 @@ from app.schemas.sale_execution import (
     SaleDeliveryCreate,
     SaleWarrantyReturnCreate,
     SaleUnitResolution,
+)
+from app.schemas.maintenance_execution import (
+    MaintenanceBoardRead,
+    MaintenanceCapture,
+    MaintenanceChangeCreate,
+    MaintenanceChangeResolve,
+    MaintenanceEquipmentCreate,
+    MaintenanceMaterialCreate,
+    MaintenancePauseCreate,
+    MaintenancePauseResolve,
+    MaintenancePrepare,
+    MaintenanceSignature,
 )
 from app.services.auth import get_current_user, require_permission
 from app.services.capture_packages import (
@@ -89,6 +102,25 @@ from app.services.sale_execution import (
     resolve_warranty_return,
     sale_board,
 )
+from app.services.maintenance_execution import (
+    accept_field_visit,
+    add_material as add_maintenance_material,
+    add_pause as add_maintenance_pause,
+    close_execution as close_maintenance_execution,
+    complete_technical as complete_maintenance_technical,
+    generate_report as generate_maintenance_report,
+    maintenance_board,
+    prepare_execution as prepare_maintenance_execution,
+    register_arrival as register_maintenance_arrival,
+    register_field_equipment,
+    request_change as request_maintenance_change,
+    resolve_change as resolve_maintenance_change,
+    resolve_investigation,
+    resolve_pause as resolve_maintenance_pause,
+    save_capture as save_maintenance_capture,
+    sign_report as sign_maintenance_report,
+    start_execution as start_maintenance_execution,
+)
 from app.services.work_order_pdfs import (
     generate_service_order_work_orders_pdf,
     generate_service_work_order_pdf,
@@ -97,6 +129,92 @@ from app.services.work_order_pdfs import (
 
 
 router = APIRouter(prefix="/service-orders", tags=["service-orders"])
+
+
+@router.get("/{service_order_id}/maintenance", response_model=MaintenanceBoardRead)
+def get_maintenance_board(service_order_id: int, db: Session = Depends(get_db), _current_user: User = Depends(require_permission("service_orders.read"))):
+    return maintenance_board(db, service_order_id)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/arrival", response_model=MaintenanceBoardRead)
+def post_maintenance_arrival(service_order_id: int, execution_id: int, payload: MaintenanceEquipmentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.manage"))):
+    return register_maintenance_arrival(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/field-equipment", response_model=MaintenanceBoardRead)
+def post_maintenance_field_equipment(service_order_id: int, execution_id: int, payload: MaintenanceEquipmentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.manage"))):
+    return register_field_equipment(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/prepare", response_model=MaintenanceBoardRead)
+def post_maintenance_prepare(service_order_id: int, execution_id: int, payload: MaintenancePrepare, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.manage"))):
+    return prepare_maintenance_execution(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/field-accept", response_model=MaintenanceBoardRead)
+def post_maintenance_field_accept(service_order_id: int, execution_id: int, scheduled_for: datetime, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return accept_field_visit(db, service_order_id, execution_id, scheduled_for, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/start", response_model=MaintenanceBoardRead)
+def post_maintenance_start(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return start_maintenance_execution(db, service_order_id, execution_id, actor=current_user)
+
+
+@router.put("/{service_order_id}/maintenance/{execution_id}/capture", response_model=MaintenanceBoardRead)
+def put_maintenance_capture(service_order_id: int, execution_id: int, payload: MaintenanceCapture, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return save_maintenance_capture(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/pauses", response_model=MaintenanceBoardRead)
+def post_maintenance_pause(service_order_id: int, execution_id: int, payload: MaintenancePauseCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return add_maintenance_pause(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/pauses/{pause_id}/resolve", response_model=MaintenanceBoardRead)
+def post_maintenance_pause_resolution(service_order_id: int, execution_id: int, pause_id: int, payload: MaintenancePauseResolve, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return resolve_maintenance_pause(db, service_order_id, execution_id, pause_id, payload.resolution, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/materials", response_model=MaintenanceBoardRead)
+def post_maintenance_material(service_order_id: int, execution_id: int, payload: MaintenanceMaterialCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return add_maintenance_material(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/changes", response_model=MaintenanceBoardRead)
+def post_maintenance_change(service_order_id: int, execution_id: int, payload: MaintenanceChangeCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return request_maintenance_change(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/changes/{change_id}/resolve", response_model=MaintenanceBoardRead)
+def post_maintenance_change_resolution(service_order_id: int, execution_id: int, change_id: int, payload: MaintenanceChangeResolve, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.authorize"))):
+    return resolve_maintenance_change(db, service_order_id, execution_id, change_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/investigation/resolve", response_model=MaintenanceBoardRead)
+def post_maintenance_investigation_resolution(service_order_id: int, execution_id: int, payload: MaintenancePauseResolve, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.authorize"))):
+    return resolve_investigation(db, service_order_id, execution_id, payload.resolution, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/technical-complete", response_model=MaintenanceBoardRead)
+def post_maintenance_technical_complete(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.execute"))):
+    return complete_maintenance_technical(db, service_order_id, execution_id, actor=current_user)
+
+
+@router.get("/{service_order_id}/maintenance/{execution_id}/report.pdf")
+def get_maintenance_report(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.manage"))):
+    content, filename = generate_maintenance_report(db, service_order_id, execution_id, actor=current_user)
+    return StreamingResponse(BytesIO(content), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/signature", response_model=MaintenanceBoardRead)
+def post_maintenance_signature(service_order_id: int, execution_id: int, payload: MaintenanceSignature, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.sign"))):
+    return sign_maintenance_report(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/maintenance/{execution_id}/close", response_model=MaintenanceBoardRead)
+def post_maintenance_close(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.close"))):
+    return close_maintenance_execution(db, service_order_id, execution_id, actor=current_user)
 
 
 @router.get("/{service_order_id}/sale", response_model=SaleBoardRead)

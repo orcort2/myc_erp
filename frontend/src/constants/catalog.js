@@ -42,8 +42,36 @@ export const catalogKindByCategory = {
   Capacitacion: 'training',
   Consultoria: 'consulting',
   Venta: 'sale',
-  'Servicio general': 'general_service'
+  'Servicio general': 'general_service',
+  Otro: 'other'
 };
+
+export const catalogOperationalCategoryOptions = [
+  { value: 'calibration', label: 'Calibración', category: 'Calibracion' },
+  { value: 'maintenance', label: 'Mantenimiento', category: 'Mantenimiento' },
+  { value: 'repair', label: 'Reparación', category: 'Reparacion' },
+  { value: 'verification', label: 'Verificación', category: 'Verificacion' },
+  { value: 'qualification', label: 'Calificación', category: 'Calificacion' },
+  { value: 'validation', label: 'Validación', category: 'Validacion' },
+  { value: 'training', label: 'Capacitación', category: 'Capacitacion' },
+  { value: 'consulting', label: 'Consultoría', category: 'Consultoria' },
+  { value: 'general_service', label: 'Servicio general', category: 'Servicio general' },
+  { value: 'sale', label: 'Venta', category: 'Venta' },
+  { value: 'other', label: 'Otra', category: 'Otro' }
+];
+
+export function operationalCategoryFromCatalogCategory(category) {
+  return catalogKindByCategory[category] ?? 'other';
+}
+
+export function catalogCategoryFromOperationalCategory(operationalCategory, fallback = '') {
+  return catalogOperationalCategoryOptions.find((option) => option.value === operationalCategory)?.category ?? fallback;
+}
+
+export function operationalCategoryFromCatalogForm(form) {
+  const value = form?.operationalCategory ?? '';
+  return catalogOperationalCategoryOptions.some((option) => option.value === value) ? value : '';
+}
 
 export const internalUnitOptions = [
   { value: 'service', label: 'Servicio' },

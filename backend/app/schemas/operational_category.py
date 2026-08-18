@@ -45,12 +45,13 @@ _CATEGORY_KEYS = {
     "equipos": "sale",
     "accesorios": "sale",
     "consumibles": "sale",
+    "otro": "other",
+    "otra": "other",
 }
 
 _COMMODITY_KEYS = {
     value: value
     for value in OPERATIONAL_CATEGORY_VALUES
-    if value != "other"
 }
 
 
@@ -63,13 +64,10 @@ def _key(value: str | None) -> str:
 
 def operational_category_from_structured_fields(
     *,
-    item_type: str | None,
     category: str | None,
     commodity: str | None,
 ) -> str | None:
     """Resolve legacy structured fields exactly; never inspect names/descriptions."""
-    if item_type == "product":
-        return "sale"
     category_value = _CATEGORY_KEYS.get(_key(category))
     if category_value is not None:
         return category_value

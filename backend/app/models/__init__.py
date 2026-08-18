@@ -80,6 +80,12 @@ from app.models.lab_work_order import (
     LabWorkOrderSignatureSession,
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
+from app.models.maintenance_execution import (
+    MaintenanceChangeRequest,
+    MaintenanceExecution,
+    MaintenanceMaterial,
+    MaintenancePause,
+)
 from app.models.operational_ticket import OperationalTicket
 from app.models.notification import Notification, PushDevice
 from app.models.portal_invitation import PortalInvitation

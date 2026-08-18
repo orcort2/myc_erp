@@ -1001,6 +1001,28 @@ contra el bootstrap y el guard HTTP se mantienen en
 |---|---|---|---|
 | Cambiar servicio del catálogo | `service_orders.fields.catalog_item_id.update` | `ServiceOrderItemBase.catalog_item_id` | Requiere granularización |
 
+## 14.21. Ejecutar ETS Mantenimiento
+
+| Microacción | Método y ruta | Permiso propuesto | Estado |
+|---|---|---|---|
+| Consultar tablero de Mantenimiento | `GET /service-orders/{service_order_id}/maintenance` | `service_orders.read` | Existe en backend |
+| Registrar arribo de laboratorio | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/arrival` | `service_orders.maintenance.manage` | Existe en backend |
+| Vincular equipo atendido en campo | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/field-equipment` | `service_orders.maintenance.manage` | Existe en backend |
+| Preparar y asignar Mantenimiento | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/prepare` | `service_orders.maintenance.manage` | Existe en backend |
+| Aceptar visita de campo | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/field-accept` | `service_orders.maintenance.execute` | Existe en backend |
+| Iniciar intervención | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/start` | `service_orders.maintenance.execute` | Existe en backend |
+| Guardar captura técnica estructurada | `PUT /service-orders/{service_order_id}/maintenance/{execution_id}/capture` | `service_orders.maintenance.execute` | Existe en backend |
+| Registrar o resolver pausa | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/pauses[...]` | `service_orders.maintenance.execute` | Existe en backend |
+| Documentar material utilizado o requerido | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/materials` | `service_orders.maintenance.execute` | Existe en backend |
+| Solicitar cambio de alcance | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/changes` | `service_orders.maintenance.execute` | Existe en backend |
+| Resolver cambio de alcance | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/changes/{change_id}/resolve` | `service_orders.maintenance.authorize` | Existe en backend |
+| Resolver investigación administrativa | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/investigation/resolve` | `service_orders.maintenance.authorize` | Existe en backend |
+| Terminar técnicamente | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/technical-complete` | `service_orders.maintenance.execute` | Existe en backend |
+| Generar reporte PDF | `GET /service-orders/{service_order_id}/maintenance/{execution_id}/report.pdf` | `service_orders.maintenance.manage` | Existe en backend |
+| Firmar versión del reporte | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/signature` | `service_orders.maintenance.sign` | Existe en backend |
+| Cerrar Mantenimiento | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/close` | `service_orders.maintenance.close` | Existe en backend |
+| Aplicar override administrativo | `POST /service-orders/{service_order_id}/maintenance/{execution_id}/changes/{change_id}/resolve` | `service_orders.maintenance.authorize` | Existe en backend |
+
 # 15. Equipos
 
 ## 15.1. Cambiar estado

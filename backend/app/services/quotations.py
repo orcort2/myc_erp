@@ -115,6 +115,11 @@ def _build_operational_snapshot(
                     else None
                 ),
             } if item.operational_category == "sale" else None,
+            "maintenance_configuration_snapshot": {
+                "maintenance_type": item.calibration_scope,
+                "location_mode": item.maintenance_location,
+                "base_materials": item.maintenance_base_materials or [],
+            } if item.operational_category == "maintenance" else None,
             "linked_company_id": item.linked_company_id,
             "linked_company_name_snapshot": company.name if company else None,
             "certificate_prefix_snapshot": item.linked_certificate_prefix,
@@ -249,7 +254,6 @@ def _quotation_item_values(
         values.setdefault("tax_rate", catalog_item.tax_rate)
     elif existing_item is None and values.get("operational_category") is None:
         values["operational_category"] = operational_category_from_structured_fields(
-            item_type=None,
             category=None,
             commodity=values.get("commodity"),
         )

@@ -43,6 +43,7 @@ class CompositeCatalogServiceTests(unittest.TestCase):
             "service_kind": "simple",
             "commodity": "calibration",
             "category": "Calibracion",
+            "operational_category": "calibration",
             "name": name,
             "origin_currency": "MXN",
             "calibration_scope": scope,
@@ -125,6 +126,7 @@ class CompositeCatalogServiceTests(unittest.TestCase):
                     "service_kind": "composite",
                     "commodity": "general_service",
                     "category": "Servicio general",
+                    "operational_category": "general_service",
                     "name": "Servicio padre",
                     "origin_currency": "MXN",
                     "components": [
@@ -160,6 +162,7 @@ class CompositeCatalogServiceTests(unittest.TestCase):
                     "service_kind": "composite",
                     "commodity": "general_service",
                     "category": "Servicio general",
+                    "operational_category": "general_service",
                     "name": "Equipo Especial",
                     "origin_currency": "MXN",
                     "components": [

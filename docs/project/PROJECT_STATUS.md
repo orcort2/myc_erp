@@ -10,6 +10,10 @@
 
 # Estado actual del ERP MYC
 
+## ETS Mantenimiento — TERMINADO, EN REVISIÓN
+
+Vertical integrado al motor ETS con configuración congelada, preventivo/correctivo, laboratorio/campo, OT/equipo, asignación, visita, pausas, captura estructurada, materiales, cambios comerciales, investigación, reporte PDF versionado, firma y cierre. No se declara SELLADO porque falta aceptación autenticada en navegador/dispositivo físico y permanecen TD-045/TD-046/TD-047. Reparación, Compras, Almacén y navegación externa continúan fuera de alcance.
+
 Este documento contiene sólo el estado vigente. Es la única fuente documental autorizada para responder qué módulos están sellados, casi sellados, en desarrollo, pendientes o no iniciados. La evidencia detallada del corte está en [`../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md`](../audits/AUDITORIA_INTEGRAL_AVANCE_ERP_MYC_2026-07-21.md).
 
 ## Resumen
@@ -116,6 +120,9 @@ categorías y blinda una única decisión inicial
 bajo concurrencia, conservando compatibilidad con calibración. No cambia la
 clasificación global: faltan revisión funcional y
 arquitectónica, UI de cards/tabs, portal/app de aprobación y E2E autenticado.
+Tipo Producto/Servicio quedó desacoplado de la ruta ETS: Venta se selecciona
+explícitamente para cualquiera de los dos y ningún Producto se vuelve `sale`
+por su clasificación fiscal. El frente permanece **EN REVISIÓN**.
 
 El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho rutas de
 sólo lectura cubren ETS, OT, Equipos y Hojas de Campo con ownership por técnico,

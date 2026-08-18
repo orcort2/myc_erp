@@ -22,7 +22,7 @@ CatalogItemType = Literal["product", "service"]
 CatalogServiceKind = Literal["simple", "composite"]
 CatalogCommodity = Literal[
     "calibration", "maintenance", "repair", "verification", "qualification",
-    "validation", "training", "consulting", "sale", "general_service",
+    "validation", "training", "consulting", "sale", "general_service", "other",
 ]
 InternalUnit = Literal[
     "service",
@@ -60,6 +60,8 @@ CATEGORY_TO_COMMODITY = {
     "validacion": "validation",
     "capacitacion": "training",
     "consultoria": "consulting",
+    "otro": "other",
+    "otra": "other",
 }
 
 CATEGORY_LEGENDS = {
@@ -106,6 +108,9 @@ class CatalogItemBase(BaseModel):
     sale_model: str | None = Field(default=None, max_length=120)
     sale_specification: str | None = None
     included_calibration_catalog_item_id: int | None = Field(default=None, gt=0)
+    maintenance_type: Literal["preventive", "corrective"] | None = None
+    maintenance_location: Literal["laboratory", "field"] | None = None
+    maintenance_base_materials: list[dict] = Field(default_factory=list)
     name: str = Field(min_length=1, max_length=180)
     description: str | None = None
     sat_key: str | None = Field(default=None, max_length=40)
@@ -130,9 +135,7 @@ class CatalogItemBase(BaseModel):
 
     @model_validator(mode="after")
     def validate_business_rules(self):
-        if self.item_type == "service" and self.category == "Venta":
-            raise ValueError("La categoria Venta debe capturarse como producto")
-        is_sale = self.item_type == "product" or self.operational_category == "sale"
+        is_sale = self.operational_category == "sale"
         if not is_sale and (
             self.requires_individual_identification
             or self.sale_brand
@@ -141,6 +144,19 @@ class CatalogItemBase(BaseModel):
             or self.included_calibration_catalog_item_id is not None
         ):
             raise ValueError("La configuración de Venta sólo aplica a conceptos de Venta")
+        is_maintenance = self.operational_category == "maintenance"
+        if is_maintenance and (self.maintenance_type is None or self.maintenance_location is None):
+            raise ValueError("Mantenimiento requiere tipo preventivo/correctivo y laboratorio/campo")
+        if is_maintenance and self.maintenance_type != self.calibration_scope:
+            raise ValueError("maintenance_type debe coincidir con el alcance preventivo/correctivo")
+        if not is_maintenance and (
+            self.maintenance_type is not None
+            or self.maintenance_location is not None
+            or self.maintenance_base_materials
+        ):
+            raise ValueError("La configuración de Mantenimiento sólo aplica a esa categoría")
+        if self.maintenance_base_materials and self.calibration_scope != "corrective":
+            raise ValueError("Los materiales base configurables sólo aplican a Mantenimiento correctivo")
         if self.item_type == "product" and self.service_kind != "simple":
             raise ValueError("Los productos no pueden configurarse como servicios compuestos")
         allowed_scopes = SERVICE_SCOPE_VALUES_BY_CATEGORY.get(self.category)
@@ -152,9 +168,7 @@ class CatalogItemBase(BaseModel):
             )
         if not allowed_scopes and self.calibration_scope is not None:
             raise ValueError("calibration_scope debe ser null para categorias sin alcance")
-        if self.item_type == "product" and self.calibration_scope is not None:
-            raise ValueError("calibration_scope debe ser null para productos")
-        if self.item_type == "service" and self.category == "Calibracion":
+        if self.operational_category == "calibration":
             if self.service_type is None:
                 self.service_type = normalize_service_type(
                     None, calibration_scope=self.calibration_scope
@@ -185,6 +199,8 @@ class CatalogItemCreate(CatalogItemBase):
 
     @model_validator(mode="after")
     def validate_components(self):
+        if self.operational_category is None:
+            raise ValueError("operational_category es obligatoria para conceptos nuevos")
         if self.service_kind == "composite" and not self.components:
             raise ValueError("Un servicio compuesto debe tener al menos un componente")
         if self.service_kind == "simple" and self.components:
@@ -207,6 +223,9 @@ class CatalogItemUpdate(BaseModel):
     sale_model: str | None = Field(default=None, max_length=120)
     sale_specification: str | None = None
     included_calibration_catalog_item_id: int | None = Field(default=None, gt=0)
+    maintenance_type: Literal["preventive", "corrective"] | None = None
+    maintenance_location: Literal["laboratory", "field"] | None = None
+    maintenance_base_materials: list[dict] | None = None
     name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = None
     sat_key: str | None = Field(default=None, max_length=40)

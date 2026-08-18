@@ -11,10 +11,11 @@ import {
 import {
   internalUnitOptions,
   taxObjectOptions,
-  serviceCategories,
-  productCategories,
+  catalogOperationalCategoryOptions,
   scopeOptionsByCategory,
-  catalogKindByCategory,
+  operationalCategoryFromCatalogCategory,
+  catalogCategoryFromOperationalCategory,
+  operationalCategoryFromCatalogForm,
   validCatalogCurrencies,
   catalogTypeToApi,
   catalogTypeFromApi
@@ -115,11 +116,6 @@ function calculateFinalPriceMxn({ basePrice, exchangeRate, margin }) {
   return price * rate * marginFactor;
 }
 
-function inferBackendCatalogKind(type, category) {
-  if (type === 'Producto') return 'sale';
-  return catalogKindByCategory[category] ?? 'general_service';
-}
-
 function getCategoryScopeOptions(category) {
   return scopeOptionsByCategory[category] ?? [];
 }
@@ -141,6 +137,8 @@ function mapCatalogItemFromApi(item) {
         }))
       : [],
     commodity: item.commodity,
+    operationalCategory: item.operational_category
+      ?? operationalCategoryFromCatalogCategory(item.category),
     calibrationScope: item.calibration_scope ?? '',
     serviceType: item.service_type ?? (
       item.calibration_scope === 'accredited_iso_17025'
@@ -159,6 +157,9 @@ function mapCatalogItemFromApi(item) {
     saleModel: item.sale_model ?? '',
     saleSpecification: item.sale_specification ?? '',
     includedCalibrationCatalogItemId: item.included_calibration_catalog_item_id ? String(item.included_calibration_catalog_item_id) : '',
+    maintenanceType: ['preventive', 'corrective'].includes(item.calibration_scope) ? item.calibration_scope : 'preventive',
+    maintenanceLocation: item.maintenance_location ?? 'laboratory',
+    maintenanceBaseMaterialsText: JSON.stringify(item.maintenance_base_materials ?? [], null, 2),
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
     internalKey: item.internal_key ?? '',
@@ -181,14 +182,17 @@ function mapCatalogItemFromApi(item) {
   };
 }
 function mapCatalogPayloadFromForm(form) {
-  const commodity = inferBackendCatalogKind(form.type, form.category);
+  const operationalCategory = operationalCategoryFromCatalogForm(form);
+  const commodity = operationalCategory;
   const scopeOptions = getCategoryScopeOptions(form.category);
   const serviceScopeByType = {
     accredited: 'accredited_iso_17025',
     traceable: 'traceable',
     linked: 'accredited_linked_lab'
   };
-  const calibrationScope = form.category === 'Calibracion'
+  const calibrationScope = operationalCategory === 'maintenance'
+    ? form.maintenanceType
+    : form.category === 'Calibracion'
     ? serviceScopeByType[form.serviceType] || 'traceable'
     : scopeOptions.length ? form.calibrationScope || scopeOptions[0].value : null;
   return {
@@ -201,6 +205,7 @@ function mapCatalogPayloadFromForm(form) {
         }))
       : [],
     commodity,
+    operational_category: operationalCategory,
     category: form.category.trim(),
     name: form.name.trim(),
     description: null,
@@ -219,11 +224,16 @@ function mapCatalogPayloadFromForm(form) {
     linked_company_id: form.serviceType === 'linked' ? Number(form.linkedCompanyId) || null : null,
     linked_certificate_prefix: form.serviceType === 'linked' ? form.linkedCertificatePrefix.trim().toUpperCase() || null : null,
     expected_certificate_master_id: form.category === 'Calibracion' ? Number(form.expectedCertificateMasterId) || null : null,
-    requires_individual_identification: form.type === 'Producto' ? Boolean(form.requiresIndividualIdentification) : false,
-    sale_brand: form.type === 'Producto' ? form.saleBrand.trim() || null : null,
-    sale_model: form.type === 'Producto' ? form.saleModel.trim() || null : null,
-    sale_specification: form.type === 'Producto' ? form.saleSpecification.trim() || null : null,
-    included_calibration_catalog_item_id: form.type === 'Producto' ? Number(form.includedCalibrationCatalogItemId) || null : null,
+    requires_individual_identification: operationalCategory === 'sale' ? Boolean(form.requiresIndividualIdentification) : false,
+    sale_brand: operationalCategory === 'sale' ? form.saleBrand.trim() || null : null,
+    sale_model: operationalCategory === 'sale' ? form.saleModel.trim() || null : null,
+    sale_specification: operationalCategory === 'sale' ? form.saleSpecification.trim() || null : null,
+    included_calibration_catalog_item_id: operationalCategory === 'sale' ? Number(form.includedCalibrationCatalogItemId) || null : null,
+    maintenance_type: operationalCategory === 'maintenance' ? form.maintenanceType : null,
+    maintenance_location: operationalCategory === 'maintenance' ? form.maintenanceLocation : null,
+    maintenance_base_materials: operationalCategory === 'maintenance' && form.maintenanceType === 'corrective'
+      ? JSON.parse(form.maintenanceBaseMaterialsText || '[]')
+      : [],
     quotation_legend: null,
     tax_object: form.taxObject || 'iva_16'
   };
@@ -630,21 +640,16 @@ function QuotationsPage({ user = null }) {
   function updateProductForm(field, value) {
     setProductForm((current) => {
       const next = { ...current, [field]: value };
-      if (field === 'category') {
-        const options = getCategoryScopeOptions(value);
-        next.calibrationScope = options[0]?.value ?? '';
-        if (value === 'Calibracion' && !next.serviceType) next.serviceType = 'traceable';
-      }
-      if (field === 'type') {
-        const categories = value === 'Producto' ? productCategories : serviceCategories;
-        const category = categories.includes(next.category) ? next.category : '';
+      if (field === 'operationalCategory') {
+        const category = catalogCategoryFromOperationalCategory(value);
         const options = getCategoryScopeOptions(category);
         next.category = category;
         next.calibrationScope = options[0]?.value ?? '';
-        if (value === 'Producto') {
-          next.serviceKind = 'simple';
-          next.components = [];
-        }
+        if (value === 'calibration' && !next.serviceType) next.serviceType = 'traceable';
+      }
+      if (field === 'type' && value === 'Producto') {
+        next.serviceKind = 'simple';
+        next.components = [];
       }
       if (field === 'serviceKind' && value === 'simple') {
         next.components = [];
@@ -1061,6 +1066,7 @@ function QuotationsPage({ user = null }) {
       setEditingProductId(item.id);
       setProductForm({
         category: item.category,
+        operationalCategory: item.operationalCategory,
         internalKey: item.internalKey,
         name: item.name,
         type: item.type,
@@ -1077,6 +1083,9 @@ function QuotationsPage({ user = null }) {
         saleModel: item.saleModel || '',
         saleSpecification: item.saleSpecification || '',
         includedCalibrationCatalogItemId: item.includedCalibrationCatalogItemId || '',
+        maintenanceType: item.maintenanceType || 'preventive',
+        maintenanceLocation: item.maintenanceLocation || 'laboratory',
+        maintenanceBaseMaterialsText: item.maintenanceBaseMaterialsText || '[]',
         quotationLegend: item.quotationLegend,
         satKey: item.satKey,
         satUnit: item.satUnit,
@@ -1121,7 +1130,7 @@ function QuotationsPage({ user = null }) {
       setError('Captura el nombre del producto o servicio.');
       return;
     }
-    if (!productForm.type.trim() || !productForm.category.trim()) {
+    if (!productForm.type.trim() || !productForm.operationalCategory.trim()) {
       setError('Selecciona tipo y categoria del concepto.');
       return;
     }
@@ -1292,6 +1301,7 @@ function QuotationsPage({ user = null }) {
           ...emptyProductForm,
           type: typeValue,
           category,
+          operationalCategory: operationalCategoryFromCatalogCategory(category),
           name,
           satKey: getRowValue(raw, ['Clave SAT']),
           satUnit: getRowValue(raw, ['Unidad SAT']),
@@ -3129,14 +3139,14 @@ function QuotationsPage({ user = null }) {
                 </select>
               </label>
               <label>
-                Categoria
+                Categoría operacional
                 <select
-                  onChange={(event) => updateProductForm('category', event.target.value)}
-                  value={productForm.category}
+                  onChange={(event) => updateProductForm('operationalCategory', event.target.value)}
+                  value={productForm.operationalCategory}
                 >
                   <option value="">Seleccionar categoria</option>
-                  {(productForm.type === 'Producto' ? productCategories : serviceCategories).map((category) => (
-                    <option key={category}>{category}</option>
+                  {catalogOperationalCategoryOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
                 </select>
               </label>
@@ -3152,7 +3162,7 @@ function QuotationsPage({ user = null }) {
                   </select>
                 </label>
               ) : null}
-              {productForm.type === 'Servicio' && productForm.category === 'Calibracion' ? (
+              {productForm.operationalCategory === 'calibration' ? (
                 <label>
                   Tipo de servicio
                   <select
@@ -3165,7 +3175,7 @@ function QuotationsPage({ user = null }) {
                   </select>
                 </label>
               ) : null}
-              {productForm.serviceType === 'linked' && productForm.category === 'Calibracion' ? (
+              {productForm.serviceType === 'linked' && productForm.operationalCategory === 'calibration' ? (
                 <>
                   <label>
                     Empresa o laboratorio vinculado
@@ -3285,7 +3295,7 @@ function QuotationsPage({ user = null }) {
                   </select>
                 </label>
               ) : null}
-              {productForm.type === 'Producto' ? (
+              {productForm.operationalCategory === 'sale' ? (
                 <>
                   <label className="checkbox-field">
                     <input
@@ -3314,11 +3324,40 @@ function QuotationsPage({ user = null }) {
                       value={productForm.includedCalibrationCatalogItemId}
                     >
                       <option value="">Sin calibración incluida</option>
-                      {catalogItems.filter((item) => item.itemType === 'service' && item.commodity === 'calibration' && item.status === 'Activo').map((item) => (
+                      {catalogItems.filter((item) => item.operationalCategory === 'calibration' && item.status === 'Activo').map((item) => (
                         <option key={item.id} value={item.id}>{item.internalKey || 'Sin clave'} · {item.name}</option>
                       ))}
                     </select>
                   </label>
+                </>
+              ) : null}
+              {productForm.operationalCategory === 'maintenance' ? (
+                <>
+                  <label>
+                    Tipo de Mantenimiento
+                    <select onChange={(event) => updateProductForm('maintenanceType', event.target.value)} value={productForm.maintenanceType}>
+                      <option value="preventive">Preventivo</option>
+                      <option value="corrective">Correctivo</option>
+                    </select>
+                  </label>
+                  <label>
+                    Modalidad operativa
+                    <select onChange={(event) => updateProductForm('maintenanceLocation', event.target.value)} value={productForm.maintenanceLocation}>
+                      <option value="laboratory">Laboratorio</option>
+                      <option value="field">Campo</option>
+                    </select>
+                  </label>
+                  {productForm.maintenanceType === 'corrective' ? (
+                    <label>
+                      Materiales base (JSON estructurado)
+                      <textarea
+                        onChange={(event) => updateProductForm('maintenanceBaseMaterialsText', event.target.value)}
+                        placeholder='[{"name":"Sello","quantity":1,"unit":"pieza"}]'
+                        rows="5"
+                        value={productForm.maintenanceBaseMaterialsText}
+                      />
+                    </label>
+                  ) : null}
                 </>
               ) : null}
               {productForm.type === 'Servicio' && productForm.serviceKind === 'composite' ? (

@@ -13,7 +13,7 @@ from app.models.quotation import Quotation, QuotationItem
 from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
 from app.models.user import User
 from app.schemas.quotation import QuotationItemUpdate, QuotationUpdate
-from app.schemas.catalog_item import CatalogItemCreate
+from app.schemas.catalog_item import CatalogItemCreate, CatalogItemUpdate
 from app.schemas.service_execution import ServiceStageCreate, ServiceUnitBatchCreate, ServiceUnitCreate
 from app.schemas.service_order import ServiceOrderCreate
 from app.services.quotations import (
@@ -23,7 +23,7 @@ from app.services.quotations import (
     update_quotation,
     update_quotation_item,
 )
-from app.services.catalog_items import create_catalog_item
+from app.services.catalog_items import create_catalog_item, update_catalog_item
 from app.services.service_execution import create_service_units
 from app.services.service_orders import create_service_order
 
@@ -133,6 +133,7 @@ def test_catalog_persists_known_category_without_general_service_fallback():
                 item_type="service",
                 commodity="general_service",
                 category="Validacion",
+                operational_category="validation",
                 name="Validación de proceso",
                 origin_currency="MXN",
                 calibration_scope="documentary",
@@ -140,6 +141,97 @@ def test_catalog_persists_known_category_without_general_service_fallback():
         )
         assert item.commodity == "validation"
         assert item.operational_category == "validation"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_catalog_type_and_operational_category_are_independent():
+    engine, db, _, _ = _context()
+    try:
+        shared = {
+            "service_kind": "simple",
+            "origin_currency": "MXN",
+        }
+        product_sale = create_catalog_item(db, CatalogItemCreate(
+            item_type="product", commodity="sale", category="Venta",
+            operational_category="sale", name="Producto vendido", **shared,
+        ))
+        service_sale = create_catalog_item(db, CatalogItemCreate(
+            item_type="service", commodity="sale", category="Venta",
+            operational_category="sale", name="Servicio vendido", **shared,
+        ))
+        product_other = create_catalog_item(db, CatalogItemCreate(
+            item_type="product", commodity="other", category="Otro",
+            operational_category="other", name="Producto no Venta", **shared,
+        ))
+        service_maintenance = create_catalog_item(db, CatalogItemCreate(
+            item_type="service", commodity="maintenance", category="Mantenimiento",
+            operational_category="maintenance", name="Mantenimiento",
+            calibration_scope="preventive", maintenance_type="preventive",
+            maintenance_location="laboratory", **shared,
+        ))
+
+        assert product_sale.operational_category == "sale"
+        assert service_sale.operational_category == "sale"
+        assert product_other.operational_category == "other"
+        assert service_maintenance.operational_category == "maintenance"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_catalog_edit_preserves_explicit_operational_category():
+    engine, db, _, _ = _context()
+    try:
+        item = create_catalog_item(db, CatalogItemCreate(
+            item_type="product", service_kind="simple", commodity="verification",
+            category="Verificacion", operational_category="verification",
+            name="Producto verificable", origin_currency="MXN",
+        ))
+        edited = update_catalog_item(
+            db,
+            item.id,
+            CatalogItemUpdate(name="Producto verificable editado"),
+        )
+        assert edited.item_type == "product"
+        assert edited.operational_category == "verification"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_explicit_catalog_replacement_rebuilds_only_the_selected_snapshot():
+    engine, db, user, client = _context()
+    try:
+        original = _service("Validación original", "Validacion", "validation")
+        replacement = _service("Reparación sustituta", "Reparacion", "repair")
+        db.add_all([original, replacement])
+        db.flush()
+        frozen = _build_operational_snapshot(db, original)
+        quotation = Quotation(folio="COT-REPLACE-1", client_id=client.id, status="draft")
+        item = QuotationItem(
+            catalog_item_id=original.id, service_name=original.name,
+            operational_category="validation", commodity="validation", quantity=1,
+            unit_price=Decimal("100"), discount_percent=Decimal("0"),
+            tax_rate=Decimal("16"), tax_total=Decimal("16"), total=Decimal("100"),
+            operational_snapshot=frozen,
+        )
+        quotation.items = [item]
+        db.add(quotation)
+        db.commit()
+
+        updated = update_quotation_item(
+            db,
+            quotation.id,
+            item.id,
+            QuotationItemUpdate(catalog_item_id=replacement.id),
+            user_id=user.id,
+        )
+        updated_item = updated.items[0]
+        assert updated_item.operational_category == "repair"
+        assert updated_item.operational_snapshot["operational_category"] == "repair"
+        assert updated_item.operational_snapshot != frozen
     finally:
         db.close()
         engine.dispose()

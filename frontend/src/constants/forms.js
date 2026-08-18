@@ -58,6 +58,7 @@ export const emptyQuotationItemForm = {
 
 export const emptyProductForm = {
   category: '',
+  operationalCategory: '',
   internalKey: '',
   name: '',
   type: 'Servicio',
@@ -72,6 +73,9 @@ export const emptyProductForm = {
   saleModel: '',
   saleSpecification: '',
   includedCalibrationCatalogItemId: '',
+  maintenanceType: 'preventive',
+  maintenanceLocation: 'laboratory',
+  maintenanceBaseMaterialsText: '[]',
   components: [],
   calibrationScope: 'traceable',
   quotationLegend: '',

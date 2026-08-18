@@ -10,6 +10,12 @@
 
 # Flujo operativo actual
 
+## Mantenimiento
+
+`cotización aprobada/snapshot → ServiceUnit + ServiceStage maintenance + OT → arribo/equipo (laboratorio) o equipo + solicitud/aceptación/programación (campo) → asignado → en mantenimiento ↔ pausado → captura estructurada → técnicamente terminado → reporte versionado → firma vigente → liberación/cierre`.
+
+Un preventivo que descubre correctivo se pausa y solicita decisión comercial; aprobación vinculada u override auditado habilitan el alcance, mientras el rechazo conserva anomalías/recomendaciones y permite terminar el preventivo. Reparación se documenta y vincula a otro ETS. Equipo inoperable abre bloqueo e investigación administrativa.
+
 Este documento describe el flujo que existe en el sistema, no el flujo ideal ni el diseño futuro.
 
 ## Motor de Resoluciones
@@ -274,10 +280,16 @@ Servicio General inicia como `ServiceUnit(evolution_enabled) → diagnóstico`;
 calibración, mantenimiento u otras partidas del mismo ETS conservan su flujo
 normal.
 
-La ruta se decide por `operational_category` congelado en cotización/partida
-ETS. Reabrir o editar con el mismo concepto no consulta el catálogo vigente;
-una sustitución explícita sí construye un snapshot nuevo. La propuesta de Hoja
-de Campo continúa en el resolver frontend vigente y no pertenece a este flujo.
+En el alta/edición del catálogo, Tipo comercial/fiscal y Categoría operacional
+se seleccionan de forma independiente. La clave `operational_category` viaja
+explícita en el payload; seleccionar Venta muestra su configuración vigente
+sin comprobar Producto/Servicio.
+
+La ruta ETS se decide por `operational_category` congelado en
+cotización/partida. Reabrir o editar con el mismo concepto no consulta el
+catálogo vigente; una sustitución explícita sí construye un snapshot nuevo. La
+propuesta de Hoja de Campo continúa en el resolver frontend vigente y no
+pertenece a este flujo.
 
 Después, cualquier etapa de esa misma unidad evolutiva puede originar:
 

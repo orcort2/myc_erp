@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, JSON, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -36,6 +36,9 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     included_calibration_catalog_item_id: Mapped[int | None] = mapped_column(
         ForeignKey("catalog_items.id", ondelete="RESTRICT"), index=True
     )
+    maintenance_type: Mapped[str | None] = mapped_column(String(20), index=True)
+    maintenance_location: Mapped[str | None] = mapped_column(String(20), index=True)
+    maintenance_base_materials: Mapped[list | None] = mapped_column(JSON)
     internal_key: Mapped[str | None] = mapped_column(String(80), index=True)
     name: Mapped[str] = mapped_column(String(180), index=True)
     description: Mapped[str | None] = mapped_column(Text)

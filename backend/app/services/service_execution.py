@@ -63,7 +63,6 @@ def _catalog_category(catalog_item: CatalogItem | None) -> str | None:
     if catalog_item is None:
         return None
     return catalog_item.operational_category or operational_category_from_structured_fields(
-        item_type=catalog_item.item_type,
         category=catalog_item.category,
         commodity=catalog_item.commodity,
     )
@@ -156,16 +155,6 @@ def _quotation_item_categories(db: Session, item: QuotationItem) -> set[str]:
         catalog_category = _catalog_category(catalog_item)
         if catalog_category:
             categories.add("diagnosis" if catalog_category == "general_service" else catalog_category)
-    if not categories:
-        # Adaptador legacy exacto para partidas previas al campo canónico. No se
-        # buscan palabras ni descripciones y nunca prevalece sobre el snapshot.
-        legacy_category = operational_category_from_structured_fields(
-            item_type=None,
-            category=item.service_name,
-            commodity=item.service_name,
-        )
-        if legacy_category:
-            categories.add("diagnosis" if legacy_category == "general_service" else legacy_category)
     if not categories and item.technical_request_id is not None:
         request = db.get(TechnicalServiceRequest, item.technical_request_id)
         if request is not None:
