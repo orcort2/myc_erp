@@ -1,6 +1,15 @@
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, JSON, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    JSON,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -15,59 +24,188 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
             name="ck_catalog_items_service_kind",
         ),
         CheckConstraint(
-            "service_type IS NULL OR service_type IN ('accredited', 'traceable', 'linked')",
+            "service_type IS NULL OR service_type IN "
+            "('accredited', 'traceable', 'linked')",
             name="ck_catalog_items_service_type",
         ),
     )
 
-    item_type: Mapped[str] = mapped_column(String(20), index=True)
+    item_type: Mapped[str] = mapped_column(
+        String(20),
+        index=True,
+    )
+
     service_kind: Mapped[str] = mapped_column(
-        String(20), default="simple", server_default="simple", nullable=False, index=True
+        String(20),
+        default="simple",
+        server_default="simple",
+        nullable=False,
+        index=True,
     )
-    commodity: Mapped[str] = mapped_column(String(40), index=True)
-    category: Mapped[str] = mapped_column(String(120), index=True)
-    operational_category: Mapped[str | None] = mapped_column(String(40), index=True)
+
+    commodity: Mapped[str] = mapped_column(
+        String(40),
+        index=True,
+    )
+
+    category: Mapped[str] = mapped_column(
+        String(120),
+        index=True,
+    )
+
+    # Categoría operacional canónica del concepto.
+    # Ejemplos: calibration, sale, maintenance.
+    #
+    # Esta identidad se congela posteriormente en la cotización y en el ETS.
+    operational_category: Mapped[str | None] = mapped_column(
+        String(40),
+        index=True,
+    )
+
     requires_individual_identification: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false", nullable=False
+        Boolean,
+        default=False,
+        server_default="false",
+        nullable=False,
     )
-    sale_brand: Mapped[str | None] = mapped_column(String(120))
-    sale_model: Mapped[str | None] = mapped_column(String(120))
-    sale_specification: Mapped[str | None] = mapped_column(Text)
+
+    sale_brand: Mapped[str | None] = mapped_column(
+        String(120),
+    )
+
+    sale_model: Mapped[str | None] = mapped_column(
+        String(120),
+    )
+
+    sale_specification: Mapped[str | None] = mapped_column(
+        Text,
+    )
+
     included_calibration_catalog_item_id: Mapped[int | None] = mapped_column(
-        ForeignKey("catalog_items.id", ondelete="RESTRICT"), index=True
+        ForeignKey(
+            "catalog_items.id",
+            ondelete="RESTRICT",
+        ),
+        index=True,
     )
-    maintenance_type: Mapped[str | None] = mapped_column(String(20), index=True)
-    maintenance_location: Mapped[str | None] = mapped_column(String(20), index=True)
-    maintenance_base_materials: Mapped[list | None] = mapped_column(JSON)
-    internal_key: Mapped[str | None] = mapped_column(String(80), index=True)
-    name: Mapped[str] = mapped_column(String(180), index=True)
-    description: Mapped[str | None] = mapped_column(Text)
-    sat_key: Mapped[str | None] = mapped_column(String(40))
-    sat_unit: Mapped[str | None] = mapped_column(String(40))
-    internal_unit: Mapped[str | None] = mapped_column(String(80))
-    custom_internal_unit: Mapped[str | None] = mapped_column(String(80))
-    origin_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
-    origin_currency: Mapped[str] = mapped_column(String(3))
-    exchange_rate: Mapped[Decimal] = mapped_column(Numeric(12, 6), default=1)
-    margin_percent: Mapped[Decimal] = mapped_column(Numeric(8, 4), default=0)
-    final_price_mxn: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
-    internal_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
-    cost_currency: Mapped[str | None] = mapped_column(String(3))
-    calibration_scope: Mapped[str | None] = mapped_column(String(60))
-    service_type: Mapped[str | None] = mapped_column(String(20), index=True)
+
+    maintenance_type: Mapped[str | None] = mapped_column(
+        String(20),
+        index=True,
+    )
+
+    maintenance_location: Mapped[str | None] = mapped_column(
+        String(20),
+        index=True,
+    )
+
+    maintenance_base_materials: Mapped[list | None] = mapped_column(
+        JSON,
+    )
+
+    internal_key: Mapped[str | None] = mapped_column(
+        String(80),
+        index=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(180),
+        index=True,
+    )
+
+    description: Mapped[str | None] = mapped_column(
+        Text,
+    )
+
+    sat_key: Mapped[str | None] = mapped_column(
+        String(40),
+    )
+
+    sat_unit: Mapped[str | None] = mapped_column(
+        String(40),
+    )
+
+    internal_unit: Mapped[str | None] = mapped_column(
+        String(80),
+    )
+
+    custom_internal_unit: Mapped[str | None] = mapped_column(
+        String(80),
+    )
+
+    origin_price: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        default=0,
+    )
+
+    origin_currency: Mapped[str] = mapped_column(
+        String(3),
+    )
+
+    exchange_rate: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6),
+        default=1,
+    )
+
+    margin_percent: Mapped[Decimal] = mapped_column(
+        Numeric(8, 4),
+        default=0,
+    )
+
+    final_price_mxn: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2),
+        default=0,
+    )
+
+    internal_cost: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+    )
+
+    cost_currency: Mapped[str | None] = mapped_column(
+        String(3),
+    )
+
+    calibration_scope: Mapped[str | None] = mapped_column(
+        String(60),
+    )
+
+    service_type: Mapped[str | None] = mapped_column(
+        String(20),
+        index=True,
+    )
+
     linked_company_id: Mapped[int | None] = mapped_column(
-        ForeignKey("linked_companies.id"), index=True
+        ForeignKey("linked_companies.id"),
+        index=True,
     )
-    linked_certificate_prefix: Mapped[str | None] = mapped_column(String(12))
-    # Sólo aplica a servicios de calibración. El equipo congela la versión activa
-    # al momento de crearse, por lo que este vínculo nunca se consulta para
-    # reconstruir entregables históricos.
+
+    linked_certificate_prefix: Mapped[str | None] = mapped_column(
+        String(12),
+    )
+
+    # Sólo aplica a servicios de calibración.
+    #
+    # El equipo congela la versión activa al momento de crearse, por lo que
+    # este vínculo no debe utilizarse para reconstruir entregables históricos.
     expected_certificate_master_id: Mapped[int | None] = mapped_column(
-        ForeignKey("controlled_documents.id"), index=True
+        ForeignKey("controlled_documents.id"),
+        index=True,
     )
-    quotation_legend: Mapped[str | None] = mapped_column(Text)
-    tax_object: Mapped[str] = mapped_column(String(20), default="iva_16", index=True)
-    tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=16)
+
+    quotation_legend: Mapped[str | None] = mapped_column(
+        Text,
+    )
+
+    tax_object: Mapped[str] = mapped_column(
+        String(20),
+        default="iva_16",
+        index=True,
+    )
+
+    tax_rate: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        default=16,
+    )
 
     components: Mapped[list["CatalogItemComponent"]] = relationship(
         back_populates="parent_item",
@@ -75,18 +213,26 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         cascade="all, delete-orphan",
         order_by="CatalogItemComponent.id",
     )
+
     used_as_component_in: Mapped[list["CatalogItemComponent"]] = relationship(
         back_populates="component_item",
         foreign_keys="CatalogItemComponent.component_catalog_item_id",
     )
+
     linked_company: Mapped["LinkedCompany | None"] = relationship()
+
     included_calibration_item: Mapped["CatalogItem | None"] = relationship(
         remote_side="CatalogItem.id",
         foreign_keys=[included_calibration_catalog_item_id],
     )
 
 
-class CatalogItemComponent(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
+class CatalogItemComponent(
+    IntegerPkMixin,
+    TimestampMixin,
+    SoftDeleteMixin,
+    Base,
+):
     __tablename__ = "catalog_item_components"
     __table_args__ = (
         UniqueConstraint(
@@ -94,7 +240,10 @@ class CatalogItemComponent(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base
             "component_catalog_item_id",
             name="uq_catalog_item_component_parent_child",
         ),
-        CheckConstraint("quantity >= 1", name="ck_catalog_item_component_quantity_positive"),
+        CheckConstraint(
+            "quantity >= 1",
+            name="ck_catalog_item_component_quantity_positive",
+        ),
         CheckConstraint(
             "parent_catalog_item_id <> component_catalog_item_id",
             name="ck_catalog_item_component_not_self",
@@ -102,18 +251,36 @@ class CatalogItemComponent(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base
     )
 
     parent_catalog_item_id: Mapped[int] = mapped_column(
-        ForeignKey("catalog_items.id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey(
+            "catalog_items.id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
     )
+
     component_catalog_item_id: Mapped[int] = mapped_column(
-        ForeignKey("catalog_items.id", ondelete="RESTRICT"), nullable=False, index=True
+        ForeignKey(
+            "catalog_items.id",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
     )
-    quantity: Mapped[int] = mapped_column(default=1, nullable=False)
+
+    quantity: Mapped[int] = mapped_column(
+        default=1,
+        nullable=False,
+    )
 
     parent_item: Mapped[CatalogItem] = relationship(
-        back_populates="components", foreign_keys=[parent_catalog_item_id]
+        back_populates="components",
+        foreign_keys=[parent_catalog_item_id],
     )
+
     component_item: Mapped[CatalogItem] = relationship(
-        back_populates="used_as_component_in", foreign_keys=[component_catalog_item_id]
+        back_populates="used_as_component_in",
+        foreign_keys=[component_catalog_item_id],
     )
 
     @property
