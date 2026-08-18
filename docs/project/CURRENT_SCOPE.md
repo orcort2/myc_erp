@@ -273,3 +273,19 @@ Quedan fuera la ampliación del ERP web, adjuntos/llamadas, una nueva política
 de permisos, cambios funcionales en Tickets/OT/ETS, build EAS y despliegue. La
 aceptación física en dos dispositivos permanece pendiente; por eso el frente
 queda **EN REVISIÓN**.
+
+## Alcance implementado 2026-08-18 — ETS Venta
+
+- Configuración estructurada de Venta en catálogo: identificación individual,
+  marca/modelo/especificación esperados y calibración incluida opcional.
+- Snapshot comercial autoritativo y creación automática/idempotente del ETS;
+  ningún arribo o reapertura consulta el catálogo vigente.
+- Unidades serializadas o cantidades, arribos parciales, discrepancia con
+  autorización, garantía y entregas parciales por recolección, paquetería o
+  técnico MYC, con nota PDF, Portal y superficie móvil acotada.
+- Inicialización de ETS históricos sólo mediante acción explícita y desde el
+  snapshot. En ETS mixtos, cerrar Venta no cierra otras partidas.
+
+Quedan fuera mapas/rastreo externo, Gmail, una plantilla institucional avanzada
+de nota, aceptación física y workflows de categorías distintas. El frente
+queda **EN REVISIÓN**.

@@ -127,6 +127,22 @@ def _quotation_policy(method: str, path: str) -> AccessPolicy:
 def _service_order_policy(method: str, path: str) -> AccessPolicy:
     if method == "DELETE" and path.startswith("/api/service-orders/work-orders/"):
         return _permission("service_orders.delete")
+    if "/sale/" in path or path.endswith("/sale"):
+        if method == "GET":
+            return _permission("service_orders.read")
+        if path.endswith("/accept"):
+            return _permission("service_orders.sales.deliver")
+        if path.endswith("/receive"):
+            return AccessPolicy(
+                AccessType.PERMISSION,
+                "access_jwt",
+                permission="service_orders.sales.manage",
+                ownership="advisor_or_assigned_technician",
+                actor="internal_user",
+            )
+        if path.endswith("/resolve"):
+            return _permission("service_orders.sales.authorize")
+        return _permission("service_orders.sales.manage")
     if "capture-package" in path or path.endswith("/capture-files"):
         permission = "certificates.upload_pdf" if method == "POST" else "certificates.read"
         return _permission(permission)
@@ -289,6 +305,15 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
             "internal_access_jwt",
             permission="field_sheets.read",
             ownership="service_order.technician_id=current_user.id; also requires service_orders.read_assigned",
+            actor="internal_user",
+        )
+
+    if path.startswith("/api/mobile/v1/technician/sale-deliveries"):
+        return AccessPolicy(
+            AccessType.PERMISSION,
+            "internal_access_jwt",
+            permission="service_orders.sales.deliver",
+            ownership="sale_delivery.technician_id=current_user.id",
             actor="internal_user",
         )
 

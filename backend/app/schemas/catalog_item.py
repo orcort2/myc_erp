@@ -101,6 +101,11 @@ class CatalogItemBase(BaseModel):
     commodity: CatalogCommodity
     category: str = Field(min_length=1, max_length=120)
     operational_category: OperationalCategory | None = None
+    requires_individual_identification: bool = False
+    sale_brand: str | None = Field(default=None, max_length=120)
+    sale_model: str | None = Field(default=None, max_length=120)
+    sale_specification: str | None = None
+    included_calibration_catalog_item_id: int | None = Field(default=None, gt=0)
     name: str = Field(min_length=1, max_length=180)
     description: str | None = None
     sat_key: str | None = Field(default=None, max_length=40)
@@ -127,6 +132,15 @@ class CatalogItemBase(BaseModel):
     def validate_business_rules(self):
         if self.item_type == "service" and self.category == "Venta":
             raise ValueError("La categoria Venta debe capturarse como producto")
+        is_sale = self.item_type == "product" or self.operational_category == "sale"
+        if not is_sale and (
+            self.requires_individual_identification
+            or self.sale_brand
+            or self.sale_model
+            or self.sale_specification
+            or self.included_calibration_catalog_item_id is not None
+        ):
+            raise ValueError("La configuración de Venta sólo aplica a conceptos de Venta")
         if self.item_type == "product" and self.service_kind != "simple":
             raise ValueError("Los productos no pueden configurarse como servicios compuestos")
         allowed_scopes = SERVICE_SCOPE_VALUES_BY_CATEGORY.get(self.category)
@@ -188,6 +202,11 @@ class CatalogItemUpdate(BaseModel):
     commodity: CatalogCommodity | None = None
     category: str | None = Field(default=None, min_length=1, max_length=120)
     operational_category: OperationalCategory | None = None
+    requires_individual_identification: bool | None = None
+    sale_brand: str | None = Field(default=None, max_length=120)
+    sale_model: str | None = Field(default=None, max_length=120)
+    sale_specification: str | None = None
+    included_calibration_catalog_item_id: int | None = Field(default=None, gt=0)
     name: str | None = Field(default=None, min_length=1, max_length=180)
     description: str | None = None
     sat_key: str | None = Field(default=None, max_length=40)

@@ -24,6 +24,8 @@ from app.services.portal.invitation_service import create_invitation, list_invit
 from app.services.portal.membership_service import list_memberships, replace_roles, set_primary, update_status
 from app.services.portal.role_service import list_roles
 from app.core.portal.constants import ClientPortalMembershipStatus
+from app.schemas.sale_execution import SaleBoardRead, SaleDeliveryConfirm
+from app.services.sale_execution import confirm_delivery, sale_board
 
 
 router = APIRouter(prefix="/client-portal", tags=["client-portal"])
@@ -133,6 +135,27 @@ def get_client_portal_service_orders(
         for item in list_service_orders(db, client_id=context.client.id)
         if item.status not in {"cancelled"}
     ]
+
+
+@router.get("/service-orders/{service_order_id}/sale", response_model=SaleBoardRead)
+def get_client_portal_sale(
+    service_order_id: int, db: Session = Depends(get_db),
+    security: PortalSecurityContext = Depends(require_portal_permission("services.view")),
+):
+    order = db.get(ServiceOrder, service_order_id)
+    if order is None or order.client_id != security.client.id:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    return sale_board(db, service_order_id)
+
+
+@router.post("/service-orders/{service_order_id}/sale/deliveries/{delivery_id}/receive", response_model=SaleBoardRead)
+def receive_client_portal_sale(
+    service_order_id: int, delivery_id: int, payload: SaleDeliveryConfirm,
+    db: Session = Depends(get_db),
+    security: PortalSecurityContext = Depends(require_portal_permission("services.view")),
+):
+    return confirm_delivery(db, service_order_id, delivery_id, payload,
+                            actor=security.user, portal_client_id=security.client.id)
 
 
 @router.get("/certificates", response_model=list[CertificateRead])

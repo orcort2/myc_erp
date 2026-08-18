@@ -6,6 +6,7 @@ from app.models.user import User
 from app.schemas.equipment import EquipmentRead
 from app.schemas.field_sheet import FieldSheetRead
 from app.schemas.service_order import ServiceOrderRead, ServiceWorkOrderRead
+from app.schemas.sale_execution import SaleBoardRead, SaleDeliveryAccept, SaleDeliveryConfirm, SaleDeliveryRead
 from app.services.auth import require_permission
 from app.services.mobile_technician import (
     list_assigned_equipment,
@@ -19,12 +20,49 @@ from app.services.mobile_technician_scope import (
     get_assigned_service_order,
     get_assigned_work_order,
 )
+from app.services.sale_execution import (
+    accept_technician_delivery,
+    confirm_delivery,
+    list_technician_deliveries,
+)
 
 
 router = APIRouter(
     prefix="/mobile/v1/technician",
     tags=["mobile-technician"],
 )
+
+
+@router.get("/sale-deliveries", response_model=list[SaleDeliveryRead])
+def get_my_sale_deliveries(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.deliver")),
+):
+    return list_technician_deliveries(db, current_user.id)
+
+
+@router.post("/sale-deliveries/{delivery_id}/accept", response_model=SaleBoardRead)
+def accept_my_sale_delivery(
+    delivery_id: int, payload: SaleDeliveryAccept, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.deliver")),
+):
+    delivery = next((item for item in list_technician_deliveries(db, current_user.id) if item.id == delivery_id), None)
+    if delivery is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Entrega no asignada")
+    return accept_technician_delivery(db, delivery.service_order_id, delivery.id, payload, actor=current_user)
+
+
+@router.post("/sale-deliveries/{delivery_id}/receive", response_model=SaleBoardRead)
+def receive_my_sale_delivery(
+    delivery_id: int, payload: SaleDeliveryConfirm, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.deliver")),
+):
+    delivery = next((item for item in list_technician_deliveries(db, current_user.id) if item.id == delivery_id), None)
+    if delivery is None:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Entrega no asignada")
+    return confirm_delivery(db, delivery.service_order_id, delivery.id, payload, actor=current_user)
 
 
 # ============================================================

@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -27,6 +27,15 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     commodity: Mapped[str] = mapped_column(String(40), index=True)
     category: Mapped[str] = mapped_column(String(120), index=True)
     operational_category: Mapped[str | None] = mapped_column(String(40), index=True)
+    requires_individual_identification: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    sale_brand: Mapped[str | None] = mapped_column(String(120))
+    sale_model: Mapped[str | None] = mapped_column(String(120))
+    sale_specification: Mapped[str | None] = mapped_column(Text)
+    included_calibration_catalog_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("catalog_items.id", ondelete="RESTRICT"), index=True
+    )
     internal_key: Mapped[str | None] = mapped_column(String(80), index=True)
     name: Mapped[str] = mapped_column(String(180), index=True)
     description: Mapped[str | None] = mapped_column(Text)
@@ -68,6 +77,10 @@ class CatalogItem(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         foreign_keys="CatalogItemComponent.component_catalog_item_id",
     )
     linked_company: Mapped["LinkedCompany | None"] = relationship()
+    included_calibration_item: Mapped["CatalogItem | None"] = relationship(
+        remote_side="CatalogItem.id",
+        foreign_keys=[included_calibration_catalog_item_id],
+    )
 
 
 class CatalogItemComponent(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):

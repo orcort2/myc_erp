@@ -6,6 +6,7 @@ import ConfirmDialog from '../components/ConfirmDialog.jsx';
 import CaptureProcessingSummary from '../components/CaptureProcessingSummary.jsx';
 import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
+import SaleEtsTab from '../components/ets-sales/SaleEtsTab.jsx';
 import {
   emptyServiceOrderForm,
   emptyEquipmentForm,
@@ -286,6 +287,10 @@ function ServiceOrdersPage({ user = null }) {
   const usersById = useMemo(
     () => new Map(users.map((systemUser) => [systemUser.id, systemUser])),
     [users]
+  );
+  const selectedOrderHasSale = useMemo(
+    () => Boolean((selectedOrder?.items || []).some((item) => item.operational_category === 'sale')),
+    [selectedOrder]
   );
 
   const equipmentById = useMemo(
@@ -2672,6 +2677,7 @@ function ServiceOrdersPage({ user = null }) {
             <div className="ets-folder-tabs" role="tablist" aria-label="Carpetas del expediente">
               {[
                 ['info', 'Resumen'],
+                ...(selectedOrderHasSale ? [['sale', 'Venta']] : []),
                 ['equipment', 'Equipos'],
                 ['field-sheet', 'Hojas de Campo'],
                 ['capture', 'Captura'],
@@ -2867,6 +2873,10 @@ function ServiceOrdersPage({ user = null }) {
                   </div>
                 </form>
               </>
+            ) : null}
+
+            {activeTab === 'sale' && selectedOrderHasSale ? (
+              <SaleEtsTab order={selectedOrder} user={user} users={users} />
             ) : null}
 
             {activeTab === 'equipment' ? (

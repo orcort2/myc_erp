@@ -527,3 +527,22 @@ Background y logout cierran socket, timers y listeners. Si expira el access
 JWT, el servidor cierra `4401`; la app usa el refresh HTTP existente, reconecta
 y resincroniza. Push y realtime sólo despiertan/invalidan; el detalle se vuelve
 a obtener por REST.
+
+## Flujo ETS Venta — 2026-08-18
+
+```text
+cotización aceptada con operational_category=sale
+→ creación idempotente del ETS
+→ materialización desde operational_snapshot
+→ partida por cantidad o ServiceUnit por unidad identificable
+→ arribo exclusivo del asesor
+→ coincidencia con snapshot o revisión comercial/autorización
+→ calibración incluida sobre la misma unidad/equipo, cuando aplica
+→ entrega parcial: recolección / paquetería / técnico MYC
+→ firma o evidencia de recepción
+→ cierre de Venta; el ETS sólo cierra si no quedan partidas ajenas abiertas
+```
+
+Un ETS histórico sin proyección de Venta no se modifica al consultarlo. El
+asesor ejecuta una inicialización explícita que usa únicamente el snapshot. La
+propuesta/selección de Hojas de Campo continúa en su servicio vigente.

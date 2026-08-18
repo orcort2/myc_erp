@@ -154,6 +154,11 @@ function mapCatalogItemFromApi(item) {
     linkedCompanyId: item.linked_company_id ? String(item.linked_company_id) : '',
     linkedCertificatePrefix: item.linked_certificate_prefix ?? '',
     expectedCertificateMasterId: item.expected_certificate_master_id ? String(item.expected_certificate_master_id) : '',
+    requiresIndividualIdentification: Boolean(item.requires_individual_identification),
+    saleBrand: item.sale_brand ?? '',
+    saleModel: item.sale_model ?? '',
+    saleSpecification: item.sale_specification ?? '',
+    includedCalibrationCatalogItemId: item.included_calibration_catalog_item_id ? String(item.included_calibration_catalog_item_id) : '',
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
     internalKey: item.internal_key ?? '',
@@ -214,6 +219,11 @@ function mapCatalogPayloadFromForm(form) {
     linked_company_id: form.serviceType === 'linked' ? Number(form.linkedCompanyId) || null : null,
     linked_certificate_prefix: form.serviceType === 'linked' ? form.linkedCertificatePrefix.trim().toUpperCase() || null : null,
     expected_certificate_master_id: form.category === 'Calibracion' ? Number(form.expectedCertificateMasterId) || null : null,
+    requires_individual_identification: form.type === 'Producto' ? Boolean(form.requiresIndividualIdentification) : false,
+    sale_brand: form.type === 'Producto' ? form.saleBrand.trim() || null : null,
+    sale_model: form.type === 'Producto' ? form.saleModel.trim() || null : null,
+    sale_specification: form.type === 'Producto' ? form.saleSpecification.trim() || null : null,
+    included_calibration_catalog_item_id: form.type === 'Producto' ? Number(form.includedCalibrationCatalogItemId) || null : null,
     quotation_legend: null,
     tax_object: form.taxObject || 'iva_16'
   };
@@ -1062,6 +1072,11 @@ function QuotationsPage({ user = null }) {
         linkedCompanyName: '',
         linkedCertificatePrefix: item.linkedCertificatePrefix || '',
         expectedCertificateMasterId: item.expectedCertificateMasterId || '',
+        requiresIndividualIdentification: Boolean(item.requiresIndividualIdentification),
+        saleBrand: item.saleBrand || '',
+        saleModel: item.saleModel || '',
+        saleSpecification: item.saleSpecification || '',
+        includedCalibrationCatalogItemId: item.includedCalibrationCatalogItemId || '',
         quotationLegend: item.quotationLegend,
         satKey: item.satKey,
         satUnit: item.satUnit,
@@ -3269,6 +3284,42 @@ function QuotationsPage({ user = null }) {
                     {certificateMasters.map((master) => <option key={master.id} value={master.id}>{master.code} · {master.name} · Rev. {master.current_revision || '-'}</option>)}
                   </select>
                 </label>
+              ) : null}
+              {productForm.type === 'Producto' ? (
+                <>
+                  <label className="checkbox-field">
+                    <input
+                      checked={productForm.requiresIndividualIdentification}
+                      onChange={(event) => updateProductForm('requiresIndividualIdentification', event.target.checked)}
+                      type="checkbox"
+                    />
+                    Requiere identificación individual / número de serie
+                  </label>
+                  <label>
+                    Marca cotizada
+                    <input onChange={(event) => updateProductForm('saleBrand', event.target.value)} value={productForm.saleBrand} />
+                  </label>
+                  <label>
+                    Modelo cotizado
+                    <input onChange={(event) => updateProductForm('saleModel', event.target.value)} value={productForm.saleModel} />
+                  </label>
+                  <label>
+                    Especificación cotizada
+                    <textarea onChange={(event) => updateProductForm('saleSpecification', event.target.value)} value={productForm.saleSpecification} />
+                  </label>
+                  <label>
+                    Calibración incluida
+                    <select
+                      onChange={(event) => updateProductForm('includedCalibrationCatalogItemId', event.target.value)}
+                      value={productForm.includedCalibrationCatalogItemId}
+                    >
+                      <option value="">Sin calibración incluida</option>
+                      {catalogItems.filter((item) => item.itemType === 'service' && item.commodity === 'calibration' && item.status === 'Activo').map((item) => (
+                        <option key={item.id} value={item.id}>{item.internalKey || 'Sin clave'} · {item.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </>
               ) : null}
               {productForm.type === 'Servicio' && productForm.serviceKind === 'composite' ? (
                 <section className="catalog-composite-editor">

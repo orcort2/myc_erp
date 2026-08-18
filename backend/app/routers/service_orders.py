@@ -26,6 +26,18 @@ from app.schemas.service_execution import (
     TechnicalServiceRequestCreate,
     TechnicalServiceRequestRead,
 )
+from app.schemas.sale_execution import (
+    SaleArrivalCreate,
+    SaleAuthorizationCreate,
+    SaleAuthorizationRead,
+    SaleAuthorizationResolve,
+    SaleBoardRead,
+    SaleDeliveryAccept,
+    SaleDeliveryConfirm,
+    SaleDeliveryCreate,
+    SaleWarrantyReturnCreate,
+    SaleUnitResolution,
+)
 from app.services.auth import get_current_user, require_permission
 from app.services.capture_packages import (
     list_capture_files,
@@ -59,6 +71,24 @@ from app.services.service_execution import (
     execution_board,
     update_service_stage,
 )
+from app.services.sale_execution import (
+    accept_technician_delivery,
+    add_later_calibration,
+    close_sale,
+    confirm_delivery,
+    create_delivery,
+    delivery_note_pdf,
+    dispatch_delivery,
+    individualize_sale_item,
+    initialize_existing_sale_execution,
+    mark_warranty_return,
+    register_arrival,
+    report_courier_delivery,
+    request_authorization,
+    resolve_authorization,
+    resolve_warranty_return,
+    sale_board,
+)
 from app.services.work_order_pdfs import (
     generate_service_order_work_orders_pdf,
     generate_service_work_order_pdf,
@@ -67,6 +97,143 @@ from app.services.work_order_pdfs import (
 
 
 router = APIRouter(prefix="/service-orders", tags=["service-orders"])
+
+
+@router.get("/{service_order_id}/sale", response_model=SaleBoardRead)
+def get_sale_board(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+    _current_user: User = Depends(require_permission("service_orders.read")),
+):
+    return sale_board(db, service_order_id)
+
+
+@router.post("/{service_order_id}/sale/initialize", response_model=SaleBoardRead)
+def post_sale_initialization(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return initialize_existing_sale_execution(db, service_order_id, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/items/{sale_item_id}/arrivals", response_model=SaleBoardRead)
+def post_sale_arrival(
+    service_order_id: int, sale_item_id: int, payload: SaleArrivalCreate,
+    unit_state_id: int | None = Query(default=None), db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return register_arrival(db, service_order_id, sale_item_id, payload,
+                            actor=current_user, sale_unit_state_id=unit_state_id)
+
+
+@router.post("/{service_order_id}/sale/units/{unit_state_id}/warranty", response_model=SaleBoardRead)
+def post_sale_warranty(
+    service_order_id: int, unit_state_id: int, payload: SaleWarrantyReturnCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return mark_warranty_return(db, service_order_id, unit_state_id, payload.reason, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/units/{unit_state_id}/warranty/resolve", response_model=SaleBoardRead)
+def post_sale_warranty_resolution(
+    service_order_id: int, unit_state_id: int, payload: SaleUnitResolution,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.authorize")),
+):
+    return resolve_warranty_return(db, service_order_id, unit_state_id, payload.reason, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/authorizations", response_model=SaleAuthorizationRead, status_code=201)
+def post_sale_authorization(
+    service_order_id: int, payload: SaleAuthorizationCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return request_authorization(db, service_order_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/authorizations/{authorization_id}/resolve", response_model=SaleAuthorizationRead)
+def post_sale_authorization_resolution(
+    service_order_id: int, authorization_id: int, payload: SaleAuthorizationResolve,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.authorize")),
+):
+    return resolve_authorization(db, service_order_id, authorization_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/items/{sale_item_id}/individualize", response_model=SaleBoardRead)
+def post_sale_individualization(
+    service_order_id: int, sale_item_id: int, authorization_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return individualize_sale_item(db, service_order_id, sale_item_id, authorization_id, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/units/{unit_state_id}/calibration", response_model=SaleBoardRead)
+def post_sale_calibration(
+    service_order_id: int, unit_state_id: int, quotation_item_id: int | None = None,
+    authorization_id: int | None = None, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return add_later_calibration(db, service_order_id, unit_state_id, actor=current_user,
+                                 quotation_item_id=quotation_item_id, authorization_id=authorization_id)
+
+
+@router.post("/{service_order_id}/sale/deliveries", response_model=SaleBoardRead, status_code=201)
+def post_sale_delivery(
+    service_order_id: int, payload: SaleDeliveryCreate, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return create_delivery(db, service_order_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/deliveries/{delivery_id}/dispatch", response_model=SaleBoardRead)
+def post_sale_delivery_dispatch(
+    service_order_id: int, delivery_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return dispatch_delivery(db, service_order_id, delivery_id, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/deliveries/{delivery_id}/accept", response_model=SaleBoardRead)
+def post_sale_delivery_accept(
+    service_order_id: int, delivery_id: int, payload: SaleDeliveryAccept,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.deliver")),
+):
+    return accept_technician_delivery(db, service_order_id, delivery_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/deliveries/{delivery_id}/courier-confirm", response_model=SaleBoardRead)
+def post_sale_courier_confirmation(
+    service_order_id: int, delivery_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders.sales.manage")),
+):
+    return report_courier_delivery(db, service_order_id, delivery_id, actor=current_user)
+
+
+@router.post("/{service_order_id}/sale/deliveries/{delivery_id}/receive", response_model=SaleBoardRead)
+def post_sale_delivery_receipt(
+    service_order_id: int, delivery_id: int, payload: SaleDeliveryConfirm,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    return confirm_delivery(db, service_order_id, delivery_id, payload, actor=current_user)
+
+
+@router.get("/{service_order_id}/sale/deliveries/{delivery_id}/note.pdf")
+def get_sale_delivery_note(service_order_id: int, delivery_id: int, db: Session = Depends(get_db),
+                           _current_user: User = Depends(require_permission("service_orders.read"))):
+    content, filename = delivery_note_pdf(db, service_order_id, delivery_id)
+    return StreamingResponse(BytesIO(content), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/{service_order_id}/sale/close", response_model=SaleBoardRead)
+def post_sale_close(service_order_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(require_permission("service_orders.sales.manage"))):
+    return close_sale(db, service_order_id, actor=current_user)
 
 
 @router.get("/{service_order_id}/execution-board", response_model=ServiceExecutionBoardRead)

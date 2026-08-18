@@ -43,10 +43,15 @@
   snapshot esquema 2 por componente y editar/reabrir con el mismo concepto no
   consulta el catálogo vigente. Sólo `general_service` habilita diagnóstico
   evolutivo. La propuesta de Hojas de Campo permanece en el resolver frontend.
+- El vertical **ETS Venta** está **TERMINADO TÉCNICAMENTE — EN REVISIÓN**:
+  materializa unidades o cantidades desde snapshot, registra arribo exclusivo
+  del asesor, discrepancias/autorizaciones, calibración sobre la misma unidad,
+  garantía y entregas parciales por recolección, paquetería o técnico. Portal y
+  MYC Mobile confirman recepción con evidencia; falta aceptación física/browser.
 - El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho
-  lecturas aplican asignación ETS, ownership heredado, 404 opaco y doble
-  permiso para Hojas de Campo. La app LAB actual no consume listado, detalle,
-  documentos ni eliminación de esa superficie productiva.
+  lecturas conservan ownership y tres rutas Venta permiten sólo listar, aceptar
+  y confirmar entregas asignadas con evidencia. La app LAB no consume
+  eliminación productiva.
 - La eliminación física de OT productiva está **IMPLEMENTADA Y VALIDADA**:
   Administrador usa `service_orders.delete`; el backend elimina el
   agregado exclusivo sin restricción de estado, preserva ETS, factura,
@@ -90,10 +95,10 @@
   REVISIÓN**: Calidad es la única superficie mutante, ETS perdió endpoint/lote
   y acciones, y `certificate_authentication.authenticate_certificate` conserva
   lock, actor, origen, audit, evento y commit únicos.
-- La conciliación **TD-027** deja el capability gate **VERDE** en 26/0 y el
-  bootstrap cubre 80/80 permisos HTTP. Las diferencias móviles nuevas incluyen
+- La conciliación **TD-027** deja el capability gate **VERDE** en 29/0 y el
+  bootstrap cubre 83/83 permisos HTTP. Las diferencias gobernadas incluyen
   `lab_work_orders.use/export/delete` y `tickets.create/view_own/review`,
-  explícitamente temporales. Portal usa
+  además de `service_orders.sales.manage/deliver/authorize`. Portal usa
   `portal.read`; la clave legacy
   `portal.view` quedó inactiva y sin asignaciones, y
   `reference_standard_certificates.delete` se asigna con menor privilegio.
@@ -132,7 +137,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 - Motor: PostgreSQL, SQLAlchemy y Alembic.
 - Head aplicado a la base local compartida: `f7c9d1e3a5b7`.
-- Head del código: `a8c0e2f4b6d8`.
+- Head del código: `b9d1f3a5c7e9`.
 - `e7b62b8a9421` incorpora `service_order_exception_requests` para conservar
   solicitud, autorización, ejecución, actores, timestamps y estado ETS de
   revalidación sin usar auditoría como almacenamiento de lifecycle.
@@ -159,6 +164,11 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
   correcto y `alembic check` no detectó operaciones nuevas; la base temporal
   fue eliminada. La base local compartida se
   conserva en `f7c9d1e3a5b7`; por ello no se regeneró el respaldo oficial.
+- `b9d1f3a5c7e9` agrega configuración de Venta, categoría `sale` en etapas y
+  las tablas normalizadas de partidas, unidades, autorizaciones y entregas. El
+  ciclo aislado `base → head → base → head` y `alembic check` fueron correctos.
+  La base compartida y el respaldo permanecen deliberadamente en
+  `f7c9d1e3a5b7`; no se modificaron ni regeneraron en este trabajo.
 - Ciclo completo vacío `base → head → base → head`: **CORRECTO** en PostgreSQL
   aislado mediante `scripts/toolkit/db/validate-schema-cycle.sh`.
 - Upgrade desde el respaldo histórico en `b03b4c5d6e7f` hasta el head:
@@ -194,7 +204,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 
 | Validación | Resultado |
 | --- | --- |
-| Backend canónico | 552 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
+| Backend canónico | 560 passed, 5 skipped, 19 subtests passed, 3 warnings deprecados |
 | Identidad operativa/snapshot focal | 38 passed, 12 subtests; congelamiento, reapertura, categorías conocidas/Servicio General, compuestos, calibración y Hojas de Campo |
 | Comunicaciones/realtime focal | 14 passed; persistencia→evento, deduplicación, sync, recibos, menciones, IDOR, typing y multi-dispositivo |
 | Concurrencia Comunicaciones PostgreSQL | 5 escritores conservaron secuencias 1–5; 2 reintentos simultáneos compartieron un solo mensaje/sequence 6; base temporal eliminada |
@@ -209,8 +219,9 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Frontend `node --test` | 43 passed |
 | Frontend `npm run build` | correcto; warning de chunk >500 kB |
 | Backend `compileall` | correcto |
-| Backend suite completa del corte | 552 passed, 5 skipped y 19 subtests; head esperado sincronizado en `a8c0e2f4b6d8` |
-| Inventario FastAPI | 398/398 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime; cuatro rutas concurrentes corresponden a Comunicaciones |
+| Backend suite completa del corte | 560 passed, 5 skipped y 19 subtests; head esperado sincronizado en `b9d1f3a5c7e9` |
+| ETS Venta focal | 12 passed; snapshot, serial/cantidad, parciales, calibración, discrepancia/autorización, garantía, tres entregas, aceptación automática, compatibilidad histórica y ETS mixto |
+| Inventario FastAPI | 419/419 operaciones clasificadas; CSV regenerado canónicamente y coincide con runtime |
 | Eliminación OT productiva dirigida | 43 passed; admin/403/404, estados, dependencias, bloqueo por evidencia inmutable, firma compartida, factura, lectura móvil y rollback de base/archivo |
 | Frontend eliminación OT | 5 passed; capacidad exacta, ocultamiento sin permiso y regresión de access control/autenticación |
 | OT LAB backend/API/PDF/export/Tickets/eliminación | 26 passed, 5 skipped sin URL PostgreSQL; cubre autorización, estados, datos exclusivos, raíz/intermedia, hermanas, firma/ticket/revisión compartidos, rollback y conformidad |
@@ -233,7 +244,7 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Alembic upgrade desde respaldo histórico | correcto; b03→f27, 102 tablas |
 | Alembic current/check | base principal en `f7c9d1e3a5b7`; código y base aislada en `a8c0e2f4b6d8`; check aislado sin operaciones nuevas |
 | Respaldo oficial regenerado/restaurado | 75,050,260 bytes; SHA-256 `f2280b0e…b81b14`; restore drill con 130 tablas y head `f7c9d1e3a5b7` |
-| Validador Catálogo Institucional/permissions/API | VERDE: 80 permisos HTTP, baseline gobernado 26 brechas literales y 0 de bootstrap; seis diferencias HTTP pertenecen al vertical móvil temporal LAB/Tickets |
+| Validador Catálogo Institucional/permissions/API | VERDE: baseline gobernado de 29 brechas literales y 0 de bootstrap; tres capacidades nuevas pertenecen al vertical ETS Venta EN REVISIÓN |
 | Conteo Catálogo Funcional | 42 módulos, 181 acciones, 657 microacciones; IDs de acción únicos |
 | Metadatos Catálogo Funcional | 657/657 con naturaleza, criticidad y alcance; alineación completa |
 | Identidad y permisos del catálogo | microacciones, marcas y celdas de permisos sin cambios frente al corte previo a metadatos |
@@ -267,7 +278,7 @@ seguridad e inventario, se conserva en
 
 ## Seguridad y operación
 
-- Inventario introspectado: 398 operaciones HTTP, todas clasificadas por el
+- Inventario introspectado: 419 operaciones HTTP, todas clasificadas por el
   guard deny-by-default; el CSV canónico coincide con runtime.
 - Toda ruta interna pasa por el guard deny-by-default y el arranque/prueba de
   conformidad fallan si aparece una operación sin clasificación.
@@ -314,6 +325,8 @@ seguridad e inventario, se conserva en
 10. Ejecutar en dos dispositivos reales el checklist de Comunicaciones:
     simultaneidad, reconexión, push/deep links, typing, recibos,
     background/foreground y logout (TD-042).
+11. Ejecutar el checklist browser/dispositivo/Portal de ETS Venta, incluidas
+    entregas parciales, evidencia, garantía y perfil técnico (TD-043).
 
 ## Documentación de este corte
 
@@ -339,3 +352,6 @@ elevó primero el esquema a `f4a1c9d2e710`; los sprints LAB, Notifications y
 Comunicaciones lo llevaron finalmente a `f7c9d1e3a5b7`. El respaldo oficial
 vigente conserva 75,050,260 bytes, coincide con ese head y superó restore
 drill, sin versionarse en Git.
+La identidad operativa y ETS Venta elevaron el head del código a
+`b9d1f3a5c7e9`; ambos ciclos se validaron en PostgreSQL temporal sin tocar la
+base compartida ni el respaldo oficial. El vertical queda **EN REVISIÓN**.

@@ -739,6 +739,55 @@ export async function getServiceExecutionBoard(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/execution-board`);
 }
 
+export async function getSaleBoard(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/sale`);
+}
+
+export async function initializeSaleOrder(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/sale/initialize`, { method: 'POST' });
+}
+
+export async function registerSaleArrival(serviceOrderId, saleItemId, payload, unitStateId = null) {
+  const query = unitStateId ? `?unit_state_id=${unitStateId}` : '';
+  return request(`/service-orders/${serviceOrderId}/sale/items/${saleItemId}/arrivals${query}`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function returnSaleWarranty(serviceOrderId, unitStateId, reason) {
+  return request(`/service-orders/${serviceOrderId}/sale/units/${unitStateId}/warranty`, { method: 'POST', body: JSON.stringify({ reason }) });
+}
+
+export function requestSaleAuthorization(serviceOrderId, payload) {
+  return request(`/service-orders/${serviceOrderId}/sale/authorizations`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function resolveSaleAuthorization(serviceOrderId, authorizationId, payload) {
+  return request(`/service-orders/${serviceOrderId}/sale/authorizations/${authorizationId}/resolve`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function createSaleDelivery(serviceOrderId, payload) {
+  return request(`/service-orders/${serviceOrderId}/sale/deliveries`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function dispatchSaleDelivery(serviceOrderId, deliveryId) {
+  return request(`/service-orders/${serviceOrderId}/sale/deliveries/${deliveryId}/dispatch`, { method: 'POST' });
+}
+
+export async function reportSaleCourierDelivery(serviceOrderId, deliveryId) {
+  return request(`/service-orders/${serviceOrderId}/sale/deliveries/${deliveryId}/courier-confirm`, { method: 'POST' });
+}
+
+export async function confirmSaleDelivery(serviceOrderId, deliveryId, payload) {
+  return request(`/service-orders/${serviceOrderId}/sale/deliveries/${deliveryId}/receive`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export async function closeSaleOrder(serviceOrderId) {
+  return request(`/service-orders/${serviceOrderId}/sale/close`, { method: 'POST' });
+}
+
+export function downloadSaleDeliveryNote(serviceOrderId, deliveryId) {
+  return downloadRequest(`/service-orders/${serviceOrderId}/sale/deliveries/${deliveryId}/note.pdf`);
+}
+
 export async function createServiceUnits(serviceOrderId, units) {
   return request(`/service-orders/${serviceOrderId}/service-units`, {
     method: 'POST',

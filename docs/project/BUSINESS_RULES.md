@@ -155,3 +155,19 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    firma ni notificación persistente. `DeviceNotRegistered` desactiva el token.
 6. La app refresca por evento, foreground, foco y mutación local, con
    deduplicación/throttle y pull-to-refresh; se prohíbe polling agresivo.
+
+## Reglas de ETS Venta — 2026-08-18
+
+1. El catálogo configura una Venta nueva; el snapshot de cotización gobierna
+   toda operación creada y no se refresca silenciosamente.
+2. Una partida identificable crea una `ServiceUnit` por unidad; una partida no
+   identificable conserva cantidades agregadas y parciales.
+3. Sólo el asesor asignado registra arribos. Una discrepancia contra los datos
+   congelados bloquea hasta autorización.
+4. La calibración incluida agrega una etapa al mismo equipo/unidad y bloquea
+   su entrega hasta el cierre técnico vigente.
+5. Toda entrega parcial exige receptor y firma o evidencia para completarse.
+6. Garantías y revisiones abiertas bloquean el cierre; completar Venta en un
+   ETS mixto no cierra partidas de otras categorías.
+7. La inicialización histórica es explícita, idempotente, auditada y usa sólo
+   el snapshot, nunca el catálogo actual.

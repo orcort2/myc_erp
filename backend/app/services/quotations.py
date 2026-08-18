@@ -90,6 +90,11 @@ def _build_operational_snapshot(
         service_type = normalize_service_type(
             item.service_type, calibration_scope=item.calibration_scope
         )
+        included_calibration = (
+            db.get(CatalogItem, item.included_calibration_catalog_item_id)
+            if item.included_calibration_catalog_item_id is not None
+            else None
+        )
         return {
             "service_id": item.id,
             "service_key": item.internal_key,
@@ -98,6 +103,18 @@ def _build_operational_snapshot(
             "service_type_snapshot": service_type.value if service_type else None,
             "calibration_scope_snapshot": item.calibration_scope,
             "operational_category_snapshot": item.operational_category,
+            "sale_configuration_snapshot": {
+                "requires_individual_identification": item.requires_individual_identification,
+                "brand": item.sale_brand,
+                "model": item.sale_model,
+                "specification": item.sale_specification,
+                "included_calibration_catalog_item_id": item.included_calibration_catalog_item_id,
+                "included_calibration_snapshot": (
+                    snapshot_for(included_calibration)
+                    if included_calibration is not None
+                    else None
+                ),
+            } if item.operational_category == "sale" else None,
             "linked_company_id": item.linked_company_id,
             "linked_company_name_snapshot": company.name if company else None,
             "certificate_prefix_snapshot": item.linked_certificate_prefix,
@@ -703,6 +720,33 @@ def change_quotation_status(
         metadata={"previous_status": previous_status, "status": new_status},
     )
     db.commit()
+    if new_status == "accepted":
+        accepted = get_quotation(db, quotation.id)
+        contains_sale = any(
+            item.is_active and (
+                item.operational_category == "sale"
+                or (item.operational_snapshot or {}).get("operational_category") == "sale"
+                or any(
+                    component.get("operational_category") == "sale"
+                    for component in (item.operational_snapshot or {}).get("operational_items", [])
+                )
+            )
+            for item in accepted.items
+        )
+        if contains_sale:
+            from app.schemas.service_order import ServiceOrderCreate
+            from app.services.service_orders import create_service_order
+
+            create_service_order(
+                db,
+                ServiceOrderCreate(
+                    client_id=accepted.client_id,
+                    quotation_id=accepted.id,
+                    advisor_id=accepted.advisor_id,
+                    notes=f"ETS Venta generado al aprobar {accepted.folio}",
+                ),
+                user_id=user_id,
+            )
     return get_quotation(db, quotation.id)
 
 

@@ -36,6 +36,16 @@ STATUS_OVERRIDES = {
     "backend/migrations/versions/a8c0e2f4b6d8_add_canonical_operational_category.py": "En revisión",
     "backend/tests/test_operational_identity_snapshot.py": "En revisión",
     "docs/architecture/OPERATIONAL_SERVICE_IDENTITY.md": "En revisión",
+    "backend/app/models/sale_execution.py": "En revisión",
+    "backend/app/schemas/sale_execution.py": "En revisión",
+    "backend/app/services/sale_execution.py": "En revisión",
+    "backend/migrations/versions/b9d1f3a5c7e9_add_sale_ets_execution.py": "En revisión",
+    "backend/tests/test_sale_ets_execution.py": "En revisión",
+    "docs/architecture/SALE_ETS_EXECUTION.md": "En revisión",
+    "frontend/src/components/ets-sales/SaleEtsTab.jsx": "En revisión",
+    "frontend/src/components/ets-sales/sale-ets.css": "En revisión",
+    "myc-mobile/app/(technician)/deliveries.tsx": "En revisión",
+    "myc-mobile/src/types/sale-delivery.ts": "En revisión",
 }
 FORCE_RECLASSIFY = {
     "AGENTS.md",
@@ -324,6 +334,16 @@ FORCE_RECLASSIFY.update({
     "frontend/src/services/api.js",
     "frontend/src/utils/workOrderDeletion.js",
     "frontend/src/utils/workOrderDeletion.test.js",
+    "backend/app/models/sale_execution.py",
+    "backend/app/schemas/sale_execution.py",
+    "backend/app/services/sale_execution.py",
+    "backend/migrations/versions/b9d1f3a5c7e9_add_sale_ets_execution.py",
+    "backend/tests/test_sale_ets_execution.py",
+    "docs/architecture/SALE_ETS_EXECUTION.md",
+    "frontend/src/components/ets-sales/SaleEtsTab.jsx",
+    "frontend/src/components/ets-sales/sale-ets.css",
+    "myc-mobile/app/(technician)/deliveries.tsx",
+    "myc-mobile/src/types/sale-delivery.ts",
     "backend/app/routers/lab_work_orders.py",
     "backend/app/services/lab_work_orders.py",
     "backend/tests/test_lab_work_orders.py",
@@ -482,14 +502,29 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value in communications_files:
         return communications_files[value]
 
+    sale_files = {
+        "backend/app/models/sale_execution.py": ("Persistencia ETS Venta", "Modela partidas congeladas, estado por unidad, autorizaciones y entregas/líneas parciales con integridad relacional.", "SQLAlchemy, ETS, ServiceUnit, usuarios y Alembic", "Servicio Venta, routers, Portal, móvil y pruebas", "Crítico"),
+        "backend/app/schemas/sale_execution.py": ("Contratos ETS Venta", "Valida arribos, autorizaciones, garantía, entregas, recepción con evidencia y proyección del board.", "Pydantic", "Routers web/Portal/móvil y frontend", "Crítico"),
+        "backend/app/services/sale_execution.py": ("Autoridad ETS Venta", "Materializa desde snapshot, gobierna arribo, discrepancia, calibración, garantía, entregas parciales, evidencia y cierre sin consultar catálogo vigente.", "Modelos Venta/ETS/Equipo/Certificado, auditoría y notificaciones", "Routers, frontend, Portal, MYC Mobile y pruebas", "Crítico"),
+        "backend/migrations/versions/b9d1f3a5c7e9_add_sale_ets_execution.py": ("Migración ETS Venta", "Agrega configuración de catálogo, etapa sale y tablas normalizadas de ejecución Venta con constraints e índices reversibles.", "Alembic, PostgreSQL y a8c0e2f4b6d8", "Despliegue, rollback y validación de esquema", "Crítico"),
+        "backend/tests/test_sale_ets_execution.py": ("Suite ETS Venta", "Cubre snapshot, serial/cantidad, parciales, calibración, discrepancia, garantía, entregas, creación automática, histórico explícito y ETS mixto.", "Pytest, SQLAlchemy y servicios Venta/ETS", "Gate backend ETS Venta", "Crítico"),
+        "frontend/src/components/ets-sales/SaleEtsTab.jsx": ("Workbench ETS Venta", "Presenta partidas/unidades, arribo, garantía, entregas, evidencia, bloqueantes e inicialización histórica explícita.", "React, API compartida y estilos ETS Venta", "Asesores y usuarios ETS web", "Crítico"),
+        "frontend/src/components/ets-sales/sale-ets.css": ("Estilos ETS Venta", "Compone layout responsive de partidas, unidades, formularios, entregas y cierre dentro del lenguaje visual vigente.", "CSS y clases compartidas frontend", "SaleEtsTab", "Medio"),
+        "myc-mobile/app/(technician)/deliveries.tsx": ("Entregas Venta móviles", "Lista entregas asignadas y permite aceptar/agendar y confirmar recepción con evidencia sin operar arribos ni catálogo.", "Expo Router, AuthProvider y API móvil", "Técnicos MYC", "Crítico"),
+        "myc-mobile/src/types/sale-delivery.ts": ("Contrato móvil de entregas Venta", "Tipifica entrega, líneas, estados y payloads de aceptación/recepción.", "TypeScript", "Pantalla y cliente API móvil", "Alto"),
+        "docs/architecture/SALE_ETS_EXECUTION.md": ("Contrato arquitectónico ETS Venta", "Documenta autoridad snapshot, granularidad, arribos, calibración, garantía, entregas, seguridad, compatibilidad y cierre.", "Código, migración y pruebas Venta", "Arquitectura, desarrollo, QA y operación", "Crítico"),
+    }
+    if value in sale_files:
+        return sale_files[value]
+
     work_order_deletion_files = {
-        "backend/app/routers/service_orders.py": ("API ETS/OT", "Expone la eliminación física de una OT productiva con permiso exacto y delegación al servicio propietario, además de las rutas vigentes del expediente.", "FastAPI, auth, schemas y service_orders", "Frontend ETS y clientes API", "Crítico"),
-        "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica 398 operaciones deny-by-default y separa los permisos DELETE de OT productiva y OT LAB.", "FastAPI, auth, catálogo de permisos e inventario CSV", "Middleware, arranque, generador y pruebas de conformidad", "Crítico"),
-        "backend/app/services/service_orders.py": ("Autoridad única ETS/OT", "Orquesta lifecycle ETS, consume identidad/configuración congelada por componente al crear partidas operativas y elimina OT con mapa de dependencias, conservación compartida, auditoría y staging reversible.", "Modelos operativos/financieros, snapshots, storage, auditoría y Activity", "Router ETS, frontend, móvil productivo y pruebas", "Crítico"),
-        "backend/tests/test_api_access_conformity.py": ("Prueba de conformidad API", "Exige clasificación de las 398 operaciones y coincidencia exacta entre runtime e inventario CSV.", "app.main, security.api_access e inventario CSV", "Suite backend y revisión de API", "Crítico"),
+        "backend/app/routers/service_orders.py": ("API ETS/OT", "Expone rutas del expediente, eliminación física de OT y el vertical Venta con permisos separados para gestión, autorización y entrega.", "FastAPI, auth, schemas y servicios ETS/Venta", "Frontend ETS, Portal y clientes API", "Crítico"),
+        "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica 419 operaciones deny-by-default y separa permisos internos, Portal y móvil.", "FastAPI, auth, catálogo de permisos e inventario CSV", "Middleware, arranque, generador y pruebas de conformidad", "Crítico"),
+        "backend/app/services/service_orders.py": ("Autoridad única ETS/OT", "Orquesta lifecycle ETS, crea idempotentemente la proyección Venta desde snapshot y elimina OT con mapa de dependencias, conservación compartida, auditoría y staging reversible.", "Modelos operativos/financieros, Venta, snapshots, storage, auditoría y Activity", "Router ETS, frontend, móvil productivo y pruebas", "Crítico"),
+        "backend/tests/test_api_access_conformity.py": ("Prueba de conformidad API", "Exige clasificación de las 419 operaciones y coincidencia exacta entre runtime e inventario CSV.", "app.main, security.api_access e inventario CSV", "Suite backend y revisión de API", "Crítico"),
         "backend/tests/test_service_work_order_deletion.py": ("Suite de eliminación OT", "Prueba admin, 403/404, estados, dependencias, firma compartida, conservación financiera, lectura móvil y rollback de base/archivo.", "Pytest, FastAPI, SQLAlchemy y agregado ETS/OT", "Gate backend de eliminación destructiva", "Crítico"),
-        "frontend/src/pages/ServiceOrdersPage.jsx": ("Expediente integral ETS", "Añade la acción confirmada de eliminación de OT sólo con capacidad exacta y refresca el expediente sin duplicar reglas destructivas.", "Componentes ETS, cliente API y workOrderDeletion", "Usuarios operativos y Administrador", "Crítico"),
-        "frontend/src/services/api.js": ("Cliente API compartido", "Centraliza transporte bearer e incorpora el DELETE individual de OT productiva junto a los contratos existentes.", "fetch/HTTP y endpoints FastAPI", "Páginas y controladores frontend", "Crítico"),
+        "frontend/src/pages/ServiceOrdersPage.jsx": ("Expediente integral ETS", "Compone el workbench Venta por identidad operativa, el expediente vigente y la eliminación OT con capacidad exacta.", "Componentes ETS/Venta, cliente API y permisos", "Usuarios operativos y Administrador", "Crítico"),
+        "frontend/src/services/api.js": ("Cliente API compartido", "Centraliza transporte bearer e incorpora contratos ETS Venta, Portal y OT sin duplicar controladores de dominio.", "fetch/HTTP y endpoints FastAPI", "Páginas y controladores frontend", "Crítico"),
         "frontend/src/utils/workOrderDeletion.js": ("Autoridad visual de eliminación OT", "Deriva la visibilidad exclusivamente desde service_orders.delete y permisos efectivos.", "accessControl", "ServiceOrdersPage y pruebas", "Alto"),
         "frontend/src/utils/workOrderDeletion.test.js": ("Prueba frontend de eliminación OT", "Verifica comodín administrativo, capacidad exacta y ocultamiento para lectura/actualización sin privilegio.", "Node test y workOrderDeletion", "Gate frontend de autorización visual", "Alto"),
         "docs/architecture/WORK_ORDER_DELETION.md": ("Contrato de eliminación OT", "Documenta identidad, ownership, preservación, bloqueos, atomicidad, archivos y efecto móvil del borrado productivo.", "Código, reglas y pruebas ETS/OT", "Arquitectura, seguridad, QA y operación", "Crítico"),
@@ -500,7 +535,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo OT LAB móvil", "Lista y opera sólo OT LAB 6400–6999; integra eliminación autorizada, confirmación/refetch y tarjetas resistentes a clientes largos.", "AuthProvider, API LAB, permisos, firma, Notifications y Expo", "Técnicos y Administrador móvil", "Crítico"),
         "myc-mobile/src/services/lab-work-order-deletion.ts": ("Coordinador DELETE OT LAB", "Verifica lab_work_orders.delete, clasifica 204/403/404/409/red e impide doble envío contra el endpoint LAB.", "Permisos efectivos y Fetch API", "Pantalla OT LAB y pruebas", "Crítico"),
         "myc-mobile/src/services/lab-work-order-deletion.test.ts": ("Pruebas móviles DELETE LAB", "Verifica capacidad, aislamiento productivo, estados HTTP, cancelación, doble envío y contrato de layout para nombres largos.", "Node test y coordinador LAB", "Gate móvil de eliminación LAB", "Alto"),
-        "docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv": ("Evidencia reproducible API", "Registra 398 operaciones con método, ruta, identidad, permiso, ownership y pruebas esperadas.", "generate_api_access_inventory.py y app runtime", "Conformidad, revisión externa y CI futura", "Crítico"),
+        "docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv": ("Evidencia reproducible API", "Registra 419 operaciones con método, ruta, identidad, permiso, ownership y pruebas esperadas.", "generate_api_access_inventory.py y app runtime", "Conformidad, revisión externa y CI futura", "Crítico"),
     }
     if value in work_order_deletion_files:
         return work_order_deletion_files[value]
@@ -714,7 +749,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/models/catalog_item.py": (
             "Clasificación comercial del catálogo",
-            "Modela composición, operational_category y tipo formal acreditado, trazable o vinculado, con empresa y prefijo institucional cuando corresponde.",
+            "Modela composición, operational_category, alcance formal y configuración estructurada de Venta con identificación, atributos esperados y calibración incluida.",
             "SQLAlchemy, identidad operativa, ServiceType y LinkedCompany",
             "Catálogo, Cotizaciones, ETS y certificados",
             "Crítico",
@@ -805,7 +840,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/services/quotations.py": (
             "Dominio de cotizaciones",
-            "Gestiona CRUD, estados, partidas e importes; congela identidad/configuración por componente en snapshot esquema 2 y sólo lo refresca ante sustitución explícita de catálogo.",
+            "Gestiona CRUD, estados, partidas e importes; congela identidad/configuración por componente y Venta en snapshot esquema 2, y crea idempotentemente ETS Venta al aceptar.",
             "SQLAlchemy, catálogo, identidad operativa, Actividad y auditoría",
             "Router, PDFs, ETS y excepción contextual",
             "Crítico",
@@ -847,7 +882,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "frontend/src/pages/ServiceOrdersPage.jsx": (
             "Expediente integral",
-            "Orquesta ETS y Captura→Calidad→Autenticación→Pago→Liberación; toda excepción operativa crea una solicitud y nunca implica ejecución directa desde la UI.",
+            "Orquesta ETS, integra el workbench Venta por categoría y conserva Captura→Calidad→Autenticación→Pago→Liberación y excepciones gobernadas.",
             "Componentes ETS, EtsBillingTab, APIs operativas y etiqueta de solicitud",
             "Usuarios operativos y administrativos del expediente",
             "Alto",
@@ -882,14 +917,14 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "frontend/src/pages/QuotationsPage.jsx": (
             "Módulo de Cotizaciones con permisos",
-            "Compone listado, detalle y catálogo; condiciona alta, edición, cambios de estado, generación ETS y administración de catálogo según permisos efectivos.",
+            "Compone listado, detalle y catálogo; configura Venta estructurada y condiciona alta, edición, estados, ETS y catálogo según permisos efectivos.",
             "React, API, accessControl, formularios, PDF, Actividad y componentes de Ventas",
             "Usuarios de Ventas con capacidades backend",
             "Crítico",
         ),
         "frontend/src/services/api.js": (
             "Cliente API compartido",
-            "Centraliza transporte bearer, traduce 401/403/red, evita llamadas Dashboard sin permiso y reutiliza descargas autenticadas con manejo uniforme.",
+            "Centraliza transporte bearer, errores y descargas e incorpora los contratos web/Portal del workbench ETS Venta sin controladores paralelos.",
             "fetch/HTTP, tokens y endpoints FastAPI",
             "Páginas y controladores frontend",
             "Crítico",
@@ -2344,7 +2379,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value == "backend/app/services/service_execution.py":
         return ("Ejecución ETS por unidad", "Resuelve origen desde operational_category/snapshot, conserva Servicio General evolutivo y crea unidades/etapas append-only sin seleccionar Hojas de Campo ni inferir por texto libre.", "ServiceUnit, ServiceStage, Cotizaciones, catálogo y Activity", "Router ETS, board, decisiones y pruebas Fase 1", "Crítico")
     if value == "backend/app/services/catalog_items.py":
-        return ("Dominio del Catálogo MYC", "Deriva y persiste identidad operativa estructurada, valida servicios simples/compuestos y congela configuración por hoja durante su expansión comercial→operativa.", "CatalogItem, componentes, scopes, tipos y documentos", "Router de Catálogo, Cotizaciones y creación ETS", "Crítico")
+        return ("Dominio del Catálogo MYC", "Deriva identidad estructurada, valida servicios simples/compuestos y configuración Venta, incluida calibración activa, y limpia atributos no aplicables al cambiar categoría.", "CatalogItem, componentes, scopes, tipos y documentos", "Router de Catálogo, Cotizaciones y creación ETS", "Crítico")
     if value == "backend/tests/test_operational_identity_snapshot.py":
         return ("Regresión de identidad/snapshot", "Prueba catálogo conocido sin fallback, congelamiento ante cambio/reapertura, Servicio General evolutivo, componentes, calibración y resolver vigente de Hojas de Campo.", "Pytest, SQLAlchemy, Node y dominios Catálogo/Cotización/ETS", "Gate de revisión de identidad operativa", "Crítico")
     if value == "docs/architecture/OPERATIONAL_SERVICE_IDENTITY.md":
@@ -2352,7 +2387,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value == "backend/tests/test_service_scope_contract.py":
         return ("Prueba de contrato transversal", "Verifica las tres modalidades canónicas, rechazo de texto documental, categorías, respuestas del catálogo y mapeo bidireccional a certificados.", "Schemas de catálogo, cotización, ETS, equipo y control documental", "CI y desarrollo de la cadena de calibración", "Alto")
     if value == "backend/app/schemas/catalog_item.py":
-        return ("Contrato Pydantic de Catálogo", "Valida partidas, restringe cada alcance a su categoría y consume las claves/leyendas compartidas sin aceptar contenido documental.", "service_scope.py, Pydantic y modelo CatalogItem", "Router, servicio de Catálogo, cotizaciones y frontend", "Crítico")
+        return ("Contrato Pydantic de Catálogo", "Valida partidas, alcance por categoría y configuración estructurada de Venta, incluida identificación y calibración enlazada.", "service_scope.py, Pydantic y modelo CatalogItem", "Router, servicio de Catálogo, cotizaciones y frontend", "Crítico")
     if value == "backend/app/schemas/controlled_document.py":
         return ("Contrato Pydantic documental", "Valida documentos, interpretaciones y perfiles técnicos; reutiliza AccreditationScope para impedir una taxonomía paralela.", "service_scope.py, Pydantic y modelos documentales", "Control Documental, perfiles técnicos y motores operativos", "Alto")
     if value == "backend/app/schemas/service_order.py":

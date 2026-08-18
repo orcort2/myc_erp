@@ -35,6 +35,12 @@ export default function TechnicianHome() {
           <Text style={styles.moduleTitle}>OT&apos;s</Text>
           <Text style={styles.moduleText}>Crear y cerrar órdenes de trabajo LAB</Text>
         </Pressable>
+        {hasPermission(user.permissions, 'service_orders.sales.deliver') && (
+          <Pressable style={styles.module} onPress={() => router.push('/(technician)/deliveries')}>
+            <Text style={styles.moduleTitle}>Entregas de Venta</Text>
+            <Text style={styles.moduleText}>Aceptar, agendar y documentar recepción</Text>
+          </Pressable>
+        )}
         <Pressable style={styles.module} onPress={() => router.push('/(technician)/communications')}>
           <Text style={styles.moduleTitle}>Comunicaciones{communicationUnreadCount ? ` · ${communicationUnreadCount}` : ''}</Text>
           <Text style={styles.moduleText}>Mensajes, menciones y Tickets en tiempo real</Text>

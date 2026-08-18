@@ -461,6 +461,13 @@ def create_service_order(
     db: Session, payload: ServiceOrderCreate, *, user_id: int
 ) -> ServiceOrder:
     user_id = _require_actor_id(user_id)
+    if payload.quotation_id is not None:
+        existing_order_id = db.scalar(select(ServiceOrder.id).where(
+            ServiceOrder.quotation_id == payload.quotation_id,
+            ServiceOrder.is_active.is_(True),
+        ).order_by(ServiceOrder.id.asc()).limit(1))
+        if existing_order_id is not None:
+            return get_service_order(db, existing_order_id)
     _ensure_active_client(db, payload.client_id)
     _ensure_active_user(db, payload.advisor_id, "Asesor")
     _ensure_active_user(db, payload.technician_id, "Tecnico")
@@ -521,6 +528,11 @@ def create_service_order(
     db.flush()
 
     _build_work_orders_for_service_order(db, service_order)
+    db.flush()
+
+    from app.services.sale_execution import initialize_sale_execution
+
+    initialize_sale_execution(db, service_order, user_id=user_id)
     db.flush()
 
     write_audit_log(

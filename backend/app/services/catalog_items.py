@@ -126,6 +126,12 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
         category=values.get("category"),
         commodity=values.get("commodity"),
     ) or "other"
+    if values["operational_category"] != "sale":
+        values["requires_individual_identification"] = False
+        values["sale_brand"] = None
+        values["sale_model"] = None
+        values["sale_specification"] = None
+        values["included_calibration_catalog_item_id"] = None
     values["tax_object"] = values.get("tax_object") or "iva_16"
     values["tax_rate"] = TAX_RATE_BY_OBJECT[values["tax_object"]]
 
@@ -183,6 +189,25 @@ def _ensure_linked_company(db: Session, values: dict) -> None:
     company = db.get(LinkedCompany, values.get("linked_company_id"))
     if company is None or not company.is_active or not company.is_enabled:
         raise HTTPException(status_code=422, detail="La empresa vinculada no está disponible")
+
+
+def _ensure_included_calibration(db: Session, values: dict) -> None:
+    calibration_id = values.get("included_calibration_catalog_item_id")
+    if calibration_id is None:
+        return
+    if values.get("operational_category") != "sale":
+        raise HTTPException(status_code=422, detail="La calibración incluida sólo aplica a Venta")
+    calibration = db.get(CatalogItem, calibration_id)
+    if (
+        calibration is None
+        or not calibration.is_active
+        or calibration.item_type != "service"
+        or calibration.operational_category != "calibration"
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="La calibración incluida debe ser un servicio activo de Calibración",
+        )
 
 
 def list_linked_companies(db: Session) -> list[LinkedCompany]:
@@ -534,6 +559,7 @@ def create_catalog_item(
     raw_values.pop("components", None)
     values = _prepare_values(raw_values)
     _ensure_linked_company(db, values)
+    _ensure_included_calibration(db, values)
     _ensure_valid_components(
         db,
         parent_id=None,
@@ -594,6 +620,11 @@ def update_catalog_item(
         "commodity": item.commodity,
         "category": item.category,
         "operational_category": item.operational_category,
+        "requires_individual_identification": item.requires_individual_identification,
+        "sale_brand": item.sale_brand,
+        "sale_model": item.sale_model,
+        "sale_specification": item.sale_specification,
+        "included_calibration_catalog_item_id": item.included_calibration_catalog_item_id,
         "name": item.name,
         "description": item.description,
         "sat_key": item.sat_key,
@@ -619,6 +650,7 @@ def update_catalog_item(
     should_recalculate = bool({"origin_price", "exchange_rate", "margin_percent"} & set(updates))
     prepared = _prepare_values(merged, recalculate_price=should_recalculate)
     _ensure_linked_company(db, prepared)
+    _ensure_included_calibration(db, prepared)
     _ensure_certificate_master(db, prepared.get("expected_certificate_master_id"))
     if prepared["service_kind"] == "simple":
         effective_components = []

@@ -27,6 +27,7 @@ SERVICE_STAGE_CATEGORIES = (
     "validation",
     "training",
     "consulting",
+    "sale",
     "other",
 )
 
@@ -85,7 +86,7 @@ class ServiceStage(IntegerPkMixin, TimestampMixin, Base):
         UniqueConstraint("service_unit_id", "sequence", name="uq_service_stage_sequence"),
         CheckConstraint(
             "category IN ('diagnosis','repair','maintenance','calibration','verification',"
-            "'qualification','validation','training','consulting','other')",
+            "'qualification','validation','training','consulting','sale','other')",
             name="ck_service_stages_category",
         ),
         CheckConstraint(

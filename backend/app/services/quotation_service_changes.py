@@ -777,6 +777,9 @@ def apply_change(
 
     request.service_order_id = None
     db.flush()
+    from app.services.sale_execution import delete_pristine_sale_execution, initialize_sale_execution
+
+    delete_pristine_sale_execution(db, order.id)
     db.delete(order)
     db.flush()
 
@@ -785,6 +788,8 @@ def apply_change(
     db.add(new_order)
     db.flush()
     _build_work_orders_for_service_order(db, new_order)
+    db.flush()
+    initialize_sale_execution(db, new_order, user_id=user.id)
     db.flush()
 
     request.service_order_id = new_order.id

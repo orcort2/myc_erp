@@ -223,6 +223,20 @@ y TD-041 queda resuelto; cualquier escala futura exige backplane previo. No se
 marca aceptado/sellado hasta ejecutar el checklist físico en dos dispositivos,
 y no hubo build EAS ni despliegue.
 
+## Corte 2026-08-18 — vertical ETS Venta
+
+El vertical **ETS Venta** está **TERMINADO TÉCNICAMENTE — EN REVISIÓN**. La
+aceptación de una cotización con Venta crea una sola vez el ETS y materializa,
+desde el snapshot, partidas por cantidad o unidades individualizadas. El
+asesor controla arribo, discrepancias, garantía y entregas parciales por
+recolección, paquetería o técnico; calibración incluida continúa sobre la misma
+`ServiceUnit`/`Equipment` y bloquea la entrega hasta quedar cerrada. Portal y
+MYC Mobile confirman recepción con evidencia según ownership.
+
+No se marca aceptado ni sellado: falta aceptación funcional en navegador y en
+dispositivo físico, y permanecen las deudas TD-043/TD-044. No se abrieron
+workflows de otras categorías.
+
 ## Regla de mantenimiento
 
 Toda auditoría posterior debe actualizar este archivo sólo con conclusiones verificadas. Las auditorías conservan la evidencia y la fecha del corte, pero dejan de ser autoridad de avance en cuanto este documento incorpora un corte posterior.

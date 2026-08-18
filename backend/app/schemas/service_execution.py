@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ServiceStageCategory = Literal[
     "diagnosis", "repair", "maintenance", "calibration", "verification",
-    "qualification", "validation", "training", "consulting", "other",
+    "qualification", "validation", "training", "consulting", "sale", "other",
 ]
 ServiceStageStatus = Literal[
     "planned", "pending_quote", "pending_approval", "authorized", "in_progress",

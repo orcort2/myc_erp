@@ -13,12 +13,12 @@ validator = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(validator)
 
 
-def test_inventory_has_only_the_26_governed_compatibility_gaps():
+def test_inventory_has_only_the_29_governed_compatibility_gaps():
     catalog_permissions, *_ = validator.parse_catalog()
     current = validator.current_permissions()
     inventory = validator.inventory_permissions()
 
-    assert len(inventory - catalog_permissions) == 26
+    assert len(inventory - catalog_permissions) == 29
     assert inventory <= current
     assert "portal.view" not in inventory
     assert "portal.read" in inventory & catalog_permissions & current
@@ -30,6 +30,11 @@ def test_inventory_has_only_the_26_governed_compatibility_gaps():
         "lab_work_orders.delete",
     } <= inventory - catalog_permissions
     assert {"tickets.create", "tickets.view_own", "tickets.review"} <= inventory - catalog_permissions
+    assert {
+        "service_orders.sales.manage",
+        "service_orders.sales.deliver",
+        "service_orders.sales.authorize",
+    } <= inventory - catalog_permissions
     assert PERMISSIONS["SERVICE_ORDERS_DELETE"] == "service_orders.delete"
     assert PERMISSIONS["LAB_WORK_ORDERS_DELETE"] == "lab_work_orders.delete"
     assert all(

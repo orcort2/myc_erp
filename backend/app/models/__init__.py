@@ -103,6 +103,13 @@ from app.models.quotation_service_change import (
     QuotationServiceChangeRequest,
 )
 from app.models.service_order_exception import ServiceOrderExceptionRequest
+from app.models.sale_execution import (
+    SaleAuthorization,
+    SaleDelivery,
+    SaleDeliveryLine,
+    SaleOrderItem,
+    SaleUnitState,
+)
 from app.models.reference_standard import (
     FieldSheetReferenceStandard,
     ReferenceStandard,
@@ -173,6 +180,11 @@ __all__ = [
     "ActivityThreadRead",
     "AuditLog",
     "CalibrationProcedure",
+    "SaleAuthorization",
+    "SaleDelivery",
+    "SaleDeliveryLine",
+    "SaleOrderItem",
+    "SaleUnitState",
     "CatalogItem",
     "CatalogItemComponent",
     "Certificate",

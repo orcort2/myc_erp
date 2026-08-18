@@ -14,6 +14,7 @@ from app.models.service_order import (
     ServiceWorkOrder,
 )
 from app.resolution_engine.infrastructure.persistence import ResolutionEntityReference
+from app.services.sale_execution import count_non_pristine_sale_dependencies
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,11 @@ def can_physically_rebuild_service_order(
             (ServiceWorkOrder.service_order_id == service_order.id)
             & (ServiceWorkOrder.status == "pending"),
         ),
+    )
+    add(
+        "sale_execution",
+        "movimientos operativos de Venta",
+        count_non_pristine_sale_dependencies(db, service_order.id),
     )
     signature_fields = (
         service_order.technician_signature_data_url,

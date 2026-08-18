@@ -1,13 +1,13 @@
 # Acceso móvil acotado para técnicos
 
-> Estado: vigente en backend; aplicación LAB aislada de estas rutas productivas
+> Estado: vigente; lecturas productivas y entrega ETS Venta acotada
 >
 > Corte verificado: 2026-08-17
 
 ## Propósito
 
-El namespace `/api/mobile/v1/technician` es una superficie de sólo lectura para
-usuarios internos con asignación técnica. Reutiliza el access JWT interno y no
+El namespace `/api/mobile/v1/technician` ofrece lecturas productivas y una
+mutación acotada para entregas ETS Venta asignadas. Reutiliza el access JWT interno y no
 modifica ni sustituye `/api/service-orders`, `/api/equipment` o
 `/api/field-sheets` del ERP web.
 
@@ -16,6 +16,8 @@ modifica ni sustituye `/api/service-orders`, `/api/equipment` o
 - ETS, OT y equipos exigen `service_orders.read_assigned`.
 - Hojas de Campo exigen conjuntamente `service_orders.read_assigned` y
   `field_sheets.read`.
+- Entregas Venta exigen `service_orders.sales.deliver` y que
+  `SaleDelivery.technician_id` coincida con el actor.
 - `service_orders.read` permanece en el rol `Tecnico` por compatibilidad del ERP
   web; no concede acceso al namespace móvil.
 - La autenticación sin permiso responde `403`; la ausencia o invalidez del
@@ -43,8 +45,10 @@ de lista viven en `services/mobile_technician.py` y los lookups individuales
 con ownership en `services/mobile_technician_scope.py`. Cada detalle vuelve a
 validar el ámbito; nunca confía en una lista previa ni en el cliente móvil.
 
-El namespace técnico no agrega escritura, sesión móvil, revocación, permisos
-por usuario, asignación multi-técnico por OT ni cambios al Motor. La fase LAB
+La única escritura productiva es aceptar/agendar y confirmar una entrega Venta
+asignada; no permite registrar arribos, elegir mercancía, autorizar cambios ni
+operar otras partidas. El namespace no agrega sesión móvil, revocación,
+permisos por usuario, asignación multi-técnico por OT ni cambios al Motor. La fase LAB
 actual de `myc-mobile` no consume estos endpoints para listado, detalle,
 documentos o eliminación; opera sólo sobre su namespace LAB temporal.
 
@@ -67,3 +71,6 @@ DELETE administrativo pertenece al router/permiso LAB independiente.
 | GET | `/api/mobile/v1/technician/equipment/{id}` | `service_orders.read_assigned` | Equipo por ETS asignado o 404 |
 | GET | `/api/mobile/v1/technician/field-sheets` | ambos permisos | Hoja→Equipo→ETS asignado |
 | GET | `/api/mobile/v1/technician/field-sheets/{id}` | ambos permisos | Hoja→Equipo→ETS asignado o 404 |
+| GET | `/api/mobile/v1/technician/sale-deliveries` | `service_orders.sales.deliver` | Entregas asignadas |
+| POST | `/api/mobile/v1/technician/sale-deliveries/{id}/accept` | `service_orders.sales.deliver` | Técnico asignado |
+| POST | `/api/mobile/v1/technician/sale-deliveries/{id}/receive` | `service_orders.sales.deliver` | Técnico asignado y evidencia |
