@@ -38,3 +38,6 @@ backups/*.sql
 backend/resources/sat/catalogs.db
 backend/resources/sat/catalogs.db-shm
 backend/resources/sat/catalogs.db-wal
+
+myc-mobile.zip
+backend/migrations.zip
