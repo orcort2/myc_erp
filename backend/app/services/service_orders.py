@@ -251,7 +251,6 @@ def _legacy_expected_certificate_master_id(
         )
     )
 
-
 def _service_order_items_from_quotation(
     db: Session,
     quotation: Quotation,
@@ -266,49 +265,118 @@ def _service_order_items_from_quotation(
         snapshot = quotation_item.operational_snapshot or {}
         snapshot_items = snapshot.get("operational_items") or []
 
+        # ============================================================
+        # FLUJO CANÓNICO: SNAPSHOT CONGELADO
+        # ============================================================
+        #
+        # Cuando existen operational_items, el ETS debe construirse
+        # exclusivamente desde la realidad congelada de la cotización.
+        #
+        # No se consulta CatalogItem para reinterpretar:
+        # - categoría operacional;
+        # - Master esperado;
+        # - scope;
+        # - configuración de Venta;
+        # - configuración de Mantenimiento;
+        # - identidad del servicio.
+        #
+        # ============================================================
+
         if snapshot_items:
             expanded_items: list[dict] = []
 
+            commercial_service_snapshot = (
+                snapshot.get("commercial_service_snapshot") or {}
+            )
+
             for snapshot_item in snapshot_items:
                 quantity_per_commercial_unit = int(
-                    snapshot_item.get("quantity", 1)
+                    snapshot_item.get("quantity", 1) or 1
                 )
+
                 operational_quantity = (
                     quantity_per_commercial_unit
-                    * int(quotation_item.quantity)
+                    * int(quotation_item.quantity or 1)
                 )
 
                 service_snapshot = (
                     snapshot_item.get("service_snapshot")
-                    or snapshot.get("commercial_service_snapshot")
+                    or commercial_service_snapshot
                     or {}
                 )
-                template_snapshot = service_snapshot.get("template_snapshot") or {}
-                frozen_master_present = (
-                    "expected_certificate_master_id" in snapshot_item
-                    or "expected_certificate_master_id" in template_snapshot
+
+                template_snapshot = (
+                    service_snapshot.get("template_snapshot") or {}
                 )
+
+                # ----------------------------------------------------
+                # Categoría operacional
+                # ----------------------------------------------------
+                #
+                # El quotations.py actual congela la clave como:
+                #
+                #     "operational_category"
+                #
+                # No como "operational_category_snapshot".
+                #
+                operational_category = (
+                    snapshot_item.get("operational_category")
+                    or service_snapshot.get("operational_category")
+                    or quotation_item.operational_category
+                    or commercial_service_snapshot.get(
+                        "operational_category"
+                    )
+                )
+
+                # ----------------------------------------------------
+                # Master esperado
+                # ----------------------------------------------------
+                #
+                # Si la clave existe explícitamente, incluso con None,
+                # respetamos ese valor congelado.
+                #
+                # No debemos consultar el catálogo vivo cuando ya
+                # existe snapshot.
+                #
+                if "expected_certificate_master_id" in snapshot_item:
+                    expected_certificate_master_id = snapshot_item.get(
+                        "expected_certificate_master_id"
+                    )
+                elif "expected_certificate_master_id" in template_snapshot:
+                    expected_certificate_master_id = template_snapshot.get(
+                        "expected_certificate_master_id"
+                    )
+                else:
+                    expected_certificate_master_id = None
+
+                # ----------------------------------------------------
+                # Scope
+                # ----------------------------------------------------
+
+                calibration_scope = snapshot_item.get("calibration_scope")
+
+                if calibration_scope is None:
+                    calibration_scope = service_snapshot.get(
+                        "calibration_scope_snapshot"
+                    )
+
+                # ----------------------------------------------------
+                # Nombre congelado
+                # ----------------------------------------------------
+
+                service_name = (
+                    snapshot_item.get("service_name")
+                    or service_snapshot.get("service_name_snapshot")
+                    or quotation_item.service_name
+                )
+
                 item_values = {
                     "catalog_item_id": snapshot_item.get("catalog_item_id"),
-                    "service_name": (
-                        snapshot_item.get("service_name")
-                        or quotation_item.service_name
-                    ),
-                    "calibration_scope": snapshot_item.get("calibration_scope"),
-                    "operational_category": (
-                        snapshot_item.get("operational_category")
-                        or service_snapshot.get(
-                            "operational_category_snapshot"
-                        )
-                    ),
+                    "service_name": service_name,
+                    "operational_category": operational_category,
+                    "calibration_scope": calibration_scope,
                     "expected_certificate_master_id": (
-                        snapshot_item.get("expected_certificate_master_id")
-                        if "expected_certificate_master_id" in snapshot_item
-                        else template_snapshot.get("expected_certificate_master_id")
-                        if frozen_master_present
-                        else _legacy_expected_certificate_master_id(
-                            db, snapshot_item.get("catalog_item_id")
-                        )
+                        expected_certificate_master_id
                     ),
                     "quantity": operational_quantity,
                     "status": snapshot_item.get("status", "pending"),
@@ -321,6 +389,7 @@ def _service_order_items_from_quotation(
                         **item_values,
                     )
                 )
+
                 expanded_items.append(item_values)
 
             if snapshot.get("service_kind") == "composite":
@@ -334,6 +403,10 @@ def _service_order_items_from_quotation(
                             snapshot.get("commercial_service_name")
                             or quotation_item.service_name
                         ),
+                        "commercial_operational_category": (
+                            snapshot.get("commercial_operational_category")
+                            or quotation_item.operational_category
+                        ),
                         "commercial_quantity": quotation_item.quantity,
                         "snapshot_schema_version": snapshot.get(
                             "schema_version"
@@ -344,38 +417,86 @@ def _service_order_items_from_quotation(
 
             continue
 
-        # Compatibilidad temporal para partidas creadas antes de incorporar
-        # operational_snapshot. Las partidas manuales también entran aquí.
+        # ============================================================
+        # COMPATIBILIDAD LEGACY
+        # ============================================================
+        #
+        # Sólo partidas antiguas, creadas antes de operational_snapshot,
+        # o partidas manuales sin snapshot pueden llegar aquí.
+        #
+        # En esta ruta sí está permitido consultar CatalogItem porque
+        # no existe una realidad operacional histórica congelada.
+        #
+        # ============================================================
+
         catalog_item = (
-            db.get(CatalogItem, quotation_item.catalog_item_id)
+            db.get(
+                CatalogItem,
+                quotation_item.catalog_item_id,
+            )
             if quotation_item.catalog_item_id is not None
             else None
         )
 
+        # ------------------------------------------------------------
+        # LEGACY SIMPLE / MANUAL
+        # ------------------------------------------------------------
+
         if catalog_item is None or catalog_item.service_kind == "simple":
+            operational_category = quotation_item.operational_category
+
+            if operational_category is None and catalog_item is not None:
+                operational_category = catalog_item.operational_category
+
+            expected_certificate_master_id = (
+                _legacy_expected_certificate_master_id(
+                    db,
+                    catalog_item.id,
+                )
+                if catalog_item is not None
+                else None
+            )
+
+            legacy_service_snapshot = (
+                snapshot.get("commercial_service_snapshot") or None
+            )
+
             operational_items.append(
                 ServiceOrderItem(
                     quotation_item_id=quotation_item.id,
                     catalog_item_id=quotation_item.catalog_item_id,
                     service_name=quotation_item.service_name,
-                    operational_category=(
-                        quotation_item.operational_category
-                        or (catalog_item.operational_category if catalog_item is not None else None)
-                    ),
+                    operational_category=operational_category,
                     calibration_scope=quotation_item.calibration_scope,
                     expected_certificate_master_id=(
-                        _legacy_expected_certificate_master_id(db, catalog_item.id)
-                        if catalog_item is not None
-                        else None
+                        expected_certificate_master_id
                     ),
                     quantity=quotation_item.quantity,
                     status="pending",
-                    service_snapshot=(
-                        quotation_item.operational_snapshot or {}
-                    ).get("commercial_service_snapshot"),
+                    service_snapshot=legacy_service_snapshot,
                 )
             )
+
+            expansion_log.append(
+                {
+                    "quotation_item_id": quotation_item.id,
+                    "commercial_catalog_item_id": (
+                        quotation_item.catalog_item_id
+                    ),
+                    "commercial_service_name": quotation_item.service_name,
+                    "commercial_quantity": quotation_item.quantity,
+                    "snapshot_schema_version": snapshot.get(
+                        "schema_version"
+                    ),
+                    "legacy_catalog_fallback": catalog_item is not None,
+                }
+            )
+
             continue
+
+        # ------------------------------------------------------------
+        # LEGACY COMPUESTO
+        # ------------------------------------------------------------
 
         legacy_expanded = expand_catalog_item_for_operations(
             db,
@@ -383,13 +504,47 @@ def _service_order_items_from_quotation(
             quotation_item.quantity,
         )
 
-        for item_values in legacy_expanded:
+        normalized_legacy_items: list[dict] = []
+
+        for legacy_item in legacy_expanded:
+            item_values = dict(legacy_item)
+
+            component_catalog_item_id = item_values.get(
+                "catalog_item_id"
+            )
+
+            component_catalog_item = (
+                db.get(
+                    CatalogItem,
+                    component_catalog_item_id,
+                )
+                if component_catalog_item_id is not None
+                else None
+            )
+
+            if item_values.get("operational_category") is None:
+                item_values["operational_category"] = (
+                    component_catalog_item.operational_category
+                    if component_catalog_item is not None
+                    else None
+                )
+
+            if "expected_certificate_master_id" not in item_values:
+                item_values["expected_certificate_master_id"] = (
+                    _legacy_expected_certificate_master_id(
+                        db,
+                        component_catalog_item_id,
+                    )
+                )
+
             operational_items.append(
                 ServiceOrderItem(
                     quotation_item_id=quotation_item.id,
                     **item_values,
                 )
             )
+
+            normalized_legacy_items.append(item_values)
 
         expansion_log.append(
             {
@@ -399,12 +554,11 @@ def _service_order_items_from_quotation(
                 "commercial_quantity": quotation_item.quantity,
                 "snapshot_schema_version": None,
                 "legacy_catalog_expansion": True,
-                "operational_items": legacy_expanded,
+                "operational_items": normalized_legacy_items,
             }
         )
 
     return operational_items, expansion_log
-
 
 def list_service_orders(
     db: Session,
@@ -458,31 +612,83 @@ def get_service_order(db: Session, service_order_id: int) -> ServiceOrder:
 
 
 def create_service_order(
-    db: Session, payload: ServiceOrderCreate, *, user_id: int
+    db: Session,
+    payload: ServiceOrderCreate,
+    *,
+    user_id: int,
 ) -> ServiceOrder:
     user_id = _require_actor_id(user_id)
-    if payload.quotation_id is not None:
-        existing_order_id = db.scalar(select(ServiceOrder.id).where(
-            ServiceOrder.quotation_id == payload.quotation_id,
-            ServiceOrder.is_active.is_(True),
-        ).order_by(ServiceOrder.id.asc()).limit(1))
-        if existing_order_id is not None:
-            return get_service_order(db, existing_order_id)
-    _ensure_active_client(db, payload.client_id)
-    _ensure_active_user(db, payload.advisor_id, "Asesor")
-    _ensure_active_user(db, payload.technician_id, "Tecnico")
 
-    quotation = _get_active_quotation(db, payload.quotation_id)
-    if quotation is not None and quotation.client_id != payload.client_id:
+    # ------------------------------------------------------------
+    # Idempotencia por cotización
+    # ------------------------------------------------------------
+
+    if payload.quotation_id is not None:
+        existing_order_id = db.scalar(
+            select(ServiceOrder.id)
+            .where(
+                ServiceOrder.quotation_id == payload.quotation_id,
+                ServiceOrder.is_active.is_(True),
+            )
+            .order_by(ServiceOrder.id.asc())
+            .limit(1)
+        )
+
+        if existing_order_id is not None:
+            return get_service_order(
+                db,
+                existing_order_id,
+            )
+
+    # ------------------------------------------------------------
+    # Validaciones
+    # ------------------------------------------------------------
+
+    _ensure_active_client(
+        db,
+        payload.client_id,
+    )
+
+    _ensure_active_user(
+        db,
+        payload.advisor_id,
+        "Asesor",
+    )
+
+    _ensure_active_user(
+        db,
+        payload.technician_id,
+        "Tecnico",
+    )
+
+    quotation = _get_active_quotation(
+        db,
+        payload.quotation_id,
+    )
+
+    if (
+        quotation is not None
+        and quotation.client_id != payload.client_id
+    ):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="La cotizacion no pertenece al cliente indicado",
+            detail=(
+                "La cotizacion no pertenece "
+                "al cliente indicado"
+            ),
         )
+
+    # ------------------------------------------------------------
+    # Cabecera ETS
+    # ------------------------------------------------------------
 
     primary_work_order_number = _next_work_order_number(db)
 
     service_order = ServiceOrder(
-        folio=_next_service_order_folio(db, date.today()),
+        folio=_next_service_order_folio(
+            db,
+            date.today(),
+        ),
         work_order_number=primary_work_order_number,
         client_id=payload.client_id,
         quotation_id=payload.quotation_id,
@@ -494,48 +700,133 @@ def create_service_order(
         completed_equipment=payload.completed_equipment,
         requires_payment=payload.requires_payment,
         notes=payload.notes,
-        source_snapshot=_service_order_source_snapshot(quotation),
+        source_snapshot=_service_order_source_snapshot(
+            quotation
+        ),
         status="scheduled",
     )
 
     expansion_log: list[dict] = []
-    if payload.items:
-        service_order.items = [
-            ServiceOrderItem(
-                **item.model_dump(exclude={"operational_category"}),
-                operational_category=(
-                    item.operational_category
-                    or (
-                        db.get(CatalogItem, item.catalog_item_id).operational_category
-                        if item.catalog_item_id is not None
-                        and db.get(CatalogItem, item.catalog_item_id) is not None
-                        else None
-                    )
-                ),
-                expected_certificate_master_id=_legacy_expected_certificate_master_id(
+
+    # ============================================================
+    # AUTORIDAD DE PARTIDAS
+    # ============================================================
+    #
+    # Cotización vinculada:
+    #     la cotización congelada es la autoridad.
+    #
+    # ETS sin cotización:
+    #     se permiten payload.items y, al no existir snapshot
+    #     comercial previo, puede consultarse el catálogo durante
+    #     esta creación.
+    #
+    # Esto evita que frontend pueda sustituir silenciosamente la
+    # identidad operacional de una cotización ya aprobada.
+    #
+    # ============================================================
+
+    if quotation is not None:
+        (
+            service_order.items,
+            expansion_log,
+        ) = _service_order_items_from_quotation(
+            db,
+            quotation,
+        )
+
+    elif payload.items:
+        direct_items: list[ServiceOrderItem] = []
+
+        for item in payload.items:
+            item_values = item.model_dump(
+                exclude={
+                    "operational_category",
+                }
+            )
+
+            catalog_item = (
+                db.get(
+                    CatalogItem,
+                    item.catalog_item_id,
+                )
+                if item.catalog_item_id is not None
+                else None
+            )
+
+            operational_category = (
+                item.operational_category
+                or (
+                    catalog_item.operational_category
+                    if catalog_item is not None
+                    else None
+                )
+            )
+
+            expected_certificate_master_id = (
+                _legacy_expected_certificate_master_id(
                     db,
                     item.catalog_item_id,
-                ),
+                )
             )
-            for item in payload.items
-        ]
-    elif quotation is not None:
-        service_order.items, expansion_log = _service_order_items_from_quotation(
-            db, quotation
-        )
+
+            direct_items.append(
+                ServiceOrderItem(
+                    **item_values,
+                    operational_category=operational_category,
+                    expected_certificate_master_id=(
+                        expected_certificate_master_id
+                    ),
+                )
+            )
+
+        service_order.items = direct_items
+
+    # ------------------------------------------------------------
+    # Persistencia inicial
+    # ------------------------------------------------------------
 
     db.add(service_order)
     db.flush()
 
-    _build_work_orders_for_service_order(db, service_order)
+    # ------------------------------------------------------------
+    # Órdenes de trabajo
+    # ------------------------------------------------------------
+
+    _build_work_orders_for_service_order(
+        db,
+        service_order,
+    )
+
     db.flush()
 
-    from app.services.maintenance_execution import initialize_maintenance_execution
-    from app.services.sale_execution import initialize_sale_execution
+    # ------------------------------------------------------------
+    # Inicialización de verticales ETS
+    # ------------------------------------------------------------
 
-    initialize_sale_execution(db, service_order, user_id=user_id)
-    initialize_maintenance_execution(db, service_order, user_id=user_id)
+    from app.services.maintenance_execution import (
+        initialize_maintenance_execution,
+    )
+    from app.services.sale_execution import (
+        initialize_sale_execution,
+    )
+
+    initialize_sale_execution(
+        db,
+        service_order,
+        user_id=user_id,
+    )
+
+    initialize_maintenance_execution(
+        db,
+        service_order,
+        user_id=user_id,
+    )
+
     db.flush()
+
+    # ------------------------------------------------------------
+    # Auditoría
+    # ------------------------------------------------------------
 
     write_audit_log(
         db,
@@ -545,25 +836,37 @@ def create_service_order(
         user_id=user_id,
         new_values={
             "folio": service_order.folio,
-            "work_order_number": service_order.work_order_number,
+            "work_order_number": (
+                service_order.work_order_number
+            ),
             "work_orders": [
                 {
                     "id": work_order.id,
-                    "work_order_number": work_order.work_order_number,
+                    "work_order_number": (
+                        work_order.work_order_number
+                    ),
                     "sequence": work_order.sequence,
-                    "equipment_limit": work_order.equipment_limit,
+                    "equipment_limit": (
+                        work_order.equipment_limit
+                    ),
                 }
                 for work_order in service_order.work_orders
             ],
             "client_id": service_order.client_id,
             "quotation_id": service_order.quotation_id,
             "status": service_order.status,
-            "composite_service_expansions": expansion_log,
+            "composite_service_expansions": (
+                expansion_log
+            ),
         },
     )
-    db.commit()
-    return get_service_order(db, service_order.id)
 
+    db.commit()
+
+    return get_service_order(
+        db,
+        service_order.id,
+    )
 
 def update_service_order(
     db: Session,

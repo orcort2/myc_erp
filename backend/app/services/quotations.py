@@ -384,6 +384,11 @@ def _build_operational_snapshot(
             catalog_item.service_kind
         ),
 
+        # Identidad operacional canónica del snapshot.
+        "operational_category": (
+            catalog_item.operational_category
+        ),
+
         "commercial_catalog_item_id": (
             catalog_item.id
         ),
@@ -1832,11 +1837,74 @@ def change_quotation_status(
 
     db.commit()
 
+    # Venta ya tiene contrato de nacimiento automático del ETS
+    # cuando la cotización aceptada contiene al menos una partida sale.
+    if new_status == "accepted":
+        accepted = get_quotation(
+            db,
+            quotation.id,
+        )
+
+        contains_sale = any(
+            item.is_active
+            and (
+                item.operational_category == "sale"
+                or (
+                    item.operational_snapshot
+                    or {}
+                ).get(
+                    "operational_category"
+                ) == "sale"
+                or (
+                    item.operational_snapshot
+                    or {}
+                ).get(
+                    "commercial_operational_category"
+                ) == "sale"
+                or any(
+                    component.get(
+                        "operational_category"
+                    ) == "sale"
+                    for component in (
+                        (
+                            item.operational_snapshot
+                            or {}
+                        ).get(
+                            "operational_items",
+                            [],
+                        )
+                    )
+                )
+            )
+            for item in accepted.items
+        )
+
+        if contains_sale:
+            from app.schemas.service_order import (
+                ServiceOrderCreate,
+            )
+            from app.services.service_orders import (
+                create_service_order,
+            )
+
+            create_service_order(
+                db,
+                ServiceOrderCreate(
+                    client_id=accepted.client_id,
+                    quotation_id=accepted.id,
+                    advisor_id=accepted.advisor_id,
+                    notes=(
+                        "ETS Venta generado al aprobar "
+                        f"{accepted.folio}"
+                    ),
+                ),
+                user_id=user_id,
+            )
+
     return get_quotation(
         db,
         quotation.id,
     )
-
 
 def deactivate_quotation(
     db: Session,
