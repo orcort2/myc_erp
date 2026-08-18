@@ -6325,6 +6325,11 @@ button {
   justify-content: flex-end;
 }
 
+.ets-work-order-row__actions .is-danger {
+  border-color: rgba(180, 35, 24, 0.35);
+  color: #b42318;
+}
+
 .ets-work-orders-modal .form-field {
   display: grid;
   gap: 7px;

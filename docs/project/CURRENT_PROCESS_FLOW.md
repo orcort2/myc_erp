@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-17
 
 # Flujo operativo actual
 
@@ -299,6 +299,19 @@ scheduled → confirmed → called/in_progress → technical_review
 
 `cancelled` es terminal y existen rutas alternativas permitidas por la máquina vigente. Al crear el expediente se generan Órdenes de Trabajo según los cupos; cada OT admite como máximo 10 equipos. Los ciclos de firma vinculan las OT activas pendientes del momento; una OT agregada después requiere un ciclo nuevo.
 
+Un Administrador puede eliminar definitivamente una OT productiva desde el
+modal de Órdenes de Trabajo sin importar su estado. El backend bloquea la OT y
+su ETS, calcula el grafo real y ejecuta una sola transacción: elimina equipos,
+hojas, certificados, unidades/etapas/tareas y vínculos exclusivos; desacopla
+referencias anulables de factura/cotización; elimina un ciclo de firma sólo si
+ya no tiene otra OT; conserva los recursos compartidos y el evento mínimo de
+auditoría. Los archivos exclusivos pasan primero a staging reversible, se
+restauran ante rollback y se destruyen después del commit. Una evidencia
+inmutable del Motor de Resoluciones bloquea con `409` antes de mutar.
+
+MYC Mobile no lista, abre, descarga ni elimina estas OT productivas. Su pantalla
+temporal de Órdenes de Trabajo consume exclusivamente el agregado LAB.
+
 El router ETS conserva sólo transporte HTTP, identidad, permisos, validación y
 respuesta. `backend/app/services/service_orders.py` es la única autoridad para
 crear, actualizar, transitar, cerrar, solicitar/autorizar/ejecutar excepciones y
@@ -408,6 +421,9 @@ Login interno técnico
 → sesión compartida bloquea inmediatamente todo el grupo
 → finalizar genera y congela un PDF por OT
 → iOS abre impresión o compartir para el folio seleccionado
+→ Administrador puede confirmar y eliminar una OT LAB individual
+→ backend repara raíz/cadena y conserva recursos compartidos
+→ app cierra detalle y vuelve a consultar el listado LAB
 ```
 
 La captura móvil muestra Cliente, Domicilio, Atención, C.P., Ciudad, Estado,
@@ -419,6 +435,15 @@ institucionales independientes y una orden de compra ausente queda vacía.
 El retiro futuro sigue `detener altas → exportar → validar conteos/checksums →
 custodiar → retirar consumidores/modelos → migración controlada de tablas`. No
 existe eliminación automática ni dependencia desde el flujo productivo.
+
+La eliminación LAB exige `lab_work_orders.delete` en guard y router sin mirar
+el nombre del rol. No restringe estado, pero sí ownership: equipos, PDF binario,
+revisiones y tickets exclusivos desaparecen con la OT; una sesión de firma,
+ticket o revisión compartida se conserva. Si se elimina la raíz con hermanas,
+la primera superviviente se convierte en raíz, se recompone `previous` y se
+compacta `sequence_number`. `204`/`404` cierran el detalle y refrescan desde el
+backend; `403`, `409` o red mantienen la OT local. Ninguna llamada usa
+`/api/service-orders/...`.
 
 Desde 2026-08-14, una OT `completed` sólo vuelve a edición mediante Ticket. El
 técnico solicita; la OT sigue cerrada; Calidad/autoridad rechaza o aprueba una
@@ -447,3 +472,50 @@ refetch acotado; una mutación local invalida inmediatamente. El toque de un
 push conserva el destino durante la restauración de sesión, pero nunca usa el
 payload como detalle permanente. Pull-to-refresh sigue disponible y no existe
 polling global.
+
+## Flujo de Comunicaciones — Etapas A–I
+
+```text
+sesión interna válida en MYC Mobile
+→ RealtimeProvider ofrece protocolo v1 + access JWT
+→ backend valida JWT y vuelve a resolver User en base
+→ acepta socket y une exclusivamente user:{id}
+→ emite realtime.connected con envelope v1
+→ provider queda connected
+
+conversation.subscribe(conversation_id)
+→ backend consulta ownership
+→ autorizado: une conversation:{id}
+→ ajeno: realtime.error sin unirse
+
+usuario envía mensaje
+→ MYC Mobile crea optimistic row con client_message_id
+→ REST valida membership y bloquea la conversación
+→ asigna sequence, persiste mensaje/recibos/menciones/notificaciones
+→ commit
+→ publica message.created y notification.created
+→ app concilia por client_message_id o conserva failed para retry
+
+usuario abre/lee conversación
+→ REST avanza receipt/cursor sin permitir regresión
+→ publica message.delivered o message.read
+→ todos los dispositivos actualizan estado
+
+typing.started / typing.stopped
+→ backend vuelve a validar membership y suscripción
+→ publica evento efímero en conversation:{id}
+→ cliente limita frecuencia y expira indicador localmente
+
+desconexión recuperable / regreso a foreground
+→ reconnecting con backoff
+→ nuevo realtime.connected
+→ resynchronizing
+→ GET /sync desde la última sequence hasta cerrar todos los huecos
+→ refresco REST de conversaciones/no leídos
+→ connected
+```
+
+Background y logout cierran socket, timers y listeners. Si expira el access
+JWT, el servidor cierra `4401`; la app usa el refresh HTTP existente, reconecta
+y resincroniza. Push y realtime sólo despiertan/invalidan; el detalle se vuelve
+a obtener por REST.

@@ -22,6 +22,13 @@ exportación ZIP verificable. La app incorpora login JWT, SecureStore,
 renovación de token, lista/alta, captura compacta, editor secundario,
 navegación por folios relacionados, firma táctil, cierre, impresión y compartir.
 
+La corrección administrativa 2026-08-17 mantiene esa pantalla como único
+consumidor móvil: retiró la integración accidental con Service Orders y agregó
+DELETE individual LAB con capacidad `lab_work_orders.delete`, confirmación,
+refetch, reparación de cadena y conservación de firma/ticket/revisión
+compartidos. También reserva la metadata de tarjeta y limita clientes largos a
+dos líneas con ellipsis.
+
 La corrección UX del mismo corte retiró teléfono/correo de la captura visible,
 adoptó safe area real, agrupación de inputs y espaciado móvil consistente en
 captura, editor de equipo y firmas. El PDF LAB ahora asigna por separado
@@ -62,6 +69,18 @@ para referencias ausentes; el PDF productivo conserva su comportamiento.
 - No se aplicó la migración a la base ERP compartida ni se regeneró el respaldo
   oficial; la validación usó una base temporal eliminada al terminar.
 
+## Validación correctiva 2026-08-17
+
+- Backend dirigido LAB/conformidad/capacidades: 26 passed, 5 skipped por falta
+  de `LAB_POSTGRES_TEST_URL`; cubre 403/404/204, raíz/intermedia, estados,
+  datos exclusivos, firma/ticket/revisión compartidos y rollback.
+- Móvil: 6 pruebas Node para capacidad, aislamiento de `/service-orders`,
+  estados HTTP, cancelación, doble envío y contrato de tarjeta; TypeScript y
+  lint correctos; bundle iOS Expo 54 correcto con 1,151 módulos.
+- Inventario API: 398/398; validador de capacidades verde en 80 permisos HTTP,
+  26 diferencias temporales gobernadas y 0 gaps de bootstrap.
+- No hubo migración, modificación de datos ni regeneración del respaldo SQL.
+
 ## Pendientes de aceptación
 
 1. Aplicar `c6e8a1b4d2f9` en el entorno operativo autorizado y regenerar el
@@ -70,3 +89,5 @@ para referencias ausentes; el PDF productivo conserva su comportamiento.
    impresión AirPrint y hoja de compartir.
 3. Resolver las 22 vulnerabilidades reportadas por `npm install` mediante una
    actualización controlada; no ejecutar `audit fix --force` sin revisión.
+4. Repetir en iOS/Android la eliminación LAB para raíz, adicional, firmada y
+   finalizada, y validar tarjetas con nombres largos en anchos distintos.

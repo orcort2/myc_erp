@@ -45,6 +45,7 @@ from app.services.service_orders import (
     confirm_signature_cycle,
     create_service_order,
     deactivate_service_order,
+    delete_service_work_order,
     execute_service_order_exception,
     get_service_order,
     list_service_orders,
@@ -465,4 +466,19 @@ def delete_service_order(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     deactivate_service_order(db, service_order_id, user_id=current_user.id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/work-orders/{work_order_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_work_order(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_permission("service_orders.delete")
+    ),
+) -> Response:
+    delete_service_work_order(db, work_order_id, user_id=current_user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

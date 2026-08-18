@@ -23,6 +23,7 @@ export type NotificationSyncEvent = {
   entity_id?: number | null;
   ticket_id?: number;
   work_order_id?: number;
-  source: 'push' | 'foreground' | 'local';
+  conversation_id?: number;
+  source: 'push' | 'foreground' | 'local' | 'realtime';
   dedupe_key?: string;
 };

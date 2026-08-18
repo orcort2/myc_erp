@@ -63,7 +63,9 @@ export default function NotificationsScreen() {
     }
     const ticketId = Number(item.metadata_json.ticket_id ?? (item.entity_type === 'ticket' ? item.entity_id : 0));
     const workOrderId = Number(item.metadata_json.work_order_id ?? 0);
-    if (ticketId) router.push({ pathname: '/(technician)/tickets', params: { ticketId: String(ticketId) } });
+    const conversationId = Number(item.metadata_json.conversation_id ?? (item.entity_type === 'communication' ? item.entity_id : 0));
+    if (conversationId) router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(conversationId) } });
+    else if (ticketId) router.push({ pathname: '/(technician)/tickets', params: { ticketId: String(ticketId) } });
     else if (workOrderId) router.push({ pathname: '/(technician)/work-orders', params: { workOrderId: String(workOrderId) } });
   }
 

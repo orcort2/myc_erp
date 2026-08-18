@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-14 — Notifications V1; sin cambio de clasificación global
+> Corte verificado: 2026-08-17 — Comunicaciones Etapas A–I; terminado técnicamente y en revisión
 
 # Estado actual del ERP MYC
 
@@ -116,7 +116,11 @@ arquitectónica, UI de cards/tabs, portal/app de aprobación y E2E autenticado.
 
 El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho rutas de
 sólo lectura cubren ETS, OT, Equipos y Hojas de Campo con ownership por técnico,
-404 opaco y permisos compuestos. No modifica el ERP web ni `myc-mobile`.
+404 opaco y permisos compuestos. Esa entrega no modificó el ERP web ni la app.
+MYC Mobile incorpora ahora, como integración administrativa separada, listado y
+expediente productivo con eliminación por `service_orders.delete`, confirmación,
+tratamiento de `204/403/404/409`, exclusión LAB y reconciliación inmediata. La
+validación física iOS/Android permanece pendiente y no cambia el estado global.
 
 1. La Contención de Seguridad Etapa 1 quedó **APROBADA Y CERRADA**:
    deny-by-default, JWT productivo seguro, clasificación 383/383 y portal
@@ -180,10 +184,15 @@ El vertical backend/móvil está terminado técnicamente: agregado aislado, foli
 6400–6999, máximo 10 equipos, adicionales encadenadas, firma única compartida,
 bloqueo grupal, PDFs individuales y exportación verificable. Las pruebas LAB,
 conformidad API, PostgreSQL, TypeScript, lint y Expo Doctor están verdes.
+La pantalla móvil continúa mostrando exclusivamente LAB 6400–6999 y agrega
+eliminación administrativa individual con capacidad propia, confirmación,
+refetch y layout estable para clientes largos. Backend cubre dependencias
+exclusivas, raíz/cadena, firma/ticket/revisión compartidos y rollback.
 
 No se marca `CASI SELLADO` ni `SELLADO`: la versión operativa anterior fue
 validada físicamente, pero el sprint nuevo requiere repetir teclado, firma,
-AirPrint, compartir, filtros y Tickets en Android/iPhone. El LAB es provisional
+AirPrint, compartir, filtros, Tickets, eliminación y nombres largos en
+Android/iPhone. El LAB es provisional
 y debe retirarse sólo después de exportación íntegra verificada.
 No cambia el estado ni el contrato de las OT/firmas productivas.
 
@@ -200,6 +209,16 @@ registra múltiples dispositivos, entrega por Expo sin revertir dominio y añade
 centro, badge, deep links y refresco automático de Tickets/OT. Conserva el
 estado canónico `EN DESARROLLO` hasta el checklist físico iOS/Android y la
 decisión posterior sobre cola durable/receipts; no hubo build EAS ni despliegue.
+
+Comunicaciones **Etapas A–I** está **TERMINADA TÉCNICAMENTE — EN REVISIÓN**:
+REST/PostgreSQL conserva la verdad y WebSocket v1 entrega mensajes, typing,
+recibos y notificaciones posteriores al commit. MYC Mobile incorpora envío
+optimista, deduplicación/reintento, sync por secuencia, grupos, menciones,
+multi-dispositivo, push y lifecycle completo. Producción fue verificada con un
+único proceso Uvicorn sin `--workers`, de modo que el hub en memoria es válido
+y TD-041 queda resuelto; cualquier escala futura exige backplane previo. No se
+marca aceptado/sellado hasta ejecutar el checklist físico en dos dispositivos,
+y no hubo build EAS ni despliegue.
 
 ## Regla de mantenimiento
 

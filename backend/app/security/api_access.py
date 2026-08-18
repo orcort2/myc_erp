@@ -125,6 +125,8 @@ def _quotation_policy(method: str, path: str) -> AccessPolicy:
 
 
 def _service_order_policy(method: str, path: str) -> AccessPolicy:
+    if method == "DELETE" and path.startswith("/api/service-orders/work-orders/"):
+        return _permission("service_orders.delete")
     if "capture-package" in path or path.endswith("/capture-files"):
         permission = "certificates.upload_pdf" if method == "POST" else "certificates.read"
         return _permission(permission)
@@ -292,6 +294,13 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
 
     if path == "/api/mobile/v1/technician/lab-work-orders/export":
         return _permission("lab_work_orders.export")
+
+    if (
+        method.upper() == "DELETE"
+        and path.startswith("/api/mobile/v1/technician/lab-work-orders/")
+        and "/equipment/" not in path
+    ):
+        return _permission("lab_work_orders.delete")
 
     if path.startswith("/api/mobile/v1/technician/tickets"):
         if path.endswith("/approve") or path.endswith("/reject"):

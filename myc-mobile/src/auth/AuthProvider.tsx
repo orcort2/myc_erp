@@ -1,4 +1,4 @@
-import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { login as loginRequest, refresh as refreshRequest } from '@/src/services/auth.service';
 import { deactivateCurrentDevice } from '@/src/services/push-notifications';
@@ -11,6 +11,7 @@ type AuthContextValue = {
   user: AuthUser | null;
   login(email: string, password: string): Promise<AuthUser>;
   logout(): Promise<void>;
+  refreshSession(): Promise<TokenPair>;
   authorizedFetch(path: string, init?: RequestInit): Promise<Response>;
 };
 
@@ -23,6 +24,20 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     readSession().then(setSession).finally(() => setIsLoading(false));
   }, []);
+
+  const refreshSession = useCallback(async (): Promise<TokenPair> => {
+    if (!session) throw new Error('Sesión no disponible');
+    try {
+      const next = await refreshRequest(session.refresh_token);
+      await writeSession(next);
+      setSession(next);
+      return next;
+    } catch (error) {
+      await clearSession();
+      setSession(null);
+      throw error;
+    }
+  }, [session]);
 
   const value = useMemo<AuthContextValue>(() => ({
     isLoading,
@@ -41,26 +56,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
       await clearSession();
       setSession(null);
     },
+    refreshSession,
     async authorizedFetch(path, init = {}) {
       if (!session) throw new Error('Sesión no disponible');
       const headers = new Headers(init.headers);
       headers.set('Authorization', `Bearer ${session.access_token}`);
       let response = await fetch(path, { ...init, headers });
       if (response.status !== 401) return response;
-      try {
-        const next = await refreshRequest(session.refresh_token);
-        await writeSession(next);
-        setSession(next);
-        headers.set('Authorization', `Bearer ${next.access_token}`);
-        response = await fetch(path, { ...init, headers });
-        return response;
-      } catch (error) {
-        await clearSession();
-        setSession(null);
-        throw error;
-      }
+      const next = await refreshSession();
+      headers.set('Authorization', `Bearer ${next.access_token}`);
+      response = await fetch(path, { ...init, headers });
+      return response;
     },
-  }), [isLoading, session]);
+  }), [isLoading, refreshSession, session]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

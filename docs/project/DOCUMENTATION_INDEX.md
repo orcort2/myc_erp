@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-08-13
+> Corte verificado: 2026-08-17
 
 # Índice único de documentación
 
@@ -57,14 +57,16 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md`](../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md) | Snapshot técnico reproducible de ETAPA 2B: 36 superficies, 305 operaciones HTTP y 493 campos; no es autoridad funcional posterior a la validación. |
 | [`../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md) | Brechas verificadas entre Catálogo Institucional, bootstrap `permissions.py` e inventario HTTP; base de revisión previa a cualquier RBAC dinámico. |
 | [`../architecture/security/API_ACCESS_CONTROL.md`](../architecture/security/API_ACCESS_CONTROL.md) | Deny-by-default, clasificación de rutas, excepciones públicas, JWT, portal/ownership y relación backend/frontend. |
-| [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible vigente de 392 operaciones FastAPI; conserva la fecha del archivo de origen y su política mínima verificable. |
+| [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible vigente de 398 operaciones FastAPI; conserva la fecha del archivo de origen y su política mínima verificable. |
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |
 | [`../architecture/ETS_MULTIPLE_EVOLVED_CORE.md`](../architecture/ETS_MULTIPLE_EVOLVED_CORE.md) | Contrato de Fase 1 para unidades estables, etapas append-only, solicitudes, decisiones por partida, tareas y compatibilidad de calibración. |
-| [`../architecture/MOBILE_TECHNICIAN_ACCESS.md`](../architecture/MOBILE_TECHNICIAN_ACCESS.md) | Contrato de autenticación, permisos, ownership heredado, 404 opaco y fronteras del namespace móvil técnico. |
+| [`../architecture/MOBILE_TECHNICIAN_ACCESS.md`](../architecture/MOBILE_TECHNICIAN_ACCESS.md) | Contrato de autenticación, permisos, ownership heredado, 404 opaco y frontera productiva que la app LAB actual no consume. |
 | [`../architecture/MOBILE_NOTIFICATIONS_V1.md`](../architecture/MOBILE_NOTIFICATIONS_V1.md) | Contrato de persistencia, dispositivos, eventos, destinatarios, entrega Expo, deep links y sincronización móvil V1. |
-| [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md) | Contrato temporal/removible de OT LAB, grupo de captura, firma única compartida, folios 6400–6999, PDF, exportación y retiro. |
+| [`../architecture/COMMUNICATIONS_REALTIME.md`](../architecture/COMMUNICATIONS_REALTIME.md) | Contrato final A–I de Comunicaciones: persistencia/orden, REST+WebSocket, seguridad, optimistic UI, sync, typing, recibos, menciones, grupos, push, lifecycle y compuerta multi-worker. |
+| [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md) | Contrato temporal/removible de OT LAB, grupo de captura, firma única compartida, folios 6400–6999, eliminación individual segura, PDF, exportación y retiro. |
+| [`../architecture/WORK_ORDER_DELETION.md`](../architecture/WORK_ORDER_DELETION.md) | Contrato de eliminación física administrativa de una OT productiva, ownership, recursos compartidos, atomicidad, archivos y exclusión explícita del cliente móvil LAB. |
 | [`../architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`](../architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md) | Lifecycle de Tickets, reapertura versionada, firma histórica/activa, filtros paginados, permisos y auditoría del vertical LAB. |
 | [`../architecture/database/SCHEMA_RECOVERY.md`](../architecture/database/SCHEMA_RECOVERY.md) | Contrato reproducible de ciclo Alembic, upgrade histórico, respaldo oficial y restore drill. |
 | [`../architecture/ACTIVITY_INSTITUTIONAL.md`](../architecture/ACTIVITY_INSTITUTIONAL.md) | Contrato genérico de conversación, eventos, menciones, adjuntos, atención, no leídos y permisos por entidad. |
@@ -121,8 +123,11 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | [`../closures/ETS_MULTIPLE_EVOLVED_PHASE_1_2026-08-12.md`](../closures/ETS_MULTIPLE_EVOLVED_PHASE_1_2026-08-12.md) | Entrega técnica de Fase 1 ETS múltiple/evolucionado; estado obligatorio `EN REVISIÓN`, sin abrir fase posterior. |
 | [`../closures/MOBILE_TECHNICIAN_ACCESS_2026-08-12.md`](../closures/MOBILE_TECHNICIAN_ACCESS_2026-08-12.md) | Cierre técnico de ocho lecturas móviles con scope asignado, permisos compuestos, matriz A/B y compatibilidad web. |
 | [`../closures/LAB_WORK_ORDERS_VERTICAL_SLICE_2026-08-13.md`](../closures/LAB_WORK_ORDERS_VERTICAL_SLICE_2026-08-13.md) | Cierre técnico del vertical OT LAB backend/móvil; pendiente de aceptación física en iPhone. |
+| [`../closures/WORK_ORDER_DELETION_2026-08-17.md`](../closures/WORK_ORDER_DELETION_2026-08-17.md) | Implementación y validación del borrado físico administrativo de OT productiva con dependencias, firma compartida, rollback y lectura móvil. |
 | [`../closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md`](../closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md) | Cierre técnico en revisión manual de filtros, Tickets, reapertura, revisiones y firmas LAB. |
 | [`../closures/MOBILE_NOTIFICATIONS_V1_2026-08-14.md`](../closures/MOBILE_NOTIFICATIONS_V1_2026-08-14.md) | Cierre técnico de notificaciones persistentes/push y sincronización automática; pendiente de aceptación física iOS/Android. |
+| [`../closures/COMMUNICATIONS_REALTIME_STAGE_A_2026-08-17.md`](../closures/COMMUNICATIONS_REALTIME_STAGE_A_2026-08-17.md) | Cierre técnico de contrato, WebSocket, hub y provider móvil de Comunicaciones Etapa A; pendiente de revisión y gate multi-worker. |
+| [`../closures/COMMUNICATIONS_COMPLETE_2026-08-17.md`](../closures/COMMUNICATIONS_COMPLETE_2026-08-17.md) | Cierre técnico A–I de Comunicaciones con topología productiva verificada, modelo persistente, experiencia móvil, pruebas, respaldo y pendientes físicos; en revisión. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_0.md`](../closures/RESOLUTION_ENGINE_PHASE_0.md) | Ratificación, matriz, gates, validaciones y condición de aprobación de la Fase 0 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_1.md`](../closures/RESOLUTION_ENGINE_PHASE_1.md) | Contratos, catálogos, serialización canónica, runtime, registro versionado, aislamiento y validaciones de la Fase 1 del Motor de Resoluciones. |
 | [`../closures/RESOLUTION_ENGINE_PHASE_2.md`](../closures/RESOLUTION_ENGINE_PHASE_2.md) | Modelo ORM, integridad, reconstrucción, inmutabilidad, migración reversible y validaciones de la Fase 2 del Motor de Resoluciones. |

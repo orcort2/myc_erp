@@ -1,14 +1,38 @@
 from datetime import date, datetime, timezone
 from math import ceil
+import os
+from pathlib import Path
+from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.folios import FolioRequest, generate_folio
 from app.models.client import Client
 from app.models.catalog_item import CatalogItem
+from app.models.activity import ActivityAttachment, ActivityMessage, ActivityThread
+from app.models.certificate import (
+    Certificate,
+    CertificateCaptureFile,
+    CertificatePdfVersion,
+)
+from app.models.certificate_resolution_operation import CertificateResolutionOperation
+from app.models.equipment import Equipment
+from app.models.field_sheet import FieldSheet, FieldSheetResult, FieldSheetSignature
+from app.models.invoice import InvoiceItem
+from app.models.notification import Notification
 from app.models.quotation import Quotation
+from app.models.quotation import QuotationItem
+from app.models.reference_standard import FieldSheetReferenceStandard
+from app.models.service_execution import (
+    ServiceStage,
+    ServiceStageDocument,
+    ServiceTask,
+    ServiceTaskAssignee,
+    ServiceUnit,
+    TechnicalServiceRequest,
+)
 from app.models.service_order import (
     ServiceOrder,
     ServiceOrderItem,
@@ -18,6 +42,7 @@ from app.models.service_order import (
 )
 from app.models.service_order_exception import ServiceOrderExceptionRequest
 from app.models.user import User
+from app.models.uncertainty import UncertaintyCalculation
 from app.schemas.service_order import (
     ServiceOrderCreate,
     ServiceOrderExceptionCreate,
@@ -28,6 +53,11 @@ from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.catalog_items import expand_catalog_item_for_operations
 from app.services.institutional_folios import next_work_order_number
+from app.services.storage_service import (
+    count_active_references,
+    resolve_storage_path,
+    storage_root,
+)
 
 
 
@@ -1061,3 +1091,377 @@ def deactivate_service_order(
     )
     db.commit()
     return service_order
+
+
+def delete_service_work_order(
+    db: Session, work_order_id: int, *, user_id: int
+) -> None:
+    """Delete one productive OT and only the operational records it owns.
+
+    The parent ETS, commercial/financial records, master catalogs, users,
+    resolution aggregates and signature cycles still used by another OT are
+    shared resources and are therefore retained.  All database mutations and
+    the minimal audit event are committed as one transaction.
+    """
+    user_id = _require_actor_id(user_id)
+    work_order = db.scalar(
+        select(ServiceWorkOrder)
+        .where(ServiceWorkOrder.id == work_order_id)
+        .with_for_update()
+    )
+    if work_order is None:
+        raise HTTPException(status_code=404, detail="Orden de trabajo no encontrada")
+
+    service_order = db.scalar(
+        select(ServiceOrder)
+        .where(ServiceOrder.id == work_order.service_order_id)
+        .with_for_update()
+    )
+    if service_order is None:
+        raise HTTPException(status_code=409, detail="La OT no tiene un ETS válido")
+
+    equipment_ids = set(
+        db.scalars(
+            select(Equipment.id).where(Equipment.work_order_id == work_order.id)
+        ).all()
+    )
+    field_sheet_ids = set(
+        db.scalars(
+            select(FieldSheet.id).where(
+                or_(
+                    FieldSheet.work_order_id == work_order.id,
+                    FieldSheet.equipment_id.in_(equipment_ids) if equipment_ids else False,
+                )
+            )
+        ).all()
+    )
+    certificate_ids = set(
+        db.scalars(
+            select(Certificate.id).where(
+                or_(
+                    Certificate.equipment_id.in_(equipment_ids) if equipment_ids else False,
+                    Certificate.field_sheet_id.in_(field_sheet_ids) if field_sheet_ids else False,
+                )
+            )
+        ).all()
+    )
+
+    protected_operations = 0
+    if certificate_ids:
+        protected_operations = int(
+            db.scalar(
+                select(func.count(CertificateResolutionOperation.id)).where(
+                    CertificateResolutionOperation.certificate_id.in_(certificate_ids)
+                )
+            )
+            or 0
+        )
+    if protected_operations:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "WORK_ORDER_DELETE_BLOCKED",
+                "message": "La OT contiene certificados con evidencia inmutable del Motor de Resoluciones.",
+                "blocking_dependencies": {
+                    "certificate_resolution_operations": protected_operations
+                },
+            },
+        )
+
+    file_references: set[tuple[str, str | None, int | None]] = set()
+    if certificate_ids:
+        for certificate in db.scalars(
+            select(Certificate).where(Certificate.id.in_(certificate_ids))
+        ):
+            file_references.add(
+                (certificate.final_pdf_path or "", certificate.final_pdf_original_filename, certificate.id)
+            )
+            file_references.add(
+                (certificate.authenticated_pdf_path or "", None, certificate.id)
+            )
+        for version in db.scalars(
+            select(CertificatePdfVersion).where(
+                CertificatePdfVersion.certificate_id.in_(certificate_ids)
+            )
+        ):
+            file_references.add((version.file_path, version.original_filename, version.certificate_id))
+        for capture_file in db.scalars(
+            select(CertificateCaptureFile).where(
+                CertificateCaptureFile.certificate_id.in_(certificate_ids)
+            )
+        ):
+            file_references.add(
+                (capture_file.stored_path or "", capture_file.original_filename, capture_file.certificate_id)
+            )
+
+    signature_cycle_ids = set(
+        db.scalars(
+            select(ServiceOrderSignatureCycleWorkOrder.signature_cycle_id).where(
+                ServiceOrderSignatureCycleWorkOrder.work_order_id == work_order.id
+            )
+        ).all()
+    )
+    thread_ids = set(
+        db.scalars(
+            select(ActivityThread.id).where(
+                ActivityThread.entity_type.in_(("work_order", "service_work_order")),
+                ActivityThread.entity_id == work_order.id,
+            )
+        ).all()
+    )
+    activity_message_ids = set(
+        db.scalars(
+            select(ActivityMessage.id).where(ActivityMessage.thread_id.in_(thread_ids))
+        ).all()
+    ) if thread_ids else set()
+    if activity_message_ids:
+        for attachment in db.scalars(
+            select(ActivityAttachment).where(
+                ActivityAttachment.message_id.in_(activity_message_ids)
+            )
+        ):
+            file_references.add(
+                (attachment.stored_path, attachment.original_name, None)
+            )
+    service_unit_ids = set(
+        db.scalars(
+            select(ServiceUnit.id).where(ServiceUnit.work_order_id == work_order.id)
+        ).all()
+    )
+    service_stage_ids = set(
+        db.scalars(
+            select(ServiceStage.id).where(
+                ServiceStage.service_unit_id.in_(service_unit_ids)
+            )
+        ).all()
+    ) if service_unit_ids else set()
+    technical_request_ids = set(
+        db.scalars(
+            select(TechnicalServiceRequest.id).where(
+                or_(
+                    TechnicalServiceRequest.service_unit_id.in_(service_unit_ids)
+                    if service_unit_ids else False,
+                    TechnicalServiceRequest.source_stage_id.in_(service_stage_ids)
+                    if service_stage_ids else False,
+                    TechnicalServiceRequest.source_message_id.in_(activity_message_ids)
+                    if activity_message_ids else False,
+                )
+            )
+        ).all()
+    )
+    task_ids = set(
+        db.scalars(
+            select(ServiceTask.id).where(
+                or_(
+                    ServiceTask.service_unit_id.in_(service_unit_ids)
+                    if service_unit_ids else False,
+                    ServiceTask.service_stage_id.in_(service_stage_ids)
+                    if service_stage_ids else False,
+                    ServiceTask.source_message_id.in_(activity_message_ids)
+                    if activity_message_ids else False,
+                )
+            )
+        ).all()
+    )
+
+    staged_files: list[tuple[Path, Path]] = []
+    try:
+        # Financial and commercial evidence is shared: detach nullable pointers.
+        if equipment_ids or certificate_ids:
+            db.execute(
+                update(InvoiceItem)
+                .where(
+                    or_(
+                        InvoiceItem.equipment_id.in_(equipment_ids) if equipment_ids else False,
+                        InvoiceItem.certificate_id.in_(certificate_ids) if certificate_ids else False,
+                    )
+                )
+                .values(equipment_id=None, certificate_id=None)
+            )
+        if technical_request_ids or service_unit_ids or service_stage_ids:
+            db.execute(
+                update(QuotationItem)
+                .where(
+                    or_(
+                        QuotationItem.technical_request_id.in_(technical_request_ids)
+                        if technical_request_ids else False,
+                        QuotationItem.source_service_unit_id.in_(service_unit_ids)
+                        if service_unit_ids else False,
+                        QuotationItem.source_stage_id.in_(service_stage_ids)
+                        if service_stage_ids else False,
+                    )
+                )
+                .values(
+                    technical_request_id=None,
+                    source_service_unit_id=None,
+                    source_stage_id=None,
+                )
+            )
+        if service_stage_ids:
+            db.execute(
+                update(ServiceStage)
+                .where(
+                    ServiceStage.source_stage_id.in_(service_stage_ids),
+                    ServiceStage.id.not_in(service_stage_ids),
+                )
+                .values(source_stage_id=None)
+            )
+
+        if certificate_ids:
+            db.execute(delete(CertificateCaptureFile).where(CertificateCaptureFile.certificate_id.in_(certificate_ids)))
+            db.execute(delete(CertificatePdfVersion).where(CertificatePdfVersion.certificate_id.in_(certificate_ids)))
+            db.execute(delete(Certificate).where(Certificate.id.in_(certificate_ids)))
+        if field_sheet_ids:
+            db.execute(delete(UncertaintyCalculation).where(UncertaintyCalculation.field_sheet_id.in_(field_sheet_ids)))
+            db.execute(delete(FieldSheetReferenceStandard).where(FieldSheetReferenceStandard.field_sheet_id.in_(field_sheet_ids)))
+            db.execute(delete(FieldSheetResult).where(FieldSheetResult.field_sheet_id.in_(field_sheet_ids)))
+            db.execute(delete(FieldSheetSignature).where(FieldSheetSignature.field_sheet_id.in_(field_sheet_ids)))
+            db.execute(delete(FieldSheet).where(FieldSheet.id.in_(field_sheet_ids)))
+        if task_ids:
+            db.execute(delete(ServiceTaskAssignee).where(ServiceTaskAssignee.task_id.in_(task_ids)))
+            db.execute(delete(ServiceTask).where(ServiceTask.id.in_(task_ids)))
+        if technical_request_ids:
+            db.execute(delete(TechnicalServiceRequest).where(TechnicalServiceRequest.id.in_(technical_request_ids)))
+        if service_stage_ids:
+            db.execute(delete(ServiceStageDocument).where(ServiceStageDocument.service_stage_id.in_(service_stage_ids)))
+            db.execute(delete(ServiceStage).where(ServiceStage.id.in_(service_stage_ids)))
+        if service_unit_ids:
+            db.execute(delete(ServiceUnit).where(ServiceUnit.id.in_(service_unit_ids)))
+        if equipment_ids:
+            db.execute(delete(Equipment).where(Equipment.id.in_(equipment_ids)))
+
+        now = datetime.now(timezone.utc)
+        db.execute(
+            update(Notification)
+            .where(
+                Notification.entity_type.in_(("work_order", "service_work_order")),
+                Notification.entity_id == work_order.id,
+                Notification.revoked_at.is_(None),
+            )
+            .values(revoked_at=now, read_at=now, dismissed_at=now)
+        )
+        if activity_message_ids:
+            db.execute(
+                update(Notification)
+                .where(Notification.activity_message_id.in_(activity_message_ids))
+                .values(
+                    activity_message_id=None,
+                    revoked_at=now,
+                    read_at=now,
+                    dismissed_at=now,
+                )
+            )
+        if thread_ids:
+            for thread in db.scalars(
+                select(ActivityThread).where(ActivityThread.id.in_(thread_ids))
+            ):
+                db.delete(thread)
+
+        db.execute(
+            delete(ServiceOrderSignatureCycleWorkOrder).where(
+                ServiceOrderSignatureCycleWorkOrder.work_order_id == work_order.id
+            )
+        )
+        db.flush()
+        if signature_cycle_ids:
+            unreferenced_cycle_ids = set(
+                db.scalars(
+                    select(ServiceOrderSignatureCycle.id)
+                    .where(ServiceOrderSignatureCycle.id.in_(signature_cycle_ids))
+                    .where(
+                        ~ServiceOrderSignatureCycle.work_order_links.any()
+                    )
+                ).all()
+            )
+            if unreferenced_cycle_ids:
+                db.execute(
+                    delete(ServiceOrderSignatureCycle).where(
+                        ServiceOrderSignatureCycle.id.in_(unreferenced_cycle_ids)
+                    )
+                )
+
+        db.execute(delete(ServiceWorkOrder).where(ServiceWorkOrder.id == work_order.id))
+        remaining = db.scalar(
+            select(ServiceWorkOrder)
+            .where(ServiceWorkOrder.service_order_id == service_order.id)
+            .order_by(ServiceWorkOrder.sequence.asc(), ServiceWorkOrder.id.asc())
+            .limit(1)
+        )
+        if remaining is not None and service_order.work_order_number == work_order.work_order_number:
+            service_order.work_order_number = remaining.work_order_number
+        service_order.total_equipment = max(service_order.total_equipment - len(equipment_ids), 0)
+        service_order.completed_equipment = min(
+            service_order.completed_equipment,
+            service_order.total_equipment,
+        )
+
+        write_audit_log(
+            db,
+            action="service_work_order.deleted",
+            entity="service_work_orders",
+            entity_id=work_order.id,
+            user_id=user_id,
+            previous_values={
+                "work_order_number": work_order.work_order_number,
+                "service_order_id": service_order.id,
+            },
+            new_values={"deleted": True},
+            comment="Eliminación administrativa completa de la OT productiva.",
+        )
+        db.flush()
+        staging_directory = (
+            storage_root()
+            / ".pending-deletions"
+            / f"work-order-{work_order.id}-{uuid4().hex}"
+        )
+        for index, (path, _filename, _certificate_id) in enumerate(
+            sorted(file_references, key=lambda item: (item[0], item[1] or "", item[2] or 0))
+        ):
+            if not path:
+                continue
+            resolved = resolve_storage_path(path)
+            if (
+                resolved is None
+                or resolved.is_symlink()
+                or not resolved.is_file()
+                or count_active_references(db, resolved) > 0
+            ):
+                continue
+            staging_directory.mkdir(parents=True, exist_ok=True)
+            staged = staging_directory / f"{index}-{resolved.name}"
+            os.replace(resolved, staged)
+            staged_files.append((resolved, staged))
+        db.commit()
+        for _original, staged in staged_files:
+            try:
+                staged.unlink(missing_ok=True)
+            except OSError:
+                # The file is already outside every deliverable path and can be
+                # swept safely from the private staging directory later.
+                pass
+        if staged_files:
+            try:
+                staging_directory.rmdir()
+                staging_directory.parent.rmdir()
+            except OSError:
+                pass
+    except HTTPException:
+        db.rollback()
+        for original, staged in reversed(staged_files):
+            if staged.exists():
+                original.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(staged, original)
+        raise
+    except Exception as exc:
+        db.rollback()
+        for original, staged in reversed(staged_files):
+            if staged.exists():
+                original.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(staged, original)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "WORK_ORDER_DELETE_FAILED",
+                "message": "No fue posible eliminar la OT de forma segura; no se aplicaron cambios.",
+            },
+        ) from exc

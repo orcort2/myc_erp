@@ -42,6 +42,7 @@ import {
   deleteEquipment,
   deleteFieldSheet,
   deleteServiceOrder,
+  deleteServiceWorkOrder,
   getFieldSheet,
   getCertificateReleaseReadiness,
   getServiceOrderWorkOrdersPdfUrl,
@@ -96,6 +97,7 @@ import {
 import { suggestOfficialFieldSheetTemplate } from '../utils/fieldSheetTemplateResolver.js';
 import { formatDate, formatDateTime, getClientAddress, getClientDisplayName } from '../utils/formatters.js';
 import { exceptionActionLabel } from '../utils/exceptionAuthority.js';
+import { canDeleteWorkOrder } from '../utils/workOrderDeletion.js';
 import FieldSheetLayout from '../components/field-sheets/FieldSheetLayout.jsx';
 import ServiceOrderSignatureMorph from '../components/signatures/ServiceOrderSignatureMorph.jsx';
 import EtsBillingTab from '../components/ets-billing/EtsBillingTab.jsx';
@@ -274,6 +276,7 @@ function ServiceOrdersPage({ user = null }) {
   const canUseQualityActions = hasStageAccess(user, 'quality');
   const canUseReleaseActions = canReleaseCertificates(user);
   const canUseAdminActions = canUseAdministrativeActions(user);
+  const canPermanentlyDeleteWorkOrder = canDeleteWorkOrder(user);
 
   const clientsById = useMemo(
     () => new Map(clients.map((client) => [client.id, client])),
@@ -360,7 +363,7 @@ function ServiceOrdersPage({ user = null }) {
   const relatedWorkOrders = useMemo(() => {
     if (!selectedOrder) return [];
 
-    if (Array.isArray(selectedOrder.work_orders) && selectedOrder.work_orders.length) {
+    if (Array.isArray(selectedOrder.work_orders)) {
       return [...selectedOrder.work_orders]
       .filter((workOrder) => workOrder.is_active !== false)
       .sort((left, right) => Number(left.sequence || 0) - Number(right.sequence || 0));
@@ -2388,6 +2391,34 @@ function ServiceOrdersPage({ user = null }) {
     });
   }
 
+  function handleDeleteWorkOrder(workOrder) {
+    if (!selectedOrder || !workOrder || isLegacyWorkOrder(workOrder)) return;
+    const clientName = getClientDisplayName(clientsById.get(selectedOrder.client_id));
+    openConfirm({
+      title: 'Eliminar orden de trabajo',
+      message: `OT-${workOrder.work_order_number}\nCliente: ${clientName || 'No disponible'}\n\nEsta operación eliminará definitivamente la orden y sus equipos, hojas de campo, certificados y demás registros operativos exclusivos. Los recursos compartidos por otras OT se conservarán.`,
+      confirmText: 'Eliminar definitivamente',
+      variant: 'danger',
+      onConfirm: async () => {
+        setError('');
+        setNotice('');
+        setIsSaving(true);
+        try {
+          await deleteServiceWorkOrder(workOrder.id);
+          if (Number(selectedWorkOrderContext?.id) === Number(workOrder.id)) {
+            clearWorkOrderContext();
+          }
+          setNotice(`La OT-${workOrder.work_order_number} fue eliminada definitivamente`);
+          await loadServiceOrderData();
+        } catch (requestError) {
+          setError(requestError.message);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    });
+  }
+
   async function handleDeleteFieldSheet() {
     if (!selectedFieldSheet) return;
     openConfirm({
@@ -4321,6 +4352,16 @@ function ServiceOrdersPage({ user = null }) {
                             {label}
                           </button>
                         ))}
+                        {canPermanentlyDeleteWorkOrder && !isLegacyWorkOrder(workOrder) ? (
+                          <button
+                            className="table-button is-danger"
+                            disabled={isSaving}
+                            onClick={() => handleDeleteWorkOrder(workOrder)}
+                            type="button"
+                          >
+                            Eliminar orden de trabajo
+                          </button>
+                        ) : null}
                       </div>
                     </article>
                   );

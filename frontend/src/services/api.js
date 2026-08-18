@@ -793,6 +793,12 @@ export async function deleteServiceOrder(serviceOrderId) {
   });
 }
 
+export async function deleteServiceWorkOrder(workOrderId) {
+  return request(`/service-orders/work-orders/${workOrderId}`, {
+    method: 'DELETE'
+  });
+}
+
 export async function changeServiceOrderStatus(serviceOrderId, action, comment = null) {
   return request(`/service-orders/${serviceOrderId}/${action}`, {
     method: 'POST',

@@ -14,7 +14,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -23,11 +23,20 @@ from app.core.db import Base, get_db
 from app.core.security import create_access_token
 from app.main import app
 from app.models.folio_sequence import InstitutionalFolioSequence
-from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
+from app.models.audit_log import AuditLog
+from app.models.lab_work_order import (
+    LabWorkOrder,
+    LabWorkOrderEquipment,
+    LabWorkOrderSignatureSession,
+)
+from app.models.lab_work_order_revision import LabWorkOrderRevision
+from app.models.notification import Notification
+from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
 from app.schemas.operational_ticket import TicketReject, TicketReview
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.lab_work_orders import _allocate_folio, create_additional_work_order
+from app.services.lab_work_orders import delete_work_order
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket
 
 
@@ -45,6 +54,13 @@ def lab_context():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine, "connect")
+    def enable_sqlite_foreign_keys(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as db:
@@ -876,3 +892,255 @@ def test_postgresql_concurrent_folio_allocation_is_unique():
     with factory() as db:
         folios = list(db.scalars(select(LabWorkOrder.folio).order_by(LabWorkOrder.folio)))
     assert folios == [6402, 6403]
+
+
+def test_delete_lab_work_order_is_admin_only_and_removes_exclusive_data(lab_context):
+    client, factory, tokens = lab_context
+    root = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload("Eliminar LAB"),
+        headers=auth(tokens["tech"]),
+    ).json()
+    client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/equipment",
+        json=equipment_payload(1),
+        headers=auth(tokens["tech"]),
+    )
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root['id']}"
+
+    assert client.delete(endpoint, headers=auth(tokens["tech"])).status_code == 403
+    assert client.delete(endpoint, headers=auth(tokens["capture"])).status_code == 403
+    assert client.delete(endpoint, headers=auth(tokens["admin"])).status_code == 204
+    assert client.delete(endpoint, headers=auth(tokens["admin"])).status_code == 404
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, root["id"]) is None
+        assert db.scalar(
+            select(func.count(LabWorkOrderEquipment.id)).where(
+                LabWorkOrderEquipment.work_order_id == root["id"]
+            )
+        ) == 0
+        audit = db.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "lab_work_order.deleted",
+                AuditLog.entity_id == root["id"],
+            )
+        )
+        assert audit is not None
+        assert audit.previous_values["folio"] == 6400
+
+
+def _signed_lab_group(client: TestClient, token: str) -> tuple[dict, dict, int]:
+    headers = auth(token)
+    root = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload("Grupo compartido"),
+        headers=headers,
+    ).json()
+    for index in range(1, 11):
+        client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/equipment",
+            json=equipment_payload(index),
+            headers=headers,
+        )
+    extra = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/additional",
+        headers=headers,
+    ).json()
+    client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{extra['id']}/equipment",
+        json=equipment_payload(11),
+        headers=headers,
+    )
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/signatures",
+        json=signatures_payload(),
+        headers=headers,
+    ).json()
+    return root, extra, signed["signature_session_id"]
+
+
+def test_delete_additional_lab_order_preserves_root_and_shared_signatures(lab_context):
+    client, factory, tokens = lab_context
+    root, extra, signature_session_id = _signed_lab_group(client, tokens["tech"])
+
+    response = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{extra['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 204, response.text
+    remaining = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}",
+        headers=auth(tokens["tech"]),
+    ).json()
+    assert [item["id"] for item in remaining["related_work_orders"]] == [root["id"]]
+    assert remaining["signature_session_id"] == signature_session_id
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, extra["id"]) is None
+        assert db.get(LabWorkOrderSignatureSession, signature_session_id) is not None
+
+
+def test_delete_root_lab_order_reparents_group_and_shared_session(lab_context):
+    client, factory, tokens = lab_context
+    root, extra, signature_session_id = _signed_lab_group(client, tokens["tech"])
+
+    response = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 204, response.text
+    remaining = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{extra['id']}",
+        headers=auth(tokens["tech"]),
+    ).json()
+    assert remaining["root_work_order_id"] == extra["id"]
+    assert remaining["previous_work_order_id"] is None
+    assert remaining["sequence_number"] == 1
+    assert [item["id"] for item in remaining["related_work_orders"]] == [extra["id"]]
+
+    with factory() as db:
+        session = db.get(LabWorkOrderSignatureSession, signature_session_id)
+        assert session is not None
+        assert session.root_work_order_id == extra["id"]
+
+
+def test_delete_middle_lab_order_repairs_chain_without_deleting_sisters(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    root = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload("Cadena LAB"),
+        headers=headers,
+    ).json()
+    for index in range(1, 11):
+        client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/equipment",
+            json=equipment_payload(index),
+            headers=headers,
+        )
+    middle = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/additional",
+        headers=headers,
+    ).json()
+    for index in range(11, 21):
+        client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{middle['id']}/equipment",
+            json=equipment_payload(index),
+            headers=headers,
+        )
+    last = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{middle['id']}/additional",
+        headers=headers,
+    ).json()
+
+    response = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{middle['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 204, response.text
+
+    with factory() as db:
+        remaining = list(db.scalars(select(LabWorkOrder).order_by(LabWorkOrder.sequence_number)))
+        assert [item.id for item in remaining] == [root["id"], last["id"]]
+        assert [item.sequence_number for item in remaining] == [1, 2]
+        assert remaining[1].previous_work_order_id == root["id"]
+        assert {item.root_work_order_id for item in remaining} == {root["id"]}
+
+
+def test_delete_completed_single_lab_order_removes_inline_pdf_and_signature_session(lab_context):
+    client, factory, tokens = lab_context
+    completed = _completed_work_order(client, tokens["tech"], "Finalizada eliminable")
+    signature_session_id = completed["signature_session_id"]
+
+    response = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 204, response.text
+    with factory() as db:
+        assert db.get(LabWorkOrder, completed["id"]) is None
+        assert db.get(LabWorkOrderSignatureSession, signature_session_id) is None
+
+
+def test_delete_root_preserves_shared_ticket_revision_and_repairs_notification(lab_context):
+    client, factory, tokens = lab_context
+    root, extra, _signature_session_id = _signed_lab_group(client, tokens["tech"])
+    client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/complete",
+        headers=auth(tokens["tech"]),
+    )
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": root["id"],
+            "reason": "Corrección compartida",
+            "description": "Conservar la historia de la OT hermana.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=auth(tokens["tech"]),
+    ).json()
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=auth(tokens["admin"]),
+    )
+    assert approved.status_code == 200, approved.text
+
+    response = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 204, response.text
+
+    with factory() as db:
+        stored_ticket = db.get(OperationalTicket, ticket["id"])
+        assert stored_ticket is not None
+        assert stored_ticket.work_order_id == extra["id"]
+        revisions = list(
+            db.scalars(
+                select(LabWorkOrderRevision).where(
+                    LabWorkOrderRevision.reopen_ticket_id == ticket["id"]
+                )
+            )
+        )
+        assert {revision.work_order_id for revision in revisions} == {extra["id"]}
+        notifications = list(
+            db.scalars(
+                select(Notification).where(
+                    Notification.entity_type == "ticket",
+                    Notification.entity_id == ticket["id"],
+                )
+            )
+        )
+        assert notifications
+        assert all(
+            notification.metadata_json["work_order_id"] == extra["id"]
+            for notification in notifications
+        )
+
+
+def test_delete_lab_work_order_rolls_back_on_commit_failure(lab_context, monkeypatch):
+    client, factory, tokens = lab_context
+    created = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload("Rollback LAB"),
+        headers=auth(tokens["tech"]),
+    ).json()
+
+    with factory() as db:
+        admin = db.scalar(
+            select(User).where(User.email == "lab-admin@example.test")
+        )
+        assert admin is not None
+
+        def fail_commit() -> None:
+            raise RuntimeError("fallo simulado")
+
+        monkeypatch.setattr(db, "commit", fail_commit)
+        with pytest.raises(HTTPException) as exc_info:
+            delete_work_order(db, created["id"], admin)
+        assert exc_info.value.status_code == 409
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, created["id"]) is not None

@@ -20,6 +20,7 @@ from app.services.lab_work_orders import (
     complete_group,
     create_additional_work_order,
     create_work_order,
+    delete_work_order,
     delete_equipment,
     export_all,
     get_pdf,
@@ -87,6 +88,15 @@ def get_lab_work_order(
     _current_user: User = Depends(require_permission("lab_work_orders.use")),
 ) -> LabWorkOrderRead:
     return get_work_order(db, work_order_id)
+
+
+@router.delete("/{work_order_id}", status_code=204)
+def remove_lab_work_order(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("lab_work_orders.delete")),
+) -> None:
+    delete_work_order(db, work_order_id, current_user)
 
 
 @router.patch("/{work_order_id}", response_model=LabWorkOrderRead)

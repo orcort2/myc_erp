@@ -132,3 +132,21 @@ dos políticas de firma). El baseline pasa a 151 permisos actuales, 89
 diferencias frente al catálogo congelado, 78 permisos HTTP, 25 diferencias
 literales y 0 gaps de bootstrap. No se promueven automáticamente al Catálogo
 Institucional porque pertenecen al vertical temporal.
+
+## Conciliación puntual — 2026-08-17
+
+La eliminación productiva de OT consume `service_orders.delete`, capacidad ya
+presente en el Catálogo Institucional, y la registra en el bootstrap sin
+asignarla a roles ordinarios. El baseline ejecutable pasa a 152 permisos
+actuales, 63 coincidencias con catálogo, 79 permisos HTTP y conserva 25
+diferencias literales y 0 gaps de bootstrap. Las brechas móviles temporales no
+cambian.
+
+## Corrección de aislamiento LAB — 2026-08-17
+
+La eliminación administrativa de una OT manual agrega
+`lab_work_orders.delete` al bootstrap y al único DELETE HTTP LAB. No se asigna
+a roles ordinarios: Administrador la obtiene mediante `*`. La clave es temporal
+y no se promueve al Catálogo congelado; debe retirarse con el módulo LAB. El
+baseline ejecutable queda en 153 permisos actuales, 63 coincidencias, 80
+permisos HTTP, 26 diferencias literales y 0 gaps de bootstrap.

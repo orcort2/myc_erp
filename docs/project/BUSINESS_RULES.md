@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-17
 
 # Reglas de negocio vigentes
 
@@ -72,6 +72,12 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-055 | Activity / Tareas | `#tarea` es un atajo: crea una `ServiceTask` independiente con mensaje origen único, creador, asignados y contexto ETS/unidad/etapa. No sustituye Activity ni convierte el texto en autoridad técnica/comercial. | `services/activity.py`, `services/service_execution.py` y pruebas | 2026-08-12 |
 | BR-056 | Acceso móvil / Técnicos | Toda lectura móvil deriva ownership de `ServiceOrder.technician_id == current_user.id`; OT y Equipo heredan por `service_order_id`, y Hoja de Campo por `equipment_id → service_order_id`. Un recurso ajeno, inactivo o sin asignación responde 404. Hojas exige conjuntamente `service_orders.read_assigned` y `field_sheets.read`. | [`../architecture/MOBILE_TECHNICIAN_ACCESS.md`](../architecture/MOBILE_TECHNICIAN_ACCESS.md) y suite de aislamiento | 2026-08-12 |
 | BR-057 | OT LAB temporal | Una OT LAB admite máximo 10 equipos y folio backend 6400–6999. Una adicional sólo nace desde la última OT llena, hereda generales y conserva cadena por ID. El grupo completo captura una sola sesión de firmas; desde la firma no admite nuevas OT, equipos ni edición. Cada OT conserva PDF individual y toda retirada exige exportación íntegra verificada previa. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md) y suite LAB | 2026-08-13 |
+| BR-058 | OT productiva | Sólo `service_orders.delete` autoriza la eliminación física de una OT, sin restricción por estado. Deben eliminarse atómicamente sus dependencias operativas exclusivas y conservarse ETS, registros comerciales/financieros, maestros, agregados del Motor, auditoría mínima y todo ciclo de firma aún enlazado a otra OT. Una evidencia inmutable del Motor bloquea antes de mutar. MYC Mobile no consume listado, detalle, documentos ni DELETE productivos en su fase LAB actual. | [`../architecture/WORK_ORDER_DELETION.md`](../architecture/WORK_ORDER_DELETION.md), servicio y suites específicas | 2026-08-17 |
+| BR-059 | OT LAB temporal | Sólo `lab_work_orders.delete` autoriza eliminar una OT LAB individual en cualquier estado. Se borran OT, equipos, PDF/revisiones/tickets exclusivos y se conserva cualquier hermana, sesión de firma, ticket, revisión o notificación todavía compartida. Al retirar raíz o eslabón intermedio se repara y compacta la cadena dentro de la misma transacción. La app sólo usa `/mobile/v1/technician/lab-work-orders/{id}` y vuelve a consultar el listado tras `204`/`404`. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicio y suite LAB | 2026-08-17 |
+| BR-060 | Comunicaciones | PostgreSQL/REST es la fuente de verdad. Un mensaje obtiene secuencia canónica bajo lock y sólo se publica por WebSocket después del commit; `client_message_id` hace idempotente el reintento por conversación/remitente. | [`../architecture/COMMUNICATIONS_REALTIME.md`](../architecture/COMMUNICATIONS_REALTIME.md), servicio y suite concurrente | 2026-08-17 |
+| BR-061 | Comunicaciones / Seguridad | Listar, leer, sincronizar, escribir, recibir typing y actualizar recibos exige membership vigente comprobada en backend. La identidad procede del access JWT revalidado y un ID ajeno no revela contenido. | Router/servicio Communications, realtime y pruebas IDOR | 2026-08-17 |
+| BR-062 | Comunicaciones / Menciones | Una mención individual sólo puede dirigirse a un participante; `@todos` o rol exige perfil Administrador, Desarrollador o Calidad y el rol debe existir dentro del grupo. Recibos y cursores por usuario avanzan sin regresión. | Modelo/servicio Communications y pruebas de menciones/recibos | 2026-08-17 |
+| BR-063 | Comunicaciones / Push | Realtime y Expo Push son transporte best-effort, nunca autoridad. La notificación se persiste con vista previa sin cuerpo del mensaje, una falla de entrega no revierte dominio y todo deep link vuelve a consultar REST. | Arquitectura Communications, Notifications V1 y provider móvil | 2026-08-17 |
 
 ## Reglas históricas no vigentes como obligación actual
 

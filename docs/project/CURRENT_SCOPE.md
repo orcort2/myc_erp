@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-17
 
 # Alcance actual del ERP MYC
 
@@ -31,6 +31,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   las mutaciones HTTP y excepciones persistentes
   `requested → authorized → executed`; hitos de agenda/llamado, equipos,
   Órdenes de Trabajo y firmas por ciclo.
+- Eliminación física administrativa de una OT productiva individual desde el
+  expediente ETS web, sin restricción por estado. El agregado elimina dependencias
+  operativas exclusivas en una transacción, conserva ETS, factura/cotización,
+  maestros, Motor y ciclos de firma todavía compartidos, y deja auditoría
+  mínima. MYC Mobile no consume esta operación productiva.
 - Núcleo ETS múltiple/evolucionado Fase 1, `EN REVISIÓN`: unidades estables por
   intervención con partida/categoría origen y capacidad evolutiva por unidad,
   secuencias de etapas sin reemplazo histórico, identificación parcial
@@ -39,8 +44,8 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   contextual y tareas `#tarea`.
 - Acceso móvil backend de sólo lectura para técnicos: ETS, OT, Equipos y Hojas
   de Campo heredan exclusivamente `ServiceOrder.technician_id`, con 404 ante
-  recursos ajenos o sin asignación. La aplicación `myc-mobile` no forma parte
-  del alcance de esta implementación.
+  recursos ajenos o sin asignación. La app temporal LAB no consume estas rutas
+  productivas en su listado, detalle, documentos ni eliminación.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
 - Control Documental V1 y Plantillas Maestras de Certificado.
@@ -151,6 +156,10 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
   encadenada con datos generales heredados.
 - Una sesión de firma técnico/cliente para todo el grupo; la firma bloquea altas
   y edición y la finalización genera un PDF institucional por OT.
+- Eliminación administrativa individual con `lab_work_orders.delete`, válida
+  en cualquier estado. Elimina equipo, PDF, revisiones/tickets exclusivos y la
+  OT seleccionada; repara raíz/cadena y conserva firma, tickets, revisiones y
+  hermanas todavía compartidos. La app confirma y reconcilia el listado LAB.
 - Impresión/compartir mediante APIs Expo Go y exportación administrativa ZIP
   con manifiesto, relaciones, firmas, PDFs y checksums.
 
@@ -242,3 +251,24 @@ y extensión al agregado productivo ETS.
 
 Quedan fuera de V1 retries durables/receipts, preferencias, quiet hours,
 agrupación, APNs/FCM directos, canales no push y aceptación física iOS/Android.
+
+## Alcance implementado 2026-08-17 — Comunicaciones Etapas A–I
+
+- Canal `WS /api/realtime/ws` autenticado por subprotocolo JWT, usuario
+  revalidado, envelope v1 y rooms autorizadas por usuario/conversación.
+- REST canónico para conversaciones directas y grupales, historial paginado,
+  mensajes idempotentes, sync por secuencia, recibos, directorio y menciones.
+- Persistencia normalizada de secuencia, `client_message_id`, recibos por
+  usuario, menciones estructuradas y no leídos; relación opcional con un Ticket
+  al que el actor ya tiene acceso.
+- MYC Mobile con bandeja/detalle, envío optimista, reconciliación, error/retry,
+  deduplicación, typing, recibos, menciones, grupos, push/deep links,
+  multi-dispositivo, AppState, backoff, refresh HTTP y logout.
+- Topología productiva comprobada single-worker; `RealtimeHub` mantiene la
+  implementación desacoplada y un backplane es compuerta previa sólo si la
+  topología aumenta procesos/instancias.
+
+Quedan fuera la ampliación del ERP web, adjuntos/llamadas, una nueva política
+de permisos, cambios funcionales en Tickets/OT/ETS, build EAS y despliegue. La
+aceptación física en dos dispositivos permanece pendiente; por eso el frente
+queda **EN REVISIÓN**.

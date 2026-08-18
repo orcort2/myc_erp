@@ -351,6 +351,8 @@ ROLE_PERMISSIONS = {
 
 
 PERMISSIONS = {
+    "SERVICE_ORDERS_DELETE": "service_orders.delete",
+    "LAB_WORK_ORDERS_DELETE": "lab_work_orders.delete",
     "TICKETS_CREATE": "tickets.create",
     "TICKETS_VIEW_OWN": "tickets.view_own",
     "TICKETS_VIEW_ALL": "tickets.view_all",

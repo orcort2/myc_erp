@@ -11,13 +11,16 @@
 El LAB resuelve captura operativa temporal desde iPhone sin crear ni modificar
 `ServiceOrder`, `ServiceWorkOrder`, `Equipment`, `Client`, `Certificate`, Hojas
 de Campo, Facturación ni entidades del Motor de Resoluciones. El flujo
-productivo no puede depender de tablas, rutas o tipos LAB.
+productivo no puede depender de tablas, rutas o tipos LAB. La app no consulta
+`/api/service-orders/...` para listar, abrir, documentar o eliminar OT LAB.
 
 El namespace protegido es
 `/api/mobile/v1/technician/lab-work-orders`. `lab_work_orders.use` habilita el
 flujo operativo a Técnicos y `lab_work_orders.export` reserva la exportación
-integral a autoridad administrativa. El guard transversal conserva
-deny-by-default y JWT interno; no existe autenticador LAB alterno.
+integral a autoridad administrativa. `lab_work_orders.delete` reserva el
+borrado individual a Administrador mediante su comodín institucional `*`, sin
+asignación a roles ordinarios. El guard transversal conserva deny-by-default y
+JWT interno; no existe autenticador LAB alterno.
 
 ## Agregado persistente
 
@@ -51,7 +54,8 @@ En el cierre inicial, la firma se captura una sola vez después de revisar todo 
 `LabWorkOrderSignatureSession` conserva los dos binarios y cada OT referencia
 esa misma sesión. En cuanto se firma, todas las OT pasan a
 `ready_for_signatures`; desde ese momento se rechazan nuevas OT, equipos,
-ediciones o eliminaciones. La finalización genera y congela todos los PDFs y
+ediciones o eliminaciones operativas. La eliminación administrativa individual
+permanece disponible con permiso específico. La finalización genera y congela todos los PDFs y
 transiciona el grupo completo a `completed`.
 
 Este contrato es una excepción temporal y aislada a los ciclos de firma del
@@ -114,12 +118,33 @@ opcionales únicamente por compatibilidad del contrato backend. Datos generales
 y firmas se agrupan en paneles con jerarquía, espaciado vertical y scrolling;
 el editor secundario conserva el patrón sheet sin anidar otro `Modal` nativo.
 
+## Eliminación administrativa individual
+
+`DELETE /api/mobile/v1/technician/lab-work-orders/{id}` exige
+`lab_work_orders.delete` y acepta `draft`, `ready_for_signatures` o `completed`.
+El servicio bloquea la OT y el grupo, elimina equipos, PDF actual, revisiones y
+tickets/notificaciones exclusivos, conserva la auditoría histórica y registra
+`lab_work_order.deleted` con folio, raíz y supervivientes.
+
+Si quedan hermanas, conserva sesiones de firma, tickets, revisiones y
+notificaciones todavía compartidos. Al borrar la raíz, la primera superviviente
+se vuelve raíz y las sesiones del grupo se reparentan; al borrar cualquier
+posición se recompone `previous_work_order_id` y se compacta
+`sequence_number`. Si era la última OT, elimina también sus sesiones/firmas
+exclusivas. PDFs y firmas son binarios dentro de PostgreSQL, no archivos del
+filesystem, y todas las mutaciones comparten un commit con rollback explícito.
+
+La app muestra la acción sólo con la capacidad efectiva, usa confirmación
+nativa con folio/cliente, impide doble envío y vuelve a consultar el listado
+LAB tras `204` o `404`. `403`, `409` y errores de red conservan el detalle.
+
 ## API
 
 | Método | Ruta relativa | Efecto |
 | --- | --- | --- |
 | POST / GET | `/lab-work-orders` | crear raíz / listar con `folio`, `client`, `status`, `offset`, `limit` |
 | GET / PATCH | `/lab-work-orders/{id}` | detalle de grupo / propagar generales |
+| DELETE | `/lab-work-orders/{id}` | eliminar una OT individual y reparar/conservar el grupo |
 | POST | `/{id}/equipment` | agregar hasta 10 |
 | PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / eliminar antes de firma |
 | POST | `/{id}/additional` | crear la siguiente OT del grupo |

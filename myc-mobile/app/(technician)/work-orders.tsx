@@ -26,6 +26,11 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { SignaturePad } from '@/src/components/SignaturePad';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { affectsWorkOrders, RefreshGate } from '@/src/notifications/refresh-policy';
+import {
+  canDeleteLabWorkOrder,
+  deleteLabWorkOrder,
+  LabWorkOrderDeletionCoordinator,
+} from '@/src/services/lab-work-order-deletion';
 import type {
   EquipmentData,
   GeneralData,
@@ -106,7 +111,7 @@ function FormSection({
 }
 
 export default function WorkOrdersScreen() {
-  const { authorizedFetch, isLoading: authLoading, session, user } = useAuth();
+  const { authorizedFetch, isLoading: authLoading, refreshSession, session, user } = useAuth();
   const { publishLocalChange, subscribe } = useNotificationSync();
   const params = useLocalSearchParams<{ workOrderId?: string }>();
   const [items, setItems] = useState<LabListItem[]>([]);
@@ -134,8 +139,10 @@ export default function WorkOrdersScreen() {
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
+  const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -218,6 +225,7 @@ export default function WorkOrdersScreen() {
   }, [params.workOrderId, user]);
 
   const editable = workOrder?.status === 'draft';
+  const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
   const canSaveEquipment = useMemo(
     () => equipment.instrument.trim() && equipment.brand.trim() && equipment.identification.trim() && equipment.serial_number.trim(),
     [equipment],
@@ -474,6 +482,71 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  async function performWorkOrderDeletion(target: LabWorkOrder) {
+    if (deletionCoordinator.current.isDeleting) return;
+    setDeleting(true);
+    setBusy(true);
+    const result = await deletionCoordinator.current.run(
+      true,
+      () => deleteLabWorkOrder(
+        authorizedFetch,
+        apiUrl(`/mobile/v1/technician/lab-work-orders/${target.id}`),
+      ),
+    );
+    try {
+      if (result.kind === 'ignored' || result.kind === 'cancelled') return;
+      if (result.kind === 'success' || result.kind === 'not_found') {
+        setOpen(false);
+        setWorkOrder(null);
+        setEquipmentEditor(null);
+        setTicketOpen(false);
+        await refresh(true);
+        publishLocalChange({
+          event_type: 'work_order.deleted',
+          entity_type: 'lab_work_order',
+          entity_id: target.id,
+          work_order_id: target.id,
+        });
+        Alert.alert(
+          result.kind === 'success' ? 'Orden eliminada' : 'Orden no disponible',
+          result.kind === 'success'
+            ? `La OT ${target.folio} fue eliminada y el listado quedó actualizado.`
+            : 'Esta OT LAB ya no existe. El listado fue actualizado.',
+        );
+        return;
+      }
+      if (result.kind === 'forbidden') {
+        await refreshSession().catch(() => undefined);
+        Alert.alert('Permiso requerido', 'No tienes permiso para eliminar esta orden de trabajo.');
+        return;
+      }
+      if (result.kind === 'conflict') {
+        Alert.alert('No fue posible eliminar', result.message);
+        return;
+      }
+      if (result.kind === 'error') Alert.alert('No fue posible eliminar', result.message);
+    } finally {
+      setDeleting(false);
+      setBusy(false);
+    }
+  }
+
+  function confirmWorkOrderDeletion(target: LabWorkOrder) {
+    if (deleting || deletionCoordinator.current.isDeleting) return;
+    Alert.alert(
+      'Eliminar orden de trabajo',
+      `¿Deseas eliminar definitivamente la OT ${target.folio}?\n\nCliente: ${target.client_name}\n\nEsta acción eliminará la orden y su información exclusiva asociada.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: () => { void performWorkOrderDeletion(target); },
+        },
+      ],
+    );
+  }
+
   function closeFlow() {
     setOpen(false);
     setEquipmentEditor(null);
@@ -539,7 +612,7 @@ export default function WorkOrdersScreen() {
           )}
           {items.map((item) => (
             <Pressable key={item.id} style={styles.card} onPress={() => openExisting(item.id)}>
-              <View><Text style={styles.folio}>OT {item.folio}</Text><Text style={styles.client}>{item.client_name}</Text></View>
+              <View style={styles.cardContent}><Text style={styles.folio}>OT {item.folio}</Text><Text ellipsizeMode="tail" numberOfLines={2} style={styles.client}>{item.client_name}</Text></View>
               <View style={styles.cardRight}><Text style={styles.count}>{item.equipment_count}/10</Text><Text style={styles.status}>{item.status}</Text></View>
             </Pressable>
           ))}
@@ -557,9 +630,9 @@ export default function WorkOrdersScreen() {
         <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modalScreen}>
           <View style={styles.modalHeader}>
             <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>Firma única para todo el grupo</Text></View>
-            <Pressable onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
+            <Pressable disabled={deleting} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
           </View>
-          {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>Guardando…</Text></View>}
+          {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
             <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
               {step === 'general' && (
@@ -668,6 +741,20 @@ export default function WorkOrdersScreen() {
                   <Pressable style={styles.secondary} onPress={() => setTicketOpen(true)}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>
                 </>
               )}
+
+              {workOrder && canDelete && (
+                <View style={styles.dangerZone}>
+                  <Text style={styles.dangerTitle}>Acciones administrativas</Text>
+                  <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
+                  <Pressable
+                    disabled={busy || deleting}
+                    onPress={() => confirmWorkOrderDeletion(workOrder)}
+                    style={[styles.deleteWorkOrder, (busy || deleting) && styles.disabled]}
+                  >
+                    <Text style={styles.deleteWorkOrderText}>Eliminar orden de trabajo</Text>
+                  </Pressable>
+                </View>
+              )}
             </ScrollView>
           </KeyboardAvoidingView>
 
@@ -732,7 +819,7 @@ const styles = StyleSheet.create({
   clearFilters: { alignSelf: 'flex-end', paddingHorizontal: 4, paddingVertical: 4 }, clearFiltersText: { color: '#0067a8', fontSize: 14, fontWeight: '700' },
   primary: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 12, justifyContent: 'center', marginTop: 18, minHeight: 52, paddingHorizontal: 18 }, primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' }, screenPrimary: { marginHorizontal: 20 },
   secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1.5, justifyContent: 'center', marginTop: 14, minHeight: 50 }, secondaryText: { color: '#0067a8', fontSize: 16, fontWeight: '700' }, disabled: { opacity: 0.4 },
-  loader: { marginTop: 40 }, list: { gap: 10, padding: 20, paddingTop: 0 }, card: { alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', padding: 16 }, folio: { color: '#0067a8', fontSize: 18, fontWeight: '800' }, client: { color: '#334451', marginTop: 3 }, cardRight: { alignItems: 'flex-end' }, count: { fontWeight: '700' }, status: { color: '#70808d', fontSize: 12, marginTop: 3 }, empty: { color: '#70808d', paddingVertical: 22, textAlign: 'center' },
+  loader: { marginTop: 40 }, list: { gap: 10, padding: 20, paddingTop: 0 }, card: { alignItems: 'flex-start', backgroundColor: '#fff', borderRadius: 12, flexDirection: 'row', justifyContent: 'space-between', padding: 16 }, cardContent: { flex: 1, minWidth: 0, paddingRight: 14 }, folio: { color: '#0067a8', fontSize: 18, fontWeight: '800' }, client: { color: '#334451', lineHeight: 19, marginTop: 3 }, cardRight: { alignItems: 'flex-end', flexShrink: 0, minWidth: 48 }, count: { fontWeight: '700' }, status: { color: '#70808d', fontSize: 12, marginTop: 3 }, empty: { color: '#70808d', paddingVertical: 22, textAlign: 'center' },
   errorState: { alignItems: 'center', backgroundColor: '#fff0f0', borderRadius: 12, padding: 16 }, errorText: { color: '#8d1f2d', textAlign: 'center' }, retry: { color: '#0067a8', fontWeight: '800', marginTop: 10 }, loadMore: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' },
   modalScreen: { backgroundColor: '#f4f7f9', flex: 1 }, modalHeader: { alignItems: 'center', backgroundColor: '#fff', borderBottomColor: '#dce3e9', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 18 }, modalTitle: { color: '#142b3a', fontSize: 21, fontWeight: '800' }, modalHint: { color: '#637280', fontSize: 12, marginTop: 5 }, close: { color: '#0067a8', fontSize: 16, fontWeight: '700', paddingVertical: 8 }, modalContent: { paddingBottom: 72, paddingHorizontal: 20, paddingTop: 26 }, sectionIntro: { marginBottom: 20 }, sectionEyebrow: { color: '#008f87', fontSize: 12, fontWeight: '800', letterSpacing: 1.1, marginBottom: 7 }, sectionTitle: { color: '#142b3a', fontSize: 24, fontWeight: '800', marginBottom: 8 }, sectionDescription: { color: '#637280', fontSize: 15, lineHeight: 21 }, sectionRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, counter: { color: '#0067a8', fontSize: 18, fontWeight: '800' },
   formSection: { backgroundColor: '#fff', borderColor: '#dbe4ea', borderRadius: 16, borderWidth: 1, marginBottom: 16, paddingHorizontal: 16, paddingTop: 18 }, formSectionTitle: { color: '#173746', fontSize: 16, fontWeight: '800', marginBottom: 16 }, field: { marginBottom: 18 }, fieldLabel: { color: '#344553', fontSize: 14, fontWeight: '700', marginBottom: 8 }, input: { backgroundColor: '#fbfcfd', borderColor: '#b9c8d2', borderRadius: 11, borderWidth: 1, fontSize: 16, minHeight: 50, paddingHorizontal: 14 }, multiline: { minHeight: 86, paddingTop: 13, textAlignVertical: 'top' },
@@ -741,4 +828,5 @@ const styles = StyleSheet.create({
   reviewLine: { backgroundColor: '#fff', borderRadius: 8, fontSize: 17, fontWeight: '700', marginBottom: 8, padding: 14 }, notice: { backgroundColor: '#fff5cf', borderRadius: 10, color: '#5f4d00', fontSize: 15, lineHeight: 22, padding: 14 },
   overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(16,28,38,0.58)', justifyContent: 'flex-end', zIndex: 20 }, overlayCard: { backgroundColor: '#f4f7f9', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '92%', overflow: 'hidden' }, overlayContent: { paddingBottom: 38, paddingHorizontal: 20, paddingTop: 12 }, overlayHandle: { alignSelf: 'center', backgroundColor: '#b8c4cc', borderRadius: 3, height: 5, marginBottom: 22, width: 46 }, conditionRow: { flexDirection: 'row', gap: 10, marginBottom: 20 }, condition: { alignItems: 'center', backgroundColor: '#e7ecef', borderRadius: 11, flex: 1, padding: 15 }, conditionSelected: { backgroundColor: '#bde8c9' }, conditionBadSelected: { backgroundColor: '#f5c6cc' }, conditionText: { fontSize: 16, fontWeight: '800' }, actionRow: { flexDirection: 'row', gap: 10 }, cancel: { alignItems: 'center', backgroundColor: '#e3e8ec', borderRadius: 11, flex: 1, justifyContent: 'center', minHeight: 50 }, save: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 11, flex: 2, justifyContent: 'center', minHeight: 50 }, delete: { color: '#a51c30', fontSize: 16, fontWeight: '700', padding: 18, textAlign: 'center' },
   busy: { alignItems: 'center', backgroundColor: '#243844', flexDirection: 'row', gap: 10, justifyContent: 'center', padding: 11 }, busyText: { color: '#fff', fontWeight: '700' },
+  dangerZone: { backgroundColor: '#fff1f2', borderColor: '#dbaeb4', borderRadius: 14, borderWidth: 1, marginTop: 28, padding: 16 }, dangerTitle: { color: '#8d1f2d', fontSize: 16, fontWeight: '800', marginBottom: 7 }, dangerDescription: { color: '#6f363d', lineHeight: 20, marginBottom: 16 }, deleteWorkOrder: { alignItems: 'center', backgroundColor: '#a51c30', borderRadius: 11, justifyContent: 'center', minHeight: 52 }, deleteWorkOrderText: { color: '#fff', fontSize: 16, fontWeight: '800' },
 });

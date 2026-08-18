@@ -50,6 +50,7 @@ from app.routers import (
     lab_work_orders,
     operational_tickets,
     verification,
+    realtime,
 )
 from app.routers import field_sheet_templates
 from app.routers.portal import auth as portal_auth, configuration as portal_configuration, dashboard as portal_dashboard, invitations as portal_invitations, profile as portal_profile, registration as portal_registration, roles as portal_roles, users as portal_users
@@ -177,6 +178,7 @@ include_api_router(field_sheet_templates.router, prefix="/api")
 include_api_router(mobile_technician.router, prefix="/api")
 include_api_router(lab_work_orders.router, prefix="/api")
 include_api_router(operational_tickets.router, prefix="/api")
+app.include_router(realtime.router)
 
 
 @app.exception_handler(PublicApiError)

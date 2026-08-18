@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
+import { useCommunications } from '@/src/communications/CommunicationsProvider';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { apiUrl } from '@/src/api/client';
 import { hasPermission } from '@/src/permissions/permissions';
@@ -11,6 +12,7 @@ import type { OperationalTicket } from '@/src/types/operational-ticket';
 export default function TechnicianHome() {
   const { authorizedFetch, isLoading, user, logout } = useAuth();
   const { unreadCount } = useNotificationSync();
+  const { unreadCount: communicationUnreadCount } = useCommunications();
   const [pendingTickets, setPendingTickets] = useState<number | null>(null);
   useEffect(() => {
     if (!user || !hasPermission(user.permissions, 'tickets.view_own')) return;
@@ -32,6 +34,10 @@ export default function TechnicianHome() {
         <Pressable style={styles.module} onPress={() => router.push('/(technician)/work-orders')}>
           <Text style={styles.moduleTitle}>OT&apos;s</Text>
           <Text style={styles.moduleText}>Crear y cerrar órdenes de trabajo LAB</Text>
+        </Pressable>
+        <Pressable style={styles.module} onPress={() => router.push('/(technician)/communications')}>
+          <Text style={styles.moduleTitle}>Comunicaciones{communicationUnreadCount ? ` · ${communicationUnreadCount}` : ''}</Text>
+          <Text style={styles.moduleText}>Mensajes, menciones y Tickets en tiempo real</Text>
         </Pressable>
         {hasPermission(user.permissions, 'tickets.view_own') && (
           <Pressable style={styles.module} onPress={() => router.push('/(technician)/tickets')}>

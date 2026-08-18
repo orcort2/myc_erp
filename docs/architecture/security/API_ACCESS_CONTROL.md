@@ -4,7 +4,7 @@
 >
 > Autoridad: Alta para clasificación y enforcement HTTP
 >
-> Corte verificado: 2026-08-04
+> Corte verificado: 2026-08-17
 
 # Control de acceso de la API
 
@@ -26,6 +26,13 @@ cd backend
 ```
 
 El CSV es evidencia por operación, no una fuente de autorización paralela.
+
+El inventario y `enforce_api_access` cubren operaciones HTTP. El WebSocket
+`/api/realtime/ws` se incluye fuera de esa dependencia porque `Request` HTTP no
+es aplicable al handshake; aplica fail-closed dentro de su router mediante el
+mismo decoder JWT, resolución de usuario activo contra base y ownership de
+conversación. Su contrato específico está en
+[`../COMMUNICATIONS_REALTIME.md`](../COMMUNICATIONS_REALTIME.md).
 
 ## Categorías
 

@@ -55,14 +55,20 @@ inferencia documental.
 - Certificados: lectura, creación, aprobación, captura, carga PDF y override de match.
 - Auditoría: `audit_logs.read`.
 - Patrones y procedimientos: lectura, creación, actualización y eliminación.
+- Órdenes de Trabajo productivas: `service_orders.delete` protege
+  el borrado físico individual. Sólo Administrador lo obtiene actualmente por
+  `*`; `service_orders.update`, nombres de rol en frontend y el permiso LAB no
+  conceden esta operación.
 - Control Documental: lectura, creación, actualización, aprobación y archivo; incluye interpretaciones, perfiles y certificados de patrón.
 - Metrología: selección de patrones, ejecución y modelos/versiones de incertidumbre.
 - Plantillas de Hojas de Campo: lectura, creación, actualización, aprobación, archivo, exportación e importación.
 - Configuración: lectura/actualización de parámetros y administración de catálogos maestros.
 - ETS: firma y reapertura de ciclos de firma.
 - OT LAB temporal: `lab_work_orders.use` para captura y
-  `lab_work_orders.export` para retiro verificable. No forman parte del dominio
-  productivo y deben eliminarse con el módulo temporal.
+  `lab_work_orders.export` para retiro verificable;
+  `lab_work_orders.delete` protege el borrado físico individual y sólo
+  Administrador lo recibe mediante `*`. No forman parte del dominio productivo
+  y deben eliminarse con el módulo temporal.
 - Tickets/reapertura LAB: `tickets.create`, `tickets.view_own`,
   `tickets.view_all`, `tickets.review`, `work_orders.reopen`,
   `work_orders.reopen_preserve_signatures` y
@@ -97,6 +103,15 @@ conserva el permiso canónico `resolution_center.*` de la etapa.
 
 Estos límites no reabren el acceso anónimo: toda ruta interna exige identidad y
 su permiso mínimo antes de ejecutar el endpoint.
+
+## Comunicaciones
+
+Comunicaciones no agrega permisos bootstrap ni confía en el frontend. Todas
+las rutas REST exigen usuario interno autenticado y el servicio filtra por
+membership; WebSocket vuelve a validar usuario, ownership y suscripción en
+cada room/comando. Administrador, Desarrollador y Calidad pueden usar
+menciones masivas; esa regla de dominio no concede acceso a conversaciones
+ajenas. Vincular un Ticket exige ser solicitante o tener `tickets.view_all`.
 
 ## Mantenimiento
 

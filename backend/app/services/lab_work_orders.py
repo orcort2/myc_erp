@@ -8,7 +8,7 @@ import zipfile
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, cast, func, select, text, update
+from sqlalchemy import String, cast, delete, func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.folio_sequence import InstitutionalFolioSequence
@@ -19,6 +19,8 @@ from app.models.lab_work_order import (
     LabWorkOrderSignatureSession,
 )
 from app.models.operational_ticket import OperationalTicket
+from app.models.lab_work_order_revision import LabWorkOrderRevision
+from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.lab_work_order import (
     LabEquipmentWrite,
@@ -271,6 +273,145 @@ def list_work_orders(
 
 def get_work_order(db: Session, work_order_id: int) -> LabWorkOrderRead:
     return _read(db, _get(db, work_order_id))
+
+
+def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
+    """Delete one LAB work order while preserving valid group-owned resources."""
+    try:
+        work_order = _get(db, work_order_id, lock=True)
+        group = _group(db, work_order, lock=True)
+        survivors = [item for item in group if item.id != work_order.id]
+        survivor_ids = {item.id for item in survivors}
+        root_id = _root_id(work_order)
+        deleted_folio = work_order.folio
+
+        revisions = list(
+            db.scalars(
+                select(LabWorkOrderRevision)
+                .where(LabWorkOrderRevision.work_order_id == work_order.id)
+                .with_for_update()
+            ).all()
+        )
+        for revision in revisions:
+            db.delete(revision)
+
+        tickets = list(
+            db.scalars(
+                select(OperationalTicket)
+                .where(OperationalTicket.work_order_id == work_order.id)
+                .with_for_update()
+            ).all()
+        )
+        ticket_ids = {ticket.id for ticket in tickets}
+        shared_ticket_ids: set[int] = {
+            item.reopen_ticket_id
+            for item in survivors
+            if item.reopen_ticket_id in ticket_ids
+        }
+        if survivor_ids and ticket_ids:
+            shared_ticket_ids.update(
+                db.scalars(
+                    select(LabWorkOrderRevision.reopen_ticket_id).where(
+                        LabWorkOrderRevision.work_order_id.in_(survivor_ids),
+                        LabWorkOrderRevision.reopen_ticket_id.in_(ticket_ids),
+                    )
+                ).all()
+            )
+
+        replacement = survivors[0] if survivors else None
+        orphan_sessions: list[LabWorkOrderSignatureSession] = []
+        if replacement is not None and work_order.id == root_id:
+            sessions = list(
+                db.scalars(
+                    select(LabWorkOrderSignatureSession)
+                    .where(LabWorkOrderSignatureSession.root_work_order_id == root_id)
+                    .with_for_update()
+                ).all()
+            )
+            for session in sessions:
+                session.root_work_order_id = replacement.id
+        elif replacement is None:
+            orphan_sessions = list(
+                db.scalars(
+                    select(LabWorkOrderSignatureSession)
+                    .where(LabWorkOrderSignatureSession.root_work_order_id == root_id)
+                    .with_for_update()
+                ).all()
+            )
+
+        work_order.signature_session_id = None
+        work_order.reopen_ticket_id = None
+        work_order.previous_work_order_id = None
+        work_order.root_work_order_id = None
+        db.flush()
+
+        for ticket in tickets:
+            if replacement is not None and ticket.id in shared_ticket_ids:
+                ticket.work_order_id = replacement.id
+                notifications = list(
+                    db.scalars(
+                        select(Notification).where(
+                            Notification.entity_type == "ticket",
+                            Notification.entity_id == ticket.id,
+                        )
+                    ).all()
+                )
+                for notification in notifications:
+                    notification.metadata_json = {
+                        **notification.metadata_json,
+                        "work_order_id": replacement.id,
+                        "work_order_folio": replacement.folio,
+                    }
+                continue
+            db.execute(
+                delete(Notification).where(
+                    Notification.entity_type == "ticket",
+                    Notification.entity_id == ticket.id,
+                )
+            )
+            db.delete(ticket)
+
+        previous_id: int | None = None
+        if replacement is not None:
+            for survivor in survivors:
+                survivor.root_work_order_id = replacement.id
+                survivor.previous_work_order_id = previous_id
+                previous_id = survivor.id
+        else:
+            for session in orphan_sessions:
+                db.delete(session)
+        db.flush()
+
+        db.delete(work_order)
+        db.flush()
+
+        for sequence, survivor in enumerate(survivors, start=1):
+            survivor.sequence_number = sequence
+
+        write_audit_log(
+            db,
+            action="lab_work_order.deleted",
+            entity="lab_work_orders",
+            entity_id=work_order_id,
+            user_id=user.id,
+            previous_values={
+                "folio": deleted_folio,
+                "root_work_order_id": root_id,
+            },
+            new_values={
+                "surviving_work_order_ids": [item.id for item in survivors],
+            },
+        )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No fue posible eliminar la orden de trabajo LAB de forma segura",
+        ) from exc
 
 
 def update_work_order(

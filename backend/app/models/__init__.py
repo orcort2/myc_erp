@@ -40,6 +40,8 @@ from app.models.client_portal_role_permission import (
 from app.models.communication import (
     CommunicationConversation,
     CommunicationMessage,
+    CommunicationMessageMention,
+    CommunicationMessageReceipt,
 )
 from app.models.controlled_document import (
     ControlledDocument,

@@ -9,7 +9,10 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test:notifications": "tsx --test src/notifications/refresh-policy.test.ts"
+    "test:notifications": "tsx --test src/notifications/refresh-policy.test.ts",
+    "test:realtime": "tsx --test src/realtime/realtime-client.test.ts",
+    "test:communications": "tsx --test src/communications/message-state.test.ts",
+    "test:lab-work-order-deletion": "tsx --test src/services/lab-work-order-deletion.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

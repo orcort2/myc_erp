@@ -5,6 +5,7 @@ import { AppState } from 'react-native';
 
 import { apiUrl } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
+import { useRealtime } from '@/src/realtime/RealtimeProvider';
 import { registerCurrentDevice } from '@/src/services/push-notifications';
 import type { NotificationSyncEvent } from '@/src/types/notification';
 import { NotificationEventDeduper } from '@/src/notifications/refresh-policy';
@@ -39,12 +40,19 @@ function eventFromData(data: Record<string, unknown>, source: NotificationSyncEv
     entity_id: numberValue(data.entity_id),
     ticket_id: numberValue(data.ticket_id),
     work_order_id: numberValue(data.work_order_id),
+    conversation_id: numberValue(data.conversation_id),
     source,
     dedupe_key: key,
   };
 }
 
 function targetFor(event: NotificationSyncEvent): Href | null {
+  if (event.conversation_id || event.entity_type === 'communication') {
+    const id = event.conversation_id ?? event.entity_id;
+    return id
+      ? { pathname: '/(technician)/communications/[id]', params: { id: String(id) } }
+      : '/(technician)/communications';
+  }
   if (event.ticket_id || event.entity_type === 'ticket') {
     const id = event.ticket_id ?? event.entity_id;
     return { pathname: '/(technician)/tickets', params: id ? { ticketId: String(id) } : {} };
@@ -58,6 +66,7 @@ function targetFor(event: NotificationSyncEvent): Href | null {
 export function NotificationSyncProvider({ children }: PropsWithChildren) {
   const { authorizedFetch, user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
+  const { subscribe: subscribeRealtime } = useRealtime();
   const listeners = useRef(new Set<Listener>());
   const processed = useRef(new NotificationEventDeduper());
   const pendingTarget = useRef<Href | null>(null);
@@ -126,6 +135,12 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
       appState.remove();
     };
   }, [emit, handleResponse, refreshUnread, user]);
+
+  useEffect(() => subscribeRealtime((envelope) => {
+    if (envelope.event !== 'notification.created') return;
+    emit(eventFromData(envelope.data, 'realtime', envelope.event_id));
+    refreshUnread().catch(() => undefined);
+  }), [emit, refreshUnread, subscribeRealtime]);
 
   const value = useMemo<NotificationSyncValue>(() => ({
     unreadCount,

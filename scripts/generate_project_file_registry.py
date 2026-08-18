@@ -24,7 +24,7 @@ EXCLUDED_NAMES = {
     ".DS_Store", "backup_erp_myc_antes_prueba.sql", "BytesIO",
     ".tmp_field_sheet_templates.json", "package-lock.json", "from", "import", "io",
     "BACKUP_ESTADO_ACTUAL (1).md", "resolution_engine.zip",
-    "backend.zip",
+    "backend.zip", "01_login.ai",
 }
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
@@ -60,6 +60,34 @@ FORCE_RECLASSIFY = {
     "myc-mobile/src/notifications/refresh-policy.test.ts",
     "myc-mobile/src/services/push-notifications.ts",
     "myc-mobile/src/types/notification.ts",
+    "backend/app/models/communication.py",
+    "backend/app/routers/communications.py",
+    "backend/app/schemas/communication.py",
+    "backend/app/services/communications.py",
+    "backend/app/realtime/authentication.py",
+    "backend/app/realtime/contracts.py",
+    "backend/app/realtime/events.py",
+    "backend/app/realtime/hub.py",
+    "backend/app/realtime/runtime.py",
+    "backend/app/routers/realtime.py",
+    "backend/migrations/versions/f7c9d1e3a5b7_complete_communications_foundation.py",
+    "backend/tests/test_communications_completion.py",
+    "backend/tests/test_realtime_stage_a.py",
+    "myc-mobile/app/(technician)/communications/index.tsx",
+    "myc-mobile/app/(technician)/communications/[id].tsx",
+    "myc-mobile/src/communications/CommunicationsProvider.tsx",
+    "myc-mobile/src/communications/message-state.ts",
+    "myc-mobile/src/communications/message-state.test.ts",
+    "myc-mobile/src/services/communications.ts",
+    "myc-mobile/src/types/communication.ts",
+    "myc-mobile/src/realtime/RealtimeProvider.tsx",
+    "myc-mobile/src/realtime/realtime-client.ts",
+    "myc-mobile/src/realtime/realtime-client.test.ts",
+    "myc-mobile/src/realtime/reconnection-policy.ts",
+    "myc-mobile/src/realtime/types.ts",
+    "myc-mobile/app/_layout.tsx",
+    "docs/architecture/COMMUNICATIONS_REALTIME.md",
+    "docs/closures/COMMUNICATIONS_COMPLETE_2026-08-17.md",
     "myc-mobile/app.json",
     "myc-mobile/package.json",
     "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md",
@@ -261,6 +289,24 @@ FORCE_RECLASSIFY = {
     "docs/closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md",
 }
 FORCE_RECLASSIFY.update({
+    "backend/app/routers/service_orders.py",
+    "backend/app/security/api_access.py",
+    "backend/app/services/service_orders.py",
+    "backend/tests/test_api_access_conformity.py",
+    "backend/tests/test_service_work_order_deletion.py",
+    "docs/architecture/WORK_ORDER_DELETION.md",
+    "docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv",
+    "docs/closures/WORK_ORDER_DELETION_2026-08-17.md",
+    "frontend/src/pages/ServiceOrdersPage.jsx",
+    "frontend/src/services/api.js",
+    "frontend/src/utils/workOrderDeletion.js",
+    "frontend/src/utils/workOrderDeletion.test.js",
+    "backend/app/routers/lab_work_orders.py",
+    "backend/app/services/lab_work_orders.py",
+    "backend/tests/test_lab_work_orders.py",
+    "myc-mobile/app/(technician)/work-orders.tsx",
+    "myc-mobile/src/services/lab-work-order-deletion.ts",
+    "myc-mobile/src/services/lab-work-order-deletion.test.ts",
     "backend/app/core/folios.py",
     "backend/app/core/permissions.py",
     "backend/app/models/__init__.py",
@@ -380,7 +426,64 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
 
+    communications_files = {
+        "backend/app/models/communication.py": ("Persistencia de Comunicaciones", "Modela conversaciones directas/grupales, participantes con cursores, mensajes secuenciados/idempotentes, recibos y menciones normalizados.", "SQLAlchemy, users, Tickets y Alembic", "Servicio Communications, API, realtime y pruebas", "Crítico"),
+        "backend/app/routers/communications.py": ("API REST de Comunicaciones", "Expone directorio, menciones, conversaciones, historial/sync, mensajes idempotentes y recibos; publica eventos y push sólo después del commit.", "FastAPI, auth, servicio Communications, realtime y push", "MYC Mobile y clientes ERP compatibles", "Crítico"),
+        "backend/app/schemas/communication.py": ("Contratos de Comunicaciones", "Valida creación directa/grupal, mensajes/menciones, recibos, cursores y proyecciones de bandeja/historial.", "Pydantic", "Router, servicio, OpenAPI y clientes", "Alto"),
+        "backend/app/services/communications.py": ("Autoridad de Comunicaciones", "Aplica membership/IDOR, locks y secuencias, idempotencia concurrente, recibos monótonos, menciones autorizadas y notificaciones persistentes con sesiones cortas.", "SQLAlchemy, modelos Communications/User/Ticket/Notification y push", "Router REST, realtime indirecto y pruebas", "Crítico"),
+        "backend/app/realtime/authentication.py": ("Autenticación WebSocket", "Extrae access JWT del subprotocolo sin URL, valida expiración/tipo y vuelve a resolver usuario interno activo antes del accept.", "Core JWT, auth, User y FastAPI WebSocket", "Router realtime y pruebas", "Crítico"),
+        "backend/app/realtime/contracts.py": ("Envelope realtime v1", "Construye envelopes versionados con event_id y timestamp UTC generados por servidor.", "datetime, UUID y tipos Python", "Hub, router, publicadores y clientes móviles", "Crítico"),
+        "backend/app/realtime/events.py": ("Publicador realtime desacoplado", "Entrega envelopes v1 a rooms de usuario mediante el puerto RealtimeHub sin acoplar el dominio al adaptador concreto.", "contracts y runtime RealtimeHub", "Routers y futuros eventos post-commit", "Crítico"),
+        "backend/app/realtime/hub.py": ("Puerto y adaptador single-worker", "Define join/leave/publicación aislada y el adaptador en memoria validado para la topología productiva vigente de un proceso.", "asyncio y FastAPI WebSocket", "Runtime, router realtime y publicadores", "Crítico"),
+        "backend/app/realtime/runtime.py": ("Composición realtime", "Selecciona en un punto único el adaptador InMemoryRealtimeHub detrás del puerto reemplazable.", "RealtimeHub e InMemoryRealtimeHub", "Router y publicador realtime", "Crítico"),
+        "backend/app/routers/realtime.py": ("Endpoint WebSocket", "Autentica, administra rooms autorizadas y procesa subscribe/unsubscribe/ping/typing con sesiones SQL cortas y actor server-side.", "Realtime auth/hub/contracts, Communications, SQLAlchemy y FastAPI", "MYC Mobile", "Crítico"),
+        "backend/migrations/versions/f7c9d1e3a5b7_complete_communications_foundation.py": ("Migración Comunicaciones A–I", "Agrega secuencias/idempotencia, grupos/Ticket, cursores, recibos y menciones con backfill e integridad reversible.", "Alembic, PostgreSQL y e6b8c0d2f4a6", "Despliegue, rollback, restore y validación de esquema", "Crítico"),
+        "backend/tests/test_communications_completion.py": ("Suite Comunicaciones A–I", "Prueba idempotencia, eventos post-commit, sync, recibos, menciones, IDOR, multi-dispositivo y privacidad de notificación.", "Pytest, FastAPI, SQLAlchemy y hub falso", "Gate backend Communications", "Crítico"),
+        "backend/tests/test_realtime_stage_a.py": ("Suite realtime", "Prueba JWT/rechazos, identidad, ownership, rooms, cleanup, envelope y typing autorizado/efímero.", "Pytest, TestClient, SQLite y RealtimeHub", "Gate backend realtime", "Crítico"),
+        "myc-mobile/app/(technician)/communications/index.tsx": ("Bandeja móvil de Comunicaciones", "Presenta conversaciones, menciones, Tickets, no leídos y creación directa/grupal con refresh manual.", "CommunicationsProvider, Expo Router y AuthProvider", "Usuarios internos móviles", "Crítico"),
+        "myc-mobile/app/(technician)/communications/[id].tsx": ("Detalle móvil de conversación", "Compone historial paginado, estados optimistic/retry, composer, typing, menciones autorizadas y recibos.", "CommunicationsProvider, tipos y componentes React Native", "Participantes de conversaciones", "Crítico"),
+        "myc-mobile/src/communications/CommunicationsProvider.tsx": ("Estado canónico móvil de Comunicaciones", "Coordina REST/realtime, optimistic UI, deduplicación, retry, sync completo, typing, recibos, no leídos y cleanup de sesión.", "RealtimeProvider, AuthProvider y servicio REST", "Bandeja, detalle, home y notificaciones", "Crítico"),
+        "myc-mobile/src/communications/message-state.ts": ("Reconciliador de mensajes", "Deduplica por ID persistente/client_message_id y deriva estados sending/sent/delivered/read/failed sin reloj canónico.", "Tipos Communication", "CommunicationsProvider y pruebas", "Alto"),
+        "myc-mobile/src/communications/message-state.test.ts": ("Pruebas de reconciliación", "Verifica conciliación optimistic y conservación segura del estado failed.", "Node test, tsx y message-state", "Gate móvil Communications", "Alto"),
+        "myc-mobile/src/services/communications.ts": ("Cliente REST de Comunicaciones", "Centraliza listado, detalle, historial, sync, mensajes, recibos, directorio, menciones y creación de conversaciones.", "Fetch autenticado y tipos Communication", "CommunicationsProvider y pantallas", "Crítico"),
+        "myc-mobile/src/types/communication.ts": ("Contrato móvil de Comunicaciones", "Tipifica conversaciones, mensajes/secuencias, recibos, menciones, directorio, paginación y estados optimistas.", "TypeScript", "Servicio, provider y pantallas", "Alto"),
+        "myc-mobile/src/realtime/RealtimeProvider.tsx": ("Provider realtime único", "Vincula socket a sesión/AppState/logout, distribuye envelopes, envía comandos y registra reconciliadores.", "AuthProvider, RealtimeClient y React Context", "CommunicationsProvider y layout", "Crítico"),
+        "myc-mobile/src/realtime/realtime-client.ts": ("Máquina de conexión realtime", "Gestiona socket, backoff, refresh único por 4401, resync, comandos y cleanup sin persistencia paralela.", "WebSocket React Native, backoff y tipos", "RealtimeProvider y pruebas", "Crítico"),
+        "myc-mobile/src/realtime/realtime-client.test.ts": ("Pruebas lifecycle realtime", "Verifica backoff, resync, refresh 4401, background/logout, límites de retry y envío de comandos.", "Node test, tsx y sockets/timers falsos", "Gate móvil realtime", "Alto"),
+        "myc-mobile/src/realtime/reconnection-policy.ts": ("Política de reconexión", "Calcula backoff exponencial con jitter/tope y clasifica cierres recuperables.", "JavaScript timers", "RealtimeClient", "Alto"),
+        "myc-mobile/src/realtime/types.ts": ("Tipos realtime v1", "Declara estados, envelope, listeners, callbacks de reconciliación y comandos.", "TypeScript", "Provider y cliente realtime", "Alto"),
+        "myc-mobile/app/_layout.tsx": ("Raíz de navegación móvil", "Compone sesión, RealtimeProvider, CommunicationsProvider y Notifications una sola vez alrededor del Stack.", "Expo Router y providers globales", "Todas las pantallas móviles", "Crítico"),
+        "docs/architecture/COMMUNICATIONS_REALTIME.md": ("Contrato final de Comunicaciones", "Documenta fuente de verdad, topología, seguridad, persistencia/orden, REST/eventos, reconciliación, push y compuerta multi-worker.", "Implementación backend/móvil, migración y pruebas", "Desarrollo, seguridad, QA y operación", "Crítico"),
+        "docs/closures/COMMUNICATIONS_COMPLETE_2026-08-17.md": ("Cierre técnico A–I", "Consolida topología, capacidades, migración/respaldo, validaciones y revisión física pendiente.", "Arquitectura, código, pruebas y documentos canónicos", "Dirección, desarrollo, operación y QA", "Alto"),
+    }
+    if value in communications_files:
+        return communications_files[value]
+
+    work_order_deletion_files = {
+        "backend/app/routers/service_orders.py": ("API ETS/OT", "Expone la eliminación física de una OT productiva con permiso exacto y delegación al servicio propietario, además de las rutas vigentes del expediente.", "FastAPI, auth, schemas y service_orders", "Frontend ETS y clientes API", "Crítico"),
+        "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica 398 operaciones deny-by-default y separa los permisos DELETE de OT productiva y OT LAB.", "FastAPI, auth, catálogo de permisos e inventario CSV", "Middleware, arranque, generador y pruebas de conformidad", "Crítico"),
+        "backend/app/services/service_orders.py": ("Autoridad única ETS/OT", "Orquesta lifecycle ETS y eliminación transaccional de OT con mapa explícito de dependencias, conservación compartida, auditoría y staging reversible de archivos.", "Modelos operativos/financieros, storage, auditoría y Activity", "Router ETS, frontend, móvil productivo y pruebas", "Crítico"),
+        "backend/tests/test_api_access_conformity.py": ("Prueba de conformidad API", "Exige clasificación de las 398 operaciones y coincidencia exacta entre runtime e inventario CSV.", "app.main, security.api_access e inventario CSV", "Suite backend y revisión de API", "Crítico"),
+        "backend/tests/test_service_work_order_deletion.py": ("Suite de eliminación OT", "Prueba admin, 403/404, estados, dependencias, firma compartida, conservación financiera, lectura móvil y rollback de base/archivo.", "Pytest, FastAPI, SQLAlchemy y agregado ETS/OT", "Gate backend de eliminación destructiva", "Crítico"),
+        "frontend/src/pages/ServiceOrdersPage.jsx": ("Expediente integral ETS", "Añade la acción confirmada de eliminación de OT sólo con capacidad exacta y refresca el expediente sin duplicar reglas destructivas.", "Componentes ETS, cliente API y workOrderDeletion", "Usuarios operativos y Administrador", "Crítico"),
+        "frontend/src/services/api.js": ("Cliente API compartido", "Centraliza transporte bearer e incorpora el DELETE individual de OT productiva junto a los contratos existentes.", "fetch/HTTP y endpoints FastAPI", "Páginas y controladores frontend", "Crítico"),
+        "frontend/src/utils/workOrderDeletion.js": ("Autoridad visual de eliminación OT", "Deriva la visibilidad exclusivamente desde service_orders.delete y permisos efectivos.", "accessControl", "ServiceOrdersPage y pruebas", "Alto"),
+        "frontend/src/utils/workOrderDeletion.test.js": ("Prueba frontend de eliminación OT", "Verifica comodín administrativo, capacidad exacta y ocultamiento para lectura/actualización sin privilegio.", "Node test y workOrderDeletion", "Gate frontend de autorización visual", "Alto"),
+        "docs/architecture/WORK_ORDER_DELETION.md": ("Contrato de eliminación OT", "Documenta identidad, ownership, preservación, bloqueos, atomicidad, archivos y efecto móvil del borrado productivo.", "Código, reglas y pruebas ETS/OT", "Arquitectura, seguridad, QA y operación", "Crítico"),
+        "docs/closures/WORK_ORDER_DELETION_2026-08-17.md": ("Cierre técnico de eliminación OT", "Consolida implementación, alcance, validaciones y frontera explícita frente a ETS y OT LAB.", "Contrato, código, inventario y suites", "Dirección, desarrollo y QA", "Alto"),
+        "backend/app/routers/lab_work_orders.py": ("API OT LAB", "Expone el flujo LAB temporal y su DELETE individual protegido por lab_work_orders.delete sin reutilizar rutas productivas.", "FastAPI, auth, schemas y servicio LAB", "MYC Mobile y pruebas LAB", "Crítico"),
+        "backend/app/services/lab_work_orders.py": ("Autoridad OT LAB", "Gestiona folios 6400–6999, grupo, equipos, firmas, PDFs y eliminación atómica con reparación de cadena y conservación compartida.", "Modelos LAB, Tickets, Notifications, auditoría y PDFs", "Router LAB, MYC Mobile y pruebas", "Crítico"),
+        "backend/tests/test_lab_work_orders.py": ("Suite integral OT LAB", "Cubre lifecycle LAB, folios, grupos, firmas, PDFs, Tickets y eliminación administrativa de raíz/intermedia/finalizada con rollback y recursos compartidos.", "Pytest, FastAPI, SQLAlchemy y agregado LAB", "Gate backend del vertical temporal", "Crítico"),
+        "myc-mobile/app/(technician)/work-orders.tsx": ("Flujo OT LAB móvil", "Lista y opera sólo OT LAB 6400–6999; integra eliminación autorizada, confirmación/refetch y tarjetas resistentes a clientes largos.", "AuthProvider, API LAB, permisos, firma, Notifications y Expo", "Técnicos y Administrador móvil", "Crítico"),
+        "myc-mobile/src/services/lab-work-order-deletion.ts": ("Coordinador DELETE OT LAB", "Verifica lab_work_orders.delete, clasifica 204/403/404/409/red e impide doble envío contra el endpoint LAB.", "Permisos efectivos y Fetch API", "Pantalla OT LAB y pruebas", "Crítico"),
+        "myc-mobile/src/services/lab-work-order-deletion.test.ts": ("Pruebas móviles DELETE LAB", "Verifica capacidad, aislamiento productivo, estados HTTP, cancelación, doble envío y contrato de layout para nombres largos.", "Node test y coordinador LAB", "Gate móvil de eliminación LAB", "Alto"),
+        "docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv": ("Evidencia reproducible API", "Registra 398 operaciones con método, ruta, identidad, permiso, ownership y pruebas esperadas.", "generate_api_access_inventory.py y app runtime", "Conformidad, revisión externa y CI futura", "Crítico"),
+    }
+    if value in work_order_deletion_files:
+        return work_order_deletion_files[value]
+
     notification_files = {
+        "myc-mobile/app/(auth)/login.tsx": ("Login interno móvil", "Presenta el acceso responsive con logo institucional, safe area, teclado adaptable, versión Expo y estados de autenticación existentes sin duplicar el flujo.", "AuthProvider, Expo Router, Constants y asset MYC", "Personal interno en iOS/Android", "Crítico"),
         "backend/app/models/notification.py": ("Persistencia de notificaciones push", "Extiende la bandeja institucional con event_key, estado de entrega y dispositivos Expo multiusuario/multidispositivo con ownership.", "SQLAlchemy, users y Alembic", "Activity, Tickets, API y MYC Mobile", "Crítico"),
         "backend/app/routers/notifications.py": ("API de notificaciones y dispositivos", "Expone bandeja propia, no leídos, lectura idempotente y alta/baja autenticada de PushDevice sin aceptar user_id del cliente.", "FastAPI, auth y servicios Notifications/Push", "MYC Mobile y Activity", "Crítico"),
         "backend/app/schemas/notification.py": ("Contratos de Notifications V1", "Valida respuestas de notificación, estado de entrega y registro de token Expo para iOS/Android.", "Pydantic", "Routers y cliente móvil", "Alto"),
@@ -395,7 +498,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "myc-mobile/src/services/push-notifications.ts": ("Registro Expo del dispositivo", "Solicita permisos sin bloquear, crea canal Android, obtiene token en device físico y registra/desactiva la asociación autenticada.", "Expo Notifications/Device/Constants, SecureStore y API", "AuthProvider y NotificationSyncProvider", "Crítico"),
         "myc-mobile/src/types/notification.ts": ("Contrato móvil Notifications", "Tipifica bandeja, devices y metadata de eventos/deep links.", "TypeScript", "Centro, sincronización y pantallas operativas", "Alto"),
         "myc-mobile/app.json": ("Configuración Expo móvil", "Conserva identidad EAS/bundle/package y habilita el plugin oficial expo-notifications sin alterar branding.", "Expo SDK 54 y EAS projectId", "Builds manuales iOS/Android y runtime móvil", "Crítico"),
-        "myc-mobile/package.json": ("Dependencias y gates móviles", "Fija dependencias Expo SDK 54 para notifications/device y scripts TypeScript, lint y pruebas de sincronización.", "npm, Expo SDK 54 y tsx", "Desarrollo, validación y builds manuales", "Crítico"),
+        "myc-mobile/package.json": ("Dependencias y gates móviles", "Fija dependencias Expo SDK 54 y scripts TypeScript, lint, sincronización, Realtime y eliminación OT LAB.", "npm, Expo SDK 54 y tsx", "Desarrollo, validación y builds manuales", "Crítico"),
         "docs/architecture/MOBILE_NOTIFICATIONS_V1.md": ("Contrato Notifications V1", "Documenta fuente de verdad, eventos, destinatarios, devices, Expo, seguridad, deep links, refresco y límites.", "Código backend/móvil y pruebas", "Desarrollo, seguridad, QA y operación", "Crítico"),
         "docs/closures/MOBILE_NOTIFICATIONS_V1_2026-08-14.md": ("Cierre técnico Notifications V1", "Registra entrega, evidencia automática, límites y aceptación física pendiente.", "Arquitectura, implementación y validaciones", "Dirección, QA y operación móvil", "Alto"),
     }
@@ -413,7 +516,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/migrations/versions/c6e8a1b4d2f9_create_lab_work_orders.py": ("Migración OT LAB", "Fusiona los dos heads preservados y crea exclusivamente las cuatro tablas LAB, restricciones, índices y FKs trazables.", "Alembic, PostgreSQL, a7c2e5f8b1d4 y fdc1c503a353", "Despliegue, rollback y validación de esquema", "Crítico"),
         "backend/tests/test_lab_work_orders.py": ("Suite OT LAB/Tickets", "Prueba filtros, paginación, permisos, lifecycle, firmas, PDFs y resolución única de Tickets, incluida concurrencia approve/reject con locks reales.", "Pytest, TestClient, pypdf, SQLite y PostgreSQL aislados", "Gate backend del vertical móvil", "Crítico"),
         "backend/app/services/operational_tickets.py": ("Lifecycle de Tickets/reapertura", "Crea, lista y resuelve Tickets con visibilidad propia/global, lock PostgreSQL exclusivo sobre su fila, un único ganador concurrente, snapshots, firmas, historial, auditoría y eventos persistentes.", "SQLAlchemy, modelos Ticket/LAB, permisos, auditoría y Notifications", "Routers móviles, cierre LAB, revisores y pruebas PostgreSQL", "Crítico"),
-        "myc-mobile/app/(technician)/index.tsx": ("Home técnica móvil", "Navega a OT, Tickets y Notificaciones; muestra conteos pendientes y badge no leído según permisos efectivos.", "AuthProvider, API, permisos, NotificationSyncProvider y Expo Router", "Técnicos y revisores móviles", "Alto"),
+        "myc-mobile/app/(technician)/index.tsx": ("Home técnica móvil", "Navega a OT LAB, Tickets y Notificaciones; condiciona accesos y conteos según permisos efectivos sin exponer Service Orders productivas.", "AuthProvider, API, permisos, NotificationSyncProvider y Expo Router", "Técnicos, revisores y Administrador móvil", "Alto"),
         "myc-mobile/app/(technician)/tickets.tsx": ("Bandeja móvil de Tickets", "Lista, busca, filtra y pagina solicitudes; muestra detalle safe-area, resuelve por permiso y refresca por foco, foreground, push o mutación local.", "Expo Router, SafeAreaContext, AuthProvider, API, permisos y NotificationSyncProvider", "Técnicos, Calidad y administradores", "Crítico"),
         "docs/architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md": ("Contrato Tickets/reapertura", "Define lifecycle, locks, resolución única, revisiones, firma histórica/activa, cambios críticos, control optimista, API, búsqueda y auditoría.", "Implementación backend/móvil y reglas LAB", "Desarrollo, QA, seguridad y operación", "Crítico"),
         "docs/closures/MOBILE_TICKETS_AND_REOPENING_2026-08-14.md": ("Cierre técnico Tickets móvil", "Registra filtros, reapertura, corrección de lock PostgreSQL, safe area y validaciones del sprint.", "Contrato, implementación y pruebas PostgreSQL/móvil", "Dirección, QA y operación móvil", "Alto"),
@@ -817,7 +920,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/core/permissions.py": (
             "Matriz ejecutable de permisos",
-            "Declara roles y permisos del ERP, incluidos lectura, operación, auditoría e infraestructura del Centro de Resoluciones.",
+            "Declara roles y permisos del ERP, incluida la capacidad institucional service_orders.delete sin asignarla a roles ordinarios, además de lectura, operación, auditoría e infraestructura del Centro de Resoluciones.",
             "Servicio de autenticación y nombres de permisos",
             "Routers, capabilities y administración",
             "Crítico",
@@ -2370,6 +2473,11 @@ def render(paths: list[Path], preserved: dict[str, str]) -> str:
                     )
                 ),
             )
+            if any(
+                marker in value
+                for marker in ("/communication", "/realtime", "COMMUNICATIONS_")
+            ):
+                status = "En revisión"
             cells = (path.as_posix(), module(path), function, responsibility, dependencies, consumers, criticality, status)
             lines.append("| " + " | ".join(markdown_cell(cell) for cell in cells) + " |")
         lines.append("")

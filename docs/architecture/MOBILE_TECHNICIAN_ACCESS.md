@@ -1,8 +1,8 @@
 # Acceso móvil acotado para técnicos
 
-> Estado: vigente en backend; aplicación móvil fuera de alcance
+> Estado: vigente en backend; aplicación LAB aislada de estas rutas productivas
 >
-> Corte verificado: 2026-08-12
+> Corte verificado: 2026-08-17
 
 ## Propósito
 
@@ -43,9 +43,17 @@ de lista viven en `services/mobile_technician.py` y los lookups individuales
 con ownership en `services/mobile_technician_scope.py`. Cada detalle vuelve a
 validar el ámbito; nunca confía en una lista previa ni en el cliente móvil.
 
-La implementación no agrega escritura, sesión móvil, revocación, permisos por
-usuario, asignación multi-técnico por OT, cambios al Motor de Resoluciones ni
-modificaciones a `myc-mobile`.
+El namespace técnico no agrega escritura, sesión móvil, revocación, permisos
+por usuario, asignación multi-técnico por OT ni cambios al Motor. La fase LAB
+actual de `myc-mobile` no consume estos endpoints para listado, detalle,
+documentos o eliminación; opera sólo sobre su namespace LAB temporal.
+
+Cuando un Administrador elimina una OT productiva desde web, las
+consultas móviles no usan caché persistente: el siguiente listado deja de
+incluirla y cualquier detalle conservado por un consumidor productivo responde
+`404`. La operación revoca notificaciones semánticas de esa OT. La pantalla
+móvil vigente consulta `LabWorkOrder`, no presenta recursos productivos y su
+DELETE administrativo pertenece al router/permiso LAB independiente.
 
 ## Endpoints
 
