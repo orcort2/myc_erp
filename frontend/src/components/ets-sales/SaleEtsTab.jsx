@@ -167,9 +167,13 @@ export default function SaleEtsTab({
   user = null,
   users = [],
   onOpenTechnicalSubEts = null,
+  initialBoard = null,
 }) {
   const [board, setBoard] = useState(
-    () => saleBoardCache.get(Number(order?.id)) || null
+    () =>
+      initialBoard ||
+      saleBoardCache.get(Number(order?.id)) ||
+      null
   );
   const [boardLoading, setBoardLoading] = useState(false);
 
@@ -261,7 +265,20 @@ export default function SaleEtsTab({
 
 
   useEffect(() => {
-    const cached = saleBoardCache.get(Number(order?.id));
+    if (!order?.id) {
+      setBoard(null);
+      return;
+    }
+
+    if (initialBoard) {
+      applyBoard(initialBoard);
+      refresh({ silent: true });
+      return;
+    }
+
+    const cached = saleBoardCache.get(
+      Number(order.id)
+    );
 
     if (cached) {
       setBoard(cached);
@@ -271,7 +288,10 @@ export default function SaleEtsTab({
 
     setBoard(null);
     refresh();
-  }, [order?.id]);
+  }, [
+    order?.id,
+    initialBoard,
+  ]);
 
 
   useEffect(() => {

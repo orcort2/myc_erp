@@ -47,6 +47,7 @@ import {
   deleteServiceWorkOrder,
   getFieldSheet,
   getCertificateReleaseReadiness,
+  getSaleBoard,
   getServiceOrderWorkOrdersPdfUrl,
   getServiceWorkOrderPdfUrl,
   listCalibrationProcedures,
@@ -242,6 +243,7 @@ function ServiceOrdersPage({ user = null }) {
   const [exceptionReason, setExceptionReason] = useState('');
   const [editingEquipmentId, setEditingEquipmentId] = useState(null);
   const [activeTab, setActiveTab] = useState('info');
+  const [preloadedSaleBoard, setPreloadedSaleBoard] = useState(null);
   const [isBillingTabMounted, setIsBillingTabMounted] = useState(false);
   const [fieldSheetTab, setFieldSheetTab] = useState('info');
   const [orderFilter, setOrderFilter] = useState('all');
@@ -1390,6 +1392,46 @@ function closeTechnicalSubEts() {
       setIsBillingTabMounted(true);
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function preloadSaleBoard() {
+      if (
+        !selectedOrder?.id ||
+        !selectedOrderHasSale
+      ) {
+        setPreloadedSaleBoard(null);
+        return;
+      }
+
+      try {
+        const nextBoard = await getSaleBoard(
+          selectedOrder.id
+        );
+
+        if (!cancelled) {
+          setPreloadedSaleBoard(nextBoard);
+        }
+      } catch (requestError) {
+        if (!cancelled) {
+          console.error(
+            'No fue posible precargar ETS Venta:',
+            requestError
+          );
+        }
+      }
+    }
+
+    preloadSaleBoard();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    selectedOrder?.id,
+    selectedOrderHasSale,
+  ]);
 
   function clearWorkOrderContext() {
     setSelectedWorkOrderContext(null);
@@ -3337,7 +3379,12 @@ function closeTechnicalSubEts() {
             ) : null}
 
             {activeTab === 'sale' && selectedOrderHasSale ? (
-              <SaleEtsTab order={selectedOrder} user={user} users={users} />
+              <SaleEtsTab
+                initialBoard={preloadedSaleBoard}
+                order={selectedOrder}
+                user={user}
+                users={users}
+              />
             ) : null}
 
             {activeTab === 'maintenance' && selectedOrderHasMaintenance ? (
