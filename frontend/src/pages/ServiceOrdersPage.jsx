@@ -124,7 +124,7 @@ function getServiceOrderCapabilities(order) {
     (item) => item.operational_category === 'calibration'
   );
 
-  const hasSaleWithCalibration = items.some((item) => {
+  const hasEmbeddedCalibration = items.some((item) => {
     if (item.operational_category !== 'sale') {
       return false;
     }
@@ -138,15 +138,11 @@ function getServiceOrderCapabilities(order) {
     );
   });
 
-  const hasCalibration =
-    hasDirectCalibration || hasSaleWithCalibration;
-
   return {
     hasSale,
     hasMaintenance,
     hasDirectCalibration,
-    hasSaleWithCalibration,
-    hasCalibration,
+    hasEmbeddedCalibration,
   };
 }
 
@@ -251,6 +247,7 @@ function ServiceOrdersPage({ user = null }) {
   const [orderFilter, setOrderFilter] = useState('all');
   const [etsSearch, setEtsSearch] = useState('');
   const [selectedWorkOrderContext, setSelectedWorkOrderContext] = useState(null);
+  const [technicalSubEtsEquipment, setTechnicalSubEtsEquipment] = useState(null);
   const [isWorkOrdersModalOpen, setIsWorkOrdersModalOpen] = useState(false);
   const [workOrderSearch, setWorkOrderSearch] = useState('');
   const [exitingEquipmentIds, setExitingEquipmentIds] = useState([]);
@@ -338,7 +335,8 @@ function ServiceOrdersPage({ user = null }) {
   const {
     hasSale: selectedOrderHasSale,
     hasMaintenance: selectedOrderHasMaintenance,
-    hasCalibration: selectedOrderHasCalibration,
+    hasDirectCalibration: selectedOrderHasDirectCalibration,
+    hasEmbeddedCalibration: selectedOrderHasEmbeddedCalibration,
   } = selectedOrderCapabilities;
 
   const selectedOrderTabs = useMemo(() => {
@@ -357,9 +355,16 @@ function ServiceOrdersPage({ user = null }) {
         ? [['sale', 'Venta']]
         : []),
 
-      ...(selectedOrderHasCalibration
+      ...(
+        selectedOrderHasSale ||
+        selectedOrderHasMaintenance ||
+        selectedOrderHasDirectCalibration
+          ? [['equipment', 'Equipos']]
+          : []
+      ),
+
+      ...(selectedOrderHasDirectCalibration
         ? [
-            ['equipment', 'Equipos'],
             ['field-sheet', 'Hojas de Campo'],
             ['capture', 'Captura'],
             ['quality', 'Calidad'],
@@ -376,8 +381,25 @@ function ServiceOrdersPage({ user = null }) {
     selectedOrder,
     selectedOrderHasSale,
     selectedOrderHasMaintenance,
-    selectedOrderHasCalibration,
+    selectedOrderHasDirectCalibration,
   ]);
+
+  const technicalSubEtsTabs = useMemo(
+    () => [
+      ['equipment', 'Orden de trabajo'],
+      ['field-sheet', 'Hojas de Campo'],
+      ['capture', 'Captura'],
+      ['quality', 'Calidad'],
+      ['certificates', 'Certificados'],
+    ],
+    []
+  );
+
+  const visibleEtsTabs = technicalSubEtsEquipment
+    ? technicalSubEtsTabs
+    : selectedOrderTabs;
+
+
 
   const equipmentById = useMemo(
     () => new Map(equipment.map((item) => [item.id, item])),
@@ -640,6 +662,61 @@ function ServiceOrdersPage({ user = null }) {
     };
   }
 
+  function getEquipmentWorkOrder(item) {
+    if (!item) return null;
+
+    return relatedWorkOrders.find((workOrder) => {
+      if (
+        item.work_order_id &&
+        !isLegacyWorkOrder(workOrder) &&
+        Number(workOrder.id) === Number(item.work_order_id)
+      ) {
+        return true;
+      }
+
+      return (
+        String(workOrder.work_order_number || '') ===
+        String(item.work_order_number || '')
+      );
+    }) || null;
+  }
+
+  function openTechnicalSubEts(item) {
+    if (!item) return;
+
+    const operationalContext =
+      getEquipmentOperationalContext(item);
+
+    if (!operationalContext.hasMetrology) {
+      openEquipmentDetail(item);
+      return;
+    }
+
+    const workOrder = getEquipmentWorkOrder(item);
+
+    setTechnicalSubEtsEquipment(item);
+
+    setSelectedWorkOrderContext(
+      workOrder
+        ? workOrderContextFromWorkOrder(workOrder)
+        : {
+            id: item.work_order_id || null,
+            number: item.work_order_number || null,
+            label: `OT-${item.work_order_number || '-'}`,
+          }
+    );
+
+    setFieldSheetWorkspaceView('capture');
+    setActiveTab('equipment');
+  }
+
+function closeTechnicalSubEts() {
+  setTechnicalSubEtsEquipment(null);
+  setSelectedWorkOrderContext(null);
+  setFieldSheetWorkspaceView('capture');
+  setActiveTab('equipment');
+}
+
   function itemMatchesWorkOrderContext(item, context = selectedWorkOrderContext) {
     if (!context) return true;
     if (context.id && Number(item.work_order_id) === Number(context.id)) return true;
@@ -735,10 +812,28 @@ function ServiceOrdersPage({ user = null }) {
 
   const filteredSelectedEquipment = useMemo(() => {
     return selectedEquipment.filter((item) => {
-      if (!itemMatchesWorkOrderContext(item)) return false;
-      if (!normalizedEtsSearch) return true;
-      const sheet = fieldSheetsByEquipmentId.get(item.id);
-      const certificate = activeCertificatesByEquipmentId.get(item.id);
+      if (
+        technicalSubEtsEquipment &&
+        Number(item.id) !==
+          Number(technicalSubEtsEquipment.id)
+      ) {
+        return false;
+      }
+
+      if (!itemMatchesWorkOrderContext(item)) {
+        return false;
+      }
+
+      if (!normalizedEtsSearch) {
+        return true;
+      }
+
+      const sheet =
+        fieldSheetsByEquipmentId.get(item.id);
+
+      const certificate =
+        activeCertificatesByEquipmentId.get(item.id);
+
       return [
         selectedOrder?.work_order_number,
         item.name,
@@ -752,17 +847,39 @@ function ServiceOrdersPage({ user = null }) {
         certificate?.folio,
         certificate?.expected_folio,
         certificate?.final_pdf_original_filename,
-        certificate?.authentication_code
-      ].some((value) => String(value || '').toLowerCase().includes(normalizedEtsSearch));
+        certificate?.authentication_code,
+      ].some((value) =>
+        String(value || '')
+          .toLowerCase()
+          .includes(normalizedEtsSearch)
+      );
     });
-  }, [activeCertificatesByEquipmentId, fieldSheetsByEquipmentId, normalizedEtsSearch, selectedEquipment, selectedOrder, selectedWorkOrderContext]);
-
+  }, [
+    activeCertificatesByEquipmentId,
+    fieldSheetsByEquipmentId,
+    normalizedEtsSearch,
+    selectedEquipment,
+    selectedOrder,
+    selectedWorkOrderContext,
+    technicalSubEtsEquipment,
+  ]);
   const filteredSelectedCertificates = useMemo(() => {
     return selectedCertificates.filter((certificate) => {
       const item = equipment.find((candidate) => candidate.id === certificate.equipment_id);
       const sheet = certificate.field_sheet_id ? fieldSheets.find((candidate) => candidate.id === certificate.field_sheet_id) : null;
+
+      // Tu nueva validación agregada
+      if (
+        technicalSubEtsEquipment &&
+        Number(item?.id) !== Number(technicalSubEtsEquipment.id)
+      ) {
+        return false;
+      }
+
       if (!itemMatchesWorkOrderContext(item) && !sheetMatchesWorkOrderContext(sheet)) return false;
+
       if (!normalizedEtsSearch) return true;
+
       return [
         certificate.folio,
         certificate.expected_folio,
@@ -777,7 +894,8 @@ function ServiceOrdersPage({ user = null }) {
         sheet?.work_order_number
       ].some((value) => String(value || '').toLowerCase().includes(normalizedEtsSearch));
     });
-  }, [equipment, fieldSheets, normalizedEtsSearch, selectedCertificates, selectedWorkOrderContext]);
+  }, [equipment, fieldSheets, normalizedEtsSearch, selectedCertificates, selectedWorkOrderContext, technicalSubEtsEquipment, technicalSubEtsEquipment]); 
+
 
   const latestCaptureFileByCertificateId = useMemo(() => {
     const selectedIds = new Set(filteredSelectedCertificates.map((certificate) => certificate.id));
@@ -941,46 +1059,133 @@ function ServiceOrdersPage({ user = null }) {
   }, [selectedCertificates, selectedOrder]);
 
   const selectedStageState = useMemo(() => {
-    if (!selectedOrder) return {};
-    const summaryReady = Boolean(selectedOrder.agenda_date && selectedOrder.service_date && selectedOrder.technician_id);
-    const equipmentStage = getEquipmentStageStatus({ order: selectedOrder, equipment: selectedEquipment });
-    const fieldSheetStage = getFieldSheetStageStatus({ equipment: selectedEquipment, fieldSheets: selectedFieldSheets, equipmentStage });
-    const captureStage = getCaptureStageStatus({ certificates: selectedCertificates, fieldSheetStage });
-    const qualityStage = getQualityStageStatus({ certificates: selectedCertificates });
-    const certificateStage = getCertificateStageStatus({ certificates: selectedCertificates, releaseReadiness: certificateReleaseReadiness });
-    const documentsReady = certificateStage.status === 'done' || selectedFieldSheets.length > 0 || Boolean(selectedOrder.quotation_id);
-    const billingComplete = certificateReleaseReadiness?.payment_status === 'paid' || certificateReleaseReadiness?.payment_status === 'not_required';
+    if (!selectedOrder) {
+      return {};
+    }
+
+    const summaryReady = Boolean(
+      selectedOrder.agenda_date &&
+      selectedOrder.service_date &&
+      selectedOrder.technician_id
+    );
+
+    const equipmentStage =
+      getEquipmentStageStatus({
+        order: selectedOrder,
+        equipment: selectedEquipment,
+      });
+
+    const fieldSheetStage =
+      getFieldSheetStageStatus({
+        equipment: filteredSelectedEquipment,
+        fieldSheets: selectedFieldSheets,
+        equipmentStage,
+      });
+
+    const captureStage =
+      getCaptureStageStatus({
+        certificates: filteredSelectedCertificates,
+        fieldSheetStage,
+      });
+
+    const qualityStage =
+      getQualityStageStatus({
+        certificates: filteredSelectedCertificates,
+      });
+
+    const certificateStage =
+      getCertificateStageStatus({
+        certificates: filteredSelectedCertificates,
+        releaseReadiness:
+          certificateReleaseReadiness,
+      });
+
+    const billingComplete =
+      certificateReleaseReadiness?.payment_status ===
+        'paid' ||
+      certificateReleaseReadiness?.payment_status ===
+        'not_required';
+
     const states = {
       info: {
-        label: summaryReady ? 'Lista' : 'En proceso',
-        status: summaryReady ? 'done' : 'active',
+        label: summaryReady
+          ? 'Lista'
+          : 'En proceso',
+        status: summaryReady
+          ? 'done'
+          : 'active',
         ready: summaryReady,
       },
+
+      sale: selectedOrderHasSale
+        ? {
+            label: 'Disponible',
+            status: 'active',
+            ready: true,
+          }
+        : undefined,
+
+      maintenance: selectedOrderHasMaintenance
+        ? {
+            label: 'Disponible',
+            status: 'active',
+            ready: true,
+          }
+        : undefined,
+
       equipment: equipmentStage,
-      'field-sheet': fieldSheetStage,
-      capture: captureStage,
-      quality: qualityStage,
-      certificates: certificateStage,
+
+      billing: stageFromPaymentReadiness(
+        certificateReleaseReadiness,
+        billingComplete
+      ),
+
       documents: {
-        label: documentsReady ? 'Disponible' : 'Pendiente',
-        status: documentsReady ? 'active' : 'pending',
-        ready: documentsReady,
-      },
-      notes: {
-        label: selectedOrder.notes ? 'Con notas' : 'Disponible',
-        status: selectedOrder.notes ? 'active' : 'pending',
+        label: 'Disponible',
+        status: 'active',
         ready: true,
       },
+
+      notes: {
+        label: selectedOrder.notes
+          ? 'Con notas'
+          : 'Disponible',
+        status: selectedOrder.notes
+          ? 'active'
+          : 'pending',
+        ready: true,
+      },
+
       history: {
         label: 'Disponible',
         status: 'active',
         ready: true,
       },
-      billing: stageFromPaymentReadiness(certificateReleaseReadiness, billingComplete),
     };
-    return states;
-  }, [selectedOrder, selectedEquipment, selectedFieldSheets, selectedCertificates, certificateReleaseReadiness]);
 
+    if (
+      selectedOrderHasDirectCalibration ||
+      technicalSubEtsEquipment
+    ) {
+      states['field-sheet'] = fieldSheetStage;
+      states.capture = captureStage;
+      states.quality = qualityStage;
+      states.certificates = certificateStage;
+    }
+
+    return states;
+  }, [
+    selectedOrder,
+    selectedEquipment,
+    selectedFieldSheets,
+    filteredSelectedEquipment,
+    filteredSelectedCertificates,
+    certificateReleaseReadiness,
+    selectedOrderHasSale,
+    selectedOrderHasMaintenance,
+    selectedOrderHasDirectCalibration,
+    technicalSubEtsEquipment,
+  ]);
   function getOrderMetrics(order) {
     const orderEquipment = equipment.filter((item) => item.service_order_id === order.id && item.is_active !== false);
     const orderEquipmentIds = new Set(orderEquipment.map((item) => item.id));
@@ -2912,9 +3117,38 @@ function ServiceOrdersPage({ user = null }) {
                 </button>
               </div>
             ) : null}
+            {technicalSubEtsEquipment ? (
+              <div className="ets-subets-context">
+                <div>
+                  <span>Sub-ETS técnico</span>
 
+                  <strong>
+                    {technicalSubEtsEquipment.name ||
+                      'Equipo'}
+                  </strong>
+
+                  <small>
+                    {[
+                      technicalSubEtsEquipment.serial_number
+                        ? `Serie ${technicalSubEtsEquipment.serial_number}`
+                        : null,
+                      selectedWorkOrderContext?.label,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </small>
+                </div>
+                <button
+                  className="table-button"
+                  onClick={closeTechnicalSubEts}
+                  type="button"
+                >
+                  ← Volver a Equipos
+                </button>
+              </div>
+            ) : null}
             <div className="ets-folder-tabs" role="tablist" aria-label="Carpetas del expediente">
-                {selectedOrderTabs.map(([key, label]) => (
+                {visibleEtsTabs.map(([key, label]) => (
                 <button
                   aria-selected={activeTab === key}
                   className={activeTab === key ? 'ets-folder-tab is-active' : 'ets-folder-tab'}
@@ -3244,7 +3478,15 @@ function ServiceOrdersPage({ user = null }) {
                                   .filter(Boolean)
                                   .join(' ')}
                                 key={item.id}
-                                onClick={() => openEquipmentDetail(item)}
+                                onClick={() => {
+                                  const context =
+                                    getEquipmentOperationalContext(item);
+                                  if (context.hasMetrology) {
+                                    openTechnicalSubEts(item);
+                                    return;
+                                  }
+                                  openEquipmentDetail(item);
+                                }}      
                                 type="button"
                               >
                                 <header className="ets-equipment-card__header">
@@ -3330,9 +3572,11 @@ function ServiceOrdersPage({ user = null }) {
                                   </div>
 
                                   <span className="ets-equipment-card__open">
-                                    Ver detalle
-                                    <ChevronRight size={16} />
-                                  </span>
+                                    {operationalContext.hasMetrology
+                                      ? 'Abrir proceso'
+                                      : 'Ver equipo'}
+                                    <ChevronRight size={16} />  
+                                  </span>  
                                 </footer>
                               </button>
                             );
