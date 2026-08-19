@@ -25,7 +25,7 @@ class MaintenanceExecution(IntegerPkMixin, TimestampMixin, Base):
     service_unit_id: Mapped[int] = mapped_column(ForeignKey("service_units.id", ondelete="RESTRICT"), index=True)
     service_stage_id: Mapped[int] = mapped_column(ForeignKey("service_stages.id", ondelete="RESTRICT"), index=True)
     maintenance_type: Mapped[str] = mapped_column(String(20), index=True)
-    location_mode: Mapped[str] = mapped_column(String(20), index=True)
+    location_mode: Mapped[str | None] = mapped_column(String(20), index=True, nullable=True,)
     configuration_snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(40), default="pending_arrival", server_default="pending_arrival", index=True)
     technician_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)

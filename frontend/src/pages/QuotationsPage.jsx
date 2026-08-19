@@ -158,7 +158,6 @@ function mapCatalogItemFromApi(item) {
     saleSpecification: item.sale_specification ?? '',
     includedCalibrationCatalogItemId: item.included_calibration_catalog_item_id ? String(item.included_calibration_catalog_item_id) : '',
     maintenanceType: ['preventive', 'corrective'].includes(item.calibration_scope) ? item.calibration_scope : 'preventive',
-    maintenanceLocation: item.maintenance_location ?? 'laboratory',
     maintenanceBaseMaterialsText: JSON.stringify(item.maintenance_base_materials ?? [], null, 2),
     quotationLegend: item.quotation_legend ?? '',
     category: item.category ?? '',
@@ -230,7 +229,7 @@ function mapCatalogPayloadFromForm(form) {
     sale_specification: operationalCategory === 'sale' ? form.saleSpecification.trim() || null : null,
     included_calibration_catalog_item_id: operationalCategory === 'sale' ? Number(form.includedCalibrationCatalogItemId) || null : null,
     maintenance_type: operationalCategory === 'maintenance' ? form.maintenanceType : null,
-    maintenance_location: operationalCategory === 'maintenance' ? form.maintenanceLocation : null,
+    maintenance_location: null,
     maintenance_base_materials: operationalCategory === 'maintenance' && form.maintenanceType === 'corrective'
       ? JSON.parse(form.maintenanceBaseMaterialsText || '[]')
       : [],

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 MaintenanceStatus = Literal[
     "pending_arrival",
+    "received",
     "pending_assignment",
     "assigned",
     "in_maintenance",
@@ -19,66 +20,9 @@ MaintenanceStatus = Literal[
 ]
 
 
-MaintenanceType = Literal[
-    "preventive",
-    "corrective",
-]
-
-
 MaintenanceLocationMode = Literal[
     "laboratory",
     "field",
-]
-
-
-MaintenancePauseType = Literal[
-    "spare_part",
-    "authorization",
-    "second_intervention",
-    "commercial_review",
-    "administrative_investigation",
-]
-
-
-MaintenancePauseStatus = Literal[
-    "active",
-    "resolved",
-]
-
-
-MaintenanceMaterialType = Literal[
-    "used",
-    "required",
-]
-
-
-MaintenanceChangeType = Literal[
-    "corrective",
-    "repair",
-    "investigation",
-]
-
-
-MaintenanceChangeStatus = Literal[
-    "requested",
-    "approved",
-    "rejected",
-    "overridden",
-    "linked",
-]
-
-
-MaintenanceInvestigationStatus = Literal[
-    "required",
-    "open",
-    "resolved",
-]
-
-
-MaintenanceNoticeSeverity = Literal[
-    "blocker",
-    "warning",
-    "recommendation",
 ]
 
 
@@ -131,11 +75,33 @@ class MaintenanceEquipmentCreate(BaseModel):
 
 
 class MaintenancePrepare(BaseModel):
-    technician_id: int = Field(gt=0)
+    technician_id: int = Field(
+        gt=0,
+    )
+
+    location_mode: MaintenanceLocationMode
 
     field_address: dict | None = None
 
     scheduled_for: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_location_requirements(self):
+        if (
+            self.location_mode == "field"
+            and not self.field_address
+        ):
+            raise ValueError(
+                "La modalidad de campo requiere dirección"
+            )
+
+        if (
+            self.location_mode == "laboratory"
+            and self.field_address is not None
+        ):
+            self.field_address = None
+
+        return self
 
 
 class MaintenanceCapture(BaseModel):
@@ -201,44 +167,45 @@ class MaintenanceCapture(BaseModel):
         ]
 
         for reference in references:
-            if len(reference) > 500:
-                raise ValueError(
-                    "Las referencias fotográficas "
-                    "no pueden superar 500 caracteres"
+            if (
+                len(reference) > 500
+                or reference.startswith(
+                    (
+                        "/",
+                        "data:",
+                        "http://",
+                        "https://",
+                        "file:",
+                    )
                 )
-
-            if reference.startswith(
-                (
-                    "/",
-                    "data:",
-                    "http://",
-                    "https://",
-                    "file:",
-                )
+                or ".." in reference.split("/")
             ):
                 raise ValueError(
-                    "Las fotografías deben usar referencias "
-                    "relativas seguras del almacenamiento institucional"
-                )
-
-            if ".." in reference.split("/"):
-                raise ValueError(
-                    "Las fotografías deben usar referencias "
-                    "relativas seguras del almacenamiento institucional"
+                    "Las fotografías deben usar "
+                    "referencias relativas seguras "
+                    "del almacenamiento institucional"
                 )
 
         return self
 
 
 class MaintenancePauseCreate(BaseModel):
-    pause_type: MaintenancePauseType
+    pause_type: Literal[
+        "spare_part",
+        "authorization",
+        "second_intervention",
+        "commercial_review",
+        "administrative_investigation",
+    ]
 
     reason: str = Field(
         min_length=3,
         max_length=2000,
     )
 
-    responsible_user_id: int = Field(gt=0)
+    responsible_user_id: int = Field(
+        gt=0,
+    )
 
     tentative_resume_at: datetime | None = None
 
@@ -251,14 +218,19 @@ class MaintenancePauseResolve(BaseModel):
 
 
 class MaintenanceMaterialCreate(BaseModel):
-    material_type: MaintenanceMaterialType
+    material_type: Literal[
+        "used",
+        "required",
+    ]
 
     name: str = Field(
         min_length=1,
         max_length=180,
     )
 
-    quantity: Decimal = Field(gt=0)
+    quantity: Decimal = Field(
+        gt=0,
+    )
 
     unit: str = Field(
         min_length=1,
@@ -288,7 +260,11 @@ class MaintenanceMaterialCreate(BaseModel):
 
 
 class MaintenanceChangeCreate(BaseModel):
-    change_type: MaintenanceChangeType
+    change_type: Literal[
+        "corrective",
+        "repair",
+        "investigation",
+    ]
 
     summary: str = Field(
         min_length=3,
@@ -339,15 +315,17 @@ class MaintenanceSignature(BaseModel):
     @model_validator(mode="after")
     def validate_signature(self):
         match = re.fullmatch(
-            r"data:image/(png|jpeg);base64,"
-            r"([A-Za-z0-9+/]+={0,2})",
+            (
+                r"data:image/(png|jpeg);base64,"
+                r"([A-Za-z0-9+/]+={0,2})"
+            ),
             self.signature_data_url,
         )
 
         if match is None:
             raise ValueError(
-                "La firma debe ser una imagen "
-                "PNG/JPEG en data URL base64"
+                "La firma debe ser una imagen PNG/JPEG "
+                "en data URL base64"
             )
 
         try:
@@ -396,95 +374,50 @@ class MaintenanceOverride(BaseModel):
     )
 
 
-class MaintenanceBlockerRead(BaseModel):
-    execution_id: int
-
-    severity: MaintenanceNoticeSeverity = "blocker"
-
-    message: str
-
-    section: str
-
-    field: str
-
-
-class MaintenanceNoticeRead(BaseModel):
-    execution_id: int
-
-    severity: MaintenanceNoticeSeverity
-
-    message: str
-
-    section: str
-
-    field: str
-
-
 class MaintenanceEntityRead(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
     )
 
     id: int
-
     created_at: datetime
-
     updated_at: datetime
 
 
 class MaintenancePauseRead(
     MaintenanceEntityRead
 ):
-    pause_type: MaintenancePauseType
-
+    pause_type: str
     reason: str
-
     responsible_user_id: int
-
     tentative_resume_at: datetime | None
-
-    status: MaintenancePauseStatus
-
+    status: str
     resolution: str | None
-
     resolved_by_id: int | None
-
     resolved_at: datetime | None
 
 
 class MaintenanceMaterialRead(
     MaintenanceEntityRead
 ):
-    material_type: MaintenanceMaterialType
-
+    material_type: str
     name: str
-
     quantity: Decimal
-
     unit: str
-
     component: str | None
-
     notes: str | None
-
     decision: str | None
-
     source: str
 
 
 class MaintenanceChangeRead(
     MaintenanceEntityRead
 ):
-    change_type: MaintenanceChangeType
-
+    change_type: str
     summary: str
-
-    status: MaintenanceChangeStatus
-
+    status: str
     quotation_item_id: int | None
-
     linked_service_order_id: int | None
-
     decision_reason: str | None
 
 
@@ -492,26 +425,17 @@ class MaintenanceExecutionRead(
     MaintenanceEntityRead
 ):
     service_order_id: int
-
     service_order_item_id: int
-
     service_unit_id: int
-
     service_stage_id: int
 
     equipment_id: int | None
-
     equipment_name: str
-
     work_order_number: int
 
-    maintenance_type: MaintenanceType
+    maintenance_type: str
 
-    original_maintenance_type: MaintenanceType
-
-    maintenance_type_evolved: bool
-
-    location_mode: MaintenanceLocationMode
+    location_mode: MaintenanceLocationMode | None
 
     configuration_snapshot: dict
 
@@ -520,78 +444,51 @@ class MaintenanceExecutionRead(
     technician_id: int | None
 
     field_request_status: str | None
-
     field_address: dict | None
 
     scheduled_for: datetime | None
 
     initial_condition: str | None
-
     initial_description: str | None
 
     findings: list
-
     actions: list
 
     final_condition: str | None
 
     functional_result: str | None
-
     technical_conclusion: str | None
 
     recommendations: list
 
     before_photos: list
-
     after_photos: list
 
     technical_completed_at: datetime | None
 
     report_status: str
-
     report_version: int
-
     report_generated_at: datetime | None
 
     signed_report_version: int | None
-
     signer_name: str | None
-
     signed_at: datetime | None
 
     client_decision: str | None
 
-    investigation_status: (
-        MaintenanceInvestigationStatus | None
-    )
-
-    linked_investigation_stage_id: int | None
+    investigation_status: str | None
 
     closed_at: datetime | None
 
     pauses: list[MaintenancePauseRead]
-
-    active_pauses: list[MaintenancePauseRead] = Field(
-        default_factory=list,
-    )
-
-    has_active_pause: bool = False
-
     materials: list[MaintenanceMaterialRead]
-
     changes: list[MaintenanceChangeRead]
 
-    blockers: list[MaintenanceBlockerRead] = Field(
+    blockers: list[dict] = Field(
         default_factory=list,
     )
 
-    closure_blockers: list[
-        MaintenanceBlockerRead
-    ] = Field(
-        default_factory=list,
-    )
-
-    notices: list[MaintenanceNoticeRead] = Field(
+    notices: list[dict] = Field(
         default_factory=list,
     )
 
@@ -603,12 +500,6 @@ class MaintenanceBoardRead(BaseModel):
         MaintenanceExecutionRead
     ]
 
-    blockers: list[
-        MaintenanceBlockerRead
-    ]
-
-    closure_blockers: list[
-        MaintenanceBlockerRead
-    ]
+    blockers: list[dict]
 
     can_close: bool

@@ -137,15 +137,11 @@ def _maintenance_configuration(item: ServiceOrderItem) -> dict:
     if maintenance_type not in {"preventive", "corrective"}:
         maintenance_type = "preventive"
 
-    location_mode = config.get("location_mode") or "laboratory"
-
-    if location_mode not in {"laboratory", "field"}:
-        location_mode = "laboratory"
-
     return {
         "maintenance_type": maintenance_type,
-        "location_mode": location_mode,
-        "base_materials": list(config.get("base_materials") or []),
+        "base_materials": list(
+            config.get("base_materials") or []
+        ),
         "source": (
             "quotation_snapshot"
             if config
@@ -240,13 +236,9 @@ def initialize_maintenance_execution(
                 service_unit_id=unit.id,
                 service_stage_id=stage.id,
                 maintenance_type=config["maintenance_type"],
-                location_mode=config["location_mode"],
+                location_mode=None,
                 configuration_snapshot=config,
-                status=(
-                    "pending_arrival"
-                    if config["location_mode"] == "laboratory"
-                    else "pending_assignment"
-                ),
+                status="pending_assignment",
             )
 
             db.add(execution)
@@ -307,6 +299,23 @@ def _blocker(
         "field": field,
     }
 
+def _location_blockers(
+    execution: MaintenanceExecution,
+) -> list[dict]:
+    if execution.location_mode in {
+        "laboratory",
+        "field",
+    }:
+        return []
+
+    return [
+        _blocker(
+            execution,
+            "Define la modalidad operativa de esta unidad.",
+            "assignment",
+            "location_mode",
+        )
+    ]
 
 def _equipment_blockers(
     execution: MaintenanceExecution,
@@ -314,12 +323,18 @@ def _equipment_blockers(
     if execution.service_unit.equipment_id is not None:
         return []
 
+    if execution.location_mode is None:
+        return []
+
     if execution.location_mode == "laboratory":
-        message = "Registra el arribo y vincula el equipo."
+        message = (
+            "Registra el arribo y vincula el equipo."
+        )
         section = "arrival"
     else:
         message = (
-            "Da de alta o vincula el equipo que será atendido en campo."
+            "Da de alta o vincula el equipo "
+            "que será atendido en campo."
         )
         section = "equipment"
 
@@ -363,7 +378,10 @@ def _field_visit_blockers(
     return [
         _blocker(
             execution,
-            "El técnico debe aceptar y programar la visita de campo.",
+            (
+                "El técnico debe aceptar y programar "
+                "la visita de campo."
+            ),
             "assignment",
             "field_request_status",
         )
@@ -581,13 +599,30 @@ def _technical_completion_blockers(
 ) -> list[dict]:
     blockers: list[dict] = []
 
-    blockers.extend(_equipment_blockers(execution))
-    blockers.extend(_assignment_blockers(execution))
-    blockers.extend(_field_visit_blockers(execution))
-    blockers.extend(_active_pause_blockers(execution))
-    blockers.extend(_commercial_blockers(execution))
-    blockers.extend(_investigation_blockers(execution))
-    blockers.extend(_technical_capture_blockers(execution))
+    blockers.extend(
+        _location_blockers(execution)
+    )
+    blockers.extend(
+        _equipment_blockers(execution)
+    )
+    blockers.extend(
+        _assignment_blockers(execution)
+    )
+    blockers.extend(
+        _field_visit_blockers(execution)
+    )
+    blockers.extend(
+        _active_pause_blockers(execution)
+    )
+    blockers.extend(
+        _commercial_blockers(execution)
+    )
+    blockers.extend(
+        _investigation_blockers(execution)
+    )
+    blockers.extend(
+        _technical_capture_blockers(execution)
+    )
 
     return blockers
 
@@ -691,7 +726,7 @@ def _current_blockers(
 
     if execution.status == "pending_assignment":
         return (
-            _equipment_blockers(execution)
+            _location_blockers(execution)
             + _assignment_blockers(execution)
         )
 
@@ -961,7 +996,11 @@ def register_arrival(
         else "partial"
     )
 
-    execution.status = "pending_assignment"
+    execution.status = (
+        "assigned"
+        if execution.technician_id is not None
+        else "pending_assignment"
+    )
 
     write_audit_log(
         db,
@@ -1008,14 +1047,15 @@ def register_field_equipment(
 
     if (
         execution.location_mode != "field"
-        or execution.status != "pending_assignment"
+        or execution.status != "assigned"
         or execution.service_unit.equipment_id is not None
     ):
         raise HTTPException(
             status_code=409,
             detail=(
-                "La unidad de campo no admite "
-                "este vínculo de equipo"
+                "Sólo un mantenimiento de campo "
+                "asignado y sin equipo vinculado "
+                "admite este registro"
             ),
         )
 
@@ -1132,15 +1172,6 @@ def prepare_execution(
             ),
         )
 
-    if execution.service_unit.equipment_id is None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Primero debe vincularse el equipo "
-                "que recibirá el mantenimiento"
-            ),
-        )
-
     technician = db.get(
         User,
         payload.technician_id,
@@ -1162,22 +1193,52 @@ def prepare_execution(
             ),
         )
 
-    execution.technician_id = payload.technician_id
+    execution.technician_id = (
+        payload.technician_id
+    )
 
-    if execution.location_mode == "field":
+    execution.location_mode = (
+        payload.location_mode
+    )
+
+    execution.scheduled_for = (
+        payload.scheduled_for
+    )
+
+    if payload.location_mode == "laboratory":
+        execution.field_address = None
+        execution.field_request_status = None
+
+        execution.status = (
+            "assigned"
+            if execution.service_unit.equipment_id
+            is not None
+            else "pending_arrival"
+        )
+
+    else:
         if not payload.field_address:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    "La visita de campo requiere dirección"
+                    "La modalidad de campo "
+                    "requiere dirección"
                 ),
             )
 
-        execution.field_address = payload.field_address
-        execution.field_request_status = "requested"
+        execution.field_address = (
+            payload.field_address
+        )
 
-    execution.status = "assigned"
-    execution.scheduled_for = payload.scheduled_for
+        execution.field_request_status = (
+            "requested"
+        )
+
+        # El equipo puede identificarse después
+        # de la asignación. start_execution()
+        # seguirá siendo la autoridad que impida
+        # iniciar sin equipo.
+        execution.status = "assigned"
 
     write_audit_log(
         db,
@@ -1186,8 +1247,12 @@ def prepare_execution(
         entity_id=execution.id,
         user_id=actor.id,
         new_values={
-            "technician_id": execution.technician_id,
-            "location_mode": execution.location_mode,
+            "technician_id": (
+                execution.technician_id
+            ),
+            "location_mode": (
+                execution.location_mode
+            ),
             "scheduled_for": (
                 execution.scheduled_for.isoformat()
                 if execution.scheduled_for
@@ -1202,7 +1267,6 @@ def prepare_execution(
         db,
         service_order_id,
     )
-
 
 def accept_field_visit(
     db: Session,
@@ -1237,16 +1301,39 @@ def accept_field_visit(
             ),
         )
 
-    if (
-        execution.location_mode != "field"
-        or execution.field_request_status != "requested"
-        or execution.technician_id != actor.id
-    ):
+    if execution.location_mode != "field":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Sólo un mantenimiento de campo "
+                "puede aceptar una visita"
+            ),
+        )
+
+    if execution.technician_id != actor.id:
         raise HTTPException(
             status_code=409,
             detail=(
                 "La visita no está asignada "
                 "a este técnico"
+            ),
+        )
+
+    if execution.field_request_status != "requested":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "La visita de campo no se encuentra "
+                "pendiente de aceptación"
+            ),
+        )
+
+    if execution.service_unit.equipment_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "La visita de campo requiere "
+                "un equipo vinculado"
             ),
         )
 
@@ -1260,7 +1347,10 @@ def accept_field_visit(
         entity_id=execution.id,
         user_id=actor.id,
         new_values={
-            "scheduled_for": scheduled_for.isoformat(),
+            "scheduled_for": (
+                scheduled_for.isoformat()
+            ),
+            "field_request_status": "accepted",
         },
     )
 
@@ -2530,7 +2620,8 @@ def _report_html(
         <p>
           <b>Tipo:</b> {escape(execution.maintenance_type)}
           ·
-          <b>Modalidad:</b> {escape(execution.location_mode)}
+          <b>Modalidad:</b>
+            {escape(execution.location_mode or "No definida")}
         </p>
 
         {evolution}

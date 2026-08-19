@@ -141,6 +141,7 @@ export default function MaintenanceEtsTab({
 
   const [assignment, setAssignment] = useState({
     technician_id: '',
+    location_mode: '',
     address: '',
     scheduled_for: '',
   });
@@ -291,6 +292,28 @@ export default function MaintenanceEtsTab({
 
   useEffect(() => {
     setHighlightedField('');
+
+    if (!selected) {
+      return;
+    }
+
+    setAssignment((current) => ({
+      ...current,
+      technician_id:
+        selected.technician_id
+          ? String(selected.technician_id)
+          : '',
+      location_mode:
+        selected.location_mode || '',
+      address:
+        selected.field_address?.formatted || '',
+      scheduled_for:
+        selected.scheduled_for
+          ? new Date(
+            selected.scheduled_for,
+          ).toISOString().slice(0, 16)
+          : '',
+    }));
   }, [selectedId]);
 
 
@@ -528,10 +551,14 @@ export default function MaintenanceEtsTab({
                 }
                 {' · '}
                 {
-                  locationLabels[
-                    item.location_mode
-                  ]
-                  || item.location_mode
+                  item.location_mode
+                    ? (
+                      locationLabels[
+                        item.location_mode
+                      ]
+                      || item.location_mode
+                    )
+                    : 'Modalidad pendiente'
                 }
               </option>
             ),
@@ -693,10 +720,12 @@ export default function MaintenanceEtsTab({
           {
             selected.location_mode === 'field'
               ? 'Campo; equipo con cliente'
-              : (
-                'Laboratorio; custodia MYC '
-                + 'al registrar arribo'
-              )
+              : selected.location_mode === 'laboratory'
+                ? (
+                  'Laboratorio; custodia MYC '
+                  + 'al registrar arribo'
+                )
+                : 'Modalidad pendiente de definir'
           }
         </span>
 
@@ -733,7 +762,9 @@ export default function MaintenanceEtsTab({
           {
             selected.location_mode === 'laboratory'
               ? 'Arribo, equipo y OT'
-              : 'Equipo atendido en campo'
+              : selected.location_mode === 'field'
+                ? 'Equipo atendido en campo'
+                : 'Equipo del servicio'
           }
         </h4>
 
@@ -831,43 +862,52 @@ export default function MaintenanceEtsTab({
 
 
         {canManage && !selected.equipment_id ? (
-          <button
-            className="primary-button"
-            disabled={
-              busy
-              || !equipment.name
-            }
-            onClick={() =>
-              mutate(
-                () => (
+          <>
+            {selected.location_mode ? (
+              <button
+                className="primary-button"
+                disabled={
+                  busy
+                  || !equipment.name
+                }
+                onClick={() =>
+                  mutate(
+                    () => (
+                      selected.location_mode
+                      === 'laboratory'
+                        ? registerMaintenanceArrival(
+                          order.id,
+                          selected.id,
+                          equipment,
+                        )
+                        : registerMaintenanceFieldEquipment(
+                          order.id,
+                          selected.id,
+                          equipment,
+                        )
+                    ),
+                    (
+                      'Equipo vinculado a la unidad '
+                      + 'y OT institucional.'
+                    ),
+                  )
+                }
+                type="button"
+              >
+                {
                   selected.location_mode
                   === 'laboratory'
-                    ? registerMaintenanceArrival(
-                      order.id,
-                      selected.id,
-                      equipment,
-                    )
-                    : registerMaintenanceFieldEquipment(
-                      order.id,
-                      selected.id,
-                      equipment,
-                    )
-                ),
-                (
-                  'Equipo vinculado a la unidad '
-                  + 'y OT institucional.'
-                ),
-              )
-            }
-            type="button"
-          >
-            {
-              selected.location_mode
-              === 'laboratory'
-                ? 'Registrar arribo'
-                : 'Vincular equipo en campo'
-            }
-          </button>
+                    ? 'Registrar arribo'
+                    : 'Vincular equipo en campo'
+                }
+              </button>
+            ) : (
+              <p>
+                Define primero la modalidad operativa
+                en la asignación.
+              </p>
+            )}
+          </>
         ) : (
           <p>
             Equipo vinculado:
@@ -893,6 +933,42 @@ export default function MaintenanceEtsTab({
         </h4>
 
         <div className="maintenance-grid">
+          <label>
+            Modalidad operativa
+
+            <select
+              name="location_mode"
+              disabled={
+                selected.status !== 'pending_assignment'
+              }
+              onChange={(event) =>
+                setAssignment({
+                  ...assignment,
+                  location_mode:
+                    event.target.value,
+                  address:
+                    event.target.value === 'field'
+                      ? assignment.address
+                      : '',
+                })
+              }
+              value={assignment.location_mode}
+            >
+              <option value="">
+                Seleccionar modalidad
+              </option>
+
+              <option value="laboratory">
+                Laboratorio
+              </option>
+
+              <option value="field">
+                Campo
+              </option>
+            </select>
+          </label>
+
+
           <label
             className={blockerClass(
               'technician_id',
@@ -902,6 +978,9 @@ export default function MaintenanceEtsTab({
 
             <select
               name="technician_id"
+              disabled={
+                selected.status !== 'pending_assignment'
+              }
               onChange={(event) =>
                 setAssignment({
                   ...assignment,
@@ -927,11 +1006,15 @@ export default function MaintenanceEtsTab({
           </label>
 
 
-          {selected.location_mode === 'field' ? (
+          {assignment.location_mode === 'field' ? (
             <label>
               Dirección
 
               <textarea
+                name="field_address"
+                disabled={
+                  selected.status !== 'pending_assignment'
+                }
                 onChange={(event) =>
                   setAssignment({
                     ...assignment,
@@ -978,8 +1061,10 @@ export default function MaintenanceEtsTab({
                   disabled={
                     busy
                     || !assignment.technician_id
+                    || !assignment.location_mode
                     || (
-                      selected.location_mode === 'field'
+                      assignment.location_mode
+                      === 'field'
                       && !assignment.address.trim()
                     )
                   }
@@ -995,8 +1080,11 @@ export default function MaintenanceEtsTab({
                                 assignment.technician_id,
                               ),
 
+                            location_mode:
+                              assignment.location_mode,
+
                             field_address:
-                              selected.location_mode
+                              assignment.location_mode
                               === 'field'
                                 ? {
                                   formatted:
@@ -1009,12 +1097,12 @@ export default function MaintenanceEtsTab({
                               || null,
                           },
                         ),
-                      'Mantenimiento asignado.',
+                      'Mantenimiento preparado.',
                     )
                   }
                   type="button"
                 >
-                  Asignar
+                  Preparar y asignar
                 </button>
               )
               : null
