@@ -37,17 +37,6 @@
   --myc-danger: #c44a47;
   --myc-info: #3a86c8;
 
-  /* Institutional layer scale */
-  --z-content: 1;
-  --z-dropdown: 200;
-  --z-sticky: 300;
-  --z-navigation: 400;
-  --z-modal-backdrop: 1000;
-  --z-modal: 1010;
-  --z-modal-nested-backdrop: 1100;
-  --z-modal-nested: 1110;
-  --z-toast: 1200;
-
   --glass-bg: rgba(255, 255, 255, 0.28);
   --glass-bg-strong: rgba(255, 255, 255, 0.38);
   --glass-bg-soft: rgba(255, 255, 255, 0.20);
@@ -565,7 +554,7 @@ button {
     padding 180ms ease,
     transform 220ms ease,
     width 180ms ease;
-  z-index: var(--z-navigation);
+  z-index: 20;
 }
 
 .sidebar__controls {
@@ -701,7 +690,6 @@ button {
   overflow: hidden;
   padding: 12px 18px;
   position: relative;
-  z-index: var(--z-navigation);
 }
 
 .topbar::before,
@@ -1347,7 +1335,7 @@ button {
   justify-content: center;
   padding: 22px;
   position: fixed;
-  z-index: var(--z-modal-backdrop);
+  z-index: 20;
 }
 
 .client-modal {
@@ -1364,7 +1352,6 @@ button {
   padding: 22px;
   position: relative;
   width: min(780px, 100%);
-  z-index: var(--z-modal);
 }
 
 .client-modal::before {
@@ -1789,7 +1776,7 @@ button {
   position: absolute;
   right: 0;
   top: calc(100% + 6px);
-  z-index: var(--z-dropdown);
+  z-index: 20;
 }
 
 .ets-admin-actions__menu button {
@@ -3504,7 +3491,7 @@ tablas y acordeones operativos que
 
 .modal-backdrop--nested {
   background: rgba(5, 31, 45, 0.64);
-  z-index: var(--z-modal-nested-backdrop);
+  z-index: 40;
 }
 
 .certificate-client-modal {
@@ -4536,7 +4523,7 @@ tablas y acordeones operativos que
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  z-index: var(--z-dropdown);
+  z-index: 20;
 }
 .quote-service-picker__menu button { background: transparent; border: 0; color: var(--myc-navy); cursor: pointer; display: grid; gap: 2px; padding: 9px 11px; text-align: left; }
 .quote-service-picker__menu button:hover,
@@ -4854,7 +4841,7 @@ tablas y acordeones operativos que
     top: 0;
     transform: translateX(-104%);
     width: min(84vw, 320px);
-    z-index: var(--z-navigation);
+    z-index: 50;
   }
 
   .is-mobile-sidebar-open .sidebar {
@@ -4873,7 +4860,7 @@ tablas y acordeones operativos que
     right: 0;
     top: 0;
     transition: opacity 180ms ease;
-    z-index: calc(var(--z-navigation) - 10);
+    z-index: 45;
   }
 
   .is-mobile-sidebar-open .sidebar-overlay {

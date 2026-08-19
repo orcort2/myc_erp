@@ -174,14 +174,78 @@ def test_field_has_no_arrival_and_requires_equipment_request_acceptance_and_sche
 
 def test_typed_spare_part_pause_and_second_visit_are_traceable(ctx):
     db, _, technician, advisor, client = ctx
-    order = _order(db, client, advisor, _catalog(db))
-    execution = _execution(db, order); _start_lab(db, order, execution, advisor, technician)
-    board = add_pause(db, order.id, execution.id, MaintenancePauseCreate(pause_type="spare_part", reason="Esperando sello", responsible_user_id=advisor.id), actor=technician)
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        _catalog(db),
+    )
+
+    execution = _execution(db, order)
+
+    _start_lab(
+        db,
+        order,
+        execution,
+        advisor,
+        technician,
+    )
+
+    board = add_pause(
+        db,
+        order.id,
+        execution.id,
+        MaintenancePauseCreate(
+            pause_type="spare_part",
+            reason="Esperando sello",
+            responsible_user_id=advisor.id,
+        ),
+        actor=technician,
+    )
+
     pause = board["executions"][0]["pauses"][0]
-    assert board["executions"][0]["status"] == "paused"
-    resolve_pause(db, order.id, execution.id, pause.id, "Sello recibido", actor=technician)
-    add_pause(db, order.id, execution.id, MaintenancePauseCreate(pause_type="second_intervention", reason="Segunda visita necesaria", responsible_user_id=technician.id), actor=technician)
-    assert len(_execution(db, order).pauses) == 2
+
+    assert (
+        board["executions"][0]["status"]
+        == "in_maintenance"
+    )
+    assert (
+        board["executions"][0]["has_active_pause"]
+        is True
+    )
+    assert pause.status == "active"
+    assert pause.pause_type == "spare_part"
+
+    resolve_pause(
+        db,
+        order.id,
+        execution.id,
+        pause.id,
+        "Sello recibido",
+        actor=technician,
+    )
+
+    board = add_pause(
+        db,
+        order.id,
+        execution.id,
+        MaintenancePauseCreate(
+            pause_type="second_intervention",
+            reason="Segunda visita necesaria",
+            responsible_user_id=technician.id,
+        ),
+        actor=technician,
+    )
+
+    assert (
+        board["executions"][0]["status"]
+        == "in_maintenance"
+    )
+
+    assert len(
+        _execution(db, order).pauses
+    ) == 2
 
 
 def test_preventive_corrective_requires_own_approved_commercial_link(ctx):
@@ -251,19 +315,151 @@ def test_repair_is_only_requested_and_never_executed_inside_maintenance(ctx):
 
 def test_inoperable_creates_administrative_block_and_linked_investigation(ctx):
     db, admin, technician, advisor, client = ctx
-    order = _order(db, client, advisor, _catalog(db))
-    execution = _execution(db, order); _start_lab(db, order, execution, advisor, technician)
-    save_capture(db, order.id, execution.id, _capture("not_operational"), actor=technician)
-    assert _execution(db, order).status == "paused"
-    assert any(item.pause_type == "administrative_investigation" for item in _execution(db, order).pauses)
-    with pytest.raises(HTTPException): complete_technical(db, order.id, execution.id, actor=technician)
-    request_change(db, order.id, execution.id, MaintenanceChangeCreate(change_type="investigation", summary="Diagnóstico administrativo"), actor=technician)
-    change = _execution(db, order).changes[-1]
-    investigation_order = _order(db, client, advisor, _other_service(db, "general_service"), folio="COT-INVESTIGATION")
-    resolve_change(db, order.id, execution.id, change.id, MaintenanceChangeResolve(decision="linked", reason="Investigación vinculada", linked_service_order_id=investigation_order.id), actor=admin)
-    assert _execution(db, order).linked_investigation_stage_id is not None
-    resolve_investigation(db, order.id, execution.id, "Investigación concluida y documentada", actor=admin)
-    assert _execution(db, order).investigation_status == "resolved"
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        _catalog(db),
+    )
+
+    execution = _execution(db, order)
+
+    _start_lab(
+        db,
+        order,
+        execution,
+        advisor,
+        technician,
+    )
+
+    save_capture(
+        db,
+        order.id,
+        execution.id,
+        _capture("not_operational"),
+        actor=technician,
+    )
+
+    execution = _execution(db, order)
+
+    # El lifecycle principal no cambia.
+    assert execution.status == "in_maintenance"
+
+    # El técnico solamente declara la condición.
+    assert (
+        execution.investigation_status
+        == "required"
+    )
+
+    # Todavía no existe una pausa administrativa:
+    # el técnico no tiene autoridad para abrirla.
+    assert not any(
+        item.status == "active"
+        and item.pause_type
+        == "administrative_investigation"
+        for item in execution.pauses
+    )
+
+    # La investigación requerida bloquea la
+    # terminación técnica.
+    with pytest.raises(HTTPException):
+        complete_technical(
+            db,
+            order.id,
+            execution.id,
+            actor=technician,
+        )
+
+    request_change(
+        db,
+        order.id,
+        execution.id,
+        MaintenanceChangeCreate(
+            change_type="investigation",
+            summary="Diagnóstico administrativo",
+        ),
+        actor=technician,
+    )
+
+    change = _execution(
+        db,
+        order,
+    ).changes[-1]
+
+    investigation_order = _order(
+        db,
+        client,
+        advisor,
+        _other_service(
+            db,
+            "general_service",
+        ),
+        folio="COT-INVESTIGATION",
+    )
+
+    resolve_change(
+        db,
+        order.id,
+        execution.id,
+        change.id,
+        MaintenanceChangeResolve(
+            decision="linked",
+            reason="Investigación vinculada",
+            linked_service_order_id=(
+                investigation_order.id
+            ),
+        ),
+        actor=admin,
+    )
+
+    execution = _execution(db, order)
+
+    assert (
+        execution.status
+        == "in_maintenance"
+    )
+
+    assert (
+        execution.investigation_status
+        == "open"
+    )
+
+    assert (
+        execution.linked_investigation_stage_id
+        is not None
+    )
+
+    # Ahora sí existe la pausa administrativa,
+    # creada dentro de la resolución autorizada.
+    assert any(
+        item.status == "active"
+        and item.pause_type
+        == "administrative_investigation"
+        for item in execution.pauses
+    )
+
+    resolve_investigation(
+        db,
+        order.id,
+        execution.id,
+        "Investigación concluida y documentada",
+        actor=admin,
+    )
+
+    execution = _execution(db, order)
+
+    assert (
+        execution.investigation_status
+        == "resolved"
+    )
+
+    assert not any(
+        item.status == "active"
+        and item.pause_type
+        == "administrative_investigation"
+        for item in execution.pauses
+    )
 
 
 def test_maintenance_and_calibration_coexist_as_independent_units(ctx):
