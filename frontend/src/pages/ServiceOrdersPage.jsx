@@ -109,6 +109,47 @@ function safeNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
 }
 
+function getServiceOrderCapabilities(order) {
+  const items = Array.isArray(order?.items) ? order.items : [];
+
+  const hasSale = items.some(
+    (item) => item.operational_category === 'sale'
+  );
+
+  const hasMaintenance = items.some(
+    (item) => item.operational_category === 'maintenance'
+  );
+
+  const hasDirectCalibration = items.some(
+    (item) => item.operational_category === 'calibration'
+  );
+
+  const hasSaleWithCalibration = items.some((item) => {
+    if (item.operational_category !== 'sale') {
+      return false;
+    }
+
+    const saleConfiguration =
+      item.service_snapshot?.sale_configuration_snapshot;
+
+    return Boolean(
+      saleConfiguration?.included_calibration_catalog_item_id ||
+      saleConfiguration?.included_calibration_snapshot
+    );
+  });
+
+  const hasCalibration =
+    hasDirectCalibration || hasSaleWithCalibration;
+
+  return {
+    hasSale,
+    hasMaintenance,
+    hasDirectCalibration,
+    hasSaleWithCalibration,
+    hasCalibration,
+  };
+}
+
 function safeText(value, fallback = '-') {
   return value === undefined || value === null || value === '' ? fallback : value;
 }
@@ -289,19 +330,212 @@ function ServiceOrdersPage({ user = null }) {
     () => new Map(users.map((systemUser) => [systemUser.id, systemUser])),
     [users]
   );
-  const selectedOrderHasSale = useMemo(
-    () => Boolean((selectedOrder?.items || []).some((item) => item.operational_category === 'sale')),
+  const selectedOrderCapabilities = useMemo(
+    () => getServiceOrderCapabilities(selectedOrder),
     [selectedOrder]
   );
-  const selectedOrderHasMaintenance = useMemo(
-    () => Boolean((selectedOrder?.items || []).some((item) => item.operational_category === 'maintenance')),
-    [selectedOrder]
-  );
+
+  const {
+    hasSale: selectedOrderHasSale,
+    hasMaintenance: selectedOrderHasMaintenance,
+    hasCalibration: selectedOrderHasCalibration,
+  } = selectedOrderCapabilities;
+
+  const selectedOrderTabs = useMemo(() => {
+    if (!selectedOrder) {
+      return [];
+    }
+
+    return [
+      ['info', 'Resumen'],
+
+      ...(selectedOrderHasMaintenance
+        ? [['maintenance', 'Mantenimiento']]
+        : []),
+
+      ...(selectedOrderHasSale
+        ? [['sale', 'Venta']]
+        : []),
+
+      ...(selectedOrderHasCalibration
+        ? [
+            ['equipment', 'Equipos'],
+            ['field-sheet', 'Hojas de Campo'],
+            ['capture', 'Captura'],
+            ['quality', 'Calidad'],
+            ['certificates', 'Certificados'],
+          ]
+        : []),
+
+      ['billing', 'Facturacion'],
+      ['documents', 'Documentos'],
+      ['notes', 'Actividad'],
+      ['history', 'Historial'],
+    ];
+  }, [
+    selectedOrder,
+    selectedOrderHasSale,
+    selectedOrderHasMaintenance,
+    selectedOrderHasCalibration,
+  ]);
 
   const equipmentById = useMemo(
     () => new Map(equipment.map((item) => [item.id, item])),
     [equipment]
   );
+
+  const selectedOrderItemsById = useMemo(
+    () =>
+      new Map(
+        (selectedOrder?.items || []).map((item) => [
+          Number(item.id),
+          item,
+        ])
+      ),
+    [selectedOrder]
+  );
+
+  function getEquipmentOperationalContext(item) {
+    const sourceItem = item?.service_order_item_id
+      ? selectedOrderItemsById.get(Number(item.service_order_item_id))
+      : null;
+
+    const operationalCategory =
+      sourceItem?.operational_category || null;
+
+    const saleConfiguration =
+      sourceItem?.service_snapshot?.sale_configuration_snapshot || null;
+
+    const saleIncludesCalibration = Boolean(
+      saleConfiguration?.included_calibration_catalog_item_id ||
+      saleConfiguration?.included_calibration_snapshot
+    );
+
+    if (operationalCategory === 'sale') {
+      if (saleIncludesCalibration || item?.calibration_scope) {
+        return {
+          key: 'sale-calibration',
+          label: 'Venta + calibración',
+          hasMetrology: true,
+          sourceItem,
+        };
+      }
+
+      return {
+        key: 'sale',
+        label: 'Venta',
+        hasMetrology: false,
+        sourceItem,
+      };
+    }
+
+    if (operationalCategory === 'maintenance') {
+      return {
+        key: 'maintenance',
+        label: 'Mantenimiento',
+        hasMetrology: Boolean(item?.calibration_scope),
+        sourceItem,
+      };
+    }
+
+    if (operationalCategory === 'calibration') {
+      return {
+        key: 'calibration',
+        label: 'Calibración',
+        hasMetrology: true,
+        sourceItem,
+      };
+    }
+
+    if (item?.calibration_scope) {
+      return {
+        key: 'calibration',
+        label: 'Calibración',
+        hasMetrology: true,
+        sourceItem,
+      };
+    }
+
+    return {
+      key: 'equipment',
+      label: 'Equipo',
+      hasMetrology: false,
+      sourceItem,
+    };
+  }
+
+  function getEquipmentNextStep({
+    item,
+    operationalContext,
+    sheet,
+    certificate,
+  }) {
+    if (!operationalContext.hasMetrology) {
+      return {
+        label: 'Proceso operativo',
+        value:
+          equipmentStatusLabels[item.status] ??
+          item.status ??
+          'Pendiente',
+      };
+    }
+
+    if (!sheet) {
+      return {
+        label: 'Siguiente paso',
+        value: 'Preparar hoja de campo',
+      };
+    }
+
+    if (
+      ['draft', 'in_progress', 'returned_to_technician', 'rejected']
+        .includes(sheet.status)
+    ) {
+      return {
+        label: 'Siguiente paso',
+        value: 'Completar hoja de campo',
+      };
+    }
+
+    if (
+      ['completed', 'under_review']
+        .includes(sheet.status)
+    ) {
+      return {
+        label: 'Siguiente paso',
+        value: 'Revisión de hoja',
+      };
+    }
+
+    if (!certificate) {
+      return {
+        label: 'Siguiente paso',
+        value: 'Preparar certificado',
+      };
+    }
+
+    if (certificate.authenticated_pdf_path) {
+      return {
+        label: 'Estado técnico',
+        value: 'Certificado autenticado',
+      };
+    }
+
+    if (certificate.final_pdf_path) {
+      return {
+        label: 'Siguiente paso',
+        value: 'Revisión / autenticación',
+      };
+    }
+
+    return {
+      label: 'Estado técnico',
+      value:
+        certificateStatusLabels[certificate.status] ??
+        certificate.status ??
+        'En proceso',
+    };
+  }
 
   const technicianOptions = useMemo(
     () => users.filter((systemUser) => systemUser.is_active !== false && canManageServices(systemUser)),
@@ -2680,20 +2914,7 @@ function ServiceOrdersPage({ user = null }) {
             ) : null}
 
             <div className="ets-folder-tabs" role="tablist" aria-label="Carpetas del expediente">
-              {[
-                ['info', 'Resumen'],
-                ...(selectedOrderHasMaintenance ? [['maintenance', 'Mantenimiento']] : []),
-                ...(selectedOrderHasSale ? [['sale', 'Venta']] : []),
-                ['equipment', 'Equipos'],
-                ['field-sheet', 'Hojas de Campo'],
-                ['capture', 'Captura'],
-                ['quality', 'Calidad'],
-                ['certificates', 'Certificados'],
-                ['billing', 'Facturacion'],
-                ['documents', 'Documentos'],
-                ['notes', 'Actividad'],
-                ['history', 'Historial']
-              ].map(([key, label]) => (
+                {selectedOrderTabs.map(([key, label]) => (
                 <button
                   aria-selected={activeTab === key}
                   className={activeTab === key ? 'ets-folder-tab is-active' : 'ets-folder-tab'}
@@ -2989,62 +3210,133 @@ function ServiceOrdersPage({ user = null }) {
                           </span>
                         </div>
                         <div className="ets-equipment-card-grid ets-animated-list">
-                          {groupEquipment.length ? (
-                            groupEquipment.map((item) => {
-                              const sheet = fieldSheetsByEquipmentId.get(item.id);
-                              const certificate = activeCertificatesByEquipmentId.get(item.id);
-                              return (
-                                <button
-                                  className={`ets-equipment-card ets-list-item${exitingEquipmentIds.includes(item.id) ? ' is-exiting' : ''}`}
-                                  key={item.id}
-                                  onClick={() => openEquipmentDetail(item)}
-                                  type="button"
-                                >
-                                  <span className="ets-equipment-card__eyebrow">{calibrationScopeLabels[item.calibration_scope] || 'Sin tipo'}</span>
-                                  <strong>{item.name}</strong>
-                                  <mark className={`quotation-status status-${item.status}`}>
-                                    {equipmentStatusLabels[item.status] ?? item.status}
+                          {groupEquipment.map((item) => {
+                            const sheet = fieldSheetsByEquipmentId.get(item.id);
+
+                            const certificate =
+                              activeCertificatesByEquipmentId.get(item.id);
+
+                            const operationalContext =
+                              getEquipmentOperationalContext(item);
+
+                            const nextStep = getEquipmentNextStep({
+                              item,
+                              operationalContext,
+                              sheet,
+                              certificate,
+                            });
+
+                            const scopeLabel = item.calibration_scope
+                              ? calibrationScopeLabels[item.calibration_scope] ||
+                                item.calibration_scope
+                              : null;
+
+                            return (
+                              <button
+                                className={[
+                                  'ets-equipment-card',
+                                  `ets-equipment-card--${operationalContext.key}`,
+                                  'ets-list-item',
+                                  exitingEquipmentIds.includes(item.id)
+                                    ? 'is-exiting'
+                                    : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ')}
+                                key={item.id}
+                                onClick={() => openEquipmentDetail(item)}
+                                type="button"
+                              >
+                                <header className="ets-equipment-card__header">
+                                  <div className="ets-equipment-card__heading">
+                                    <span
+                                      className={`ets-equipment-card__eyebrow is-${operationalContext.key}`}
+                                    >
+                                      {operationalContext.label}
+                                    </span>
+
+                                    <strong className="ets-equipment-card__name">
+                                      {item.name || 'Equipo sin nombre'}
+                                    </strong>
+                                  </div>
+
+                                  <mark
+                                    className={`quotation-status status-${item.status}`}
+                                  >
+                                    {equipmentStatusLabels[item.status] ??
+                                      item.status ??
+                                      'Pendiente'}
                                   </mark>
-                                  <dl>
-                                    <div>
-                                      <dt>Marca</dt>
-                                      <dd>{item.brand || '-'}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Modelo</dt>
-                                      <dd>{item.model || '-'}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Serie</dt>
-                                      <dd>{item.serial_number || '-'}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>ID interno</dt>
-                                      <dd>{item.internal_id || '-'}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Folio reservado</dt>
-                                      <dd>{certificate?.expected_folio || certificate?.folio || '-'}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Hoja</dt>
-                                      <dd>{sheet ? `Hoja ${sheet.id}` : 'Pendiente'}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>Certificado</dt>
-                                      <dd>{certificate ? certificateStatusLabels[certificate.status] ?? certificate.status : 'Pendiente'}</dd>
-                                    </div>
-                                    <div>
-                                      <dt>PDF</dt>
-                                      <dd>{certificate?.authenticated_pdf_path ? 'Autenticado' : certificate?.final_pdf_path ? 'Original' : 'Pendiente'}</dd>
-                                    </div>
-                                  </dl>
-                                </button>
-                              );
-                            })
-                          ) : (
-                            <div className="clients-empty">Sin equipos para esta Orden de Trabajo.</div>
-                          )}
+                                </header>
+
+                                <div className="ets-equipment-card__identity">
+                                  <span>{item.brand || 'Marca pendiente'}</span>
+
+                                  <i aria-hidden="true">·</i>
+
+                                  <span>{item.model || 'Modelo pendiente'}</span>
+                                </div>
+
+                                <dl className="ets-equipment-card__identifiers">
+                                  <div>
+                                    <dt>Serie</dt>
+                                    <dd>{item.serial_number || 'Pendiente'}</dd>
+                                  </div>
+
+                                  <div>
+                                    <dt>ID interno</dt>
+                                    <dd>{item.internal_id || 'Pendiente'}</dd>
+                                  </div>
+                                </dl>
+
+                                <div className="ets-equipment-card__flow">
+                                  <article className="ets-equipment-card__flow-state">
+                                    <span>Operación</span>
+                                    <strong>{operationalContext.label}</strong>
+
+                                    {scopeLabel ? (
+                                      <small>{scopeLabel}</small>
+                                    ) : (
+                                      <small>Sin proceso metrológico</small>
+                                    )}
+                                  </article>
+
+                                  {operationalContext.hasMetrology ? (
+                                    <article className="ets-equipment-card__flow-state">
+                                      <span>Proceso técnico</span>
+
+                                      <strong>
+                                        {sheet
+                                          ? fieldSheetStatusLabels[sheet.status] ??
+                                            sheet.status ??
+                                            'Hoja creada'
+                                          : 'Pendiente'}
+                                      </strong>
+
+                                      <small>
+                                        {certificate
+                                          ? certificateStatusLabels[certificate.status] ??
+                                            certificate.status
+                                          : 'Certificado pendiente'}
+                                      </small>
+                                    </article>
+                                  ) : null}
+                                </div>
+
+                                <footer className="ets-equipment-card__footer">
+                                  <div>
+                                    <span>{nextStep.label}</span>
+                                    <strong>{nextStep.value}</strong>
+                                  </div>
+
+                                  <span className="ets-equipment-card__open">
+                                    Ver detalle
+                                    <ChevronRight size={16} />
+                                  </span>
+                                </footer>
+                              </button>
+                            );
+                          })}
                         </div>
                       </section>
                     );

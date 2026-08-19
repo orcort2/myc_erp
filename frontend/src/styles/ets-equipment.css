@@ -1,0 +1,352 @@
+/* ==========================================
+   ETS · Tarjetas operativas de equipos
+========================================== */
+
+.ets-equipment-card-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns:
+    repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.ets-equipment-card {
+  appearance: none;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(216, 225, 227, 0.68),
+      rgba(177, 195, 198, 0.34)
+    ),
+    rgba(185, 201, 204, 0.5);
+  border: 1px solid rgba(7, 76, 86, 0.18);
+  border-radius: 14px;
+  color: var(--myc-text);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 300px;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+  text-align: left;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+  width: 100%;
+}
+
+.ets-equipment-card::before {
+  background: var(--myc-primary);
+  content: "";
+  height: 3px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+}
+
+.ets-equipment-card--sale::before {
+  background: var(--myc-info);
+}
+
+.ets-equipment-card--sale-calibration::before {
+  background:
+    linear-gradient(
+      90deg,
+      var(--myc-info) 0 48%,
+      var(--myc-primary) 52% 100%
+    );
+}
+
+.ets-equipment-card--calibration::before {
+  background: var(--myc-primary);
+}
+
+.ets-equipment-card--maintenance::before {
+  background: var(--myc-warning);
+}
+
+.ets-equipment-card:hover,
+.ets-equipment-card:focus-visible {
+  border-color: rgba(11, 106, 117, 0.42);
+  box-shadow:
+    0 18px 36px rgba(5, 31, 45, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  outline: none;
+  transform: translateY(-2px);
+}
+
+.ets-equipment-card:focus-visible {
+  box-shadow:
+    0 0 0 3px rgba(61, 183, 179, 0.2),
+    0 18px 36px rgba(5, 31, 45, 0.14);
+}
+
+.ets-equipment-card__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 18px 18px 12px;
+}
+
+.ets-equipment-card__heading {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.ets-equipment-card__eyebrow {
+  align-items: center;
+  background: rgba(8, 117, 111, 0.1);
+  border: 1px solid rgba(8, 117, 111, 0.14);
+  border-radius: 999px;
+  color: var(--myc-primary-dark);
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  min-height: 24px;
+  padding: 0 9px;
+  text-transform: uppercase;
+  width: fit-content;
+}
+
+.ets-equipment-card__eyebrow.is-sale {
+  background: rgba(58, 134, 200, 0.1);
+  border-color: rgba(58, 134, 200, 0.18);
+  color: #255f91;
+}
+
+.ets-equipment-card__eyebrow.is-sale-calibration {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(58, 134, 200, 0.1),
+      rgba(11, 106, 117, 0.12)
+    );
+  border-color: rgba(11, 106, 117, 0.18);
+  color: var(--myc-primary-dark);
+}
+
+.ets-equipment-card__eyebrow.is-maintenance {
+  background: rgba(210, 154, 26, 0.11);
+  border-color: rgba(210, 154, 26, 0.18);
+  color: #805d12;
+}
+
+.ets-equipment-card__name {
+  color: var(--myc-navy);
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.ets-equipment-card__header .quotation-status {
+  flex: 0 0 auto;
+}
+
+.ets-equipment-card__identity {
+  align-items: center;
+  color: var(--myc-soft-text);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  font-weight: 760;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 18px 14px;
+}
+
+.ets-equipment-card__identity i {
+  color: rgba(95, 112, 115, 0.5);
+  font-style: normal;
+}
+
+.ets-equipment-card__identifiers {
+  border-bottom: 1px solid rgba(7, 76, 86, 0.1);
+  border-top: 1px solid rgba(7, 76, 86, 0.1);
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.ets-equipment-card__identifiers > div {
+  background: rgba(255, 255, 255, 0.18);
+  min-width: 0;
+  padding: 11px 18px;
+}
+
+.ets-equipment-card__identifiers > div + div {
+  border-left: 1px solid rgba(7, 76, 86, 0.1);
+}
+
+.ets-equipment-card__identifiers dt {
+  color: var(--myc-soft-text);
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ets-equipment-card__identifiers dd {
+  color: var(--myc-navy);
+  font-size: 12.5px;
+  font-weight: 850;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.ets-equipment-card__flow {
+  display: grid;
+  gap: 8px;
+  padding: 14px 18px;
+}
+
+.ets-equipment-card__flow-state {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(7, 76, 86, 0.1);
+  border-radius: 9px;
+  display: grid;
+  gap: 3px;
+  grid-template-columns:
+    minmax(90px, 0.65fr)
+    minmax(120px, 1fr);
+  padding: 9px 11px;
+}
+
+.ets-equipment-card__flow-state > span {
+  color: var(--myc-soft-text);
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.ets-equipment-card__flow-state > strong {
+  color: var(--myc-navy);
+  font-size: 12px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.ets-equipment-card__flow-state > small {
+  color: var(--myc-soft-text);
+  font-size: 10.5px;
+  font-weight: 720;
+  grid-column: 1 / -1;
+}
+
+.ets-equipment-card__footer {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.16);
+  border-top: 1px solid rgba(7, 76, 86, 0.1);
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-top: auto;
+  min-height: 64px;
+  padding: 11px 18px;
+}
+
+.ets-equipment-card__footer > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ets-equipment-card__footer > div > span {
+  color: var(--myc-soft-text);
+  font-size: 9.5px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ets-equipment-card__footer > div > strong {
+  color: var(--myc-primary-dark);
+  font-size: 12.5px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.ets-equipment-card__open {
+  align-items: center;
+  color: var(--myc-primary-dark);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 900;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* El detalle de equipo conserva sus estilos independientes. */
+
+.ets-equipment-notes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.ets-equipment-notes article {
+  background: rgba(255, 255, 255, 0.38);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.ets-equipment-notes span {
+  color: var(--myc-soft-text);
+  font-size: 11px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.ets-equipment-notes p {
+  color: var(--myc-navy);
+  font-size: 13px;
+  font-weight: 800;
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 680px) {
+  .ets-equipment-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ets-equipment-card {
+    min-height: 0;
+  }
+
+  .ets-equipment-card__header {
+    gap: 10px;
+  }
+
+  .ets-equipment-card__identifiers {
+    grid-template-columns: 1fr;
+  }
+
+  .ets-equipment-card__identifiers > div + div {
+    border-left: 0;
+    border-top: 1px solid rgba(7, 76, 86, 0.1);
+  }
+
+  .ets-equipment-card__flow-state {
+    grid-template-columns: 1fr;
+  }
+
+  .ets-equipment-card__flow-state > strong {
+    text-align: left;
+  }
+
+  .ets-equipment-card__footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
