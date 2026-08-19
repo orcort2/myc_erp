@@ -3099,431 +3099,1077 @@ function QuotationsPage({ user = null }) {
 
       {isProductModalOpen ? (
         <div className="modal-backdrop" role="presentation">
-          <section className="client-modal quotation-modal" aria-modal="true" role="dialog">
-            <div className="section-heading">
+          <section
+            className="client-modal quotation-modal catalog-item-modal"
+            aria-modal="true"
+            role="dialog"
+          >
+            <div className="section-heading catalog-item-modal__heading">
               <div>
-                <p>Catalogo</p>
-                <h2>{editingProductId ? 'Editar producto/servicio' : 'Nuevo producto/servicio'}</h2>
+                <p>Catálogo</p>
+                <h2>
+                  {editingProductId
+                    ? 'Editar producto/servicio'
+                    : 'Nuevo producto/servicio'}
+                </h2>
               </div>
+
               <div className="toolbar-actions">
-                <button className="primary-button" disabled={isSaving} form="catalog-item-form" type="submit">
+                <button
+                  className="primary-button"
+                  disabled={isSaving}
+                  form="catalog-item-form"
+                  type="submit"
+                >
                   {isSaving ? 'Guardando...' : 'Guardar'}
                 </button>
+
                 {editingProductId ? (
                   <button
                     className="table-button table-button--danger"
                     disabled={isSaving}
-                    onClick={() => handleDeleteCatalogItem({ id: editingProductId, name: productForm.name })}
+                    onClick={() =>
+                      handleDeleteCatalogItem({
+                        id: editingProductId,
+                        name: productForm.name,
+                      })
+                    }
                     type="button"
                   >
                     Eliminar
                   </button>
                 ) : null}
-                <button className="icon-text-button" onClick={closeProductModal} type="button">
+
+                <button
+                  className="icon-text-button"
+                  onClick={closeProductModal}
+                  type="button"
+                >
                   Cerrar
                 </button>
               </div>
             </div>
 
-            {error ? <div className="form-error dashboard-error">{error}</div> : null}
+            {error ? (
+              <div className="form-error dashboard-error">
+                {error}
+              </div>
+            ) : null}
 
-            <form id="catalog-item-form" className="client-form client-form--modal" noValidate onSubmit={handleProductSubmit}>
-              <label>
-                Tipo
-                <select
-                  onChange={(event) => updateProductForm('type', event.target.value)}
-                  value={productForm.type}
-                >
-                  <option>Producto</option>
-                  <option>Servicio</option>
-                </select>
-              </label>
-              <label>
-                Categoría operacional
-                <select
-                  onChange={(event) => updateProductForm('operationalCategory', event.target.value)}
-                  value={productForm.operationalCategory}
-                >
-                  <option value="">Seleccionar categoria</option>
-                  {catalogOperationalCategoryOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
-              {productForm.type === 'Servicio' ? (
-                <label>
-                  Composición
-                  <select
-                    onChange={(event) => updateProductForm('serviceKind', event.target.value)}
-                    value={productForm.serviceKind}
-                  >
-                    <option value="simple">Servicio Simple</option>
-                    <option value="composite">Servicio Compuesto</option>
-                  </select>
-                </label>
-              ) : null}
-              {productForm.operationalCategory === 'calibration' ? (
-                <label>
-                  Tipo de servicio
-                  <select
-                    onChange={(event) => updateProductForm('serviceType', event.target.value)}
-                    value={productForm.serviceType || 'traceable'}
-                  >
-                    <option value="accredited">Acreditado</option>
-                    <option value="traceable">Trazable</option>
-                    <option value="linked">Vinculado</option>
-                  </select>
-                </label>
-              ) : null}
-              {productForm.serviceType === 'linked' && productForm.operationalCategory === 'calibration' ? (
-                <>
+            <form
+              id="catalog-item-form"
+              className="client-form client-form--modal catalog-item-form"
+              noValidate
+              onSubmit={handleProductSubmit}
+            >
+              {/* =========================================================
+                  IDENTIDAD
+              ========================================================= */}
+
+              <section className="catalog-form-section">
+                <div className="catalog-form-section__heading">
+                  <div>
+                    <span>Identidad</span>
+                    <strong>Datos del producto o servicio</strong>
+                  </div>
+
+                  <p>
+                    Define cómo se identifica y clasifica este concepto dentro
+                    del catálogo institucional.
+                  </p>
+                </div>
+
+                <div className="catalog-form-grid">
                   <label>
-                    Empresa o laboratorio vinculado
+                    Tipo
+
                     <select
-                      required
-                      onChange={(event) => updateProductForm('linkedCompanyId', event.target.value)}
-                      value={productForm.linkedCompanyId}
+                      onChange={(event) =>
+                        updateProductForm(
+                          'type',
+                          event.target.value,
+                        )
+                      }
+                      value={productForm.type}
                     >
-                      <option value="">Seleccionar empresa</option>
-                      {linkedCompanies.map((company) => (
-                        <option key={company.id} value={company.id}>
-                          {company.name}
-                        </option>
-                      ))}
-                      <option value="other">Otro</option>
+                      <option>Producto</option>
+                      <option>Servicio</option>
                     </select>
                   </label>
-                  {productForm.linkedCompanyId === 'other' ? (
+
+                  <label>
+                    Categoría operacional
+
+                    <select
+                      onChange={(event) =>
+                        updateProductForm(
+                          'operationalCategory',
+                          event.target.value,
+                        )
+                      }
+                      value={productForm.operationalCategory}
+                    >
+                      <option value="">
+                        Seleccionar categoría
+                      </option>
+
+                      {catalogOperationalCategoryOptions.map(
+                        (option) => (
+                          <option
+                            key={option.value}
+                            value={option.value}
+                          >
+                            {option.label}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </label>
+
+                  {productForm.type === 'Servicio' ? (
                     <label>
-                      Nombre de la empresa vinculada
-                      <input
-                        maxLength={180}
-                        onChange={(event) => updateProductForm('linkedCompanyName', event.target.value)}
-                        required
-                        type="text"
-                        value={productForm.linkedCompanyName}
-                      />
+                      Composición
+
+                      <select
+                        onChange={(event) =>
+                          updateProductForm(
+                            'serviceKind',
+                            event.target.value,
+                          )
+                        }
+                        value={productForm.serviceKind}
+                      >
+                        <option value="simple">
+                          Servicio simple
+                        </option>
+
+                        <option value="composite">
+                          Servicio compuesto
+                        </option>
+                      </select>
                     </label>
                   ) : null}
+
                   <label>
-                    Iniciales de folio
+                    Nombre
+
                     <input
-                      maxLength={12}
-                      onChange={(event) => updateProductForm('linkedCertificatePrefix', event.target.value.toUpperCase())}
-                      pattern="[A-Z0-9]{2,12}"
+                      onChange={(event) =>
+                        updateProductForm(
+                          'name',
+                          event.target.value,
+                        )
+                      }
                       required
                       type="text"
-                      value={productForm.linkedCertificatePrefix}
+                      value={productForm.name}
                     />
                   </label>
-                </>
-              ) : null}
-              <label>
-                Clave interna generada
-                <input
-                  readOnly
-                  placeholder="Se genera al guardar"
-                  type="text"
-                  value={productForm.internalKey}
-                />
-              </label>
-              <label>
-                Nombre
-                <input
-                  onChange={(event) => updateProductForm('name', event.target.value)}
-                  required
-                  type="text"
-                  value={productForm.name}
-                />
-              </label>
-              <label>
-                Clave SAT
-                <input
-                  onChange={(event) => updateProductForm('satKey', event.target.value)}
-                  type="text"
-                  value={productForm.satKey}
-                />
-              </label>
-              <label>
-                Unidad SAT
-                <input
-                  onChange={(event) => updateProductForm('satUnit', event.target.value)}
-                  type="text"
-                  value={productForm.satUnit}
-                />
-              </label>
-              <label>
-                Unidad interna
-                <select
-                  onChange={(event) => updateProductForm('internalUnit', event.target.value)}
-                  value={productForm.internalUnit}
-                >
-                  {internalUnitOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
-              {productForm.internalUnit === 'other' ? (
-                <label>
-                  Unidad personalizada
-                  <input
-                    onChange={(event) => updateProductForm('customInternalUnit', event.target.value)}
-                    type="text"
-                    value={productForm.customInternalUnit}
-                  />
-                </label>
-              ) : null}
-              {getCategoryScopeOptions(productForm.category).length && productForm.category !== 'Calibracion' ? (
-                <label>
-                  Alcance
-                  <select
-                    onChange={(event) => updateProductForm('calibrationScope', event.target.value)}
-                    value={productForm.calibrationScope}
-                  >
-                    {getCategoryScopeOptions(productForm.category).map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {productForm.category === 'Calibracion' ? (
-                <label>
-                  Plantilla esperada de certificado
-                  <select onChange={(event) => updateProductForm('expectedCertificateMasterId', event.target.value)} value={productForm.expectedCertificateMasterId || ''}>
-                    <option value="">Sin asignar</option>
-                    {certificateMasters.map((master) => <option key={master.id} value={master.id}>{master.code} · {master.name} · Rev. {master.current_revision || '-'}</option>)}
-                  </select>
-                </label>
-              ) : null}
-              {productForm.operationalCategory === 'sale' ? (
-                <>
-                  <label className="checkbox-field">
+
+                  <label>
+                    Clave interna
+
                     <input
-                      checked={productForm.requiresIndividualIdentification}
-                      onChange={(event) => updateProductForm('requiresIndividualIdentification', event.target.checked)}
-                      type="checkbox"
+                      readOnly
+                      placeholder="Se genera al guardar"
+                      type="text"
+                      value={productForm.internalKey}
                     />
-                    Requiere identificación individual / número de serie
                   </label>
+
                   <label>
-                    Marca cotizada
-                    <input onChange={(event) => updateProductForm('saleBrand', event.target.value)} value={productForm.saleBrand} />
+                    Clave SAT
+
+                    <input
+                      onChange={(event) =>
+                        updateProductForm(
+                          'satKey',
+                          event.target.value,
+                        )
+                      }
+                      type="text"
+                      value={productForm.satKey}
+                    />
                   </label>
+
                   <label>
-                    Modelo cotizado
-                    <input onChange={(event) => updateProductForm('saleModel', event.target.value)} value={productForm.saleModel} />
+                    Unidad SAT
+
+                    <input
+                      onChange={(event) =>
+                        updateProductForm(
+                          'satUnit',
+                          event.target.value,
+                        )
+                      }
+                      type="text"
+                      value={productForm.satUnit}
+                    />
                   </label>
+
                   <label>
-                    Especificación cotizada
-                    <textarea onChange={(event) => updateProductForm('saleSpecification', event.target.value)} value={productForm.saleSpecification} />
-                  </label>
-                  <label>
-                    Calibración incluida
+                    Unidad interna
+
                     <select
-                      onChange={(event) => updateProductForm('includedCalibrationCatalogItemId', event.target.value)}
-                      value={productForm.includedCalibrationCatalogItemId}
+                      onChange={(event) =>
+                        updateProductForm(
+                          'internalUnit',
+                          event.target.value,
+                        )
+                      }
+                      value={productForm.internalUnit}
                     >
-                      <option value="">Sin calibración incluida</option>
-                      {catalogItems.filter((item) => item.operationalCategory === 'calibration' && item.status === 'Activo').map((item) => (
-                        <option key={item.id} value={item.id}>{item.internalKey || 'Sin clave'} · {item.name}</option>
+                      {internalUnitOptions.map((option) => (
+                        <option
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </option>
                       ))}
                     </select>
                   </label>
-                </>
-              ) : null}
-              {productForm.operationalCategory === 'maintenance' ? (
-                <>
-                  <label>
-                    Tipo de Mantenimiento
-                    <select onChange={(event) => updateProductForm('maintenanceType', event.target.value)} value={productForm.maintenanceType}>
-                      <option value="preventive">Preventivo</option>
-                      <option value="corrective">Correctivo</option>
-                    </select>
-                  </label>
-                  <label>
-                    Modalidad operativa
-                    <select onChange={(event) => updateProductForm('maintenanceLocation', event.target.value)} value={productForm.maintenanceLocation}>
-                      <option value="laboratory">Laboratorio</option>
-                      <option value="field">Campo</option>
-                    </select>
-                  </label>
-                  {productForm.maintenanceType === 'corrective' ? (
+
+                  {productForm.internalUnit === 'other' ? (
                     <label>
-                      Materiales base (JSON estructurado)
-                      <textarea
-                        onChange={(event) => updateProductForm('maintenanceBaseMaterialsText', event.target.value)}
-                        placeholder='[{"name":"Sello","quantity":1,"unit":"pieza"}]'
-                        rows="5"
-                        value={productForm.maintenanceBaseMaterialsText}
+                      Unidad personalizada
+
+                      <input
+                        onChange={(event) =>
+                          updateProductForm(
+                            'customInternalUnit',
+                            event.target.value,
+                          )
+                        }
+                        type="text"
+                        value={productForm.customInternalUnit}
                       />
                     </label>
                   ) : null}
-                </>
-              ) : null}
-              {productForm.type === 'Servicio' && productForm.serviceKind === 'composite' ? (
-                <section className="catalog-composite-editor">
-                  <div className="catalog-composite-editor__heading">
+                </div>
+              </section>
+
+              {/* =========================================================
+                  CONFIGURACIÓN OPERATIVA
+              ========================================================= */}
+
+              {productForm.type === 'Servicio' ? (
+                <section className="catalog-form-section">
+                  <div className="catalog-form-section__heading">
                     <div>
-                      <span>Descomposición operativa</span>
-                      <strong>Componentes del servicio</strong>
+                      <span>Configuración operativa</span>
+                      <strong>
+                        {catalogOperationalCategoryOptions.find(
+                          (option) =>
+                            option.value
+                            === productForm.operationalCategory,
+                        )?.label || 'Servicio'}
+                      </strong>
                     </div>
-                    <button className="table-button" onClick={addCompositeComponent} type="button">
-                      Agregar componente
-                    </button>
+
+                    <p>
+                      Define las reglas propias de esta categoría. La ejecución
+                      posterior se materializará dentro del ETS.
+                    </p>
                   </div>
-                  <p>La cotización conservará este concepto único. Los componentes se crearán únicamente al generar el ETS.</p>
-                  <div className="catalog-composite-editor__list">
-                    {productForm.components.length ? productForm.components.map((component, index) => {
-                      const selectedIds = new Set(
-                        productForm.components
-                          .filter((_, componentIndex) => componentIndex !== index)
-                          .map((item) => item.componentCatalogItemId)
-                      );
-                      return (
-                        <div className="catalog-composite-editor__row" key={`${component.id || 'new'}-${index}`}>
+
+                  <div className="catalog-form-grid">
+                    {/* CALIBRACIÓN */}
+
+                    {productForm.operationalCategory
+                    === 'calibration' ? (
+                      <>
+                        <label>
+                          Tipo de servicio
+
+                          <select
+                            onChange={(event) =>
+                              updateProductForm(
+                                'serviceType',
+                                event.target.value,
+                              )
+                            }
+                            value={
+                              productForm.serviceType
+                              || 'traceable'
+                            }
+                          >
+                            <option value="accredited">
+                              Acreditado
+                            </option>
+
+                            <option value="traceable">
+                              Trazable
+                            </option>
+
+                            <option value="linked">
+                              Vinculado
+                            </option>
+                          </select>
+                        </label>
+
+                        {productForm.serviceType
+                        === 'linked' ? (
+                          <>
+                            <label>
+                              Empresa o laboratorio vinculado
+
+                              <select
+                                required
+                                onChange={(event) =>
+                                  updateProductForm(
+                                    'linkedCompanyId',
+                                    event.target.value,
+                                  )
+                                }
+                                value={
+                                  productForm.linkedCompanyId
+                                }
+                              >
+                                <option value="">
+                                  Seleccionar empresa
+                                </option>
+
+                                {linkedCompanies.map(
+                                  (company) => (
+                                    <option
+                                      key={company.id}
+                                      value={company.id}
+                                    >
+                                      {company.name}
+                                    </option>
+                                  ),
+                                )}
+
+                                <option value="other">
+                                  Otro
+                                </option>
+                              </select>
+                            </label>
+
+                            {productForm.linkedCompanyId
+                            === 'other' ? (
+                              <label>
+                                Nombre de la empresa vinculada
+
+                                <input
+                                  maxLength={180}
+                                  onChange={(event) =>
+                                    updateProductForm(
+                                      'linkedCompanyName',
+                                      event.target.value,
+                                    )
+                                  }
+                                  required
+                                  type="text"
+                                  value={
+                                    productForm.linkedCompanyName
+                                  }
+                                />
+                              </label>
+                            ) : null}
+
+                            <label>
+                              Iniciales de folio
+
+                              <input
+                                maxLength={12}
+                                onChange={(event) =>
+                                  updateProductForm(
+                                    'linkedCertificatePrefix',
+                                    event.target.value.toUpperCase(),
+                                  )
+                                }
+                                pattern="[A-Z0-9]{2,12}"
+                                required
+                                type="text"
+                                value={
+                                  productForm.linkedCertificatePrefix
+                                }
+                              />
+                            </label>
+                          </>
+                        ) : null}
+
+                        {productForm.category
+                        === 'Calibracion' ? (
                           <label>
-                            Servicio
+                            Plantilla esperada de certificado
+
                             <select
-                              onChange={(event) => updateCompositeComponent(index, 'componentCatalogItemId', event.target.value)}
-                              value={component.componentCatalogItemId}
+                              onChange={(event) =>
+                                updateProductForm(
+                                  'expectedCertificateMasterId',
+                                  event.target.value,
+                                )
+                              }
+                              value={
+                                productForm.expectedCertificateMasterId
+                                || ''
+                              }
                             >
-                              <option value="">Seleccionar servicio</option>
-                              {catalogItems
-                                .filter((item) => item.itemType === 'service'
-                                  && item.status === 'Activo'
-                                  && String(item.id) !== String(editingProductId || '')
-                                  && (!selectedIds.has(String(item.id)) || String(item.id) === component.componentCatalogItemId))
-                                .map((item) => (
-                                  <option key={item.id} value={item.id}>
-                                    {item.internalKey || 'Sin clave'} · {item.name}
-                                    {item.serviceKind === 'composite' ? ' (Compuesto)' : ''}
+                              <option value="">
+                                Sin asignar
+                              </option>
+
+                              {certificateMasters.map(
+                                (master) => (
+                                  <option
+                                    key={master.id}
+                                    value={master.id}
+                                  >
+                                    {master.code}
+                                    {' · '}
+                                    {master.name}
+                                    {' · Rev. '}
+                                    {master.current_revision || '-'}
                                   </option>
-                                ))}
+                                ),
+                              )}
                             </select>
                           </label>
-                          <label>
-                            Cantidad
-                            <input
-                              min="1"
-                              onChange={(event) => updateCompositeComponent(index, 'quantity', event.target.value)}
-                              step="1"
-                              type="number"
-                              value={component.quantity}
-                            />
-                          </label>
-                          <button
-                            aria-label="Quitar componente"
-                            className="table-button table-button--danger"
-                            onClick={() => removeCompositeComponent(index)}
-                            type="button"
+                        ) : null}
+                      </>
+                    ) : null}
+
+                    {/* ALCANCE PARA CATEGORÍAS QUE REALMENTE LO USAN */}
+
+                    {getCategoryScopeOptions(
+                      productForm.category,
+                    ).length
+                      && productForm.category
+                        !== 'Calibracion'
+                      && productForm.operationalCategory
+                        !== 'maintenance' ? (
+                        <label>
+                          Alcance
+
+                          <select
+                            onChange={(event) =>
+                              updateProductForm(
+                                'calibrationScope',
+                                event.target.value,
+                              )
+                            }
+                            value={
+                              productForm.calibrationScope
+                            }
                           >
-                            Quitar
-                          </button>
+                            {getCategoryScopeOptions(
+                              productForm.category,
+                            ).map((option) => (
+                              <option
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      ) : null}
+
+                    {/* VENTA */}
+
+                    {productForm.operationalCategory
+                    === 'sale' ? (
+                      <>
+                        <label className="checkbox-field catalog-checkbox-card">
+                          <input
+                            checked={
+                              productForm.requiresIndividualIdentification
+                            }
+                            onChange={(event) =>
+                              updateProductForm(
+                                'requiresIndividualIdentification',
+                                event.target.checked,
+                              )
+                            }
+                            type="checkbox"
+                          />
+
+                          <span>
+                            <strong>
+                              Identificación individual
+                            </strong>
+
+                            <small>
+                              Requiere número de serie o identificación
+                              individual.
+                            </small>
+                          </span>
+                        </label>
+
+                        <label>
+                          Marca cotizada
+
+                          <input
+                            onChange={(event) =>
+                              updateProductForm(
+                                'saleBrand',
+                                event.target.value,
+                              )
+                            }
+                            value={productForm.saleBrand}
+                          />
+                        </label>
+
+                        <label>
+                          Modelo cotizado
+
+                          <input
+                            onChange={(event) =>
+                              updateProductForm(
+                                'saleModel',
+                                event.target.value,
+                              )
+                            }
+                            value={productForm.saleModel}
+                          />
+                        </label>
+
+                        <label className="catalog-form-field--wide">
+                          Especificación cotizada
+
+                          <textarea
+                            onChange={(event) =>
+                              updateProductForm(
+                                'saleSpecification',
+                                event.target.value,
+                              )
+                            }
+                            value={
+                              productForm.saleSpecification
+                            }
+                          />
+                        </label>
+
+                        <label className="catalog-form-field--wide">
+                          Calibración incluida
+
+                          <select
+                            onChange={(event) =>
+                              updateProductForm(
+                                'includedCalibrationCatalogItemId',
+                                event.target.value,
+                              )
+                            }
+                            value={
+                              productForm.includedCalibrationCatalogItemId
+                            }
+                          >
+                            <option value="">
+                              Sin calibración incluida
+                            </option>
+
+                            {catalogItems
+                              .filter(
+                                (item) =>
+                                  item.operationalCategory
+                                    === 'calibration'
+                                  && item.status === 'Activo',
+                              )
+                              .map((item) => (
+                                <option
+                                  key={item.id}
+                                  value={item.id}
+                                >
+                                  {item.internalKey || 'Sin clave'}
+                                  {' · '}
+                                  {item.name}
+                                </option>
+                              ))}
+                          </select>
+                        </label>
+                      </>
+                    ) : null}
+
+                    {/* MANTENIMIENTO */}
+
+                    {productForm.operationalCategory
+                    === 'maintenance' ? (
+                      <div className="catalog-maintenance-config">
+                        <label>
+                          Tipo de mantenimiento
+
+                          <select
+                            onChange={(event) =>
+                              updateProductForm(
+                                'maintenanceType',
+                                event.target.value,
+                              )
+                            }
+                            value={
+                              productForm.maintenanceType
+                            }
+                          >
+                            <option value="preventive">
+                              Preventivo
+                            </option>
+
+                            <option value="corrective">
+                              Correctivo
+                            </option>
+                          </select>
+                        </label>
+
+                        <div className="catalog-form-info">
+                          <span>
+                            Modalidad operativa
+                          </span>
+
+                          <strong>
+                            Se define por equipo en el ETS
+                          </strong>
+
+                          <p>
+                            Cada unidad podrá ejecutarse en laboratorio
+                            o en campo de forma independiente.
+                          </p>
                         </div>
-                      );
-                    }) : (
-                      <div className="clients-empty">Agrega al menos un servicio del catálogo.</div>
-                    )}
+
+                        {productForm.maintenanceType
+                        === 'corrective' ? (
+                          <div className="catalog-maintenance-materials">
+                            <div className="catalog-maintenance-materials__heading">
+                              <span>
+                                Materiales base
+                              </span>
+
+                              <strong>
+                                Referencia técnica del servicio
+                              </strong>
+                            </div>
+
+                            <textarea
+                              onChange={(event) =>
+                                updateProductForm(
+                                  'maintenanceBaseMaterialsText',
+                                  event.target.value,
+                                )
+                              }
+                              placeholder='[{"name":"Sello","quantity":1,"unit":"pieza"}]'
+                              rows="5"
+                              value={
+                                productForm.maintenanceBaseMaterialsText
+                              }
+                            />
+
+                            <small>
+                              Estos materiales son una referencia base.
+                              El consumo real se documentará durante
+                              la intervención.
+                            </small>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
                   </div>
                 </section>
               ) : null}
-              <label>
-                Precio origen
-                <input
-                  min="0"
-                  onChange={(event) => updateProductForm('basePrice', event.target.value)}
-                  step="0.01"
-                  type="number"
-                  value={productForm.basePrice}
-                />
-              </label>
-              <label>
-                Moneda origen
-                <select
-                  onChange={(event) => updateProductForm('sourceCurrency', event.target.value)}
-                  value={productForm.sourceCurrency}
-                >
-                  <option>MXN</option>
-                  <option>USD</option>
-                  <option>EUR</option>
-                </select>
-              </label>
-              <label>
-                Tipo de cambio
-                <input
-                  min="0"
-                  onChange={(event) => updateProductForm('exchangeRate', event.target.value)}
-                  step="0.0001"
-                  type="number"
-                  value={productForm.exchangeRate}
-                />
-              </label>
-              <label>
-                Costo interno
-                <input
-                  min="0"
-                  onChange={(event) => updateProductForm('internalCost', event.target.value)}
-                  step="0.01"
-                  type="number"
-                  value={productForm.internalCost}
-                />
-              </label>
-              <label>
-                Moneda de costo
-                <select
-                  onChange={(event) => updateProductForm('costCurrency', event.target.value)}
-                  value={productForm.costCurrency}
-                >
-                  <option>MXN</option>
-                  <option>USD</option>
-                  <option>EUR</option>
-                </select>
-              </label>
-              <label>
-                Margen %
-                <input
-                  min="0"
-                  onChange={(event) => updateProductForm('margin', event.target.value)}
-                  step="0.01"
-                  type="number"
-                  value={productForm.margin}
-                />
-              </label>
-              <label>
-                Objeto impuesto
-                <select
-                  onChange={(event) => updateProductForm('taxObject', event.target.value)}
-                  value={productForm.taxObject}
-                >
-                  {taxObjectOptions.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="price-preview-card price-preview-card--catalog">
-                <span>Precio final MXN</span>
-                <strong>{formatMoney(calculateFinalPriceMxn(productForm))}</strong>
-                <small>Base: {formatMoney(productForm.basePrice || 0)} {productForm.sourceCurrency}</small>
-                <small>Tipo de cambio: {Number(productForm.exchangeRate || 1).toFixed(4)}</small>
-                <small>Margen: {Number(productForm.margin || 0).toFixed(2)}%</small>
-                <small>
-                  {productForm.taxObject === 'iva_16'
-                    ? `IVA no incluido. Total con IVA: ${formatMoney(calculateFinalPriceMxn(productForm) * 1.16)}`
-                    : 'Sin IVA 16% agregado en el precio final.'}
-                </small>
-              </div>
-              <label className="catalog-status-field">
-                Estado
-                <select onChange={(event) => updateProductForm('status', event.target.value)} value={productForm.status}>
-                  <option>Activo</option>
-                  <option>Inactivo</option>
-                </select>
-              </label>
+
+              {/* =========================================================
+                  SERVICIO COMPUESTO
+              ========================================================= */}
+
+              {productForm.type === 'Servicio'
+              && productForm.serviceKind === 'composite' ? (
+                <section className="catalog-form-section catalog-composite-section">
+                  <div className="catalog-form-section__heading">
+                    <div>
+                      <span>Descomposición operativa</span>
+                      <strong>
+                        Componentes del servicio
+                      </strong>
+                    </div>
+
+                    <button
+                      className="table-button"
+                      onClick={addCompositeComponent}
+                      type="button"
+                    >
+                      Agregar componente
+                    </button>
+                  </div>
+
+                  <p className="catalog-form-section__description">
+                    La cotización conservará este concepto único.
+                    Los componentes se materializarán únicamente
+                    al generar el ETS.
+                  </p>
+
+                  <div className="catalog-composite-editor__list">
+                    {productForm.components.length
+                      ? productForm.components.map(
+                        (component, index) => {
+                          const selectedIds = new Set(
+                            productForm.components
+                              .filter(
+                                (_, componentIndex) =>
+                                  componentIndex
+                                  !== index,
+                              )
+                              .map(
+                                (item) =>
+                                  item.componentCatalogItemId,
+                              ),
+                          );
+
+                          return (
+                            <div
+                              className="catalog-composite-editor__row"
+                              key={
+                                `${component.id || 'new'}-${index}`
+                              }
+                            >
+                              <label>
+                                Servicio
+
+                                <select
+                                  onChange={(event) =>
+                                    updateCompositeComponent(
+                                      index,
+                                      'componentCatalogItemId',
+                                      event.target.value,
+                                    )
+                                  }
+                                  value={
+                                    component.componentCatalogItemId
+                                  }
+                                >
+                                  <option value="">
+                                    Seleccionar servicio
+                                  </option>
+
+                                  {catalogItems
+                                    .filter(
+                                      (item) =>
+                                        item.itemType
+                                          === 'service'
+                                        && item.status
+                                          === 'Activo'
+                                        && String(item.id)
+                                          !== String(
+                                            editingProductId
+                                            || '',
+                                          )
+                                        && (
+                                          !selectedIds.has(
+                                            String(item.id),
+                                          )
+                                          || String(item.id)
+                                            === component.componentCatalogItemId
+                                        ),
+                                    )
+                                    .map((item) => (
+                                      <option
+                                        key={item.id}
+                                        value={item.id}
+                                      >
+                                        {item.internalKey
+                                          || 'Sin clave'}
+                                        {' · '}
+                                        {item.name}
+                                        {item.serviceKind
+                                        === 'composite'
+                                          ? ' (Compuesto)'
+                                          : ''}
+                                      </option>
+                                    ))}
+                                </select>
+                              </label>
+
+                              <label>
+                                Cantidad
+
+                                <input
+                                  min="1"
+                                  onChange={(event) =>
+                                    updateCompositeComponent(
+                                      index,
+                                      'quantity',
+                                      event.target.value,
+                                    )
+                                  }
+                                  step="1"
+                                  type="number"
+                                  value={component.quantity}
+                                />
+                              </label>
+
+                              <button
+                                aria-label="Quitar componente"
+                                className="table-button table-button--danger"
+                                onClick={() =>
+                                  removeCompositeComponent(index)
+                                }
+                                type="button"
+                              >
+                                Quitar
+                              </button>
+                            </div>
+                          );
+                        },
+                      )
+                      : (
+                        <div className="clients-empty">
+                          Agrega al menos un servicio del catálogo.
+                        </div>
+                      )}
+                  </div>
+                </section>
+              ) : null}
+
+              {/* =========================================================
+                  CONFIGURACIÓN ECONÓMICA
+              ========================================================= */}
+
+              <section className="catalog-form-section">
+                <div className="catalog-form-section__heading">
+                  <div>
+                    <span>Configuración económica</span>
+                    <strong>
+                      Precio, costo y margen
+                    </strong>
+                  </div>
+
+                  <p>
+                    Configura el valor comercial del concepto y su
+                    referencia interna de costo.
+                  </p>
+                </div>
+
+                <div className="catalog-form-grid">
+                  <label>
+                    Precio origen
+
+                    <input
+                      min="0"
+                      onChange={(event) =>
+                        updateProductForm(
+                          'basePrice',
+                          event.target.value,
+                        )
+                      }
+                      step="0.01"
+                      type="number"
+                      value={productForm.basePrice}
+                    />
+                  </label>
+
+                  <label>
+                    Moneda origen
+
+                    <select
+                      onChange={(event) =>
+                        updateProductForm(
+                          'sourceCurrency',
+                          event.target.value,
+                        )
+                      }
+                      value={productForm.sourceCurrency}
+                    >
+                      <option>MXN</option>
+                      <option>USD</option>
+                      <option>EUR</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Tipo de cambio
+
+                    <input
+                      min="0"
+                      onChange={(event) =>
+                        updateProductForm(
+                          'exchangeRate',
+                          event.target.value,
+                        )
+                      }
+                      step="0.0001"
+                      type="number"
+                      value={productForm.exchangeRate}
+                    />
+                  </label>
+
+                  <label>
+                    Costo interno
+
+                    <input
+                      min="0"
+                      onChange={(event) =>
+                        updateProductForm(
+                          'internalCost',
+                          event.target.value,
+                        )
+                      }
+                      step="0.01"
+                      type="number"
+                      value={productForm.internalCost}
+                    />
+                  </label>
+
+                  <label>
+                    Moneda de costo
+
+                    <select
+                      onChange={(event) =>
+                        updateProductForm(
+                          'costCurrency',
+                          event.target.value,
+                        )
+                      }
+                      value={productForm.costCurrency}
+                    >
+                      <option>MXN</option>
+                      <option>USD</option>
+                      <option>EUR</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Margen %
+
+                    <input
+                      min="0"
+                      onChange={(event) =>
+                        updateProductForm(
+                          'margin',
+                          event.target.value,
+                        )
+                      }
+                      step="0.01"
+                      type="number"
+                      value={productForm.margin}
+                    />
+                  </label>
+
+                  <label>
+                    Objeto impuesto
+
+                    <select
+                      onChange={(event) =>
+                        updateProductForm(
+                          'taxObject',
+                          event.target.value,
+                        )
+                      }
+                      value={productForm.taxObject}
+                    >
+                      {taxObjectOptions.map((option) => (
+                        <option
+                          key={option.value}
+                          value={option.value}
+                        >
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="catalog-status-field">
+                    Estado
+
+                    <select
+                      onChange={(event) =>
+                        updateProductForm(
+                          'status',
+                          event.target.value,
+                        )
+                      }
+                      value={productForm.status}
+                    >
+                      <option>Activo</option>
+                      <option>Inactivo</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
+
+              {/* =========================================================
+                  RESUMEN
+              ========================================================= */}
+
+              <section className="catalog-form-section catalog-price-summary">
+                <div className="catalog-form-section__heading">
+                  <div>
+                    <span>Resumen</span>
+                    <strong>
+                      Precio calculado
+                    </strong>
+                  </div>
+
+                  <p>
+                    Resultado comercial según precio origen,
+                    tipo de cambio y margen configurado.
+                  </p>
+                </div>
+
+                <div className="price-preview-card price-preview-card--catalog">
+                  <div className="catalog-price-preview__main">
+                    <span>
+                      Precio final MXN
+                    </span>
+
+                    <strong>
+                      {formatMoney(
+                        calculateFinalPriceMxn(
+                          productForm,
+                        ),
+                      )}
+                    </strong>
+                  </div>
+
+                  <div className="catalog-price-preview__details">
+                    <small>
+                      Base:
+                      {' '}
+                      {formatMoney(
+                        productForm.basePrice || 0,
+                      )}
+                      {' '}
+                      {productForm.sourceCurrency}
+                    </small>
+
+                    <small>
+                      Tipo de cambio:
+                      {' '}
+                      {Number(
+                        productForm.exchangeRate || 1,
+                      ).toFixed(4)}
+                    </small>
+
+                    <small>
+                      Margen:
+                      {' '}
+                      {Number(
+                        productForm.margin || 0,
+                      ).toFixed(2)}
+                      %
+                    </small>
+
+                    <small>
+                      {productForm.taxObject === 'iva_16'
+                        ? (
+                          `IVA no incluido. Total con IVA: ${
+                            formatMoney(
+                              calculateFinalPriceMxn(
+                                productForm,
+                              ) * 1.16,
+                            )
+                          }`
+                        )
+                        : (
+                          'Sin IVA 16% agregado en el precio final.'
+                        )}
+                    </small>
+                  </div>
+                </div>
+              </section>
             </form>
           </section>
         </div>
       ) : null}
-
       {unlockPreview ? (
         <div className="modal-backdrop" role="presentation">
           <section className="client-modal quotation-modal quotation-unlock-summary" aria-modal="true" role="dialog">
