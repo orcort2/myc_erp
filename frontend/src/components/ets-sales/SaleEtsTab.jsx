@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   closeSaleOrder,
@@ -17,6 +18,9 @@ import {
 } from '../../services/api.js';
 
 import './sale-ets.css';
+
+
+const saleBoardCache = new Map();
 
 
 const statusLabels = {
@@ -146,13 +150,32 @@ function getStatusTone(status) {
   return 'pending';
 }
 
+function renderModal(content) {
+  if (typeof document === 'undefined') {
+    return null;
+  }
+
+  return createPortal(
+    content,
+    document.body
+  );
+}
+
 
 export default function SaleEtsTab({
   order,
   user = null,
   users = [],
+  onOpenTechnicalSubEts = null,
 }) {
-  const [board, setBoard] = useState(null);
+  const [board, setBoard] = useState(
+    () => saleBoardCache.get(Number(order?.id)) || null
+  );
+  const [boardLoading, setBoardLoading] = useState(false);
+
+  const [selectedSaleItem, setSelectedSaleItem] = useState(null);
+  const [selectedSaleUnit, setSelectedSaleUnit] = useState(null);
+  const [equipmentModalMode, setEquipmentModalMode] = useState(null);
 
   const [arrival, setArrival] = useState(emptyArrival);
   const [arrivalTarget, setArrivalTarget] = useState(null);
@@ -161,6 +184,22 @@ export default function SaleEtsTab({
   const [selectedLines, setSelectedLines] = useState({});
 
   const [receipt, setReceipt] = useState(emptyReceipt);
+
+  useEffect(() => {
+    if (!equipmentModalMode) {
+      return undefined;
+    }
+
+    const previousOverflow =
+      document.body.style.overflow;
+
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow =
+        previousOverflow;
+    };
+  }, [equipmentModalMode]);
 
   const [warranty, setWarranty] = useState({
     unitId: null,
@@ -181,29 +220,150 @@ export default function SaleEtsTab({
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const [expandedItemId, setExpandedItemId] = useState(null);
   const [itemSearch, setItemSearch] = useState('');
 
 
-  async function refresh() {
+  function applyBoard(nextBoard) {
+    setBoard(nextBoard);
+
+    if (order?.id && nextBoard) {
+      saleBoardCache.set(Number(order.id), nextBoard);
+    }
+  }
+
+
+  async function refresh({ silent = false } = {}) {
     if (!order?.id) {
-      return;
+      return null;
+    }
+
+    if (!silent) {
+      setBoardLoading(true);
     }
 
     try {
-      setBoard(await getSaleBoard(order.id));
+      const nextBoard = await getSaleBoard(order.id);
+      applyBoard(nextBoard);
+      setError('');
+      return nextBoard;
     } catch (requestError) {
       setError(
         requestError.message ||
           'No fue posible cargar la operación de Venta.'
       );
+      return null;
+    } finally {
+      if (!silent) {
+        setBoardLoading(false);
+      }
     }
   }
 
 
   useEffect(() => {
+    const cached = saleBoardCache.get(Number(order?.id));
+
+    if (cached) {
+      setBoard(cached);
+      refresh({ silent: true });
+      return;
+    }
+
+    setBoard(null);
     refresh();
   }, [order?.id]);
+
+
+  useEffect(() => {
+    if (!equipmentModalMode) {
+      return undefined;
+    }
+
+    function handleModalKeyDown(event) {
+      if (event.key !== 'Escape' || busy) {
+        return;
+      }
+
+      /*
+       * El ETS padre también escucha Escape.
+       * Capturamos el evento antes de que llegue a ese listener y
+       * detenemos su propagación para que Escape cierre únicamente
+       * el modal de Venta.
+       */
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
+
+      closeEquipmentModal();
+    }
+
+    window.addEventListener('keydown', handleModalKeyDown, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleModalKeyDown, true);
+    };
+  }, [equipmentModalMode, busy]);
+
+  function openSaleItem(item) {
+    if (!item) return;
+
+    setSelectedSaleItem(item);
+
+    if (item.requires_individual_identification) {
+      const firstUnit = item.units?.[0] || null;
+
+      setSelectedSaleUnit(firstUnit);
+
+      if (
+        !firstUnit ||
+        firstUnit.status === 'pending_arrival' ||
+        firstUnit.status === 'commercial_review'
+      ) {
+        setEquipmentModalMode('register');
+        setArrivalTarget({
+          itemId: item.id,
+          unitId: firstUnit?.id || null,
+        });
+
+        return;
+      }
+
+      setEquipmentModalMode(
+        item.included_calibration_catalog_item_id
+          ? 'technical'
+          : 'delivery'
+      );
+
+      return;
+    }
+
+    if (Number(item.arrived_quantity || 0) === 0) {
+      setEquipmentModalMode('register');
+      setArrivalTarget({
+        itemId: item.id,
+        unitId: null,
+      });
+
+      return;
+    }
+
+    setEquipmentModalMode(
+      item.included_calibration_catalog_item_id
+        ? 'technical'
+        : 'delivery'
+    );
+  }
+
+  function closeEquipmentModal() {
+    setSelectedSaleItem(null);
+    setSelectedSaleUnit(null);
+    setEquipmentModalMode(null);
+    setArrivalTarget(null);
+    setArrival(emptyArrival);
+  }
 
 
   const serviceItems = useMemo(
@@ -378,14 +538,20 @@ export default function SaleEtsTab({
 
     try {
       const next = await action();
-      setBoard(next);
+
+      if (next) {
+        applyBoard(next);
+      }
+
       setMessage(success);
+      return true;
     } catch (requestError) {
       setError(
         typeof requestError.message === 'string'
           ? requestError.message
           : 'No fue posible completar la acción.'
       );
+      return false;
     } finally {
       setBusy(false);
     }
@@ -399,24 +565,25 @@ export default function SaleEtsTab({
 
     try {
       await action();
-      setBoard(await getSaleBoard(order.id));
+      await refresh({ silent: true });
       setMessage(success);
+      return true;
     } catch (requestError) {
       setError(
         requestError.message ||
           'No fue posible completar la acción.'
       );
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
-
   async function submitArrival(event) {
     event.preventDefault();
 
-    if (!arrivalTarget) {
-      return;
+    if (!arrivalTarget || !board) {
+      return false;
     }
 
     const item = board.items.find(
@@ -429,24 +596,26 @@ export default function SaleEtsTab({
 
     if (!item) {
       setError('No se encontró la partida de Venta.');
-      return;
+      return false;
     }
 
     if (!source?.catalog_item_id) {
       setError(
         'La partida no conserva el concepto de catálogo necesario para registrar el arribo.'
       );
-      return;
+      return false;
     }
 
-    await mutate(
+    const success = await mutate(
       () =>
         registerSaleArrival(
           order.id,
           item.id,
           {
             ...arrival,
-            quantity: Number(arrival.quantity),
+            quantity: arrivalTarget.unitId
+              ? 1
+              : Number(arrival.quantity),
             catalog_item_id: source.catalog_item_id,
             serial_number:
               arrival.serial_unknown || !arrival.serial_number
@@ -457,9 +626,7 @@ export default function SaleEtsTab({
             specification: arrival.specification || null,
             substitution_authorization_id:
               arrival.substitution_authorization_id
-                ? Number(
-                    arrival.substitution_authorization_id
-                  )
+                ? Number(arrival.substitution_authorization_id)
                 : null,
           },
           arrivalTarget.unitId
@@ -467,10 +634,12 @@ export default function SaleEtsTab({
       'Arribo registrado.'
     );
 
-    setArrivalTarget(null);
-    setArrival(emptyArrival);
-  }
+    if (success) {
+      closeEquipmentModal();
+    }
 
+    return success;
+  }
 
   function toggleLine(key, value) {
     setSelectedLines((current) => ({
@@ -617,6 +786,39 @@ export default function SaleEtsTab({
   }
 
 
+  function openTechnicalProcess() {
+    if (!selectedSaleItem) {
+      return;
+    }
+
+    if (typeof onOpenTechnicalSubEts === 'function') {
+      onOpenTechnicalSubEts({
+        saleItem: selectedSaleItem,
+        saleUnit: selectedSaleUnit,
+      });
+      closeEquipmentModal();
+      return;
+    }
+
+    setError(
+      'El Sub-ETS técnico todavía no está conectado desde ServiceOrdersPage.'
+    );
+  }
+
+
+  function scrollToDelivery() {
+    closeEquipmentModal();
+
+    window.setTimeout(() => {
+      document
+        .getElementById('sale-delivery-workspace')
+        ?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+    }, 0);
+  }
+
   if (!board) {
     return (
       <div className="clients-empty">
@@ -661,7 +863,7 @@ export default function SaleEtsTab({
           <p>
             Control comercial de las partidas de Venta vinculadas
             al expediente. Las calibraciones incluidas continúan
-            su proceso técnico en las etapas metrológicas del ETS.
+            su proceso técnico dentro del Sub-ETS particular del equipo.
           </p>
         </div>
 
@@ -762,16 +964,6 @@ export default function SaleEtsTab({
               value={itemSearch}
             />
           </label>
-
-          {expandedItemId ? (
-            <button
-              className="table-button"
-              onClick={() => setExpandedItemId(null)}
-              type="button"
-            >
-              Contraer partida
-            </button>
-          ) : null}
         </div>
 
         {filteredSaleItems.length ? (
@@ -790,351 +982,103 @@ export default function SaleEtsTab({
                 Number(item.delivered_quantity || 0) -
                 Number(item.resolved_quantity || 0);
 
-              const isExpanded =
-                Number(expandedItemId) === Number(item.id);
-
-              const availableForDelivery = Math.max(
-                Number(item.arrived_quantity || 0) -
-                  Number(item.delivered_quantity || 0) -
-                  Number(item.resolved_quantity || 0),
-                0
-              );
-
-              const toggleItem = () => {
-                setExpandedItemId((current) =>
-                  Number(current) === Number(item.id)
-                    ? null
-                    : item.id
-                );
-              };
-
               return (
-                <article
-                  aria-expanded={isExpanded}
+                <button
                   className={[
                     'sale-item-card',
+                    'sale-item-card__trigger',
                     hasCalibration
                       ? 'sale-item-card--calibration'
                       : 'sale-item-card--pure',
-                    isExpanded
-                      ? 'sale-item-card--expanded'
-                      : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
+                  ].join(' ')}
                   key={item.id}
+                  onClick={() => openSaleItem(item)}
+                  type="button"
                 >
-                  <button
-                    className="sale-item-card__trigger"
-                    onClick={toggleItem}
-                    type="button"
-                  >
-                    <div className="sale-item-card__trigger-main">
-                      <div className="sale-item-card__title">
-                        <span>
-                          Partida {source?.id || item.id}
-                        </span>
-
-                        <strong>
-                          {source?.service_name ||
-                            source?.description ||
-                            'Venta'}
-                        </strong>
-
-                        <div className="sale-item-card__badges">
-                          <small className="sale-capability-badge">
-                            Venta
-                          </small>
-
-                          {hasCalibration ? (
-                            <small className="sale-capability-badge is-calibration">
-                              + Calibración
-                            </small>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <em
-                        className={`sale-status-badge is-${getStatusTone(
-                          item.status
-                        )}`}
-                      >
-                        {getStatusLabel(item.status)}
-                      </em>
-                    </div>
-
-                    <div className="sale-item-card__compact-metrics">
-                      <div>
-                        <span>Vendidas</span>
-                        <strong>{item.ordered_quantity}</strong>
-                      </div>
-
-                      <div>
-                        <span>Arribadas</span>
-                        <strong>{item.arrived_quantity}</strong>
-                      </div>
-
-                      <div>
-                        <span>Entregadas</span>
-                        <strong>{item.delivered_quantity}</strong>
-                      </div>
-
-                      <div>
-                        <span>Pendientes</span>
-                        <strong>{Math.max(remaining, 0)}</strong>
-                      </div>
-
-                      <div className="sale-item-card__next">
-                        <span>Siguiente</span>
-                        <strong>
-                          {item.status === 'calibration_pending'
-                            ? 'Proceso técnico'
-                            : item.status === 'ready_for_delivery'
-                              ? 'Preparar entrega'
-                              : item.status === 'delivered'
-                                ? 'Completada'
-                                : getStatusLabel(item.status)}
-                        </strong>
-                      </div>
-
-                      <span
-                        aria-hidden="true"
-                        className="sale-item-card__chevron"
-                      >
-                        {isExpanded ? '−' : '+'}
+                  <div className="sale-item-card__trigger-main">
+                    <div className="sale-item-card__title">
+                      <span>
+                        Partida {source?.id || item.id}
                       </span>
-                    </div>
-                  </button>
 
-                  {isExpanded ? (
-                    <div className="sale-item-card__detail">
-                      <div className="sale-item-card__configuration">
-                        <div>
-                          <span>Control</span>
-                          <strong>
-                            {item.requires_individual_identification
-                              ? 'Individual por unidad y serie'
-                              : 'Por cantidad'}
-                          </strong>
-                        </div>
+                      <strong>
+                        {source?.service_name ||
+                          source?.description ||
+                          'Venta'}
+                      </strong>
 
-                        <div>
-                          <span>Calibración</span>
-                          <strong>
-                            {hasCalibration
-                              ? 'Incluida'
-                              : 'No incluida'}
-                          </strong>
-                        </div>
+                      <div className="sale-item-card__badges">
+                        <small className="sale-capability-badge">
+                          Venta
+                        </small>
 
-                        <div>
-                          <span>Estado comercial</span>
-                          <strong>
-                            {getStatusLabel(item.status)}
-                          </strong>
-                        </div>
-
-                        <div>
-                          <span>Disponibles para entrega</span>
-                          <strong>{availableForDelivery}</strong>
-                        </div>
+                        {hasCalibration ? (
+                          <small className="sale-capability-badge is-calibration">
+                            + Calibración
+                          </small>
+                        ) : null}
                       </div>
-
-                      {item.requires_individual_identification ? (
-                        <div className="sale-units">
-                          {(item.units || []).map(
-                            (unit, index) => (
-                              <article
-                                className="sale-unit"
-                                key={unit.id}
-                              >
-                                <div className="sale-unit__identity">
-                                  <span>
-                                    Unidad {index + 1}
-                                  </span>
-
-                                  <strong>
-                                    {unit.serial_number ||
-                                      'Serie pendiente'}
-                                  </strong>
-
-                                  <small>
-                                    {getStatusLabel(unit.status)}
-                                  </small>
-                                </div>
-
-                                <div className="sale-unit__actions">
-                                  {[
-                                    'pending_arrival',
-                                    'commercial_review',
-                                  ].includes(unit.status) ? (
-                                    <button
-                                      className="table-button table-button--primary"
-                                      disabled={busy}
-                                      onClick={() =>
-                                        setArrivalTarget({
-                                          itemId: item.id,
-                                          unitId: unit.id,
-                                        })
-                                      }
-                                      type="button"
-                                    >
-                                      Registrar arribo
-                                    </button>
-                                  ) : null}
-
-                                  {unit.status ===
-                                  'calibration_pending' ? (
-                                    <span className="sale-unit__technical-status">
-                                      Continúa en flujo técnico
-                                    </span>
-                                  ) : null}
-
-                                  {unit.arrived_at &&
-                                  ![
-                                    'delivered',
-                                    'resolved',
-                                    'replaced',
-                                    'warranty_return',
-                                  ].includes(unit.status) ? (
-                                    <button
-                                      className="table-button table-button--danger"
-                                      disabled={busy}
-                                      onClick={() =>
-                                        setWarranty({
-                                          unitId: unit.id,
-                                          reason: '',
-                                        })
-                                      }
-                                      type="button"
-                                    >
-                                      Garantía
-                                    </button>
-                                  ) : null}
-
-                                  {canAuthorize &&
-                                  unit.status ===
-                                    'warranty_return' ? (
-                                    <button
-                                      className="table-button"
-                                      disabled={busy}
-                                      onClick={() =>
-                                        setWarrantyResolution({
-                                          unitId: unit.id,
-                                          resolution:
-                                            'return_to_flow',
-                                          reason: '',
-                                        })
-                                      }
-                                      type="button"
-                                    >
-                                      Resolver garantía
-                                    </button>
-                                  ) : null}
-
-                                  {unit.status ===
-                                  'ready_for_delivery' ? (
-                                    <label className="sale-unit__select">
-                                      <input
-                                        checked={Boolean(
-                                          selectedLines[
-                                            `u-${unit.id}`
-                                          ]
-                                        )}
-                                        onChange={(event) =>
-                                          toggleLine(
-                                            `u-${unit.id}`,
-                                            event.target.checked
-                                          )
-                                        }
-                                        type="checkbox"
-                                      />
-
-                                      <span>
-                                        Incluir en entrega
-                                      </span>
-                                    </label>
-                                  ) : null}
-                                </div>
-                              </article>
-                            )
-                          )}
-                        </div>
-                      ) : (
-                        <div className="sale-quantity-actions">
-                          <div>
-                            <span>Control por cantidad</span>
-
-                            <small>
-                              {availableForDelivery}{' '}
-                              disponibles para entrega
-                            </small>
-                          </div>
-
-                          <div className="sale-quantity-actions__controls">
-                            {item.arrived_quantity <
-                            item.ordered_quantity ? (
-                              <button
-                                className="table-button"
-                                disabled={busy}
-                                onClick={() =>
-                                  setArrivalTarget({
-                                    itemId: item.id,
-                                    unitId: null,
-                                  })
-                                }
-                                type="button"
-                              >
-                                Registrar arribo
-                              </button>
-                            ) : null}
-
-                            <label>
-                              Cantidad a entregar
-
-                              <input
-                                min="0"
-                                onChange={(event) =>
-                                  toggleLine(
-                                    `i-${item.id}`,
-                                    event.target.value
-                                  )
-                                }
-                                type="number"
-                                value={
-                                  selectedLines[
-                                    `i-${item.id}`
-                                  ] || ''
-                                }
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      )}
-
-                      <footer className="sale-item-card__footer">
-                        <span>Siguiente etapa</span>
-
-                        <strong>
-                          {item.status === 'calibration_pending'
-                            ? 'Proceso técnico de calibración'
-                            : item.status ===
-                                'ready_for_delivery'
-                              ? 'Preparar entrega'
-                              : item.status === 'delivered'
-                                ? 'Entrega completada'
-                                : getStatusLabel(item.status)}
-                        </strong>
-                      </footer>
                     </div>
-                  ) : null}
-                </article>
+
+                    <em
+                      className={`sale-status-badge is-${getStatusTone(
+                        item.status
+                      )}`}
+                    >
+                      {getStatusLabel(item.status)}
+                    </em>
+                  </div>
+
+                  <div className="sale-item-card__compact-metrics">
+                    <div>
+                      <span>Vendidas</span>
+                      <strong>{item.ordered_quantity}</strong>
+                    </div>
+
+                    <div>
+                      <span>Arribadas</span>
+                      <strong>{item.arrived_quantity}</strong>
+                    </div>
+
+                    <div>
+                      <span>Entregadas</span>
+                      <strong>{item.delivered_quantity}</strong>
+                    </div>
+
+                    <div>
+                      <span>Pendientes</span>
+                      <strong>{Math.max(remaining, 0)}</strong>
+                    </div>
+
+                    <div className="sale-item-card__next">
+                      <span>Siguiente</span>
+
+                      <strong>
+                        {item.status === 'calibration_pending'
+                          ? 'Proceso técnico'
+                          : item.status === 'ready_for_delivery'
+                            ? 'Preparar entrega'
+                            : item.status === 'delivered'
+                              ? 'Completada'
+                              : getStatusLabel(item.status)}
+                      </strong>
+                    </div>
+
+                    <span
+                      aria-hidden="true"
+                      className="sale-item-card__chevron"
+                    >
+                      →
+                    </span>
+                  </div>
+                </button>
               );
             })}
           </div>
         ) : (
           <div className="sale-empty">
             <strong>No encontramos partidas</strong>
+
             <span>
               Cambia el término de búsqueda para volver a
               mostrar resultados.
@@ -1144,160 +1088,366 @@ export default function SaleEtsTab({
       </section>
 
 
-      {arrivalTarget ? (
-        <form
-          className="sale-panel sale-panel--active"
-          onSubmit={submitArrival}
+      {equipmentModalMode === 'register' &&
+        arrivalTarget &&
+        selectedSaleItem
+          ? renderModal(
+              <div
+                className="sale-equipment-modal"
+                role="presentation"
+                onMouseDown={(event) => {
+                  if (
+                    event.target === event.currentTarget &&
+                    !busy
+                  ) {
+                    closeEquipmentModal();
+                  }
+                }}
+              >
+                <section
+                  aria-modal="true"
+                  className="sale-equipment-modal__dialog"
+                  role="dialog"
+                >
+                  <header className="sale-equipment-modal__header">
+                    <div>
+                      <span>Recepción de equipo</span>
+
+                      <h3>
+                        {getSaleItemName(selectedSaleItem)}
+                      </h3>
+
+                      <small>
+                        {selectedSaleUnit
+                          ? `Unidad ${
+                              (selectedSaleItem.units || [])
+                                .findIndex(
+                                  (unit) =>
+                                    unit.id === selectedSaleUnit.id
+                                ) + 1
+                            }`
+                          : 'Registro por cantidad'}
+                      </small>
+                    </div>
+
+                    <button
+                      aria-label="Cerrar"
+                      className="sale-equipment-modal__close"
+                      disabled={busy}
+                      onClick={closeEquipmentModal}
+                      type="button"
+                    >
+                      ×
+                    </button>
+                  </header>
+
+                  <form
+                    className="sale-equipment-modal__body"
+                    onSubmit={submitArrival}
+                  >
+                    <div className="sale-equipment-modal__identity">
+                      {arrivalTarget.unitId ? (
+                        <>
+                          <label>
+                            Serie
+
+                            <input
+                              disabled={arrival.serial_unknown}
+                              onChange={(event) =>
+                                setArrival({
+                                  ...arrival,
+                                  serial_number:
+                                    event.target.value,
+                                })
+                              }
+                              value={arrival.serial_number}
+                            />
+                          </label>
+
+                          <label className="sale-modal-checkbox">
+                            <input
+                              checked={arrival.serial_unknown}
+                              onChange={(event) =>
+                                setArrival({
+                                  ...arrival,
+                                  serial_unknown:
+                                    event.target.checked,
+                                  serial_number:
+                                    event.target.checked
+                                      ? ''
+                                      : arrival.serial_number,
+                                })
+                              }
+                              type="checkbox"
+                            />
+
+                            <span>Serie desconocida</span>
+                          </label>
+                        </>
+                      ) : (
+                        <label>
+                          Cantidad recibida
+
+                          <input
+                            min="1"
+                            onChange={(event) =>
+                              setArrival({
+                                ...arrival,
+                                quantity:
+                                  event.target.value,
+                              })
+                            }
+                            required
+                            type="number"
+                            value={arrival.quantity}
+                          />
+                        </label>
+                      )}
+
+                      <label>
+                        Marca
+
+                        <input
+                          onChange={(event) =>
+                            setArrival({
+                              ...arrival,
+                              brand: event.target.value,
+                            })
+                          }
+                          value={arrival.brand}
+                        />
+                      </label>
+
+                      <label>
+                        Modelo
+
+                        <input
+                          onChange={(event) =>
+                            setArrival({
+                              ...arrival,
+                              model: event.target.value,
+                            })
+                          }
+                          value={arrival.model}
+                        />
+                      </label>
+
+                      <label className="sale-modal-field--wide">
+                        Especificación
+
+                        <textarea
+                          onChange={(event) =>
+                            setArrival({
+                              ...arrival,
+                              specification:
+                                event.target.value,
+                            })
+                          }
+                          value={arrival.specification}
+                        />
+                      </label>
+
+                      <label>
+                        Autorización de sustitución
+
+                        <input
+                          min="1"
+                          onChange={(event) =>
+                            setArrival({
+                              ...arrival,
+                              substitution_authorization_id:
+                                event.target.value,
+                            })
+                          }
+                          placeholder="Sólo si aplica"
+                          type="number"
+                          value={
+                            arrival.substitution_authorization_id
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <footer className="sale-equipment-modal__footer">
+                      <button
+                        className="table-button"
+                        disabled={busy}
+                        onClick={closeEquipmentModal}
+                        type="button"
+                      >
+                        Cancelar
+                      </button>
+
+                      <button
+                        className="primary-button"
+                        disabled={busy}
+                        type="submit"
+                      >
+                        {busy
+                          ? 'Registrando...'
+                          : 'Registrar equipo'}
+                      </button>
+                    </footer>
+                  </form>
+                </section>
+              </div>
+            )
+          : null}
+
+
+      {equipmentModalMode === 'technical' &&
+      selectedSaleItem ? renderModal(
+        (
+        <div
+          className="sale-equipment-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !busy
+            ) {
+              closeEquipmentModal();
+            }
+          }}
         >
-          <header className="sale-panel__heading">
-            <div>
-              <span>Recepción física</span>
-              <h4>Registrar arribo</h4>
+          <section
+            aria-modal="true"
+            className="sale-equipment-modal__dialog sale-equipment-modal__dialog--technical"
+            role="dialog"
+          >
+            <header className="sale-equipment-modal__header">
+              <div>
+                <span>Sub-ETS técnico</span>
+
+                <h3>
+                  {getSaleItemName(selectedSaleItem)}
+                </h3>
+
+                <small>
+                  {selectedSaleUnit?.serial_number
+                    ? `Serie ${selectedSaleUnit.serial_number}`
+                    : 'Equipo registrado'}
+                </small>
+              </div>
+
+              <button
+                aria-label="Cerrar"
+                className="sale-equipment-modal__close"
+                disabled={busy}
+                onClick={closeEquipmentModal}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
+
+            <div className="sale-technical-entry">
+              <div>
+                <span>Proceso requerido</span>
+                <strong>Calibración incluida</strong>
+              </div>
+
+              <p>
+                El proceso técnico pertenece exclusivamente a este
+                equipo y continuará en su Sub-ETS.
+              </p>
+
+              <div className="sale-technical-entry__tabs">
+                <span>Orden de trabajo</span>
+                <span>Hojas de Campo</span>
+                <span>Captura</span>
+                <span>Calidad</span>
+                <span>Certificados</span>
+              </div>
+
+              <button
+                className="primary-button"
+                onClick={openTechnicalProcess}
+                type="button"
+              >
+                Abrir proceso técnico
+              </button>
             </div>
+          </section>
+        </div>
+        )
+      ) : null}
 
-            <button
-              className="table-button"
-              disabled={busy}
-              onClick={() => {
-                setArrivalTarget(null);
-                setArrival(emptyArrival);
-              }}
-              type="button"
-            >
-              Cancelar
-            </button>
-          </header>
 
-          <div className="sale-form-grid">
-            <label>
-              Cantidad
+      {equipmentModalMode === 'delivery' &&
+      selectedSaleItem ? renderModal(
+        (
+        <div
+          className="sale-equipment-modal"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !busy
+            ) {
+              closeEquipmentModal();
+            }
+          }}
+        >
+          <section
+            aria-modal="true"
+            className="sale-equipment-modal__dialog"
+            role="dialog"
+          >
+            <header className="sale-equipment-modal__header">
+              <div>
+                <span>Entrega de equipo</span>
 
-              <input
-                disabled={Boolean(
-                  arrivalTarget.unitId
-                )}
-                min="1"
-                onChange={(event) =>
-                  setArrival({
-                    ...arrival,
-                    quantity: event.target.value,
-                  })
-                }
-                type="number"
-                value={arrival.quantity}
-              />
-            </label>
+                <h3>
+                  {getSaleItemName(selectedSaleItem)}
+                </h3>
 
-            <label>
-              Serie
+                <small>
+                  {selectedSaleUnit?.serial_number
+                    ? `Serie ${selectedSaleUnit.serial_number}`
+                    : 'Venta pura'}
+                </small>
+              </div>
 
-              <input
-                disabled={arrival.serial_unknown}
-                onChange={(event) =>
-                  setArrival({
-                    ...arrival,
-                    serial_number:
-                      event.target.value,
-                  })
-                }
-                value={arrival.serial_number}
-              />
-            </label>
+              <button
+                aria-label="Cerrar"
+                className="sale-equipment-modal__close"
+                disabled={busy}
+                onClick={closeEquipmentModal}
+                type="button"
+              >
+                ×
+              </button>
+            </header>
 
-            <label className="checkbox-field sale-checkbox-field">
-              <input
-                checked={arrival.serial_unknown}
-                onChange={(event) =>
-                  setArrival({
-                    ...arrival,
-                    serial_unknown:
-                      event.target.checked,
-                    serial_number:
-                      event.target.checked
-                        ? ''
-                        : arrival.serial_number,
-                  })
-                }
-                type="checkbox"
-              />
+            <div className="sale-delivery-entry">
+              <div>
+                <span>Estado</span>
 
-              <span>Serie desconocida</span>
-            </label>
+                <strong>
+                  {getStatusLabel(
+                    selectedSaleUnit?.status ||
+                      selectedSaleItem.status
+                  )}
+                </strong>
+              </div>
 
-            <label>
-              Marca
+              <p>
+                Esta unidad no requiere proceso técnico. Su flujo
+                continúa con entrega, recepción y evidencia del cliente.
+              </p>
 
-              <input
-                onChange={(event) =>
-                  setArrival({
-                    ...arrival,
-                    brand: event.target.value,
-                  })
-                }
-                value={arrival.brand}
-              />
-            </label>
-
-            <label>
-              Modelo
-
-              <input
-                onChange={(event) =>
-                  setArrival({
-                    ...arrival,
-                    model: event.target.value,
-                  })
-                }
-                value={arrival.model}
-              />
-            </label>
-
-            <label className="sale-field--wide">
-              Especificación
-
-              <textarea
-                onChange={(event) =>
-                  setArrival({
-                    ...arrival,
-                    specification:
-                      event.target.value,
-                  })
-                }
-                value={arrival.specification}
-              />
-            </label>
-
-            <label>
-              Autorización de sustitución
-
-              <input
-                min="1"
-                onChange={(event) =>
-                  setArrival({
-                    ...arrival,
-                    substitution_authorization_id:
-                      event.target.value,
-                  })
-                }
-                placeholder="Sólo si aplica"
-                type="number"
-                value={
-                  arrival.substitution_authorization_id
-                }
-              />
-            </label>
-          </div>
-
-          <div className="sale-panel__actions">
-            <button
-              className="primary-button"
-              disabled={busy}
-              type="submit"
-            >
-              Registrar arribo
-            </button>
-          </div>
-        </form>
+              <button
+                className="primary-button"
+                onClick={scrollToDelivery}
+                type="button"
+              >
+                Ir a entrega
+              </button>
+            </div>
+          </section>
+        </div>
+        )
       ) : null}
 
 
@@ -1743,7 +1893,10 @@ export default function SaleEtsTab({
       </section>
 
 
-      <section className="sale-panel">
+      <section
+        className="sale-panel"
+        id="sale-delivery-workspace"
+      >
         <header className="sale-panel__heading">
           <div>
             <span>Logística</span>
