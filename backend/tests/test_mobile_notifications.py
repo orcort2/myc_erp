@@ -17,6 +17,7 @@ from app.main import app
 from app.models.notification import Notification, PushDevice
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
+from app.services import push_notifications as push_notifications_service
 from app.services.push_notifications import deliver_notification_ids, expo_push_service
 
 
@@ -270,3 +271,58 @@ def test_ticket_events_persist_and_push_failure_never_rolls_back(
         created = db.scalar(select(Notification).where(Notification.notification_type == "ticket.created"))
         assert created.recipient_user_id == users["admin"].id
         assert created.delivery_status == "failed"
+
+
+def test_ticket_notifications_are_published_on_the_realtime_channel(
+    notification_context, monkeypatch
+):
+    """MOB-004: ticket-lifecycle notifications (reopen requests, approvals,
+    rejections, resolutions, signature-required) must reach a foregrounded
+    app instance through the realtime channel, not only through OS push.
+
+    Before this fix, app.services.notification_events only ever queued
+    these notifications for OS push delivery — nothing published a
+    "notification.created" realtime event for them (unlike
+    app/routers/communications.py, which already does both). This asserts
+    the wiring in commit_and_dispatch_notifications actually calls
+    publish_to_users with the right recipient and payload shape for a
+    ticket.created notification, independent of whatever the OS push
+    channel does.
+    """
+    client, factory, users, tokens = notification_context
+    published: list[tuple[set[int], str, dict]] = []
+
+    async def fake_publish_to_users(user_ids, event, data):
+        published.append((set(user_ids), event, data))
+
+    monkeypatch.setattr(push_notifications_service, "publish_to_users", fake_publish_to_users)
+    monkeypatch.setattr(
+        expo_push_service, "send", lambda messages: [{"status": "ok"}] * len(messages)
+    )
+
+    order = _completed_work_order(client, tokens["tech"], "Evento realtime")
+    ticket = _create_ticket(client, tokens["tech"], order["id"])
+
+    ticket_created_events = [item for item in published if item[1] == "notification.created"]
+    assert ticket_created_events, "se esperaba al menos un evento notification.created publicado"
+    recipients, event, data = ticket_created_events[0]
+    assert recipients == {users["admin"].id}
+    assert event == "notification.created"
+    assert data["event_type"] == "ticket.created"
+    assert data["entity_type"] == "ticket"
+    assert data["ticket_id"] == ticket["id"]
+    assert data["work_order_id"] == order["id"]
+
+    published.clear()
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=auth(tokens["admin"]),
+    )
+    assert approved.status_code == 200
+
+    approved_events = [item for item in published if item[1] == "notification.created"]
+    assert approved_events
+    recipients, _event, data = approved_events[0]
+    assert recipients == {users["tech"].id}
+    assert data["event_type"] == "ticket.approved"

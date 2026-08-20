@@ -7,6 +7,10 @@ type Timer = ReturnType<typeof setTimeout>;
 
 export type RealtimeSocket = Pick<WebSocket, 'onopen' | 'onmessage' | 'onclose' | 'onerror' | 'close' | 'send'>;
 
+const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000;
+const DEFAULT_HEARTBEAT_TIMEOUT_MS = 60_000;
+const HEARTBEAT_CLOSE_CODE = 4408;
+
 type RealtimeClientOptions = {
   url: string;
   getAccessToken(): string | null;
@@ -18,6 +22,20 @@ type RealtimeClientOptions = {
   schedule?: (callback: () => void, delay: number) => Timer;
   cancelSchedule?: (timer: Timer) => void;
   delayForAttempt?: (attempt: number) => number;
+  /**
+   * Cuando se define, el cliente envía `connection.ping` en este intervalo
+   * mientras está conectado. Si no se define, no hay heartbeat (comportamiento
+   * previo, usado por las pruebas existentes que no simulan un socket zombie).
+   */
+  heartbeatIntervalMs?: number;
+  /**
+   * Si no llega ningún mensaje del servidor (incluido el `connection.pong` de
+   * respuesta) durante este período, el socket se considera muerto y se cierra
+   * localmente con el código 4408 para forzar la reconexión normal.
+   */
+  heartbeatTimeoutMs?: number;
+  /** Reloj inyectable para pruebas deterministas del heartbeat. */
+  now?: () => number;
 };
 
 function isEnvelope(value: unknown): value is RealtimeEnvelope {
@@ -40,6 +58,8 @@ export class RealtimeClient {
   private hasConnected = false;
   private refreshedForAuthFailure = false;
   private generation = 0;
+  private heartbeatTimer: Timer | null = null;
+  private lastActivityAt = 0;
 
   constructor(private readonly options: RealtimeClientOptions) {}
 
@@ -55,6 +75,7 @@ export class RealtimeClient {
     this.active = false;
     this.generation += 1;
     this.clearRetry();
+    this.stopHeartbeat();
     const socket = this.socket;
     this.socket = null;
     socket?.close(1000, 'session_closed');
@@ -66,6 +87,7 @@ export class RealtimeClient {
     this.active = false;
     this.generation += 1;
     this.clearRetry();
+    this.stopHeartbeat();
     const socket = this.socket;
     this.socket = null;
     socket?.close(1000, 'app_background');
@@ -113,6 +135,7 @@ export class RealtimeClient {
       let parsed: unknown;
       try { parsed = JSON.parse(event.data); } catch { return; }
       if (!isEnvelope(parsed)) return;
+      this.lastActivityAt = this.now();
       this.options.onEnvelope(parsed);
       if (parsed.event !== 'realtime.connected') return;
       const mustResynchronize = recovery || this.hasConnected;
@@ -121,18 +144,21 @@ export class RealtimeClient {
       this.refreshedForAuthFailure = false;
       if (!mustResynchronize) {
         this.options.onState('connected');
+        this.startHeartbeat();
         return;
       }
       this.options.onState('resynchronizing');
       void this.options.resynchronize().finally(() => {
         if (generation === this.generation && this.active && !this.stopped) {
           this.options.onState('connected');
+          this.startHeartbeat();
         }
       });
     };
     socket.onclose = (event) => {
       if (generation !== this.generation) return;
       this.socket = null;
+      this.stopHeartbeat();
       if (this.stopped || !this.active) {
         this.options.onState('disconnected');
         return;
@@ -187,5 +213,49 @@ export class RealtimeClient {
     const cancel = this.options.cancelSchedule ?? clearTimeout;
     cancel(this.retryTimer);
     this.retryTimer = null;
+  }
+
+  private now(): number {
+    return (this.options.now ?? Date.now)();
+  }
+
+  private startHeartbeat(): void {
+    if (!this.options.heartbeatIntervalMs) return;
+    this.lastActivityAt = this.now();
+    this.scheduleHeartbeatTick();
+  }
+
+  private scheduleHeartbeatTick(): void {
+    const schedule = this.options.schedule ?? setTimeout;
+    const interval = this.options.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+    this.heartbeatTimer = schedule(() => this.heartbeatTick(), interval);
+  }
+
+  private heartbeatTick(): void {
+    this.heartbeatTimer = null;
+    if (this.stopped || !this.active || !this.socket) return;
+    const timeout = this.options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
+    if (this.now() - this.lastActivityAt > timeout) {
+      // El socket dejó de responder (por ejemplo, tras un cambio de red o un
+      // NAT idle timeout) sin disparar `onclose`. Se cierra localmente para
+      // que el flujo normal de reconexión (`onclose` -> `scheduleReconnect`)
+      // se encargue, evitando una reconexión duplicada.
+      const socket = this.socket;
+      try {
+        socket.close(HEARTBEAT_CLOSE_CODE, 'heartbeat_timeout');
+      } catch {
+        // El socket ya podría estar muerto; no hay nada más que hacer aquí.
+      }
+      return;
+    }
+    this.sendCommand('connection.ping');
+    this.scheduleHeartbeatTick();
+  }
+
+  private stopHeartbeat(): void {
+    if (!this.heartbeatTimer) return;
+    const cancel = this.options.cancelSchedule ?? clearTimeout;
+    cancel(this.heartbeatTimer);
+    this.heartbeatTimer = null;
   }
 }

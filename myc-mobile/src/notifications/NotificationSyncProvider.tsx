@@ -42,6 +42,22 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
   const userRef = useRef(user);
   useEffect(() => { userRef.current = user; }, [user]);
 
+  // Same pattern for `authorizedFetch`, read by the foreground push-device
+  // revalidation below (MOB-004) so that effect can also stay registered
+  // exactly once instead of re-subscribing on every session refresh.
+  const authorizedFetchRef = useRef(authorizedFetch);
+  useEffect(() => { authorizedFetchRef.current = authorizedFetch; }, [authorizedFetch]);
+
+  const registerDevice = useCallback((trigger: 'login' | 'foreground') => {
+    registerCurrentDevice(authorizedFetchRef.current, trigger)
+      .then((result) => {
+        if (!result.ok) {
+          console.warn(`[push-notifications] registro de dispositivo incompleto (trigger=${trigger})`, result.reason);
+        }
+      })
+      .catch((error) => console.warn(`[push-notifications] registro de dispositivo falló inesperadamente (trigger=${trigger})`, error));
+  }, []);
+
   const subscribe = useCallback((listener: Listener) => {
     listeners.current.add(listener);
     return () => listeners.current.delete(listener);
@@ -92,13 +108,13 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
       setUnreadCount(0);
       return;
     }
-    registerCurrentDevice(authorizedFetch).catch(() => undefined);
+    registerDevice('login');
     refreshUnread().catch(() => undefined);
     if (pendingTarget.current) {
       router.push(pendingTarget.current);
       pendingTarget.current = null;
     }
-  }, [authorizedFetch, refreshUnread, user]);
+  }, [authorizedFetch, refreshUnread, registerDevice, user]);
 
   // MOB-003: registered exactly once (deps: [emit, handleResponse], both
   // stable). Notifications.getLastNotificationResponseAsync() keeps
@@ -123,13 +139,19 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
       if (state !== 'active' || !userRef.current) return;
       emit({ event_type: 'app.foreground', source: 'foreground' });
       refreshUnreadRef.current().catch(() => undefined);
+      // MOB-004: revalidates the push-device registration on every
+      // foreground so a token that changed (or a registration that failed
+      // silently before) self-heals without waiting for the next login.
+      // registerCurrentDevice's own throttle (see push-notification-policy)
+      // keeps this from hitting the backend on every app switch.
+      registerDevice('foreground');
     });
     return () => {
       received.remove();
       responded.remove();
       appState.remove();
     };
-  }, [emit, handleResponse]);
+  }, [emit, handleResponse, registerDevice]);
 
   useEffect(() => subscribeRealtime((envelope) => {
     if (envelope.event !== 'notification.created') return;

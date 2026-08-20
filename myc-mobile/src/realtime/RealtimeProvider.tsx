@@ -15,6 +15,12 @@ type RealtimeContextValue = {
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
 
+// Intervalo/umbral de heartbeat: mantiene vivo el WebSocket y detecta
+// conexiones muertas en silencio (p. ej. tras un cambio de red o un NAT idle
+// timeout) que de otro modo nunca dispararían `onclose`. Ver MOB-005.
+const REALTIME_HEARTBEAT_INTERVAL_MS = 25_000;
+const REALTIME_HEARTBEAT_TIMEOUT_MS = 60_000;
+
 export function RealtimeProvider({ children }: PropsWithChildren) {
   const { refreshSession, session, user } = useAuth();
   const [state, setState] = useState<RealtimeState>('disconnected');
@@ -59,6 +65,8 @@ export function RealtimeProvider({ children }: PropsWithChildren) {
       async resynchronize() {
         await Promise.all([...resynchronizers.current].map((callback) => callback()));
       },
+      heartbeatIntervalMs: REALTIME_HEARTBEAT_INTERVAL_MS,
+      heartbeatTimeoutMs: REALTIME_HEARTBEAT_TIMEOUT_MS,
     });
     clientRef.current = client;
     client.start();

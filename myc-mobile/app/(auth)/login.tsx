@@ -49,6 +49,7 @@ export default function LoginScreen() {
         style={styles.keyboardView}
       >
         <ScrollView
+          automaticallyAdjustKeyboardInsets
           bounces={false}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"

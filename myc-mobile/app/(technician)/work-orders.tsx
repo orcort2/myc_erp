@@ -31,6 +31,7 @@ import {
   deleteLabWorkOrder,
   LabWorkOrderDeletionCoordinator,
 } from '@/src/services/lab-work-order-deletion';
+import { canSkipSignaturesAfterReopen } from '@/src/services/lab-work-order-signature-policy';
 import type {
   EquipmentData,
   GeneralData,
@@ -668,6 +669,7 @@ export default function WorkOrdersScreen() {
             style={styles.flex}
           >
             <ScrollView
+              automaticallyAdjustKeyboardInsets
               style={styles.flex}
               contentContainerStyle={styles.modalContent}
               keyboardShouldPersistTaps="handled"
@@ -738,7 +740,11 @@ export default function WorkOrdersScreen() {
                   {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s)</Text>)}
                   <Text style={styles.notice}>Las firmas se capturarán una sola vez y se aplicarán a todos los PDFs del grupo. Después de firmar no se podrán agregar OT ni equipos.</Text>
                   <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Editar equipos</Text></Pressable>
-                  <Pressable style={styles.primary} onPress={() => setStep('signatures')}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
+                  {canSkipSignaturesAfterReopen(workOrder) ? (
+                    <Pressable style={styles.primary} onPress={completeGroup}><Text style={styles.primaryText}>Cerrar orden</Text></Pressable>
+                  ) : (
+                    <Pressable style={styles.primary} onPress={() => setStep('signatures')}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
+                  )}
                 </>
               )}
 
@@ -802,6 +808,7 @@ export default function WorkOrdersScreen() {
                 style={styles.overlayCard}
               >
                 <ScrollView
+                  automaticallyAdjustKeyboardInsets
                   style={styles.flex}
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
@@ -836,6 +843,7 @@ export default function WorkOrdersScreen() {
                 style={styles.overlayCard}
               >
                 <ScrollView
+                  automaticallyAdjustKeyboardInsets
                   style={styles.flex}
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"

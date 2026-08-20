@@ -92,6 +92,7 @@ from app.models.repair_execution import (
     RepairIntervention,
     RepairPause,
     RepairTest,
+    RepairWarrantyCycle,
 )
 from app.models.operational_ticket import OperationalTicket
 from app.models.notification import Notification, PushDevice
@@ -258,6 +259,7 @@ __all__ = [
     "RepairIntervention",
     "RepairPause",
     "RepairTest",
+    "RepairWarrantyCycle",
     "ReferenceStandard",
     "ReferenceStandardCertificate",
     "ReferenceStandardCertificateUncertainty",

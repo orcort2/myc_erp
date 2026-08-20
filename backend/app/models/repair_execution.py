@@ -92,10 +92,18 @@ class RepairExecution(IntegerPkMixin, TimestampMixin, Base):
     # Decisión funcional #9: SLA ~14 días como alerta suave (notice), no bloqueante duro.
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    # Decisión funcional #12: ciclos de reapertura de garantía preparables. El cierre
-    # histórico original NUNCA se sobrescribe.
+    # Decisión funcional #12: ciclos de garantía versionados (RepairWarrantyCycle).
+    # El cierre histórico original NUNCA se sobrescribe. `closed_at`, `conclusion`,
+    # `conclusion_reason` y `technical_completed_at` representan el cierre VIGENTE
+    # (el del ciclo original o el del ciclo de garantía activo/más reciente, según
+    # el lifecycle en curso los va actualizando). `original_*` son una fotografía
+    # inmutable de esos mismos campos tomada la primera vez que la ejecución cerró,
+    # antes de que cualquier ciclo de garantía pudiera sobrescribirlos.
     warranty_reopened_count: Mapped[int] = mapped_column(default=0, server_default="0")
     original_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    original_conclusion: Mapped[str | None] = mapped_column(String(30))
+    original_conclusion_reason: Mapped[str | None] = mapped_column(Text)
+    original_technical_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Decisión funcional #13: cancelación antes/después de la primera intervención.
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -116,6 +124,45 @@ class RepairExecution(IntegerPkMixin, TimestampMixin, Base):
     interventions: Mapped[list["RepairIntervention"]] = relationship(back_populates="execution", cascade="all, delete-orphan", order_by="RepairIntervention.sequence")
     tests: Mapped[list["RepairTest"]] = relationship(back_populates="execution", cascade="all, delete-orphan", order_by="RepairTest.sequence")
     changes: Mapped[list["RepairChangeRequest"]] = relationship(back_populates="execution", cascade="all, delete-orphan", order_by="RepairChangeRequest.id")
+    warranty_cycles: Mapped[list["RepairWarrantyCycle"]] = relationship(back_populates="execution", cascade="all, delete-orphan", order_by="RepairWarrantyCycle.sequence")
+
+
+class RepairWarrantyCycle(IntegerPkMixin, TimestampMixin, Base):
+    """Ciclo histórico de garantía sobre una RepairExecution ya cerrada.
+
+    Una garantía NO reabre destructivamente el ciclo original: crea un nuevo
+    ciclo versionado (sequence 1, 2, ...) que agrupa el trabajo técnico
+    (intervenciones/pruebas/pausas/cambios) realizado durante esa garantía,
+    vía RepairIntervention.warranty_cycle_id, etc. Solo puede existir un ciclo
+    'open' a la vez por ejecución; los ciclos anteriores permanecen intactos.
+    """
+
+    __tablename__ = "repair_warranty_cycles"
+    __table_args__ = (
+        UniqueConstraint("repair_execution_id", "sequence", name="uq_repair_warranty_cycle_sequence"),
+        CheckConstraint("sequence > 0", name="ck_repair_warranty_cycle_sequence_positive"),
+        CheckConstraint("status IN ('open','closed')", name="ck_repair_warranty_cycle_status"),
+        CheckConstraint(
+            "resolution IS NULL OR resolution IN ('repaired','equipment_not_suitable')",
+            name="ck_repair_warranty_cycle_resolution",
+        ),
+    )
+
+    repair_execution_id: Mapped[int] = mapped_column(ForeignKey("repair_executions.id", ondelete="CASCADE"), index=True)
+    sequence: Mapped[int] = mapped_column(index=True)
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="open", server_default="open", index=True)
+
+    opened_by_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    resolution: Mapped[str | None] = mapped_column(String(30))
+    resolution_notes: Mapped[str | None] = mapped_column(Text)
+
+    closed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    execution: Mapped[RepairExecution] = relationship(back_populates="warranty_cycles")
 
 
 class RepairIntervention(IntegerPkMixin, TimestampMixin, Base):
@@ -131,6 +178,12 @@ class RepairIntervention(IntegerPkMixin, TimestampMixin, Base):
     )
 
     repair_execution_id: Mapped[int] = mapped_column(ForeignKey("repair_executions.id", ondelete="CASCADE"), index=True)
+    # NULL = trabajo del ciclo original. No-NULL = pertenece a ese ciclo de garantía.
+    # Determinado siempre por el backend (ver services/repair_execution.py), nunca
+    # aceptado como entrada directa del cliente HTTP.
+    warranty_cycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("repair_warranty_cycles.id", ondelete="RESTRICT"), index=True
+    )
     sequence: Mapped[int] = mapped_column(index=True)
     technician_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
     description: Mapped[str] = mapped_column(Text)
@@ -155,6 +208,9 @@ class RepairTest(IntegerPkMixin, TimestampMixin, Base):
 
     repair_execution_id: Mapped[int] = mapped_column(ForeignKey("repair_executions.id", ondelete="CASCADE"), index=True)
     intervention_id: Mapped[int | None] = mapped_column(ForeignKey("repair_interventions.id", ondelete="RESTRICT"), index=True)
+    warranty_cycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("repair_warranty_cycles.id", ondelete="RESTRICT"), index=True
+    )
     sequence: Mapped[int] = mapped_column(index=True)
     test_type: Mapped[str] = mapped_column(String(60))
     result: Mapped[str] = mapped_column(String(20), index=True)
@@ -182,6 +238,9 @@ class RepairPause(IntegerPkMixin, TimestampMixin, Base):
     )
 
     repair_execution_id: Mapped[int] = mapped_column(ForeignKey("repair_executions.id", ondelete="CASCADE"), index=True)
+    warranty_cycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("repair_warranty_cycles.id", ondelete="RESTRICT"), index=True
+    )
     pause_type: Mapped[str] = mapped_column(String(40), index=True)
     reason: Mapped[str] = mapped_column(Text)
     responsible_user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
@@ -211,6 +270,9 @@ class RepairChangeRequest(IntegerPkMixin, TimestampMixin, Base):
     )
 
     repair_execution_id: Mapped[int] = mapped_column(ForeignKey("repair_executions.id", ondelete="CASCADE"), index=True)
+    warranty_cycle_id: Mapped[int | None] = mapped_column(
+        ForeignKey("repair_warranty_cycles.id", ondelete="RESTRICT"), index=True
+    )
     change_type: Mapped[str] = mapped_column(String(30), index=True)
     summary: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default="requested", server_default="requested", index=True)

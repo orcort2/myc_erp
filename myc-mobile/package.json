@@ -12,7 +12,9 @@
     "test:notifications": "tsx --test src/notifications/refresh-policy.test.ts",
     "test:realtime": "tsx --test src/realtime/realtime-client.test.ts",
     "test:communications": "tsx --test src/communications/message-state.test.ts",
-    "test:lab-work-order-deletion": "tsx --test src/services/lab-work-order-deletion.test.ts"
+    "test:lab-work-order-deletion": "tsx --test src/services/lab-work-order-deletion.test.ts",
+    "test:lab-work-order-signature-policy": "tsx --test src/services/lab-work-order-signature-policy.test.ts",
+    "test:push-notification-policy": "tsx --test src/services/push-notification-policy.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

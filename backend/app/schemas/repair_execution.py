@@ -466,7 +466,11 @@ class RepairCancel(BaseModel):
 
 
 class RepairWarrantyReopen(BaseModel):
-    """Preparación para reapertura futura por garantía."""
+    """Apertura de un nuevo ciclo de garantía (RepairWarrantyCycle).
+
+    No deshace el cierre anterior: crea un nuevo ciclo versionado sobre la
+    misma RepairExecution.
+    """
 
     reason: str = Field(
         min_length=10,
