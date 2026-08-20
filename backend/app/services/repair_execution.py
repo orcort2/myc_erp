@@ -1096,7 +1096,11 @@ def save_diagnosis(
     *,
     actor: User,
 ) -> dict:
-    """El diagnóstico es opcional y no bloquea el avance."""
+    """Registra o actualiza el diagnóstico durante la evaluación.
+
+    El diagnóstico es opcional para concluir la evaluación y no modifica
+    por sí mismo el lifecycle de Reparación.
+    """
 
     _require(
         actor,
@@ -1132,6 +1136,25 @@ def save_diagnosis(
             ),
         )
 
+    diagnosis_data = {
+        "reported_issue":
+            payload.reported_issue,
+        "observed_condition":
+            payload.observed_condition,
+        "findings":
+            payload.findings,
+        "probable_causes":
+            payload.probable_causes,
+        "severity":
+            payload.severity,
+        "repairability":
+            payload.repairability,
+    }
+
+    execution.diagnosis_data = (
+        diagnosis_data
+    )
+
     execution.diagnosis_notes = (
         payload.diagnosis_notes
     )
@@ -1146,9 +1169,12 @@ def save_diagnosis(
         entity="repair_executions",
         entity_id=execution.id,
         user_id=actor.id,
-        new_values=(
-            payload.model_dump()
-        ),
+        new_values={
+            "diagnosis_data":
+                diagnosis_data,
+            "diagnosis_notes":
+                payload.diagnosis_notes,
+        },
     )
 
     db.commit()

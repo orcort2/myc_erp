@@ -72,12 +72,105 @@ class RepairAssign(BaseModel):
 
 
 class RepairDiagnosis(BaseModel):
-    """Diagnóstico opcional dentro del flujo de Reparación."""
+    """Diagnóstico técnico opcional durante la evaluación."""
 
-    diagnosis_notes: str = Field(
+    reported_issue: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=1000,
+    )
+
+    observed_condition: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=2000,
+    )
+
+    findings: list[
+        str
+    ] = Field(
+        default_factory=list,
+        max_length=50,
+    )
+
+    probable_causes: list[
+        str
+    ] = Field(
+        default_factory=list,
+        max_length=50,
+    )
+
+    severity: Literal[
+        "minor",
+        "moderate",
+        "major",
+        "critical",
+    ] | None = None
+
+    repairability: Literal[
+        "repairable",
+        "conditionally_repairable",
+        "not_repairable",
+        "undetermined",
+    ] | None = None
+
+    diagnosis_notes: str | None = Field(
+        default=None,
         min_length=3,
         max_length=3000,
     )
+
+    @model_validator(mode="after")
+    def validate_diagnosis(self):
+        self.findings = [
+            finding.strip()
+            for finding in self.findings
+        ]
+
+        self.probable_causes = [
+            cause.strip()
+            for cause in self.probable_causes
+        ]
+
+        if any(
+            len(finding) < 3
+            or len(finding) > 500
+            for finding in self.findings
+        ):
+            raise ValueError(
+                "Cada hallazgo debe contener "
+                "entre 3 y 500 caracteres"
+            )
+
+        if any(
+            len(cause) < 3
+            or len(cause) > 500
+            for cause in self.probable_causes
+        ):
+            raise ValueError(
+                "Cada causa probable debe contener "
+                "entre 3 y 500 caracteres"
+            )
+
+        has_content = any(
+            (
+                self.reported_issue,
+                self.observed_condition,
+                self.findings,
+                self.probable_causes,
+                self.severity,
+                self.repairability,
+                self.diagnosis_notes,
+            )
+        )
+
+        if not has_content:
+            raise ValueError(
+                "El diagnóstico debe contener "
+                "al menos una evidencia técnica"
+            )
+
+        return self
 
 
 class RepairConclude(BaseModel):
@@ -486,6 +579,8 @@ class RepairExecutionRead(
     status: RepairStatus
 
     technician_id: int | None
+
+    diagnosis_data: dict
 
     diagnosis_notes: str | None
     diagnosis_completed_at: datetime | None

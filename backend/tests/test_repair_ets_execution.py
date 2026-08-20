@@ -60,6 +60,7 @@ from app.services.repair_execution import (
     resolve_change,
     resolve_pause,
     start_evaluation,
+    save_diagnosis,
 )
 from app.services.service_orders import create_service_order
 
@@ -387,6 +388,339 @@ def _advance_to_in_repair(
     )
 
     return execution
+
+def test_structured_diagnosis_is_persisted_and_does_not_change_status(
+    ctx,
+):
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog = _catalog(
+        db,
+    )
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        catalog,
+        folio="COT-REP-DIAG-STRUCT",
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    register_arrival(
+        db,
+        order.id,
+        execution.id,
+        RepairEquipmentCreate(
+            name="Bomba",
+            brand="MYC",
+            model="D-1",
+            serial_number="DIAG-001",
+        ),
+        actor=advisor,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assign_technician(
+        db,
+        order.id,
+        execution.id,
+        RepairAssign(
+            technician_id=technician.id,
+        ),
+        actor=advisor,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    start_evaluation(
+        db,
+        order.id,
+        execution.id,
+        actor=technician,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assert execution.status == "in_evaluation"
+
+    save_diagnosis(
+        db,
+        order.id,
+        execution.id,
+        RepairDiagnosis(
+            reported_issue=(
+                "El equipo no enciende"
+            ),
+            observed_condition=(
+                "No presenta alimentación "
+                "en la tarjeta principal"
+            ),
+            findings=[
+                "Fusible de entrada abierto",
+                "Capacitor de fuente deteriorado",
+            ],
+            probable_causes=[
+                "Sobretensión de alimentación",
+            ],
+            severity="major",
+            repairability="repairable",
+            diagnosis_notes=(
+                "Se recomienda reemplazo "
+                "y prueba funcional."
+            ),
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assert execution.status == "in_evaluation"
+
+    assert execution.diagnosis_data == {
+        "reported_issue":
+            "El equipo no enciende",
+        "observed_condition":
+            (
+                "No presenta alimentación "
+                "en la tarjeta principal"
+            ),
+        "findings": [
+            "Fusible de entrada abierto",
+            "Capacitor de fuente deteriorado",
+        ],
+        "probable_causes": [
+            "Sobretensión de alimentación",
+        ],
+        "severity": "major",
+        "repairability": "repairable",
+    }
+
+    assert (
+        execution.diagnosis_notes
+        == (
+            "Se recomienda reemplazo "
+            "y prueba funcional."
+        )
+    )
+
+    assert (
+        execution.diagnosis_completed_at
+        is not None
+    )
+
+
+def test_diagnosis_validation_and_editing_rules(
+    ctx,
+):
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog = _catalog(
+        db,
+    )
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        catalog,
+        folio="COT-REP-DIAG-RULES",
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    register_arrival(
+        db,
+        order.id,
+        execution.id,
+        RepairEquipmentCreate(
+            name="Bomba",
+        ),
+        actor=advisor,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assign_technician(
+        db,
+        order.id,
+        execution.id,
+        RepairAssign(
+            technician_id=technician.id,
+        ),
+        actor=advisor,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    start_evaluation(
+        db,
+        order.id,
+        execution.id,
+        actor=technician,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    # Diagnóstico completamente vacío:
+    # debe rechazarse por contrato.
+    with pytest.raises(Exception):
+        RepairDiagnosis()
+
+    # Diagnóstico exclusivamente narrativo:
+    # sigue siendo válido.
+    save_diagnosis(
+        db,
+        order.id,
+        execution.id,
+        RepairDiagnosis(
+            diagnosis_notes=(
+                "Se detecta desgaste "
+                "en el sistema mecánico."
+            ),
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assert execution.status == "in_evaluation"
+
+    assert (
+        execution.diagnosis_notes
+        == (
+            "Se detecta desgaste "
+            "en el sistema mecánico."
+        )
+    )
+
+    # Mientras siga en evaluación,
+    # el diagnóstico puede editarse.
+    save_diagnosis(
+        db,
+        order.id,
+        execution.id,
+        RepairDiagnosis(
+            findings=[
+                "Desgaste excesivo en rodamiento",
+            ],
+            severity="moderate",
+            repairability=(
+                "conditionally_repairable"
+            ),
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assert (
+        execution.diagnosis_data[
+            "severity"
+        ]
+        == "moderate"
+    )
+
+    assert (
+        execution.diagnosis_data[
+            "repairability"
+        ]
+        == "conditionally_repairable"
+    )
+
+    assert (
+        execution.diagnosis_notes
+        is None
+    )
+
+    # Concluir evaluación sigue siendo
+    # independiente del diagnóstico.
+    conclude_evaluation(
+        db,
+        order.id,
+        execution.id,
+        RepairConclude(
+            conclusion="repaired",
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assert execution.status == "in_repair"
+
+    # Después de concluir,
+    # el diagnóstico ya no puede editarse.
+    with pytest.raises(
+        HTTPException,
+    ) as exc_info:
+        save_diagnosis(
+            db,
+            order.id,
+            execution.id,
+            RepairDiagnosis(
+                diagnosis_notes=(
+                    "Intento posterior "
+                    "a la conclusión"
+                ),
+            ),
+            actor=technician,
+        )
+
+    assert (
+        exc_info.value.status_code
+        == 409
+    )
 
 
 def test_intervention_http_contract(

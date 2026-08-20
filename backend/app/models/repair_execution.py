@@ -55,9 +55,23 @@ class RepairExecution(IntegerPkMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(40), default="pending_arrival", server_default="pending_arrival", index=True)
     technician_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
 
-    # Decisión funcional #3: diagnóstico opcional, no obligatorio para avanzar.
-    diagnosis_notes: Mapped[str | None] = mapped_column(Text)
-    diagnosis_completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Decisión funcional #3:
+    # El diagnóstico continúa siendo opcional y no bloquea el avance.
+    # La información técnicamente explotable se conserva estructurada,
+    # mientras diagnosis_notes mantiene la narrativa libre y compatibilidad
+    # con consumidores anteriores.
+    diagnosis_data: Mapped[dict] = mapped_column(
+        JSON,
+        default=dict,
+    )
+
+    diagnosis_notes: Mapped[str | None] = mapped_column(
+        Text,
+    )
+
+    diagnosis_completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
 
     # Decisión funcional #4: conclusión 'equipment_not_suitable' exige justificación
     # y salta reparación/pruebas.
