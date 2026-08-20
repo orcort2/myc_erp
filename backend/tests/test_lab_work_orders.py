@@ -594,6 +594,145 @@ def test_ticket_preserves_minor_change_and_versions_pdf(lab_context):
     assert historical_pdf.content.startswith(b"%PDF")
 
 
+def test_reopen_preserve_edit_general_critical_field_keeps_signature(lab_context):
+    """MOB-001 CASO A: editar un campo general CRÍTICO (client_name) que ya
+    existía antes de la reapertura, con requested_signature_policy=preserve,
+    no debe invalidar la firma histórica ni exigir una nueva."""
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    work_order = _completed_work_order(client, tokens["tech"], "Cliente Original")
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": work_order["id"],
+            "reason": "Corrección de razón social",
+            "description": "El cliente solicitó corregir su nombre legal.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=tech_headers,
+    ).json()
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}"
+    reopened = client.get(endpoint, headers=tech_headers).json()
+    assert reopened["signature_required"] is False
+    assert reopened["signature_preserved"] is True
+    assert reopened["signature_session_id"] == work_order["signature_session_id"]
+
+    changed = client.patch(
+        endpoint,
+        json={
+            "client_name": "Cliente Original Corregido",
+            "expected_edit_version": reopened["edit_version"],
+        },
+        headers=tech_headers,
+    )
+    assert changed.status_code == 200, changed.text
+    body = changed.json()
+    assert body["client_name"] == "Cliente Original Corregido"
+    assert body["signature_preserved"] is True
+    assert body["signature_required"] is False
+    assert body["signature_session_id"] == work_order["signature_session_id"]
+
+    closed = client.post(f"{endpoint}/complete", headers=tech_headers)
+    assert closed.status_code == 200, closed.text
+    closed_body = closed.json()
+    assert closed_body["status"] == "completed"
+    assert closed_body["revision_number"] == 2
+    assert closed_body["signature_session_id"] == work_order["signature_session_id"]
+    assert closed_body["signature_required"] is False
+
+
+def test_reopen_preserve_edit_existing_equipment_keeps_signature(lab_context):
+    """MOB-001 CASO B: editar datos de un equipo YA EXISTENTE (instrument,
+    brand, identification, serial_number, is_good_condition) durante una
+    reapertura preserve no debe invalidar la firma ni solicitar una nueva."""
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    work_order = _completed_work_order(client, tokens["tech"], "Cliente Equipo")
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}"
+    equipment_id = client.get(endpoint, headers=tech_headers).json()["equipment"][0]["id"]
+
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": work_order["id"],
+            "reason": "Corrección de número de serie",
+            "description": "El número de serie capturado tenía un error de dedo.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=tech_headers,
+    ).json()
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+    reopened = client.get(endpoint, headers=tech_headers).json()
+    assert reopened["signature_required"] is False
+
+    changed = client.patch(
+        f"{endpoint}/equipment/{equipment_id}",
+        json={
+            **equipment_payload(1, serial_number="SER-1-CORREGIDO"),
+            "expected_edit_version": reopened["edit_version"],
+        },
+        headers=tech_headers,
+    )
+    assert changed.status_code == 200, changed.text
+    body = changed.json()
+    assert body["equipment"][0]["serial_number"] == "SER-1-CORREGIDO"
+    assert body["signature_preserved"] is True
+    assert body["signature_required"] is False
+    assert body["signature_session_id"] == work_order["signature_session_id"]
+
+    closed = client.post(f"{endpoint}/complete", headers=tech_headers)
+    assert closed.status_code == 200, closed.text
+    closed_body = closed.json()
+    assert closed_body["status"] == "completed"
+    assert closed_body["revision_number"] == 2
+    assert closed_body["signature_session_id"] == work_order["signature_session_id"]
+    assert closed_body["signature_required"] is False
+
+
+def test_original_critical_edit_before_close_still_invalidates_signature(lab_context):
+    """MOB-001 CASO C (regresión): un cambio crítico ANTES del primer cierre
+    (sin reopen_ticket_id) debe seguir invalidando la firma, igual que antes
+    de este fix."""
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    root = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload("Cliente Pre-Cierre"),
+        headers=headers,
+    ).json()
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root['id']}"
+    client.post(f"{endpoint}/equipment", json=equipment_payload(1), headers=headers)
+    signed = client.post(f"{endpoint}/signatures", json=signatures_payload(), headers=headers)
+    assert signed.status_code == 200, signed.text
+    signature_session_id = signed.json()["signature_session_id"]
+
+    changed = client.patch(
+        endpoint,
+        json={"client_name": "Cliente Renombrado"},
+        headers=headers,
+    )
+    assert changed.status_code == 200, changed.text
+    body = changed.json()
+    assert body["signature_session_id"] is None
+    assert body["signature_required"] is True
+    assert body["signature_preserved"] is False
+    assert signature_session_id is not None
+
+
 def test_structural_change_invalidates_signature_and_requires_new_signature(lab_context):
     client, _factory, tokens = lab_context
     tech_headers = auth(tokens["tech"])

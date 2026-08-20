@@ -8,7 +8,7 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { useRealtime } from '@/src/realtime/RealtimeProvider';
 import { registerCurrentDevice } from '@/src/services/push-notifications';
 import type { NotificationSyncEvent } from '@/src/types/notification';
-import { NotificationEventDeduper } from '@/src/notifications/refresh-policy';
+import { eventFromData, NotificationEventDeduper, targetFor } from '@/src/notifications/refresh-policy';
 
 type Listener = (event: NotificationSyncEvent) => void;
 type NotificationSyncValue = {
@@ -29,40 +29,6 @@ Notifications.setNotificationHandler({
   }),
 });
 
-function numberValue(value: unknown): number | undefined {
-  return typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : undefined;
-}
-
-function eventFromData(data: Record<string, unknown>, source: NotificationSyncEvent['source'], key?: string): NotificationSyncEvent {
-  return {
-    event_type: typeof data.event_type === 'string' ? data.event_type : 'notification.received',
-    entity_type: typeof data.entity_type === 'string' ? data.entity_type : null,
-    entity_id: numberValue(data.entity_id),
-    ticket_id: numberValue(data.ticket_id),
-    work_order_id: numberValue(data.work_order_id),
-    conversation_id: numberValue(data.conversation_id),
-    source,
-    dedupe_key: key,
-  };
-}
-
-function targetFor(event: NotificationSyncEvent): Href | null {
-  if (event.conversation_id || event.entity_type === 'communication') {
-    const id = event.conversation_id ?? event.entity_id;
-    return id
-      ? { pathname: '/(technician)/communications/[id]', params: { id: String(id) } }
-      : '/(technician)/communications';
-  }
-  if (event.ticket_id || event.entity_type === 'ticket') {
-    const id = event.ticket_id ?? event.entity_id;
-    return { pathname: '/(technician)/tickets', params: id ? { ticketId: String(id) } : {} };
-  }
-  if (event.work_order_id) {
-    return { pathname: '/(technician)/work-orders', params: { workOrderId: String(event.work_order_id) } };
-  }
-  return null;
-}
-
 export function NotificationSyncProvider({ children }: PropsWithChildren) {
   const { authorizedFetch, user } = useAuth();
   const [unreadCount, setUnreadCount] = useState(0);
@@ -70,6 +36,11 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
   const listeners = useRef(new Set<Listener>());
   const processed = useRef(new NotificationEventDeduper());
   const pendingTarget = useRef<Href | null>(null);
+
+  // Latest `user` for callbacks that must stay referentially stable (see
+  // handleResponse below) without reintroducing `user` into their deps.
+  const userRef = useRef(user);
+  useEffect(() => { userRef.current = user; }, [user]);
 
   const subscribe = useCallback((listener: Listener) => {
     listeners.current.add(listener);
@@ -83,23 +54,38 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
   }, []);
 
   const refreshUnread = useCallback(async () => {
-    if (!user) return;
+    if (!userRef.current) return;
     const response = await authorizedFetch(apiUrl('/notifications/unread-count'));
     if (!response.ok) return;
     const payload = await response.json() as { count: number };
     setUnreadCount(payload.count);
     await Notifications.setBadgeCountAsync(payload.count).catch(() => undefined);
-  }, [authorizedFetch, user]);
+  }, [authorizedFetch]);
 
+  // Latest `refreshUnread` for the OS-listener effect below, which must not
+  // depend on it directly (see that effect's comment).
+  const refreshUnreadRef = useRef(refreshUnread);
+  useEffect(() => { refreshUnreadRef.current = refreshUnread; }, [refreshUnread]);
+
+  // Stable on purpose (deps: [emit] only). `emit` dedupes by
+  // event.dedupe_key (the notification's request.identifier), so processing
+  // the same response twice — e.g. because
+  // Notifications.getLastNotificationResponseAsync() keeps returning the
+  // same cached response — only navigates once. Reading `user` through a
+  // ref (instead of closing over it) keeps this callback's identity stable
+  // across unrelated re-renders (e.g. a silent token refresh producing a
+  // new `user` object), which is what lets the listener-registration effect
+  // below run only once per app session instead of re-subscribing (and
+  // re-querying getLastNotificationResponseAsync) on every such re-render.
   const handleResponse = useCallback((response: Notifications.NotificationResponse) => {
     const data = response.notification.request.content.data as Record<string, unknown>;
     const event = eventFromData(data, 'push', response.notification.request.identifier);
     if (!emit(event)) return;
     const target = targetFor(event);
     if (!target) return;
-    if (user) router.push(target);
+    if (userRef.current) router.push(target);
     else pendingTarget.current = target;
-  }, [emit, user]);
+  }, [emit]);
 
   useEffect(() => {
     if (!user) {
@@ -114,33 +100,42 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
     }
   }, [authorizedFetch, refreshUnread, user]);
 
+  // MOB-003: registered exactly once (deps: [emit, handleResponse], both
+  // stable). Notifications.getLastNotificationResponseAsync() keeps
+  // returning the *same* cached response until the app relaunches, so
+  // re-subscribing here on every unrelated re-render used to re-process
+  // that stale response and push the same navigation target again right
+  // after the user had already closed/backed out of it — the "cierra pero
+  // rebota" symptom. handleResponse/emit/refreshUnreadRef read the latest
+  // user/refreshUnread via refs, so nothing here goes stale by only running
+  // once.
   useEffect(() => {
     const received = Notifications.addNotificationReceivedListener((notification) => {
       const data = notification.request.content.data as Record<string, unknown>;
       emit(eventFromData(data, 'push', notification.request.identifier));
-      refreshUnread().catch(() => undefined);
+      refreshUnreadRef.current().catch(() => undefined);
     });
     const responded = Notifications.addNotificationResponseReceivedListener(handleResponse);
     Notifications.getLastNotificationResponseAsync().then((response) => {
       if (response) handleResponse(response);
     }).catch(() => undefined);
     const appState = AppState.addEventListener('change', (state) => {
-      if (state !== 'active' || !user) return;
+      if (state !== 'active' || !userRef.current) return;
       emit({ event_type: 'app.foreground', source: 'foreground' });
-      refreshUnread().catch(() => undefined);
+      refreshUnreadRef.current().catch(() => undefined);
     });
     return () => {
       received.remove();
       responded.remove();
       appState.remove();
     };
-  }, [emit, handleResponse, refreshUnread, user]);
+  }, [emit, handleResponse]);
 
   useEffect(() => subscribeRealtime((envelope) => {
     if (envelope.event !== 'notification.created') return;
     emit(eventFromData(envelope.data, 'realtime', envelope.event_id));
-    refreshUnread().catch(() => undefined);
-  }), [emit, refreshUnread, subscribeRealtime]);
+    refreshUnreadRef.current().catch(() => undefined);
+  }), [emit, subscribeRealtime]);
 
   const value = useMemo<NotificationSyncValue>(() => ({
     unreadCount,

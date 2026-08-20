@@ -217,9 +217,20 @@ export default function WorkOrdersScreen() {
     }
   }), [refreshActive, request, subscribe, workOrder]);
 
+  // MOB-003: `user` gets a new object reference on every silent token
+  // refresh (see AuthProvider.authorizedFetch -> refreshSession), which
+  // would otherwise re-run this effect and call openExisting(id) again —
+  // reopening the modal right after the technician closed it via
+  // closeFlow(). openedDeepLinkId remembers which id was already handled so
+  // a stale `user` reference alone never reopens it; a genuinely new
+  // deep-link id still opens normally.
+  const openedDeepLinkId = useRef<number | null>(null);
   useEffect(() => {
     const id = Number(params.workOrderId);
-    if (id > 0 && user) openExisting(id);
+    if (id > 0 && user && openedDeepLinkId.current !== id) {
+      openedDeepLinkId.current = id;
+      openExisting(id);
+    }
     // openExisting is intentionally invoked only for a new deep-link id.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.workOrderId, user]);
@@ -652,8 +663,15 @@ export default function WorkOrdersScreen() {
             <Pressable disabled={deleting} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-            <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.flex}
+          >
+            <ScrollView
+              style={styles.flex}
+              contentContainerStyle={styles.modalContent}
+              keyboardShouldPersistTaps="handled"
+            >
               {step === 'general' && (
                 <>
                   <View style={styles.sectionIntro}>
@@ -779,8 +797,15 @@ export default function WorkOrdersScreen() {
 
           {equipmentEditor && (
             <View style={styles.overlay}>
-              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlayCard}>
-                <ScrollView contentContainerStyle={styles.overlayContent} keyboardShouldPersistTaps="handled">
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.overlayCard}
+              >
+                <ScrollView
+                  style={styles.flex}
+                  contentContainerStyle={styles.overlayContent}
+                  keyboardShouldPersistTaps="handled"
+                >
                   <View style={styles.overlayHandle} />
                   <Text style={styles.sectionEyebrow}>EQUIPO DE LA OT {workOrder?.folio}</Text>
                   <Text style={styles.sectionTitle}>{equipmentEditor === 'new' ? 'Añadir equipo' : 'Editar equipo'}</Text>
@@ -806,8 +831,15 @@ export default function WorkOrdersScreen() {
           )}
           {ticketOpen && (
             <View style={styles.overlay}>
-              <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.overlayCard}>
-                <ScrollView contentContainerStyle={styles.overlayContent} keyboardShouldPersistTaps="handled">
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.overlayCard}
+              >
+                <ScrollView
+                  style={styles.flex}
+                  contentContainerStyle={styles.overlayContent}
+                  keyboardShouldPersistTaps="handled"
+                >
                   <View style={styles.overlayHandle} />
                   <Text style={styles.sectionEyebrow}>TICKET DE REAPERTURA</Text>
                   <Text style={styles.sectionTitle}>¿Por qué necesitas modificar esta orden?</Text>

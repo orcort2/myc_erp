@@ -115,9 +115,19 @@ export default function TicketsScreen() {
     if (ticketId && selected?.id === ticketId) refreshSelected(ticketId);
   }), [refreshActive, refreshSelected, selected?.id, subscribe]);
 
+  // MOB-003: `user` gets a new object reference on every silent token
+  // refresh, which would otherwise re-run this effect and call
+  // refreshSelected(id) again — which sets `selected` and reopens the
+  // ticket modal right after the technician closed it (setSelected(null)).
+  // openedDeepLinkId remembers which id was already handled so a stale
+  // `user` reference alone never reopens it.
+  const openedDeepLinkId = useRef<number | null>(null);
   useEffect(() => {
     const id = Number(params.ticketId);
-    if (id > 0 && user) refreshSelected(id);
+    if (id > 0 && user && openedDeepLinkId.current !== id) {
+      openedDeepLinkId.current = id;
+      refreshSelected(id);
+    }
   }, [params.ticketId, refreshSelected, user]);
 
   async function review(action: 'approve' | 'reject', signaturePolicy?: SignaturePolicy) {

@@ -20,7 +20,8 @@ from app.schemas.repair_execution import (
     RepairConclude,
     RepairDiagnosis,
     RepairEquipmentCreate,
-    RepairInterventionCreate,
+    RepairInterventionComplete,
+    RepairInterventionStart,
     RepairPauseCreate,
     RepairPauseResolve,
     RepairTestCreate,
@@ -45,6 +46,7 @@ from app.services.repair_execution import (
     add_test,
     assign_technician,
     cancel_execution,
+    complete_intervention,
     complete_technical,
     conclude_evaluation,
     register_arrival,
@@ -209,15 +211,44 @@ def test_direct_quotation_happy_path_to_closed(ctx):
     execution = _advance_to_in_repair(db, order, execution, advisor, technician)
 
     add_intervention(
-        db, order.id, execution.id,
-        RepairInterventionCreate(description="Reemplazo de sello", actions=[{"action": "replace_seal"}]),
+        db,
+        order.id,
+        execution.id,
+        RepairInterventionStart(
+            description="Reemplazo de sello",
+        ),
         actor=technician,
     )
     execution = _execution(db, order)
     assert execution.status == "in_repair"
     assert len(execution.interventions) == 1
+    assert execution.interventions[0].completed_at is None
 
-    add_test(db, order.id, execution.id, RepairTestCreate(test_type="functional", result="pass"), actor=technician)
+    complete_intervention(
+        db,
+        order.id,
+        execution.id,
+        execution.interventions[0].id,
+        RepairInterventionComplete(
+            actions=[{"action": "replace_seal"}],
+            outcome="effective",
+        ),
+        actor=technician,
+    )
+    execution = _execution(db, order)
+    assert execution.interventions[0].completed_at is not None
+
+    add_test(
+        db,
+        order.id,
+        execution.id,
+        RepairTestCreate(
+            test_type="functional",
+            result="pass",
+            intervention_id=execution.interventions[0].id,
+        ),
+        actor=technician,
+    )
     execution = _execution(db, order)
     assert execution.status == "testing"
 
@@ -275,14 +306,78 @@ def test_multiple_interventions_and_failed_test_cycles_back(ctx):
     execution = _execution(db, order)
     execution = _advance_to_in_repair(db, order, execution, advisor, technician)
 
-    add_intervention(db, order.id, execution.id, RepairInterventionCreate(description="Intervención 1"), actor=technician)
-    add_test(db, order.id, execution.id, RepairTestCreate(test_type="functional", result="fail"), actor=technician)
+    add_intervention(
+        db,
+        order.id,
+        execution.id,
+        RepairInterventionStart(
+            description="Intervención 1",
+        ),
+        actor=technician,
+    )
+    execution = _execution(db, order)
+    first_intervention_id = execution.interventions[0].id
+
+    complete_intervention(
+        db,
+        order.id,
+        execution.id,
+        first_intervention_id,
+        RepairInterventionComplete(
+            outcome="ineffective",
+        ),
+        actor=technician,
+    )
+
+    add_test(
+        db,
+        order.id,
+        execution.id,
+        RepairTestCreate(
+            test_type="functional",
+            result="fail",
+            intervention_id=first_intervention_id,
+        ),
+        actor=technician,
+    )
     execution = _execution(db, order)
     assert execution.status == "in_repair"
     assert len(execution.tests) == 1
 
-    add_intervention(db, order.id, execution.id, RepairInterventionCreate(description="Intervención 2"), actor=technician)
-    add_test(db, order.id, execution.id, RepairTestCreate(test_type="functional", result="pass"), actor=technician)
+    add_intervention(
+        db,
+        order.id,
+        execution.id,
+        RepairInterventionStart(
+            description="Intervención 2",
+        ),
+        actor=technician,
+    )
+    execution = _execution(db, order)
+    second_intervention_id = execution.interventions[1].id
+
+    complete_intervention(
+        db,
+        order.id,
+        execution.id,
+        second_intervention_id,
+        RepairInterventionComplete(
+            outcome="effective",
+        ),
+        actor=technician,
+    )
+
+    add_test(
+        db,
+        order.id,
+        execution.id,
+        RepairTestCreate(
+            test_type="functional",
+            result="pass",
+            intervention_id=second_intervention_id,
+        ),
+        actor=technician,
+    )
     execution = _execution(db, order)
 
     assert execution.status == "testing"
@@ -299,20 +394,46 @@ def test_removed_component_disposition_defaults_and_validates(ctx):
     execution = _advance_to_in_repair(db, order, execution, advisor, technician)
 
     add_intervention(
-        db, order.id, execution.id,
-        RepairInterventionCreate(
+        db,
+        order.id,
+        execution.id,
+        RepairInterventionStart(
             description="Retiro de tarjeta dañada",
-            removed_components=[{"name": "Tarjeta control"}],
         ),
         actor=technician,
     )
     execution = _execution(db, order)
-    assert execution.interventions[0].removed_components[0]["disposition"] == "return_to_client"
+
+    complete_intervention(
+        db,
+        order.id,
+        execution.id,
+        execution.interventions[0].id,
+        RepairInterventionComplete(
+            removed_components=[
+                {"name": "Tarjeta control"},
+            ],
+            outcome="effective",
+        ),
+        actor=technician,
+    )
+    execution = _execution(db, order)
+
+    assert (
+        execution.interventions[0]
+        .removed_components[0]["disposition"]
+        == "return_to_client"
+    )
 
     with pytest.raises(Exception):
-        RepairInterventionCreate(
-            description="x",
-            removed_components=[{"name": "Fusible", "disposition": "invalid"}],
+        RepairInterventionComplete(
+            removed_components=[
+                {
+                    "name": "Fusible",
+                    "disposition": "invalid",
+                },
+            ],
+            outcome="partial",
         )
 
 
@@ -374,14 +495,35 @@ def test_cancel_after_first_intervention(ctx):
     execution = _execution(db, order)
     execution = _advance_to_in_repair(db, order, execution, advisor, technician)
 
-    add_intervention(db, order.id, execution.id, RepairInterventionCreate(description="Intervención 1"), actor=technician)
+    add_intervention(
+        db,
+        order.id,
+        execution.id,
+        RepairInterventionStart(
+            description="Intervención 1",
+        ),
+        actor=technician,
+    )
     execution = _execution(db, order)
 
-    cancel_execution(db, order.id, execution.id, RepairCancel(reason="Cliente desistió tras intervención"), actor=advisor)
+    with pytest.raises(HTTPException) as exc_info:
+        cancel_execution(
+            db,
+            order.id,
+            execution.id,
+            RepairCancel(
+                reason="Cliente desistió tras intervención",
+            ),
+            actor=advisor,
+        )
+
+    assert exc_info.value.status_code == 409
+
     execution = _execution(db, order)
 
-    assert execution.status == "cancelled"
-    assert execution.cancelled_after_intervention is True
+    assert execution.status == "in_repair"
+    assert execution.cancelled_after_intervention is False
+    assert len(execution.interventions) == 1
 
 
 def test_maintenance_linked_repair_origin_and_investigation_regression(ctx):

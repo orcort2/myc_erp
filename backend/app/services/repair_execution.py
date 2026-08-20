@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from weasyprint import HTML
 
+from app.models.equipment import Equipment
 from app.models.maintenance_execution import MaintenanceChangeRequest
 from app.models.repair_execution import (
     RepairChangeRequest,
@@ -34,7 +35,8 @@ from app.schemas.repair_execution import (
     RepairConclude,
     RepairDiagnosis,
     RepairEquipmentCreate,
-    RepairInterventionCreate,
+    RepairInterventionComplete,
+    RepairInterventionStart,
     RepairPauseCreate,
     RepairPauseResolve,
     RepairSignature,
@@ -89,6 +91,29 @@ def _require(
             detail=(
                 "No tienes permiso para esta "
                 "operación de Reparación"
+            ),
+        )
+
+
+def _require_assigned_technician(
+    execution: RepairExecution,
+    actor: User,
+) -> None:
+    if execution.technician_id is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "La reparación todavía no tiene "
+                "un técnico asignado"
+            ),
+        )
+
+    if execution.technician_id != actor.id:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Esta reparación está asignada "
+                "a otro técnico"
             ),
         )
 
@@ -482,6 +507,30 @@ def _current_blockers(
             ),
         )
 
+    open_intervention = next(
+        (
+            intervention
+            for intervention
+            in execution.interventions
+            if intervention.completed_at is None
+        ),
+        None,
+    )
+
+    if open_intervention is not None:
+        blockers.append(
+            _blocker(
+                execution,
+                (
+                    "Existe una intervención técnica "
+                    "en curso"
+                ),
+                "interventions",
+                "completed_at",
+                severity="notice",
+            ),
+        )
+
     for pause in execution.pauses:
         if pause.status == "active":
             blockers.append(
@@ -520,6 +569,40 @@ def _closure_blockers(
                 ),
                 "status",
                 "status",
+            ),
+        )
+
+    if (
+        execution.report_status
+        != "signed"
+        or execution.report_version <= 0
+    ):
+        blockers.append(
+            _blocker(
+                execution,
+                (
+                    "El reporte técnico vigente "
+                    "debe estar generado y firmado"
+                ),
+                "report",
+                "report_status",
+            ),
+        )
+
+    elif (
+        execution.signed_report_version
+        != execution.report_version
+    ):
+        blockers.append(
+            _blocker(
+                execution,
+                (
+                    "La firma no corresponde "
+                    "a la versión vigente "
+                    "del reporte"
+                ),
+                "report",
+                "signed_report_version",
             ),
         )
 
@@ -750,10 +833,7 @@ def register_arrival(
         execution_id,
     )
 
-    if (
-        execution.status
-        != "pending_arrival"
-    ):
+    if execution.status != "pending_arrival":
         raise HTTPException(
             status_code=409,
             detail=(
@@ -764,28 +844,78 @@ def register_arrival(
 
     unit = execution.service_unit
 
-    if (
-        payload.equipment_id
-        is not None
-    ):
-        unit.equipment_id = (
-            payload.equipment_id
+    if payload.equipment_id is not None:
+        equipment = db.get(
+            Equipment,
+            payload.equipment_id,
         )
 
-    if payload.name:
-        unit.name = payload.name
+        if (
+            equipment is None
+            or equipment.service_order_id
+            != service_order_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El equipo no pertenece "
+                    "a este ETS"
+                ),
+            )
 
-    unit.brand = payload.brand
-    unit.model = payload.model
-    unit.serial_number = (
-        payload.serial_number
-    )
+        if (
+            equipment.service_unit is not None
+            and equipment.service_unit.id
+            != unit.id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "El equipo ya está vinculado "
+                    "a otra unidad de servicio"
+                ),
+            )
+
+        unit.equipment_id = equipment.id
+        unit.name = equipment.name
+        unit.brand = equipment.brand
+        unit.model = equipment.model
+        unit.serial_number = (
+            equipment.serial_number
+        )
+
+    else:
+        equipment = Equipment(
+            service_order_id=service_order_id,
+            work_order_id=unit.work_order_id,
+            service_order_item_id=(
+                execution.service_order_item_id
+            ),
+            name=payload.name,
+            brand=payload.brand,
+            model=payload.model,
+            serial_number=(
+                payload.serial_number
+            ),
+            status="registered",
+        )
+
+        db.add(equipment)
+        db.flush()
+
+        unit.equipment_id = equipment.id
+        unit.name = equipment.name
+        unit.brand = equipment.brand
+        unit.model = equipment.model
+        unit.serial_number = (
+            equipment.serial_number
+        )
 
     unit.identification_status = (
-        "identified"
+        "complete"
         if (
-            payload.equipment_id
-            or payload.serial_number
+            unit.name
+            and unit.serial_number
         )
         else "partial"
     )
@@ -796,15 +926,16 @@ def register_arrival(
 
     write_audit_log(
         db,
-        action=(
-            "repair.arrival_registered"
-        ),
+        action="repair.arrival_registered",
         entity="repair_executions",
         entity_id=execution.id,
         user_id=actor.id,
-        new_values=(
-            payload.model_dump()
-        ),
+        new_values={
+            "equipment_id":
+                unit.equipment_id,
+            "equipment_name":
+                unit.name,
+        },
     )
 
     db.commit()
@@ -851,23 +982,43 @@ def assign_technician(
             ),
         )
 
+    technician = db.get(
+        User,
+        payload.technician_id,
+    )
+
+    if (
+        technician is None
+        or not technician.is_active
+        or not user_has_permission(
+            technician,
+            "service_orders.repair.execute",
+        )
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Selecciona un técnico activo "
+                "con capacidad de ejecutar "
+                "Reparaciones"
+            ),
+        )
+
     execution.technician_id = (
-        payload.technician_id
+        technician.id
     )
 
     execution.status = "assigned"
 
     write_audit_log(
         db,
-        action=(
-            "repair.technician_assigned"
-        ),
+        action="repair.technician_assigned",
         entity="repair_executions",
         entity_id=execution.id,
         user_id=actor.id,
         new_values={
             "technician_id":
-                payload.technician_id,
+                technician.id,
         },
     )
 
@@ -900,6 +1051,11 @@ def start_evaluation(
         db,
         service_order_id,
         execution_id,
+    )
+
+    _require_assigned_technician(
+        execution,
+        actor,
     )
 
     if execution.status != "assigned":
@@ -956,6 +1112,11 @@ def save_diagnosis(
         db,
         service_order_id,
         execution_id,
+    )
+
+    _require_assigned_technician(
+        execution,
+        actor,
     )
 
     if (
@@ -1024,6 +1185,11 @@ def conclude_evaluation(
         execution_id,
     )
 
+    _require_assigned_technician(
+        execution,
+        actor,
+    )
+
     if (
         execution.status
         != "in_evaluation"
@@ -1089,10 +1255,12 @@ def add_intervention(
     db: Session,
     service_order_id: int,
     execution_id: int,
-    payload: RepairInterventionCreate,
+    payload: RepairInterventionStart,
     *,
     actor: User,
 ) -> dict:
+    """Inicia una nueva sesión de intervención técnica."""
+
     _require(
         actor,
         "service_orders.repair.execute",
@@ -1109,21 +1277,41 @@ def add_intervention(
         execution_id,
     )
 
+    _require_assigned_technician(
+        execution,
+        actor,
+    )
+
     if execution.status != "in_repair":
         raise HTTPException(
             status_code=409,
             detail=(
-                "Solo pueden registrarse "
-                "intervenciones mientras "
-                "la ejecución está "
-                "en reparación"
+                "Solo puede iniciarse una intervención "
+                "mientras la ejecución está en reparación"
+            ),
+        )
+
+    open_intervention = next(
+        (
+            intervention
+            for intervention
+            in execution.interventions
+            if intervention.completed_at is None
+        ),
+        None,
+    )
+
+    if open_intervention is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Ya existe una intervención técnica "
+                "abierta para esta reparación"
             ),
         )
 
     sequence = (
-        len(
-            execution.interventions,
-        )
+        len(execution.interventions)
         + 1
     )
 
@@ -1132,40 +1320,159 @@ def add_intervention(
         sequence=sequence,
         technician_id=(
             execution.technician_id
-            or actor.id
         ),
         description=payload.description,
-        actions=payload.actions,
-        removed_components=[
-            {
-                **component,
-                "disposition":
-                    component.get(
-                        "disposition",
-                        "return_to_client",
-                    ),
-            }
-            for component
-            in payload.removed_components
-        ],
-        outcome=payload.outcome,
+        actions=[],
+        removed_components=[],
+        outcome=None,
         started_at=_now(),
-        completed_at=_now(),
+        completed_at=None,
     )
 
     db.add(intervention)
+    db.flush()
 
     write_audit_log(
         db,
-        action=(
-            "repair.intervention_added"
-        ),
-        entity="repair_executions",
-        entity_id=execution.id,
+        action="repair.intervention_started",
+        entity="repair_interventions",
+        entity_id=intervention.id,
         user_id=actor.id,
-        new_values=(
-            payload.model_dump()
+        new_values={
+            "sequence":
+                intervention.sequence,
+            "description":
+                intervention.description,
+            "technician_id":
+                intervention.technician_id,
+        },
+    )
+
+    db.commit()
+
+    return repair_board(
+        db,
+        service_order_id,
+    )
+
+
+def complete_intervention(
+    db: Session,
+    service_order_id: int,
+    execution_id: int,
+    intervention_id: int,
+    payload: RepairInterventionComplete,
+    *,
+    actor: User,
+) -> dict:
+    """Finaliza una sesión de intervención previamente iniciada."""
+
+    _require(
+        actor,
+        "service_orders.repair.execute",
+    )
+
+    _active_order(
+        db,
+        service_order_id,
+    )
+
+    execution = _execution(
+        db,
+        service_order_id,
+        execution_id,
+    )
+
+    _require_assigned_technician(
+        execution,
+        actor,
+    )
+
+    if execution.status != "in_repair":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Solo puede finalizarse una intervención "
+                "mientras la ejecución está en reparación"
+            ),
+        )
+
+    intervention = next(
+        (
+            item
+            for item
+            in execution.interventions
+            if item.id == intervention_id
         ),
+        None,
+    )
+
+    if intervention is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Intervención técnica no encontrada"
+            ),
+        )
+
+    if intervention.completed_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "La intervención técnica ya fue finalizada"
+            ),
+        )
+
+    if intervention.technician_id != actor.id:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "La intervención pertenece "
+                "a otro técnico"
+            ),
+        )
+
+    intervention.actions = (
+        payload.actions
+    )
+
+    intervention.removed_components = [
+        {
+            **component,
+            "disposition":
+                component.get(
+                    "disposition",
+                    "return_to_client",
+                ),
+        }
+        for component
+        in payload.removed_components
+    ]
+
+    intervention.outcome = (
+        payload.outcome
+    )
+
+    intervention.completed_at = (
+        _now()
+    )
+
+    write_audit_log(
+        db,
+        action="repair.intervention_completed",
+        entity="repair_interventions",
+        entity_id=intervention.id,
+        user_id=actor.id,
+        new_values={
+            "sequence":
+                intervention.sequence,
+            "outcome":
+                intervention.outcome,
+            "completed_at":
+                intervention
+                .completed_at
+                .isoformat(),
+        },
     )
 
     db.commit()
@@ -1205,6 +1512,30 @@ def add_test(
         execution_id,
     )
 
+    _require_assigned_technician(
+        execution,
+        actor,
+    )
+
+    open_intervention = next(
+        (
+            intervention
+            for intervention
+            in execution.interventions
+            if intervention.completed_at is None
+        ),
+        None,
+    )
+
+    if open_intervention is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Debe finalizarse la intervención "
+                "abierta antes de registrar pruebas"
+            ),
+        )
+
     if execution.status not in {
         "in_repair",
         "testing",
@@ -1218,24 +1549,35 @@ def add_test(
             ),
         )
 
-    if (
-        payload.intervention_id
-        is not None
-        and not any(
-            intervention.id
-            == payload.intervention_id
-            for intervention
-            in execution.interventions
-        )
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "intervention_id no pertenece "
-                "a esta ejecución"
+    if payload.intervention_id is not None:
+        linked_intervention = next(
+            (
+                intervention
+                for intervention
+                in execution.interventions
+                if intervention.id
+                == payload.intervention_id
             ),
+            None,
         )
 
+        if linked_intervention is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "intervention_id no pertenece "
+                    "a esta ejecución"
+                ),
+            )
+
+        if linked_intervention.completed_at is None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "No puede probarse una intervención "
+                    "que todavía está abierta"
+                ),
+            )
     sequence = (
         len(
             execution.tests,
@@ -1305,6 +1647,24 @@ def complete_technical(
         service_order_id,
         execution_id,
     )
+
+    _require_assigned_technician(
+        execution,
+        actor,
+    )
+
+    if any(
+        intervention.completed_at is None
+        for intervention
+        in execution.interventions
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Existen intervenciones técnicas "
+                "abiertas sin finalizar"
+            ),
+        )
 
     if execution.status != "testing":
         raise HTTPException(
@@ -1387,6 +1747,11 @@ def add_pause(
         execution_id,
     )
 
+    _require_assigned_technician(
+        execution,
+        actor,
+    )
+
     db.add(
         RepairPause(
             repair_execution_id=(
@@ -1450,6 +1815,11 @@ def resolve_pause(
         db,
         service_order_id,
         execution_id,
+    )
+
+    _require_assigned_technician(
+        execution,
+        actor,
     )
 
     pause = next(
@@ -1527,6 +1897,11 @@ def request_change(
         db,
         service_order_id,
         execution_id,
+    )
+
+    _require_assigned_technician(
+        execution,
+        actor,
     )
 
     db.add(
@@ -1917,29 +2292,61 @@ def generate_report(
             ),
         )
 
-    execution.report_version += 1
-    execution.report_status = "generated"
-    execution.report_generated_at = (
-        _now()
+    next_version = (
+        execution.report_version
+        + 1
     )
 
-    write_audit_log(
-        db,
-        action=(
-            "repair.report_generated"
-        ),
-        entity="repair_executions",
-        entity_id=execution.id,
-        user_id=actor.id,
-    )
-
-    db.commit()
-
+    # Primero se genera el documento.
+    # La BD solo debe afirmar que existe
+    # una versión cuando WeasyPrint terminó
+    # correctamente.
     content = HTML(
         string=_report_html(
             execution,
         ),
     ).write_pdf()
+
+    execution.report_version = (
+        next_version
+    )
+    execution.report_status = (
+        "generated"
+    )
+    execution.report_generated_at = (
+        _now()
+    )
+
+    # Una nueva versión invalida cualquier
+    # firma previa porque esa firma pertenece
+    # a una versión anterior del documento.
+    execution.signed_report_version = None
+    execution.signer_name = None
+    execution.signature_data_url = None
+    execution.signed_at = None
+    execution.client_decision = None
+
+    if execution.status == "pending_release":
+        execution.status = (
+            "technically_completed"
+            if execution.conclusion
+            != "equipment_not_suitable"
+            else "equipment_not_suitable"
+        )
+
+    write_audit_log(
+        db,
+        action="repair.report_generated",
+        entity="repair_executions",
+        entity_id=execution.id,
+        user_id=actor.id,
+        new_values={
+            "report_version":
+                execution.report_version,
+        },
+    )
+
+    db.commit()
 
     filename = (
         f"reparacion-{execution.id}"
@@ -1985,6 +2392,21 @@ def sign_report(
             ),
         )
 
+    if (
+        execution.report_status
+        != "generated"
+        or execution.report_version <= 0
+        or execution.report_generated_at
+        is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Primero debe generarse "
+                "el reporte técnico vigente"
+            ),
+        )
+
     execution.signer_name = (
         payload.signer_name
     )
@@ -2001,8 +2423,9 @@ def sign_report(
 
     execution.signed_report_version = (
         execution.report_version
-        or 1
     )
+
+    execution.report_status = "signed"
 
     execution.status = (
         "pending_release"
@@ -2017,6 +2440,9 @@ def sign_report(
         new_values={
             "client_decision":
                 payload.client_decision,
+            "signed_report_version":
+                execution
+                .signed_report_version,
         },
     )
 
@@ -2067,11 +2493,26 @@ def close_execution(
             ),
         )
 
+    if (
+        execution.report_status
+        != "signed"
+        or execution.report_version <= 0
+        or execution.signed_report_version
+        != execution.report_version
+        or execution.signed_at is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "El reporte técnico vigente "
+                "debe estar generado y firmado "
+                "antes de cerrar"
+            ),
+        )
+
     execution.status = "closed"
     execution.closed_at = _now()
 
-    # El cierre histórico original
-    # nunca se sobrescribe.
     if (
         execution.original_closed_at
         is None
@@ -2086,6 +2527,13 @@ def close_execution(
         entity="repair_executions",
         entity_id=execution.id,
         user_id=actor.id,
+        new_values={
+            "report_version":
+                execution.report_version,
+            "signed_report_version":
+                execution
+                .signed_report_version,
+        },
     )
 
     db.commit()
@@ -2104,11 +2552,10 @@ def cancel_execution(
     *,
     actor: User,
 ) -> dict:
-    """Cancelación actual de Fase 1.
+    """Cancela una Reparación antes de su primera intervención.
 
-    Nota:
-    La política definitiva después de primera intervención
-    queda pendiente de revisión funcional.
+    Una vez iniciada cualquier intervención técnica, la reparación
+    debe terminar mediante el flujo técnico documentado.
     """
 
     _require(
@@ -2139,16 +2586,19 @@ def cancel_execution(
             ),
         )
 
-    execution.cancelled_after_intervention = (
-        bool(
-            execution.interventions,
+    if execution.interventions:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Una reparación que ya fue intervenida "
+                "no puede cancelarse administrativamente. "
+                "Debe finalizarse mediante una conclusión "
+                "técnica documentada."
+            ),
         )
-    )
 
-    execution.cancellation_reason = (
-        payload.reason
-    )
-
+    execution.cancelled_after_intervention = False
+    execution.cancellation_reason = payload.reason
     execution.cancelled_at = _now()
     execution.status = "cancelled"
 
@@ -2159,11 +2609,8 @@ def cancel_execution(
         entity_id=execution.id,
         user_id=actor.id,
         new_values={
-            "reason":
-                payload.reason,
-            "cancelled_after_intervention":
-                execution
-                .cancelled_after_intervention,
+            "reason": payload.reason,
+            "cancelled_after_intervention": False,
         },
     )
 

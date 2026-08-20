@@ -130,6 +130,26 @@ def _bump_edit_version(group: list[LabWorkOrder]) -> None:
         item.edit_version = next_version
 
 
+def _group_signatures_preserved(group: list[LabWorkOrder]) -> bool:
+    """True when the group's current signature session comes from a reopening
+    approved with requested_signature_policy = "preserve".
+
+    ``_ensure_group_editable`` already guarantees that, once a group is
+    editable, any item that still carries a ``signature_session_id`` must
+    have ``reopen_ticket_id`` and ``signature_preserved`` set (otherwise the
+    group would have been rejected as "ya fue firmado"). So the presence of
+    a live signature session on an editable group means that session was
+    explicitly preserved through a reopening and must not be invalidated by
+    ordinary edits to already-existing data (general fields or equipment).
+    """
+    return any(
+        item.signature_session_id is not None
+        and item.reopen_ticket_id is not None
+        and item.signature_preserved
+        for item in group
+    )
+
+
 def invalidate_group_signatures(
     db: Session, group: list[LabWorkOrder], user: User, *, fields: list[str]
 ) -> None:
@@ -430,7 +450,9 @@ def update_work_order(
     changed_fields = sorted(
         key for key, value in updates.items() if getattr(work_order, key) != value
     )
-    if CRITICAL_GENERAL_FIELDS.intersection(changed_fields):
+    if CRITICAL_GENERAL_FIELDS.intersection(changed_fields) and not _group_signatures_preserved(
+        group
+    ):
         invalidate_group_signatures(db, group, user, fields=changed_fields)
     for item in group:
         for key, value in updates.items():
@@ -509,7 +531,9 @@ def update_equipment(
     changed_fields = sorted(
         key for key, value in values.items() if getattr(equipment, key) != value
     )
-    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields):
+    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields) and not _group_signatures_preserved(
+        group
+    ):
         invalidate_group_signatures(db, group, user, fields=changed_fields)
     for key, value in values.items():
         setattr(equipment, key, value)

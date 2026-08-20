@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+import anyio
 import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.notification import Notification, PushDevice
 from app.models.user import User
+from app.realtime.events import publish_to_users
 from app.schemas.notification import PushDeviceCreate
 
 
@@ -187,6 +189,58 @@ def deliver_notification_ids(db: Session, notification_ids: list[int]) -> None:
     db.commit()
 
 
+def _realtime_payload(notification: Notification) -> dict:
+    return {
+        "event_type": notification.notification_type,
+        "entity_type": notification.entity_type,
+        "entity_id": notification.entity_id,
+        **(notification.metadata_json or {}),
+    }
+
+
+def _publish_realtime_notifications(db: Session, notification_ids: list[int]) -> None:
+    """Mirror of the OS push channel but for foregrounded app instances.
+
+    MOB-004: ticket/work-order notifications (created via
+    app.services.notification_events) were only ever queued for OS push
+    delivery — nothing published a "notification.created" realtime event for
+    them, unlike app/routers/communications.py which does both. That meant a
+    technician with the app open in the foreground never saw the update
+    until the next unread-count poll (app.foreground) or a full relogin,
+    even though the realtime hub/WebSocket infrastructure already exists and
+    already works for communications.
+
+    anyio.from_thread.run bridges back to the ASGI event loop from the
+    worker thread FastAPI runs this (sync) code in — the same mechanism
+    Starlette itself uses for sync path operations — so no BackgroundTasks
+    plumbing is required through every router/service call site. If there is
+    no such portal available (e.g. this is invoked from a CLI script outside
+    a request), the RuntimeError is swallowed: push delivery already
+    happened and is unaffected either way.
+    """
+    notifications = list(
+        db.scalars(select(Notification).where(Notification.id.in_(notification_ids))).all()
+    )
+    for notification in notifications:
+        try:
+            anyio.from_thread.run(
+                publish_to_users,
+                {notification.recipient_user_id},
+                "notification.created",
+                _realtime_payload(notification),
+            )
+        except RuntimeError:
+            logger.debug(
+                "Sin portal async disponible para publicar realtime notification_id=%s",
+                notification.id,
+            )
+        except Exception:
+            logger.exception(
+                "Publicación realtime inesperadamente fallida notification_id=%s",
+                notification.id,
+            )
+
+
 def commit_and_dispatch_notifications(db: Session) -> None:
     notification_ids = list(db.info.pop("push_notification_ids", []))
     db.commit()
@@ -197,3 +251,4 @@ def commit_and_dispatch_notifications(db: Session) -> None:
     except Exception:
         db.rollback()
         logger.exception("Entrega push inesperadamente fallida notification_ids=%s", notification_ids)
+    _publish_realtime_notifications(db, notification_ids)
