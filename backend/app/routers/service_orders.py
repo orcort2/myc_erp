@@ -60,7 +60,8 @@ from app.schemas.repair_execution import (
     RepairConclude,
     RepairDiagnosis,
     RepairEquipmentCreate,
-    RepairInterventionCreate,
+    RepairInterventionComplete,
+    RepairInterventionStart,
     RepairPauseCreate,
     RepairPauseResolve,
     RepairSignature,
@@ -144,6 +145,7 @@ from app.services.repair_execution import (
     assign_technician as assign_repair_technician,
     cancel_execution as cancel_repair_execution,
     close_execution as close_repair_execution,
+    complete_intervention,
     complete_technical as complete_repair_technical,
     conclude_evaluation,
     generate_report as generate_repair_report,
@@ -284,9 +286,12 @@ def post_repair_conclude(service_order_id: int, execution_id: int, payload: Repa
 
 
 @router.post("/{service_order_id}/repair/{execution_id}/interventions", response_model=RepairBoardRead)
-def post_repair_intervention(service_order_id: int, execution_id: int, payload: RepairInterventionCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+def post_repair_intervention(service_order_id: int, execution_id: int, payload: RepairInterventionStart, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
     return add_intervention(db, service_order_id, execution_id, payload, actor=current_user)
 
+@router.post("/{service_order_id}/repair/{execution_id}/interventions/" "{intervention_id}/complete", response_model=RepairBoardRead)
+def post_repair_intervention_complete(service_order_id: int, execution_id: int, intervention_id: int, payload: RepairInterventionComplete, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return complete_intervention(db, service_order_id, execution_id, intervention_id, payload, actor=current_user)
 
 @router.post("/{service_order_id}/repair/{execution_id}/tests", response_model=RepairBoardRead)
 def post_repair_test(service_order_id: int, execution_id: int, payload: RepairTestCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
