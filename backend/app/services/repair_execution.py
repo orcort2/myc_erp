@@ -1752,6 +1752,29 @@ def add_pause(
         actor,
     )
 
+    duplicate_active_pause = next(
+        (
+            pause
+            for pause in execution.pauses
+            if (
+                pause.status == "active"
+                and pause.pause_type
+                == payload.pause_type
+            )
+        ),
+        None,
+    )
+
+    if duplicate_active_pause is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Ya existe una pausa activa "
+                f"de tipo '{payload.pause_type}' "
+                "para esta reparación"
+            ),
+        )
+
     db.add(
         RepairPause(
             repair_execution_id=(

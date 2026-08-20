@@ -1280,7 +1280,7 @@ def test_removed_component_disposition_defaults_and_validates(
         )
 
 
-def test_pause_does_not_mutate_execution_status(
+def test_pause_types_are_parallel_and_reject_active_duplicates(
     ctx,
 ):
     (
@@ -1316,20 +1316,24 @@ def test_pause_does_not_mutate_execution_status(
         technician,
     )
 
-    status_before = (
-        execution.status
-    )
+    status_before = execution.status
+
+    # ---------------------------------------------------------
+    # Warehouse es un bloqueante paralelo.
+    # No modifica el lifecycle principal.
+    # ---------------------------------------------------------
 
     add_pause(
         db,
         order.id,
         execution.id,
         RepairPauseCreate(
-            pause_type="spare_part",
-            reason="Espera de refacción",
-            responsible_user_id=(
-                technician.id
+            pause_type="warehouse",
+            reason=(
+                "Pendiente de surtido "
+                "interno de almacén"
             ),
+            responsible_user_id=technician.id,
         ),
         actor=technician,
     )
@@ -1339,32 +1343,95 @@ def test_pause_does_not_mutate_execution_status(
         order,
     )
 
-    assert (
-        execution.status
-        == status_before
+    assert execution.status == status_before
+
+    assert len(execution.pauses) == 1
+
+    warehouse_pause = execution.pauses[0]
+
+    assert warehouse_pause.pause_type == "warehouse"
+    assert warehouse_pause.status == "active"
+
+    # ---------------------------------------------------------
+    # No debe permitirse duplicar el mismo bloqueante activo.
+    # ---------------------------------------------------------
+
+    with pytest.raises(
+        HTTPException,
+    ) as exc_info:
+        add_pause(
+            db,
+            order.id,
+            execution.id,
+            RepairPauseCreate(
+                pause_type="warehouse",
+                reason=(
+                    "Segundo bloqueo "
+                    "de almacén"
+                ),
+                responsible_user_id=technician.id,
+            ),
+            actor=technician,
+        )
+
+    assert exc_info.value.status_code == 409
+
+    # ---------------------------------------------------------
+    # Un bloqueante diferente sí puede coexistir.
+    # ---------------------------------------------------------
+
+    add_pause(
+        db,
+        order.id,
+        execution.id,
+        RepairPauseCreate(
+            pause_type="authorization",
+            reason=(
+                "Pendiente de autorización "
+                "adicional"
+            ),
+            responsible_user_id=technician.id,
+        ),
+        actor=technician,
     )
 
-    assert (
-        execution
-        .pauses[0]
-        .status
-        == "active"
+    execution = _execution(
+        db,
+        order,
     )
 
-    pause_id = (
-        execution
-        .pauses[0]
-        .id
+    assert execution.status == status_before
+
+    active_types = {
+        pause.pause_type
+        for pause in execution.pauses
+        if pause.status == "active"
+    }
+
+    assert active_types == {
+        "warehouse",
+        "authorization",
+    }
+
+    # ---------------------------------------------------------
+    # Resolver warehouse tampoco modifica el lifecycle.
+    # ---------------------------------------------------------
+
+    warehouse_pause = next(
+        pause
+        for pause in execution.pauses
+        if pause.pause_type == "warehouse"
     )
 
     resolve_pause(
         db,
         order.id,
         execution.id,
-        pause_id,
+        warehouse_pause.id,
         RepairPauseResolve(
             resolution=(
-                "Refacción recibida"
+                "Material entregado "
+                "por almacén"
             ),
         ),
         actor=technician,
@@ -1375,17 +1442,70 @@ def test_pause_does_not_mutate_execution_status(
         order,
     )
 
-    assert (
-        execution.status
-        == status_before
+    assert execution.status == status_before
+
+    warehouse_pause = next(
+        pause
+        for pause in execution.pauses
+        if (
+            pause.id
+            == warehouse_pause.id
+        )
     )
 
-    assert (
-        execution
-        .pauses[0]
-        .status
-        == "resolved"
+    assert warehouse_pause.status == "resolved"
+    assert warehouse_pause.resolved_at is not None
+
+    # Authorization continúa activa.
+    assert any(
+        pause.pause_type == "authorization"
+        and pause.status == "active"
+        for pause in execution.pauses
     )
+
+    # ---------------------------------------------------------
+    # Una vez resuelta, warehouse puede volver a abrirse.
+    # ---------------------------------------------------------
+
+    add_pause(
+        db,
+        order.id,
+        execution.id,
+        RepairPauseCreate(
+            pause_type="warehouse",
+            reason=(
+                "Nuevo requerimiento "
+                "de almacén"
+            ),
+            responsible_user_id=technician.id,
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(
+        db,
+        order,
+    )
+
+    assert execution.status == status_before
+
+    warehouse_pauses = [
+        pause
+        for pause in execution.pauses
+        if pause.pause_type == "warehouse"
+    ]
+
+    assert len(warehouse_pauses) == 2
+
+    assert sum(
+        pause.status == "active"
+        for pause in warehouse_pauses
+    ) == 1
+
+    assert sum(
+        pause.status == "resolved"
+        for pause in warehouse_pauses
+    ) == 1
 
 
 def test_blockers_prevent_premature_closure(

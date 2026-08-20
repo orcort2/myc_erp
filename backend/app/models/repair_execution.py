@@ -155,7 +155,13 @@ class RepairPause(IntegerPkMixin, TimestampMixin, Base):
     __tablename__ = "repair_pauses"
     __table_args__ = (
         CheckConstraint(
-            "pause_type IN ('spare_part','authorization','client_decision','administrative_investigation')",
+            "pause_type IN ("
+            "'spare_part',"
+            "'authorization',"
+            "'client_decision',"
+            "'administrative_investigation',"
+            "'warehouse'"
+            ")",
             name="ck_repair_pause_type",
         ),
         CheckConstraint("status IN ('active','resolved')", name="ck_repair_pause_status"),

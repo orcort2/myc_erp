@@ -214,6 +214,7 @@ class RepairPauseCreate(BaseModel):
         "authorization",
         "client_decision",
         "administrative_investigation",
+        "warehouse",
     ]
 
     reason: str = Field(
