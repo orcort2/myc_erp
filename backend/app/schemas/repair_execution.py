@@ -558,6 +558,23 @@ class RepairChangeRead(
     decision_reason: str | None
 
 
+class RepairWarrantyCycleRead(
+    RepairEntityRead,
+):
+    sequence: int
+    reason: str
+    status: str
+
+    opened_by_id: int
+    opened_at: datetime
+
+    resolution: str | None
+    resolution_notes: str | None
+
+    closed_by_id: int | None
+    closed_at: datetime | None
+
+
 class RepairExecutionRead(
     RepairEntityRead,
 ):
@@ -609,6 +626,9 @@ class RepairExecutionRead(
 
     warranty_reopened_count: int
     original_closed_at: datetime | None
+    original_conclusion: str | None
+    original_conclusion_reason: str | None
+    original_technical_completed_at: datetime | None
 
     cancelled_at: datetime | None
     cancelled_after_intervention: bool
@@ -633,6 +653,14 @@ class RepairExecutionRead(
     changes: list[
         RepairChangeRead
     ]
+
+    warranty_cycles: list[
+        RepairWarrantyCycleRead
+    ] = Field(
+        default_factory=list,
+    )
+
+    active_warranty_cycle_id: int | None = None
 
     blockers: list[dict] = Field(
         default_factory=list,

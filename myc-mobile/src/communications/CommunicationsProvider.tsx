@@ -10,7 +10,7 @@ import {
 } from 'react';
 
 import { useAuth } from '@/src/auth/AuthProvider';
-import { markMessageFailed, reconcileMessages } from '@/src/communications/message-state';
+import { applyMessageToConversations, markMessageFailed, reconcileMessages } from '@/src/communications/message-state';
 import { useRealtime } from '@/src/realtime/RealtimeProvider';
 import {
   fetchConversation,
@@ -165,6 +165,13 @@ export function CommunicationsProvider({ children }: PropsWithChildren) {
       setMessagesByConversation((current) => ({
         ...current, [id]: reconcileMessages(current[id] ?? [], [confirmed]),
       }));
+      // Updates the conversation preview immediately from the POST response
+      // instead of waiting for the realtime echo of this same message — see
+      // applyMessageToConversations' idempotency note for why that echo is
+      // then safely a no-op.
+      setConversations((current) => applyMessageToConversations(
+        current, confirmed, user.id, activeConversation.current,
+      ));
       setError(null);
     } catch (caught) {
       setMessagesByConversation((current) => ({
@@ -221,19 +228,9 @@ export function CommunicationsProvider({ children }: PropsWithChildren) {
           current[message.conversation_id] ?? [], [message],
         ),
       }));
-      setConversations((current) => current.map((conversation) => (
-        conversation.id === message.conversation_id
-          ? {
-            ...conversation,
-            last_message: message,
-            last_message_at: message.created_at,
-            latest_sequence: Math.max(conversation.latest_sequence, message.sequence),
-            unread_count: message.sender.id !== user?.id && activeConversation.current !== message.conversation_id
-              ? conversation.unread_count + 1
-              : conversation.unread_count,
-          }
-          : conversation
-      )).sort((left, right) => (right.last_message_at ?? '').localeCompare(left.last_message_at ?? '')));
+      setConversations((current) => applyMessageToConversations(
+        current, message, user?.id, activeConversation.current,
+      ));
       const shouldRead = activeConversation.current === message.conversation_id;
       acknowledge(message.conversation_id, [message], shouldRead).catch(() => undefined);
       return;

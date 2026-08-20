@@ -1,4 +1,4 @@
-import type { CommunicationMessage, MessageDeliveryState } from '@/src/types/communication';
+import type { CommunicationConversation, CommunicationMessage, MessageDeliveryState } from '@/src/types/communication';
 
 function key(message: CommunicationMessage): string {
   return message.client_message_id
@@ -47,4 +47,42 @@ export function markMessageFailed(
   return messages.map((message) => message.client_message_id === clientMessageId
     ? { ...message, delivery_state: 'failed' }
     : message);
+}
+
+/**
+ * Applies a confirmed message (own POST response or realtime message.created)
+ * to the conversation list's preview fields and re-sorts by recency. Shared
+ * by both call sites so the own-sender's preview updates immediately after
+ * sending, without waiting for the realtime echo of that same message.
+ *
+ * Idempotent by `sequence`: a message whose sequence has already been
+ * reflected in `latest_sequence` (e.g. the realtime echo arriving after the
+ * POST response already applied it) is a no-op — this is what lets the echo
+ * land safely without double-counting unread_count or regressing the
+ * preview. Optimistic messages (sequence 0) are never applied here; only
+ * confirmed/server messages carry a real sequence.
+ */
+export function applyMessageToConversations(
+  conversations: CommunicationConversation[],
+  message: CommunicationMessage,
+  currentUserId: number | undefined,
+  activeConversationId: number | null,
+): CommunicationConversation[] {
+  const next = conversations.map((conversation) => {
+    if (conversation.id !== message.conversation_id) return conversation;
+    if (message.sequence > 0 && message.sequence <= conversation.latest_sequence) return conversation;
+
+    const isOwnMessage = message.sender.id === currentUserId;
+    const isActiveConversation = conversation.id === activeConversationId;
+    return {
+      ...conversation,
+      last_message: message,
+      last_message_at: message.created_at,
+      latest_sequence: Math.max(conversation.latest_sequence, message.sequence),
+      unread_count: !isOwnMessage && !isActiveConversation
+        ? conversation.unread_count + 1
+        : conversation.unread_count,
+    };
+  });
+  return next.sort((left, right) => (right.last_message_at ?? '').localeCompare(left.last_message_at ?? ''));
 }

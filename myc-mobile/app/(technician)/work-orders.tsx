@@ -809,7 +809,6 @@ export default function WorkOrdersScreen() {
               >
                 <ScrollView
                   automaticallyAdjustKeyboardInsets
-                  style={styles.flex}
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -844,7 +843,6 @@ export default function WorkOrdersScreen() {
               >
                 <ScrollView
                   automaticallyAdjustKeyboardInsets
-                  style={styles.flex}
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >

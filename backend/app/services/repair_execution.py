@@ -23,6 +23,7 @@ from app.models.repair_execution import (
     RepairIntervention,
     RepairPause,
     RepairTest,
+    RepairWarrantyCycle,
 )
 from app.models.service_execution import ServiceStage, ServiceUnit
 from app.models.service_order import ServiceOrder, ServiceOrderItem
@@ -174,6 +175,9 @@ def _query(
                 RepairExecution.changes,
             ),
             selectinload(
+                RepairExecution.warranty_cycles,
+            ),
+            selectinload(
                 RepairExecution.service_unit,
             ),
             selectinload(
@@ -213,6 +217,26 @@ def _execution(
         )
 
     return execution
+
+
+def _active_warranty_cycle(
+    execution: RepairExecution,
+) -> RepairWarrantyCycle | None:
+    """Ciclo de garantía vigente, si lo hay.
+
+    El backend es la única fuente de verdad para determinar a qué ciclo
+    pertenece trabajo técnico nuevo (intervenciones, pruebas, pausas,
+    cambios): nunca se acepta un warranty_cycle_id provisto por el cliente.
+    """
+
+    return next(
+        (
+            cycle
+            for cycle in execution.warranty_cycles
+            if cycle.status == "open"
+        ),
+        None,
+    )
 
 
 def _repair_configuration(
@@ -779,6 +803,17 @@ def repair_board(
                     .service_unit
                     .work_order
                     .work_order_number,
+                "active_warranty_cycle_id": (
+                    active_cycle.id
+                    if (
+                        active_cycle
+                        := _active_warranty_cycle(
+                            execution,
+                        )
+                    )
+                    is not None
+                    else None
+                ),
                 "blockers":
                     current_blockers,
                 "closure_blockers":
@@ -1341,8 +1376,17 @@ def add_intervention(
         + 1
     )
 
+    active_cycle = _active_warranty_cycle(
+        execution,
+    )
+
     intervention = RepairIntervention(
         repair_execution_id=execution.id,
+        warranty_cycle_id=(
+            active_cycle.id
+            if active_cycle is not None
+            else None
+        ),
         sequence=sequence,
         technician_id=(
             execution.technician_id
@@ -1611,10 +1655,19 @@ def add_test(
         + 1
     )
 
+    active_cycle = _active_warranty_cycle(
+        execution,
+    )
+
     test = RepairTest(
         repair_execution_id=execution.id,
         intervention_id=(
             payload.intervention_id
+        ),
+        warranty_cycle_id=(
+            active_cycle.id
+            if active_cycle is not None
+            else None
         ),
         sequence=sequence,
         test_type=payload.test_type,
@@ -1801,10 +1854,19 @@ def add_pause(
             ),
         )
 
+    active_cycle = _active_warranty_cycle(
+        execution,
+    )
+
     db.add(
         RepairPause(
             repair_execution_id=(
                 execution.id
+            ),
+            warranty_cycle_id=(
+                active_cycle.id
+                if active_cycle is not None
+                else None
             ),
             pause_type=(
                 payload.pause_type
@@ -1953,10 +2015,19 @@ def request_change(
         actor,
     )
 
+    active_cycle = _active_warranty_cycle(
+        execution,
+    )
+
     db.add(
         RepairChangeRequest(
             repair_execution_id=(
                 execution.id
+            ),
+            warranty_cycle_id=(
+                active_cycle.id
+                if active_cycle is not None
+                else None
             ),
             change_type=(
                 payload.change_type
@@ -2177,10 +2248,19 @@ def resolve_change(
             existing_investigation_pause
             is None
         ):
+            active_cycle = _active_warranty_cycle(
+                execution,
+            )
+
             db.add(
                 RepairPause(
                     repair_execution_id=(
                         execution.id
+                    ),
+                    warranty_cycle_id=(
+                        active_cycle.id
+                        if active_cycle is not None
+                        else None
                     ),
                     pause_type=(
                         "administrative_"
@@ -2562,12 +2642,30 @@ def close_execution(
     execution.status = "closed"
     execution.closed_at = _now()
 
+    # Decisión funcional #12: la PRIMERA vez que la ejecución cierra se toma
+    # una fotografía inmutable del ciclo original. A partir de aquí,
+    # `conclusion`/`conclusion_reason`/`technical_completed_at`/`closed_at`
+    # pasan a representar el cierre VIGENTE (que un ciclo de garantía
+    # posterior sí puede volver a mover), mientras que `original_*` nunca
+    # vuelve a tocarse.
     if (
         execution.original_closed_at
         is None
     ):
         execution.original_closed_at = (
             execution.closed_at
+        )
+
+        execution.original_conclusion = (
+            execution.conclusion
+        )
+
+        execution.original_conclusion_reason = (
+            execution.conclusion_reason
+        )
+
+        execution.original_technical_completed_at = (
+            execution.technical_completed_at
         )
 
     write_audit_log(
@@ -2584,6 +2682,49 @@ def close_execution(
                 .signed_report_version,
         },
     )
+
+    active_cycle = _active_warranty_cycle(
+        execution,
+    )
+
+    if active_cycle is not None:
+        active_cycle.status = "closed"
+
+        active_cycle.resolution = (
+            execution.conclusion
+        )
+
+        active_cycle.resolution_notes = (
+            execution.conclusion_reason
+        )
+
+        active_cycle.closed_by_id = (
+            actor.id
+        )
+
+        active_cycle.closed_at = (
+            execution.closed_at
+        )
+
+        write_audit_log(
+            db,
+            action="repair.warranty_closed",
+            entity="repair_warranty_cycles",
+            entity_id=active_cycle.id,
+            user_id=actor.id,
+            new_values={
+                "repair_execution_id":
+                    execution.id,
+                "warranty_cycle_id":
+                    active_cycle.id,
+                "sequence":
+                    active_cycle.sequence,
+                "resolution":
+                    active_cycle.resolution,
+                "resolution_notes":
+                    active_cycle.resolution_notes,
+            },
+        )
 
     db.commit()
 
@@ -2679,9 +2820,14 @@ def reopen_for_warranty(
     *,
     actor: User,
 ) -> dict:
-    """Preparación para garantía.
+    """Abre un nuevo RepairWarrantyCycle sobre una RepairExecution cerrada.
 
-    No implementa todavía un ciclo histórico completo.
+    Una garantía NO deshace ni reinterpreta el cierre anterior: el ciclo
+    original (o el ciclo de garantía previo) permanece intacto e histórico.
+    Esta operación solo devuelve la ejecución al estado operativo necesario
+    para realizar el nuevo trabajo técnico, que quedará asociado al ciclo
+    recién creado (ver `_active_warranty_cycle` y su uso en
+    add_intervention/add_test/add_pause/request_change).
     """
 
     _require(
@@ -2704,36 +2850,92 @@ def reopen_for_warranty(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Solo puede reabrirse "
-                "una ejecución cerrada"
+                "Solo puede abrirse una garantía "
+                "sobre una ejecución cerrada"
             ),
         )
 
-    execution.warranty_reopened_count += 1
+    if (
+        _active_warranty_cycle(
+            execution,
+        )
+        is not None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Ya existe un ciclo de garantía "
+                "activo para esta ejecución"
+            ),
+        )
+
+    # Defensivo/idempotente: en el flujo normal close_execution() ya dejó
+    # esta fotografía poblada la primera vez que la ejecución cerró, así
+    # que para toda ejecución con status == 'closed' original_closed_at
+    # nunca debería ser None. Se conserva el guard explícitamente porque
+    # así lo especifica el contrato funcional de esta operación.
+    if (
+        execution.original_closed_at
+        is None
+    ):
+        execution.original_closed_at = (
+            execution.closed_at
+        )
+
+        execution.original_conclusion = (
+            execution.conclusion
+        )
+
+        execution.original_conclusion_reason = (
+            execution.conclusion_reason
+        )
+
+        execution.original_technical_completed_at = (
+            execution.technical_completed_at
+        )
+
+    next_sequence = (
+        len(execution.warranty_cycles)
+        + 1
+    )
+
+    cycle = RepairWarrantyCycle(
+        repair_execution_id=execution.id,
+        sequence=next_sequence,
+        reason=payload.reason,
+        status="open",
+        opened_by_id=actor.id,
+        opened_at=_now(),
+    )
+
+    db.add(cycle)
+    db.flush()
+
+    # Concilia el contador legado con el número real de ciclos de garantía
+    # creados, en vez de simplemente incrementarlo.
+    execution.warranty_reopened_count = (
+        next_sequence
+    )
 
     execution.status = (
         "pending_assignment"
     )
 
-    execution.closed_at = None
-    execution.conclusion = None
-    execution.conclusion_reason = None
-    execution.technical_completed_at = None
-
     write_audit_log(
         db,
-        action=(
-            "repair.warranty_reopened"
-        ),
-        entity="repair_executions",
-        entity_id=execution.id,
+        action="repair.warranty_opened",
+        entity="repair_warranty_cycles",
+        entity_id=cycle.id,
         user_id=actor.id,
         new_values={
+            "repair_execution_id":
+                execution.id,
+            "warranty_cycle_id":
+                cycle.id,
+            "sequence":
+                cycle.sequence,
             "reason":
                 payload.reason,
-            "cycle":
-                execution
-                .warranty_reopened_count,
         },
     )
 
