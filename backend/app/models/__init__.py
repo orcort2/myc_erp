@@ -86,6 +86,13 @@ from app.models.maintenance_execution import (
     MaintenanceMaterial,
     MaintenancePause,
 )
+from app.models.repair_execution import (
+    RepairChangeRequest,
+    RepairExecution,
+    RepairIntervention,
+    RepairPause,
+    RepairTest,
+)
 from app.models.operational_ticket import OperationalTicket
 from app.models.notification import Notification, PushDevice
 from app.models.portal_invitation import PortalInvitation
@@ -246,6 +253,11 @@ __all__ = [
     "QuotationItemDecision",
     "QuotationServiceChangeRequest",
     "QuotationSnapshot",
+    "RepairChangeRequest",
+    "RepairExecution",
+    "RepairIntervention",
+    "RepairPause",
+    "RepairTest",
     "ReferenceStandard",
     "ReferenceStandardCertificate",
     "ReferenceStandardCertificateUncertainty",

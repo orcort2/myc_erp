@@ -806,6 +806,9 @@ def create_service_order(
     from app.services.maintenance_execution import (
         initialize_maintenance_execution,
     )
+    from app.services.repair_execution import (
+        initialize_repair_execution,
+    )
     from app.services.sale_execution import (
         initialize_sale_execution,
     )
@@ -817,6 +820,12 @@ def create_service_order(
     )
 
     initialize_maintenance_execution(
+        db,
+        service_order,
+        user_id=user_id,
+    )
+
+    initialize_repair_execution(
         db,
         service_order,
         user_id=user_id,

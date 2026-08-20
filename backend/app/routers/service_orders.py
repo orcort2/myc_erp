@@ -51,6 +51,22 @@ from app.schemas.maintenance_execution import (
     MaintenancePrepare,
     MaintenanceSignature,
 )
+from app.schemas.repair_execution import (
+    RepairAssign,
+    RepairBoardRead,
+    RepairCancel,
+    RepairChangeCreate,
+    RepairChangeResolve,
+    RepairConclude,
+    RepairDiagnosis,
+    RepairEquipmentCreate,
+    RepairInterventionCreate,
+    RepairPauseCreate,
+    RepairPauseResolve,
+    RepairSignature,
+    RepairTestCreate,
+    RepairWarrantyReopen,
+)
 from app.services.auth import get_current_user, require_permission
 from app.services.capture_packages import (
     list_capture_files,
@@ -120,6 +136,26 @@ from app.services.maintenance_execution import (
     save_capture as save_maintenance_capture,
     sign_report as sign_maintenance_report,
     start_execution as start_maintenance_execution,
+)
+from app.services.repair_execution import (
+    add_intervention,
+    add_pause as add_repair_pause,
+    add_test,
+    assign_technician as assign_repair_technician,
+    cancel_execution as cancel_repair_execution,
+    close_execution as close_repair_execution,
+    complete_technical as complete_repair_technical,
+    conclude_evaluation,
+    generate_report as generate_repair_report,
+    register_arrival as register_repair_arrival,
+    reopen_for_warranty as reopen_repair_for_warranty,
+    repair_board,
+    request_change as request_repair_change,
+    resolve_change as resolve_repair_change,
+    resolve_pause as resolve_repair_pause,
+    save_diagnosis,
+    sign_report as sign_repair_report,
+    start_evaluation,
 )
 from app.services.work_order_pdfs import (
     generate_service_order_work_orders_pdf,
@@ -215,6 +251,98 @@ def post_maintenance_signature(service_order_id: int, execution_id: int, payload
 @router.post("/{service_order_id}/maintenance/{execution_id}/close", response_model=MaintenanceBoardRead)
 def post_maintenance_close(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.maintenance.close"))):
     return close_maintenance_execution(db, service_order_id, execution_id, actor=current_user)
+
+
+@router.get("/{service_order_id}/repair", response_model=RepairBoardRead)
+def get_repair_board(service_order_id: int, db: Session = Depends(get_db), _current_user: User = Depends(require_permission("service_orders.read"))):
+    return repair_board(db, service_order_id)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/arrival", response_model=RepairBoardRead)
+def post_repair_arrival(service_order_id: int, execution_id: int, payload: RepairEquipmentCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.manage"))):
+    return register_repair_arrival(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/assign", response_model=RepairBoardRead)
+def post_repair_assign(service_order_id: int, execution_id: int, payload: RepairAssign, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.manage"))):
+    return assign_repair_technician(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/start-evaluation", response_model=RepairBoardRead)
+def post_repair_start_evaluation(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return start_evaluation(db, service_order_id, execution_id, actor=current_user)
+
+
+@router.put("/{service_order_id}/repair/{execution_id}/diagnosis", response_model=RepairBoardRead)
+def put_repair_diagnosis(service_order_id: int, execution_id: int, payload: RepairDiagnosis, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return save_diagnosis(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/conclude", response_model=RepairBoardRead)
+def post_repair_conclude(service_order_id: int, execution_id: int, payload: RepairConclude, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return conclude_evaluation(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/interventions", response_model=RepairBoardRead)
+def post_repair_intervention(service_order_id: int, execution_id: int, payload: RepairInterventionCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return add_intervention(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/tests", response_model=RepairBoardRead)
+def post_repair_test(service_order_id: int, execution_id: int, payload: RepairTestCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return add_test(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/pauses", response_model=RepairBoardRead)
+def post_repair_pause(service_order_id: int, execution_id: int, payload: RepairPauseCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return add_repair_pause(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/pauses/{pause_id}/resolve", response_model=RepairBoardRead)
+def post_repair_pause_resolution(service_order_id: int, execution_id: int, pause_id: int, payload: RepairPauseResolve, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return resolve_repair_pause(db, service_order_id, execution_id, pause_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/changes", response_model=RepairBoardRead)
+def post_repair_change(service_order_id: int, execution_id: int, payload: RepairChangeCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return request_repair_change(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/changes/{change_id}/resolve", response_model=RepairBoardRead)
+def post_repair_change_resolution(service_order_id: int, execution_id: int, change_id: int, payload: RepairChangeResolve, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.authorize"))):
+    return resolve_repair_change(db, service_order_id, execution_id, change_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/technical-complete", response_model=RepairBoardRead)
+def post_repair_technical_complete(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.execute"))):
+    return complete_repair_technical(db, service_order_id, execution_id, actor=current_user)
+
+
+@router.get("/{service_order_id}/repair/{execution_id}/report.pdf")
+def get_repair_report(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.manage"))):
+    content, filename = generate_repair_report(db, service_order_id, execution_id, actor=current_user)
+    return StreamingResponse(BytesIO(content), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/signature", response_model=RepairBoardRead)
+def post_repair_signature(service_order_id: int, execution_id: int, payload: RepairSignature, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.sign"))):
+    return sign_repair_report(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/close", response_model=RepairBoardRead)
+def post_repair_close(service_order_id: int, execution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.close"))):
+    return close_repair_execution(db, service_order_id, execution_id, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/cancel", response_model=RepairBoardRead)
+def post_repair_cancel(service_order_id: int, execution_id: int, payload: RepairCancel, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.manage"))):
+    return cancel_repair_execution(db, service_order_id, execution_id, payload, actor=current_user)
+
+
+@router.post("/{service_order_id}/repair/{execution_id}/warranty-reopen", response_model=RepairBoardRead)
+def post_repair_warranty_reopen(service_order_id: int, execution_id: int, payload: RepairWarrantyReopen, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.authorize"))):
+    return reopen_repair_for_warranty(db, service_order_id, execution_id, payload, actor=current_user)
+
 
 
 @router.get("/{service_order_id}/sale", response_model=SaleBoardRead)

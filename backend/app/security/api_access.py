@@ -139,6 +139,32 @@ def _service_order_policy(method: str, path: str) -> AccessPolicy:
         if any(fragment in path for fragment in ("/field-accept", "/start", "/capture", "/pauses", "/materials", "/changes", "/technical-complete")):
             return _permission("service_orders.maintenance.execute")
         return _permission("service_orders.maintenance.manage")
+    if "/repair/" in path or path.endswith("/repair"):
+        if method == "GET" and path.endswith("/repair"):
+            return _permission("service_orders.read")
+        if path.endswith("/signature"):
+            return _permission("service_orders.repair.sign")
+        if path.endswith("/close"):
+            return _permission("service_orders.repair.close")
+        if path.endswith("/warranty-reopen"):
+            return _permission("service_orders.repair.authorize")
+        if "/changes/" in path and path.endswith("/resolve"):
+            return _permission("service_orders.repair.authorize")
+        if any(
+            fragment in path
+            for fragment in (
+                "/start-evaluation",
+                "/diagnosis",
+                "/conclude",
+                "/interventions",
+                "/tests",
+                "/pauses",
+                "/changes",
+                "/technical-complete",
+            )
+        ):
+            return _permission("service_orders.repair.execute")
+        return _permission("service_orders.repair.manage")
     if "/sale/" in path or path.endswith("/sale"):
         if method == "GET":
             return _permission("service_orders.read")

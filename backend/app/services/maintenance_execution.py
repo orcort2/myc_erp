@@ -17,6 +17,7 @@ from app.models.maintenance_execution import (
     MaintenancePause,
 )
 from app.models.quotation import QuotationItem, QuotationItemDecision
+from app.models.repair_execution import RepairExecution
 from app.models.service_execution import ServiceStage, ServiceUnit
 from app.models.service_order import ServiceOrder, ServiceOrderItem
 from app.models.user import User
@@ -2248,6 +2249,30 @@ def resolve_change(
                     responsible_user_id=actor.id,
                 )
             )
+
+    if (
+        change.change_type == "repair"
+        and payload.decision == "linked"
+    ):
+        # Integración con Reparación (Fase 1 ETS Reparación): estampa
+        # trazabilidad en las RepairExecution del ETS destino ya
+        # inicializado. No se altera ninguna rama existente de esta
+        # función; esto es una adición aditiva y de solo escritura hacia
+        # el dominio de Reparación, requerida por la Decisión funcional #1
+        # (origen/trazabilidad) del brief de Fase 1.
+        target_repair_executions = db.scalars(
+            select(RepairExecution).where(
+                RepairExecution.service_order_id
+                == payload.linked_service_order_id
+            )
+        ).all()
+
+        for repair_execution in target_repair_executions:
+            if repair_execution.origin != "maintenance_linked":
+                repair_execution.origin = "maintenance_linked"
+                repair_execution.source_maintenance_change_request_id = (
+                    change.id
+                )
 
     if change.change_type == "corrective":
         for pause in execution.pauses:
