@@ -8,6 +8,7 @@ import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import SaleEtsTab from '../components/ets-sales/SaleEtsTab.jsx';
 import MaintenanceEtsTab from '../components/ets-maintenance/MaintenanceEtsTab.jsx';
+import RepairEtsTab from '../components/ets-repair/RepairEtsTab.jsx';
 import {
   emptyServiceOrderForm,
   emptyEquipmentForm,
@@ -113,6 +114,10 @@ function safeNumber(value) {
 function getServiceOrderCapabilities(order) {
   const items = Array.isArray(order?.items) ? order.items : [];
 
+  const hasRepair = items.some(
+    (item) => item.operational_category === 'repair'
+  );
+
   const hasSale = items.some(
     (item) => item.operational_category === 'sale'
   );
@@ -142,6 +147,7 @@ function getServiceOrderCapabilities(order) {
   return {
     hasSale,
     hasMaintenance,
+    hasRepair,
     hasDirectCalibration,
     hasEmbeddedCalibration,
   };
@@ -337,6 +343,7 @@ function ServiceOrdersPage({ user = null }) {
   const {
     hasSale: selectedOrderHasSale,
     hasMaintenance: selectedOrderHasMaintenance,
+    hasRepair: selectedOrderHasRepair,
     hasDirectCalibration: selectedOrderHasDirectCalibration,
     hasEmbeddedCalibration: selectedOrderHasEmbeddedCalibration,
   } = selectedOrderCapabilities;
@@ -353,6 +360,10 @@ function ServiceOrdersPage({ user = null }) {
         ? [['maintenance', 'Mantenimiento']]
         : []),
 
+      ...(selectedOrderHasRepair
+        ? [['repair', 'Reparación']]
+        : []),  
+
       ...(selectedOrderHasSale
         ? [['sale', 'Venta']]
         : []),
@@ -360,6 +371,7 @@ function ServiceOrdersPage({ user = null }) {
       ...(
         selectedOrderHasSale ||
         selectedOrderHasMaintenance ||
+        selectedOrderHasRepair ||
         selectedOrderHasDirectCalibration
           ? [['equipment', 'Equipos']]
           : []
@@ -383,6 +395,7 @@ function ServiceOrdersPage({ user = null }) {
     selectedOrder,
     selectedOrderHasSale,
     selectedOrderHasMaintenance,
+    selectedOrderHasRepair,
     selectedOrderHasDirectCalibration,
   ]);
 
@@ -457,6 +470,15 @@ function ServiceOrdersPage({ user = null }) {
       return {
         key: 'maintenance',
         label: 'Mantenimiento',
+        hasMetrology: Boolean(item?.calibration_scope),
+        sourceItem,
+      };
+    }
+
+    if (operationalCategory === 'repair') {
+      return {
+        key: 'repair',
+        label: 'Reparación',
         hasMetrology: Boolean(item?.calibration_scope),
         sourceItem,
       };
@@ -1135,6 +1157,14 @@ function closeTechnicalSubEts() {
           }
         : undefined,
 
+      repair: selectedOrderHasRepair
+        ? {
+            label: 'Disponible',
+            status: 'active',
+            ready: true,
+          }
+        : undefined,
+
       equipment: equipmentStage,
 
       billing: stageFromPaymentReadiness(
@@ -1185,6 +1215,7 @@ function closeTechnicalSubEts() {
     certificateReleaseReadiness,
     selectedOrderHasSale,
     selectedOrderHasMaintenance,
+    selectedOrderHasRepair,
     selectedOrderHasDirectCalibration,
     technicalSubEtsEquipment,
   ]);
@@ -3389,6 +3420,14 @@ function closeTechnicalSubEts() {
 
             {activeTab === 'maintenance' && selectedOrderHasMaintenance ? (
               <MaintenanceEtsTab order={selectedOrder} user={user} users={users} />
+            ) : null}
+
+            {activeTab === 'repair' && selectedOrderHasRepair ? (
+              <RepairEtsTab
+                order={selectedOrder}
+                user={user}
+                users={users}
+              />
             ) : null}
 
             {activeTab === 'equipment' ? (

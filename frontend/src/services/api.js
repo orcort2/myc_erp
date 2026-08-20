@@ -757,6 +757,188 @@ export const downloadMaintenanceReport = (serviceOrderId, executionId) => downlo
 export const signMaintenanceReport = (serviceOrderId, executionId, payload) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/signature`, { method: 'POST', body: JSON.stringify(payload) });
 export const closeMaintenance = (serviceOrderId, executionId) => request(`/service-orders/${serviceOrderId}/maintenance/${executionId}/close`, { method: 'POST' });
 
+
+
+// ---------------------------------------------------------------------------
+// REPARACIÓN
+// ---------------------------------------------------------------------------
+
+export const getRepairBoard = (serviceOrderId) =>
+  request(`/service-orders/${serviceOrderId}/repair`);
+
+export const registerRepairArrival = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/arrival`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const assignRepairTechnician = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/assign`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const startRepairEvaluation = (
+  serviceOrderId,
+  executionId
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/start-evaluation`,
+    {
+      method: 'POST',
+    }
+  );
+
+export const saveRepairDiagnosis = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/diagnosis`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const concludeRepairEvaluation = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/conclude`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const startRepairIntervention = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/interventions`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const completeRepairIntervention = (
+  serviceOrderId,
+  executionId,
+  interventionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/interventions/${interventionId}/complete`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const addRepairTest = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/tests`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const addRepairPause = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/pauses`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const resolveRepairPause = (
+  serviceOrderId,
+  executionId,
+  pauseId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/pauses/${pauseId}/resolve`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const completeRepairTechnical = (
+  serviceOrderId,
+  executionId
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/technical-complete`,
+    {
+      method: 'POST',
+    }
+  );
+
+export const downloadRepairReport = (
+  serviceOrderId,
+  executionId
+) =>
+  downloadRequest(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/report.pdf`
+  );
+
+export const signRepairReport = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/signature`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const closeRepair = (
+  serviceOrderId,
+  executionId
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/close`,
+    {
+      method: 'POST',
+    }
+  );
+
 export async function getSaleBoard(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/sale`);
 }
