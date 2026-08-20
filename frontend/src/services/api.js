@@ -766,6 +766,14 @@ export const closeMaintenance = (serviceOrderId, executionId) => request(`/servi
 export const getRepairBoard = (serviceOrderId) =>
   request(`/service-orders/${serviceOrderId}/repair`);
 
+export const initializeRepairExecution = (serviceOrderId) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/initialize`,
+    {
+      method: 'POST',
+    }
+  );
+
 export const registerRepairArrival = (
   serviceOrderId,
   executionId,

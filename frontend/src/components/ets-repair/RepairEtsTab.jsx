@@ -11,6 +11,7 @@ import {
 import React, {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -23,12 +24,14 @@ import {
   concludeRepairEvaluation,
   downloadRepairReport,
   getRepairBoard,
+  initializeRepairExecution,
   registerRepairArrival,
   resolveRepairPause,
   saveRepairDiagnosis,
   startRepairEvaluation,
   startRepairIntervention,
 } from '../../services/api.js';
+import { hasPermission } from '../../utils/accessControl.js';
 
 import './repair-ets.css';
 
@@ -294,6 +297,9 @@ function RepairEtsTab({
   const [isSaving, setIsSaving] =
     useState(false);
 
+  const [isInitializing, setIsInitializing] =
+    useState(false);
+
   const [error, setError] =
     useState('');
 
@@ -373,6 +379,29 @@ function RepairEtsTab({
     useMemo(
       () => safeArray(board?.executions),
       [board],
+    );
+
+
+  const hasRepairItem =
+    useMemo(
+      () =>
+        safeArray(order?.items).some(
+          (item) =>
+            item.operational_category ===
+            'repair',
+        ),
+      [order],
+    );
+
+
+  const canManageRepair =
+    useMemo(
+      () =>
+        hasPermission(
+          user,
+          'service_orders.repair.manage',
+        ),
+      [user],
     );
 
 
@@ -535,6 +564,85 @@ function RepairEtsTab({
       );
     }
   }
+
+
+  const initAttemptedForOrderRef =
+    useRef(null);
+
+
+  async function attemptInitialize() {
+    if (
+      !order?.id ||
+      isInitializing
+    ) {
+      return;
+    }
+
+    setIsInitializing(true);
+    setError('');
+
+    try {
+      const result =
+        await initializeRepairExecution(
+          order.id,
+        );
+
+      updateBoard(result);
+
+      setNotice(
+        'Reparación inicializada a partir de las partidas existentes.',
+      );
+    } catch (requestError) {
+      setError(
+        requestError?.message ||
+          'No fue posible inicializar Reparación.',
+      );
+    } finally {
+      setIsInitializing(false);
+    }
+  }
+
+
+  useEffect(() => {
+    // Auto-reconciliación: una ETS con partida repair puede existir sin
+    // RepairExecution materializada (creada antes de que la inicialización
+    // automática de create_service_order() existiera). GET /repair devuelve
+    // 404 ("El ETS no contiene Reparación") en ese caso -- no un board con
+    // executions: [] -- así que board se queda en null y el efecto se
+    // apoya en executions.length (siempre 0 mientras board es null) en vez
+    // de exigir un board no-nulo. Se intenta UNA sola vez por
+    // service_order_id mientras el componente está montado; el ref (no el
+    // estado) es lo que impide reintentos automáticos, incluso si el
+    // intento falla o si el GET falló por otra razón.
+    if (
+      isLoading ||
+      !order?.id ||
+      executions.length > 0 ||
+      !hasRepairItem ||
+      !canManageRepair
+    ) {
+      return;
+    }
+
+    if (
+      initAttemptedForOrderRef.current ===
+      order.id
+    ) {
+      return;
+    }
+
+    initAttemptedForOrderRef.current =
+      order.id;
+
+    attemptInitialize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    isLoading,
+    order?.id,
+    executions.length,
+    hasRepairItem,
+    canManageRepair,
+  ]);
 
 
   async function runAction(
@@ -1197,6 +1305,22 @@ function RepairEtsTab({
 
 
   if (!executions.length) {
+    let emptyStateMessage =
+      'Esta orden no contiene partidas de Reparación.';
+
+    if (hasRepairItem) {
+      emptyStateMessage =
+        'Esta orden contiene una partida de ' +
+        'Reparación, pero todavía no tiene una ' +
+        'ejecución operativa materializada.';
+    }
+
+    if (isInitializing) {
+      emptyStateMessage =
+        'Inicializando Reparación a partir ' +
+        'de las partidas existentes...';
+    }
+
     return (
       <section className="repair-ets">
         <div className="quotation-section">
@@ -1210,7 +1334,10 @@ function RepairEtsTab({
 
             <button
               className="table-button"
-              disabled={isLoading}
+              disabled={
+                isLoading ||
+                isInitializing
+              }
               onClick={() =>
                 loadBoard({
                   preserveSelection: false,
@@ -1223,11 +1350,28 @@ function RepairEtsTab({
             </button>
           </div>
 
+          {error ? (
+            <div className="form-error dashboard-error">
+              {error}
+            </div>
+          ) : null}
+
           <div className="clients-empty">
-            Esta orden contiene una partida de
-            Reparación, pero el backend todavía no
-            devolvió una ejecución operativa.
+            {emptyStateMessage}
           </div>
+
+          {hasRepairItem ? (
+            <button
+              className="primary-button"
+              disabled={isInitializing}
+              onClick={attemptInitialize}
+              type="button"
+            >
+              {isInitializing
+                ? 'Inicializando...'
+                : 'Inicializar Reparación'}
+            </button>
+          ) : null}
         </div>
       </section>
     );

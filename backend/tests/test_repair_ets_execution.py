@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -15,6 +15,7 @@ from app.models.catalog_item import CatalogItem
 from app.models.client import Client
 from app.models.quotation import Quotation, QuotationItem
 from app.models.repair_execution import RepairExecution
+from app.models.service_execution import ServiceStage, ServiceUnit
 from app.models.user import Role, User
 from app.schemas.maintenance_execution import (
     MaintenanceChangeCreate,
@@ -58,6 +59,7 @@ from app.services.repair_execution import (
     complete_technical,
     conclude_evaluation,
     generate_report,
+    initialize_existing_repair_execution,
     register_arrival,
     reopen_for_warranty,
     repair_board,
@@ -283,6 +285,60 @@ def _order(
     )
 
 
+def _order_multi(
+    db,
+    client,
+    advisor,
+    catalog_and_quantities,
+    *,
+    folio="COT-REP-MULTI",
+):
+    """Igual que _order() pero con varias partidas repair distintas."""
+
+    quote = Quotation(
+        folio=folio,
+        client_id=client.id,
+        advisor_id=advisor.id,
+        status="waiting",
+        subtotal=Decimal("100"),
+        tax_total=Decimal("16"),
+        total=Decimal("116"),
+    )
+
+    quote.items = [
+        QuotationItem(
+            catalog_item_id=catalog.id,
+            service_name=catalog.name,
+            operational_category=catalog.operational_category,
+            commodity=catalog.commodity,
+            quantity=quantity,
+            unit_price=Decimal("100"),
+            discount_percent=Decimal("0"),
+            tax_rate=Decimal("16"),
+            tax_total=Decimal("16"),
+            total=Decimal("100"),
+            operational_snapshot=_build_operational_snapshot(
+                db,
+                catalog,
+            ),
+        )
+        for catalog, quantity in catalog_and_quantities
+    ]
+
+    db.add(quote)
+    db.commit()
+
+    return create_service_order(
+        db,
+        ServiceOrderCreate(
+            client_id=client.id,
+            quotation_id=quote.id,
+            advisor_id=advisor.id,
+        ),
+        user_id=advisor.id,
+    )
+
+
 def _executions(
     db,
     order,
@@ -311,6 +367,69 @@ def _execution(
         db,
         order,
     )[0]
+
+
+def _simulate_missing_repair_executions(
+    db,
+    order,
+    *,
+    execution_ids=None,
+):
+    """Simula una ETS 'antigua': borra RepairExecution (+ su ServiceUnit/
+    ServiceStage) dejando intacto el ServiceOrderItem operational_category
+    == 'repair' y las Órdenes de Trabajo, tal como quedaría una ETS creada
+    antes de que initialize_repair_execution() existiera.
+
+    Si execution_ids se especifica, solo se borran esas ejecuciones
+    (para simular una reconciliación parcial).
+    """
+
+    executions = _executions(db, order)
+
+    if execution_ids is not None:
+        executions = [
+            execution
+            for execution in executions
+            if execution.id in execution_ids
+        ]
+
+    unit_ids = [
+        execution.service_unit_id
+        for execution in executions
+    ]
+
+    stage_ids = [
+        execution.service_stage_id
+        for execution in executions
+    ]
+
+    ids = [
+        execution.id
+        for execution in executions
+    ]
+
+    if not ids:
+        return
+
+    db.execute(
+        delete(RepairExecution).where(
+            RepairExecution.id.in_(ids),
+        ),
+    )
+
+    db.execute(
+        delete(ServiceStage).where(
+            ServiceStage.id.in_(stage_ids),
+        ),
+    )
+
+    db.execute(
+        delete(ServiceUnit).where(
+            ServiceUnit.id.in_(unit_ids),
+        ),
+    )
+
+    db.commit()
 
 
 def _advance_to_in_repair(
@@ -2951,3 +3070,322 @@ def test_client_cannot_assign_arbitrary_warranty_cycle_id(
     execution = _execution(db, order)
 
     assert execution.interventions[-1].warranty_cycle_id == cycle_1_id
+
+
+# ---------------------------------------------------------------------------
+# RECONCILIACIÓN DE ETS EXISTENTES (initialize_repair_execution / facade)
+# ---------------------------------------------------------------------------
+
+
+def test_new_service_order_auto_materializes_repair_execution(
+    ctx,
+):
+    """A: crear una ETS nueva con partida repair materializa
+    RepairExecution automáticamente, sin pasos adicionales."""
+
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog = _catalog(db)
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        catalog,
+        folio="COT-REP-INIT-A",
+    )
+
+    executions = _executions(db, order)
+
+    assert len(executions) == 1
+    assert executions[0].status == "pending_arrival"
+    assert executions[0].service_order_item_id == order.items[0].id
+
+    # El board ya es operativo sin ninguna reconciliación adicional.
+    board = repair_board(db, order.id)
+    assert len(board["executions"]) == 1
+
+
+def test_initialize_reconciles_existing_ets_missing_execution(
+    ctx,
+):
+    """B: una ETS existente con partida repair pero sin RepairExecution
+    (simulando una ETS creada antes del inicializador automático) se
+    reconcilia explícitamente vía initialize_existing_repair_execution()."""
+
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog = _catalog(db)
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        catalog,
+        folio="COT-REP-INIT-B",
+    )
+
+    original_item_id = order.items[0].id
+
+    _simulate_missing_repair_executions(
+        db,
+        order,
+    )
+
+    assert _executions(db, order) == []
+
+    with pytest.raises(HTTPException) as exc_info:
+        repair_board(db, order.id)
+
+    assert exc_info.value.status_code == 404
+
+    board = initialize_existing_repair_execution(
+        db,
+        order.id,
+        actor=admin,
+    )
+
+    assert len(board["executions"]) == 1
+    assert (
+        board["executions"][0]["service_order_item_id"]
+        == original_item_id
+    )
+    assert (
+        board["executions"][0]["status"]
+        == "pending_arrival"
+    )
+
+    executions = _executions(db, order)
+    assert len(executions) == 1
+
+
+def test_initialize_is_idempotent_across_repeated_calls(
+    ctx,
+):
+    """C: repetir POST repair/initialize (1, 2 o 20 veces) no crea
+    duplicados, tanto para una ETS ya materializada como para una recién
+    reconciliada."""
+
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog = _catalog(db)
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        catalog,
+        folio="COT-REP-INIT-C",
+    )
+
+    _simulate_missing_repair_executions(
+        db,
+        order,
+    )
+
+    for _ in range(20):
+        board = initialize_existing_repair_execution(
+            db,
+            order.id,
+            actor=admin,
+        )
+
+        assert len(board["executions"]) == 1
+
+    assert len(_executions(db, order)) == 1
+
+
+def test_initialize_rejects_ets_without_repair_items(
+    ctx,
+):
+    """D: una ETS sin ninguna partida repair rechaza la inicialización de
+    forma explícita (409), en vez de devolver un board vacío en silencio."""
+
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    maintenance_catalog = _catalog(
+        db,
+        category="maintenance",
+        name="Mantenimiento preventivo",
+    )
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        maintenance_catalog,
+        folio="COT-REP-INIT-D",
+    )
+
+    assert _executions(db, order) == []
+
+    with pytest.raises(HTTPException) as exc_info:
+        initialize_existing_repair_execution(
+            db,
+            order.id,
+            actor=admin,
+        )
+
+    assert exc_info.value.status_code == 409
+
+
+def test_initialize_creates_correct_count_for_multiple_repair_items(
+    ctx,
+):
+    """E: varias partidas repair distintas -> initialize crea exactamente
+    las ejecuciones que corresponden a cada una."""
+
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog_a = _catalog(
+        db,
+        name="Reparación de bomba",
+    )
+
+    catalog_b = _catalog(
+        db,
+        name="Reparación de motor",
+    )
+
+    order = _order_multi(
+        db,
+        client,
+        advisor,
+        [
+            (catalog_a, 1),
+            (catalog_b, 2),
+        ],
+        folio="COT-REP-INIT-E",
+    )
+
+    # Ya materializada por create_service_order(): 1 + 2 = 3.
+    assert len(_executions(db, order)) == 3
+
+    _simulate_missing_repair_executions(
+        db,
+        order,
+    )
+
+    assert _executions(db, order) == []
+
+    board = initialize_existing_repair_execution(
+        db,
+        order.id,
+        actor=admin,
+    )
+
+    assert len(board["executions"]) == 3
+
+    item_ids = {
+        item.id for item in order.items
+    }
+
+    execution_item_ids = {
+        execution["service_order_item_id"]
+        for execution in board["executions"]
+    }
+
+    assert execution_item_ids == item_ids
+
+
+def test_initialize_only_creates_missing_units_for_partial_item(
+    ctx,
+):
+    """F: ejecuciones parcialmente existentes -> initialize crea
+    SOLAMENTE las que faltan, no vuelve a crear las que ya existían ni
+    asume que la reconciliación es todo-o-nada."""
+
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog = _catalog(db)
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        catalog,
+        quantity=3,
+        folio="COT-REP-INIT-F",
+    )
+
+    executions = _executions(db, order)
+    assert len(executions) == 3
+
+    surviving_execution = executions[0]
+    to_delete_ids = {
+        execution.id
+        for execution in executions[1:]
+    }
+
+    # Simula una materialización parcial: 1 de 3 unidades ya existía,
+    # las otras 2 se perdieron/nunca se crearon.
+    _simulate_missing_repair_executions(
+        db,
+        order,
+        execution_ids=to_delete_ids,
+    )
+
+    remaining = _executions(db, order)
+    assert len(remaining) == 1
+    assert remaining[0].id == surviving_execution.id
+
+    board = initialize_existing_repair_execution(
+        db,
+        order.id,
+        actor=admin,
+    )
+
+    assert len(board["executions"]) == 3
+
+    execution_ids_after = {
+        execution["id"]
+        for execution in board["executions"]
+    }
+
+    # La unidad sobreviviente no fue recreada ni duplicada.
+    assert surviving_execution.id in execution_ids_after
+
+    # Repetirlo no crea una cuarta unidad.
+    board_again = initialize_existing_repair_execution(
+        db,
+        order.id,
+        actor=admin,
+    )
+
+    assert len(board_again["executions"]) == 3

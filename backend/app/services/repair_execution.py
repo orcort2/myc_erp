@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from html import escape
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 from weasyprint import HTML
 
@@ -341,19 +341,36 @@ def initialize_repair_execution(
     )
 
     unit_offset = 0
+    created_execution_ids: list[int] = []
 
     for item in items:
-        existing = db.scalar(
-            select(
-                RepairExecution.id,
-            ).where(
-                RepairExecution
-                .service_order_item_id
-                == item.id,
-            ),
+        # Decisión funcional (reconciliación): idempotencia por CANTIDAD
+        # faltante, no por mera existencia. Una ETS que ya tiene 1 de 3
+        # RepairExecution para esta partida (por ejemplo, materializada
+        # parcialmente antes de este endurecimiento) debe completar solo
+        # las 2 unidades que faltan, no saltarse el item entero ni
+        # duplicar la que ya existe.
+        existing_count = (
+            db.scalar(
+                select(
+                    func.count(
+                        RepairExecution.id,
+                    ),
+                ).where(
+                    RepairExecution
+                    .service_order_item_id
+                    == item.id,
+                ),
+            )
+            or 0
         )
 
-        if existing:
+        missing = (
+            item.quantity
+            - existing_count
+        )
+
+        if missing <= 0:
             continue
 
         config = (
@@ -363,7 +380,7 @@ def initialize_repair_execution(
         )
 
         for _ in range(
-            item.quantity,
+            missing,
         ):
             work_order = work_orders[
                 min(
@@ -435,14 +452,77 @@ def initialize_repair_execution(
             db.add(execution)
             db.flush()
 
+            created_execution_ids.append(
+                execution.id,
+            )
+
             unit_offset += 1
 
-    write_audit_log(
+    if created_execution_ids:
+        write_audit_log(
+            db,
+            action="repair.initialized",
+            entity="service_orders",
+            entity_id=order.id,
+            user_id=user_id,
+            new_values={
+                "repair_execution_ids":
+                    created_execution_ids,
+            },
+        )
+
+
+def initialize_existing_repair_execution(
+    db: Session,
+    service_order_id: int,
+    *,
+    actor: User,
+) -> dict:
+    """Reconciliación explícita: materializa las RepairExecution que le
+    faltan a una ETS existente con partidas repair.
+
+    Espejo de `initialize_existing_sale_execution`
+    (app/services/sale_execution.py). Es una MUTACIÓN explícita e
+    idempotente — nunca se dispara implícitamente desde repair_board()/GET.
+    Reutiliza initialize_repair_execution() como única autoridad de
+    materialización; no duplica su lógica.
+    """
+
+    _require(
+        actor,
+        "service_orders.repair.manage",
+    )
+
+    order = _active_order(
         db,
-        action="repair.initialized",
-        entity="service_orders",
-        entity_id=order.id,
-        user_id=user_id,
+        service_order_id,
+    )
+
+    if not any(
+        item.is_active
+        and item.operational_category
+        == "repair"
+        for item in order.items
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "El ETS no contiene "
+                "partidas de Reparación"
+            ),
+        )
+
+    initialize_repair_execution(
+        db,
+        order,
+        user_id=actor.id,
+    )
+
+    db.commit()
+
+    return repair_board(
+        db,
+        order.id,
     )
 
 

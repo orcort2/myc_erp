@@ -149,6 +149,7 @@ from app.services.repair_execution import (
     complete_technical as complete_repair_technical,
     conclude_evaluation,
     generate_report as generate_repair_report,
+    initialize_existing_repair_execution,
     register_arrival as register_repair_arrival,
     reopen_for_warranty as reopen_repair_for_warranty,
     repair_board,
@@ -258,6 +259,11 @@ def post_maintenance_close(service_order_id: int, execution_id: int, db: Session
 @router.get("/{service_order_id}/repair", response_model=RepairBoardRead)
 def get_repair_board(service_order_id: int, db: Session = Depends(get_db), _current_user: User = Depends(require_permission("service_orders.read"))):
     return repair_board(db, service_order_id)
+
+
+@router.post("/{service_order_id}/repair/initialize", response_model=RepairBoardRead)
+def post_repair_initialization(service_order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("service_orders.repair.manage"))):
+    return initialize_existing_repair_execution(db, service_order_id, actor=current_user)
 
 
 @router.post("/{service_order_id}/repair/{execution_id}/arrival", response_model=RepairBoardRead)
