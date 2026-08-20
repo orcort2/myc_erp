@@ -8,7 +8,7 @@ import WorkOrderFlowGroups from '../components/WorkOrderFlowGroups.jsx';
 import ActivityPanel from '../components/activity/ActivityPanel.jsx';
 import SaleEtsTab from '../components/ets-sales/SaleEtsTab.jsx';
 import MaintenanceEtsTab from '../components/ets-maintenance/MaintenanceEtsTab.jsx';
-import RepairEtsTab from '../components/ets-repair/RepairEtsTab.jsx';
+import RepairEtsTabV2 from '../components/ets-repair-v2/RepairEtsTabV2.jsx';
 import {
   emptyServiceOrderForm,
   emptyEquipmentForm,
@@ -3423,7 +3423,7 @@ function closeTechnicalSubEts() {
             ) : null}
 
             {activeTab === 'repair' && selectedOrderHasRepair ? (
-              <RepairEtsTab
+              <RepairEtsTabV2
                 order={selectedOrder}
                 user={user}
                 users={users}

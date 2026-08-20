@@ -1,0 +1,2188 @@
+/* =========================================================
+   ETS REPARACIÓN V2
+   IDENTIDAD VISUAL ALINEADA CON ETS VENTA
+   ========================================================= */
+
+.repair-v2 {
+  display: grid;
+  gap: 18px;
+
+  width: 100%;
+  min-width: 0;
+}
+
+.repair-v2 *,
+.repair-v2 *::before,
+.repair-v2 *::after,
+.repair-v2-modal *,
+.repair-v2-modal *::before,
+.repair-v2-modal *::after {
+  box-sizing: border-box;
+}
+
+
+/* =========================================================
+   ENCABEZADO PRINCIPAL
+   ========================================================= */
+
+.repair-v2__heading {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    minmax(190px, 260px);
+
+  align-items: stretch;
+  gap: 18px;
+
+  padding: 18px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.16);
+
+  border-radius: 12px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.48),
+      rgba(70, 216, 196, 0.1)
+    ),
+    rgba(255, 255, 255, 0.24);
+}
+
+.repair-v2__heading > div:first-child {
+  display: grid;
+  align-content: center;
+
+  gap: 6px;
+
+  min-width: 0;
+}
+
+.repair-v2__heading
+> div:first-child
+> span {
+  color: var(--myc-primary);
+
+  font-size: 10px;
+  font-weight: 900;
+
+  letter-spacing: 0.06em;
+
+  text-transform: uppercase;
+}
+
+.repair-v2__heading h3 {
+  margin: 0;
+
+  color: var(--myc-navy);
+
+  font-size: 22px;
+  font-weight: 900;
+
+  line-height: 1.15;
+}
+
+.repair-v2__heading p {
+  max-width: 720px;
+
+  margin: 0;
+
+  color: var(--myc-soft-text);
+
+  font-size: 12.5px;
+  font-weight: 700;
+
+  line-height: 1.5;
+}
+
+
+/* =========================================================
+   ACCIONES DEL ENCABEZADO
+   ========================================================= */
+
+.repair-v2__heading-actions {
+  display: grid;
+  align-content: center;
+
+  gap: 9px;
+
+  min-width: 0;
+
+  padding: 14px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.13);
+
+  border-radius: 10px;
+
+  background:
+    rgba(255, 255, 255, 0.34);
+}
+
+.repair-v2__heading-actions small {
+  overflow: hidden;
+
+  color: var(--myc-soft-text);
+
+  font-size: 10.5px;
+  font-weight: 750;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   BOTÓN ACTUALIZAR
+   ========================================================= */
+
+.repair-v2__refresh-button {
+  appearance: none;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 7px;
+
+  min-height: 36px;
+
+  padding: 0 12px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.15);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.62);
+
+  color: var(--myc-primary-dark);
+
+  font: inherit;
+  font-size: 11px;
+  font-weight: 850;
+
+  cursor: pointer;
+
+  transition:
+    border-color 170ms ease,
+    background 170ms ease,
+    box-shadow 170ms ease,
+    transform 170ms ease;
+}
+
+.repair-v2__refresh-button:hover:not(:disabled) {
+  border-color:
+    rgba(8, 117, 111, 0.32);
+
+  background:
+    rgba(255, 255, 255, 0.8);
+
+  box-shadow:
+    0 6px 16px
+    rgba(5, 31, 45, 0.06);
+
+  transform:
+    translateY(-1px);
+}
+
+.repair-v2__refresh-button:focus-visible {
+  outline: none;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(70, 216, 196, 0.18);
+}
+
+.repair-v2__refresh-button:disabled {
+  cursor: not-allowed;
+
+  opacity: 0.55;
+}
+
+
+/* =========================================================
+   ALERTAS
+   ========================================================= */
+
+.repair-v2__alert {
+  padding: 11px 13px;
+
+  border: 1px solid transparent;
+  border-radius: 9px;
+
+  font-size: 11px;
+  font-weight: 700;
+
+  line-height: 1.45;
+}
+
+.repair-v2__alert.is-error {
+  border-color:
+    rgba(180, 35, 24, 0.18);
+
+  background:
+    rgba(254, 243, 242, 0.88);
+
+  color: #b42318;
+}
+
+.repair-v2__alert.is-success {
+  border-color:
+    rgba(6, 118, 71, 0.18);
+
+  background:
+    rgba(236, 253, 243, 0.88);
+
+  color: #067647;
+}
+
+
+/* =========================================================
+   MÉTRICAS PRINCIPALES
+   ========================================================= */
+
+.repair-v2__metrics {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 8px;
+}
+
+.repair-v2__metrics article {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+  min-height: 68px;
+
+  padding: 11px 12px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.12);
+
+  border-radius: 9px;
+
+  background:
+    rgba(255, 255, 255, 0.3);
+}
+
+.repair-v2__metrics span {
+  color: var(--myc-soft-text);
+
+  font-size: 9.5px;
+  font-weight: 900;
+
+  letter-spacing: 0.035em;
+
+  text-transform: uppercase;
+}
+
+.repair-v2__metrics strong {
+  color: var(--myc-navy);
+
+  font-size: 21px;
+  font-weight: 900;
+
+  line-height: 1;
+}
+
+
+/* =========================================================
+   CATÁLOGO
+   ========================================================= */
+
+.repair-v2__catalog {
+  display: grid;
+
+  gap: 13px;
+
+  min-width: 0;
+
+  padding: 16px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.13);
+
+  border-radius: 12px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.34),
+      rgba(70, 216, 196, 0.06)
+    ),
+    rgba(255, 255, 255, 0.2);
+}
+
+.repair-v2__section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 18px;
+}
+
+.repair-v2__section-heading
+> div {
+  display: grid;
+
+  gap: 3px;
+}
+
+.repair-v2__section-heading
+> div
+> span {
+  color: var(--myc-primary);
+
+  font-size: 9.5px;
+  font-weight: 900;
+
+  letter-spacing: 0.05em;
+
+  text-transform: uppercase;
+}
+
+.repair-v2__section-heading h4 {
+  margin: 0;
+
+  color: var(--myc-navy);
+
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.repair-v2__section-heading small {
+  color: var(--myc-soft-text);
+
+  font-size: 11px;
+  font-weight: 750;
+}
+
+
+/* =========================================================
+   GRID DE EQUIPOS
+   ========================================================= */
+
+.repair-v2__grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 10px;
+}
+
+
+/* =========================================================
+   TARJETA DE EJECUCIÓN
+   ========================================================= */
+
+.repair-v2-card {
+  appearance: none;
+
+  position: relative;
+
+  display: grid;
+
+  gap: 12px;
+
+  width: 100%;
+  min-width: 0;
+
+  padding: 15px;
+
+  overflow: hidden;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.14);
+
+  border-radius: 11px;
+
+  background:
+    rgba(255, 255, 255, 0.56);
+
+  color: inherit;
+
+  font: inherit;
+  text-align: left;
+
+  cursor: pointer;
+
+  transition:
+    border-color 170ms ease,
+    box-shadow 170ms ease,
+    transform 170ms ease;
+}
+
+.repair-v2-card::before {
+  content: "";
+
+  position: absolute;
+
+  top: 0;
+  right: 0;
+  left: 0;
+
+  height: 3px;
+
+  background:
+    linear-gradient(
+      90deg,
+      var(--myc-primary),
+      var(--myc-accent)
+    );
+}
+
+.repair-v2-card:hover {
+  border-color:
+    rgba(8, 117, 111, 0.3);
+
+  box-shadow:
+    0 8px 22px
+    rgba(5, 31, 45, 0.08);
+
+  transform:
+    translateY(-1px);
+}
+
+.repair-v2-card:focus-visible {
+  outline: none;
+
+  box-shadow:
+    inset 0 0 0 3px
+    rgba(70, 216, 196, 0.24);
+}
+
+
+/* =========================================================
+   HEADER DE TARJETA
+   ========================================================= */
+
+.repair-v2-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 12px;
+
+  min-width: 0;
+}
+
+.repair-v2-card__title {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+}
+
+.repair-v2-card__title > span {
+  color: var(--myc-primary);
+
+  font-size: 9.5px;
+  font-weight: 900;
+
+  letter-spacing: 0.05em;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-card__title > strong {
+  overflow: hidden;
+
+  color: var(--myc-navy);
+
+  font-size: 14px;
+  font-weight: 900;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   ESTADOS
+   ========================================================= */
+
+.repair-v2-card__status,
+.repair-v2-modal__status,
+.repair-v2-stage__state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 5px;
+
+  flex: 0 0 auto;
+
+  min-height: 25px;
+
+  padding: 4px 8px;
+
+  border: 1px solid transparent;
+  border-radius: 999px;
+
+  font-size: 9.5px;
+  font-weight: 900;
+
+  line-height: 1;
+
+  white-space: nowrap;
+}
+
+
+/* pendiente */
+
+.repair-v2-card__status.is-pending,
+.repair-v2-modal__status.is-pending {
+  border-color:
+    rgba(8, 117, 111, 0.13);
+
+  background:
+    rgba(255, 255, 255, 0.48);
+
+  color: var(--myc-soft-text);
+}
+
+
+/* activo */
+
+.repair-v2-card__status.is-active,
+.repair-v2-modal__status.is-active,
+.repair-v2-stage__state.is-active {
+  border-color:
+    rgba(21, 112, 239, 0.18);
+
+  background:
+    rgba(239, 248, 255, 0.88);
+
+  color: #175cd3;
+}
+
+
+/* completado */
+
+.repair-v2-card__status.is-done,
+.repair-v2-modal__status.is-done,
+.repair-v2-stage__state.is-done {
+  border-color:
+    rgba(6, 118, 71, 0.18);
+
+  background:
+    rgba(236, 253, 243, 0.9);
+
+  color: #067647;
+}
+
+
+/* bloqueado */
+
+.repair-v2-card__status.is-blocked,
+.repair-v2-modal__status.is-blocked,
+.repair-v2-stage__state.is-blocked {
+  border-color:
+    rgba(180, 35, 24, 0.18);
+
+  background:
+    rgba(254, 243, 242, 0.9);
+
+  color: #b42318;
+}
+
+
+/* =========================================================
+   IDENTIDAD DE TARJETA
+   ========================================================= */
+
+.repair-v2-card__identity {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 8px;
+}
+
+.repair-v2-card__identity > div {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+
+  padding: 9px 10px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.1);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.42);
+}
+
+.repair-v2-card__identity span {
+  color: var(--myc-soft-text);
+
+  font-size: 9px;
+  font-weight: 850;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-card__identity strong {
+  overflow: hidden;
+
+  color: var(--myc-navy);
+
+  font-size: 11px;
+  font-weight: 800;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   MÉTRICAS DE TARJETA
+   ========================================================= */
+
+.repair-v2-card__metrics {
+  display: grid;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+
+  gap: 8px;
+}
+
+.repair-v2-card__metrics > div {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+
+  padding: 8px 9px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.1);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.34);
+}
+
+.repair-v2-card__metrics span {
+  color: var(--myc-soft-text);
+
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.repair-v2-card__metrics strong {
+  color: var(--myc-navy);
+
+  font-size: 13px;
+  font-weight: 900;
+}
+
+
+/* =========================================================
+   FOOTER DE TARJETA
+   ========================================================= */
+
+.repair-v2-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 12px;
+
+  padding-top: 10px;
+
+  border-top:
+    1px solid
+    rgba(8, 117, 111, 0.1);
+}
+
+.repair-v2-card__footer > span {
+  font-size: 9.5px;
+  font-weight: 850;
+}
+
+.repair-v2-card__footer
+> span.is-clear {
+  color: #067647;
+}
+
+.repair-v2-card__footer
+> span.has-blockers {
+  color: #b54708;
+}
+
+.repair-v2-card__footer > strong {
+  display: inline-flex;
+  align-items: center;
+
+  gap: 6px;
+
+  color: var(--myc-primary-dark);
+
+  font-size: 10.5px;
+  font-weight: 900;
+
+  white-space: nowrap;
+}
+
+.repair-v2-card__arrow {
+  transition:
+    transform 150ms ease;
+}
+
+.repair-v2-card:hover
+.repair-v2-card__arrow {
+  transform:
+    translateX(3px);
+}
+
+
+/* =========================================================
+   ESTADO VACÍO
+   ========================================================= */
+
+.repair-v2__empty {
+  display: grid;
+  place-items: center;
+
+  gap: 9px;
+
+  min-height: 220px;
+
+  padding: 28px;
+
+  border:
+    1px dashed
+    rgba(8, 117, 111, 0.2);
+
+  border-radius: 12px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.35),
+      rgba(70, 216, 196, 0.05)
+    ),
+    rgba(255, 255, 255, 0.22);
+
+  text-align: center;
+}
+
+.repair-v2__empty strong {
+  color: var(--myc-navy);
+
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.repair-v2__empty span {
+  max-width: 520px;
+
+  color: var(--myc-soft-text);
+
+  font-size: 11px;
+  font-weight: 700;
+
+  line-height: 1.5;
+}
+
+.repair-v2__empty
+.primary-button {
+  margin-top: 8px;
+}
+
+
+/* =========================================================
+   SKELETON
+   ========================================================= */
+
+.repair-v2__skeleton-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 10px;
+}
+
+.repair-v2__skeleton-card {
+  display: grid;
+
+  gap: 13px;
+
+  min-height: 210px;
+
+  padding: 15px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.12);
+
+  border-radius: 11px;
+
+  background:
+    rgba(255, 255, 255, 0.4);
+}
+
+.repair-v2__skeleton-card > * {
+  border-radius: 7px;
+
+  background:
+    linear-gradient(
+      90deg,
+      rgba(8, 117, 111, 0.04) 25%,
+      rgba(70, 216, 196, 0.12) 50%,
+      rgba(8, 117, 111, 0.04) 75%
+    );
+
+  background-size:
+    200% 100%;
+
+  animation:
+    repair-v2-skeleton
+    1.4s infinite linear;
+}
+
+.repair-v2__skeleton-card > span {
+  width: 30%;
+  height: 12px;
+}
+
+.repair-v2__skeleton-card > strong {
+  width: 70%;
+  height: 20px;
+}
+
+.repair-v2__skeleton-card > div {
+  width: 100%;
+  height: 52px;
+}
+
+
+/* =========================================================
+   MODAL / OVERLAY
+   ========================================================= */
+
+.repair-v2-modal {
+  position: fixed;
+  inset: 0;
+
+  z-index: 1400;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 24px;
+
+  background:
+    rgba(5, 31, 45, 0.48);
+
+  backdrop-filter:
+    blur(4px);
+
+  animation:
+    repair-v2-overlay-enter
+    160ms ease-out;
+}
+
+
+/* =========================================================
+   DIÁLOGO
+   ========================================================= */
+
+.repair-v2-modal__dialog {
+  display: flex;
+  flex-direction: column;
+
+  width:
+    min(
+      1180px,
+      calc(100vw - 48px)
+    );
+
+  max-height:
+    calc(100dvh - 48px);
+
+  min-height: 0;
+
+  overflow: hidden;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.2);
+
+  border-radius: 14px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.96),
+      rgba(232, 250, 247, 0.94)
+    );
+
+  box-shadow:
+    0 28px 80px
+    rgba(5, 31, 45, 0.26);
+
+  animation:
+    repair-v2-dialog-enter
+    180ms ease-out;
+}
+
+
+/* =========================================================
+   HEADER DEL MODAL
+   ========================================================= */
+
+.repair-v2-modal__header {
+  position: relative;
+
+  z-index: 2;
+
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 24px;
+
+  flex: 0 0 auto;
+
+  padding: 17px 19px;
+
+  border-bottom:
+    1px solid
+    rgba(8, 117, 111, 0.14);
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.72),
+      rgba(70, 216, 196, 0.09)
+    ),
+    rgba(255, 255, 255, 0.72);
+}
+
+.repair-v2-modal__heading {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+}
+
+.repair-v2-modal__heading > span {
+  color: var(--myc-primary);
+
+  font-size: 9.5px;
+  font-weight: 900;
+
+  letter-spacing: 0.065em;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-modal__heading h3 {
+  overflow: hidden;
+
+  margin: 0;
+
+  color: var(--myc-navy);
+
+  font-size: 17px;
+  font-weight: 900;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repair-v2-modal__heading-meta {
+  display: flex;
+  align-items: center;
+
+  gap: 6px;
+
+  min-width: 0;
+
+  color: var(--myc-soft-text);
+}
+
+.repair-v2-modal__heading-meta small {
+  overflow: hidden;
+
+  font-size: 10.5px;
+  font-weight: 750;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repair-v2-modal__heading-meta > span {
+  color:
+    rgba(8, 117, 111, 0.24);
+}
+
+
+/* =========================================================
+   ACCIONES HEADER
+   ========================================================= */
+
+.repair-v2-modal__header-actions {
+  display: flex;
+  align-items: center;
+
+  gap: 10px;
+
+  flex: 0 0 auto;
+}
+
+.repair-v2-modal__close {
+  appearance: none;
+
+  display: grid;
+  place-items: center;
+
+  width: 34px;
+  height: 34px;
+
+  padding: 0;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.14);
+
+  border-radius: 50%;
+
+  background:
+    rgba(255, 255, 255, 0.58);
+
+  color: var(--myc-primary-dark);
+
+  font: inherit;
+  font-size: 20px;
+  font-weight: 500;
+
+  line-height: 1;
+
+  cursor: pointer;
+
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+
+.repair-v2-modal__close:hover:not(:disabled) {
+  border-color:
+    rgba(8, 117, 111, 0.32);
+
+  background:
+    rgba(255, 255, 255, 0.9);
+
+  transform:
+    scale(1.04);
+}
+
+.repair-v2-modal__close:focus-visible {
+  outline: none;
+
+  box-shadow:
+    0 0 0 3px
+    rgba(70, 216, 196, 0.18);
+}
+
+.repair-v2-modal__close:disabled {
+  cursor: not-allowed;
+
+  opacity: 0.5;
+}
+
+
+/* =========================================================
+   BODY DEL MODAL
+   ========================================================= */
+
+.repair-v2-modal__body {
+  flex: 1 1 auto;
+
+  min-height: 0;
+
+  overflow-x: hidden;
+  overflow-y: auto;
+
+  overscroll-behavior: contain;
+
+  padding: 16px;
+
+  scrollbar-gutter: stable;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.24),
+      rgba(70, 216, 196, 0.035)
+    );
+}
+
+
+/* =========================================================
+   BLOQUES INTERNOS DEL MODAL
+   ========================================================= */
+
+.repair-v2-modal__summary,
+.repair-v2-modal__workspace,
+.repair-v2-modal__traceability {
+  width: 100%;
+  min-width: 0;
+
+  padding: 15px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.13);
+
+  border-radius: 11px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.48),
+      rgba(70, 216, 196, 0.045)
+    ),
+    rgba(255, 255, 255, 0.35);
+}
+
+.repair-v2-modal__body
+> section
++ section {
+  margin-top: 12px;
+}
+
+
+/* =========================================================
+   HEADINGS INTERNOS
+   ========================================================= */
+
+.repair-v2-modal__summary-heading,
+.repair-v2-modal__blockers > header,
+.repair-v2-modal__traceability > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+
+  gap: 16px;
+
+  margin-bottom: 12px;
+}
+
+.repair-v2-modal__summary-heading > div,
+.repair-v2-modal__blockers > header,
+.repair-v2-modal__traceability > header {
+  min-width: 0;
+}
+
+.repair-v2-modal__summary-heading span,
+.repair-v2-modal__blockers
+> header
+> span,
+.repair-v2-modal__traceability
+> header
+> span {
+  display: block;
+
+  margin-bottom: 3px;
+
+  color: var(--myc-primary);
+
+  font-size: 9px;
+  font-weight: 900;
+
+  letter-spacing: 0.055em;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-modal__summary-heading h4,
+.repair-v2-modal__blockers h4,
+.repair-v2-modal__traceability h4 {
+  margin: 0;
+
+  color: var(--myc-navy);
+
+  font-size: 14px;
+  font-weight: 900;
+}
+
+
+/* =========================================================
+   RESUMEN DEL EXPEDIENTE
+   ========================================================= */
+
+.repair-v2-modal__summary-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 8px;
+}
+
+.repair-v2-modal__summary-grid article {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+
+  padding: 10px 11px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.1);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.42);
+}
+
+.repair-v2-modal__summary-grid span {
+  color: var(--myc-soft-text);
+
+  font-size: 9px;
+  font-weight: 800;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-modal__summary-grid strong {
+  overflow: hidden;
+
+  color: var(--myc-navy);
+
+  font-size: 11px;
+  font-weight: 850;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   BLOQUEANTES
+   ========================================================= */
+
+.repair-v2-modal__blockers {
+  width: 100%;
+
+  padding: 14px;
+
+  border:
+    1px solid
+    rgba(247, 144, 9, 0.2);
+
+  border-radius: 11px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(255, 250, 235, 0.9),
+      rgba(254, 240, 199, 0.56)
+    );
+}
+
+.repair-v2-modal__blockers
+> header
+> span {
+  color: #b54708;
+}
+
+.repair-v2-modal__blockers h4 {
+  color: #7a2e0e;
+}
+
+.repair-v2-modal__blocker-list {
+  display: grid;
+
+  gap: 7px;
+}
+
+.repair-v2-modal__blocker-list article {
+  padding: 9px 11px;
+
+  border:
+    1px solid
+    rgba(247, 144, 9, 0.16);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.52);
+}
+
+.repair-v2-modal__blocker-list strong {
+  color: #7a2e0e;
+
+  font-size: 10.5px;
+  font-weight: 750;
+
+  line-height: 1.45;
+}
+
+
+/* =========================================================
+   WORKSPACE
+   ========================================================= */
+
+.repair-v2-modal__workspace {
+  min-height: 220px;
+}
+
+
+/* =========================================================
+   TRAZABILIDAD
+   ========================================================= */
+
+.repair-v2-modal__traceability-grid {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 8px;
+}
+
+.repair-v2-modal__traceability-grid article {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+
+  padding: 9px 10px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.08);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.38);
+}
+
+.repair-v2-modal__traceability-grid span {
+  color: var(--myc-soft-text);
+
+  font-size: 8.5px;
+  font-weight: 800;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-modal__traceability-grid strong {
+  overflow: hidden;
+
+  color: var(--myc-navy);
+
+  font-size: 10.5px;
+  font-weight: 750;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   ALERTAS DENTRO DEL MODAL
+   ========================================================= */
+
+.repair-v2-modal__alert {
+  margin-bottom: 12px;
+}
+
+
+/* =========================================================
+   ETAPAS DEL WORKFLOW
+   ========================================================= */
+
+.repair-v2-stage {
+  display: grid;
+
+  gap: 14px;
+
+  width: 100%;
+  min-width: 0;
+}
+
+.repair-v2-stage__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 18px;
+}
+
+.repair-v2-stage__heading > div {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+}
+
+.repair-v2-stage__heading
+> div
+> span {
+  color: var(--myc-primary);
+
+  font-size: 9px;
+  font-weight: 900;
+
+  letter-spacing: 0.055em;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-stage__heading h4 {
+  margin: 0;
+
+  color: var(--myc-navy);
+
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.repair-v2-stage__heading p {
+  max-width: 680px;
+
+  margin: 0;
+
+  color: var(--myc-soft-text);
+
+  font-size: 10.5px;
+  font-weight: 700;
+
+  line-height: 1.5;
+}
+
+
+/* =========================================================
+   AVISO DE ETAPA
+   ========================================================= */
+
+.repair-v2-stage__notice {
+  padding: 10px 12px;
+
+  border:
+    1px solid
+    rgba(247, 144, 9, 0.2);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 250, 235, 0.78);
+
+  color: #7a2e0e;
+
+  font-size: 10.5px;
+  font-weight: 700;
+
+  line-height: 1.45;
+}
+
+
+/* =========================================================
+   FORMULARIO GENERAL DEL WORKFLOW
+   ========================================================= */
+
+.repair-v2-form {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  gap: 12px;
+
+  width: 100%;
+  min-width: 0;
+}
+
+
+/* =========================================================
+   CAMPOS
+   ========================================================= */
+
+.repair-v2-form__field,
+.repair-v2-form label {
+  display: grid;
+
+  gap: 5px;
+
+  min-width: 0;
+
+  color: var(--myc-soft-text);
+
+  font-size: 9.5px;
+  font-weight: 900;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-form__field--wide {
+  grid-column:
+    1 / -1;
+}
+
+.repair-v2-form input,
+.repair-v2-form select,
+.repair-v2-form textarea {
+  width: 100%;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.14);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.68);
+
+  color: var(--myc-navy);
+
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+
+  outline: none;
+
+  text-transform: none;
+
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+}
+
+.repair-v2-form input,
+.repair-v2-form select {
+  min-height: 38px;
+
+  padding: 0 11px;
+}
+
+.repair-v2-form textarea {
+  min-height: 88px;
+
+  padding: 10px 11px;
+
+  resize: vertical;
+}
+
+.repair-v2-form input:focus,
+.repair-v2-form select:focus,
+.repair-v2-form textarea:focus {
+  border-color:
+    var(--myc-primary);
+
+  box-shadow:
+    0 0 0 3px
+    rgba(70, 216, 196, 0.13);
+}
+
+.repair-v2-form input:disabled,
+.repair-v2-form select:disabled,
+.repair-v2-form textarea:disabled {
+  cursor: not-allowed;
+
+  background:
+    rgba(5, 31, 45, 0.05);
+
+  color:
+    var(--myc-soft-text);
+
+  opacity: 0.75;
+}
+
+
+/* =========================================================
+   GRUPOS DE FORMULARIO
+   ========================================================= */
+
+.repair-v2-form__group {
+  display: grid;
+
+  gap: 10px;
+
+  min-width: 0;
+
+  padding: 12px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.1);
+
+  border-radius: 9px;
+
+  background:
+    rgba(255, 255, 255, 0.32);
+}
+
+.repair-v2-form__group--full {
+  grid-column:
+    1 / -1;
+}
+
+.repair-v2-form__group > header {
+  display: grid;
+
+  gap: 3px;
+}
+
+.repair-v2-form__group
+> header
+> span {
+  color: var(--myc-navy);
+
+  font-size: 10.5px;
+  font-weight: 900;
+}
+
+.repair-v2-form__group
+> header
+> p {
+  margin: 0;
+
+  color: var(--myc-soft-text);
+
+  font-size: 9.5px;
+  font-weight: 700;
+
+  line-height: 1.45;
+}
+
+
+/* =========================================================
+   SEPARADOR
+   ========================================================= */
+
+.repair-v2-form__separator {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  grid-column:
+    1 / -1;
+
+  min-height: 25px;
+
+  color: var(--myc-soft-text);
+
+  font-size: 9px;
+  font-weight: 800;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-form__separator::before,
+.repair-v2-form__separator::after {
+  content: "";
+
+  flex: 1 1 auto;
+
+  height: 1px;
+
+  background:
+    rgba(8, 117, 111, 0.1);
+}
+
+.repair-v2-form__separator span {
+  flex: 0 0 auto;
+
+  padding:
+    0 11px;
+}
+
+
+/* =========================================================
+   CONTEXTO DE RECEPCIÓN
+   ========================================================= */
+
+.repair-v2-reception-context {
+  display: grid;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+
+  grid-column:
+    1 / -1;
+
+  gap: 8px;
+
+  margin-top: 2px;
+}
+
+.repair-v2-reception-context > div {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+
+  padding: 9px 10px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.08);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.32);
+}
+
+.repair-v2-reception-context span {
+  color: var(--myc-soft-text);
+
+  font-size: 8.5px;
+  font-weight: 800;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-reception-context strong {
+  overflow: hidden;
+
+  color: var(--myc-navy);
+
+  font-size: 10.5px;
+  font-weight: 800;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   ACCIONES DEL FORMULARIO
+   ========================================================= */
+
+.repair-v2-form__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+
+  gap: 9px;
+
+  grid-column:
+    1 / -1;
+
+  padding-top: 4px;
+}
+
+.repair-v2-form__actions
+.primary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 7px;
+}
+
+
+/* =========================================================
+   RECEPCIÓN COMPLETADA
+   ========================================================= */
+
+.repair-v2-reception-summary {
+  display: grid;
+
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr));
+
+  gap: 8px;
+}
+
+.repair-v2-reception-summary article {
+  display: grid;
+
+  gap: 4px;
+
+  min-width: 0;
+
+  padding: 10px 11px;
+
+  border:
+    1px solid
+    rgba(8, 117, 111, 0.1);
+
+  border-radius: 8px;
+
+  background:
+    rgba(255, 255, 255, 0.34);
+}
+
+.repair-v2-reception-summary span {
+  color: var(--myc-soft-text);
+
+  font-size: 8.5px;
+  font-weight: 800;
+
+  text-transform: uppercase;
+}
+
+.repair-v2-reception-summary strong {
+  overflow: hidden;
+
+  color: var(--myc-navy);
+
+  font-size: 10.5px;
+  font-weight: 850;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   ANIMACIONES
+   ========================================================= */
+
+@keyframes repair-v2-overlay-enter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+
+@keyframes repair-v2-dialog-enter {
+  from {
+    opacity: 0;
+
+    transform:
+      translateY(10px)
+      scale(0.988);
+  }
+
+  to {
+    opacity: 1;
+
+    transform:
+      translateY(0)
+      scale(1);
+  }
+}
+
+
+@keyframes repair-v2-skeleton {
+  0% {
+    background-position:
+      200% 0;
+  }
+
+  100% {
+    background-position:
+      -200% 0;
+  }
+}
+
+
+/* =========================================================
+   TABLET
+   ========================================================= */
+
+@media (max-width: 1000px) {
+  .repair-v2__heading {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(170px, 220px);
+  }
+
+  .repair-v2__metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .repair-v2-modal__summary-grid,
+  .repair-v2-modal__traceability-grid,
+  .repair-v2-reception-summary {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 720px) {
+  .repair-v2 {
+    gap: 14px;
+  }
+
+
+  /* encabezado */
+
+  .repair-v2__heading {
+    grid-template-columns:
+      1fr;
+
+    padding: 15px;
+  }
+
+  .repair-v2__heading-actions {
+    grid-template-columns:
+      minmax(0, 1fr)
+      auto;
+
+    align-items: center;
+  }
+
+
+  /* métricas */
+
+  .repair-v2__metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+
+  /* catálogo */
+
+  .repair-v2__section-heading {
+    align-items: flex-start;
+
+    flex-direction: column;
+
+    gap: 5px;
+  }
+
+  .repair-v2__grid,
+  .repair-v2__skeleton-grid {
+    grid-template-columns:
+      1fr;
+  }
+
+
+  /* tarjeta */
+
+  .repair-v2-card__identity {
+    grid-template-columns:
+      1fr;
+  }
+
+
+  /* modal */
+
+  .repair-v2-modal {
+    align-items: stretch;
+
+    padding: 0;
+
+    background:
+      linear-gradient(
+        145deg,
+        rgba(236, 253, 250, 0.98),
+        rgba(255, 255, 255, 0.98)
+      );
+
+    backdrop-filter: none;
+  }
+
+  .repair-v2-modal__dialog {
+    width: 100%;
+    height: 100dvh;
+
+    max-height: 100dvh;
+
+    border: 0;
+    border-radius: 0;
+
+    box-shadow: none;
+  }
+
+  .repair-v2-modal__header {
+    padding:
+      14px 15px;
+  }
+
+  .repair-v2-modal__heading h3 {
+    max-width:
+      65vw;
+  }
+
+  .repair-v2-modal__status {
+    display: none;
+  }
+
+  .repair-v2-modal__body {
+    padding: 11px;
+  }
+
+  .repair-v2-modal__summary,
+  .repair-v2-modal__blockers,
+  .repair-v2-modal__workspace,
+  .repair-v2-modal__traceability {
+    padding: 13px;
+
+    border-radius: 10px;
+  }
+
+  .repair-v2-modal__summary-grid,
+  .repair-v2-modal__traceability-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+
+  /* etapas */
+
+  .repair-v2-stage__heading {
+    flex-direction: column;
+  }
+
+  .repair-v2-form {
+    grid-template-columns:
+      1fr;
+  }
+
+  .repair-v2-form__field--wide,
+  .repair-v2-form__group--full,
+  .repair-v2-form__separator,
+  .repair-v2-reception-context,
+  .repair-v2-form__actions {
+    grid-column:
+      auto;
+  }
+
+  .repair-v2-reception-context {
+    grid-template-columns:
+      1fr;
+  }
+
+  .repair-v2-form__actions {
+    justify-content:
+      stretch;
+  }
+
+  .repair-v2-form__actions
+  .primary-button {
+    width: 100%;
+  }
+}
+
+
+/* =========================================================
+   MOBILE PEQUEÑO
+   ========================================================= */
+
+@media (max-width: 480px) {
+  .repair-v2__metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+
+    gap: 7px;
+  }
+
+  .repair-v2__metrics article {
+    padding:
+      10px;
+  }
+
+  .repair-v2-card {
+    padding:
+      13px;
+  }
+
+  .repair-v2-card__header {
+    flex-direction:
+      column;
+  }
+
+  .repair-v2-card__metrics {
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr));
+  }
+
+  .repair-v2-card__footer {
+    align-items:
+      flex-start;
+
+    flex-direction:
+      column;
+  }
+
+  .repair-v2-modal__summary-grid,
+  .repair-v2-modal__traceability-grid,
+  .repair-v2-reception-summary {
+    grid-template-columns:
+      1fr;
+  }
+
+  .repair-v2-modal__heading-meta {
+    flex-wrap:
+      wrap;
+  }
+
+  .repair-v2__heading-actions {
+    grid-template-columns:
+      1fr;
+  }
+}
+
+
+/* =========================================================
+   ACCESIBILIDAD / REDUCED MOTION
+   ========================================================= */
+
+@media (
+  prefers-reduced-motion:
+  reduce
+) {
+  .repair-v2-card,
+  .repair-v2-card__arrow,
+  .repair-v2__refresh-button,
+  .repair-v2-modal,
+  .repair-v2-modal__dialog,
+  .repair-v2-modal__close {
+    animation: none;
+    transition: none;
+  }
+
+  .repair-v2__skeleton-card
+  > * {
+    animation: none;
+  }
+}
