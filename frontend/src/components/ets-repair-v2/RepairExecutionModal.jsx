@@ -4,6 +4,14 @@ import React, {
 } from 'react';
 
 import RepairReceptionSection from './sections/RepairReceptionSection.jsx';
+import RepairAssignmentSection from './sections/RepairAssignmentSection.jsx';
+import RepairDiagnosisSection from './sections/RepairDiagnosisSection.jsx';
+import RepairVerdictSection from './sections/RepairVerdictSection.jsx';
+import RepairInterventionSection from './sections/RepairInterventionSection.jsx';
+import RepairPauseSection from './sections/RepairPauseSection.jsx';
+import RepairTestingSection from './sections/RepairTestingSection.jsx';
+import RepairWarrantySection from './sections/RepairWarrantySection.jsx';
+import RepairClosureSection from './sections/RepairClosureSection.jsx';
 
 
 const REPAIR_STATUS_LABELS = {
@@ -134,6 +142,7 @@ function RepairExecutionModal({
   order,
   board = null,
   users = [],
+  user = null,
 
   isOpen = false,
   isBusy = false,
@@ -567,25 +576,124 @@ function RepairExecutionModal({
           <section className="repair-v2-modal__workspace">
             <RepairReceptionSection
               board={board}
-              execution={
-                execution
-              }
-              isBusy={
-                isBusy
-              }
-              onBoardChange={
-                onBoardChange
-              }
-              onBusyChange={
-                onBusyChange
-              }
-              onError={
-                onError
-              }
-              onNotice={
-                onNotice
-              }
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
               order={order}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairAssignmentSection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
+              users={users}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairDiagnosisSection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
+              users={users}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairVerdictSection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
+              users={users}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairInterventionSection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
+              users={users}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairPauseSection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
+              users={users}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairTestingSection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
+              users={users}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairWarrantySection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
+              users={users}
+            />
+          </section>
+
+          <section className="repair-v2-modal__workspace">
+            <RepairClosureSection
+              execution={execution}
+              isBusy={isBusy}
+              onBoardChange={onBoardChange}
+              onBusyChange={onBusyChange}
+              onError={onError}
+              onNotice={onNotice}
+              order={order}
+              user={user}
             />
           </section>
 

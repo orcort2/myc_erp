@@ -849,6 +849,7 @@ function RepairEtsTabV2({
           handleExecutionNotice
         }
         order={order}
+        user={user}
         users={users}
       />
     </>

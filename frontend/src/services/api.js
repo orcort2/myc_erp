@@ -947,6 +947,32 @@ export const closeRepair = (
     }
   );
 
+export const cancelRepairExecution = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/cancel`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const reopenRepairWarranty = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/warranty-reopen`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
 export async function getSaleBoard(serviceOrderId) {
   return request(`/service-orders/${serviceOrderId}/sale`);
 }
