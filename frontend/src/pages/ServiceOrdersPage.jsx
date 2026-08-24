@@ -130,6 +130,10 @@ function getServiceOrderCapabilities(order) {
     (item) => item.operational_category === 'calibration'
   );
 
+  const hasVerification = items.some(
+    (item) => item.operational_category === 'verification'
+  );
+
   const hasEmbeddedCalibration = items.some((item) => {
     if (item.operational_category !== 'sale') {
       return false;
@@ -149,6 +153,7 @@ function getServiceOrderCapabilities(order) {
     hasMaintenance,
     hasRepair,
     hasDirectCalibration,
+    hasVerification,
     hasEmbeddedCalibration,
   };
 }
@@ -345,6 +350,7 @@ function ServiceOrdersPage({ user = null }) {
     hasMaintenance: selectedOrderHasMaintenance,
     hasRepair: selectedOrderHasRepair,
     hasDirectCalibration: selectedOrderHasDirectCalibration,
+    hasVerification: selectedOrderHasVerification,
     hasEmbeddedCalibration: selectedOrderHasEmbeddedCalibration,
   } = selectedOrderCapabilities;
 
@@ -372,12 +378,13 @@ function ServiceOrdersPage({ user = null }) {
         selectedOrderHasSale ||
         selectedOrderHasMaintenance ||
         selectedOrderHasRepair ||
-        selectedOrderHasDirectCalibration
+        selectedOrderHasDirectCalibration ||
+        selectedOrderHasVerification
           ? [['equipment', 'Equipos']]
           : []
       ),
 
-      ...(selectedOrderHasDirectCalibration
+      ...(selectedOrderHasDirectCalibration || selectedOrderHasVerification
         ? [
             ['field-sheet', 'Hojas de Campo'],
             ['capture', 'Captura'],
@@ -397,6 +404,7 @@ function ServiceOrdersPage({ user = null }) {
     selectedOrderHasMaintenance,
     selectedOrderHasRepair,
     selectedOrderHasDirectCalibration,
+    selectedOrderHasVerification,
   ]);
 
   const technicalSubEtsTabs = useMemo(
@@ -430,6 +438,20 @@ function ServiceOrdersPage({ user = null }) {
         ])
       ),
     [selectedOrder]
+  );
+
+  const metrologicalOrderItems = useMemo(
+    () => (selectedOrder?.items || []).filter((item) =>
+      ['calibration', 'verification'].includes(item.operational_category)
+    ),
+    [selectedOrder]
+  );
+
+  const selectedEquipmentFormItem = useMemo(
+    () => metrologicalOrderItems.find(
+      (item) => String(item.id) === String(equipmentForm.serviceOrderItemId)
+    ) || null,
+    [equipmentForm.serviceOrderItemId, metrologicalOrderItems]
   );
 
   function getEquipmentOperationalContext(item) {
@@ -488,6 +510,15 @@ function ServiceOrdersPage({ user = null }) {
       return {
         key: 'calibration',
         label: 'Calibración',
+        hasMetrology: true,
+        sourceItem,
+      };
+    }
+
+    if (operationalCategory === 'verification') {
+      return {
+        key: 'verification',
+        label: 'Verificación',
         hasMetrology: true,
         sourceItem,
       };
@@ -1965,12 +1996,18 @@ function closeTechnicalSubEts() {
         notes: item.notes ?? ''
       });
     } else {
+      const defaultMetrologicalItem = metrologicalOrderItems.length === 1
+        ? metrologicalOrderItems[0]
+        : null;
       setEditingEquipmentId(null);
       setEquipmentForm({
         ...emptyEquipmentForm,
         workOrderId: preferredWorkOrder && !isLegacyWorkOrder(preferredWorkOrder) ? String(preferredWorkOrder.id) : '',
+        serviceOrderItemId: defaultMetrologicalItem ? String(defaultMetrologicalItem.id) : '',
         certificateScope:
-          selectedOrderCertificateCapacity.singleAvailableScope ??
+          defaultMetrologicalItem?.operational_category === 'verification'
+            ? ''
+            : defaultMetrologicalItem?.calibration_scope ?? selectedOrderCertificateCapacity.singleAvailableScope ??
           (selectedOrderCertificateCapacity.availableScopes.length > 1 ? '' : emptyEquipmentForm.certificateScope),
       });
     }
@@ -1991,7 +2028,11 @@ function closeTechnicalSubEts() {
       setError('Captura el nombre del equipo.');
       return;
     }
-    if (!editingEquipmentId && !equipmentForm.certificateScope) {
+    if (!editingEquipmentId && !equipmentForm.serviceOrderItemId) {
+      setError('Selecciona la partida metrológica para este equipo.');
+      return;
+    }
+    if (!editingEquipmentId && selectedEquipmentFormItem?.operational_category === 'calibration' && !equipmentForm.certificateScope) {
       setError('Selecciona el tipo de certificado para este equipo.');
       return;
     }
@@ -2002,6 +2043,7 @@ function closeTechnicalSubEts() {
       const payload = {
         service_order_id: selectedOrder.id,
         work_order_id: equipmentForm.workOrderId ? Number(equipmentForm.workOrderId) : null,
+        service_order_item_id: equipmentForm.serviceOrderItemId ? Number(equipmentForm.serviceOrderItemId) : null,
         calibration_scope: equipmentForm.certificateScope || null,
         name: equipmentForm.name.trim(),
         brand: equipmentForm.brand.trim() || null,
@@ -4334,7 +4376,41 @@ function closeTechnicalSubEts() {
                   })}
                 </select>
               </label>
-              {editingEquipmentId ? (
+              <label>
+                Proceso metrológico
+                <select
+                  disabled={Boolean(editingEquipmentId)}
+                  onChange={(event) => {
+                    const serviceOrderItemId = event.target.value;
+                    const serviceItem = metrologicalOrderItems.find(
+                      (item) => String(item.id) === serviceOrderItemId
+                    );
+                    setEquipmentForm((current) => ({
+                      ...current,
+                      serviceOrderItemId,
+                      certificateScope:
+                        serviceItem?.operational_category === 'verification'
+                          ? ''
+                          : serviceItem?.calibration_scope || '',
+                    }));
+                  }}
+                  required
+                  value={equipmentForm.serviceOrderItemId}
+                >
+                  <option value="">Selecciona una partida</option>
+                  {metrologicalOrderItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.operational_category === 'verification' ? 'Verificación' : 'Calibración'} · {item.service_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedEquipmentFormItem?.operational_category === 'verification' ? (
+                <label>
+                  Tipo de certificado
+                  <input disabled type="text" value="Certificado de Verificación" />
+                </label>
+              ) : editingEquipmentId ? (
                 <label>
                   Tipo de certificado
                   <input
@@ -4373,6 +4449,7 @@ function closeTechnicalSubEts() {
                   />
                 </label>
               )}
+              {selectedEquipmentFormItem?.operational_category !== 'verification' ? (
               <div className="ets-certificate-capacity-list">
                 {['traceable', 'accredited_iso_17025', 'accredited_linked_lab'].map((scope) => (
                   <article key={scope}>
@@ -4383,6 +4460,7 @@ function closeTechnicalSubEts() {
                   </article>
                 ))}
               </div>
+              ) : null}
               <label>
                 Nombre
                 <input onChange={(event) => updateEquipmentForm('name', event.target.value)} required type="text" value={equipmentForm.name} />

@@ -40,7 +40,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-009 | Plantillas Maestras/Equipos | Al crear el ETS, cada partida congela el identificador del Master esperado. Al dar de alta el equipo, éste congela documento, versión, ruta, nombre, hash, vigencia y el contexto operativo —alcance, tipo de certificado, Master y partida/origen— sin resolver por nombre ni volver a consultar el catálogo. | modelos/servicios de ETS y Equipos; migración `8c2d4e6f7a9b` | 2026-07-23 |
 | BR-010 | Hojas de Campo | La hoja conserva snapshot de plantilla e identidad; una plantilla no debe cambiar retroactivamente una hoja creada. | modelos/servicios de Hojas de Campo | 2026-07-13 |
 | BR-011 | Hojas de Campo | No hay fallback silencioso a plantilla General cuando no existe coincidencia segura; la selección debe ser explícita. | integración operativa auditada 2026-07-13 | 2026-07-13 |
-| BR-012 | Certificados | Cada certificado se vincula a un equipo y un ETS; usa `MYCA`/`MYCT` o el prefijo vinculado congelado, seguido por `AAMMNNNN` sin guiones. | `backend/app/services/institutional_folios.py`, arquitectura de folios | 2026-07-29 |
+| BR-012 | Certificados | Cada certificado se vincula a un equipo y un ETS. Calibración usa `MYCA`/`MYCT` o el prefijo vinculado congelado seguido por `AAMMNNNN`; Verificación usa obligatoriamente `MYCV-MM-AA-XXXX`, asignado por la secuencia institucional y sin edición manual. | `backend/app/services/institutional_folios.py`, arquitectura de folios | 2026-08-24 |
 | BR-013 | Calidad | La aprobación del Master XLSX es la única compuerta documental para autenticar. Desde `quality_approved` —o el alias legacy `approved`— Autenticar genera el PDF final desde el Master identificado, lo sella, conserva actor/fecha/auditoría/referencia al Master y pasa a `authenticated`. No exige PDF previo, `final_pdf_path` ni `match_status`; un rechazo de Calidad requiere comentario. | `backend/app/services/certificate_authentication.py`, pruebas de autenticación desde Master | 2026-07-21 |
 | BR-014 | Certificados | Calidad es la única superficie funcional que puede solicitar autenticación; ETS sólo consulta el estado. `certificate_authentication.authenticate_certificate` es la autoridad transaccional única, exige actor/origen Calidad, bloquea el certificado y persiste audit/evento una sola vez. | `docs/modules/calidad/AUTENTICACION_CERTIFICADOS.md`, cierre P0 y pruebas de integridad | 2026-08-10 |
 | BR-015 | Certificados | La vista ordinaria de Certificados sólo muestra PDFs autenticados en estado autenticado o liberado. | frontend de Certificados y servicio de certificados | 2026-07 |
@@ -92,6 +92,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-061 | Comunicaciones / Seguridad | Listar, leer, sincronizar, escribir, recibir typing y actualizar recibos exige membership vigente comprobada en backend. La identidad procede del access JWT revalidado y un ID ajeno no revela contenido. | Router/servicio Communications, realtime y pruebas IDOR | 2026-08-17 |
 | BR-062 | Comunicaciones / Menciones | Una mención individual sólo puede dirigirse a un participante; `@todos` o rol exige perfil Administrador, Desarrollador o Calidad y el rol debe existir dentro del grupo. Recibos y cursores por usuario avanzan sin regresión. | Modelo/servicio Communications y pruebas de menciones/recibos | 2026-08-17 |
 | BR-063 | Comunicaciones / Push | Realtime y Expo Push son transporte best-effort, nunca autoridad. La notificación se persiste con vista previa sin cuerpo del mensaje, una falla de entrega no revierte dominio y todo deep link vuelve a consultar REST. | Arquitectura Communications, Notifications V1 y provider móvil | 2026-08-17 |
+| BR-064 | ETS / Verificación | Verificación reutiliza OT, Equipment, Hoja de Campo, Captura, Calidad, Certificados, autenticación, versiones y liberación. Usa `operational_category=verification`, `calibration_scope=null` y certificado `verification`; `Equipment.service_order_item_id` impide confundirla con Calibración en un ETS mixto. Cada OT conserva el máximo común de 10 equipos. | Servicios de Equipment/Certificados/Captura, frontend ETS y suite de Verificación | 2026-08-24 |
 
 ## Reglas históricas no vigentes como obligación actual
 
@@ -130,9 +131,10 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    `calibration_scope` conserva sus tres claves vigentes.
 5. Vinculado exige empresa y prefijo alfanumérico mayúsculo de 2–12
    caracteres. Equipo y certificado usan el snapshot, no el catálogo vivo.
-6. Certificados usan `{PREFIJO}{AA}{MM}{NNNN}` sin guiones. En 2026 comienzan
-   o continúan desde 8000; desde cada año nuevo, 1000. OT usa 7000 en 2026 y
-   1000 desde cada año posterior. Ningún contador se reinicia por mes.
+6. Certificados de Calibración usan `{PREFIJO}{AA}{MM}{NNNN}` sin guiones;
+   Verificación usa `MYCV-MM-AA-XXXX`. En 2026 comienzan o continúan desde
+   8000; desde cada año nuevo, 1000. OT usa 7000 en 2026 y 1000 desde cada año
+   posterior. Ningún contador se reinicia por mes.
 7. Un actor con `authorize_unlock`, `apply_unlock`,
    `rebuild_empty_service_order`, `inspect` y
    `self_authorize_unlock` obtiene el desbloqueo en el mismo comando.

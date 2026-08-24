@@ -3,10 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.models.certificate import Certificate
+from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrderItem
 from app.schemas.service_scope import ACCREDITATION_SCOPE_VALUES
 
@@ -28,6 +29,7 @@ CALIBRATION_SCOPE_LABELS = {
 }
 
 SUPPORTED_CALIBRATION_SCOPES = ACCREDITATION_SCOPE_VALUES
+METROLOGICAL_OPERATIONAL_CATEGORIES = {"calibration", "verification"}
 
 
 @dataclass(frozen=True)
@@ -162,3 +164,99 @@ def auto_service_order_item_id_for_scope(
         ).all()
     )
     return item_ids[0] if item_ids else None
+
+
+def resolve_equipment_metrological_context(
+    db: Session,
+    service_order_id: int,
+    *,
+    service_order_item_id: int | None,
+    requested_scope: str | None,
+) -> tuple[int, str | None, str]:
+    """Resolve one equipment to its frozen ETS item and certificate domain."""
+    items = list(
+        db.scalars(
+            select(ServiceOrderItem).where(
+                ServiceOrderItem.service_order_id == service_order_id,
+                ServiceOrderItem.is_active.is_(True),
+                or_(
+                    ServiceOrderItem.operational_category.in_(
+                        METROLOGICAL_OPERATIONAL_CATEGORIES
+                    ),
+                    ServiceOrderItem.calibration_scope.in_(
+                        SUPPORTED_CALIBRATION_SCOPES
+                    ),
+                ),
+            ).order_by(ServiceOrderItem.id)
+        ).all()
+    )
+    if not items:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La Orden de Trabajo no contiene partidas metrológicas",
+        )
+
+    if service_order_item_id is not None:
+        item = next((row for row in items if row.id == service_order_item_id), None)
+        if item is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="La partida seleccionada no es metrológica o no pertenece al ETS",
+            )
+    else:
+        available = []
+        for row in items:
+            used = db.scalar(
+                select(func.count(Equipment.id)).where(
+                    Equipment.service_order_item_id == row.id,
+                    Equipment.is_active.is_(True),
+                )
+            )
+            if int(used or 0) < int(row.quantity or 0):
+                available.append(row)
+        if len(available) != 1:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Selecciona la partida metrológica correspondiente al equipo",
+            )
+        item = available[0]
+
+    used = db.scalar(
+        select(func.count(Equipment.id)).where(
+            Equipment.service_order_item_id == item.id,
+            Equipment.is_active.is_(True),
+        )
+    )
+    if int(used or 0) >= int(item.quantity or 0):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La partida seleccionada ya no tiene equipos disponibles",
+        )
+
+    if item.operational_category == "verification":
+        if requested_scope is not None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Verificación no admite alcance acreditado, trazable ni vinculado",
+            )
+        return item.id, None, "verification"
+
+    resolved_scope = resolve_equipment_calibration_scope(
+        db, service_order_id, requested_scope or item.calibration_scope
+    )
+    if item.calibration_scope is not None and item.calibration_scope != resolved_scope:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="El alcance no corresponde a la partida de Calibración seleccionada",
+        )
+    certificate_type = certificate_type_from_scope(resolved_scope)
+    if certificate_type is None:
+        raise HTTPException(status_code=422, detail="Alcance de Calibración no soportado")
+    return item.id, resolved_scope, certificate_type
+
+
+def certificate_type_for_equipment(db: Session, equipment: Equipment) -> str | None:
+    item = db.get(ServiceOrderItem, equipment.service_order_item_id)
+    if item is not None and item.operational_category == "verification":
+        return "verification"
+    return certificate_type_from_scope(equipment.calibration_scope)

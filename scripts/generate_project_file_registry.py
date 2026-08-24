@@ -25,6 +25,7 @@ EXCLUDED_NAMES = {
     ".tmp_field_sheet_templates.json", "package-lock.json", "from", "import", "io",
     "BACKUP_ESTADO_ACTUAL (1).md", "resolution_engine.zip",
     "backend.zip", "01_login.ai",
+    "global.css.bak-before-ets-card-cleanup", "global.css.bak-equipos",
 }
 EXCLUDED_PREFIXES = ("backend/resources/sat/reports/",)
 OFFICIAL_IGNORED_RESOURCES = (Path("backend/resources/sat/catalogo sat.xlsx"),)
@@ -134,6 +135,7 @@ FORCE_RECLASSIFY = {
     "backend/app/schemas/catalog_item.py",
     "backend/app/schemas/controlled_document.py",
     "backend/app/schemas/equipment.py",
+    "backend/app/schemas/operational_engine.py",
     "backend/app/schemas/quotation.py",
     "backend/app/schemas/service_order.py",
     "backend/app/schemas/service_scope.py",
@@ -561,7 +563,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/app/services/quotations.py": ("Servicio de cotizaciones", "Congela snapshot v2 por componente, incluidas configuraciones de Venta y Mantenimiento, sin reinterpretar historial.", "Catálogo, expansión compuesta y snapshots", "API Cotizaciones, ETS y pruebas", "Crítico"),
         "backend/app/services/service_orders.py": ("Servicio agregado ETS", "Crea ETS/OT/partidas y materializa una sola vez verticales Venta y Mantenimiento desde snapshots aprobados.", "Cotizaciones, ServiceOrder, expansor y verticales", "Routers, frontend y pruebas", "Crítico"),
         "frontend/src/pages/QuotationsPage.jsx": ("Cotizaciones y catálogo comercial", "Gestiona cotización y un formulario donde Tipo comercial/fiscal y Categoría operacional son independientes; compone Venta y Servicios Compuestos existentes.", "React, API Cotizaciones/Catálogo y formularios", "Usuarios comerciales", "Crítico"),
-        "frontend/src/pages/ServiceOrdersPage.jsx": ("Workbench ETS institucional", "Compone carpetas del expediente y monta verticales Venta/Mantenimiento sin duplicar motor ni OT.", "React, APIs ETS y componentes verticales", "Usuarios operativos del ETS", "Crítico"),
+        "frontend/src/pages/ServiceOrdersPage.jsx": ("Workbench ETS institucional", "Compone el expediente y verticales; detecta Verificación, habilita el pipeline metrológico compartido y asocia altas/acciones por equipo y partida para coexistir con Calibración.", "React, APIs ETS, ServiceOrderItem y componentes verticales", "Usuarios operativos del ETS", "Crítico"),
         "frontend/src/services/api.js": ("Cliente API web", "Centraliza contratos HTTP del ERP, incluidos endpoints completos de Venta y Mantenimiento y descargas PDF.", "Fetch autenticado y manejo de errores", "Páginas/componentes web", "Crítico"),
     }
     if value in maintenance_files:
@@ -733,9 +735,9 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value == "backend/app/services/certificates.py":
         return (
             "Lifecycle de certificados",
-            "Gestiona creación, revisión y liberación; no autentica ni conserva un flujo paralelo de autenticación. Toda mutación humana exige actor y la creación derivada admite actor técnico opcional.",
-            "Equipos, snapshots, auditoría, Facturación e institutional_folios",
-            "ETS, Calidad, Certificados y descargas",
+            "Gestiona creación, captura, Calidad y liberación compartidas; valida el tipo contra la partida/equipo, impone título y folio institucional de Verificación y delega autenticación a su autoridad única.",
+            "Equipment, ServiceOrderItem, snapshots, auditoría, Facturación e institutional_folios",
+            "ETS, Captura, Calidad, Certificados y descargas",
             "Crítico",
         )
     if value == "frontend/src/pages/ServiceOrdersPage.jsx":
@@ -862,23 +864,23 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/services/institutional_folios.py": (
             "Asignador institucional de folios",
-            "Reserva consecutivos anuales con advisory lock y row lock, respeta pisos iniciales y construye folios compactos por prefijo.",
-            "PostgreSQL, FolioSequence y fechas",
+            "Reserva consecutivos anuales con locks, respeta pisos y construye folios compactos de Calibración, prefijos vinculados, MYCV-MM-AA-XXXX de Verificación y números de OT.",
+            "PostgreSQL, FolioSequence, Certificate y fechas",
             "Certificados, órdenes de trabajo y pruebas",
             "Crítico",
         ),
         "backend/app/services/certificates.py": (
             "Lifecycle y emisión de certificados",
-            "Gestiona estados, carga, autenticación y liberación; toda mutación humana exige actor y sólo la creación derivada conserva actor técnico opcional. Mantiene folio anual/prefijo congelado MYCA, MYCT o vinculado.",
-            "Equipos, snapshots, autenticación, auditoría, Facturación e institutional_folios",
-            "ETS, Calidad, Certificados y descargas",
+            "Gestiona creación, captura, Calidad y liberación compartidas; valida el tipo contra la partida/equipo, impone título y folio institucional de Verificación y delega autenticación a su autoridad única.",
+            "Equipment, ServiceOrderItem, snapshots, auditoría, Facturación e institutional_folios",
+            "ETS, Captura, Calidad, Certificados y descargas",
             "Crítico",
         ),
         "backend/app/services/folio_engine.py": (
-            "Folio de orden de trabajo",
-            "Delega la asignación anual de OT al contador institucional central y preserva la interfaz consumida por ETS.",
-            "institutional_folios y sesión SQLAlchemy",
-            "Creación y reconstrucción de ETS",
+            "Sugerencia de folios de certificado",
+            "Expone sugerencias auditadas para Calibración y Verificación, formatea MYCV-MM-AA-XXXX y prohíbe el folio manual de Verificación.",
+            "institutional_folios, Certificate, auditoría y sesión SQLAlchemy",
+            "Motor operacional de folios y pruebas",
             "Crítico",
         ),
         "backend/app/routers/quotation_service_changes.py": (
@@ -931,9 +933,9 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
             "Alto",
         ),
         "frontend/src/pages/ServiceOrdersPage.jsx": (
-            "Expediente integral",
-            "Orquesta ETS, integra el workbench Venta por categoría y conserva Captura→Calidad→Autenticación→Pago→Liberación y excepciones gobernadas.",
-            "Componentes ETS, EtsBillingTab, APIs operativas y etiqueta de solicitud",
+            "Workbench ETS institucional",
+            "Compone el expediente y verticales; detecta Verificación, habilita el pipeline metrológico compartido y asocia altas/acciones por equipo y partida para coexistir con Calibración.",
+            "React, APIs ETS, ServiceOrderItem y componentes verticales",
             "Usuarios operativos y administrativos del expediente",
             "Alto",
         ),
@@ -2375,9 +2377,9 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/services/certificates.py": (
             "Lifecycle de certificados",
-            "Gestiona creación, revisión y liberación; no autentica ni conserva un flujo paralelo de autenticación. Toda mutación humana exige actor y la creación derivada admite actor técnico opcional.",
-            "Equipos, snapshots, auditoría, Facturación e institutional_folios",
-            "ETS, Calidad, Certificados y descargas",
+            "Gestiona creación, captura, Calidad y liberación compartidas; valida el tipo contra la partida/equipo, impone título y folio institucional de Verificación y delega autenticación a su autoridad única.",
+            "Equipment, ServiceOrderItem, snapshots, auditoría, Facturación e institutional_folios",
+            "ETS, Captura, Calidad, Certificados y descargas",
             "Crítico",
         ),
         "backend/tests/test_certificate_authentication_integrity.py": (
@@ -2444,10 +2446,18 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         return ("Contrato Pydantic documental", "Valida documentos, interpretaciones y perfiles técnicos; reutiliza AccreditationScope para impedir una taxonomía paralela.", "service_scope.py, Pydantic y modelos documentales", "Control Documental, perfiles técnicos y motores operativos", "Alto")
     if value == "backend/app/schemas/service_order.py":
         return ("Contrato Pydantic operacional", "Valida ETS y el lifecycle solicitado/autorizado/ejecutado de excepciones, propagando ServiceScope con claves canónicas.", "service_scope.py, Pydantic y modelos ORM", "Router/servicio ETS y cadena Catálogo→ETS→Certificado", "Alto")
-    if value in {"backend/app/schemas/quotation.py", "backend/app/schemas/equipment.py"}:
+    if value == "backend/app/schemas/operational_engine.py":
+        return ("Contratos de motores operativos", "Valida resultados técnicos y la sugerencia de folios para Calibración o Verificación, sin aceptar tipos documentales ambiguos.", "Pydantic y contratos de Certificados/Folios", "Router de motores operativos y servicios documentales", "Alto")
+    if value == "backend/app/schemas/equipment.py":
+        return ("Contrato Pydantic de Equipment", "Valida OT, partida ETS y scope opcional; permite Verificación con alcance nulo sin crear un enum paralelo.", "service_scope.py, Pydantic y modelo Equipment", "Router, servicio de Equipment y workbench ETS", "Alto")
+    if value == "backend/app/schemas/quotation.py":
         return ("Contrato Pydantic operacional", f"Valida payloads y respuestas de {subject}, propagando ServiceScope con las claves canónicas de acreditación.", "service_scope.py, Pydantic y modelo ORM", "Routers, servicios y cadena Catálogo→ETS→Certificado", "Alto")
     if value == "backend/app/services/service_order_certificate_capacity.py":
-        return ("Capacidad automática por acreditación", "Calcula cupos del ETS, resuelve automáticamente el alcance del equipo y mapea las tres claves canónicas a tipos de certificado sin inferir desde documentos.", "Partidas ETS, equipos, certificados y service_scope.py", "Alta/edición de equipos y presentación de capacidad del ETS", "Crítico")
+        return ("Resolución de contexto metrológico", "Calcula cupos de Calibración y resuelve por partida el proceso de cada equipo; exige scope nulo/tipo propio para Verificación y desambiguación explícita en ETS mixtos.", "ServiceOrderItem, Equipment, Certificate y service_scope.py", "Alta de equipos, Certificados y presentación de capacidad ETS", "Crítico")
+    if value == "backend/app/services/equipment.py":
+        return ("Orquestador de Equipment", "Asocia cada equipo a su OT y partida ETS, congela contexto/Master, respeta máximo 10 por OT y crea el certificado esperado correcto para Calibración o Verificación.", "ServiceOrderItem, OT, contexto metrológico, documentos controlados y Certificados", "Router de Equipos y workbench ETS", "Crítico")
+    if value == "backend/app/services/folio_engine.py":
+        return ("Sugerencia de folios de certificado", "Expone sugerencias auditadas para Calibración y Verificación, formatea MYCV-MM-AA-XXXX y prohíbe el folio manual de Verificación.", "institutional_folios, Certificate, auditoría y sesión SQLAlchemy", "Motor operacional de folios y pruebas", "Crítico")
     if value == "backend/migrations/versions/fe6f7a8b9c0d_normalize_operational_calibration_scope.py":
         return ("Migración Alembic", "Normaliza alias legacy y texto documental a claves canónicas en seis tablas; bloquea special para evitar reclasificación silenciosa.", "Alembic, PostgreSQL y contrato calibration_scope", "Alembic durante despliegues y restauraciones", "Crítico")
     if value == "frontend/src/constants/catalog.js":
@@ -2570,7 +2580,7 @@ def render(paths: list[Path], preserved: dict[str, str]) -> str:
         "",
         "# Registro maestro de archivos funcionales",
         "",
-        "Fecha de inventario: 2026-07-29.",
+        "Fecha de inventario: 2026-08-24.",
         "",
         "Este es el inventario oficial de archivos funcionales del ERP MYC. Incluye únicamente archivos fuente, configuración, migraciones, recursos oficiales, scripts, pruebas y documentación relevante. Las filas describen responsabilidad verificable; los estados reflejan el estado actual observable del repositorio.",
         "",

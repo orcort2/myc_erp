@@ -152,6 +152,7 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R80 | Venta / endurecimiento | La auditoría tester detectó evolución genérica habilitada, calibración cruzable, garantía terminal ambigua, evidencia libre y HTML PDF sin escape. Venta quedó no evolutiva; se exige vínculo comercial, resolución de garantía explícita, firma/atestación validada y escape integral. | resuelta | Suite focal 31 pruebas, backend completo y ciclo PostgreSQL 2026-08-18 |
 | OBS-R81 | Mantenimiento / ETS | Sólo existía la categoría canónica; faltaban ejecución, captura, materiales, reporte, firma y cierre. Se implementó el vertical completo sobre ServiceUnit/ServiceStage y snapshot v2. | parcial | Arquitectura, migración `d1f3a5c7e9b2` y regresión 2026-08-18; falta aceptación E2E física |
 | OBS-R82 | Calibración/Hojas de Campo / UX | Sus bloqueantes no siempre señalan visualmente el campo responsable. Mantenimiento establece el patrón navegable `severity/message/section/field`; extenderlo queda fuera de este sprint. | parcial | TD-047 y workbench Mantenimiento 2026-08-18 |
+| OBS-R83 | ETS / Verificación | Verificación existía como categoría canónica, pero el alta de equipo la excluía al depender sólo de `calibration_scope`, Certificados no aceptaba un tipo propio y Folios no emitía `MYCV`. Ahora la partida ETS gobierna cada equipo, Verificación usa alcance nulo/tipo propio, comparte lifecycle y convive con Calibración sin clasificación global. | resuelta | Implementación y suites de Verificación 2026-08-24 |
 
 ## Regla de cierre
 

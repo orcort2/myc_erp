@@ -349,6 +349,15 @@ Captura no carga el PDF final. Para cada certificado, `identified` con advertenc
 
 ## 6. Calidad y Certificados
 
+Calibración y Verificación comparten
+`OT → Equipo → Hoja de Campo → Captura → Calidad → Certificado → Autenticación → versión PDF/sello/QR → Liberación`.
+La partida congelada gobierna cada equipo: Calibración resuelve su
+`calibration_scope`; Verificación exige alcance nulo, reserva
+`MYCV-MM-AA-XXXX` y titula el documento `Certificado de Verificación`. Las
+acciones se filtran por equipo/partida aun cuando ambos procesos conviven en un
+ETS. No se calcula automáticamente Cumple/No cumple y Ajuste no forma parte del
+flujo vigente.
+
 El flujo normalizado de certificado es:
 
 ```text

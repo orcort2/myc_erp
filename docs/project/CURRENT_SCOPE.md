@@ -52,6 +52,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   productivas en su listado, detalle, documentos ni eliminación.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
 - Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
+- Verificación como variante del pipeline metrológico: partida `verification`,
+  equipo/OT obligatorios, alcance de acreditación nulo, Certificado de
+  Verificación y folio `MYCV-MM-AA-XXXX`. Calibración y Verificación pueden
+  coexistir en el mismo ETS mediante asociación explícita de cada equipo a su
+  `ServiceOrderItem`; Ajuste permanece fuera de alcance.
 - Control Documental V1 y Plantillas Maestras de Certificado.
 - Facturación, resumen contextual dentro del ETS, Workbench compartido, registro e historial de pagos parciales/totales antes o después del timbrado, comprobante PDF, cuentas por cobrar, cobranza administrativa, Facturama Sandbox, XML y PDF institucional.
 - Catálogos SAT locales versionados.

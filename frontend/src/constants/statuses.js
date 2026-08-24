@@ -114,7 +114,8 @@ export const equipmentActions = [
 export const certificateTypeLabels = {
   acreditado: 'Acreditado',
   trazable: 'Trazable',
-  vinculado: 'Vinculado'
+  vinculado: 'Vinculado',
+  verification: 'Verificación'
 };
 
 export const certificateTabs = [

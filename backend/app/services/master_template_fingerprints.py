@@ -25,6 +25,8 @@ def canonical_service_type(value: str | None) -> str | None:
         return "accredited"
     if normalized in {"traceable", "trazable"}:
         return "traceable"
+    if normalized in {"verification", "verificacion", "verificación"}:
+        return "verification"
     return None
 
 

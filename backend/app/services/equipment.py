@@ -19,8 +19,9 @@ from app.services.activity import publish_event
 from app.services.certificates import create_certificate
 from app.services.service_order_certificate_capacity import (
     auto_service_order_item_id_for_scope,
-    certificate_type_from_scope,
+    certificate_type_for_equipment,
     resolve_equipment_calibration_scope,
+    resolve_equipment_metrological_context,
 )
 
 
@@ -222,7 +223,7 @@ def _ensure_expected_certificate_for_equipment(
     if exists is not None:
         return
 
-    certificate_type = certificate_type_from_scope(equipment.calibration_scope)
+    certificate_type = certificate_type_for_equipment(db, equipment)
     if certificate_type is None:
         return
 
@@ -295,13 +296,13 @@ def freeze_certificate_operational_context(
     context_snapshot = {
         "schema_version": 1,
         "calibration_scope": equipment.calibration_scope,
-        "certificate_type": certificate_type_from_scope(
-            equipment.calibration_scope
-        ),
+        "certificate_type": certificate_type_for_equipment(db, equipment),
         "expected_certificate_master_id": expected_master_id,
         "service_order_item_id": equipment.service_order_item_id,
         "source_catalog_item_id": item.catalog_item_id if item is not None else None,
     }
+    if item is not None and item.operational_category is not None:
+        context_snapshot["operational_category"] = item.operational_category
     if service_snapshot is not None:
         context_snapshot["service_snapshot"] = service_snapshot
     equipment.certificate_operational_context_snapshot = context_snapshot
@@ -331,18 +332,15 @@ def create_equipment(
             detail="Esta Orden de Trabajo ya tiene 10 equipos. Selecciona otra OT.",
         )
 
-    resolved_scope = resolve_equipment_calibration_scope(
+    resolved_item_id, resolved_scope, certificate_type = resolve_equipment_metrological_context(
         db,
         payload.service_order_id,
-        data.get("calibration_scope"),
+        service_order_item_id=data.get("service_order_item_id"),
+        requested_scope=data.get("calibration_scope"),
     )
     data["calibration_scope"] = resolved_scope
     data["work_order_id"] = selected_work_order.id
-    data["service_order_item_id"] = auto_service_order_item_id_for_scope(
-        db,
-        payload.service_order_id,
-        resolved_scope,
-    )
+    data["service_order_item_id"] = resolved_item_id
 
     _ensure_service_order_item(
         db,
@@ -356,7 +354,6 @@ def create_equipment(
     expected_master_id = freeze_certificate_operational_context(db, equipment)
     snapshot_certificate_master(db, equipment, expected_master_id)
 
-    certificate_type = certificate_type_from_scope(equipment.calibration_scope)
     if certificate_type:
         create_certificate(
             db,
@@ -365,6 +362,11 @@ def create_equipment(
                 equipment_id=equipment.id,
                 field_sheet_id=None,
                 certificate_type=certificate_type,
+                title=(
+                    f"Certificado de Verificación - {equipment.name}"
+                    if certificate_type == "verification"
+                    else f"Certificado de Calibración - {equipment.name}"
+                ),
                 notes="Certificado esperado generado automaticamente al dar de alta el equipo.",
             ),
             user_id=user_id,
@@ -430,6 +432,7 @@ def update_equipment(
         requested_scope = updates.get("calibration_scope")
         if requested_scope == equipment.calibration_scope:
             resolved_scope = equipment.calibration_scope
+            updates["service_order_item_id"] = equipment.service_order_item_id
         else:
             active_certificate_exists = db.scalar(
                 select(Certificate.id).where(
@@ -450,13 +453,13 @@ def update_equipment(
                 equipment.service_order_id,
                 requested_scope,
             )
+            updates["service_order_item_id"] = auto_service_order_item_id_for_scope(
+                db,
+                equipment.service_order_id,
+                resolved_scope,
+            )
 
         updates["calibration_scope"] = resolved_scope
-        updates["service_order_item_id"] = auto_service_order_item_id_for_scope(
-            db,
-            equipment.service_order_id,
-            resolved_scope,
-        )
 
     _ensure_service_order_item(
         db,

@@ -12,6 +12,12 @@
 
 `item_type` (`product`/`service`) conserva exclusivamente la clasificación comercial/fiscal. No crea, restringe ni reinterpreta identidad ETS: Producto no implica `sale` y Servicio admite `sale`. `category` conserva la etiqueta estructurada del catálogo, `commodity` conserva la clasificación comercial/API y `calibration_scope` conserva la modalidad o configuración aplicable; ninguno debe reconstruirse desde nombres o descripciones durante la ejecución. La categoría se persiste en `CatalogItem`, `QuotationItem` y `ServiceOrderItem`; `ServiceUnit.initial_category` congela el origen de la unidad y `ServiceStage.category` conserva cada etapa append-only.
 
+En el pipeline metrológico, `Equipment.service_order_item_id` es la asociación
+autoritaria entre el equipo y su proceso. Calibración conserva uno de los tres
+alcances de acreditación; Verificación conserva alcance nulo y tipo documental
+`verification`. Un ETS mixto debe desambiguar la partida al registrar cada
+equipo y nunca clasificar la orden completa como una sola modalidad.
+
 Todo concepto nuevo debe enviar `operational_category` explícita. El formulario presenta una sola lista operacional, independiente de Tipo; esa selección gobierna también la aparición de la configuración Venta ya existente. El backend valida correspondencia exacta entre la etiqueta estructurada y la clave canónica, pero nunca sustituye la clave a partir de `item_type`, nombre o descripción.
 
 `general_service` es especial: sólo ese origen habilita `ServiceUnit.evolution_enabled` e inicia en diagnóstico. Una categoría conocida nunca se degrada a Servicio General por falta de coincidencia textual.

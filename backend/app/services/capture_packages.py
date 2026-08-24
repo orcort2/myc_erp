@@ -23,6 +23,7 @@ from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
 from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.models.service_order import ServiceOrder, ServiceWorkOrder
+from app.models.service_order import ServiceOrderItem
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.audit_logs import write_audit_log
 from app.services.certificates import CAPTURE_READY_STATUSES
@@ -81,11 +82,20 @@ def equipment_base_name(certificate: Certificate, field_sheet: FieldSheet) -> st
         raise ValueError("Falta nombre de equipo")
     if not equipment.internal_id:
         raise ValueError("Falta identificación")
-    if not field_sheet.next_calibration_date:
+    certificate_type = getattr(certificate, "certificate_type", None)
+    is_verification = certificate_type == "verification"
+    if not is_verification and not field_sheet.next_calibration_date:
         raise ValueError("Falta fecha de próxima calibración")
+    reference_date = (
+        field_sheet.calibration_date
+        if is_verification
+        else field_sheet.next_calibration_date
+    )
+    if reference_date is None:
+        raise ValueError("Falta fecha de ejecución")
     return normalized_filename(
         f"{certificate.expected_folio or certificate.folio} {equipment.name} "
-        f"{equipment.internal_id} {field_sheet.next_calibration_date:%Y.%m.%d}"
+        f"{equipment.internal_id} {reference_date:%Y.%m.%d}"
     )
 
 
@@ -111,9 +121,15 @@ def _load_equipment(db: Session, *, service_order_id: int, work_order_id: int | 
 
 
 def eligibility_for_equipment(db: Session, equipment: Equipment) -> EligibleItem:
-    # A snapshot exists only for calibration equipment configured with the master.
-    if not equipment.calibration_scope:
-        return EligibleItem(equipment, None, None, "El servicio no pertenece a Calibración")
+    service_order_item_id = getattr(equipment, "service_order_item_id", None)
+    service_item = db.get(ServiceOrderItem, service_order_item_id) if service_order_item_id else None
+    operational_category = (
+        service_item.operational_category
+        if service_item is not None
+        else "calibration" if equipment.calibration_scope else None
+    )
+    if operational_category not in {"calibration", "verification"}:
+        return EligibleItem(equipment, None, None, "El servicio no pertenece a un proceso metrológico")
     field_sheet = next((item for item in equipment.field_sheets if item.is_active), None)
     certificate = next((item for item in equipment.certificates if item.is_active), None)
     if field_sheet is None:
@@ -126,7 +142,7 @@ def eligibility_for_equipment(db: Session, equipment: Equipment) -> EligibleItem
         return EligibleItem(equipment, field_sheet, certificate, "Falta nombre de equipo")
     if not equipment.internal_id:
         return EligibleItem(equipment, field_sheet, certificate, "Falta identificación")
-    if not field_sheet.next_calibration_date:
+    if operational_category == "calibration" and not field_sheet.next_calibration_date:
         return EligibleItem(equipment, field_sheet, certificate, "Falta fecha de próxima calibración")
     if not equipment.certificate_master_document_id:
         return EligibleItem(equipment, field_sheet, certificate, "Falta plantilla esperada de certificado")
@@ -249,7 +265,7 @@ def _expected_values(certificate: Certificate) -> dict[str, str]:
     return {"folio": certificate.expected_folio or certificate.folio, "cliente": client.commercial_name or client.legal_name or "",
             "equipo": equipment.name or "", "identificacion": equipment.internal_id or "", "marca": equipment.brand or "",
             "modelo": equipment.model or "", "serie": equipment.serial_number or "", "fecha_calibracion": str(sheet.calibration_date or "") if sheet else "",
-            "proxima_calibracion": str(sheet.next_calibration_date or "") if sheet else "", "servicio": equipment.calibration_scope or ""}
+            "proxima_calibracion": str(sheet.next_calibration_date or "") if sheet else "", "servicio": certificate.certificate_type}
 
 
 def _validate_excel(raw: bytes, extension: str, certificate: Certificate) -> dict:

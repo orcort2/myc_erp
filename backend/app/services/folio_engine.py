@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -27,10 +28,19 @@ def suggest_certificate_folio(
     user_id: int | None = None,
 ) -> FolioSuggestionResult:
     folio_date = issued_on or date.today()
-    service_type = "acreditado" if certificate_type == "acreditado" else "trazable"
+    service_type = (
+        "verification"
+        if certificate_type == "verification"
+        else "acreditado" if certificate_type == "acreditado" else "trazable"
+    )
     messages: list[EngineMessage] = []
 
     if manual_folio:
+        if certificate_type == "verification":
+            raise HTTPException(
+                status_code=422,
+                detail="El folio de Verificación se asigna exclusivamente por la secuencia institucional",
+            )
         exists = db.scalar(select(Certificate.id).where(Certificate.folio == manual_folio))
         if exists is not None:
             messages.append(
@@ -48,9 +58,12 @@ def suggest_certificate_folio(
         )
     else:
         if sequence is not None:
-            normalized = normalize_service_type(service_type)
-            prefix = "MYCA" if normalized and normalized.value == "accredited" else "MYCT"
-            suggested = f"{prefix}{folio_date:%y%m}{sequence:04d}"
+            if certificate_type == "verification":
+                suggested = f"MYCV-{folio_date:%m}-{folio_date:%y}-{sequence:04d}"
+            else:
+                normalized = normalize_service_type(service_type)
+                prefix = "MYCA" if normalized and normalized.value == "accredited" else "MYCT"
+                suggested = f"{prefix}{folio_date:%y%m}{sequence:04d}"
         else:
             suggested = build_certificate_folio(
                 db,
@@ -71,7 +84,7 @@ def suggest_certificate_folio(
         entity_id=None,
         user_id=user_id,
         new_values={
-            **result.model_dump(),
+            **result.model_dump(mode="json"),
             "reason": reason,
             "sequence": sequence,
         },

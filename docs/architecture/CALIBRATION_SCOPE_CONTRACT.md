@@ -2,7 +2,7 @@
 >
 > Tipo: Contrato técnico canónico
 >
-> Corte verificado: 2026-07-22
+> Corte verificado: 2026-08-24
 
 # Contrato de `calibration_scope`
 
@@ -41,6 +41,11 @@ Perfiles técnicos e interpretaciones documentales consumen el mismo `Accreditat
 ## Validación por categoría
 
 `ServiceScope` también contiene alcances propios de otros servicios —mantenimiento, capacitación, validación, calificación y consultoría— porque la columna histórica `calibration_scope` se reutiliza para ese propósito. `SERVICE_SCOPE_VALUES_BY_CATEGORY` valida que cada clave corresponda a su categoría. El subconjunto de acreditación anterior sólo es válido para `Calibracion`.
+
+`verification` no amplía este enum. Una partida de Verificación conserva
+`operational_category=verification`, exige `calibration_scope=null` y se
+distingue en Certificados mediante `certificate_type=verification`. Intentar
+representarla como `acreditado`, `trazable` o `vinculado` es inválido.
 
 ## Compatibilidad de datos
 

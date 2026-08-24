@@ -20,15 +20,19 @@ def _initial_value(document_type: str, year: int) -> int:
 def _existing_certificate_max(
     db: Session, *, prefix: str, issued_on: date
 ) -> int | None:
-    compact_prefix = f"{prefix}{issued_on:%y}"
     values = db.scalars(
-        select(Certificate.folio).where(Certificate.folio.like(f"{compact_prefix}%"))
+        select(Certificate.folio).where(Certificate.folio.like(f"{prefix}%"))
     ).all()
-    sequences = [
-        int(value[-4:])
-        for value in values
-        if value and len(value) >= 4 and value[-4:].isdigit()
-    ]
+    compact_year_prefix = f"{prefix}{issued_on:%y}"
+    verification_year_marker = f"-{issued_on:%y}-"
+    sequences = []
+    for value in values:
+        if not value or len(value) < 4 or not value[-4:].isdigit():
+            continue
+        if value.startswith(compact_year_prefix) or (
+            prefix == "MYCV" and verification_year_marker in value
+        ):
+            sequences.append(int(value[-4:]))
     return max(sequences) if sequences else None
 
 
@@ -100,6 +104,8 @@ def build_certificate_folio(
         prefix = normalize_certificate_prefix(linked_prefix)
         if prefix is None:
             raise ValueError("El servicio vinculado no tiene iniciales de certificado")
+    elif service_type == "verification":
+        prefix = "MYCV"
     else:
         raise ValueError("Tipo de servicio no reconocido")
     sequence = allocate_sequence(
@@ -108,6 +114,8 @@ def build_certificate_folio(
         prefix=prefix,
         issued_on=issued_on,
     )
+    if service_type == "verification":
+        return f"{prefix}-{issued_on:%m}-{issued_on:%y}-{sequence:04d}"
     return f"{prefix}{issued_on:%y%m}{sequence:04d}"
 
 

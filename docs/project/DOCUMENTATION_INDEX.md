@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: cualquier índice, lista de documentos o instrucción de autoridad contenida en documentos anteriores
 >
-> Corte verificado: 2026-08-18
+> Corte verificado: 2026-08-24
 
 # Índice único de documentación
 

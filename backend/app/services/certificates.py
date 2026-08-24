@@ -14,6 +14,7 @@ from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
 from app.models.invoice import Invoice
 from app.models.service_order import ServiceOrder
+from app.models.service_order import ServiceOrderItem
 from app.schemas.certificate import (
     CertificateBatchActionItemRead,
     CertificateBatchActionRead,
@@ -128,6 +129,22 @@ def _validate_certificate_links(db: Session, payload: CertificateCreate) -> None
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
     if equipment.service_order_id != payload.service_order_id:
         raise HTTPException(status_code=409, detail="El equipo no pertenece a la orden de servicio indicada")
+
+    item = db.get(ServiceOrderItem, equipment.service_order_item_id)
+    expected_type = (
+        "verification"
+        if item is not None and item.operational_category == "verification"
+        else {
+            "traceable": "trazable",
+            "accredited_iso_17025": "acreditado",
+            "accredited_linked_lab": "vinculado",
+        }.get(equipment.calibration_scope)
+    )
+    if expected_type is None or payload.certificate_type != expected_type:
+        raise HTTPException(
+            status_code=422,
+            detail="El tipo de certificado no corresponde al proceso del equipo",
+        )
 
     if payload.field_sheet_id is not None:
         field_sheet = db.scalar(
@@ -302,6 +319,11 @@ def create_certificate(
     commit: bool = True,
 ) -> Certificate:
     _validate_certificate_links(db, payload)
+    if payload.certificate_type == "verification" and payload.expected_folio:
+        raise HTTPException(
+            status_code=422,
+            detail="El folio de Verificación se asigna exclusivamente por la secuencia institucional",
+        )
     _ensure_no_active_certificate(db, payload.field_sheet_id)
     _ensure_no_active_certificate_for_equipment(
         db,
@@ -322,10 +344,15 @@ def create_certificate(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     certificate = Certificate(
-        **payload.model_dump(exclude={"issued_on", "expected_folio"}),
+        **payload.model_dump(exclude={"issued_on", "expected_folio", "title"}),
         folio=folio,
         expected_folio=folio,
         issued_on=issued_on,
+        title=(
+            "Certificado de Verificación"
+            if payload.certificate_type == "verification"
+            else payload.title
+        ),
         status="expected",
         external_source="excel",
         match_status="pending",
@@ -366,6 +393,11 @@ def update_certificate(
     if certificate.status in TERMINAL_STATUSES:
         raise HTTPException(status_code=409, detail="No se puede editar un certificado liberado o cancelado")
     updates = payload.model_dump(exclude_unset=True)
+    if certificate.certificate_type == "verification" and "expected_folio" in updates:
+        raise HTTPException(
+            status_code=422,
+            detail="El folio institucional de Verificación no admite edición manual",
+        )
     previous_values = {key: getattr(certificate, key) for key in updates}
     for key, value in updates.items():
         setattr(certificate, key, value)

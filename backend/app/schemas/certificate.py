@@ -28,7 +28,7 @@ CertificateStatus = Literal[
     "suspended",
 ]
 
-CertificateType = Literal["acreditado", "trazable", "vinculado"]
+CertificateType = Literal["acreditado", "trazable", "vinculado", "verification"]
 CertificateMatchStatus = Literal["pending", "matched", "warning", "mismatch", "manual_accepted"]
 
 

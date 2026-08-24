@@ -39,7 +39,7 @@ class StandardsValidationResult(BaseModel):
 
 
 class FolioSuggestionRequest(BaseModel):
-    certificate_type: Literal["acreditado", "trazable"] = "trazable"
+    certificate_type: Literal["acreditado", "trazable", "verification"] = "trazable"
     issued_on: date | None = None
     sequence: int | None = Field(default=None, ge=1)
     manual_folio: str | None = Field(default=None, min_length=1, max_length=40)

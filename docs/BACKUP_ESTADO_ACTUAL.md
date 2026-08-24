@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de `project/`
 >
-> Corte actualizado: 2026-08-18
+> Corte actualizado: 2026-08-24
 
 # Estado operativo actual del ERP MYC
 
@@ -104,6 +104,13 @@
   REVISIÓN**: Calidad es la única superficie mutante, ETS perdió endpoint/lote
   y acciones, y `certificate_authentication.authenticate_certificate` conserva
   lock, actor, origen, audit, evento y commit únicos.
+- **Verificación metrológica** está **IMPLEMENTADA — EN REVISIÓN** como
+  variante del pipeline existente: ETS/OT/Equipment/Hoja/Captura/Calidad,
+  certificado `verification`, título institucional, folio
+  `MYCV-MM-AA-XXXX`, autenticación, versiones y liberación compartidas. La
+  asociación por `ServiceOrderItem` conserva coexistencia con Calibración y
+  rechaza alcances acreditado/trazable/vinculado. No se agregó esquema ni
+  migración y no se modificó la base local.
 - La conciliación **TD-027** deja el capability gate **VERDE** en 29/0 y el
   bootstrap cubre 83/83 permisos HTTP. Las diferencias gobernadas incluyen
   `lab_work_orders.use/export/delete` y `tickets.create/view_own/review`,
@@ -345,6 +352,21 @@ seguridad e inventario, se conserva en
     background/foreground y logout (TD-042).
 11. Ejecutar el checklist browser/dispositivo/Portal de ETS Venta, incluidas
     entregas parciales, evidencia, garantía y perfil técnico (TD-043).
+12. Registrar el Master institucional de Verificación y ejecutar un E2E
+    autenticado con ETS mixto Calibración + Verificación (TD-049).
+
+## Validaciones del corte 2026-08-24
+
+- Backend metrológico ampliado: `88 passed`, `2 deselected`, `7 subtests
+  passed`; las dos pruebas con infraestructura real se separaron del pase
+  sandbox.
+- Autenticación/liberación con FastAPI, PostgreSQL local y LibreOffice fuera
+  del sandbox: `6 passed`.
+- Frontend relevante con `node --test`: `5 passed`.
+- `npm run build`: correcto; Vite transformó 1746 módulos y conservó el aviso
+  no bloqueante del bundle mayor a 500 kB.
+- No hubo cambio de esquema, migración ni datos locales; por ello no se
+  regeneró `backup_erp_myc_antes_prueba.sql`.
 
 ## Documentación de este corte
 

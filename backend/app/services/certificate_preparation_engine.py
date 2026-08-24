@@ -11,6 +11,7 @@ from app.schemas.certificate import CertificateCreate
 from app.schemas.operational_engine import CertificatePreparationResult, EngineMessage
 from app.services.audit_logs import write_audit_log
 from app.services.certificates import create_certificate, get_certificate
+from app.services.service_order_certificate_capacity import certificate_type_for_equipment
 
 
 def _message(severity: str, code: str, message: str) -> EngineMessage:
@@ -61,13 +62,24 @@ def prepare_certificate_from_field_sheet(
     if equipment is None or not equipment.is_active:
         raise HTTPException(status_code=404, detail="Equipo no encontrado")
     procedure = field_sheet.calibration_procedure
+    certificate_type = certificate_type_for_equipment(db, equipment)
+    if certificate_type is None:
+        raise HTTPException(status_code=422, detail="El equipo no pertenece a un proceso metrológico")
     payload = CertificateCreate(
         service_order_id=equipment.service_order_id,
         equipment_id=equipment.id,
         field_sheet_id=field_sheet.id,
-        certificate_type=procedure.certificate_type if procedure else "trazable",
+        certificate_type=(
+            certificate_type
+            if certificate_type == "verification"
+            else procedure.certificate_type if procedure else certificate_type
+        ),
         issued_on=field_sheet.calibration_date,
-        title=f"Certificado de calibracion - {equipment.name}",
+        title=(
+            f"Certificado de Verificación - {equipment.name}"
+            if certificate_type == "verification"
+            else f"Certificado de calibración - {equipment.name}"
+        ),
         notes="Preparado automaticamente por motor documental.",
     )
     certificate = create_certificate(db, payload, user_id=user_id)
