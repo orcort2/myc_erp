@@ -230,7 +230,6 @@ function RepairTestingSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 7</span>
             <h4>Pruebas</h4>
           </div>
 
@@ -253,7 +252,6 @@ function RepairTestingSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 7</span>
             <h4>Pruebas</h4>
           </div>
 
@@ -276,7 +274,6 @@ function RepairTestingSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 7</span>
             <h4>Pruebas</h4>
           </div>
 
@@ -295,7 +292,6 @@ function RepairTestingSection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 7</span>
           <h4>Pruebas</h4>
           <p>
             Ciclo intervención ↔ prueba. Una prueba fallida regresa

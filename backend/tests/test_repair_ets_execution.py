@@ -2907,6 +2907,141 @@ def test_cannot_open_second_warranty_cycle_while_one_is_active(
     assert len(execution.warranty_cycles) == 1
 
 
+def test_test_rejects_intervention_from_different_warranty_cycle(
+    ctx,
+):
+    """Regresión de integridad: una prueba del ciclo de garantía vigente no
+    debe poder vincularse a una intervención de OTRO ciclo (ni del ciclo
+    original, ni de un ciclo de garantía anterior). Antes de este fix,
+    add_test() solo validaba que intervention_id perteneciera a la
+    ejecución y estuviera completada, sin comparar warranty_cycle_id contra
+    el ciclo activo."""
+
+    (
+        db,
+        admin,
+        technician,
+        advisor,
+        client,
+    ) = ctx
+
+    catalog = _catalog(db)
+
+    order = _order(
+        db,
+        client,
+        advisor,
+        catalog,
+        folio="COT-REP-WARRANTY-XCYCLE",
+    )
+
+    execution = _execution(db, order)
+
+    execution = _advance_to_in_repair(
+        db,
+        order,
+        execution,
+        advisor,
+        technician,
+    )
+
+    execution = _advance_to_closed(
+        db,
+        order,
+        execution,
+        admin,
+        technician,
+    )
+
+    original_intervention_id = execution.interventions[0].id
+    assert execution.interventions[0].warranty_cycle_id is None
+
+    tests_count_before = len(execution.tests)
+
+    execution = _open_warranty_cycle(
+        db,
+        order,
+        execution,
+        admin,
+    )
+
+    execution = _advance_warranty_to_in_repair(
+        db,
+        order,
+        execution,
+        advisor,
+        technician,
+    )
+
+    # La prueba intenta vincularse a la intervención del ciclo ORIGINAL
+    # (warranty_cycle_id=None) mientras el ciclo de garantía #1 está activo.
+    with pytest.raises(HTTPException) as exc_info:
+        add_test(
+            db,
+            order.id,
+            execution.id,
+            RepairTestCreate(
+                test_type="functional-warranty-xcycle",
+                result="pass",
+                intervention_id=original_intervention_id,
+            ),
+            actor=technician,
+        )
+
+    assert exc_info.value.status_code == 422
+
+    execution = _execution(db, order)
+    assert len(execution.tests) == tests_count_before
+
+    # El mismo intervention_id sí debe aceptarse cuando pertenece al ciclo
+    # activo vigente.
+    add_intervention(
+        db,
+        order.id,
+        execution.id,
+        RepairInterventionStart(
+            description="Intervención del ciclo de garantía #1",
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(db, order)
+    warranty_intervention = execution.interventions[-1]
+    assert warranty_intervention.warranty_cycle_id == execution.warranty_cycles[0].id
+
+    complete_intervention(
+        db,
+        order.id,
+        execution.id,
+        warranty_intervention.id,
+        RepairInterventionComplete(
+            actions=[{"action": "warranty_fix"}],
+            outcome="effective",
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(db, order)
+
+    add_test(
+        db,
+        order.id,
+        execution.id,
+        RepairTestCreate(
+            test_type="functional-warranty-xcycle-ok",
+            result="pass",
+            intervention_id=warranty_intervention.id,
+        ),
+        actor=technician,
+    )
+
+    execution = _execution(db, order)
+    warranty_test = execution.tests[-1]
+
+    assert warranty_test.intervention_id == warranty_intervention.id
+    assert warranty_test.warranty_cycle_id == execution.warranty_cycles[0].id
+
+
 def test_warranty_reopen_requires_closed_execution(
     ctx,
 ):

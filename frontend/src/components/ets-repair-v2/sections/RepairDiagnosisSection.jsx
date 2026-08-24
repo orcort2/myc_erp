@@ -192,7 +192,6 @@ function RepairDiagnosisSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 3</span>
             <h4>Diagnóstico</h4>
           </div>
 
@@ -218,7 +217,6 @@ function RepairDiagnosisSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 3</span>
             <h4>Diagnóstico</h4>
             <p>
               Inicia la evaluación técnica para poder
@@ -265,7 +263,6 @@ function RepairDiagnosisSection({
         <section className="repair-v2-stage">
           <header className="repair-v2-stage__heading">
             <div>
-              <span>Etapa 3</span>
               <h4>Diagnóstico</h4>
             </div>
 
@@ -290,7 +287,6 @@ function RepairDiagnosisSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 3</span>
             <h4>Diagnóstico</h4>
           </div>
 
@@ -357,7 +353,6 @@ function RepairDiagnosisSection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 3</span>
           <h4>Diagnóstico</h4>
           <p>
             Diagnóstico técnico opcional. Puede editarse mientras

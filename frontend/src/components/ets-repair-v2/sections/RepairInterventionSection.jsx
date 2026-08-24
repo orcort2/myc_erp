@@ -326,7 +326,6 @@ function RepairInterventionSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 5</span>
             <h4>Intervención</h4>
           </div>
 
@@ -348,7 +347,6 @@ function RepairInterventionSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 5</span>
             <h4>Intervención</h4>
           </div>
 
@@ -375,7 +373,6 @@ function RepairInterventionSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 5</span>
             <h4>Intervención</h4>
             <p>
               Registra cada sesión técnica de intervención sobre
@@ -564,7 +561,6 @@ function RepairInterventionSection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 5</span>
           <h4>Intervención</h4>
         </div>
 

@@ -43,7 +43,9 @@ function RepairAssignmentSection({
 
   const technicianOptions = useMemo(
     () => safeArray(users).filter(
-      (candidate) => candidate?.is_active !== false,
+      (candidate) =>
+        candidate?.is_active !== false &&
+        hasPermission(candidate, 'service_orders.repair.execute'),
     ),
     [users],
   );
@@ -117,7 +119,6 @@ function RepairAssignmentSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 2</span>
             <h4>Asignación técnica</h4>
           </div>
 
@@ -144,7 +145,6 @@ function RepairAssignmentSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 2</span>
             <h4>Asignación técnica</h4>
           </div>
 
@@ -181,7 +181,6 @@ function RepairAssignmentSection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 2</span>
           <h4>Asignación técnica</h4>
           <p>
             Selecciona al técnico responsable de ejecutar
@@ -206,6 +205,12 @@ function RepairAssignmentSection({
       {!canManage ? (
         <div className="repair-v2-stage__notice">
           No tienes permiso para asignar técnicos en Reparación.
+        </div>
+      ) : !technicianOptions.length ? (
+        <div className="repair-v2-stage__notice">
+          No hay usuarios activos con facultades para ejecutar Reparación
+          (service_orders.repair.execute). Solicita que se asigne ese
+          permiso a un técnico antes de continuar.
         </div>
       ) : (
         <form className="repair-v2-form" onSubmit={handleSubmit}>

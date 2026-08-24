@@ -1,7 +1,9 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, computed_field, field_validator
+
+from app.core.permissions import ROLE_PERMISSIONS
 
 
 def normalize_username(value: str) -> str:
@@ -47,6 +49,24 @@ class UserAdminRead(BaseModel):
     locked_until: datetime | None = None
     created_at: datetime
     roles: list[RoleRead] = Field(default_factory=list)
+
+    @computed_field
+    @property
+    def permissions(self) -> list[str]:
+        """Espejo de UserRead.permissions (app/schemas/auth.py): misma
+        autoridad (ROLE_PERMISSIONS), expuesta también en el listado
+        administrativo para que el frontend pueda filtrar candidatos
+        elegibles a una acción (p. ej. técnicos con
+        service_orders.repair.execute) sin adivinar ni duplicar reglas
+        de autorización.
+        """
+
+        permissions: set[str] = set()
+        for role in self.roles:
+            if not role.is_active:
+                continue
+            permissions.update(ROLE_PERMISSIONS.get(role.name, set()))
+        return sorted(permissions)
 
 
 class UserRolesUpdate(BaseModel):

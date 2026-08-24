@@ -116,7 +116,6 @@ function RepairVerdictSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 4</span>
             <h4>Dictamen</h4>
           </div>
 
@@ -149,7 +148,6 @@ function RepairVerdictSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 4</span>
             <h4>Dictamen</h4>
           </div>
 
@@ -186,7 +184,6 @@ function RepairVerdictSection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 4</span>
           <h4>Dictamen</h4>
           <p>
             Conclusión técnica de la evaluación. Un dictamen de

@@ -181,7 +181,7 @@ function RepairPauseSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 6</span>
+            <span>Flujo paralelo</span>
             <h4>Pausas</h4>
           </div>
 
@@ -203,7 +203,7 @@ function RepairPauseSection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 6</span>
+          <span>Flujo paralelo</span>
           <h4>Pausas</h4>
           <p>
             Bloqueantes paralelos (refacción, autorización, decisión

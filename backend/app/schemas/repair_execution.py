@@ -499,6 +499,8 @@ class RepairInterventionRead(
     sequence: int
     technician_id: int
 
+    warranty_cycle_id: int | None
+
     description: str
 
     actions: list
@@ -516,6 +518,7 @@ class RepairTestRead(
     sequence: int
 
     intervention_id: int | None
+    warranty_cycle_id: int | None
 
     test_type: str
     result: str
@@ -531,6 +534,8 @@ class RepairPauseRead(
 ):
     pause_type: str
     reason: str
+
+    warranty_cycle_id: int | None
 
     responsible_user_id: int
 
@@ -549,6 +554,8 @@ class RepairChangeRead(
 ):
     change_type: str
     summary: str
+
+    warranty_cycle_id: int | None
 
     status: str
 

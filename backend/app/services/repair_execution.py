@@ -1699,6 +1699,16 @@ def add_test(
             ),
         )
 
+    active_cycle = _active_warranty_cycle(
+        execution,
+    )
+
+    active_cycle_id = (
+        active_cycle.id
+        if active_cycle is not None
+        else None
+    )
+
     if payload.intervention_id is not None:
         linked_intervention = next(
             (
@@ -1728,6 +1738,22 @@ def add_test(
                     "que todavía está abierta"
                 ),
             )
+
+        # Decisión funcional #12/#10: una prueba solo puede vincularse a una
+        # intervención del MISMO ciclo de garantía (o ambas del ciclo
+        # original, cuando warranty_cycle_id es NULL en los dos). Sin este
+        # guard, una prueba del ciclo de garantía N podría enlazarse
+        # accidentalmente con una intervención del ciclo original o de un
+        # ciclo de garantía distinto.
+        if linked_intervention.warranty_cycle_id != active_cycle_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "intervention_id pertenece a un ciclo "
+                    "de garantía distinto al vigente"
+                ),
+            )
+
     sequence = (
         len(
             execution.tests,
@@ -1735,20 +1761,12 @@ def add_test(
         + 1
     )
 
-    active_cycle = _active_warranty_cycle(
-        execution,
-    )
-
     test = RepairTest(
         repair_execution_id=execution.id,
         intervention_id=(
             payload.intervention_id
         ),
-        warranty_cycle_id=(
-            active_cycle.id
-            if active_cycle is not None
-            else None
-        ),
+        warranty_cycle_id=active_cycle_id,
         sequence=sequence,
         test_type=payload.test_type,
         result=payload.result,

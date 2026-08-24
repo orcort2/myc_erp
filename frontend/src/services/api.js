@@ -947,6 +947,33 @@ export const closeRepair = (
     }
   );
 
+export const requestRepairChange = (
+  serviceOrderId,
+  executionId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/changes`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
+export const resolveRepairChange = (
+  serviceOrderId,
+  executionId,
+  changeId,
+  payload
+) =>
+  request(
+    `/service-orders/${serviceOrderId}/repair/${executionId}/changes/${changeId}/resolve`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }
+  );
+
 export const cancelRepairExecution = (
   serviceOrderId,
   executionId,

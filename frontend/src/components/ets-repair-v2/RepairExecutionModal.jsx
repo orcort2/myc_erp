@@ -11,7 +11,17 @@ import RepairInterventionSection from './sections/RepairInterventionSection.jsx'
 import RepairPauseSection from './sections/RepairPauseSection.jsx';
 import RepairTestingSection from './sections/RepairTestingSection.jsx';
 import RepairWarrantySection from './sections/RepairWarrantySection.jsx';
+import RepairChangeSection from './sections/RepairChangeSection.jsx';
 import RepairClosureSection from './sections/RepairClosureSection.jsx';
+
+import {
+  getFeaturedStageKeys,
+  getStageTone,
+  isClosed as isRepairClosed,
+  isTerminalCancelled,
+  getCancelledHistoryKeys,
+  REPAIR_MAIN_STAGES,
+} from './sections/repairStageModel.js';
 
 
 const REPAIR_STATUS_LABELS = {
@@ -137,6 +147,25 @@ function getStatusTone(status) {
 }
 
 
+const STAGE_SECTION_COMPONENTS = {
+  reception: RepairReceptionSection,
+  assignment: RepairAssignmentSection,
+  evaluation: RepairDiagnosisSection,
+  verdict: RepairVerdictSection,
+  intervention: RepairInterventionSection,
+  testing: RepairTestingSection,
+  closure: RepairClosureSection,
+};
+
+
+const PAUSE_UNAVAILABLE_STATUSES = new Set([
+  'pending_arrival',
+  'pending_assignment',
+  'closed',
+  'cancelled',
+]);
+
+
 function RepairExecutionModal({
   execution,
   order,
@@ -212,6 +241,77 @@ function RepairExecutionModal({
         ).length,
       [execution],
     );
+
+
+  /* =======================================================
+     RESOLUCIÓN DE ETAPA DE PRESENTACIÓN
+     (derivada de execution.status/conclusion, no persistida)
+     ======================================================= */
+
+  const isCancelled = isTerminalCancelled(execution);
+  const isClosedNow = isRepairClosed(execution);
+
+  const featuredKeys = useMemo(
+    () => (isCancelled ? [] : getFeaturedStageKeys(execution)),
+    [execution, isCancelled],
+  );
+
+  const historyKeys = useMemo(() => {
+    if (isCancelled) {
+      return getCancelledHistoryKeys(execution);
+    }
+
+    return REPAIR_MAIN_STAGES
+      .map((stage) => stage.key)
+      .filter(
+        (key) =>
+          !featuredKeys.includes(key) &&
+          getStageTone(key, execution) === 'done',
+      );
+  }, [execution, featuredKeys, isCancelled]);
+
+  const hasTechnician = Boolean(execution?.technician_id);
+
+  const showPausesPanel =
+    !isCancelled &&
+    (
+      !PAUSE_UNAVAILABLE_STATUSES.has(execution?.status) ||
+      safeArray(execution?.pauses).length > 0
+    );
+
+  const hasPendingChange = safeArray(execution?.changes).some(
+    (change) => change?.status === 'requested',
+  );
+
+  const showChangesPanel =
+    !isCancelled &&
+    (
+      (hasTechnician && !['closed', 'cancelled'].includes(execution?.status)) ||
+      safeArray(execution?.changes).length > 0
+    );
+
+  const showWarrantyPanel =
+    isClosedNow || Boolean(execution?.warranty_reopened_count);
+
+  const activeWarrantyCycle = useMemo(
+    () =>
+      safeArray(execution?.warranty_cycles).find(
+        (cycle) => cycle?.id === execution?.active_warranty_cycle_id,
+      ),
+    [execution],
+  );
+
+  const commonSectionProps = {
+    order,
+    execution,
+    isBusy,
+    onBoardChange,
+    onBusyChange,
+    onError,
+    onNotice,
+    user,
+    users,
+  };
 
 
   /* =======================================================
@@ -570,132 +670,167 @@ function RepairExecutionModal({
 
 
           {/* ===============================================
-              WORKFLOW OPERATIVO
+              STEPPER DE ETAPAS PRINCIPALES
               =============================================== */}
 
-          <section className="repair-v2-modal__workspace">
-            <RepairReceptionSection
-              board={board}
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-            />
-          </section>
+          {isCancelled ? (
+            <div className="repair-v2-context-banner">
+              Esta reparación fue cancelada antes de su primera
+              intervención técnica. El histórico disponible se
+              conserva abajo.
+            </div>
+          ) : (
+            <nav
+              aria-label="Etapas de la reparación"
+              className="repair-v2-stepper"
+            >
+              {REPAIR_MAIN_STAGES.map((stage, index) => {
+                const stageTone = getStageTone(stage.key, execution);
 
-          <section className="repair-v2-modal__workspace">
-            <RepairAssignmentSection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-              users={users}
-            />
-          </section>
+                return (
+                  <React.Fragment key={stage.key}>
+                    {index > 0 ? (
+                      <span
+                        aria-hidden="true"
+                        className="repair-v2-stepper__arrow"
+                      >
+                        →
+                      </span>
+                    ) : null}
 
-          <section className="repair-v2-modal__workspace">
-            <RepairDiagnosisSection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-              users={users}
-            />
-          </section>
+                    <span
+                      className={[
+                        'repair-v2-stepper__node',
+                        `is-${stageTone}`,
+                      ].join(' ')}
+                    >
+                      <span className="repair-v2-stepper__node-index">
+                        {index + 1}
+                      </span>
 
-          <section className="repair-v2-modal__workspace">
-            <RepairVerdictSection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-              users={users}
-            />
-          </section>
+                      {stage.label}
+                    </span>
+                  </React.Fragment>
+                );
+              })}
+            </nav>
+          )}
 
-          <section className="repair-v2-modal__workspace">
-            <RepairInterventionSection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-              users={users}
-            />
-          </section>
+          {execution?.active_warranty_cycle_id ? (
+            <div className="repair-v2-context-banner">
+              Ciclo de garantía
+              {activeWarrantyCycle?.sequence
+                ? ` #${activeWarrantyCycle.sequence}`
+                : ''}{' '}
+              en curso: el trabajo técnico continúa a través de las
+              mismas etapas de este expediente.
+            </div>
+          ) : null}
 
-          <section className="repair-v2-modal__workspace">
-            <RepairPauseSection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-              users={users}
-            />
-          </section>
 
-          <section className="repair-v2-modal__workspace">
-            <RepairTestingSection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-              users={users}
-            />
-          </section>
+          {/* ===============================================
+              ETAPA DESTACADA (la única con formulario abierto)
+              =============================================== */}
 
-          <section className="repair-v2-modal__workspace">
-            <RepairWarrantySection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-              users={users}
-            />
-          </section>
+          {featuredKeys.map((key) => {
+            const StageComponent = STAGE_SECTION_COMPONENTS[key];
 
-          <section className="repair-v2-modal__workspace">
-            <RepairClosureSection
-              execution={execution}
-              isBusy={isBusy}
-              onBoardChange={onBoardChange}
-              onBusyChange={onBusyChange}
-              onError={onError}
-              onNotice={onNotice}
-              order={order}
-              user={user}
-            />
-          </section>
+            return (
+              <section className="repair-v2-modal__workspace" key={key}>
+                <StageComponent
+                  {...commonSectionProps}
+                  board={board}
+                />
+              </section>
+            );
+          })}
+
+          {isCancelled ? (
+            <section className="repair-v2-modal__workspace">
+              <RepairClosureSection {...commonSectionProps} />
+            </section>
+          ) : null}
+
+
+          {/* ===============================================
+              HISTORIAL DE ETAPAS COMPLETADAS (colapsado)
+              =============================================== */}
+
+          {historyKeys.length ? (
+            <details className="repair-v2-history">
+              <summary>
+                Ver etapas anteriores ({historyKeys.length})
+              </summary>
+
+              <div className="repair-v2-history__body">
+                {historyKeys.map((key) => {
+                  const StageComponent = STAGE_SECTION_COMPONENTS[key];
+
+                  return (
+                    <div className="repair-v2-modal__workspace" key={key}>
+                      <StageComponent
+                        {...commonSectionProps}
+                        board={board}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </details>
+          ) : null}
+
+
+          {/* ===============================================
+              FLUJOS PARALELOS / CONTEXTUALES
+              (no son pasos de la secuencia principal)
+              =============================================== */}
+
+          {showPausesPanel ? (
+            <details
+              className="repair-v2-context-panel"
+              open={pauseCount > 0}
+            >
+              <summary>
+                Pausas operativas
+                {pauseCount
+                  ? ` · ${pauseCount} activa${pauseCount === 1 ? '' : 's'}`
+                  : ' · sin pausas activas'}
+              </summary>
+
+              <div className="repair-v2-context-panel__body">
+                <RepairPauseSection {...commonSectionProps} />
+              </div>
+            </details>
+          ) : null}
+
+          {showChangesPanel ? (
+            <details
+              className="repair-v2-context-panel"
+              open={hasPendingChange}
+            >
+              <summary>
+                Solicitudes de cambio
+                {hasPendingChange ? ' · pendiente de resolución' : ''}
+              </summary>
+
+              <div className="repair-v2-context-panel__body">
+                <RepairChangeSection {...commonSectionProps} />
+              </div>
+            </details>
+          ) : null}
+
+          {showWarrantyPanel ? (
+            <details
+              className="repair-v2-context-panel"
+              open={isClosedNow}
+            >
+              <summary>Garantía</summary>
+
+              <div className="repair-v2-context-panel__body">
+                <RepairWarrantySection {...commonSectionProps} />
+              </div>
+            </details>
+          ) : null}
 
 
           {/* ===============================================

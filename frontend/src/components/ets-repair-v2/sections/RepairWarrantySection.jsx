@@ -107,7 +107,7 @@ function RepairWarrantySection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 8</span>
+          <span>Flujo paralelo · posterior al cierre</span>
           <h4>Garantía</h4>
           <p>
             Un ciclo de garantía no deshace el cierre anterior: crea un

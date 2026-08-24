@@ -249,7 +249,6 @@ function RepairClosureSection({
       <section className="repair-v2-stage">
         <header className="repair-v2-stage__heading">
           <div>
-            <span>Etapa 9</span>
             <h4>Cierre</h4>
           </div>
 
@@ -271,7 +270,6 @@ function RepairClosureSection({
     <section className="repair-v2-stage">
       <header className="repair-v2-stage__heading">
         <div>
-          <span>Etapa 9</span>
           <h4>Cierre</h4>
           <p>
             Reporte técnico, firma del cliente y liberación final
