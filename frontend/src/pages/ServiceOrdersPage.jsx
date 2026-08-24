@@ -52,6 +52,7 @@ import {
   getServiceOrderWorkOrdersPdfUrl,
   getServiceWorkOrderPdfUrl,
   listCalibrationProcedures,
+  listControlledDocuments,
   listCaptureFiles,
   listCaptureMasterReadiness,
   listCertificates,
@@ -236,6 +237,7 @@ function ServiceOrdersPage({ user = null }) {
   const [certificateReleaseReadiness, setCertificateReleaseReadiness] = useState(null);
   const [referenceStandards, setReferenceStandards] = useState([]);
   const [calibrationProcedures, setCalibrationProcedures] = useState([]);
+  const [certificateMasters, setCertificateMasters] = useState([]);
   const [fieldSheetTemplates, setFieldSheetTemplates] = useState([]);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedEquipmentForSheet, setSelectedEquipmentForSheet] = useState(null);
@@ -1551,6 +1553,7 @@ function closeTechnicalSubEts() {
         certificatesResult,
         referenceStandardsResult,
         proceduresResult,
+        certificateMastersResult,
         usersResult
       ] = await Promise.all([
         listServiceOrders(),
@@ -1562,6 +1565,7 @@ function closeTechnicalSubEts() {
         listCertificates(),
         listReferenceStandards(),
         listCalibrationProcedures(),
+        listControlledDocuments({ document_type: 'certificate_master', status: 'active' }).catch(() => []),
         listUsers().catch(() => [])
       ]);
       const nextOrders = Array.isArray(ordersResult) ? ordersResult : [];
@@ -1580,6 +1584,7 @@ function closeTechnicalSubEts() {
       setCertificates(Array.isArray(certificatesResult) ? certificatesResult : []);
       setReferenceStandards(Array.isArray(referenceStandardsResult) ? referenceStandardsResult : []);
       setCalibrationProcedures(Array.isArray(proceduresResult) ? proceduresResult : []);
+      setCertificateMasters(Array.isArray(certificateMastersResult) ? certificateMastersResult : []);
       setUsers(Array.isArray(usersResult) ? usersResult : []);
     } catch (requestError) {
       setError(requestError.message);
@@ -1986,6 +1991,7 @@ function closeTechnicalSubEts() {
         workOrderId: item.work_order_id ? String(item.work_order_id) : '',
         serviceOrderItemId: item.service_order_item_id ? String(item.service_order_item_id) : '',
         certificateScope: item.calibration_scope ?? selectedOrderCertificateCapacity.singleAvailableScope ?? 'traceable',
+        certificateMasterDocumentId: item.certificate_master_document_id ? String(item.certificate_master_document_id) : '',
         name: item.name ?? '',
         brand: item.brand ?? '',
         model: item.model ?? '',
@@ -2009,6 +2015,9 @@ function closeTechnicalSubEts() {
             ? ''
             : defaultMetrologicalItem?.calibration_scope ?? selectedOrderCertificateCapacity.singleAvailableScope ??
           (selectedOrderCertificateCapacity.availableScopes.length > 1 ? '' : emptyEquipmentForm.certificateScope),
+        certificateMasterDocumentId: defaultMetrologicalItem?.expected_certificate_master_id
+          ? String(defaultMetrologicalItem.expected_certificate_master_id)
+          : '',
       });
     }
     setIsEquipmentModalOpen(true);
@@ -2045,6 +2054,9 @@ function closeTechnicalSubEts() {
         work_order_id: equipmentForm.workOrderId ? Number(equipmentForm.workOrderId) : null,
         service_order_item_id: equipmentForm.serviceOrderItemId ? Number(equipmentForm.serviceOrderItemId) : null,
         calibration_scope: equipmentForm.certificateScope || null,
+        certificate_master_document_id: equipmentForm.certificateMasterDocumentId
+          ? Number(equipmentForm.certificateMasterDocumentId)
+          : null,
         name: equipmentForm.name.trim(),
         brand: equipmentForm.brand.trim() || null,
         model: equipmentForm.model.trim() || null,
@@ -4255,7 +4267,11 @@ function closeTechnicalSubEts() {
                     </article>
                     <article>
                       <span>Tipo certificado</span>
-                      <strong>{calibrationScopeLabels[selectedEquipmentDetail.calibration_scope] || '-'}</strong>
+                      <strong>
+                        {getEquipmentOperationalContext(selectedEquipmentDetail).key === 'verification'
+                          ? 'Certificado de Verificación'
+                          : calibrationScopeLabels[selectedEquipmentDetail.calibration_scope] || '-'}
+                      </strong>
                     </article>
                     <article>
                       <span>Folio reservado</span>
@@ -4406,10 +4422,30 @@ function closeTechnicalSubEts() {
                 </select>
               </label>
               {selectedEquipmentFormItem?.operational_category === 'verification' ? (
-                <label>
-                  Tipo de certificado
-                  <input disabled type="text" value="Certificado de Verificación" />
-                </label>
+                <>
+                  <label>
+                    Tipo de certificado
+                    <input disabled type="text" value="Certificado de Verificación" />
+                  </label>
+                  <label>
+                    {editingEquipmentId ? 'Master específico final' : 'Master genérico inicial'}
+                    <select
+                      disabled={!editingEquipmentId}
+                      onChange={(event) => updateEquipmentForm('certificateMasterDocumentId', event.target.value)}
+                      value={equipmentForm.certificateMasterDocumentId}
+                    >
+                      <option value="">Sin Master asignado</option>
+                      {certificateMasters.map((master) => (
+                        <option key={master.id} value={master.id}>
+                          {master.code} · {master.name} · Rev. {master.current_revision || '-'}
+                        </option>
+                      ))}
+                    </select>
+                    <small>
+                      La plantilla inicial es una referencia. Antes de cargar el archivo real puedes seleccionar el Master específico aplicable.
+                    </small>
+                  </label>
+                </>
               ) : editingEquipmentId ? (
                 <label>
                   Tipo de certificado

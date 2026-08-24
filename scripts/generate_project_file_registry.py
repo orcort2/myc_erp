@@ -142,6 +142,11 @@ FORCE_RECLASSIFY = {
     "backend/app/services/service_order_certificate_capacity.py",
     "backend/migrations/versions/fe6f7a8b9c0d_normalize_operational_calibration_scope.py",
     "backend/tests/test_service_scope_contract.py",
+    "backend/app/services/capture_packages.py",
+    "backend/app/services/catalog_items.py",
+    "backend/app/services/equipment.py",
+    "backend/app/services/institutional_folios.py",
+    "backend/tests/test_verification_metrological_pipeline.py",
     "docs/BACKUP_ESTADO_ACTUAL.md",
     "docs/architecture/CALIBRATION_SCOPE_CONTRACT.md",
     "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md",
@@ -153,6 +158,8 @@ FORCE_RECLASSIFY = {
     "backend/tests/test_certificate_authentication_integrity.py",
     "docs/closures/CERTIFICATE_AUTHENTICATION_INTEGRITY_SPRINT_2026-08-10.md",
     "frontend/src/pages/ServiceOrdersPage.jsx",
+    "frontend/src/pages/QuotationsPage.jsx",
+    "frontend/src/pages/serviceOrdersVerification.test.js",
     "frontend/src/pages/certificateAuthenticationAuthority.test.js",
     "backend/app/core/permissions.py",
     "backend/app/core/portal/constants.py",
@@ -559,11 +566,11 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica 436 operaciones deny-by-default, incluidos cinco límites de capacidad de Mantenimiento.", "FastAPI, permisos e inventario CSV", "Middleware, arranque, generador y pruebas", "Crítico"),
         "backend/app/models/catalog_item.py": ("Modelo de catálogo canónico", "Conserva identidad, composición, Venta y configuración estructurada preventivo/correctivo, laboratorio/campo y materiales base.", "SQLAlchemy, catálogo y migraciones", "Cotizaciones, snapshots y servicios operativos", "Crítico"),
         "backend/app/schemas/catalog_item.py": ("Contratos de catálogo", "Valida identidad y configuración exclusiva de Venta/Mantenimiento, materiales base correctivos y reglas comerciales.", "Pydantic y categorías canónicas", "API Catálogo y frontend de cotizaciones", "Crítico"),
-        "backend/app/services/catalog_items.py": ("Servicio de catálogo", "Normaliza identidad/configuración de Venta y Mantenimiento, componentes, precios y vínculos documentales.", "Modelos/esquemas de catálogo y auditoría", "Routers, cotizaciones y pruebas", "Crítico"),
+        "backend/app/services/catalog_items.py": ("Servicio de catálogo", "Normaliza identidad/configuración y conserva el Master genérico esperado para Calibración o Verificación, además de componentes, precios y vínculos documentales.", "Modelos/esquemas de catálogo, documentos y auditoría", "Routers, cotizaciones y pruebas", "Crítico"),
         "backend/app/services/quotations.py": ("Servicio de cotizaciones", "Congela snapshot v2 por componente, incluidas configuraciones de Venta y Mantenimiento, sin reinterpretar historial.", "Catálogo, expansión compuesta y snapshots", "API Cotizaciones, ETS y pruebas", "Crítico"),
         "backend/app/services/service_orders.py": ("Servicio agregado ETS", "Crea ETS/OT/partidas y materializa una sola vez verticales Venta y Mantenimiento desde snapshots aprobados.", "Cotizaciones, ServiceOrder, expansor y verticales", "Routers, frontend y pruebas", "Crítico"),
-        "frontend/src/pages/QuotationsPage.jsx": ("Cotizaciones y catálogo comercial", "Gestiona cotización y un formulario donde Tipo comercial/fiscal y Categoría operacional son independientes; compone Venta y Servicios Compuestos existentes.", "React, API Cotizaciones/Catálogo y formularios", "Usuarios comerciales", "Crítico"),
-        "frontend/src/pages/ServiceOrdersPage.jsx": ("Workbench ETS institucional", "Compone el expediente y verticales; detecta Verificación, habilita el pipeline metrológico compartido y asocia altas/acciones por equipo y partida para coexistir con Calibración.", "React, APIs ETS, ServiceOrderItem y componentes verticales", "Usuarios operativos del ETS", "Crítico"),
+        "frontend/src/pages/QuotationsPage.jsx": ("Cotizaciones y catálogo comercial", "Gestiona cotización y catálogo por identidad operacional; asocia el Master genérico esperado a Calibración o Verificación y compone Venta/Servicios Compuestos.", "React, APIs Cotizaciones/Catálogo/Control Documental y formularios", "Usuarios comerciales", "Crítico"),
+        "frontend/src/pages/ServiceOrdersPage.jsx": ("Workbench ETS institucional", "Compone el expediente; reutiliza el pipeline metrológico para Verificación, discrimina por partida, oculta scope y permite elegir Master genérico/específico.", "React, APIs ETS/Control Documental, ServiceOrderItem y componentes verticales", "Usuarios operativos del ETS", "Crítico"),
         "frontend/src/services/api.js": ("Cliente API web", "Centraliza contratos HTTP del ERP, incluidos endpoints completos de Venta y Mantenimiento y descargas PDF.", "Fetch autenticado y manejo de errores", "Páginas/componentes web", "Crítico"),
     }
     if value in maintenance_files:
@@ -742,11 +749,11 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         )
     if value == "frontend/src/pages/ServiceOrdersPage.jsx":
         return (
-            "Expediente integral ETS",
-            "Orquesta ETS y proyecta Captura, Calidad, estado autenticado, descarga, Facturación y liberación sin ofrecer ni ejecutar autenticación de certificados.",
-            "Componentes ETS, EtsBillingTab y APIs operativas",
+            "Workbench ETS institucional",
+            "Orquesta ETS, reutiliza el pipeline de Verificación por partida y Master genérico/específico, y proyecta Captura, Calidad, Facturación y liberación sin autenticar certificados directamente.",
+            "Componentes ETS, Control Documental, EtsBillingTab y APIs operativas",
             "Usuarios operativos y administrativos del expediente",
-            "Alto",
+            "Crítico",
         )
 
     sales_exception_files = {
@@ -864,7 +871,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "backend/app/services/institutional_folios.py": (
             "Asignador institucional de folios",
-            "Reserva consecutivos anuales con locks, respeta pisos y construye folios compactos de Calibración, prefijos vinculados, MYCV-MM-AA-XXXX de Verificación y números de OT.",
+            "Reserva consecutivos anuales con locks, conserva pisos legacy de Calibración/OT y asigna MYCV-MM-AA-XXXX desde 0001 por año sin reinicio mensual.",
             "PostgreSQL, FolioSequence, Certificate y fechas",
             "Certificados, órdenes de trabajo y pruebas",
             "Crítico",
@@ -2433,7 +2440,9 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value == "backend/app/services/service_execution.py":
         return ("Ejecución ETS por unidad", "Resuelve origen desde operational_category/snapshot, conserva Servicio General evolutivo y crea unidades/etapas append-only sin seleccionar Hojas de Campo ni inferir por texto libre.", "ServiceUnit, ServiceStage, Cotizaciones, catálogo y Activity", "Router ETS, board, decisiones y pruebas Fase 1", "Crítico")
     if value == "backend/app/services/catalog_items.py":
-        return ("Dominio del Catálogo MYC", "Persiste operational_category explícita independiente de item_type, valida correspondencia estructurada, servicios simples/compuestos y configuración Venta sin heurísticas operativas.", "CatalogItem, componentes, scopes, tipos y documentos", "Router de Catálogo, Cotizaciones y creación ETS", "Crítico")
+        return ("Dominio del Catálogo MYC", "Persiste operational_category explícita independiente de item_type, valida correspondencia estructurada, servicios simples/compuestos y conserva el Master genérico inicial para Calibración o Verificación.", "CatalogItem, componentes, scopes, tipos y documentos", "Router de Catálogo, Cotizaciones y creación ETS", "Crítico")
+    if value == "backend/app/services/capture_packages.py":
+        return ("Servicio de Paquete de Captura", "Genera paquetes metrológicos e ingiere el archivo técnico real; permite nombres distintos a la descarga y exige asociación única por identidad y fingerprint contra el snapshot final.", "Equipment, Hojas de Campo, Certificados, documentos controlados, storage y fingerprint", "Routers ETS, Captura, Calidad y pruebas", "Crítico")
     if value == "backend/tests/test_operational_identity_snapshot.py":
         return ("Regresión de identidad/snapshot", "Prueba Producto/Servicio con Venta, Producto no Venta, edición, sustitución explícita, congelamiento/reapertura, Servicio General y categorías por componente.", "Pytest, SQLAlchemy, Node y dominios Catálogo/Cotización/ETS", "Gate de revisión de identidad operativa", "Crítico")
     if value == "docs/architecture/OPERATIONAL_SERVICE_IDENTITY.md":
@@ -2455,7 +2464,17 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value == "backend/app/services/service_order_certificate_capacity.py":
         return ("Resolución de contexto metrológico", "Calcula cupos de Calibración y resuelve por partida el proceso de cada equipo; exige scope nulo/tipo propio para Verificación y desambiguación explícita en ETS mixtos.", "ServiceOrderItem, Equipment, Certificate y service_scope.py", "Alta de equipos, Certificados y presentación de capacidad ETS", "Crítico")
     if value == "backend/app/services/equipment.py":
-        return ("Orquestador de Equipment", "Asocia cada equipo a su OT y partida ETS, congela contexto/Master, respeta máximo 10 por OT y crea el certificado esperado correcto para Calibración o Verificación.", "ServiceOrderItem, OT, contexto metrológico, documentos controlados y Certificados", "Router de Equipos y workbench ETS", "Crítico")
+        return ("Orquestador de Equipment", "Asocia cada equipo a su OT/partida inmutable, congela Master genérico y selección específica con historial, respeta máximo 10 por OT y crea el certificado correcto para Calibración o Verificación.", "ServiceOrderItem, OT, contexto metrológico, documentos controlados, Captura y Certificados", "Router de Equipos y workbench ETS", "Crítico")
+    if value == "backend/app/services/institutional_folios.py":
+        return ("Asignador institucional de folios", "Reserva consecutivos anuales con locks; conserva pisos legacy de Calibración/OT y asigna MYCV-MM-AA-XXXX desde 0001 por año sin reinicio mensual.", "PostgreSQL, FolioSequence, Certificate y fechas", "Certificados, órdenes de trabajo y pruebas", "Crítico")
+    if value == "backend/tests/test_verification_metrological_pipeline.py":
+        return ("Prueba de integración de Verificación", "Cubre ETS puro/mixto, partida inmutable, scope nulo, secuencia MYCV anual, Master genérico/específico, archivo real con nombre distinto, fingerprint, Calidad, autenticación, versiones y liberación.", "SQLAlchemy SQLite, XLSX real y servicios metrológicos compartidos", "Pytest en CI y desarrollo", "Alto")
+    if value == "frontend/src/pages/ServiceOrdersPage.jsx":
+        return ("Workbench ETS institucional", "Compone el expediente y reutiliza el pipeline metrológico para Verificación; discrimina por partida, oculta scope y permite elegir Master genérico/específico con lenguaje correcto.", "React, APIs ETS, ServiceOrderItem, documentos controlados y componentes verticales", "Usuarios operativos y administrativos del expediente", "Crítico")
+    if value == "frontend/src/pages/QuotationsPage.jsx":
+        return ("Cotizaciones y Catálogo", "Gestiona cotizaciones/catálogo por identidad operacional y permite asociar el Master genérico esperado tanto a Calibración como a Verificación.", "React, APIs de Cotizaciones, Catálogo y Control Documental", "Usuarios comerciales y administradores de catálogo", "Crítico")
+    if value == "frontend/src/pages/serviceOrdersVerification.test.js":
+        return ("Prueba frontend de Verificación", "Verifica detección del proceso, pipeline compartido, asociación por partida, ausencia de scope y selector explícito de Master genérico/específico.", "Node test y fuente de ServiceOrdersPage", "Desarrollo y CI frontend", "Alto")
     if value == "backend/app/services/folio_engine.py":
         return ("Sugerencia de folios de certificado", "Expone sugerencias auditadas para Calibración y Verificación, formatea MYCV-MM-AA-XXXX y prohíbe el folio manual de Verificación.", "institutional_folios, Certificate, auditoría y sesión SQLAlchemy", "Motor operacional de folios y pruebas", "Crítico")
     if value == "backend/migrations/versions/fe6f7a8b9c0d_normalize_operational_calibration_scope.py":

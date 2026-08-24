@@ -15,13 +15,15 @@ Formato compacto, sin guiones:
 Verificación usa el formato institucional distinto y obligatorio
 `MYCV-{MM}-{AA}-{XXXX}`. No admite captura ni edición manual del folio.
 
-Ejemplos: `MYCA26078000`, `MYCT26078000`, `CMVG26078000` y `MYCV-08-26-8000`.
+Ejemplos: `MYCA26078000`, `MYCT26078000`, `CMVG26078000` y `MYCV-08-26-0001`.
 
 Los contadores se separan por `document_type + prefix + year`. El mes impreso
-es el real de emisión, pero no particiona el contador. En 2026 el piso es 8000;
-desde cada año nuevo es 1000. Cada prefijo vinculado conserva su propio
-consecutivo. `MYCV` comparte la misma política anual de secuencia, pero presenta
-mes y año con los separadores exigidos por su formato.
+es el real de emisión, pero no particiona el contador. Para Calibración, en
+2026 el piso es 8000 y desde cada año nuevo es 1000. Cada prefijo vinculado
+conserva su propio consecutivo. `MYCV` tiene piso `0001` en cada año, continúa
+desde el máximo MYCV existente del mismo año y presenta el mes real sin
+reiniciar `XXXX`: `MYCV-08-26-0001`, `MYCV-08-26-0002`,
+`MYCV-09-26-0003`; el siguiente ciclo inicia `MYCV-01-27-0001`.
 
 ## Órdenes de trabajo
 

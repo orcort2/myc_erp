@@ -11,7 +11,9 @@ from app.models.service_order import ServiceOrder, ServiceWorkOrder
 from app.schemas.service_type import ServiceType, normalize_certificate_prefix, normalize_service_type
 
 
-def _initial_value(document_type: str, year: int) -> int:
+def _initial_value(document_type: str, year: int, *, prefix: str | None = None) -> int:
+    if document_type == "certificate" and prefix == "MYCV":
+        return 1
     if year == 2026:
         return 7000 if document_type == "work_order" else 8000
     return 1000
@@ -66,7 +68,7 @@ def allocate_sequence(
         )
         .with_for_update()
     )
-    minimum = _initial_value(document_type, issued_on.year)
+    minimum = _initial_value(document_type, issued_on.year, prefix=normalized_prefix)
     existing_max = (
         _existing_work_order_max(db, year=issued_on.year)
         if document_type == "work_order"

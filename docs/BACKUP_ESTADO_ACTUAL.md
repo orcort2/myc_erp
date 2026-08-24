@@ -107,10 +107,14 @@
 - **Verificación metrológica** está **IMPLEMENTADA — EN REVISIÓN** como
   variante del pipeline existente: ETS/OT/Equipment/Hoja/Captura/Calidad,
   certificado `verification`, título institucional, folio
-  `MYCV-MM-AA-XXXX`, autenticación, versiones y liberación compartidas. La
+  `MYCV-MM-AA-XXXX` con `XXXX` anual desde `0001`, autenticación, versiones y liberación compartidas. La
   asociación por `ServiceOrderItem` conserva coexistencia con Calibración y
-  rechaza alcances acreditado/trazable/vinculado. No se agregó esquema ni
-  migración y no se modificó la base local.
+  rechaza alcances acreditado/trazable/vinculado. El concepto conserva un
+  Master genérico inicial; Equipment puede congelar el específico final antes
+  de Captura y guarda ambos, sus versiones y el historial en el snapshot JSON.
+  El retorno se identifica por identidad/fingerprint del XLSX real y no exige
+  conservar el nombre de la descarga. No se agregó esquema ni migración y no
+  se modificó la base local.
 - La conciliación **TD-027** deja el capability gate **VERDE** en 29/0 y el
   bootstrap cubre 83/83 permisos HTTP. Las diferencias gobernadas incluyen
   `lab_work_orders.use/export/delete` y `tickets.create/view_own/review`,
@@ -354,15 +358,20 @@ seguridad e inventario, se conserva en
     entregas parciales, evidencia, garantía y perfil técnico (TD-043).
 12. Registrar el Master institucional de Verificación y ejecutar un E2E
     autenticado con ETS mixto Calibración + Verificación (TD-049).
+13. Diseñar en etapas finales Auditoría Anual y su integración con Tickets,
+    Resoluciones, Activity, Documentos y permisos. Un cierre será inmutable y
+    cualquier cambio de ciclo distinguirá RESET DE CONTADORES de BORRADO DE
+    DATOS, que queda prohibido (TD-050); el motor actual no depende de ello.
 
 ## Validaciones del corte 2026-08-24
 
-- Backend metrológico ampliado: `88 passed`, `2 deselected`, `7 subtests
-  passed`; las dos pruebas con infraestructura real se separaron del pase
-  sandbox.
-- Autenticación/liberación con FastAPI, PostgreSQL local y LibreOffice fuera
-  del sandbox: `6 passed`.
-- Frontend relevante con `node --test`: `5 passed`.
+- Backend metrológico ampliado: `88 passed`, `19 subtests passed`; cubrió
+  Verificación, regresión de Calibración, Captura/Calidad, Master/fingerprint,
+  autenticación, liberación, Hojas de Campo, contexto de equipo y scopes.
+- El caso nuevo de retorno usó un XLSX real con nombre distinto y comprobó
+  asociación al certificado por identidad/fingerprint. No se dispuso de un
+  Master institucional productivo ni se simuló su aceptación física.
+- Frontend relevante con `node --test`: `10 passed`.
 - `npm run build`: correcto; Vite transformó 1746 módulos y conservó el aviso
   no bloqueante del bundle mayor a 500 kB.
 - No hubo cambio de esquema, migración ni datos locales; por ello no se

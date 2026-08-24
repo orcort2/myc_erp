@@ -105,6 +105,7 @@ export const emptyEquipmentForm = {
   workOrderId: '',
   serviceOrderItemId: '',
   certificateScope: 'traceable',
+  certificateMasterDocumentId: '',
   name: '',
   brand: '',
   model: '',

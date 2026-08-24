@@ -337,6 +337,35 @@ def _mark_capture_started(
     )
 
 
+def _match_uploaded_capture(
+    raw: bytes,
+    suffix: str,
+    certificates: list[Certificate],
+) -> tuple[Certificate | None, dict | None]:
+    matches: list[tuple[int, Certificate, dict]] = []
+    strong_identity_fields = {"folio", "identificacion", "serie"}
+    for certificate in certificates:
+        validation = _validate_excel(raw, suffix, certificate)
+        service_result = validation.get("servicio") or {}
+        if service_result.get("status") != "coincide":
+            continue
+        coincident_fields = {
+            key
+            for key, result in validation.items()
+            if isinstance(result, dict) and result.get("status") == "coincide"
+        }
+        identity_score = len(coincident_fields - {"servicio"})
+        if not coincident_fields.intersection(strong_identity_fields):
+            continue
+        matches.append((identity_score, certificate, validation))
+    if not matches:
+        return None, None
+    matches.sort(key=lambda item: item[0], reverse=True)
+    if len(matches) > 1 and matches[0][0] == matches[1][0]:
+        return None, None
+    return matches[0][1], matches[0][2]
+
+
 def upload_capture_files(
     db: Session,
     service_order_id: int,
@@ -349,16 +378,18 @@ def upload_capture_files(
     order = db.get(ServiceOrder, service_order_id)
     if order is None:
         raise HTTPException(status_code=404, detail="ETS no encontrado")
-    expected: dict[str, Certificate] = {}
+    expected: dict[str, list[Certificate]] = {}
+    active_certificates: list[Certificate] = []
     for item in _load_equipment(db, service_order_id=order.id):
         extension = Path(item.certificate_template_path_snapshot or "").suffix.lower() or ".xlsx"
         for certificate in item.certificates:
             if not certificate.is_active:
                 continue
+            active_certificates.append(certificate)
             if item.certificate_template_filename_snapshot:
-                expected[item.certificate_template_filename_snapshot] = certificate
+                expected.setdefault(item.certificate_template_filename_snapshot, []).append(certificate)
             if certificate.expected_folio or certificate.folio:
-                expected[_master_delivery_name(certificate, extension)] = certificate
+                expected.setdefault(_master_delivery_name(certificate, extension), []).append(certificate)
     candidates: list[tuple[str, bytes]] = []
     ignored_auxiliary: list[str] = []
     ignored_unsupported: list[str] = []
@@ -392,10 +423,18 @@ def upload_capture_files(
     results = []
     for filename, raw in candidates:
         suffix = Path(filename).suffix.lower()
-        certificate = expected.get(filename)
+        filename_matches = expected.get(filename, [])
+        certificate = filename_matches[0] if len(filename_matches) == 1 else None
+        validation = _validate_excel(raw, suffix, certificate) if certificate else None
+        if certificate is None:
+            certificate, validation = _match_uploaded_capture(
+                raw,
+                suffix,
+                active_certificates,
+            )
         record = CertificateCaptureFile(service_order_id=order.id, certificate_id=certificate.id if certificate else None,
             original_filename=filename, identification_status="identified" if certificate else "unidentified", uploaded_by_id=user_id)
-        record.validation_results = _validate_excel(raw, suffix, certificate) if certificate else {"file": {"status": "no_identificado", "message": "El nombre no coincide con un Excel entregado por el ERP"}}
+        record.validation_results = validation if certificate else {"file": {"status": "no_identificado", "message": "No fue posible asociar de forma única el archivo real con un certificado/equipo por identidad y fingerprint"}}
         db.add(record)
         db.flush()
         stored = save_validated_content(

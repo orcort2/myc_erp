@@ -188,7 +188,7 @@ def _prepare_values(values: dict, *, recalculate_price: bool = True) -> dict:
         else:
             values["linked_company_id"] = None
             values["linked_certificate_prefix"] = None
-    if values.get("operational_category") != "calibration":
+    if values.get("operational_category") not in {"calibration", "verification"}:
         values["expected_certificate_master_id"] = None
     if values.get("internal_unit") != "other":
         values["custom_internal_unit"] = None

@@ -222,7 +222,7 @@ function mapCatalogPayloadFromForm(form) {
     service_type: form.category === 'Calibracion' ? form.serviceType : null,
     linked_company_id: form.serviceType === 'linked' ? Number(form.linkedCompanyId) || null : null,
     linked_certificate_prefix: form.serviceType === 'linked' ? form.linkedCertificatePrefix.trim().toUpperCase() || null : null,
-    expected_certificate_master_id: form.category === 'Calibracion' ? Number(form.expectedCertificateMasterId) || null : null,
+    expected_certificate_master_id: ['calibration', 'verification'].includes(operationalCategory) ? Number(form.expectedCertificateMasterId) || null : null,
     requires_individual_identification: operationalCategory === 'sale' ? Boolean(form.requiresIndividualIdentification) : false,
     sale_brand: operationalCategory === 'sale' ? form.saleBrand.trim() || null : null,
     sale_model: operationalCategory === 'sale' ? form.saleModel.trim() || null : null,
@@ -3490,8 +3490,7 @@ function QuotationsPage({ user = null }) {
                           </>
                         ) : null}
 
-                        {productForm.category
-                        === 'Calibracion' ? (
+                        {['calibration', 'verification'].includes(productForm.operationalCategory) ? (
                           <label>
                             Plantilla esperada de certificado
 

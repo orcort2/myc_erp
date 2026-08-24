@@ -16,6 +16,10 @@ test('el alta asocia cada equipo a una partida y no asigna scope a Verificación
   assert.match(source, /service_order_item_id: equipmentForm\.serviceOrderItemId/);
   assert.match(source, /serviceItem\?\.operational_category === 'verification'/);
   assert.match(source, /Certificado de Verificación/);
+  assert.match(source, /certificate_master_document_id/);
+  assert.match(source, /Master específico final/);
+  assert.match(source, /Master genérico inicial/);
+  assert.match(source, /La plantilla inicial es una referencia/);
 });
 
 test('el contexto por equipo distingue Calibración de Verificación', () => {

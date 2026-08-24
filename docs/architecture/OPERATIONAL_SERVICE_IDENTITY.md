@@ -1,6 +1,6 @@
 > Estado: VIGENTE, implementación **EN REVISIÓN**
 >
-> Corte: 2026-08-18
+> Corte: 2026-08-24
 >
 > Alcance: identidad y snapshot; no define workflows técnicos por categoría.
 
@@ -17,6 +17,16 @@ autoritaria entre el equipo y su proceso. Calibración conserva uno de los tres
 alcances de acreditación; Verificación conserva alcance nulo y tipo documental
 `verification`. Un ETS mixto debe desambiguar la partida al registrar cada
 equipo y nunca clasificar la orden completa como una sola modalidad.
+
+Para Verificación, `ServiceOrderItem.expected_certificate_master_id` conserva
+la referencia genérica inicial. `Equipment.certificate_master_*` representa
+el snapshot aplicable vigente al equipo; una selección posterior de Master
+específico actualiza ese snapshot antes de Captura y el JSON operacional
+conserva identificador inicial, identificador/versión final e historial de
+selecciones. Una vez identificado un archivo técnico, el Master final queda
+bloqueado. El archivo cargado no necesita conservar nombre ni bytes de la
+plantilla descargada: su identidad y fingerprint deben producir una asociación
+única con el certificado/equipo.
 
 Todo concepto nuevo debe enviar `operational_category` explícita. El formulario presenta una sola lista operacional, independiente de Tipo; esa selección gobierna también la aparición de la configuración Venta ya existente. El backend valida correspondencia exacta entre la etiqueta estructurada y la clave canónica, pero nunca sustituye la clave a partir de `item_type`, nombre o descripción.
 

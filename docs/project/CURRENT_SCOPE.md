@@ -54,9 +54,12 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 - Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
 - Verificación como variante del pipeline metrológico: partida `verification`,
   equipo/OT obligatorios, alcance de acreditación nulo, Certificado de
-  Verificación y folio `MYCV-MM-AA-XXXX`. Calibración y Verificación pueden
+  Verificación y folio anual `MYCV-MM-AA-XXXX` desde `0001`. Calibración y Verificación pueden
   coexistir en el mismo ETS mediante asociación explícita de cada equipo a su
-  `ServiceOrderItem`; Ajuste permanece fuera de alcance.
+  `ServiceOrderItem`. El concepto puede aportar un Master genérico inicial; el
+  equipo permite congelar después el Master específico final y Captura asocia
+  el archivo técnico real por identidad/fingerprint aunque su nombre difiera
+  del descargado. Ajuste permanece fuera de alcance.
 - Control Documental V1 y Plantillas Maestras de Certificado.
 - Facturación, resumen contextual dentro del ETS, Workbench compartido, registro e historial de pagos parciales/totales antes o después del timbrado, comprobante PDF, cuentas por cobrar, cobranza administrativa, Facturama Sandbox, XML y PDF institucional.
 - Catálogos SAT locales versionados.
@@ -152,6 +155,13 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - **Google Drive:** mencionado como integración objetivo, sin implementación.
 
 ## Capacidades sin implementación funcional
+
+- Auditoría Anual transversal: apertura/cierre, ciclo, auditor u organismo,
+  evidencias, observaciones, hallazgos, no conformidades, acciones correctivas,
+  responsables, compromisos, seguimiento, eficacia y conclusiones. Debe
+  integrarse en el futuro con Tickets, Motor de Resoluciones, Activity,
+  Documentos y permisos; un cierre será histórico e inmutable. No existe motor
+  ni reinicio automático en este corte.
 
 - CRM/Leads y conversión de prospectos.
 - Encuestas de satisfacción.

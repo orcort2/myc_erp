@@ -31,6 +31,7 @@ class ServiceScopeContractTests(unittest.TestCase):
         return {
             "item_type": "service",
             "commodity": "calibration",
+            "operational_category": "calibration",
             "category": "Calibracion",
             "name": "Calibración de prueba",
             "origin_currency": "MXN",
@@ -128,7 +129,10 @@ class ServiceScopeContractTests(unittest.TestCase):
     def test_non_calibration_service_scope_remains_valid_for_its_category(self):
         payload = self.catalog_payload("preventive") | {
             "commodity": "maintenance",
+            "operational_category": "maintenance",
             "category": "Mantenimiento",
+            "maintenance_type": "preventive",
+            "maintenance_location": "laboratory",
         }
         item = CatalogItemCreate.model_validate(payload)
         self.assertEqual(item.calibration_scope, "preventive")

@@ -4,7 +4,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.certificate import Certificate
+from app.models.certificate import Certificate, CertificateCaptureFile
 from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.models.equipment import Equipment
 from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
@@ -301,12 +301,63 @@ def freeze_certificate_operational_context(
         "service_order_item_id": equipment.service_order_item_id,
         "source_catalog_item_id": item.catalog_item_id if item is not None else None,
     }
+    if context_snapshot["certificate_type"] == "verification":
+        context_snapshot["initial_certificate_master_document_id"] = expected_master_id
     if item is not None and item.operational_category is not None:
         context_snapshot["operational_category"] = item.operational_category
     if service_snapshot is not None:
         context_snapshot["service_snapshot"] = service_snapshot
     equipment.certificate_operational_context_snapshot = context_snapshot
     return expected_master_id
+
+
+def _freeze_selected_certificate_master(
+    db: Session,
+    equipment: Equipment,
+    document_id: int,
+    *,
+    user_id: int | None,
+) -> None:
+    previous_document_id = equipment.certificate_master_document_id
+    previous_version_id = equipment.certificate_master_version_id
+    if previous_document_id == document_id:
+        return
+    identified_capture_exists = db.scalar(
+        select(CertificateCaptureFile.id)
+        .join(Certificate, Certificate.id == CertificateCaptureFile.certificate_id)
+        .where(
+            Certificate.equipment_id == equipment.id,
+            CertificateCaptureFile.identification_status == "identified",
+        )
+        .limit(1)
+    )
+    if identified_capture_exists is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El Master final ya no puede cambiar después de identificar el archivo técnico cargado",
+        )
+    snapshot_certificate_master(db, equipment, document_id)
+    context = dict(equipment.certificate_operational_context_snapshot or {})
+    history = list(context.get("certificate_master_selection_history") or [])
+    history.append(
+        {
+            "previous_document_id": previous_document_id,
+            "previous_version_id": previous_version_id,
+            "selected_document_id": equipment.certificate_master_document_id,
+            "selected_version_id": equipment.certificate_master_version_id,
+            "selected_at": datetime.now(timezone.utc).isoformat(),
+            "selected_by_id": user_id,
+        }
+    )
+    context["schema_version"] = 2
+    context.setdefault(
+        "initial_certificate_master_document_id",
+        context.get("expected_certificate_master_id") or previous_document_id,
+    )
+    context["final_certificate_master_document_id"] = equipment.certificate_master_document_id
+    context["final_certificate_master_version_id"] = equipment.certificate_master_version_id
+    context["certificate_master_selection_history"] = history
+    equipment.certificate_operational_context_snapshot = context
 
 
 def create_equipment(
@@ -352,7 +403,12 @@ def create_equipment(
     db.add(equipment)
     db.flush()
     expected_master_id = freeze_certificate_operational_context(db, equipment)
-    snapshot_certificate_master(db, equipment, expected_master_id)
+    initial_master_id = expected_master_id or data.get("certificate_master_document_id")
+    snapshot_certificate_master(db, equipment, initial_master_id)
+    if initial_master_id is not None and certificate_type == "verification":
+        context = dict(equipment.certificate_operational_context_snapshot or {})
+        context["initial_certificate_master_document_id"] = initial_master_id
+        equipment.certificate_operational_context_snapshot = context
 
     if certificate_type:
         create_certificate(
@@ -414,6 +470,23 @@ def update_equipment(
 
     updates = payload.model_dump(exclude_unset=True)
 
+    if (
+        "service_order_item_id" in updates
+        and updates["service_order_item_id"] != equipment.service_order_item_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La partida metrológica del equipo queda congelada al crearlo y no puede cambiarse",
+        )
+
+    selected_master_id = updates.pop("certificate_master_document_id", None)
+    previous_master_values = None
+    if selected_master_id is not None and selected_master_id != equipment.certificate_master_document_id:
+        previous_master_values = {
+            "certificate_master_document_id": equipment.certificate_master_document_id,
+            "certificate_master_version_id": equipment.certificate_master_version_id,
+        }
+
     if "work_order_id" in updates:
         requested_work_order = _ensure_work_order_belongs_to_service_order(
             db,
@@ -471,6 +544,18 @@ def update_equipment(
 
     for key, value in updates.items():
         setattr(equipment, key, value)
+
+    if selected_master_id is not None:
+        _freeze_selected_certificate_master(
+            db,
+            equipment,
+            selected_master_id,
+            user_id=user_id,
+        )
+        updates["certificate_master_document_id"] = selected_master_id
+        updates["certificate_master_version_id"] = equipment.certificate_master_version_id
+        if previous_master_values:
+            previous_values.update(previous_master_values)
 
     write_audit_log(
         db,
