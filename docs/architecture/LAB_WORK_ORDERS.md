@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-24
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -107,7 +107,7 @@ altera el armado de domicilio de las OT productivas.
 `myc-mobile` usa Expo SDK 54 y componentes disponibles en Expo Go:
 
 - `expo-secure-store` para access/refresh token;
-- `react-native-webview` con canvas táctil para cada firma;
+- `react-native-webview` con canvas táctil autónomo para cada firma;
 - `expo-file-system`, `expo-print` y `expo-sharing` para PDF en iOS;
 - `react-native-safe-area-context` para respetar notch, status bar y home
   indicator sin offsets por modelo;
@@ -117,6 +117,60 @@ La captura principal no muestra teléfono ni correo; esos atributos permanecen
 opcionales únicamente por compatibilidad del contrato backend. Datos generales
 y firmas se agrupan en paneles con jerarquía, espaciado vertical y scrolling;
 el editor secundario conserva el patrón sheet sin anidar otro `Modal` nativo.
+
+### Contrato móvil de captura de firmas
+
+`myc-mobile/app.json` usa `orientation=default`; portrait y landscape quedan
+permitidos por la política nativa de Expo SDK 54. Cualquier binario instalado
+que todavía contenga el lock portrait requiere una build nativa posterior para
+recibir este cambio; esta intervención no genera ni distribuye esa build.
+
+El único acceso canónico sigue siendo **Continuar a firmas** dentro de la
+revisión LAB. La experiencia móvil reimplementa de forma autónoma la jerarquía
+visual MYC como pasos Cliente → Técnico, transición local y guardado real. No
+importa componentes, CSS, estado, servicios ni endpoints de `frontend/` y no
+reproduce el morph del botón web.
+
+El canvas conserva strokes como puntos normalizados independientes del bitmap.
+Un `ResizeObserver` ajusta el backing store al DPR y repinta esos vectores al
+cambiar ancho, alto u orientación; después vuelve a serializar el PNG que ya
+espera el backend LAB. Por ello portrait → landscape → portrait no depende de
+un bitmap que se borra al cambiar `canvas.width`/`height`.
+
+Pointer Events con captura de puntero gobiernan down/move/up/cancel, salida del
+área y rechazo de multitouch secundario. `touch-action:none` protege el canvas;
+el `ScrollView` nativo conserva `nestedScrollEnabled` y se deshabilita sólo
+durante un stroke activo, volviendo a habilitarse al terminar o cancelar. El
+estado `hasDrawing` sólo nace con un stroke; **Limpiar** elimina vectores, PNG y
+validez. Un stroke sólo es significativo con al menos dos puntos y distancia
+normalizada acumulada mínima de `0.01`; un tap o movimiento despreciable se
+retira antes de `postMessage`, y la validación TypeScript vuelve a comprobar la
+misma condición antes de habilitar avance o envío.
+
+La captura temporal se eleva a la pantalla OT y se liga exclusivamente a
+`root_work_order_id`, identidad canónica estable del grupo LAB. Refetch,
+reemplazo del objeto `workOrder`, rerender, rotación, cierre/reapertura visual
+del modal y navegación entre OT hermanas conservan nombres, paso, strokes,
+`hasDrawing` y PNG mientras la raíz sea la misma. Ningún `id` de OT individual,
+referencia React, versión, timestamp, equipo ni estado visual participa en esa
+identidad.
+
+Al recibir una raíz distinta se sustituye el borrador completo por uno vacío ya
+asociado al grupo nuevo; por ello Grupo A → Grupo B → Grupo A no recupera la
+captura anterior. Iniciar una OT sin raíz, eliminar el contexto o completar el
+POST también retira el borrador. Antes del envío se vuelve a comparar la raíz
+capturada con la del grupo abierto. Un error de backend conserva nombres y
+strokes sólo para reintento en ese mismo grupo; un lock lógico impide doble
+transición y doble POST.
+
+`signature_required` no autoriza la firma inicial. Una OT LAB nueva `draft`
+nace con ese flag en `false`; el valor pasa a `true` cuando una sesión previa
+fue invalidada y debe renovarse. La UI de reapertura interpreta ese caso sólo
+mediante `canSkipSignaturesAfterReopen`. Si el flujo permite capturar ambas
+firmas y la raíz sigue siendo la misma, MYC Mobile intenta siempre el POST LAB;
+el backend conserva la autoridad sobre estado editable, equipo, sesión previa
+y conflictos. Un rechazo del backend conserva el borrador para corrección o
+reintento y muestra su detalle, sin limpiarlo por flags de refetch.
 
 ## Eliminación administrativa individual
 
@@ -177,6 +231,7 @@ migración explícita de drop. La migración actual nunca elimina datos.
 ## Límites verificados
 
 La versión operativa previa fue validada en Android/iPhone físicos y TestFlight.
-El sprint 2026-08-14 de filtros, Tickets y reapertura requiere repetir ese
-recorrido antes de distribuirse. Hasta esa evidencia nueva el módulo se
-mantiene `EN DESARROLLO`, no `SELLADO`.
+Los sprints posteriores —incluida la reparación de firma/orientación del
+2026-08-24— requieren repetir el recorrido completo en Android e iPhone antes
+de distribuirse. Hasta esa evidencia nueva el módulo se mantiene `EN
+DESARROLLO`, no `SELLADO`.

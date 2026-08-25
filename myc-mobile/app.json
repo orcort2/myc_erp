@@ -3,7 +3,7 @@
     "name": "MYC Mobile",
     "slug": "myc-mobile",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "mycmobile",
     "userInterfaceStyle": "automatic",
@@ -49,7 +49,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": false
     },
     "extra": {
       "router": {},

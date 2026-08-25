@@ -57,9 +57,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   Verificación y folio anual `MYCV-MM-AA-XXXX` desde `0001`. Calibración y Verificación pueden
   coexistir en el mismo ETS mediante asociación explícita de cada equipo a su
   `ServiceOrderItem`. El concepto puede aportar un Master genérico inicial; el
-  equipo permite congelar después el Master específico final y Captura asocia
-  el archivo técnico real por identidad/fingerprint aunque su nombre difiera
-  del descargado. Ajuste permanece fuera de alcance.
+  bonche lo entrega junto con las Hojas de Campo terminadas. Captura lo sustituye
+  fuera del ERP por el archivo técnico real y, al reingresar el ZIP, el backend
+  asocia certificado/equipo por identidad fuerte e identifica de forma única el
+  Master registrado de Verificación por fingerprint, congelando automáticamente
+  la versión final. Ajuste permanece fuera de alcance.
 - Control Documental V1 y Plantillas Maestras de Certificado.
 - Facturación, resumen contextual dentro del ETS, Workbench compartido, registro e historial de pagos parciales/totales antes o después del timbrado, comprobante PDF, cuentas por cobrar, cobranza administrativa, Facturama Sandbox, XML y PDF institucional.
 - Catálogos SAT locales versionados.
@@ -176,6 +178,16 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
   encadenada con datos generales heredados.
 - Una sesión de firma técnico/cliente para todo el grupo; la firma bloquea altas
   y edición y la finalización genera un PDF institucional por OT.
+- Captura secuencial Cliente → Técnico con orientación portrait/landscape,
+  strokes normalizados que sobreviven al resize, ownership temporal del gesto
+  frente al ScrollView, `hasDrawing`, nombres recortados, lock anti-submit y
+  contexto explícito exclusivamente por `root_work_order_id`. El borrador se
+  conserva en refetch, rerender, reapertura visual y navegación entre OT
+  hermanas; una raíz distinta lo reemplaza por una captura vacía, sin recuperar
+  estados antiguos al volver. Tap/movimiento despreciable no cuenta como firma.
+  `signature_required` se limita a reapertura/invalidez previa y no bloquea el
+  POST inicial; la autoridad de aceptación permanece en backend. No existe
+  dependencia del frontend ERP.
 - Eliminación administrativa individual con `lab_work_orders.delete`, válida
   en cualquier estado. Elimina equipo, PDF, revisiones/tickets exclusivos y la
   OT seleccionada; repara raíz/cadena y conserva firma, tickets, revisiones y
@@ -183,7 +195,8 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - Impresión/compartir mediante APIs Expo Go y exportación administrativa ZIP
   con manifiesto, relaciones, firmas, PDFs y checksums.
 
-Permanece fuera del alcance implementado aplicar la migración a producción,
+Permanece fuera del alcance implementado generar/distribuir una build móvil,
+declarar aceptación Android/iOS sin dispositivos, aplicar la migración a producción,
 retirar el LAB, migrar sus datos a entidades productivas o declarar aceptación
 física sin ejecutar el recorrido real en iPhone.
 

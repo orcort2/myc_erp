@@ -4428,10 +4428,9 @@ function closeTechnicalSubEts() {
                     <input disabled type="text" value="Certificado de Verificación" />
                   </label>
                   <label>
-                    {editingEquipmentId ? 'Master específico final' : 'Master genérico inicial'}
+                    {editingEquipmentId ? 'Master vigente identificado' : 'Master genérico inicial'}
                     <select
-                      disabled={!editingEquipmentId}
-                      onChange={(event) => updateEquipmentForm('certificateMasterDocumentId', event.target.value)}
+                      disabled
                       value={equipmentForm.certificateMasterDocumentId}
                     >
                       <option value="">Sin Master asignado</option>
@@ -4442,7 +4441,7 @@ function closeTechnicalSubEts() {
                       ))}
                     </select>
                     <small>
-                      La plantilla inicial es una referencia. Antes de cargar el archivo real puedes seleccionar el Master específico aplicable.
+                      Captura sustituye el Master genérico dentro del bonche. Al reingresar el ZIP, el ERP identifica el Master técnico registrado por estructura y congela su versión final.
                     </small>
                   </label>
                 </>

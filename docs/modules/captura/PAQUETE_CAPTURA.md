@@ -8,7 +8,7 @@
 >
 > Estado del módulo: `../../project/PROJECT_STATUS.md`
 >
-> Corte verificado: 2026-07-21
+> Corte verificado: 2026-08-24
 
 # Paquete de Captura
 
@@ -26,7 +26,9 @@ capturar y guardar hoja
 → opcionalmente enviar a Captura (`under_review`)
 → consultar diagnóstico
 → descargar paquete ETS u OT
-→ subir ZIP/Master devuelto
+→ Captura sustituye fuera del ERP el Master genérico por el técnico real dentro del mismo bonche
+→ subir nuevamente el ZIP/Master devuelto
+→ identificar de forma única certificado/equipo y Master registrado
 → persistir identificación y validaciones
 → iniciar `capture_in_progress`
 → refrescar ETS, contadores y tarjetas
@@ -40,6 +42,16 @@ Generar o descargar el PDF no completa la hoja ni sustituye la transición persi
 ## Carga y persistencia del Master devuelto
 
 Cada Excel procesado crea una fila en `certificate_capture_files` con certificado/ETS, nombre original, ruta única basada en el ID, estado `identified`/`unidentified`, resultados JSON, actor y fechas. Un Master identificado inicia la transición vigente del certificado a `capture_in_progress`, conserva `capture_started_at`/`capture_started_by_id` y escribe `certificate.capture_started` en auditoría. No modifica `match_status`: es metadato legacy y no es compuerta de autenticación.
+
+En Verificación, el ZIP descargado contiene el Master genérico congelado por el
+concepto. Captura puede reemplazar ese miembro sin cambiar el bonche. Al volver
+a cargarlo, el backend busca una coincidencia única entre los Masters activos
+registrados estructuralmente como `service_type=verification` —interpretación
+documental aprobada de la misma versión o perfil técnico activo—, congela ese
+documento/versión como Master final del equipo y audita
+`selection_source=capture_upload_fingerprint`. Una coincidencia ambigua o
+inexistente no crea una identidad nueva ni consulta nombre, código o
+descripción.
 
 La respuesta incluye totales de identificados, no identificados, auxiliares ignorados, advertencias y diferencias. El frontend conserva ese resultado visible, vuelve a consultar certificados y archivos de Captura, actualiza los contadores y muestra en cada tarjeta el estado y las alertas del último Master identificado. `._*`, `.DS_Store` y cualquier contenido dentro de `__MACOSX/` se ignoran antes de persistir y no afectan estadísticas.
 
@@ -67,7 +79,7 @@ En el caso real del certificado `1`, la consulta HTTP autenticada devolvió un M
 
 ## Diagnóstico de validaciones del caso real
 
-Los campos ordinarios continúan buscando sus valores esperados en el contenido del libro. `servicio` es la excepción semántica: ya no busca `accredited_iso_17025` ni una leyenda documental. Compara la estructura del archivo cargado con el snapshot Master congelado en el equipo y, si identifica esa plantilla, traduce el alcance ERP a `accredited` o `traceable`.
+Los campos ordinarios continúan buscando sus valores esperados en el contenido del libro. `servicio` es la excepción semántica: ya no busca `accredited_iso_17025` ni una leyenda documental. Para Calibración compara contra el snapshot congelado y traduce el alcance ERP a `accredited` o `traceable`; para Verificación compara primero contra el registro estructurado de Masters de Verificación y, tras la coincidencia única, valida contra el nuevo snapshot final como `verification`.
 
 El fingerprint combina ocho indicadores: nombres de hojas, dimensiones, rangos fusionados, distribución de celdas con estilo, posiciones de fórmulas, etiquetas con coordenada, anclajes de imágenes/logotipos y áreas de impresión. Exige umbral `0.72`, coincidencia de hojas/dimensiones y al menos tres grupos estructurales con evidencia; ninguna frase aislada decide la clasificación.
 
@@ -77,7 +89,7 @@ Para `Master_MYCA-07-2026-0001.xlsx` se comprobó:
 - `proxima_calibracion`: el ERP espera `2027-09-28`, mientras la fórmula/caché de `J33` contiene `2027-07-28`; es una diferencia real de fecha.
 - `servicio`: esperado `accredited`, detectado `accredited`, `coincide`; score estructural `0.8511`, cinco grupos de evidencia y cero diferencias bloqueantes. Cambiar la leyenda/número de acreditación no impide reconocer la plantilla en la prueba automatizada.
 
-La lógica está centralizada en `backend/app/services/master_template_fingerprints.py`. Una plantilla futura no requiere una rama nueva del parser: debe registrarse y quedar congelada como snapshot en el equipo con su `calibration_scope`; el mismo fingerprint la clasifica. No existe un Master trazable real en el repositorio actual, por lo que ese perfil se probó con un snapshot trazable sintético registrado y queda pendiente validarlo además contra el primer archivo trazable oficial que se incorpore.
+La comparación estructural está centralizada en `backend/app/services/master_template_fingerprints.py` y la orquestación del retorno en `capture_packages.py`. Una plantilla futura no requiere una rama por nombre: Calibración la congela con su `calibration_scope`; Verificación la registra explícitamente con `service_type=verification`. No existe un Master trazable ni un Master específico institucional de Verificación real en el repositorio actual, por lo que ambos recorridos conservan pendiente la validación física con sus primeros archivos oficiales.
 
 ## Estados elegibles de Hoja de Campo
 
@@ -91,7 +103,7 @@ El paquete reconoce los estados vigentes que representan una hoja técnicamente 
 
 ## Condiciones acumulativas de elegibilidad
 
-1. El equipo está activo, pertenece al ETS/OT consultado y tiene `calibration_scope`.
+1. El equipo está activo, pertenece al ETS/OT consultado y su partida es `calibration` con `calibration_scope`, o `verification` con alcance nulo.
 2. Existe una Hoja de Campo activa asociada al equipo.
 3. Su estado pertenece a `completed`, `under_review` o `approved`.
 4. Existe certificado activo con `expected_folio` o `folio`.

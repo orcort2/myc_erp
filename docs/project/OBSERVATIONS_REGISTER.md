@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de pendientes en auditorías, cierres, bitácoras y documentos archivados
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-24
 
 # Registro consolidado de observaciones
 
@@ -153,7 +153,8 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R81 | Mantenimiento / ETS | Sólo existía la categoría canónica; faltaban ejecución, captura, materiales, reporte, firma y cierre. Se implementó el vertical completo sobre ServiceUnit/ServiceStage y snapshot v2. | parcial | Arquitectura, migración `d1f3a5c7e9b2` y regresión 2026-08-18; falta aceptación E2E física |
 | OBS-R82 | Calibración/Hojas de Campo / UX | Sus bloqueantes no siempre señalan visualmente el campo responsable. Mantenimiento establece el patrón navegable `severity/message/section/field`; extenderlo queda fuera de este sprint. | parcial | TD-047 y workbench Mantenimiento 2026-08-18 |
 | OBS-R83 | ETS / Verificación | Verificación existía como categoría canónica, pero el alta de equipo la excluía al depender sólo de `calibration_scope`, Certificados no aceptaba un tipo propio y Folios no emitía `MYCV`. Ahora la partida ETS gobierna cada equipo, Verificación usa alcance nulo/tipo propio, comparte lifecycle y convive con Calibración sin clasificación global. | resuelta | Implementación y suites de Verificación 2026-08-24 |
-| OBS-R84 | Verificación / Captura | Captura identificaba el retorno únicamente por el nombre de la plantilla entregada y Equipment no congelaba correctamente una selección posterior de Master específico. Ahora el nombre es sólo ayuda, el archivo real se asocia de forma única por identidad/fingerprint y el snapshot conserva Master inicial/final e historial antes de Calidad. | resuelta | Suite XLSX de Verificación, Equipment/Captura y frontend ETS 2026-08-24 |
+| OBS-R84 | Verificación / Captura | Captura identificaba el retorno por nombre o exigía preseleccionar el Master específico en Equipment. Ahora el bonche puede conservar su estructura mientras Captura sustituye el genérico fuera del ERP: la carga asocia certificado/equipo por identidad fuerte, encuentra de forma única el Master activo registrado como Verificación por fingerprint, congela automáticamente documento/versión final y conserva historial/auditoría antes de Calidad. | resuelta | Suite ZIP/XLSX de Verificación, Equipment/Captura y frontend ETS 2026-08-24 |
+| OBS-R85 | MYC Mobile / Firmas LAB | La app bloqueaba portrait, el ScrollView podía interceptar el stroke Android, el bitmap se perdía al redimensionar, la protección residual borraba captura intragrupo y una guardia posterior impedía toda firma inicial porque `signature_required` nace `false`. La reparación usa orientación default, ownership temporal del gesto, strokes significativos, borrador por `root_work_order_id` y POST gobernado por backend; regresiones prueban contexto, tap, delegación de `applySignatures` y ejecución real del request. Backend efímero confirma `draft/false → 200 → ready_for_signatures → complete`; falta aceptación táctil física Android/iOS. | parcial | Implementación móvil, 62 pruebas, backend focal y gates TypeScript/lint 2026-08-24 |
 
 ## Regla de cierre
 

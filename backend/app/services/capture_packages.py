@@ -21,7 +21,12 @@ from sqlalchemy.orm import Session, selectinload
 from app.models.certificate import Certificate, CertificateCaptureFile
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
-from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
+from app.models.controlled_document import (
+    ControlledDocument,
+    ControlledDocumentVersion,
+    DocumentInterpretation,
+    TechnicalProfile,
+)
 from app.models.service_order import ServiceOrder, ServiceWorkOrder
 from app.models.service_order import ServiceOrderItem
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
@@ -29,6 +34,7 @@ from app.services.audit_logs import write_audit_log
 from app.services.certificates import CAPTURE_READY_STATUSES
 from app.services.master_template_fingerprints import detect_service_type
 from app.services.file_security import POLICIES, validate_content, validate_upload
+from app.services.equipment import freeze_selected_certificate_master
 from app.services.storage_service import resolve_storage_path, save_validated_content
 
 
@@ -268,7 +274,13 @@ def _expected_values(certificate: Certificate) -> dict[str, str]:
             "proxima_calibracion": str(sheet.next_calibration_date or "") if sheet else "", "servicio": certificate.certificate_type}
 
 
-def _validate_excel(raw: bytes, extension: str, certificate: Certificate) -> dict:
+def _validate_excel(
+    raw: bytes,
+    extension: str,
+    certificate: Certificate,
+    *,
+    expected_template_path: Path | None = None,
+) -> dict:
     if extension not in {".xlsx", ".xlsm"}:
         return {key: {"status": "no_aplicable"} for key in _expected_values(certificate)}
     workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True, keep_vba=extension == ".xlsm")
@@ -279,7 +291,11 @@ def _validate_excel(raw: bytes, extension: str, certificate: Certificate) -> dic
             results[key] = detect_service_type(
                 raw,
                 extension=extension,
-                expected_template_path=resolve_storage_path(certificate.equipment.certificate_template_path_snapshot),
+                expected_template_path=(
+                    expected_template_path
+                    if expected_template_path is not None
+                    else resolve_storage_path(certificate.equipment.certificate_template_path_snapshot)
+                ),
                 expected_service_type=expected,
             )
             continue
@@ -290,6 +306,90 @@ def _validate_excel(raw: bytes, extension: str, certificate: Certificate) -> dic
         else:
             results[key] = {"status": "no_encontrado", "expected": expected}
     return results
+
+
+def _registered_verification_master_match(
+    db: Session,
+    raw: bytes,
+    suffix: str,
+) -> tuple[int | None, Path | None, dict]:
+    """Resolve a real Verification Master only from active structured records."""
+    if suffix not in {".xlsx", ".xlsm"}:
+        return None, None, {"status": "no_aplicable", "method": "registered_master_fingerprint"}
+    profile_rows = db.execute(
+        select(ControlledDocument, ControlledDocumentVersion)
+        .join(
+            TechnicalProfile,
+            TechnicalProfile.certificate_template_document_id == ControlledDocument.id,
+        )
+        .join(
+            ControlledDocumentVersion,
+            ControlledDocumentVersion.document_id == ControlledDocument.id,
+        )
+        .where(
+            TechnicalProfile.status == "active",
+            TechnicalProfile.service_type == "verification",
+            ControlledDocument.document_type == "certificate_master",
+            ControlledDocument.status == "active",
+            ControlledDocumentVersion.status == "active",
+        )
+    ).all()
+    interpretation_rows = db.execute(
+        select(ControlledDocument, ControlledDocumentVersion)
+        .join(
+            DocumentInterpretation,
+            DocumentInterpretation.document_id == ControlledDocument.id,
+        )
+        .join(
+            ControlledDocumentVersion,
+            ControlledDocumentVersion.id == DocumentInterpretation.document_version_id,
+        )
+        .where(
+            DocumentInterpretation.status == "approved",
+            DocumentInterpretation.interpretation_type == "certificate_template_source",
+            DocumentInterpretation.service_type == "verification",
+            ControlledDocument.document_type == "certificate_master",
+            ControlledDocument.status == "active",
+            ControlledDocumentVersion.status == "active",
+        )
+    ).all()
+    registered_versions = {
+        version.id: (document, version)
+        for document, version in [*profile_rows, *interpretation_rows]
+    }
+    matches: dict[int, tuple[Path, dict]] = {}
+    for document, version in registered_versions.values():
+        if not version.file_path or (
+            version.expires_on is not None and version.expires_on < date.today()
+        ):
+            continue
+        template_path = resolve_storage_path(version.file_path)
+        result = detect_service_type(
+            raw,
+            extension=suffix,
+            expected_template_path=template_path,
+            expected_service_type="verification",
+        )
+        if result.get("status") == "coincide" and template_path is not None:
+            matches[document.id] = (template_path, result)
+    if len(matches) == 1:
+        document_id, (template_path, result) = next(iter(matches.items()))
+        return document_id, template_path, {
+            "status": "coincide",
+            "method": "registered_master_fingerprint",
+            "document_id": document_id,
+            "template_match": result.get("template_match"),
+        }
+    if len(matches) > 1:
+        return None, None, {
+            "status": "ambiguous",
+            "method": "registered_master_fingerprint",
+            "candidate_document_ids": sorted(matches),
+        }
+    return None, None, {
+        "status": "no_encontrado",
+        "method": "registered_master_fingerprint",
+    }
 
 
 def _is_macos_auxiliary(path_value: str) -> bool:
@@ -341,11 +441,22 @@ def _match_uploaded_capture(
     raw: bytes,
     suffix: str,
     certificates: list[Certificate],
+    *,
+    verification_template_path: Path | None = None,
 ) -> tuple[Certificate | None, dict | None]:
     matches: list[tuple[int, Certificate, dict]] = []
     strong_identity_fields = {"folio", "identificacion", "serie"}
     for certificate in certificates:
-        validation = _validate_excel(raw, suffix, certificate)
+        validation = _validate_excel(
+            raw,
+            suffix,
+            certificate,
+            expected_template_path=(
+                verification_template_path
+                if certificate.certificate_type == "verification"
+                else None
+            ),
+        )
         service_result = validation.get("servicio") or {}
         if service_result.get("status") != "coincide":
             continue
@@ -421,20 +532,81 @@ def upload_capture_files(
             else:
                 candidates.append((filename, raw))
     results = []
+    has_verification_certificates = any(
+        certificate.certificate_type == "verification"
+        for certificate in active_certificates
+    )
     for filename, raw in candidates:
         suffix = Path(filename).suffix.lower()
+        if has_verification_certificates:
+            verification_master_id, verification_template_path, master_validation = (
+                _registered_verification_master_match(db, raw, suffix)
+            )
+        else:
+            verification_master_id, verification_template_path, master_validation = (
+                None,
+                None,
+                {"status": "no_aplicable", "method": "registered_master_fingerprint"},
+            )
         filename_matches = expected.get(filename, [])
         certificate = filename_matches[0] if len(filename_matches) == 1 else None
-        validation = _validate_excel(raw, suffix, certificate) if certificate else None
+        validation = (
+            _validate_excel(
+                raw,
+                suffix,
+                certificate,
+                expected_template_path=(
+                    verification_template_path
+                    if certificate.certificate_type == "verification"
+                    else None
+                ),
+            )
+            if certificate
+            else None
+        )
         if certificate is None:
             certificate, validation = _match_uploaded_capture(
                 raw,
                 suffix,
                 active_certificates,
+                verification_template_path=verification_template_path,
             )
+        if certificate and certificate.certificate_type == "verification":
+            verification_context = dict(
+                certificate.equipment.certificate_operational_context_snapshot or {}
+            )
+            requires_registered_final = bool(
+                verification_context.get("initial_certificate_master_document_id")
+                and not verification_context.get("final_certificate_master_document_id")
+            )
+            if verification_master_id is not None:
+                freeze_selected_certificate_master(
+                    db,
+                    certificate.equipment,
+                    verification_master_id,
+                    user_id=user_id,
+                    selection_source="capture_upload_fingerprint",
+                )
+                validation = _validate_excel(raw, suffix, certificate)
+            if validation is not None:
+                validation["master_registration"] = master_validation
+            if (
+                requires_registered_final
+                and verification_master_id is None
+            ) or (validation or {}).get("servicio", {}).get("status") != "coincide":
+                certificate = None
+                validation = None
+        unidentified_validation = {
+            "file": {
+                "status": "no_identificado",
+                "message": "No fue posible asociar de forma única el archivo real con un certificado/equipo por identidad y fingerprint",
+            }
+        }
+        if has_verification_certificates:
+            unidentified_validation["master_registration"] = master_validation
         record = CertificateCaptureFile(service_order_id=order.id, certificate_id=certificate.id if certificate else None,
             original_filename=filename, identification_status="identified" if certificate else "unidentified", uploaded_by_id=user_id)
-        record.validation_results = validation if certificate else {"file": {"status": "no_identificado", "message": "No fue posible asociar de forma única el archivo real con un certificado/equipo por identidad y fingerprint"}}
+        record.validation_results = validation if certificate else unidentified_validation
         db.add(record)
         db.flush()
         stored = save_validated_content(

@@ -71,7 +71,7 @@ test('la tarjeta LAB reserva metadata y limita clientes largos a dos líneas', (
   const source = readFileSync(resolve(process.cwd(), 'app/(technician)/work-orders.tsx'), 'utf8');
   assert.match(source, /style=\{styles\.cardContent\}/);
   assert.match(source, /ellipsizeMode="tail" numberOfLines=\{2\}/);
-  assert.match(source, /cardContent: \{ flex: 1, minWidth: 0/);
+  assert.match(source, /cardContent:\s*\{[^}]*flex:\s*1,[^}]*minWidth:\s*0/s);
   assert.match(source, /cardRight: \{[^}]*flexShrink: 0/);
   for (const name of [
     'Autonova',

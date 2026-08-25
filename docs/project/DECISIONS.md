@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-08-17
+> Corte verificado: 2026-08-24
 
 # Registro de decisiones vigentes
 
@@ -93,7 +93,8 @@ Se adopta `MaintenanceExecution` como proyección uno-a-uno de `ServiceUnit` y `
 | ADR-075 | 2026-08-17 | Comunicaciones persiste secuencia, idempotencia, recibos y menciones en PostgreSQL; REST reconcilia y WebSocket sólo publica eventos post-commit. La topología productiva verificada tiene un único worker, por lo que `InMemoryRealtimeHub` es el adaptador vigente; escalar procesos exige sustituirlo detrás de `RealtimeHub` antes del despliegue. | [`../architecture/COMMUNICATIONS_REALTIME.md`](../architecture/COMMUNICATIONS_REALTIME.md), migración `f7c9d1e3a5b7` y cierre A–I | Evita estados paralelos, pérdida/duplicación visible y acoplamiento del dominio al transporte; mantiene explícita la compuerta de escala. |
 | ADR-076 | 2026-08-18 | ETS Venta usa una proyección normalizada materializada sólo desde snapshot. Sus `ServiceUnit` no son evolutivas; Calibración posterior usa vínculo comercial exacto. Garantía diferencia retorno, reemplazo y cancelación; recepción exige firma acotada o atestación técnica tipada según modalidad. | [`../architecture/SALE_ETS_EXECUTION.md`](../architecture/SALE_ETS_EXECUTION.md), migraciones `b9d1f3a5c7e9`/`c0e2f4a6b8d1` y suite Venta | Conserva parciales y entrega multicanal sin consultar catálogo vigente, cruzar cotizaciones ni reutilizar evolución de Servicio General. Queda **EN REVISIÓN**. |
 | ADR-077 | 2026-08-24 | Verificación es una variante parametrizada del pipeline metrológico, no un agregado `VerificationExecution`. `ServiceOrderItem.operational_category` y `Equipment.service_order_item_id` discriminan el proceso; `certificate_type=verification` lo distingue sin falsear `calibration_scope`. | Auditoría de contratos, servicios de Equipment/Certificados/Folios/Captura, frontend ETS y suites backend/frontend | Conserva lifecycle, autenticación, versiones y liberación compartidos; permite una versión futura posterior a Ajuste sin sobrescribir V1. No abre Ajuste ni reapertura transversal. |
-| ADR-078 | 2026-08-24 | Verificación distingue Master genérico inicial y Master específico final dentro del snapshot JSON ya existente de Equipment. La selección final vuelve a congelar documento/versión y agrega historial; Captura identifica el archivo real por identidad y fingerprint, no por igualdad de nombre o hash con la descarga. | `equipment.py`, `capture_packages.py`, Control Documental y pruebas XLSX | Evita una tabla o motor paralelo, conserva históricos y bloquea cambiar Master después de identificar evidencia técnica. |
+| ADR-078 | 2026-08-24 | Verificación distingue Master genérico inicial y Master específico final dentro del snapshot JSON ya existente de Equipment. Captura reemplaza el archivo dentro del bonche fuera del ERP; al reingresar el ZIP, el backend asocia certificado/equipo por identidad fuerte y resuelve una coincidencia única por fingerprint entre Masters activos registrados estructuralmente con `service_type=verification`. Esa resolución congela automáticamente documento/versión final, actor, origen e historial; nombre, código y descripción no participan. | `equipment.py`, `capture_packages.py`, Control Documental y pruebas XLSX/ZIP | Evita selección manual obligatoria, tabla o motor paralelo; conserva históricos y bloquea cambiar Master después de identificar evidencia técnica. |
+| ADR-079 | 2026-08-24 | Las firmas de MYC Mobile siguen siendo LAB autónomo: conservan el botón y POST LAB existentes, asocian la captura temporal exclusivamente a `root_work_order_id` y elevan su borrador sobre el componente visual para sobrevivir a refetch, rerender, reapertura y navegación entre hermanas. Una raíz distinta sustituye todo el borrador por uno vacío y no se cachean grupos anteriores. Los strokes normalizados sobreviven a orientación/resize y exigen distancia real. `signature_required` describe renovación tras invalidez, no permiso de firma inicial; el frontend no duplica la admisión del POST y conserva el borrador ante rechazo backend. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), componentes móviles y pruebas de estado/handler | Impide reutilizar firmas entre grupos sin invalidarlas dentro del mismo grupo, evita bloquear firmas iniciales válidas y no cambia backend, esquema ni reglas productivas. |
 
 ## Decisiones expresamente no confirmadas
 
@@ -286,3 +287,19 @@ best-effort acotado; no reutiliza el outbox/worker del Motor de Resoluciones,
 cuya responsabilidad es exclusiva del Motor. La app invalida recursos por
 eventos y lifecycle de navegación, sin polling. Cola durable, receipts y
 preferencias requieren una fase posterior explícita.
+
+## D-2026-08-24 — Firma móvil LAB adaptable y aislada
+
+La captura móvil conserva WebView/canvas porque ya forma parte del stack Expo
+54 y no requiere una dependencia nativa nueva. Su estado lógico son strokes
+normalizados, no el bitmap del viewport; el PNG se deriva para mantener el
+contrato LAB vigente. `root_work_order_id` es la identidad canónica local y se
+revalida antes del POST. La igualdad de esa raíz conserva el mismo borrador aun
+si cambia la OT individual o la instancia React; la desigualdad crea un
+borrador vacío para el grupo nuevo y descarta el anterior sin caché de retorno.
+La UI toma tarjeta, jerarquía, pasos y feedback del ERP como referencia visual,
+sin importar código web ni alterar la política de sesión grupal o reapertura.
+`signature_required` no se usa como guardia de envío: una creación normal lo
+recibe en `false` y el backend acepta el POST; sólo la política de reapertura lo
+combina con sesión preservada. Un tap se descarta por distancia normalizada y
+la validación local exige un stroke significativo antes de avanzar.

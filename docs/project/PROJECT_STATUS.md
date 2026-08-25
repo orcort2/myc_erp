@@ -41,7 +41,7 @@ El alcance V1 sellado comprende Lista Maestra, ficha documental, versiones, hist
 | Cotizaciones | Servicios Compuestos conservan un concepto comercial y expanden el ETS. El desbloqueo controlado permite editar directamente partidas de una aprobada, compara revisiones y reconstruye físicamente un ETS virgen con el mismo folio; incluye tipos acreditado/trazable/vinculado, empresas, snapshots y pruebas. Falta completar restauración general desde snapshots, asegurar rutas legacy y ejecutar E2E autenticado en navegador hasta ETS. |
 | Órdenes de Trabajo | E2E multi-OT por rol y encapsulado del número legacy. |
 | Equipos | La independencia del catálogo vivo, snapshot y protección del router quedaron validados; falta E2E autenticado dentro del ciclo multi-OT. |
-| Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada. Calidad es la única superficie autenticadora y la autoridad única usa lock/audit/evento. Verificación reutiliza el pipeline con tipo propio, folio anual `MYCV-MM-AA-XXXX` desde `0001`, coexistencia por partida, Master genérico→específico y carga real identificada sin depender del nombre; faltan Master institucional real y E2E browser completo. |
+| Certificados | Aprobación→autenticación→liberación sin compuerta legacy de match quedó validada. Calidad es la única superficie autenticadora y la autoridad única usa lock/audit/evento. Verificación reutiliza el pipeline con tipo propio, folio anual `MYCV-MM-AA-XXXX` desde `0001`, coexistencia por partida y bonche genérico→archivo real: la carga identifica de forma única el Master registrado por fingerprint y congela automáticamente su versión final sin depender del nombre; faltan Master institucional real y E2E browser completo. |
 | Plantillas Maestras | Descarga, carga, identificación, detección semántica por fingerprint, readiness y generación del PDF autenticado desde el Master quedaron validados; falta automatizar el E2E autenticado completo del retorno. |
 | Catálogos SAT | Blindar la fuente oficial y completar E2E de consumidores autorizados. |
 | Base de datos y migraciones | Integridad, drift, downgrade, upgrade histórico, respaldo y restore están validados; sólo permanece el plan independiente de retiro legacy. |
@@ -193,15 +193,28 @@ volumen; requieren decisión operativa y etapa propia.
 El vertical backend/móvil está terminado técnicamente: agregado aislado, folios
 6400–6999, máximo 10 equipos, adicionales encadenadas, firma única compartida,
 bloqueo grupal, PDFs individuales y exportación verificable. Las pruebas LAB,
-conformidad API, PostgreSQL, TypeScript, lint y Expo Doctor están verdes.
+conformidad API, PostgreSQL, TypeScript y lint están verdes; Expo Doctor
+conserva el resultado documentado de 17/18 por desfases patch preexistentes.
 La pantalla móvil continúa mostrando exclusivamente LAB 6400–6999 y agrega
 eliminación administrativa individual con capacidad propia, confirmación,
 refetch y layout estable para clientes largos. Backend cubre dependencias
 exclusivas, raíz/cadena, firma/ticket/revisión compartidos y rollback.
+La captura de firmas móvil ya permite orientación nativa dinámica, usa pasos
+Cliente → Técnico, reconstruye strokes normalizados al redimensionar, entrega
+el gesto al canvas sólo durante el trazo y liga la captura a
+`root_work_order_id`; refetch, rerender, reapertura visual y OT hermanas
+conservan el borrador, mientras una raíz diferente lo reemplaza sin recuperar
+capturas previas. Conserva el botón y endpoint LAB existentes.
+La regresión que impedía el POST inicial por interpretar
+`signature_required=false` como prohibición quedó retirada: prueba de handler y
+backend efímero confirman `draft/false → POST 200 → ready_for_signatures →
+complete 200`. Los taps ya no cuentan como firma. Falta repetir la cadena táctil
+completa en dispositivo físico.
 
 No se marca `CASI SELLADO` ni `SELLADO`: la versión operativa anterior fue
-validada físicamente, pero el sprint nuevo requiere repetir teclado, firma,
-AirPrint, compartir, filtros, Tickets, eliminación y nombres largos en
+validada físicamente, pero el sprint nuevo requiere repetir orientación,
+teclado, firma/scroll Android, AirPrint, compartir, filtros, Tickets,
+eliminación y nombres largos en
 Android/iPhone. El LAB es provisional
 y debe retirarse sólo después de exportación íntegra verificada.
 No cambia el estado ni el contrato de las OT/firmas productivas.

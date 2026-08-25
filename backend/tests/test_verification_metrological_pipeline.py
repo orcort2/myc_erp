@@ -1,6 +1,8 @@
 from datetime import date, datetime, timezone
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
+import zipfile
 
 import pytest
 from fastapi import HTTPException
@@ -13,7 +15,11 @@ import app.models  # noqa: F401
 from app.core.db import Base
 from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
 from app.models.client import Client
-from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
+from app.models.controlled_document import (
+    ControlledDocument,
+    ControlledDocumentVersion,
+    DocumentInterpretation,
+)
 from app.models.equipment import Equipment
 from app.models.field_sheet import FieldSheet
 from app.models.service_order import ServiceOrderItem
@@ -31,7 +37,10 @@ from app.services.certificates import (
     update_certificate,
 )
 from app.services import certificate_authentication
-from app.services.capture_packages import upload_capture_files
+from app.services.capture_packages import (
+    _registered_verification_master_match,
+    upload_capture_files,
+)
 from app.services.catalog_items import _prepare_values
 from app.services.equipment import create_equipment, update_equipment
 from app.services.institutional_folios import build_certificate_folio
@@ -388,6 +397,101 @@ def _active_master(db, *, code, path):
     return document, version
 
 
+def test_verification_rejects_ambiguous_registered_master_fingerprint(
+    db,
+    mixed_order,
+    tmp_path,
+):
+    actor, order, items = mixed_order
+    generic_workbook = Workbook()
+    generic_sheet = generic_workbook.active
+    generic_sheet.title = "Master genérico"
+    generic_sheet["A1"] = "Referencia descargable"
+    generic_path = tmp_path / "verification-generic.xlsx"
+    generic_workbook.save(generic_path)
+    generic_workbook.close()
+    generic, _ = _active_master(db, code="MYC-VER-GENERIC", path=generic_path)
+    items["verification"].expected_certificate_master_id = generic.id
+    db.commit()
+    equipment = create_equipment(
+        db,
+        EquipmentCreate(
+            service_order_id=order.id,
+            service_order_item_id=items["verification"].id,
+            name="Equipo ambiguo",
+        ),
+        user_id=actor.id,
+    )
+    certificate = db.scalar(select(Certificate).where(Certificate.equipment_id == equipment.id))
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Certificado"
+    sheet["A1"] = "Estructura técnica de Verificación"
+    first_path = tmp_path / "verification-a.xlsx"
+    second_path = tmp_path / "verification-b.xlsx"
+    workbook.save(first_path)
+    workbook.save(second_path)
+    raw = first_path.read_bytes()
+    workbook.close()
+
+    documents = []
+    for code, path in (("MYC-VER-A", first_path), ("MYC-VER-B", second_path)):
+        document, version = _active_master(db, code=code, path=path)
+        documents.append(document)
+        db.add(
+            DocumentInterpretation(
+                document_id=document.id,
+                document_version_id=version.id,
+                name=f"Identidad {code}",
+                interpretation_type="certificate_template_source",
+                service_type="verification",
+                status="approved",
+                version=1,
+            )
+        )
+    db.commit()
+
+    with patch(
+        "app.services.capture_packages.resolve_storage_path",
+        side_effect=lambda value: Path(value) if value else None,
+    ):
+        document_id, template_path, validation = _registered_verification_master_match(
+            db,
+            raw,
+            ".xlsx",
+        )
+
+    assert document_id is None
+    assert template_path is None
+    assert validation["status"] == "ambiguous"
+    assert validation["candidate_document_ids"] == sorted(document.id for document in documents)
+
+    with patch(
+        "app.services.capture_packages.resolve_storage_path",
+        side_effect=lambda value: Path(value) if value else None,
+    ), patch("app.services.capture_packages.save_validated_content") as save:
+        save.return_value.relative_path = "capture/ambiguous.xlsx"
+        save.return_value.checksum_sha256 = "ambiguous"
+        result = upload_capture_files(
+            db,
+            order.id,
+            [
+                UploadFile(
+                    filename=f"Master_{certificate.folio}.xlsx",
+                    file=BytesIO(raw),
+                )
+            ],
+            user_id=actor.id,
+        )
+
+    db.refresh(equipment)
+    assert result["summary"]["unidentified"] == 1
+    assert result["processed"][0]["validation"]["master_registration"]["status"] == "ambiguous"
+    assert equipment.certificate_master_document_id == generic.id
+    assert "final_certificate_master_document_id" not in equipment.certificate_operational_context_snapshot
+
+
 def test_verification_freezes_generic_then_specific_master_and_item_identity(db, mixed_order, tmp_path):
     actor, order, items = mixed_order
     generic_path = tmp_path / "generic.xlsx"
@@ -455,10 +559,24 @@ def test_verification_freezes_generic_then_specific_master_and_item_identity(db,
         )
 
 
-def test_verification_accepts_real_file_with_different_name_and_matches_its_fingerprint(
+def test_verification_replaces_generic_in_bundle_and_auto_freezes_registered_real_master(
     db, mixed_order, tmp_path
 ):
     actor, order, items = mixed_order
+    generic_workbook = Workbook()
+    generic_sheet = generic_workbook.active
+    generic_sheet.title = "Master genérico"
+    generic_sheet["A1"] = "Referencia genérica"
+    generic_path = tmp_path / "master-generico.xlsx"
+    generic_workbook.save(generic_path)
+    generic_workbook.close()
+    generic, generic_version = _active_master(
+        db,
+        code="MYC-VER-GEN-CAPTURA",
+        path=generic_path,
+    )
+    items["verification"].expected_certificate_master_id = generic.id
+    db.commit()
     equipment = create_equipment(
         db,
         EquipmentCreate(
@@ -478,32 +596,64 @@ def test_verification_accepts_real_file_with_different_name_and_matches_its_fing
     sheet["A2"] = certificate.folio
     sheet["A3"] = equipment.internal_id
     sheet["A4"] = equipment.serial_number
-    sheet["B6"] = "Resultado"
+    sheet["B6"] = 0
     master_path = tmp_path / "master-especifico.xlsx"
     workbook.save(master_path)
-    sheet["B6"] = "Resultado técnico real cargado"
+    specific, specific_version = _active_master(
+        db,
+        code="MYC-VER-ESP-CAPTURA",
+        path=master_path,
+    )
+    db.add(
+        DocumentInterpretation(
+            document_id=specific.id,
+            document_version_id=specific_version.id,
+            name="Master técnico estructurado de Verificación",
+            interpretation_type="certificate_template_source",
+            service_type="verification",
+            status="approved",
+            version=1,
+        )
+    )
+    db.commit()
+    sheet["B6"] = 12.34
     real_file = BytesIO()
     workbook.save(real_file)
     workbook.close()
-    equipment.certificate_master_document_id = 900
-    equipment.certificate_master_version_id = 901
-    equipment.certificate_template_path_snapshot = str(master_path)
-    db.commit()
 
-    with patch("app.services.capture_packages.resolve_storage_path", return_value=master_path), patch(
-        "app.services.capture_packages.save_validated_content"
-    ) as save:
+    package = BytesIO()
+    delivery_name = f"Master_{certificate.folio}.xlsx"
+    with zipfile.ZipFile(package, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(
+            f"ETS-{order.id}/OT-{equipment.work_order_number:04d}/{certificate.folio}/{delivery_name}",
+            real_file.getvalue(),
+        )
+    package.seek(0)
+
+    with patch(
+        "app.services.capture_packages.resolve_storage_path",
+        side_effect=lambda value: Path(value) if value else None,
+    ), patch("app.services.capture_packages.save_validated_content") as save:
         save.return_value.relative_path = "capture/real-B.xlsx"
         save.return_value.checksum_sha256 = "abc123"
         result = upload_capture_files(
             db,
             order.id,
-            [UploadFile(filename="archivo-tecnico-B.xlsx", file=BytesIO(real_file.getvalue()))],
+            [UploadFile(filename="bonche-verificacion.zip", file=package)],
             user_id=actor.id,
         )
 
+    db.refresh(equipment)
     assert result["summary"]["identified"] == 1
     assert result["processed"][0]["certificate_id"] == certificate.id
-    assert result["processed"][0]["filename"] == "archivo-tecnico-B.xlsx"
+    assert result["processed"][0]["filename"] == delivery_name
     assert result["processed"][0]["validation"]["servicio"]["method"] == "template_fingerprint"
     assert result["processed"][0]["validation"]["servicio"]["status"] == "coincide"
+    assert result["processed"][0]["validation"]["master_registration"]["document_id"] == specific.id
+    assert equipment.certificate_master_document_id == specific.id
+    assert equipment.certificate_master_version_id == specific_version.id
+    context = equipment.certificate_operational_context_snapshot
+    assert context["initial_certificate_master_document_id"] == generic.id
+    assert context["final_certificate_master_document_id"] == specific.id
+    assert context["certificate_master_selection_history"][-1]["selection_source"] == "capture_upload_fingerprint"
+    assert generic_version.id != specific_version.id

@@ -12,14 +12,15 @@ test('ETS detecta Verificación y habilita el pipeline metrológico compartido',
   }
 });
 
-test('el alta asocia cada equipo a una partida y no asigna scope a Verificación', () => {
+test('el alta asocia cada equipo a una partida y el Master final se identifica en Captura', () => {
   assert.match(source, /service_order_item_id: equipmentForm\.serviceOrderItemId/);
   assert.match(source, /serviceItem\?\.operational_category === 'verification'/);
   assert.match(source, /Certificado de Verificación/);
   assert.match(source, /certificate_master_document_id/);
-  assert.match(source, /Master específico final/);
+  assert.match(source, /Master vigente identificado/);
   assert.match(source, /Master genérico inicial/);
-  assert.match(source, /La plantilla inicial es una referencia/);
+  assert.match(source, /Captura sustituye el Master genérico dentro del bonche/);
+  assert.match(source, /identifica el Master técnico registrado por estructura/);
 });
 
 test('el contexto por equipo distingue Calibración de Verificación', () => {

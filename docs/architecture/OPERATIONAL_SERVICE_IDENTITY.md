@@ -20,13 +20,18 @@ equipo y nunca clasificar la orden completa como una sola modalidad.
 
 Para Verificación, `ServiceOrderItem.expected_certificate_master_id` conserva
 la referencia genérica inicial. `Equipment.certificate_master_*` representa
-el snapshot aplicable vigente al equipo; una selección posterior de Master
-específico actualiza ese snapshot antes de Captura y el JSON operacional
+el snapshot aplicable vigente al equipo. Captura sustituye fuera del ERP el
+archivo genérico dentro del mismo bonche y, al reingresar el ZIP, el backend
+compara el XLSX con Masters activos que tengan identidad estructurada
+`service_type=verification` mediante una interpretación documental aprobada o
+un perfil técnico activo. Una coincidencia única actualiza el snapshot al
+Master específico antes de persistir la identificación; el JSON operacional
 conserva identificador inicial, identificador/versión final e historial de
-selecciones. Una vez identificado un archivo técnico, el Master final queda
-bloqueado. El archivo cargado no necesita conservar nombre ni bytes de la
-plantilla descargada: su identidad y fingerprint deben producir una asociación
-única con el certificado/equipo.
+selecciones, incluido `selection_source=capture_upload_fingerprint`. Una vez
+identificado un archivo técnico, el Master final queda bloqueado. El nombre,
+código y descripción documental no deciden la identidad; el archivo cargado no
+necesita conservar bytes de la plantilla descargada y su identidad fuerte de
+equipo/certificado más el fingerprint deben producir una asociación única.
 
 Todo concepto nuevo debe enviar `operational_category` explícita. El formulario presenta una sola lista operacional, independiente de Tipo; esa selección gobierna también la aparición de la configuración Venta ya existente. El backend valida correspondencia exacta entre la etiqueta estructurada y la clave canónica, pero nunca sustituye la clave a partir de `item_type`, nombre o descripción.
 

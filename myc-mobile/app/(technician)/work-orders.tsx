@@ -23,7 +23,12 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
-import { SignaturePad } from '@/src/components/SignaturePad';
+import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignatureFlow';
+import {
+  reconcileSignatureFlowState,
+  type SignatureFlowState,
+  type SignaturePayload,
+} from '@/src/components/signatures/signature-flow-state';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { affectsWorkOrders, RefreshGate } from '@/src/notifications/refresh-policy';
 import {
@@ -32,6 +37,7 @@ import {
   LabWorkOrderDeletionCoordinator,
 } from '@/src/services/lab-work-order-deletion';
 import { canSkipSignaturesAfterReopen } from '@/src/services/lab-work-order-signature-policy';
+import { postLabGroupSignatures } from '@/src/services/lab-work-order-signature-submission';
 import type {
   EquipmentData,
   GeneralData,
@@ -132,10 +138,8 @@ export default function WorkOrdersScreen() {
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
   const [equipmentEditor, setEquipmentEditor] = useState<LabEquipment | 'new' | null>(null);
   const [equipment, setEquipment] = useState<EquipmentData>(emptyEquipment);
-  const [technicianName, setTechnicianName] = useState('');
-  const [clientName, setClientName] = useState('');
-  const [technicianSignature, setTechnicianSignature] = useState('');
-  const [clientSignature, setClientSignature] = useState('');
+  const [signatureFlowState, setSignatureFlowState] = useState<SignatureFlowState | null>(null);
+  const [signatureDrawing, setSignatureDrawing] = useState(false);
   const [ticketOpen, setTicketOpen] = useState(false);
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
@@ -144,6 +148,7 @@ export default function WorkOrdersScreen() {
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
+  const signatureSubmitRef = useRef(false);
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -211,12 +216,21 @@ export default function WorkOrdersScreen() {
     if (workOrder && (!targetId || targetId === workOrder.id)) {
       request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`)
         .then((detail) => {
+          const sameSignatureGroup = signatureFlowState?.rootWorkOrderId === detail.root_work_order_id;
+          setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
+            clientName: detail.contact_name ?? '',
+            rootWorkOrderId: detail.root_work_order_id,
+            technicianName: user?.full_name ?? '',
+          }));
+          if (!sameSignatureGroup) setSignatureDrawing(false);
           setWorkOrder(detail);
-          setStep(detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+          setStep((current) => sameSignatureGroup && current === 'signatures'
+            ? current
+            : detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
         })
         .catch(() => undefined);
     }
-  }), [refreshActive, request, subscribe, workOrder]);
+  }), [refreshActive, request, signatureFlowState?.rootWorkOrderId, subscribe, user?.full_name, workOrder]);
 
   // MOB-003: `user` gets a new object reference on every silent token
   // refresh (see AuthProvider.authorizedFetch -> refreshSession), which
@@ -247,10 +261,8 @@ export default function WorkOrdersScreen() {
     setGeneral(emptyGeneral());
     setWorkOrder(null);
     setStep('general');
-    setTechnicianName(user?.full_name ?? '');
-    setClientName('');
-    setTechnicianSignature('');
-    setClientSignature('');
+    setSignatureFlowState(null);
+    setSignatureDrawing(false);
     setOpen(true);
   }
 
@@ -291,6 +303,13 @@ export default function WorkOrdersScreen() {
     setBusy(true);
     try {
       const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`);
+      const sameSignatureGroup = signatureFlowState?.rootWorkOrderId === detail.root_work_order_id;
+      setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
+        clientName: detail.contact_name ?? '',
+        rootWorkOrderId: detail.root_work_order_id,
+        technicianName: user?.full_name ?? '',
+      }));
+      if (!sameSignatureGroup) setSignatureDrawing(false);
       setWorkOrder(detail);
       setGeneral({
         reception_date: detail.reception_date,
@@ -306,9 +325,9 @@ export default function WorkOrdersScreen() {
         purchase_order: detail.purchase_order ?? '',
         notes: detail.notes ?? '',
       });
-      setTechnicianName(user?.full_name ?? '');
-      setClientName(detail.contact_name ?? '');
-      setStep(detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+      setStep((current) => sameSignatureGroup && current === 'signatures'
+        ? current
+        : detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
       setOpen(true);
     } catch (error) {
       Alert.alert('No fue posible abrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -340,7 +359,6 @@ export default function WorkOrdersScreen() {
         }),
       });
       setWorkOrder(detail);
-      setClientName(detail.contact_name ?? '');
       setStep('capture');
       publishLocalChange({
         event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id,
@@ -355,7 +373,16 @@ export default function WorkOrdersScreen() {
   async function selectRelated(id: number) {
     setBusy(true);
     try {
-      setWorkOrder(await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`));
+      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`);
+      if (signatureFlowState && detail.root_work_order_id !== signatureFlowState.rootWorkOrderId) {
+        setSignatureDrawing(false);
+      }
+      setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
+        clientName: detail.contact_name ?? '',
+        rootWorkOrderId: detail.root_work_order_id,
+        technicianName: user?.full_name ?? '',
+      }));
+      setWorkOrder(detail);
     } catch (error) {
       Alert.alert('No fue posible cambiar de OT', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -431,26 +458,39 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  async function applySignatures() {
-    if (!workOrder || !technicianName.trim() || !clientName.trim() || !technicianSignature || !clientSignature) return;
+  function openSignatureFlow() {
+    if (!workOrder) {
+      Alert.alert('No hay un grupo activo', 'Abre nuevamente la orden antes de capturar firmas.');
+      return;
+    }
+    setSignatureFlowState((current) => reconcileSignatureFlowState(current, {
+      clientName: workOrder.contact_name ?? '',
+      rootWorkOrderId: workOrder.root_work_order_id,
+      technicianName: user?.full_name ?? '',
+    }));
+    setStep('signatures');
+  }
+
+  async function applySignatures(payload: SignaturePayload, capturedContextId: number) {
+    if (signatureSubmitRef.current) throw new Error('Las firmas ya se están guardando.');
+    if (!workOrder || workOrder.root_work_order_id !== capturedContextId) {
+      setSignatureFlowState(null);
+      setSignatureDrawing(false);
+      throw new Error('El grupo activo cambió. Captura nuevamente las firmas.');
+    }
+    signatureSubmitRef.current = true;
     setBusy(true);
     const signedAt = new Date().toISOString();
     try {
-      const detail = await request<LabWorkOrder>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/signatures`,
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            technician: { signer_name: technicianName, signed_at: signedAt, version: 1, signature_data_url: technicianSignature },
-            client: { signer_name: clientName, signed_at: signedAt, version: 1, signature_data_url: clientSignature },
-          }),
-        },
-      );
+      const detail = await postLabGroupSignatures({ payload, request, signedAt, workOrder });
       setWorkOrder(detail);
+      setSignatureFlowState(null);
+      setSignatureDrawing(false);
       publishLocalChange({ event_type: 'work_order.signatures_updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
-      Alert.alert('No fue posible aplicar las firmas', error instanceof Error ? error.message : 'Intenta nuevamente');
+      throw new Error(error instanceof Error ? error.message : 'No fue posible aplicar las firmas. Intenta nuevamente.');
     } finally {
+      signatureSubmitRef.current = false;
       setBusy(false);
     }
   }
@@ -510,6 +550,8 @@ export default function WorkOrdersScreen() {
       if (result.kind === 'success' || result.kind === 'not_found') {
         setOpen(false);
         setWorkOrder(null);
+        setSignatureFlowState(null);
+        setSignatureDrawing(false);
         setEquipmentEditor(null);
         setTicketOpen(false);
         await refresh(true);
@@ -560,6 +602,10 @@ export default function WorkOrdersScreen() {
   }
 
   function closeFlow() {
+    if (signatureSubmitRef.current) {
+      Alert.alert('Guardado en curso', 'Espera a que termine el envío de las firmas.');
+      return;
+    }
     setOpen(false);
     setEquipmentEditor(null);
     refresh();
@@ -661,7 +707,7 @@ export default function WorkOrdersScreen() {
         <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modalScreen}>
           <View style={styles.modalHeader}>
             <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>Firma única para todo el grupo</Text></View>
-            <Pressable disabled={deleting} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
+            <Pressable disabled={deleting || signatureSubmitRef.current} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
           <KeyboardAvoidingView
@@ -670,9 +716,11 @@ export default function WorkOrdersScreen() {
           >
             <ScrollView
               automaticallyAdjustKeyboardInsets
-              style={styles.flex}
               contentContainerStyle={styles.modalContent}
               keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              scrollEnabled={!signatureDrawing}
+              style={styles.flex}
             >
               {step === 'general' && (
                 <>
@@ -743,28 +791,27 @@ export default function WorkOrdersScreen() {
                   {canSkipSignaturesAfterReopen(workOrder) ? (
                     <Pressable style={styles.primary} onPress={completeGroup}><Text style={styles.primaryText}>Cerrar orden</Text></Pressable>
                   ) : (
-                    <Pressable style={styles.primary} onPress={() => setStep('signatures')}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
+                    <Pressable style={styles.primary} onPress={openSignatureFlow}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
                   )}
                 </>
               )}
 
               {workOrder && step === 'signatures' && workOrder.status === 'draft' && (
-                <>
-                  <View style={styles.sectionIntro}>
-                    <Text style={styles.sectionEyebrow}>CIERRE DEL GRUPO</Text>
-                    <Text style={styles.sectionTitle}>Firmas del grupo</Text>
-                    <Text style={styles.sectionDescription}>Una sola sesión se aplicará a todos los PDFs relacionados.</Text>
+                signatureFlowState?.rootWorkOrderId === workOrder.root_work_order_id ? (
+                  <MobileSignatureFlow
+                    currentContextId={workOrder.root_work_order_id}
+                    key={signatureFlowState.rootWorkOrderId}
+                    onDrawingChange={setSignatureDrawing}
+                    onStateChange={setSignatureFlowState}
+                    onSubmit={applySignatures}
+                    state={signatureFlowState}
+                  />
+                ) : (
+                  <View style={styles.errorState}>
+                    <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto del grupo.</Text>
+                    <Pressable onPress={() => setStep('review')}><Text style={styles.retry}>Volver a revisión</Text></Pressable>
                   </View>
-                  <FormSection title="Técnico responsable">
-                    <Field label="Nombre del técnico" required value={technicianName} onChangeText={setTechnicianName} />
-                    <SignaturePad label="Firma del técnico" value={technicianSignature} onChange={setTechnicianSignature} />
-                  </FormSection>
-                  <FormSection title="Cliente que recibe">
-                    <Field label="Nombre del cliente" required value={clientName} onChangeText={setClientName} />
-                    <SignaturePad label="Firma del cliente" value={clientSignature} onChange={setClientSignature} />
-                  </FormSection>
-                  <Pressable disabled={!technicianSignature || !clientSignature || !technicianName || !clientName} style={styles.primary} onPress={applySignatures}><Text style={styles.primaryText}>Aplicar firmas a todo el grupo</Text></Pressable>
-                </>
+                )
               )}
 
               {workOrder && step === 'signatures' && workOrder.status === 'ready_for_signatures' && (
@@ -1150,9 +1197,12 @@ const styles = StyleSheet.create({
   },
 
   modalContent: {
+    alignSelf: 'center',
+    maxWidth: 820,
     paddingBottom: 72,
     paddingHorizontal: 20,
     paddingTop: 26,
+    width: '100%',
   },
 
   sectionIntro: {

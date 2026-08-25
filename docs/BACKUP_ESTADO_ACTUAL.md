@@ -81,7 +81,16 @@
   con un único ganador. La captura y el detalle de Tickets ya respetan safe
   area, agrupan los campos y ocultan
   teléfono/correo; el PDF separa Domicilio, C.P., Ciudad, Estado y orden de
-  compra sin `0` por ausencia. Falta aceptación física en iPhone/Expo Go.
+  compra sin `0` por ausencia. La firma móvil permite orientación dinámica,
+  secuencia Cliente → Técnico, strokes normalizados resistentes al resize,
+  ownership del gesto Android y contexto exclusivo por `root_work_order_id`.
+  El borrador elevado sobrevive refetch, objetos nuevos, rerender, reapertura
+  visual y navegación entre hermanas; una raíz distinta lo reemplaza por uno
+  vacío y volver al grupo previo no recupera su captura. No conecta el LAB al
+  ERP productivo. La guardia incorrecta sobre `signature_required` fue retirada:
+  una OT inicial `draft` lleva `false`, llega al POST y el backend decide; tap o
+  movimiento despreciable ya no cuenta como firma. Falta aceptación táctil
+  completa Android/iOS y una nueva build.
 - Notifications V1 está **TERMINADO TÉCNICAMENTE — EN REVISIÓN FÍSICA**:
   reutiliza `Notification`, registra `PushDevice`, persiste cinco eventos de
   Tickets con destinatarios por permiso/solicitante, entrega Expo posterior al
@@ -110,10 +119,12 @@
   `MYCV-MM-AA-XXXX` con `XXXX` anual desde `0001`, autenticación, versiones y liberación compartidas. La
   asociación por `ServiceOrderItem` conserva coexistencia con Calibración y
   rechaza alcances acreditado/trazable/vinculado. El concepto conserva un
-  Master genérico inicial; Equipment puede congelar el específico final antes
-  de Captura y guarda ambos, sus versiones y el historial en el snapshot JSON.
-  El retorno se identifica por identidad/fingerprint del XLSX real y no exige
-  conservar el nombre de la descarga. No se agregó esquema ni migración y no
+  Master genérico inicial dentro del bonche. Captura lo sustituye fuera del ERP
+  por el archivo técnico real y reingresa el ZIP; el backend asocia
+  certificado/equipo por identidad fuerte, reconoce de forma única un Master
+  activo registrado estructuralmente como Verificación y congela automáticamente
+  documento/versión final con historial, actor y origen. Nombre, código y
+  descripción no deciden la identidad. No se agregó esquema ni migración y no
   se modificó la base local.
 - La conciliación **TD-027** deja el capability gate **VERDE** en 29/0 y el
   bootstrap cubre 83/83 permisos HTTP. Las diferencias gobernadas incluyen
@@ -259,8 +270,10 @@ Sobre ellas se agregó `f27f8a90b1c3_reconcile_schema_integrity.py`, nuevo head
 | Notifications backend específica | 4 passed; incluye éxito, `DeviceNotRegistered`, proveedor caído y persistencia del dominio/notificación |
 | Migración LAB PostgreSQL temporal | `base → c6e8a1b4d2f9`; current correcto; `alembic check` sin operaciones nuevas; asignador concurrente `[6400, 6401]`; carrera de OT adicional: una `6403` y un rechazo `409`; base temporal eliminada |
 | `myc-mobile` TypeScript/lint | correcto / correcto; sin errores ni warnings |
+| `myc-mobile` firma LAB y regresión completa | 62 passed: Notifications 8, Realtime 7, Communications 9, eliminación 6, reapertura 5, firma/contexto/handler 23 y push policy 4; incluye frontera raíz, tap inválido, delegación de `applySignatures` y POST con `signature_required=false`; TypeScript/lint verdes; Expo config conserva `orientation=default` |
+| Cadena backend LAB de firma | prueba focal existente `1 passed`; diagnóstico efímero: `draft`, `signature_required=false`, sin sesión → POST `/signatures` 200 → `ready_for_signatures`, sesión presente → cierre/PDF correcto. No modificó base local ni imprimió firmas |
 | `myc-mobile` eliminación OT LAB | 6 passed; capacidad exacta, aislamiento productivo, cancelar, endpoint LAB, `204/403/404/409`, red, doble envío y contrato de nombres largos |
-| `myc-mobile` bundle iOS Expo 54 | correcto; 1,156 módulos, bundle Hermes de 2.95 MB y assets exportados fuera del workspace |
+| `myc-mobile` bundle iOS Expo 54 | correcto; 1,160 módulos, bundle Hermes de 2.97 MB y assets exportados a directorio temporal fuera del workspace |
 | `myc-mobile` política de refresco | 4 passed; eventos, foreground, deduplicación y throttle/mutación local |
 | `myc-mobile` Communications/realtime | 7 passed; reconciliación/failed, comandos, backoff, resync, refresh por 4401, background/logout y cierres |
 | Realtime backend Etapa A+A–I | 14 passed; auth/rechazos, identidad, ownership/IDOR, aislamiento, typing, persistencia/evento, sync, recibos, menciones y multi-dispositivo |
@@ -356,8 +369,9 @@ seguridad e inventario, se conserva en
     background/foreground y logout (TD-042).
 11. Ejecutar el checklist browser/dispositivo/Portal de ETS Venta, incluidas
     entregas parciales, evidencia, garantía y perfil técnico (TD-043).
-12. Registrar el Master institucional de Verificación y ejecutar un E2E
-    autenticado con ETS mixto Calibración + Verificación (TD-049).
+12. Registrar el Master institucional de Verificación con identidad estructurada
+    y ejecutar un E2E autenticado con ETS mixto Calibración + Verificación,
+    descarga, sustitución externa y retorno del mismo ZIP (TD-049).
 13. Diseñar en etapas finales Auditoría Anual y su integración con Tickets,
     Resoluciones, Activity, Documentos y permisos. Un cierre será inmutable y
     cualquier cambio de ciclo distinguirá RESET DE CONTADORES de BORRADO DE
@@ -365,13 +379,19 @@ seguridad e inventario, se conserva en
 
 ## Validaciones del corte 2026-08-24
 
-- Backend metrológico ampliado: `88 passed`, `19 subtests passed`; cubrió
-  Verificación, regresión de Calibración, Captura/Calidad, Master/fingerprint,
-  autenticación, liberación, Hojas de Campo, contexto de equipo y scopes.
-- El caso nuevo de retorno usó un XLSX real con nombre distinto y comprobó
-  asociación al certificado por identidad/fingerprint. No se dispuso de un
-  Master institucional productivo ni se simuló su aceptación física.
-- Frontend relevante con `node --test`: `10 passed`.
+- Backend Captura/Calidad focal: `55 passed`, `19 subtests passed`; cubrió
+  Verificación, Captura/Calidad, Master/fingerprint, autenticación desde Master,
+  separación de etapas, contexto de equipo y scopes.
+- Backend identidad/verticales: `66 passed`; cubrió snapshots operacionales,
+  Servicios Compuestos, sustitución explícita de concepto, Venta, Mantenimiento,
+  ETS evolucionado y Verificación, sin reinterpretar históricos.
+- El caso nuevo de retorno sustituye el Master genérico dentro de un ZIP,
+  comprueba asociación al certificado por identidad, resolución única del
+  Master específico registrado por fingerprint y congelación automática del
+  snapshot final. No se dispuso de un Master institucional productivo ni se
+  simuló su aceptación física.
+- Frontend relevante con `node --test`: `6 passed` para independencia
+  Tipo/Categoría y contrato de Verificación/Captura.
 - `npm run build`: correcto; Vite transformó 1746 módulos y conservó el aviso
   no bloqueante del bundle mayor a 500 kB.
 - No hubo cambio de esquema, migración ni datos locales; por ello no se
@@ -405,3 +425,9 @@ La identidad operativa, ETS Venta y ETS Mantenimiento elevaron el head del
 código a `d1f3a5c7e9b2`; los ciclos se validaron en PostgreSQL temporal sin
 tocar la base compartida ni el respaldo oficial. Ambos verticales quedan
 **EN REVISIÓN**.
+El ajuste de Verificación sincronizó flujo, alcance, reglas, ADR-078,
+observaciones, deuda, estado, arquitectura de identidad, contrato de Captura e
+inventario: el Master específico deja de requerir selección manual y se
+resuelve al retornar el bonche mediante identidad estructurada y fingerprint.
+El vertical permanece **EN REVISIÓN** hasta probarlo con el Master institucional
+y un E2E autenticado físico/browser.

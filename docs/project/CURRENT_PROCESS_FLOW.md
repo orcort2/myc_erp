@@ -355,8 +355,12 @@ La partida congelada gobierna cada equipo: Calibración resuelve su
 `calibration_scope`; Verificación exige alcance nulo, reserva
 `MYCV-MM-AA-XXXX` con consecutivo anual desde `0001` y titula el documento
 `Certificado de Verificación`. Su partida puede congelar un Master genérico
-inicial y el equipo sustituirlo, antes de identificar Captura, por el Master
-específico final; el snapshot JSON conserva ambas identidades, versiones e
+inicial. Captura descarga el bonche con Hojas de Campo terminadas y esa
+referencia, sustituye fuera del ERP el archivo por el Master técnico real y
+reingresa el mismo ZIP. El backend asocia certificado/equipo por identidad
+fuerte, reconoce de forma única el Master registrado de Verificación por
+fingerprint y congela automáticamente documento/versión final antes de Calidad;
+el snapshot JSON conserva ambas identidades, versiones, actor, origen e
 historial sin tabla paralela. Las
 acciones se filtran por equipo/partida aun cuando ambos procesos conviven en un
 ETS. No se calcula automáticamente Cumple/No cumple y Ajuste no forma parte del
@@ -450,7 +454,13 @@ Login interno técnico
 → al llenar 10: backend crea OT adicional y hereda generales
 → navegación por todas las OT del mismo root_work_order_id
 → revisión del grupo completo
-→ firma técnico + cliente una sola vez
+→ botón LAB existente “Continuar a firmas”
+→ firma cliente (nombre trim + stroke real)
+→ transición local
+→ firma técnico (nombre trim + stroke real)
+→ validación final de root_work_order_id + lock anti-submit
+→ POST LAB único aunque signature_required=false en una OT inicial
+→ backend valida estado/equipos/sesión; error exacto conserva captura del grupo
 → sesión compartida bloquea inmediatamente todo el grupo
 → finalizar genera y congela un PDF por OT
 → iOS abre impresión o compartir para el folio seleccionado
@@ -458,6 +468,18 @@ Login interno técnico
 → backend repara raíz/cadena y conserva recursos compartidos
 → app cierra detalle y vuelve a consultar el listado LAB
 ```
+
+Dentro del canvas, Pointer Events y captura de puntero conservan el stroke y el
+scroll nativo se pausa sólo mientras el dedo dibuja; fuera del canvas vuelve a
+operar normalmente. Los puntos se guardan normalizados y se repintan con el DPR
+actual, por lo que una rotación no borra la firma. Refetch, objetos nuevos,
+rerender, cierre/reapertura visual y selección de una OT hermana conservan la
+captura si `root_work_order_id` no cambia. Una raíz distinta limpia nombres,
+strokes, `hasDrawing`, PNG y paso, crea el contexto vacío del grupo nuevo y no
+mantiene un caché que permita recuperar después el borrador anterior.
+Un tap no habilita avance: `pointerup` elimina strokes sin dos puntos/distancia
+`0.01`, emite la captura final y TypeScript repite esa validación. El botón sólo
+se habilita después de recibir `postMessage` con un trazo significativo.
 
 La captura móvil muestra Cliente, Domicilio, Atención, C.P., Ciudad, Estado,
 Orden de compra/cotización, Observaciones y fechas en grupos desplazables que

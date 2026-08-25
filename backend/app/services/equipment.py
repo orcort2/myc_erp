@@ -311,16 +311,17 @@ def freeze_certificate_operational_context(
     return expected_master_id
 
 
-def _freeze_selected_certificate_master(
+def freeze_selected_certificate_master(
     db: Session,
     equipment: Equipment,
     document_id: int,
     *,
     user_id: int | None,
+    selection_source: str = "equipment_edit",
 ) -> None:
     previous_document_id = equipment.certificate_master_document_id
     previous_version_id = equipment.certificate_master_version_id
-    if previous_document_id == document_id:
+    if previous_document_id == document_id and selection_source == "equipment_edit":
         return
     identified_capture_exists = db.scalar(
         select(CertificateCaptureFile.id)
@@ -347,6 +348,7 @@ def _freeze_selected_certificate_master(
             "selected_version_id": equipment.certificate_master_version_id,
             "selected_at": datetime.now(timezone.utc).isoformat(),
             "selected_by_id": user_id,
+            "selection_source": selection_source,
         }
     )
     context["schema_version"] = 2
@@ -358,6 +360,22 @@ def _freeze_selected_certificate_master(
     context["final_certificate_master_version_id"] = equipment.certificate_master_version_id
     context["certificate_master_selection_history"] = history
     equipment.certificate_operational_context_snapshot = context
+    write_audit_log(
+        db,
+        action="equipment.certificate_master_selected",
+        entity="equipment",
+        entity_id=equipment.id,
+        user_id=user_id,
+        previous_values={
+            "certificate_master_document_id": previous_document_id,
+            "certificate_master_version_id": previous_version_id,
+        },
+        new_values={
+            "certificate_master_document_id": equipment.certificate_master_document_id,
+            "certificate_master_version_id": equipment.certificate_master_version_id,
+            "selection_source": selection_source,
+        },
+    )
 
 
 def create_equipment(
@@ -546,7 +564,7 @@ def update_equipment(
         setattr(equipment, key, value)
 
     if selected_master_id is not None:
-        _freeze_selected_certificate_master(
+        freeze_selected_certificate_master(
             db,
             equipment,
             selected_master_id,
