@@ -56,12 +56,15 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   equipo/OT obligatorios, alcance de acreditación nulo, Certificado de
   Verificación y folio anual `MYCV-MM-AA-XXXX` desde `0001`. Calibración y Verificación pueden
   coexistir en el mismo ETS mediante asociación explícita de cada equipo a su
-  `ServiceOrderItem`. El concepto puede aportar un Master genérico inicial; el
+  `ServiceOrderItem`. Todo concepto nuevo o actualizado de Verificación exige
+  un Master genérico inicial activo, vigente y con XLSX disponible; el
   bonche lo entrega junto con las Hojas de Campo terminadas. Captura lo sustituye
   fuera del ERP por el archivo técnico real y, al reingresar el ZIP, el backend
   asocia certificado/equipo por identidad fuerte e identifica de forma única el
   Master registrado de Verificación por fingerprint, congelando automáticamente
   la versión final. Ajuste permanece fuera de alcance.
+- Aceptación de Cotización y materialización idempotente del ETS en una sola
+  transacción backend; Cotizaciones sólo permite abrir el ETS ya creado.
 - Control Documental V1 y Plantillas Maestras de Certificado.
 - Facturación, resumen contextual dentro del ETS, Workbench compartido, registro e historial de pagos parciales/totales antes o después del timbrado, comprobante PDF, cuentas por cobrar, cobranza administrativa, Facturama Sandbox, XML y PDF institucional.
 - Catálogos SAT locales versionados.

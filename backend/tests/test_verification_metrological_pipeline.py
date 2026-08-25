@@ -182,6 +182,40 @@ def test_verification_only_ets_creates_its_own_equipment_and_certificate(db):
     assert certificate.title == "Certificado de Verificación"
 
 
+def test_calibration_only_ets_auto_assigns_its_frozen_item(db):
+    actor = User(
+        username="calibration-only",
+        email="calibration-only@example.test",
+        full_name="Calibration Only",
+        hashed_password="unused",
+    )
+    client = Client(legal_name="Cliente sólo Calibración")
+    db.add_all([actor, client])
+    db.commit()
+    order = create_service_order(
+        db,
+        ServiceOrderCreate(
+            client_id=client.id,
+            requires_payment=False,
+            items=[ServiceOrderItemCreate(
+                service_name="Calibración única",
+                operational_category="calibration",
+                calibration_scope="traceable",
+                quantity=1,
+            )],
+        ),
+        user_id=actor.id,
+    )
+
+    equipment = create_equipment(
+        db,
+        EquipmentCreate(service_order_id=order.id, name="Termómetro patrón"),
+        user_id=actor.id,
+    )
+    assert equipment.service_order_item_id == order.items[0].id
+    assert equipment.calibration_scope == "traceable"
+
+
 def test_mixed_ets_requires_exact_item_and_verification_rejects_calibration_scope(db, mixed_order):
     actor, order, items = mixed_order
     with pytest.raises(HTTPException, match="Selecciona la partida metrológica"):

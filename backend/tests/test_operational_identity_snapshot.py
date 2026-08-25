@@ -1,7 +1,10 @@
 from decimal import Decimal
+from datetime import date, timedelta
 from pathlib import Path
 import subprocess
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -9,6 +12,7 @@ import app.models  # noqa: F401
 from app.core.db import Base
 from app.models.catalog_item import CatalogItem, CatalogItemComponent
 from app.models.client import Client
+from app.models.controlled_document import ControlledDocument, ControlledDocumentVersion
 from app.models.quotation import Quotation, QuotationItem
 from app.models.service_order import ServiceOrder, ServiceOrderItem, ServiceWorkOrder
 from app.models.user import User
@@ -181,13 +185,42 @@ def test_catalog_type_and_operational_category_are_independent():
         engine.dispose()
 
 
-def test_catalog_edit_preserves_explicit_operational_category():
+def _certificate_master(db, path: Path, *, code: str, status="active", expires_on=None):
+    document = ControlledDocument(
+        code=code,
+        name=code,
+        document_type="certificate_master",
+        status=status,
+    )
+    db.add(document)
+    db.flush()
+    db.add(ControlledDocumentVersion(
+        document_id=document.id,
+        revision="1",
+        file_path=str(path),
+        original_filename=path.name,
+        status="active",
+        expires_on=expires_on,
+    ))
+    db.flush()
+    return document
+
+
+def test_catalog_edit_preserves_explicit_operational_category(tmp_path, monkeypatch):
     engine, db, _, _ = _context()
     try:
+        monkeypatch.setattr(
+            "app.services.catalog_items.resolve_storage_path",
+            lambda value: Path(value) if value else None,
+        )
+        master_path = tmp_path / "verification-master.xlsx"
+        master_path.write_bytes(b"xlsx")
+        master = _certificate_master(db, master_path, code="MASTER-VER-EDIT")
         item = create_catalog_item(db, CatalogItemCreate(
             item_type="product", service_kind="simple", commodity="verification",
             category="Verificacion", operational_category="verification",
             name="Producto verificable", origin_currency="MXN",
+            expected_certificate_master_id=master.id,
         ))
         edited = update_catalog_item(
             db,
@@ -196,6 +229,77 @@ def test_catalog_edit_preserves_explicit_operational_category():
         )
         assert edited.item_type == "product"
         assert edited.operational_category == "verification"
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_new_verification_requires_valid_active_xlsx_master(tmp_path, monkeypatch):
+    engine, db, _, _ = _context()
+    try:
+        monkeypatch.setattr(
+            "app.services.catalog_items.resolve_storage_path",
+            lambda value: Path(value) if value else None,
+        )
+        payload = dict(
+            item_type="service",
+            service_kind="simple",
+            commodity="verification",
+            category="Verificacion",
+            operational_category="verification",
+            name="Verificación institucional",
+            origin_currency="MXN",
+        )
+        with pytest.raises(HTTPException, match="requiere un Master genérico"):
+            create_catalog_item(db, CatalogItemCreate(**payload))
+
+        valid_path = tmp_path / "valid.xlsx"
+        valid_path.write_bytes(b"xlsx")
+        inactive = _certificate_master(
+            db, valid_path, code="MASTER-INACTIVE", status="inactive"
+        )
+        with pytest.raises(HTTPException, match="activo"):
+            create_catalog_item(
+                db,
+                CatalogItemCreate(**payload, expected_certificate_master_id=inactive.id),
+            )
+
+        expired = _certificate_master(
+            db,
+            valid_path,
+            code="MASTER-EXPIRED",
+            expires_on=date.today() - timedelta(days=1),
+        )
+        with pytest.raises(HTTPException, match="caducado"):
+            create_catalog_item(
+                db,
+                CatalogItemCreate(**payload, expected_certificate_master_id=expired.id),
+            )
+
+        missing_xlsx = _certificate_master(
+            db, tmp_path / "missing.xlsx", code="MASTER-MISSING"
+        )
+        with pytest.raises(HTTPException, match="XLSX disponible"):
+            create_catalog_item(
+                db,
+                CatalogItemCreate(**payload, expected_certificate_master_id=missing_xlsx.id),
+            )
+    finally:
+        db.close()
+        engine.dispose()
+
+
+def test_legacy_verification_without_master_remains_readable_but_cannot_be_updated():
+    engine, db, _, _ = _context()
+    try:
+        legacy = _service("Verificación legacy", "Verificacion", "verification")
+        db.add(legacy)
+        db.commit()
+        assert legacy.expected_certificate_master_id is None
+        with pytest.raises(HTTPException, match="requiere un Master genérico"):
+            update_catalog_item(db, legacy.id, CatalogItemUpdate(name="Edición legacy"))
+        db.rollback()
+        assert db.get(CatalogItem, legacy.id).name == "Verificación legacy"
     finally:
         db.close()
         engine.dispose()

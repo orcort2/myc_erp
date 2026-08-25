@@ -246,7 +246,7 @@ y no hubo build EAS ni despliegue.
 ## Corte 2026-08-18 — vertical ETS Venta
 
 El vertical **ETS Venta** está **TERMINADO TÉCNICAMENTE — EN REVISIÓN**. La
-aceptación de una cotización con Venta crea una sola vez el ETS y materializa,
+aceptación de cualquier cotización crea una sola vez el ETS y materializa,
 desde el snapshot, partidas por cantidad o unidades individualizadas. El
 asesor controla arribo, discrepancias, garantía y entregas parciales por
 recolección, paquetería o técnico; calibración incluida continúa sobre la misma

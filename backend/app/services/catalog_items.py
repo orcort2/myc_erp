@@ -291,10 +291,6 @@ def _ensure_certificate_master(db: Session, document_id: int | None) -> None:
     document = db.get(ControlledDocument, document_id)
     if document is None or document.document_type != "certificate_master" or document.status != "active":
         raise HTTPException(status_code=422, detail="La plantilla esperada debe ser un Master de Certificado activo")
-    active_version = db.scalar(select(ControlledDocumentVersion.id).where(
-        ControlledDocumentVersion.document_id == document_id,
-        ControlledDocumentVersion.status == "active",
-    ))
     version = db.scalar(select(ControlledDocumentVersion).where(
         ControlledDocumentVersion.document_id == document_id,
         ControlledDocumentVersion.status == "active",
@@ -306,6 +302,16 @@ def _ensure_certificate_master(db: Session, document_id: int | None) -> None:
     path = resolve_storage_path(version.file_path)
     if not version.file_path or not path or not path.is_file() or path.suffix.lower() != ".xlsx":
         raise HTTPException(status_code=422, detail="El Master de Certificado no tiene un archivo XLSX disponible")
+
+
+def _ensure_operational_certificate_master(db: Session, values: dict) -> None:
+    document_id = values.get("expected_certificate_master_id")
+    if values.get("operational_category") == "verification" and document_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Verificación requiere un Master genérico de Verificación activo",
+        )
+    _ensure_certificate_master(db, document_id)
 
 
 def list_catalog_items(
@@ -584,7 +590,7 @@ def create_catalog_item(
         service_kind=values["service_kind"],
         components=components,
     )
-    _ensure_certificate_master(db, values.get("expected_certificate_master_id"))
+    _ensure_operational_certificate_master(db, values)
     values["internal_key"] = _generate_internal_key(
         db, values["item_type"], values["category"], values["commodity"]
     )
@@ -672,7 +678,7 @@ def update_catalog_item(
     prepared = _prepare_values(merged, recalculate_price=should_recalculate)
     _ensure_linked_company(db, prepared)
     _ensure_included_calibration(db, prepared)
-    _ensure_certificate_master(db, prepared.get("expected_certificate_master_id"))
+    _ensure_operational_certificate_master(db, prepared)
     if prepared["service_kind"] == "simple":
         effective_components = []
     elif components_provided:

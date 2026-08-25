@@ -4,7 +4,7 @@
 >
 > Autoridad: Alta para reglas funcionales confirmadas
 >
-> Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
+> Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y bitácoras cronológicas retiradas conservadas por Git
 >
 > Corte verificado: 2026-08-25
 
@@ -94,6 +94,8 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-063 | Comunicaciones / Push | Realtime y Expo Push son transporte best-effort, nunca autoridad. La notificación se persiste con vista previa sin cuerpo del mensaje, una falla de entrega no revierte dominio y todo deep link vuelve a consultar REST. | Arquitectura Communications, Notifications V1 y provider móvil | 2026-08-17 |
 | BR-064 | ETS / Verificación | Verificación reutiliza OT, Equipment, Hoja de Campo, Captura, Calidad, Certificados, autenticación, versiones y liberación. Usa `operational_category=verification`, `calibration_scope=null` y certificado `verification`; `Equipment.service_order_item_id` impide confundirla con Calibración en un ETS mixto. Cada OT conserva el máximo común de 10 equipos. | Servicios de Equipment/Certificados/Captura, frontend ETS y suite de Verificación | 2026-08-24 |
 | BR-065 | Verificación / Masters | El Master del concepto de Verificación es una referencia genérica inicial dentro del bonche. Sólo mientras existe inicial y no existe final, el backend puede resolver una coincidencia única por fingerprint contra Masters activos registrados con `service_type=verification` y congelar documento/versión final, actor, origen e historial. Desde entonces ese final es autoridad histórica: cargas y llamadas idempotentes usan el mismo snapshot sin nueva resolución, historial ni auditoría; A→B se rechaza aunque no exista evidencia identificada. Nombre, código, descripción, revisiones y registro institucional vigentes no reinterpretan el equipo. | Equipment, documentos controlados, Captura y Calidad | 2026-08-25 |
+| BR-066 | Cotizaciones / ETS | La transición a `accepted` y la materialización del ETS son una sola operación backend transaccional e idempotente. El lock de Cotización y la búsqueda por `quotation_id` garantizan un solo ETS activo; el frontend no ejecuta una creación adicional. | `quotations.py`, `service_orders.py`, schema de Cotización y suite Venta/Cotizaciones | 2026-08-25 |
+| BR-067 | Catálogo / Verificación | Crear o actualizar Verificación exige Master genérico `certificate_master` activo, versión activa no caducada y XLSX disponible. El legacy nulo es legible, pero no actualizable ni materializable en un ETS nuevo; reparar requiere sustitución explícita para no reinterpretar snapshots. | `catalog_items.py`, `service_orders.py`, Catálogo y suite de identidad operacional | 2026-08-25 |
 
 ## Reglas históricas no vigentes como obligación actual
 

@@ -297,6 +297,8 @@ class QuotationRead(QuotationBase):
 
     updated_at: datetime
 
+    service_order_id: int | None = None
+
     items: list[QuotationItemRead] = Field(
         default_factory=list,
     )

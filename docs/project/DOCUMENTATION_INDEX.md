@@ -172,13 +172,9 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 
 ## Histórico y archivo
 
-### Estado operativo y bitácora histórica
+### Estado operativo
 
 - [`../BACKUP_ESTADO_ACTUAL.md`](../BACKUP_ESTADO_ACTUAL.md): corte operativo vigente requerido por `AGENTS.md`; sólo resume estado verificable, migraciones, validaciones y pendientes.
-- `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`: referencia
-  histórica sin autoridad cuyo archivo no está presente en el workspace del
-  corte 2026-08-10; queda pendiente recuperar o retirar formalmente la
-  referencia, sin reconstruir contenido inexistente.
 
 ### Arquitectura histórica
 
@@ -211,6 +207,12 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 | `LABORATORIO_HOJAS_CAMPO.md` + `IMPLEMENTACION_23_HOJAS_CAMPO_LAB.md` | [`../archive/field-sheets/FIELD_SHEET_LAB_CONSOLIDATED.md`](../archive/field-sheets/FIELD_SHEET_LAB_CONSOLIDATED.md) | Consulta consolidada; fuentes íntegras preservadas en `sources/`. |
 | V2, V3, flujo general, bitácora y auditoría integral | Los ocho documentos canónicos de `project/` | Se extrajo sólo información vigente; los orígenes conservaron su contenido. |
 
+La bitácora manual `BACKUP_ESTADO_ACTUAL (1).md` y la extracción estática
+`CATALOGO_PERMISOS_ERP_MYC_2026-08-04.md` se retiraron el 2026-08-25: no eran
+autoridad, no tenían referencias activas y su trazabilidad permanece en Git.
+El snapshot operativo y los contratos institucionales vigentes conservan la
+información necesaria sin mantener copias manuales.
+
 ## Reglas para futuras consultas y auditorías
 
 1. Empezar siempre aquí.
@@ -218,7 +220,10 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 3. No convertir un límite histórico, diseño futuro o propuesta en pendiente vigente si no aparece en `OBSERVATIONS_REGISTER.md`, `TECHNICAL_DEBT.md` o `CURRENT_SCOPE.md`.
 4. No declarar un módulo sellado desde un cierre técnico; sólo `PROJECT_STATUS.md` puede hacerlo.
 5. Toda nueva auditoría debe quedar en `audits/`, incluir fecha y declarar que es una fotografía. La carpeta `auditorias/` se reconoce sólo para `AUDITORIA_MATRIZ_EXCEPCIONES_ERP_MYC.md`, porque su ruta fue un entregable explícito; no crea una segunda jerarquía ni autoriza nuevos documentos allí por defecto.
-6. Todo documento sustituido debe moverse a `archive/` o conservar clasificación histórica, sin borrar su contenido.
+6. Un documento sustituido se mueve a `archive/` cuando conserva evidencia
+   única; puede eliminarse cuando no contiene información única, no es una
+   instrucción operativa, la autoridad vigente está identificada y Git preserva
+   la trazabilidad.
 7. Toda contradicción nueva debe resolverse actualizando este índice y la relación `prevalece/reemplazado por` de ambos documentos.
 
 ## Mantenimiento documental obligatorio

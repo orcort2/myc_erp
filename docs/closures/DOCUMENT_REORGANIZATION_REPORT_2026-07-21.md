@@ -8,7 +8,11 @@
 >
 > Entrada vigente: `../project/DOCUMENTATION_INDEX.md`
 
-> Actualización posterior: la gobernanza integrada al desarrollo movió la bitácora histórica de `BACKUP_ESTADO_ACTUAL.md` a `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md` y dejó en la raíz un corte operativo vigente. Para el árbol actual prevalece `DOCUMENTATION_INDEX.md`.
+> Actualización posterior: la gobernanza integrada al desarrollo separó la
+> bitácora histórica de `BACKUP_ESTADO_ACTUAL.md` y dejó en la raíz un corte
+> operativo vigente. La copia cronológica se retiró finalmente el 2026-08-25
+> por redundante; Git conserva su trazabilidad. Para el árbol actual prevalece
+> `DOCUMENTATION_INDEX.md`.
 
 # Reporte de reorganización documental
 
@@ -46,7 +50,8 @@ No se eliminó contenido histórico. Los documentos sustituidos se movieron a `a
 
 ## Documentos archivados e históricos
 
-1. `docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md` — bitácora cronológica íntegra sustituida por el corte operativo raíz.
+1. Bitácora cronológica íntegra — sustituida por el corte operativo raíz y
+   retirada el 2026-08-25; trazabilidad preservada en Git.
 2. `docs/archive/architecture/SISTEMA_ERP_MYC_ESPECIFICACION_V2.md`
 3. `docs/archive/architecture/SISTEMA_ERP_MYC_V3.md`
 4. `docs/archive/architecture/base-datos-mvp.md`
@@ -94,7 +99,7 @@ MDE quedó separado de arquitectura vigente y expresamente excluido como fuente 
 
 | Documento que dejó de ser autoridad | Reemplazo autorizado |
 | --- | --- |
-| `docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md` para avance y pendientes | `docs/project/PROJECT_STATUS.md`, `OBSERVATIONS_REGISTER.md` y `TECHNICAL_DEBT.md`; el archivo raíz sólo resume el estado operativo |
+| Bitácora cronológica retirada para avance y pendientes | `docs/project/PROJECT_STATUS.md`, `OBSERVATIONS_REGISTER.md` y `TECHNICAL_DEBT.md`; el archivo raíz sólo resume el estado operativo |
 | `SISTEMA_ERP_MYC_ESPECIFICACION_V2.md` | `CURRENT_SCOPE.md`, `CURRENT_PROCESS_FLOW.md`, `BUSINESS_RULES.md` y `DECISIONS.md` |
 | `SISTEMA_ERP_MYC_V3.md` | Los canónicos de `docs/project/`; sus decisiones ratificadas quedaron en `DECISIONS.md` |
 | `base-datos-mvp.md` | Modelos/migraciones vigentes y el estado consolidado en `PROJECT_STATUS.md` |
@@ -110,7 +115,11 @@ MDE quedó separado de arquitectura vigente y expresamente excluido como fuente 
 
 ### 1. “Estado actual” mezclado con cronología
 
-`BACKUP_ESTADO_ACTUAL.md` acumulaba cortes incompatibles y declaraciones antiguas de sellado. Su contenido cronológico se preservó en `archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`; el archivo raíz contiene ahora únicamente el corte operativo vigente. `PROJECT_STATUS.md` continúa siendo la única autoridad de avance y sólo Control Documental V1 permanece sellado.
+`BACKUP_ESTADO_ACTUAL.md` acumulaba cortes incompatibles y declaraciones
+antiguas de sellado. El archivo raíz contiene ahora únicamente el corte
+operativo vigente; la copia cronológica se retiró el 2026-08-25 y permanece en
+Git. `PROJECT_STATUS.md` continúa siendo la única autoridad de avance y sólo
+Control Documental V1 permanece sellado.
 
 ### 2. Arquitectura “congelada” que ya no representa el sistema
 
@@ -217,7 +226,7 @@ docs/
 │   └── DOCUMENT_REORGANIZATION_REPORT_2026-07-21.md
 └── archive/
     ├── project/
-    │   └── BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md
+    │   └── (bitácora cronológica retirada el 2026-08-25)
     ├── architecture/
     │   ├── SISTEMA_ERP_MYC_ESPECIFICACION_V2.md
     │   ├── SISTEMA_ERP_MYC_V3.md

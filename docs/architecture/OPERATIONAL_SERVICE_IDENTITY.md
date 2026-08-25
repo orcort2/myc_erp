@@ -37,6 +37,14 @@ Una llamada al mismo documento final es idempotente; intentar A→B responde
 conflicto aunque todavía no exista evidencia identificada. El nombre, código y
 descripción documental no deciden la identidad.
 
+Un `CatalogItem` nuevo o actualizado con `operational_category=verification`
+debe declarar ese Master genérico. El backend exige documento
+`certificate_master` activo, versión activa no caducada y archivo XLSX
+disponible. Los conceptos históricos con valor nulo siguen siendo legibles,
+pero no pueden actualizarse ni materializar un ETS nuevo hasta que el concepto
+y la partida se sustituyan explícitamente; el snapshot histórico nunca se
+rellena desde el catálogo vigente.
+
 Todo concepto nuevo debe enviar `operational_category` explícita. El formulario presenta una sola lista operacional, independiente de Tipo; esa selección gobierna también la aparición de la configuración Venta ya existente. El backend valida correspondencia exacta entre la etiqueta estructurada y la clave canónica, pero nunca sustituye la clave a partir de `item_type`, nombre o descripción.
 
 `general_service` es especial: sólo ese origen habilita `ServiceUnit.evolution_enabled` e inicia en diagnóstico. Una categoría conocida nunca se degrada a Servicio General por falta de coincidencia textual.
@@ -48,6 +56,12 @@ Al seleccionar o sustituir explícitamente un concepto del catálogo, la cotizac
 Editar otros campos o reenviar el mismo `catalog_item_id` no reconstruye el snapshot. Cambiar explícitamente a otro concepto sí crea configuración desde ese nuevo catálogo. Al crear el ETS, `ServiceOrderItem` consume primero el snapshot; sólo registros legacy sin dato congelado usan el adaptador estructurado de compatibilidad.
 
 Servicios Compuestos congelan la identidad de cada hoja dentro de `operational_items`. La expansión continúa ocurriendo una sola vez al crear el ETS y Facturación conserva el padre comercial.
+
+La transición institucional `accepted` de Cotización y la materialización del
+ETS forman una sola transacción backend. La fila de Cotización se bloquea y la
+creación por `quotation_id` es idempotente; un retry o una cotización ya
+materializada devuelve el mismo ETS activo. El frontend no crea el ETS: sólo
+presenta `service_order_id` y permite abrirlo.
 
 ## Compatibilidad
 

@@ -270,7 +270,7 @@ def test_accepting_sale_quote_creates_single_sale_ets_and_audits(ctx):
     db, _, advisor, _, client = ctx
     catalog = _catalog(db, "Venta automática")
     quote = _quotation(db, client, advisor, catalog, folio="COT-SALE-AUTO")
-    change_quotation_status(db, quote.id, "accepted", QuotationStatusChange(comment="Aprobada"), user_id=advisor.id)
+    accepted = change_quotation_status(db, quote.id, "accepted", QuotationStatusChange(comment="Aprobada"), user_id=advisor.id)
     orders = list(db.scalars(select(ServiceOrder).where(ServiceOrder.quotation_id == quote.id)).all())
     assert len(orders) == 1
     assert db.scalar(select(SaleOrderItem.id).where(SaleOrderItem.service_order_id == orders[0].id)) is not None
@@ -278,6 +278,97 @@ def test_accepting_sale_quote_creates_single_sale_ets_and_audits(ctx):
                                                  advisor_id=advisor.id), user_id=advisor.id)
     assert db.query(ServiceOrder).filter(ServiceOrder.quotation_id == quote.id).count() == 1
     assert db.scalar(select(AuditLog.id).where(AuditLog.action == "sale.execution_initialized")) is not None
+    assert accepted.service_order_id == orders[0].id
+
+    retried = change_quotation_status(
+        db, quote.id, "accepted", QuotationStatusChange(comment="Retry"), user_id=advisor.id
+    )
+    assert retried.service_order_id == orders[0].id
+    assert db.query(ServiceOrder).filter(ServiceOrder.quotation_id == quote.id).count() == 1
+
+
+def test_accepting_mixed_quote_materializes_every_frozen_item(ctx):
+    db, _, advisor, _, client = ctx
+    sale = _catalog(db, "Venta mixta automática")
+    calibration = _calibration(db)
+    quote = _quotation(db, client, advisor, sale, folio="COT-MIX-AUTO")
+    quote.items.append(QuotationItem(
+        catalog_item_id=calibration.id,
+        service_name=calibration.name,
+        operational_category="calibration",
+        commodity="calibration",
+        quantity=2,
+        unit_price=Decimal("50"),
+        discount_percent=Decimal("0"),
+        tax_rate=Decimal("16"),
+        tax_total=Decimal("16"),
+        total=Decimal("100"),
+        operational_snapshot=_build_operational_snapshot(db, calibration),
+    ))
+    db.commit()
+
+    accepted = change_quotation_status(db, quote.id, "accepted", user_id=advisor.id)
+    order = db.get(ServiceOrder, accepted.service_order_id)
+    assert [(item.operational_category, item.quantity) for item in order.items] == [
+        ("sale", 1),
+        ("calibration", 2),
+    ]
+
+
+def test_accepting_non_sale_quote_also_materializes_ets(ctx):
+    db, _, advisor, _, client = ctx
+    calibration = _calibration(db)
+    quote = Quotation(
+        folio="COT-CAL-AUTO", client_id=client.id, advisor_id=advisor.id,
+        status="waiting", subtotal=Decimal("50"), tax_total=Decimal("8"), total=Decimal("58"),
+    )
+    quote.items = [QuotationItem(
+        catalog_item_id=calibration.id, service_name=calibration.name,
+        operational_category="calibration", commodity="calibration", quantity=1,
+        unit_price=Decimal("50"), discount_percent=Decimal("0"), tax_rate=Decimal("16"),
+        tax_total=Decimal("8"), total=Decimal("50"),
+        operational_snapshot=_build_operational_snapshot(db, calibration),
+    )]
+    db.add(quote)
+    db.commit()
+
+    accepted = change_quotation_status(db, quote.id, "accepted", user_id=advisor.id)
+    order = db.get(ServiceOrder, accepted.service_order_id)
+    assert [(item.operational_category, item.quantity) for item in order.items] == [
+        ("calibration", 1),
+    ]
+
+
+def test_acceptance_rolls_back_for_legacy_verification_without_master(ctx):
+    db, _, advisor, _, client = ctx
+    verification = CatalogItem(
+        item_type="service", service_kind="simple", commodity="verification",
+        category="Verificacion", operational_category="verification",
+        name="Verificación legacy sin Master", origin_price=Decimal("100"),
+        origin_currency="MXN", exchange_rate=Decimal("1"), margin_percent=Decimal("0"),
+        final_price_mxn=Decimal("100"), tax_object="iva_16", tax_rate=Decimal("16"),
+    )
+    db.add(verification)
+    db.flush()
+    quote = Quotation(
+        folio="COT-VER-LEGACY", client_id=client.id, advisor_id=advisor.id,
+        status="waiting", subtotal=Decimal("100"), tax_total=Decimal("16"), total=Decimal("116"),
+    )
+    quote.items = [QuotationItem(
+        catalog_item_id=verification.id, service_name=verification.name,
+        operational_category="verification", commodity="verification", quantity=1,
+        unit_price=Decimal("100"), discount_percent=Decimal("0"), tax_rate=Decimal("16"),
+        tax_total=Decimal("16"), total=Decimal("100"),
+        operational_snapshot=_build_operational_snapshot(db, verification),
+    )]
+    db.add(quote)
+    db.commit()
+
+    with pytest.raises(HTTPException, match="partida histórica de Verificación"):
+        change_quotation_status(db, quote.id, "accepted", user_id=advisor.id)
+    db.rollback()
+    assert db.get(Quotation, quote.id).status == "waiting"
+    assert db.query(ServiceOrder).filter(ServiceOrder.quotation_id == quote.id).count() == 0
 
 
 def test_historical_sale_requires_explicit_snapshot_initialization(ctx):

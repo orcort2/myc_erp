@@ -1,8 +1,8 @@
 # Motor de Resoluciones
 
-> Estado: ARQUITECTURA VIGENTE — FASE 11 EN REVISIÓN
+> Estado: ARQUITECTURA VIGENTE — FASE 14 EN REVISIÓN
 >
-> Fase anterior: Fase 10 aprobada en `dd9a84e`
+> Última fase aprobada: Fase 13 mediante `bb76e3b`
 >
 > Autoridad de implementación: [`13_IMPLEMENTATION_MATRIX.md`](13_IMPLEMENTATION_MATRIX.md)
 
@@ -40,6 +40,9 @@ dominios, sus reglas, sus folios ni sus documentos institucionales.
 26. [`26_PUBLIC_API_SDK.md`](26_PUBLIC_API_SDK.md)
 27. [`27_PHASE_11_OPENING.md`](27_PHASE_11_OPENING.md)
 28. [`28_DISTRIBUTED_RUNTIME.md`](28_DISTRIBUTED_RUNTIME.md)
+29. [`29_PHASE_12_RESOLUTION_CENTER.md`](29_PHASE_12_RESOLUTION_CENTER.md)
+30. [`30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md`](30_PHASE_13_RESOLUTION_CENTER_CONSOLIDATION.md)
+31. [`31_PHASE_14_INTEGRATION_EXPANSION.md`](31_PHASE_14_INTEGRATION_EXPANSION.md)
 
 ## Regla de precedencia
 

@@ -225,13 +225,24 @@ acceso válido queda auditado.
 
 El cliente conserva identidad, datos fiscales, contactos dependientes, constancia y perfiles de certificado. La cotización se crea con partidas propias o provenientes del Catálogo MYC, calcula importes, guarda snapshots y puede transitar entre `draft`, `sent`, `waiting` y estados terminales.
 
-La aceptación de una cotización no crea automáticamente Agenda ni ETS en todos los recorridos. Un ETS puede vincularse a cliente y cotización; esa vinculación debe conservar coherencia entre ambos.
+La transición institucional a `accepted` materializa automáticamente el ETS en
+la misma transacción backend. El backend bloquea la Cotización, reutiliza el
+ETS activo si ya existe y construye todas las partidas desde snapshots; un
+retry no duplica el expediente. El asesor ya no ejecuta una segunda acción
+manual. Agenda continúa siendo una fecha dentro del ETS, no un agregado creado
+por esta transición.
 
 Un Servicio Compuesto aparece una sola vez en la cotización y en sus documentos comerciales. Al crear el ETS, el backend recorre su composición normalizada, multiplica las cantidades y genera partidas operativas únicamente para los servicios simples hoja. Esas partidas alimentan sin lógica paralela el conteo de OT, Equipos, Hojas de Campo y Certificados. Servicios simples, conceptos libres y cotizaciones existentes conservan el comportamiento anterior.
 
 En calibración, la partida del catálogo conserva una de tres modalidades canónicas: acreditación propia, trazable/no acreditada o acreditación por laboratorio vinculado. La clave se propaga a la partida cotizada y al ETS. Al registrar equipos, la capacidad configurada resuelve el alcance automáticamente cuando sólo hay una alternativa; si hay varias con cupo, se solicita desambiguar entre ellas. No se deriva la modalidad desde una leyenda o número impreso en el Master.
 
 Al crear el ETS, cada `ServiceOrderItem` congela el identificador del Master esperado mediante el ID estable del concepto operativo. Al registrar el equipo, Equipos lee exclusivamente esa partida y congela alcance, tipo de certificado, Master esperado, partida y origen de catálogo junto con la versión/archivo del Master. Cambiar después el nombre o la selección del catálogo no modifica el expediente; no existe resolución por `service_name`.
+
+Verificación exige Master genérico válido al crear o actualizar el concepto.
+Un concepto histórico con nulo permanece consultable, pero la aceptación se
+rechaza antes de crear el ETS para impedir una Captura imposible; debe
+corregirse el concepto y sustituirse explícitamente la partida para producir un
+snapshot nuevo.
 
 Una cotización aprobada con ETS completamente virgen admite:
 

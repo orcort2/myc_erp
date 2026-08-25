@@ -133,14 +133,22 @@ def _ensure_active_user(db: Session, user_id: int | None, label: str) -> None:
         raise HTTPException(status_code=404, detail=f"{label} no encontrado")
 
 
-def _get_active_quotation(db: Session, quotation_id: int | None) -> Quotation | None:
+def _get_active_quotation(
+    db: Session,
+    quotation_id: int | None,
+    *,
+    for_update: bool = False,
+) -> Quotation | None:
     if quotation_id is None:
         return None
-    quotation = db.scalar(
+    query = (
         select(Quotation)
         .where(Quotation.id == quotation_id, Quotation.is_active.is_(True))
         .options(selectinload(Quotation.items))
     )
+    if for_update:
+        query = query.with_for_update()
+    quotation = db.scalar(query)
     if quotation is None:
         raise HTTPException(status_code=404, detail="Cotizacion no encontrada")
     return quotation
@@ -616,12 +624,19 @@ def create_service_order(
     payload: ServiceOrderCreate,
     *,
     user_id: int,
+    commit: bool = True,
 ) -> ServiceOrder:
     user_id = _require_actor_id(user_id)
 
     # ------------------------------------------------------------
     # Idempotencia por cotización
     # ------------------------------------------------------------
+
+    quotation = _get_active_quotation(
+        db,
+        payload.quotation_id,
+        for_update=payload.quotation_id is not None,
+    )
 
     if payload.quotation_id is not None:
         existing_order_id = db.scalar(
@@ -659,11 +674,6 @@ def create_service_order(
         db,
         payload.technician_id,
         "Tecnico",
-    )
-
-    quotation = _get_active_quotation(
-        db,
-        payload.quotation_id,
     )
 
     if (
@@ -733,6 +743,25 @@ def create_service_order(
             db,
             quotation,
         )
+
+        incomplete_verification = next(
+            (
+                item
+                for item in service_order.items
+                if item.operational_category == "verification"
+                and item.expected_certificate_master_id is None
+            ),
+            None,
+        )
+        if incomplete_verification is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "La cotización contiene una partida histórica de Verificación "
+                    "sin Master genérico. Corrige el concepto y sustituye explícitamente "
+                    "la partida antes de materializar el ETS."
+                ),
+            )
 
     elif payload.items:
         direct_items: list[ServiceOrderItem] = []
@@ -870,7 +899,10 @@ def create_service_order(
         },
     )
 
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
 
     return get_service_order(
         db,

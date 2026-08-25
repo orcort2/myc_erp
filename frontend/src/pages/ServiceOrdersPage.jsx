@@ -159,6 +159,22 @@ function getServiceOrderCapabilities(order) {
   };
 }
 
+const operationalCategoryLabels = {
+  calibration: 'Calibración',
+  verification: 'Verificación',
+  maintenance: 'Mantenimiento',
+  repair: 'Reparación',
+  sale: 'Venta',
+  general_service: 'Servicio general',
+};
+
+function getOperationalCategoryLabels(order) {
+  return [...new Set((order?.items || [])
+    .filter((item) => item.is_active !== false)
+    .map((item) => operationalCategoryLabels[item.operational_category] || item.operational_category)
+    .filter(Boolean))];
+}
+
 function safeText(value, fallback = '-') {
   return value === undefined || value === null || value === '' ? fallback : value;
 }
@@ -445,6 +461,14 @@ function ServiceOrdersPage({ user = null }) {
   const metrologicalOrderItems = useMemo(
     () => (selectedOrder?.items || []).filter((item) =>
       ['calibration', 'verification'].includes(item.operational_category)
+    ),
+    [selectedOrder]
+  );
+
+  const selectedOrderHasIncompleteVerificationMaster = useMemo(
+    () => (selectedOrder?.items || []).some(
+      (item) => item.operational_category === 'verification'
+        && !item.expected_certificate_master_id
     ),
     [selectedOrder]
   );
@@ -1070,7 +1094,9 @@ function closeTechnicalSubEts() {
       accredited_linked_lab: 0,
     };
     (selectedOrder.items ?? []).forEach((item) => {
-      if (item.calibration_scope && quoted[item.calibration_scope] !== undefined) {
+      if (item.operational_category === 'calibration'
+        && item.calibration_scope
+        && quoted[item.calibration_scope] !== undefined) {
         quoted[item.calibration_scope] += safeNumber(item.quantity);
       }
     });
@@ -1081,6 +1107,11 @@ function closeTechnicalSubEts() {
       accredited_linked_lab: 0,
     };
     selectedCertificates.forEach((certificate) => {
+      const equipmentItem = equipmentById.get(Number(certificate.equipment_id));
+      const sourceItem = equipmentItem?.service_order_item_id
+        ? selectedOrderItemsById.get(Number(equipmentItem.service_order_item_id))
+        : null;
+      if (sourceItem?.operational_category !== 'calibration') return;
       if (certificate.certificate_type === 'trazable') used.traceable += 1;
       if (certificate.certificate_type === 'acreditado') used.accredited_iso_17025 += 1;
       if (certificate.certificate_type === 'vinculado') used.accredited_linked_lab += 1;
@@ -1113,7 +1144,30 @@ function closeTechnicalSubEts() {
       availableScopes,
       singleAvailableScope: availableScopes.length === 1 ? availableScopes[0] : null,
     };
-  }, [selectedCertificates, selectedOrder]);
+  }, [equipmentById, selectedCertificates, selectedOrder, selectedOrderItemsById]);
+
+  const selectedVerificationMetrics = useMemo(() => {
+    const verificationItemIds = new Set(
+      (selectedOrder?.items || [])
+        .filter((item) => item.operational_category === 'verification')
+        .map((item) => Number(item.id)),
+    );
+    const verificationEquipmentIds = new Set(
+      selectedEquipment
+        .filter((item) => verificationItemIds.has(Number(item.service_order_item_id)))
+        .map((item) => Number(item.id)),
+    );
+    return {
+      expected: (selectedOrder?.items || [])
+        .filter((item) => item.operational_category === 'verification')
+        .reduce((sum, item) => sum + safeNumber(item.quantity), 0),
+      registered: verificationEquipmentIds.size,
+      certificates: selectedCertificates.filter((certificate) =>
+        certificate.certificate_type === 'verification'
+        && verificationEquipmentIds.has(Number(certificate.equipment_id))
+      ).length,
+    };
+  }, [selectedCertificates, selectedEquipment, selectedOrder]);
 
   const selectedStageState = useMemo(() => {
     if (!selectedOrder) {
@@ -3127,6 +3181,11 @@ function closeTechnicalSubEts() {
                 <p>Expediente Tecnico del Servicio</p>
                 <h2>{selectedOrder.folio}</h2>
                 <span>{getClientDisplayName(clientsById.get(selectedOrder.client_id))}</span>
+                <div aria-label="Categorías operacionales del ETS" className="toolbar-actions">
+                  {getOperationalCategoryLabels(selectedOrder).map((label) => (
+                    <mark className="quotation-status" key={label}>{label.toUpperCase()}</mark>
+                  ))}
+                </div>
               </div>
               <mark className={`quotation-status quotation-status--large status-${selectedOrder.status}`}>
                 {serviceOrderStatusLabels[selectedOrder.status] ?? selectedOrder.status}
@@ -3135,7 +3194,7 @@ function closeTechnicalSubEts() {
                 Cerrar
               </button>
             </div>
-                        <div
+            <div
               aria-live="polite"
               className={`ets-autosave-status is-${autosaveStatus}`}
             >
@@ -3181,6 +3240,12 @@ function closeTechnicalSubEts() {
                 </button>
               ) : null}
             </div>
+
+            {selectedOrderHasIncompleteVerificationMaster ? (
+              <div className="form-error dashboard-error" role="alert">
+                Este ETS histórico contiene Verificación sin Master genérico. Corrige el concepto y sustituye explícitamente la partida antes de iniciar Captura.
+              </div>
+            ) : null}
 
             <div className="ets-modal-action-ribbon" aria-label="Acciones principales del ETS">
               <button className="table-button" onClick={() => openWorkOrderPdf('view')} type="button">
@@ -3512,14 +3577,22 @@ function closeTechnicalSubEts() {
                   <span className="ets-metric-badge"><strong>{selectedEquipment.length}</strong>Registrados</span>
                   <span className="ets-metric-badge"><strong>{workOrderCapacitySummary.totalRegistered} / {workOrderCapacitySummary.totalLimit}</strong>Capacidad total OT</span>
                   <span className="ets-metric-badge"><strong>{selectedFieldSheets.length} / {workOrderCapacitySummary.totalLimit}</strong>Hojas</span>
-                  {['traceable', 'accredited_iso_17025', 'accredited_linked_lab'].map((scope) => (
+                  {selectedOrderHasDirectCalibration ? ['traceable', 'accredited_iso_17025', 'accredited_linked_lab'].map((scope) => (
                     <span className="ets-metric-badge" key={scope}>
                       <strong>
                         {safeNumber(selectedOrderCertificateCapacity[scope]?.used)} / {safeNumber(selectedOrderCertificateCapacity[scope]?.quoted)}
                       </strong>
                       {calibrationScopeBadgeLabels[scope]}
                     </span>
-                  ))}
+                  )) : null}
+                  {selectedOrderHasVerification ? (
+                    <span className="ets-metric-badge">
+                      <strong>
+                        {selectedVerificationMetrics.registered} / {selectedVerificationMetrics.expected}
+                      </strong>
+                      Verificaciones · {selectedVerificationMetrics.certificates} certificados
+                    </span>
+                  ) : null}
                 </div>
                 {shouldShowSignatureLauncher && renderSignatureLauncher()}
                 {!hasAvailableWorkOrderCapacity ? (
@@ -4392,7 +4465,7 @@ function closeTechnicalSubEts() {
                   })}
                 </select>
               </label>
-              <label>
+              {metrologicalOrderItems.length > 1 ? <label>
                 Proceso metrológico
                 <select
                   disabled={Boolean(editingEquipmentId)}
@@ -4420,7 +4493,7 @@ function closeTechnicalSubEts() {
                     </option>
                   ))}
                 </select>
-              </label>
+              </label> : null}
               {selectedEquipmentFormItem?.operational_category === 'verification' ? (
                 <>
                   <label>

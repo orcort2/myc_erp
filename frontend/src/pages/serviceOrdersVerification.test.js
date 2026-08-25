@@ -28,3 +28,24 @@ test('el contexto por equipo distingue Calibración de Verificación', () => {
   assert.match(source, /key: 'verification',[\s\S]*label: 'Verificación'/);
   assert.match(source, /sourceItem\?\.operational_category/);
 });
+
+test('una sola partida se autoasigna y el selector sólo aparece con ambigüedad', () => {
+  assert.match(source, /defaultMetrologicalItem = metrologicalOrderItems\.length === 1/);
+  assert.match(source, /metrologicalOrderItems\.length > 1 \? <label>[\s\S]*Proceso metrológico/);
+  assert.match(source, /service_order_item_id: equipmentForm\.serviceOrderItemId/);
+});
+
+test('el encabezado identifica categorías y las métricas separan Verificación de Calibración', () => {
+  assert.match(source, /Categorías operacionales del ETS/);
+  assert.match(source, /label\.toUpperCase\(\)/);
+  assert.match(source, /selectedOrderHasDirectCalibration \? \['traceable'/);
+  assert.match(source, /selectedOrderHasVerification \? \(/);
+  assert.match(source, /Verificaciones · \{selectedVerificationMetrics\.certificates\} certificados/);
+  assert.match(source, /sourceItem\?\.operational_category !== 'calibration'/);
+});
+
+test('un ETS legacy sin Master muestra advertencia antes de Captura', () => {
+  assert.match(source, /selectedOrderHasIncompleteVerificationMaster/);
+  assert.match(source, /ETS histórico contiene Verificación sin Master genérico/);
+  assert.match(source, /antes de iniciar Captura/);
+});

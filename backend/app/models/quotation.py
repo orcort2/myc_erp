@@ -94,6 +94,11 @@ class Quotation(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
             return None
         return self.advisor.full_name or self.advisor.email
 
+    @property
+    def service_order_id(self) -> int | None:
+        active_orders = [order for order in self.service_orders if order.is_active]
+        return min((order.id for order in active_orders), default=None)
+
 
 class QuotationItem(
     IntegerPkMixin,

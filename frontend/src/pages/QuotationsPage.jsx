@@ -28,7 +28,6 @@ import {
   createLinkedCompany,
   createQuotation,
   createQuotationItem,
-  createServiceOrder,
   deleteCatalogItem,
   deleteQuotation,
   deleteQuotationItem,
@@ -56,6 +55,7 @@ import { downloadCsv, parseDelimitedText } from '../utils/csv.js';
 import { getRowValue } from '../utils/clients.js';
 import { hasPermission } from '../utils/accessControl.js';
 import useConfirmDialog from '../utils/useConfirmDialog.js';
+import { navigate } from '../utils/routing.js';
 import { formatDate, formatMoney, getClientDisplayName, normalizeKey } from '../utils/formatters.js';
 import { validateLinkedServiceFields } from '../utils/quotationServiceExceptions.js';
 
@@ -547,7 +547,6 @@ function QuotationsPage({ user = null }) {
     'catalog_items.update',
     'catalog_items.delete',
   ].some((permission) => hasPermission(effectiveUser, permission));
-  const canCreateServiceOrders = hasPermission(effectiveUser, 'service_orders.create');
   const canEditSelectedQuotation = Boolean(
     selectedQuotation &&
       canUpdateQuotations &&
@@ -631,6 +630,33 @@ function QuotationsPage({ user = null }) {
     }, 800);
     return () => window.clearTimeout(timeoutId);
   }, [detailForm, isDetailOpen, selectedQuotation?.id, selectedQuotation?.status]);
+
+  useEffect(() => {
+    function handleEscape(event) {
+      if (event.key !== 'Escape' || confirmDialog) return;
+      if (unlockPreview) {
+        setUnlockPreview(null);
+      } else if (isCatalogImportOpen) {
+        closeCatalogImportModal();
+      } else if (isProductModalOpen) {
+        closeProductModal();
+      } else if (isClientPickerOpen) {
+        setIsClientPickerOpen(false);
+      } else if (isDetailOpen) {
+        closeQuotationDetail();
+      }
+    }
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [
+    confirmDialog,
+    unlockPreview,
+    isCatalogImportOpen,
+    isProductModalOpen,
+    isClientPickerOpen,
+    isDetailOpen,
+  ]);
 
   function updateDetailForm(field, value) {
     setDetailForm((current) => ({ ...current, [field]: value }));
@@ -1147,6 +1173,10 @@ function QuotationsPage({ user = null }) {
     }
     if (productForm.category === 'Calibracion' && !productForm.serviceType) {
       setError('Selecciona el tipo de servicio.');
+      return;
+    }
+    if (productForm.operationalCategory === 'verification' && !productForm.expectedCertificateMasterId) {
+      setError('Selecciona el Master genérico de Verificación antes de guardar.');
       return;
     }
     const linkedServiceError = validateLinkedServiceFields(productForm);
@@ -1680,32 +1710,14 @@ function QuotationsPage({ user = null }) {
     setNotice(`${item.name} agregado como borrador de partida.`);
   }
 
-  async function handleGenerateServiceOrder() {
-    if (!selectedQuotation) return;
-    if (selectedQuotation.status !== 'accepted') {
-      setError('Solo una cotizacion aceptada puede generar orden de servicio.');
-      return;
-    }
-    openConfirm({
-      title: 'Generar orden de servicio',
-      message: `Se generará una orden de servicio desde ${selectedQuotation.folio}.`,
-      confirmText: 'Generar orden',
-      onConfirm: async () => {
-        setError('');
-        setNotice('');
-        try {
-          const serviceOrder = await createServiceOrder({
-            client_id: selectedQuotation.client_id,
-            quotation_id: selectedQuotation.id,
-            advisor_id: selectedQuotation.advisor_id || null,
-            notes: selectedQuotation.notes || `Generada desde cotizacion ${selectedQuotation.folio}`
-          });
-          setNotice(`Orden de servicio ${serviceOrder.folio} creada correctamente. Puedes verla en el módulo de Órdenes de Servicio.`);
-        } catch (requestError) {
-          setError(requestError.message);
-        }
-      }
-    });
+  function openQuotationServiceOrder() {
+    if (!selectedQuotation?.service_order_id) return;
+    window.sessionStorage.setItem('myc:contextReturn', JSON.stringify({
+      target: 'service-order',
+      serviceOrderId: selectedQuotation.service_order_id,
+      activeTab: 'info',
+    }));
+    navigate('/dashboard#servicios');
   }
 
   async function handleDeleteQuotationRecord() {
@@ -2488,13 +2500,12 @@ function QuotationsPage({ user = null }) {
                         {action.label}
                       </button>
                     )) : null}
-                    {canCreateServiceOrders ? <button
+                    {selectedQuotation.service_order_id ? <button
                       className="primary-button"
-                      disabled={selectedQuotation.status !== 'accepted' || selectedQuotation.service_orders?.length > 0}
-                      onClick={handleGenerateServiceOrder}
+                      onClick={openQuotationServiceOrder}
                       type="button"
                     >
-                      Generar orden de servicio
+                      Ver ETS
                     </button> : null}
                     <QuotationServiceExceptionAction
                       currentUser={currentUser}
@@ -3352,7 +3363,7 @@ function QuotationsPage({ user = null }) {
                   CONFIGURACIÓN OPERATIVA
               ========================================================= */}
 
-              {productForm.type === 'Servicio' ? (
+              {productForm.operationalCategory ? (
                 <section className="catalog-form-section">
                   <div className="catalog-form-section__heading">
                     <div>
@@ -3490,44 +3501,42 @@ function QuotationsPage({ user = null }) {
                           </>
                         ) : null}
 
-                        {['calibration', 'verification'].includes(productForm.operationalCategory) ? (
-                          <label>
-                            Plantilla esperada de certificado
-
-                            <select
-                              onChange={(event) =>
-                                updateProductForm(
-                                  'expectedCertificateMasterId',
-                                  event.target.value,
-                                )
-                              }
-                              value={
-                                productForm.expectedCertificateMasterId
-                                || ''
-                              }
-                            >
-                              <option value="">
-                                Sin asignar
-                              </option>
-
-                              {certificateMasters.map(
-                                (master) => (
-                                  <option
-                                    key={master.id}
-                                    value={master.id}
-                                  >
-                                    {master.code}
-                                    {' · '}
-                                    {master.name}
-                                    {' · Rev. '}
-                                    {master.current_revision || '-'}
-                                  </option>
-                                ),
-                              )}
-                            </select>
-                          </label>
-                        ) : null}
                       </>
+                    ) : null}
+
+                    {['calibration', 'verification'].includes(productForm.operationalCategory) ? (
+                      <label className="catalog-form-field--wide">
+                        {productForm.operationalCategory === 'verification'
+                          ? 'Master genérico de Verificación'
+                          : 'Plantilla esperada de certificado'}
+
+                        <select
+                          onChange={(event) => updateProductForm(
+                            'expectedCertificateMasterId',
+                            event.target.value,
+                          )}
+                          required={productForm.operationalCategory === 'verification'}
+                          value={productForm.expectedCertificateMasterId || ''}
+                        >
+                          <option value="">Sin asignar</option>
+                          {certificateMasters.map((master) => (
+                            <option key={master.id} value={master.id}>
+                              {master.code} · {master.name} · Rev. {master.current_revision || '-'}
+                            </option>
+                          ))}
+                        </select>
+                        {productForm.operationalCategory === 'verification' ? (
+                          <small>
+                            Este Master se incluye inicialmente en el paquete de Captura. El archivo técnico real podrá sustituirlo durante el retorno del ZIP.
+                          </small>
+                        ) : null}
+                        {productForm.operationalCategory === 'verification'
+                          && !productForm.expectedCertificateMasterId ? (
+                            <span className="form-error">
+                              Verificación no puede operar sin un Master genérico válido.
+                            </span>
+                          ) : null}
+                      </label>
                     ) : null}
 
                     {/* ALCANCE PARA CATEGORÍAS QUE REALMENTE LO USAN */}

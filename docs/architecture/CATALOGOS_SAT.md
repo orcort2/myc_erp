@@ -17,7 +17,9 @@ La fuente operativa del ERP es exclusivamente `sat_catalogs`, `sat_catalog_versi
 ## Jerarquía y fuentes
 
 1. Excel oficial descargado del SAT: fuente de importación vigente.
-2. [catalogs.db](/Users/saulcortes/Desktop/myc_erp/backend/resources/sat/catalogs.db) de PhpCfdi: respaldo técnico y fuente de comparación.
+2. `backend/resources/sat/catalogs.db` de PhpCfdi: recurso local ignorado por
+   Git, usado como respaldo técnico y fuente de comparación cuando está
+   disponible.
 3. PostgreSQL: única fuente operativa del ERP.
 
 El frontend y los servicios del ERP nunca leen directamente Excel ni SQLite.
@@ -32,7 +34,10 @@ El adaptador `backend/app/services/sat_catalogs/sat_xls_source.py` abre archivos
 
 ### Fuente SQLite inicial
 
-La carga inicial usa [catalogs.db](/Users/saulcortes/Desktop/myc_erp/backend/resources/sat/catalogs.db), una base SQLite 3.x descargada manualmente y abierta con `mode=ro`. La release registrada es `v10.11.20260703`; sus checksums de distribución están en `backend/resources/sat/CHECKSUMS.txt`.
+La carga inicial usa el recurso local ignorado por Git
+`backend/resources/sat/catalogs.db`, una base SQLite 3.x descargada manualmente
+y abierta con `mode=ro`. La release registrada es `v10.11.20260703`; sus
+checksums de distribución están en `backend/resources/sat/CHECKSUMS.txt`.
 
 El adaptador `backend/app/services/sat_catalogs/sqlite_source.py` sólo permite leer las tablas CFDI 4.0 mapeadas, exige `id` como clave y convierte sus filas en registros del importador existente. No ejecuta el archivo SQL/SQLite sobre PostgreSQL, ni crea una fuente maestra paralela.
 

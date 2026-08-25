@@ -23,7 +23,7 @@ EXCLUDED_PARTS = {
 EXCLUDED_NAMES = {
     ".DS_Store", "backup_erp_myc_antes_prueba.sql", "BytesIO",
     ".tmp_field_sheet_templates.json", "package-lock.json", "from", "import", "io",
-    "BACKUP_ESTADO_ACTUAL (1).md", "resolution_engine.zip",
+    "resolution_engine.zip",
     "backend.zip", "01_login.ai",
     "global.css.bak-before-ets-card-cleanup", "global.css.bak-equipos",
 }
@@ -58,9 +58,20 @@ STATUS_OVERRIDES = {
     "docs/architecture/MAINTENANCE_ETS_EXECUTION.md": "En revisión",
     "frontend/src/components/ets-maintenance/MaintenanceEtsTab.jsx": "En revisión",
     "frontend/src/components/ets-maintenance/maintenance-ets.css": "En revisión",
+    "backend/app/models/quotation.py": "En revisión",
+    "backend/app/schemas/quotation.py": "En revisión",
+    "backend/app/services/catalog_items.py": "En revisión",
+    "backend/app/services/quotations.py": "En revisión",
+    "backend/app/services/service_orders.py": "En revisión",
+    "frontend/src/pages/QuotationsPage.jsx": "En revisión",
+    "frontend/src/pages/ServiceOrdersPage.jsx": "En revisión",
+    "frontend/src/pages/quotationsVerificationQa.test.js": "En revisión",
+    "frontend/src/pages/serviceOrdersVerification.test.js": "En revisión",
+    "backend/tests/test_verification_metrological_pipeline.py": "En revisión",
 }
 FORCE_RECLASSIFY = {
     "AGENTS.md",
+    "docs/project/OBSERVATIONS_REGISTER.md",
     "backend/app/main.py",
     "backend/app/models/lab_work_order.py",
     "backend/app/routers/lab_work_orders.py",
@@ -154,7 +165,6 @@ FORCE_RECLASSIFY = {
     "backend/tests/test_verification_metrological_pipeline.py",
     "docs/BACKUP_ESTADO_ACTUAL.md",
     "docs/architecture/CALIBRATION_SCOPE_CONTRACT.md",
-    "docs/archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md",
     "frontend/src/constants/catalog.js",
     "scripts/generate_project_file_registry.py",
     "backend/app/routers/certificates.py",
@@ -509,6 +519,15 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if "/legacy/" in value or ".pre-toolkit" in name:
         status = "Obsoleto"
 
+    if value == "docs/project/OBSERVATIONS_REGISTER.md":
+        return (
+            "Registro canónico de observaciones",
+            "Conserva sólo observaciones funcionales y UX pendientes o parciales; remite deuda técnica, resoluciones y evidencia histórica a sus autoridades propias.",
+            "CURRENT_SCOPE, PROJECT_STATUS, TECHNICAL_DEBT, auditorías y cierres",
+            "Producto, QA, desarrollo y auditoría",
+            "Crítico",
+        )
+
     communications_files = {
         "backend/app/models/communication.py": ("Persistencia de Comunicaciones", "Modela conversaciones directas/grupales, participantes con cursores, mensajes secuenciados/idempotentes, recibos y menciones normalizados.", "SQLAlchemy, users, Tickets y Alembic", "Servicio Communications, API, realtime y pruebas", "Crítico"),
         "backend/app/routers/communications.py": ("API REST de Comunicaciones", "Expone directorio, menciones, conversaciones, historial/sync, mensajes idempotentes y recibos; publica eventos y push sólo después del commit.", "FastAPI, auth, servicio Communications, realtime y push", "MYC Mobile y clientes ERP compatibles", "Crítico"),
@@ -548,7 +567,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/app/services/sale_execution.py": ("Autoridad ETS Venta", "Materializa unidades no evolutivas, valida vínculo comercial de Calibración, gobierna garantía no terminal, evidencia por modalidad, PDF escapado y cierre.", "Modelos Venta/ETS/Equipo/Certificado, auditoría, HTML seguro y notificaciones", "Routers, frontend, Portal, MYC Mobile y pruebas", "Crítico"),
         "backend/migrations/versions/b9d1f3a5c7e9_add_sale_ets_execution.py": ("Migración ETS Venta", "Agrega configuración de catálogo, etapa sale y tablas normalizadas de ejecución Venta con constraints e índices reversibles.", "Alembic, PostgreSQL y a8c0e2f4b6d8", "Despliegue, rollback y validación de esquema", "Crítico"),
         "backend/migrations/versions/c0e2f4a6b8d1_disable_sale_generic_evolution.py": ("Corrección de datos ETS Venta", "Desactiva evolución genérica en ServiceUnit históricas cuya categoría inicial es sale, con downgrade acotado y sin cambiar esquema.", "Alembic, PostgreSQL y b9d1f3a5c7e9", "Despliegue, rollback y compatibilidad histórica", "Crítico"),
-        "backend/tests/test_sale_ets_execution.py": ("Suite ETS Venta", "Cubre snapshot, evolución desactivada, calibración comercial propia/ajena, garantía diferenciada, firma/evidencia acotada, PDF escapado, Portal/Mobile y parciales.", "Pytest, Pydantic, SQLAlchemy y servicios Venta/ETS", "Gate backend ETS Venta", "Crítico"),
+        "backend/tests/test_sale_ets_execution.py": ("Suite ETS Venta y nacimiento ETS", "Cubre Venta y además aceptación transaccional/idempotente, retry, exposición del ETS, cotización mixta y rollback legacy de Verificación.", "Pytest, Pydantic, SQLAlchemy y servicios Cotización/ETS/Venta", "Gate backend Cotizaciones y ETS Venta", "Crítico"),
         "frontend/src/components/ets-sales/SaleEtsTab.jsx": ("Workbench ETS Venta", "Presenta arribo, autorizaciones, tres resoluciones de garantía, entregas y firma/atestación según modalidad con bloqueantes visibles.", "React, API compartida y estilos ETS Venta", "Asesores y usuarios ETS web", "Crítico"),
         "frontend/src/components/ets-sales/sale-ets.css": ("Estilos ETS Venta", "Compone layout responsive de partidas, unidades, formularios, entregas y cierre dentro del lenguaje visual vigente.", "CSS y clases compartidas frontend", "SaleEtsTab", "Medio"),
         "myc-mobile/app/(technician)/deliveries.tsx": ("Entregas Venta móviles", "Lista entregas asignadas y permite aceptar/agendar y confirmar recepción mediante atestación técnica estructurada, sin operar arribos ni catálogo.", "Expo Router, AuthProvider y API móvil", "Técnicos MYC", "Crítico"),
@@ -571,11 +590,15 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         "backend/app/security/api_access.py": ("Política transversal de acceso", "Clasifica 436 operaciones deny-by-default, incluidos cinco límites de capacidad de Mantenimiento.", "FastAPI, permisos e inventario CSV", "Middleware, arranque, generador y pruebas", "Crítico"),
         "backend/app/models/catalog_item.py": ("Modelo de catálogo canónico", "Conserva identidad, composición, Venta y configuración estructurada preventivo/correctivo, laboratorio/campo y materiales base.", "SQLAlchemy, catálogo y migraciones", "Cotizaciones, snapshots y servicios operativos", "Crítico"),
         "backend/app/schemas/catalog_item.py": ("Contratos de catálogo", "Valida identidad y configuración exclusiva de Venta/Mantenimiento, materiales base correctivos y reglas comerciales.", "Pydantic y categorías canónicas", "API Catálogo y frontend de cotizaciones", "Crítico"),
-        "backend/app/services/catalog_items.py": ("Servicio de catálogo", "Normaliza identidad/configuración y conserva el Master genérico esperado para Calibración o Verificación, además de componentes, precios y vínculos documentales.", "Modelos/esquemas de catálogo, documentos y auditoría", "Routers, cotizaciones y pruebas", "Crítico"),
-        "backend/app/services/quotations.py": ("Servicio de cotizaciones", "Congela snapshot v2 por componente, incluidas configuraciones de Venta y Mantenimiento, sin reinterpretar historial.", "Catálogo, expansión compuesta y snapshots", "API Cotizaciones, ETS y pruebas", "Crítico"),
-        "backend/app/services/service_orders.py": ("Servicio agregado ETS", "Crea ETS/OT/partidas y materializa una sola vez verticales Venta y Mantenimiento desde snapshots aprobados.", "Cotizaciones, ServiceOrder, expansor y verticales", "Routers, frontend y pruebas", "Crítico"),
-        "frontend/src/pages/QuotationsPage.jsx": ("Cotizaciones y catálogo comercial", "Gestiona cotización y catálogo por identidad operacional; asocia el Master genérico esperado a Calibración o Verificación y compone Venta/Servicios Compuestos.", "React, APIs Cotizaciones/Catálogo/Control Documental y formularios", "Usuarios comerciales", "Crítico"),
-        "frontend/src/pages/ServiceOrdersPage.jsx": ("Workbench ETS institucional", "Compone el expediente; reutiliza el pipeline metrológico para Verificación, discrimina por partida, oculta scope y presenta el Master como snapshot de sólo lectura cuya resolución específica ocurre al retornar el bonche en Captura.", "React, APIs ETS/Control Documental, ServiceOrderItem y componentes verticales", "Usuarios operativos del ETS", "Crítico"),
+        "backend/app/models/quotation.py": ("Agregado comercial y snapshots", "Persiste cotizaciones/snapshots y expone el ETS activo principal asociado sin duplicar la relación.", "SQLAlchemy, catálogo, identidad operativa y ServiceOrder", "Ventas, ETS, Facturación, PDFs y APIs", "Crítico"),
+        "backend/app/schemas/quotation.py": ("Contrato Pydantic operacional", "Valida Cotización y publica service_order_id para abrir el ETS materializado por backend.", "Pydantic, Quotation y ServiceOrder", "Routers, frontend de Cotizaciones y cadena Catálogo→ETS", "Alto"),
+        "backend/app/services/catalog_items.py": ("Servicio de catálogo", "Normaliza identidad/configuración y exige en Verificación un Master genérico activo, vigente, versionado y con XLSX disponible.", "Modelos/esquemas de catálogo, documentos, storage y auditoría", "Routers, cotizaciones y pruebas", "Crítico"),
+        "backend/app/services/quotations.py": ("Servicio de cotizaciones", "Congela snapshot v2 y coordina accepted con la materialización transaccional e idempotente del ETS bajo lock.", "Catálogo, snapshots, ServiceOrder y eventos", "API Cotizaciones, ETS y pruebas", "Crítico"),
+        "backend/app/services/service_orders.py": ("Servicio agregado ETS", "Crea ETS/OT/partidas desde snapshots, bloquea Verificación legacy sin Master y admite persistencia coordinada con Cotizaciones.", "Cotizaciones, ServiceOrder, expansor y verticales", "Routers, frontend y pruebas", "Crítico"),
+        "frontend/src/pages/QuotationsPage.jsx": ("Cotizaciones y catálogo comercial", "Exige el Master genérico de Verificación, abre el ETS backend-authoritative y aplica ESC jerárquico sin creación manual.", "React, APIs Cotizaciones/Catálogo, Control Documental y ConfirmDialog", "Usuarios comerciales", "Crítico"),
+        "frontend/src/pages/ServiceOrdersPage.jsx": ("Workbench ETS institucional", "Identifica categorías, separa métricas Calibración/Verificación, advierte legacy sin Master y sólo solicita partida cuando existe ambigüedad.", "React, APIs ETS/Control Documental, ServiceOrderItem y componentes verticales", "Usuarios operativos del ETS", "Crítico"),
+        "backend/tests/test_verification_metrological_pipeline.py": ("Prueba de integración de Verificación", "Cubre freeze inicial/final, pipeline común y autoasignación backend de partidas únicas de Verificación y Calibración.", "SQLAlchemy SQLite, ZIP/XLSX y servicios metrológicos", "Pytest en CI y desarrollo", "Alto"),
+        "frontend/src/pages/serviceOrdersVerification.test.js": ("Prueba frontend de Verificación", "Verifica pipeline, autoasignación, selector sólo ambiguo, identidad visible, warning legacy y métricas separadas.", "Node test y fuente de ServiceOrdersPage", "Desarrollo y CI frontend", "Alto"),
         "frontend/src/services/api.js": ("Cliente API web", "Centraliza contratos HTTP del ERP, incluidos endpoints completos de Venta y Mantenimiento y descargas PDF.", "Fetch autenticado y manejo de errores", "Páginas/componentes web", "Crítico"),
     }
     if value in maintenance_files:
@@ -1290,7 +1313,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/architecture/resolution-engine/README.MD": (
             "Entrada normativa del Motor",
-            "Ordena documentos 01–29 y publica Fases 0–11 aprobadas, Fase 12 en revisión y Fase 13 no iniciada.",
+            "Ordena documentos 01–31 y publica Fases 0–13 aprobadas y Fase 14 terminada en revisión.",
             "Roadmap, matriz, aperturas, contratos y cierres",
             "Todo participante del Motor de Resoluciones",
             "Crítico",
@@ -1587,7 +1610,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         ),
         "docs/architecture/resolution-engine/README.MD": (
             "Entrada normativa del Motor",
-            "Ordena documentos 01–26, publica Fases 0–9 aprobadas y Fase 10 en revisión con la corrección del cursor opaco implementada.",
+            "Ordena documentos 01–31 y publica Fases 0–13 aprobadas y Fase 14 terminada en revisión.",
             "Roadmap, matriz, aperturas, contratos y cierres",
             "Todo participante del Motor de Resoluciones",
             "Crítico",
@@ -2454,7 +2477,7 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     if value == "backend/app/services/capture_packages.py":
         return ("Servicio de Paquete de Captura", "Genera paquetes metrológicos e ingiere el bonche devuelto; en Verificación sólo resuelve el Master registrado mientras existe inicial sin final y, después, valida exclusivamente contra documento/versión snapshot históricos.", "Equipment, Hojas de Campo, Certificados, interpretaciones/perfiles estructurados, documentos controlados, storage y fingerprint", "Routers ETS, Captura, Calidad y pruebas", "Crítico")
     if value == "backend/tests/test_operational_identity_snapshot.py":
-        return ("Regresión de identidad/snapshot", "Prueba Producto/Servicio con Venta, Producto no Venta, edición, sustitución explícita, congelamiento/reapertura, Servicio General y categorías por componente.", "Pytest, SQLAlchemy, Node y dominios Catálogo/Cotización/ETS", "Gate de revisión de identidad operativa", "Crítico")
+        return ("Regresión de identidad/snapshot", "Prueba independencia Producto/Servicio, snapshots y el contrato requerido/vigente/XLSX/legacy del Master genérico de Verificación.", "Pytest, SQLAlchemy y dominios Catálogo/Cotización/ETS", "Gate de revisión de identidad operativa", "Crítico")
     if value == "docs/architecture/OPERATIONAL_SERVICE_IDENTITY.md":
         return ("Contrato de identidad operativa", "Define operational_category, autoridad del snapshot esquema 2, compatibilidad legacy, Servicios Compuestos, frontera de Hojas de Campo y autoridad histórica inmutable del Master final de Verificación.", "Modelos, migración y servicios Catálogo/Cotización/ETS/Captura", "Desarrollo, revisión arquitectónica y QA", "Crítico")
     if value == "backend/tests/test_service_scope_contract.py":
