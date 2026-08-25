@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y notas cronológicas de `../archive/project/BACKUP_ESTADO_ACTUAL_HISTORICO_2026-07-21.md`
 >
-> Corte verificado: 2026-08-17
+> Corte verificado: 2026-08-25
 
 # Reglas de negocio vigentes
 
@@ -93,7 +93,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-062 | Comunicaciones / Menciones | Una mención individual sólo puede dirigirse a un participante; `@todos` o rol exige perfil Administrador, Desarrollador o Calidad y el rol debe existir dentro del grupo. Recibos y cursores por usuario avanzan sin regresión. | Modelo/servicio Communications y pruebas de menciones/recibos | 2026-08-17 |
 | BR-063 | Comunicaciones / Push | Realtime y Expo Push son transporte best-effort, nunca autoridad. La notificación se persiste con vista previa sin cuerpo del mensaje, una falla de entrega no revierte dominio y todo deep link vuelve a consultar REST. | Arquitectura Communications, Notifications V1 y provider móvil | 2026-08-17 |
 | BR-064 | ETS / Verificación | Verificación reutiliza OT, Equipment, Hoja de Campo, Captura, Calidad, Certificados, autenticación, versiones y liberación. Usa `operational_category=verification`, `calibration_scope=null` y certificado `verification`; `Equipment.service_order_item_id` impide confundirla con Calibración en un ETS mixto. Cada OT conserva el máximo común de 10 equipos. | Servicios de Equipment/Certificados/Captura, frontend ETS y suite de Verificación | 2026-08-24 |
-| BR-065 | Verificación / Masters | El Master del concepto de Verificación es una referencia genérica inicial dentro del bonche. Captura lo sustituye fuera del ERP por el archivo técnico real y reingresa el ZIP. El backend debe asociar certificado/equipo por identidad fuerte y encontrar una coincidencia única por fingerprint contra Masters activos registrados estructuralmente con `service_type=verification`; entonces congela automáticamente documento/versión final y conserva inicial, final, actor, origen e historial. Nombre, código y descripción no son autoridad, y el Master no cambia después de identificar la evidencia. | Equipment, documentos controlados, Captura y Calidad | 2026-08-24 |
+| BR-065 | Verificación / Masters | El Master del concepto de Verificación es una referencia genérica inicial dentro del bonche. Sólo mientras existe inicial y no existe final, el backend puede resolver una coincidencia única por fingerprint contra Masters activos registrados con `service_type=verification` y congelar documento/versión final, actor, origen e historial. Desde entonces ese final es autoridad histórica: cargas y llamadas idempotentes usan el mismo snapshot sin nueva resolución, historial ni auditoría; A→B se rechaza aunque no exista evidencia identificada. Nombre, código, descripción, revisiones y registro institucional vigentes no reinterpretan el equipo. | Equipment, documentos controlados, Captura y Calidad | 2026-08-25 |
 
 ## Reglas históricas no vigentes como obligación actual
 

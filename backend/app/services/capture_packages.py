@@ -409,6 +409,35 @@ def _validation_issue_keys(validation: dict | None) -> tuple[list[str], list[str
     return warnings, mismatches
 
 
+def _verification_requires_registered_master(certificate: Certificate) -> bool:
+    if certificate.certificate_type != "verification":
+        return False
+    context = dict(certificate.equipment.certificate_operational_context_snapshot or {})
+    return bool(
+        context.get("initial_certificate_master_document_id")
+        and not context.get("final_certificate_master_document_id")
+    )
+
+
+def _verification_master_validation(certificate: Certificate) -> dict:
+    context = dict(certificate.equipment.certificate_operational_context_snapshot or {})
+    return {
+        "status": "frozen_snapshot",
+        "method": "equipment_final_snapshot",
+        "document_id": context.get("final_certificate_master_document_id"),
+        "version_id": context.get("final_certificate_master_version_id"),
+    }
+
+
+def _verification_template_override(
+    certificate: Certificate,
+    registered_template_path: Path | None,
+) -> Path | None:
+    if _verification_requires_registered_master(certificate):
+        return registered_template_path
+    return None
+
+
 def _mark_capture_started(
     db: Session, certificate: Certificate, *, user_id: int, filename: str
 ) -> None:
@@ -452,7 +481,10 @@ def _match_uploaded_capture(
             suffix,
             certificate,
             expected_template_path=(
-                verification_template_path
+                _verification_template_override(
+                    certificate,
+                    verification_template_path,
+                )
                 if certificate.certificate_type == "verification"
                 else None
             ),
@@ -532,13 +564,14 @@ def upload_capture_files(
             else:
                 candidates.append((filename, raw))
     results = []
-    has_verification_certificates = any(
-        certificate.certificate_type == "verification"
+    has_unresolved_verification = any(
+        _verification_requires_registered_master(certificate)
         for certificate in active_certificates
     )
     for filename, raw in candidates:
+        unidentified_validation_override = None
         suffix = Path(filename).suffix.lower()
-        if has_verification_certificates:
+        if has_unresolved_verification:
             verification_master_id, verification_template_path, master_validation = (
                 _registered_verification_master_match(db, raw, suffix)
             )
@@ -556,7 +589,10 @@ def upload_capture_files(
                 suffix,
                 certificate,
                 expected_template_path=(
-                    verification_template_path
+                    _verification_template_override(
+                        certificate,
+                        verification_template_path,
+                    )
                     if certificate.certificate_type == "verification"
                     else None
                 ),
@@ -572,14 +608,8 @@ def upload_capture_files(
                 verification_template_path=verification_template_path,
             )
         if certificate and certificate.certificate_type == "verification":
-            verification_context = dict(
-                certificate.equipment.certificate_operational_context_snapshot or {}
-            )
-            requires_registered_final = bool(
-                verification_context.get("initial_certificate_master_document_id")
-                and not verification_context.get("final_certificate_master_document_id")
-            )
-            if verification_master_id is not None:
+            requires_registered_final = _verification_requires_registered_master(certificate)
+            if requires_registered_final and verification_master_id is not None:
                 freeze_selected_certificate_master(
                     db,
                     certificate.equipment,
@@ -589,20 +619,25 @@ def upload_capture_files(
                 )
                 validation = _validate_excel(raw, suffix, certificate)
             if validation is not None:
-                validation["master_registration"] = master_validation
+                validation["master_registration"] = (
+                    master_validation
+                    if requires_registered_final
+                    else _verification_master_validation(certificate)
+                )
             if (
                 requires_registered_final
                 and verification_master_id is None
             ) or (validation or {}).get("servicio", {}).get("status") != "coincide":
+                unidentified_validation_override = dict(validation or {})
                 certificate = None
                 validation = None
-        unidentified_validation = {
+        unidentified_validation = unidentified_validation_override or {
             "file": {
                 "status": "no_identificado",
                 "message": "No fue posible asociar de forma única el archivo real con un certificado/equipo por identidad y fingerprint",
             }
         }
-        if has_verification_certificates:
+        if has_unresolved_verification and "master_registration" not in unidentified_validation:
             unidentified_validation["master_registration"] = master_validation
         record = CertificateCaptureFile(service_order_id=order.id, certificate_id=certificate.id if certificate else None,
             original_filename=filename, identification_status="identified" if certificate else "unidentified", uploaded_by_id=user_id)

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de pendientes en auditorías, cierres, bitácoras y documentos archivados
 >
-> Corte verificado: 2026-08-24
+> Corte verificado: 2026-08-25
 
 # Registro consolidado de observaciones
 
@@ -155,6 +155,7 @@ Estados permitidos: `pendiente`, `parcial`, `resuelta`. Una observación resuelt
 | OBS-R83 | ETS / Verificación | Verificación existía como categoría canónica, pero el alta de equipo la excluía al depender sólo de `calibration_scope`, Certificados no aceptaba un tipo propio y Folios no emitía `MYCV`. Ahora la partida ETS gobierna cada equipo, Verificación usa alcance nulo/tipo propio, comparte lifecycle y convive con Calibración sin clasificación global. | resuelta | Implementación y suites de Verificación 2026-08-24 |
 | OBS-R84 | Verificación / Captura | Captura identificaba el retorno por nombre o exigía preseleccionar el Master específico en Equipment. Ahora el bonche puede conservar su estructura mientras Captura sustituye el genérico fuera del ERP: la carga asocia certificado/equipo por identidad fuerte, encuentra de forma única el Master activo registrado como Verificación por fingerprint, congela automáticamente documento/versión final y conserva historial/auditoría antes de Calidad. | resuelta | Suite ZIP/XLSX de Verificación, Equipment/Captura y frontend ETS 2026-08-24 |
 | OBS-R85 | MYC Mobile / Firmas LAB | La app bloqueaba portrait, el ScrollView podía interceptar el stroke Android, el bitmap se perdía al redimensionar, la protección residual borraba captura intragrupo y una guardia posterior impedía toda firma inicial porque `signature_required` nace `false`. La reparación usa orientación default, ownership temporal del gesto, strokes significativos, borrador por `root_work_order_id` y POST gobernado por backend; regresiones prueban contexto, tap, delegación de `applySignatures` y ejecución real del request. Backend efímero confirma `draft/false → 200 → ready_for_signatures → complete`; falta aceptación táctil física Android/iOS. | parcial | Implementación móvil, 62 pruebas, backend focal y gates TypeScript/lint 2026-08-24 |
+| OBS-R86 | Verificación / Snapshot Master final | Captura volvía a resolver Masters activos aunque Equipment ya tuviera final congelado y el bloqueo A→B dependía de evidencia `identified`. Ahora sólo equipos con inicial y sin final consultan el registro; un final existente valida contra documento/versión snapshot, A→A es idempotente y A→B responde conflicto antes de evidencia. | resuelta | Servicios Equipment/Captura y regresión P1 de 14 escenarios de Verificación, 2026-08-25 |
 
 ## Regla de cierre
 

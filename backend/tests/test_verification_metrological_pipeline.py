@@ -13,6 +13,7 @@ from starlette.datastructures import UploadFile
 
 import app.models  # noqa: F401
 from app.core.db import Base
+from app.models.audit_log import AuditLog
 from app.models.certificate import Certificate, CertificateCaptureFile, CertificatePdfVersion
 from app.models.client import Client
 from app.models.controlled_document import (
@@ -397,6 +398,17 @@ def _active_master(db, *, code, path):
     return document, version
 
 
+def _master_selection_audit_count(db, equipment_id):
+    return len(
+        db.scalars(
+            select(AuditLog.id).where(
+                AuditLog.action == "equipment.certificate_master_selected",
+                AuditLog.entity_id == equipment_id,
+            )
+        ).all()
+    )
+
+
 def test_verification_rejects_ambiguous_registered_master_fingerprint(
     db,
     mixed_order,
@@ -530,6 +542,28 @@ def test_verification_freezes_generic_then_specific_master_and_item_identity(db,
     assert context["final_certificate_master_version_id"] == specific_version.id
     assert context["certificate_master_selection_history"][0]["previous_document_id"] == generic.id
 
+    history_count = len(context["certificate_master_selection_history"])
+    audit_count = _master_selection_audit_count(db, equipment.id)
+    equipment = update_equipment(
+        db,
+        equipment.id,
+        EquipmentUpdate(certificate_master_document_id=specific.id),
+        user_id=actor.id,
+    )
+    assert len(equipment.certificate_operational_context_snapshot["certificate_master_selection_history"]) == history_count
+    assert _master_selection_audit_count(db, equipment.id) == audit_count
+
+    with pytest.raises(HTTPException, match="Master final de Verificación ya está congelado"):
+        update_equipment(
+            db,
+            equipment.id,
+            EquipmentUpdate(certificate_master_document_id=generic.id),
+            user_id=actor.id,
+        )
+    db.refresh(equipment)
+    assert equipment.certificate_master_document_id == specific.id
+    assert equipment.certificate_master_version_id == specific_version.id
+
     with pytest.raises(HTTPException, match="partida metrológica.*no puede cambiarse"):
         update_equipment(
             db,
@@ -538,23 +572,43 @@ def test_verification_freezes_generic_then_specific_master_and_item_identity(db,
             user_id=actor.id,
         )
 
+
+def test_verification_identified_legacy_capture_still_blocks_master_change(
+    db,
+    mixed_order,
+    tmp_path,
+):
+    actor, order, items = mixed_order
+    equipment = create_equipment(
+        db,
+        EquipmentCreate(
+            service_order_id=order.id,
+            service_order_item_id=items["verification"].id,
+            name="Equipo legacy con evidencia",
+        ),
+        user_id=actor.id,
+    )
     certificate = db.scalar(select(Certificate).where(Certificate.equipment_id == equipment.id))
     db.add(
         CertificateCaptureFile(
             certificate_id=certificate.id,
             service_order_id=order.id,
-            original_filename="evidencia-real.xlsx",
+            original_filename="evidencia-legacy.xlsx",
             identification_status="identified",
             validation_results={},
             uploaded_by_id=actor.id,
         )
     )
+    candidate_path = tmp_path / "legacy-candidate.xlsx"
+    candidate_path.touch()
+    candidate, _ = _active_master(db, code="MYC-VER-LEGACY-CANDIDATE", path=candidate_path)
     db.commit()
+
     with pytest.raises(HTTPException, match="no puede cambiar después de identificar"):
         update_equipment(
             db,
             equipment.id,
-            EquipmentUpdate(certificate_master_document_id=generic.id),
+            EquipmentUpdate(certificate_master_document_id=candidate.id),
             user_id=actor.id,
         )
 
@@ -657,3 +711,217 @@ def test_verification_replaces_generic_in_bundle_and_auto_freezes_registered_rea
     assert context["final_certificate_master_document_id"] == specific.id
     assert context["certificate_master_selection_history"][-1]["selection_source"] == "capture_upload_fingerprint"
     assert generic_version.id != specific_version.id
+
+
+def _verification_with_frozen_master(db, mixed_order, tmp_path):
+    actor, order, items = mixed_order
+    generic_book = Workbook()
+    generic_book.active.title = "Master genérico"
+    generic_book.active["A1"] = "Referencia inicial"
+    generic_path = tmp_path / "generic-authority.xlsx"
+    generic_book.save(generic_path)
+    generic_book.close()
+    generic, _ = _active_master(db, code="MYC-VER-AUTH-GEN", path=generic_path)
+    items["verification"].expected_certificate_master_id = generic.id
+    db.commit()
+
+    equipment = create_equipment(
+        db,
+        EquipmentCreate(
+            service_order_id=order.id,
+            service_order_item_id=items["verification"].id,
+            name="Equipo autoridad final",
+            internal_id="AUTH-01",
+            serial_number="AUTH-SN-01",
+        ),
+        user_id=actor.id,
+    )
+    certificate = db.scalar(select(Certificate).where(Certificate.equipment_id == equipment.id))
+    master_book = Workbook()
+    master_sheet = master_book.active
+    master_sheet.title = "Certificado A"
+    master_sheet["A1"] = "Certificado de Verificación A"
+    master_sheet["A2"] = certificate.folio
+    master_sheet["A3"] = equipment.internal_id
+    master_sheet["A4"] = equipment.serial_number
+    master_sheet["B6"] = 0
+    master_path = tmp_path / "master-final-a.xlsx"
+    master_book.save(master_path)
+    master, version = _active_master(db, code="MYC-VER-AUTH-A", path=master_path)
+    db.add(
+        DocumentInterpretation(
+            document_id=master.id,
+            document_version_id=version.id,
+            name="Master final A de Verificación",
+            interpretation_type="certificate_template_source",
+            service_type="verification",
+            status="approved",
+            version=1,
+        )
+    )
+    db.commit()
+    equipment = update_equipment(
+        db,
+        equipment.id,
+        EquipmentUpdate(certificate_master_document_id=master.id),
+        user_id=actor.id,
+    )
+    master_sheet["B6"] = 10
+    real_file = BytesIO()
+    master_book.save(real_file)
+    master_book.close()
+    return actor, order, equipment, certificate, master, version, master_path, real_file.getvalue()
+
+
+def _upload_verification_file(db, actor, order, certificate, raw):
+    with patch(
+        "app.services.capture_packages.resolve_storage_path",
+        side_effect=lambda value: Path(value) if value else None,
+    ), patch(
+        "app.services.capture_packages._registered_verification_master_match",
+        side_effect=AssertionError("No debe resolverse de nuevo un Master final congelado"),
+    ), patch("app.services.capture_packages.save_validated_content") as save:
+        save.return_value.relative_path = "capture/final-authority.xlsx"
+        save.return_value.checksum_sha256 = "final-authority"
+        return upload_capture_files(
+            db,
+            order.id,
+            [
+                UploadFile(
+                    filename=f"Master_{certificate.folio}.xlsx",
+                    file=BytesIO(raw),
+                )
+            ],
+            user_id=actor.id,
+        )
+
+
+def test_verification_final_master_is_idempotent_and_ignores_other_active_candidates(
+    db,
+    mixed_order,
+    tmp_path,
+):
+    actor, order, equipment, certificate, master_a, version_a, master_path, raw_a = (
+        _verification_with_frozen_master(db, mixed_order, tmp_path)
+    )
+    master_b_path = tmp_path / "master-candidate-b.xlsx"
+    master_b_path.write_bytes(master_path.read_bytes())
+    master_b, version_b = _active_master(db, code="MYC-VER-AUTH-B", path=master_b_path)
+    db.add(
+        DocumentInterpretation(
+            document_id=master_b.id,
+            document_version_id=version_b.id,
+            name="Master candidato B de Verificación",
+            interpretation_type="certificate_template_source",
+            service_type="verification",
+            status="approved",
+            version=1,
+        )
+    )
+    db.commit()
+    context_before = dict(equipment.certificate_operational_context_snapshot)
+    history_count = len(context_before["certificate_master_selection_history"])
+    audit_count = _master_selection_audit_count(db, equipment.id)
+
+    result = _upload_verification_file(db, actor, order, certificate, raw_a)
+
+    db.refresh(equipment)
+    assert result["summary"]["identified"] == 1
+    assert result["processed"][0]["validation"]["master_registration"] == {
+        "status": "frozen_snapshot",
+        "method": "equipment_final_snapshot",
+        "document_id": master_a.id,
+        "version_id": version_a.id,
+    }
+    assert equipment.certificate_master_document_id == master_a.id
+    assert equipment.certificate_master_version_id == version_a.id
+    assert len(equipment.certificate_operational_context_snapshot["certificate_master_selection_history"]) == history_count
+    assert _master_selection_audit_count(db, equipment.id) == audit_count
+
+
+def test_verification_file_for_other_master_cannot_replace_frozen_final(
+    db,
+    mixed_order,
+    tmp_path,
+):
+    actor, order, equipment, certificate, master_a, version_a, _, _ = (
+        _verification_with_frozen_master(db, mixed_order, tmp_path)
+    )
+    master_b_book = Workbook()
+    master_b_sheet = master_b_book.active
+    master_b_sheet.title = "Certificado B"
+    master_b_sheet["A1"] = "Certificado de Verificación B"
+    master_b_sheet["A2"] = certificate.folio
+    master_b_sheet["A3"] = equipment.internal_id
+    master_b_sheet["A4"] = equipment.serial_number
+    master_b_sheet["B9"] = 0
+    master_b_path = tmp_path / "master-real-b.xlsx"
+    master_b_book.save(master_b_path)
+    master_b, version_b = _active_master(db, code="MYC-VER-REAL-B", path=master_b_path)
+    db.add(
+        DocumentInterpretation(
+            document_id=master_b.id,
+            document_version_id=version_b.id,
+            name="Master real B de Verificación",
+            interpretation_type="certificate_template_source",
+            service_type="verification",
+            status="approved",
+            version=1,
+        )
+    )
+    db.commit()
+    master_b_sheet["B9"] = 20
+    real_b = BytesIO()
+    master_b_book.save(real_b)
+    master_b_book.close()
+
+    result = _upload_verification_file(
+        db,
+        actor,
+        order,
+        certificate,
+        real_b.getvalue(),
+    )
+
+    db.refresh(equipment)
+    assert result["summary"]["unidentified"] == 1
+    assert result["processed"][0]["validation"]["servicio"]["status"] == "mismatch"
+    assert result["processed"][0]["validation"]["master_registration"]["document_id"] == master_a.id
+    assert equipment.certificate_master_document_id == master_a.id
+    assert equipment.certificate_master_version_id == version_a.id
+
+
+def test_verification_frozen_final_version_survives_new_active_revision(
+    db,
+    mixed_order,
+    tmp_path,
+):
+    actor, order, equipment, certificate, master_a, version_a, _, raw_a = (
+        _verification_with_frozen_master(db, mixed_order, tmp_path)
+    )
+    revision_book = Workbook()
+    revision_book.active.title = "Nueva revisión"
+    revision_book.active["A1"] = "Estructura posterior incompatible"
+    revision_path = tmp_path / "master-final-a-rev2.xlsx"
+    revision_book.save(revision_path)
+    revision_book.close()
+    version_a.status = "obsolete"
+    version_a2 = ControlledDocumentVersion(
+        document_id=master_a.id,
+        revision="2",
+        file_path=str(revision_path),
+        original_filename=revision_path.name,
+        status="active",
+    )
+    db.add(version_a2)
+    master_a.current_revision = "2"
+    db.commit()
+
+    result = _upload_verification_file(db, actor, order, certificate, raw_a)
+
+    db.refresh(equipment)
+    assert result["summary"]["identified"] == 1
+    assert equipment.certificate_master_document_id == master_a.id
+    assert equipment.certificate_master_version_id == version_a.id
+    assert equipment.certificate_master_version_id != version_a2.id
+    assert result["processed"][0]["validation"]["master_registration"]["version_id"] == version_a.id

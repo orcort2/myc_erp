@@ -321,6 +321,18 @@ def freeze_selected_certificate_master(
 ) -> None:
     previous_document_id = equipment.certificate_master_document_id
     previous_version_id = equipment.certificate_master_version_id
+    context = dict(equipment.certificate_operational_context_snapshot or {})
+    final_document_id = context.get("final_certificate_master_document_id")
+    if final_document_id is not None:
+        if document_id == final_document_id:
+            return
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "El Master final de Verificación ya está congelado y no puede "
+                "sustituirse sin un mecanismo formal de corrección histórica"
+            ),
+        )
     if previous_document_id == document_id and selection_source == "equipment_edit":
         return
     identified_capture_exists = db.scalar(
@@ -338,7 +350,6 @@ def freeze_selected_certificate_master(
             detail="El Master final ya no puede cambiar después de identificar el archivo técnico cargado",
         )
     snapshot_certificate_master(db, equipment, document_id)
-    context = dict(equipment.certificate_operational_context_snapshot or {})
     history = list(context.get("certificate_master_selection_history") or [])
     history.append(
         {

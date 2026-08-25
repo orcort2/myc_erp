@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de `project/`
 >
-> Corte actualizado: 2026-08-24
+> Corte actualizado: 2026-08-25
 
 # Estado operativo actual del ERP MYC
 
@@ -124,8 +124,11 @@
   certificado/equipo por identidad fuerte, reconoce de forma única un Master
   activo registrado estructuralmente como Verificación y congela automáticamente
   documento/versión final con historial, actor y origen. Nombre, código y
-  descripción no deciden la identidad. No se agregó esquema ni migración y no
-  se modificó la base local.
+  descripción no deciden la identidad. Una vez congelado el final, documento,
+  versión y ruta snapshot son autoridad histórica: no se vuelve a ejecutar la
+  resolución institucional, A→A es idempotente y A→B se rechaza incluso sin
+  evidencia identificada. No se agregó esquema ni migración y no se modificó
+  la base local.
 - La conciliación **TD-027** deja el capability gate **VERDE** en 29/0 y el
   bootstrap cubre 83/83 permisos HTTP. Las diferencias gobernadas incluyen
   `lab_work_orders.use/export/delete` y `tickets.create/view_own/review`,
@@ -377,14 +380,15 @@ seguridad e inventario, se conserva en
     cualquier cambio de ciclo distinguirá RESET DE CONTADORES de BORRADO DE
     DATOS, que queda prohibido (TD-050); el motor actual no depende de ello.
 
-## Validaciones del corte 2026-08-24
+## Validaciones del corte 2026-08-25
 
-- Backend Captura/Calidad focal: `55 passed`, `19 subtests passed`; cubrió
-  Verificación, Captura/Calidad, Master/fingerprint, autenticación desde Master,
-  separación de etapas, contexto de equipo y scopes.
-- Backend identidad/verticales: `66 passed`; cubrió snapshots operacionales,
-  Servicios Compuestos, sustitución explícita de concepto, Venta, Mantenimiento,
-  ETS evolucionado y Verificación, sin reinterpretar históricos.
+- Backend focal ampliado: `144 passed`, `19 subtests passed`; cubrió
+  Verificación, Calibración compartida, Captura/Calidad, Equipment,
+  Master/fingerprint, autenticación, identidad/snapshots, Servicios Compuestos,
+  ETS evolucionado, Venta, Mantenimiento y Reparación.
+- Suite propia de Verificación: `14 passed`, incluidos inicial→final,
+  idempotencia A→A, bloqueo A→B sin evidencia, candidato B vigente, archivo B,
+  revisión posterior de A y ambigüedad sin mutación.
 - El caso nuevo de retorno sustituye el Master genérico dentro de un ZIP,
   comprueba asociación al certificado por identidad, resolución única del
   Master específico registrado por fingerprint y congelación automática del
@@ -429,5 +433,8 @@ El ajuste de Verificación sincronizó flujo, alcance, reglas, ADR-078,
 observaciones, deuda, estado, arquitectura de identidad, contrato de Captura e
 inventario: el Master específico deja de requerir selección manual y se
 resuelve al retornar el bonche mediante identidad estructurada y fingerprint.
+El P1 del 2026-08-25 acotó esa resolución a equipos con inicial sin final; un
+final ya congelado conserva documento/versión históricos, valida contra su
+snapshot y bloquea A→B sin depender de evidencia `identified`.
 El vertical permanece **EN REVISIÓN** hasta probarlo con el Master institucional
 y un E2E autenticado físico/browser.

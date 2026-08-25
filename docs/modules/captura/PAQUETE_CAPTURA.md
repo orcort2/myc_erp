@@ -8,7 +8,7 @@
 >
 > Estado del módulo: `../../project/PROJECT_STATUS.md`
 >
-> Corte verificado: 2026-08-24
+> Corte verificado: 2026-08-25
 
 # Paquete de Captura
 
@@ -52,6 +52,15 @@ documento/versión como Master final del equipo y audita
 `selection_source=capture_upload_fingerprint`. Una coincidencia ambigua o
 inexistente no crea una identidad nueva ni consulta nombre, código o
 descripción.
+
+La búsqueda institucional anterior sólo se ejecuta cuando el equipo conserva
+`initial_certificate_master_document_id` y aún no tiene
+`final_certificate_master_document_id`. Si ya existe Master final, su documento,
+versión y ruta snapshot son autoridad histórica aunque cambien revisiones,
+perfiles, interpretaciones o Masters activos. La carga se valida contra ese
+snapshot; no lo sustituye. Repetir el mismo Master final no agrega historial ni
+auditoría y cualquier intento A→B se rechaza antes de consultar evidencia de
+Captura.
 
 La respuesta incluye totales de identificados, no identificados, auxiliares ignorados, advertencias y diferencias. El frontend conserva ese resultado visible, vuelve a consultar certificados y archivos de Captura, actualiza los contadores y muestra en cada tarjeta el estado y las alertas del último Master identificado. `._*`, `.DS_Store` y cualquier contenido dentro de `__MACOSX/` se ignoran antes de persistir y no afectan estadísticas.
 

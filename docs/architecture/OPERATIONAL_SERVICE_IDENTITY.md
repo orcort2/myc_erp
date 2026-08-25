@@ -1,6 +1,6 @@
 > Estado: VIGENTE, implementación **EN REVISIÓN**
 >
-> Corte: 2026-08-24
+> Corte: 2026-08-25
 >
 > Alcance: identidad y snapshot; no define workflows técnicos por categoría.
 
@@ -27,11 +27,15 @@ compara el XLSX con Masters activos que tengan identidad estructurada
 un perfil técnico activo. Una coincidencia única actualiza el snapshot al
 Master específico antes de persistir la identificación; el JSON operacional
 conserva identificador inicial, identificador/versión final e historial de
-selecciones, incluido `selection_source=capture_upload_fingerprint`. Una vez
-identificado un archivo técnico, el Master final queda bloqueado. El nombre,
-código y descripción documental no deciden la identidad; el archivo cargado no
-necesita conservar bytes de la plantilla descargada y su identidad fuerte de
-equipo/certificado más el fingerprint deben producir una asociación única.
+selecciones, incluido `selection_source=capture_upload_fingerprint`. Esta
+resolución sólo ocurre mientras existe Master inicial y no existe Master final.
+Desde que `final_certificate_master_document_id` y
+`final_certificate_master_version_id` quedan congelados, ambos son autoridad
+histórica: toda carga posterior valida contra la ruta/version snapshot del
+equipo y no vuelve a consultar Masters activos, perfiles ni interpretaciones.
+Una llamada al mismo documento final es idempotente; intentar A→B responde
+conflicto aunque todavía no exista evidencia identificada. El nombre, código y
+descripción documental no deciden la identidad.
 
 Todo concepto nuevo debe enviar `operational_category` explícita. El formulario presenta una sola lista operacional, independiente de Tipo; esa selección gobierna también la aparición de la configuración Venta ya existente. El backend valida correspondencia exacta entre la etiqueta estructurada y la clave canónica, pero nunca sustituye la clave a partir de `item_type`, nombre o descripción.
 

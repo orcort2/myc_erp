@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-08-17
+> Corte verificado: 2026-08-25
 
 # Flujo operativo actual
 
@@ -343,7 +343,7 @@ Cada equipo puede tener una Hoja de Campo activa con snapshot de plantilla e ide
 
 Para el Paquete de Captura, `completed`, `under_review` y `approved` representan hojas técnicamente terminadas. La transición `complete` valida condición inicial/final, campos requeridos por plantilla, observaciones o evidencia y resultados estructurados; `Revisó` y `Elaboró informe` pertenecen a etapas posteriores y no bloquean el paquete. El flujo general de Hojas de Campo sigue sin cerrar por semánticas, automatizaciones metrológicas y acciones propias de aprobación/rechazo.
 
-Al devolver el ZIP/Master, cada Excel útil se identifica y persiste con sus validaciones. El nombre entregado es una ayuda, no una obligación: si el archivo real se llama distinto, el backend compara su identidad documental y su fingerprint contra el Master final congelado y sólo lo asocia cuando existe una coincidencia única. El primer Master identificado inicia `capture_in_progress` con actor y auditoría; metadatos `._*`, `.DS_Store` y `__MACOSX/` se ignoran. La interfaz muestra el resumen devuelto y vuelve a consultar ETS, certificados y registros de Captura sin exigir recarga manual. `match_status` se conserva como dato legacy y no gobierna la autenticación.
+Al devolver el ZIP/Master, cada Excel útil se identifica y persiste con sus validaciones. Si Verificación sólo conserva el Master genérico inicial, el backend resuelve una coincidencia institucional única y congela documento/versión final. Si ese final ya existe, no vuelve a resolver contra el registro vigente: valida exclusivamente contra la ruta y versión congeladas, aunque aparezcan otros Masters o revisiones. El nombre entregado es una ayuda, no una obligación. El primer Master identificado inicia `capture_in_progress` con actor y auditoría; metadatos `._*`, `.DS_Store` y `__MACOSX/` se ignoran. La interfaz muestra el resumen devuelto y vuelve a consultar ETS, certificados y registros de Captura sin exigir recarga manual. `match_status` se conserva como dato legacy y no gobierna la autenticación.
 
 Captura no carga el PDF final. Para cada certificado, `identified` con advertencias `no_encontrado` permite enviar; ausencia de Master identificado o resultados `mismatch`/`no_coincide` bloquean. El envío persiste `capture_in_progress → quality_review` con actor, fecha y referencia al XLSX. Calidad descarga el Master, revisa advertencias/diferencias y puede aprobarlo o regresarlo a Captura.
 
