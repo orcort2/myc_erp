@@ -58,8 +58,11 @@ def request_lab_work_order_group(
         require_mobile_permission("work_orders.group.request")
     ),
 ) -> LabWorkOrderGroupRequestRead:
-    if context.client_id is None:
-        raise ValueError("La solicitud requiere una organización operadora")
+    if context.actor_type != "client" or context.client_id is None:
+        raise HTTPException(
+            status_code=403,
+            detail="La solicitud anticipada está disponible únicamente para actores externos",
+        )
     return create_group_request(
         db, payload, context.user, operator_client_id=context.client_id
     )
@@ -72,7 +75,80 @@ def get_mobile_group_requests(
         require_mobile_permission("work_orders.group.request")
     ),
 ) -> list[LabWorkOrderGroupRequestRead]:
+    if context.actor_type != "client" or context.client_id is None:
+        raise HTTPException(
+            status_code=403,
+            detail="La consulta externa requiere una organización vinculada",
+        )
     return list_group_requests(db, operator_client_id=context.client_id)
+
+
+@router.post("/groups", response_model=LabWorkOrderRead, status_code=201)
+def create_mobile_staff_group(
+    payload: LabWorkOrderGroupCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.create")
+    ),
+) -> LabWorkOrderRead:
+    if context.actor_type != "internal":
+        raise HTTPException(
+            status_code=403,
+            detail="La creación directa de grupos está reservada a staff MYC",
+        )
+    return create_work_order_group(db, payload, context.user, operator_client_id=None)
+
+
+@router.get("/group-requests/review", response_model=list[LabWorkOrderGroupRequestRead])
+def get_mobile_staff_group_requests(
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.read")
+    ),
+) -> list[LabWorkOrderGroupRequestRead]:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La bandeja de revisión es exclusiva de staff MYC")
+    return list_group_requests(db)
+
+
+@router.post("/group-requests/{request_id}/claim", response_model=LabWorkOrderGroupRequestRead)
+def claim_mobile_staff_group_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.claim")
+    ),
+) -> LabWorkOrderGroupRequestRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La atención de solicitudes es exclusiva de staff MYC")
+    return claim_group_request(db, request_id, context.user)
+
+
+@router.post("/group-requests/{request_id}/approve", response_model=LabWorkOrderGroupRequestRead)
+def approve_mobile_staff_group_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.decide")
+    ),
+) -> LabWorkOrderGroupRequestRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La decisión de solicitudes es exclusiva de staff MYC")
+    return approve_group_request(db, request_id, context.user)
+
+
+@router.post("/group-requests/{request_id}/reject", response_model=LabWorkOrderGroupRequestRead)
+def reject_mobile_staff_group_request(
+    request_id: int,
+    payload: LabWorkOrderGroupDecision,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.decide")
+    ),
+) -> LabWorkOrderGroupRequestRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La decisión de solicitudes es exclusiva de staff MYC")
+    return reject_group_request(db, request_id, context.user, payload.reason)
 
 
 @staff_router.post("", response_model=LabWorkOrderRead, status_code=201)

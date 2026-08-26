@@ -38,5 +38,23 @@ La migración renombra la columna sin perder valores. Filas de Bloque 1 conserva
 
 1. La alta individual seguía expuesta porque Jr/Sr conservaban `work_orders.create` y Mobile derivaba el botón sólo de esa capacidad. Se retiró del RBAC externo, la UI exige actor `internal` y el router devuelve 403 a cualquier actor `client`; la OT adicional también queda reservada a staff.
 2. La experiencia administrativa sólo presentaba solicitudes de grupo. La pantalla ahora es una bandeja con secciones independientes para `OperationalTicket` y `WorkOrderGroupRequest`, sin fusionar modelos ni duplicar decisiones.
-3. Aunque el vínculo `conversation_id` se persistía, faltaban identidad visible y navegación. Claim crea o reutiliza la conversación bajo el lock de la solicitud, agrega sólo solicitante/handler y los mensajes system derivan nombre, cantidad, folios o motivo desde el evento backend.
+3. La primera versión persistía `conversation_id` prematuramente durante `pending`, cuando el admin aún no era participante, lo que producía 404. La corrección definitiva deja el vínculo nulo al crear y lo materializa en claim bajo el lock de la solicitud, con requester y handler como únicos participantes mínimos.
 4. El navegador de notificaciones no conocía las entidades nuevas y Mobile esperaba terminar el marcado como leído antes de navegar. Los resolvers Web/Mobile usan `entity_type`, `entity_id` y metadata estructurada; el intento de lectura ya no impide abrir el destino.
+
+## Revisión quirúrgica de rama
+
+- `hasPermission('*')` contaminaba la capability de solicitud; ahora request exige actor `client`, mientras grupo directo exige actor `internal` y `lab_work_order_groups.create`.
+- El endpoint externo convertía ausencia de tenant en `ValueError`/500. Ahora internal recibe 403 y el tenant externo sólo procede de `MobileSecurityContext`.
+- Se añadió el adaptador Mobile internal `/groups`, que delega íntegramente a `create_work_order_group` y no crea solicitudes.
+- Solicitudes Mobile compone Tickets y requests mediante dos lecturas existentes, con tabs, detalle, claim, approve/reject y control por handler; el Home aplica la misma suma accionable sin N+1.
+- `requested` navega a Solicitudes administrativas; `in_review/approved/rejected` navega al detalle externo. Los guards de deep link consumen una identidad una sola vez.
+- El modal externo usa layout centrado válido y sólo ofrece conversación cuando `conversation_id` existe.
+- `NotificationCenterPage`, `ProceduresPage`, `UncertaintyPage` y sus ramas en `App.jsx` se restauraron desde `main`; la única adición Web conservada en ese router es `LabWorkOrderGroupsPage`.
+- No se creó migración: `e7a3c5d9f1b2` ya contiene handler, timestamps, conversación y raíz opcional requeridos por el lifecycle.
+
+## Guía de validación manual
+
+1. **Client Sr:** confirmar ausencia de alta individual/directa, crear request de tres OT y verificar `pending`, sin folios ni conversación.
+2. **Admin Mobile:** confirmar alta individual y grupo directo, crear tres OT y verificar folios inmediatos; después abrir Solicitudes y comprobar que el contador incluye el request externo.
+3. **Aprobación:** abrir la notificación `requested`, tomar el request exacto, abrir la conversación desde ambos participantes, aprobar y comprobar grupo/folios en el detalle externo.
+4. **Rechazo:** tomar otro request, rechazar con motivo y comprobar desde client que aparecen estado/motivo, sin folios consumidos.

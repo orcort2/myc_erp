@@ -68,10 +68,21 @@ test('targetFor resolves a communication, ticket or work order deep link', () =>
   assert.equal(targetFor(eventFromData({}, 'push', 'id-4')), null);
 });
 
-test('targetFor opens a structured group request at its Mobile root', () => {
+test('requested group opens the internal request inbox', () => {
   assert.deepEqual(
-    targetFor(eventFromData({ entity_type: 'work_order_group_request', entity_id: 17, request_id: 17 }, 'push', 'request-17')),
+    targetFor(eventFromData({ event_type: 'lab_work_order_group.requested', entity_type: 'work_order_group_request', entity_id: 17, request_id: 17 }, 'push', 'request-17')),
+    { pathname: '/(technician)/tickets', params: { groupRequestId: '17', requestKind: 'groups' } },
+  );
+});
+
+test('approved and rejected groups open the external request detail', () => {
+  assert.deepEqual(
+    targetFor(eventFromData({ event_type: 'lab_work_order_group.approved', entity_type: 'work_order_group_request', entity_id: 17 }, 'push', 'request-17-approved')),
     { pathname: '/(technician)/work-orders', params: { groupRequestId: '17' } },
+  );
+  assert.deepEqual(
+    targetFor(eventFromData({ event_type: 'lab_work_order_group.rejected', entity_type: 'work_order_group_request', entity_id: 18 }, 'push', 'request-18-rejected')),
+    { pathname: '/(technician)/work-orders', params: { groupRequestId: '18' } },
   );
 });
 

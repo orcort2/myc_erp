@@ -27,13 +27,16 @@ export class RefreshGate {
 export function affectsTickets(event: NotificationSyncEvent): boolean {
   return event.event_type === 'app.foreground'
     || event.entity_type === 'ticket'
-    || event.event_type.startsWith('ticket.');
+    || event.entity_type === 'work_order_group_request'
+    || event.event_type.startsWith('ticket.')
+    || event.event_type.startsWith('lab_work_order_group.');
 }
 
 export function affectsWorkOrders(event: NotificationSyncEvent): boolean {
   return event.event_type === 'app.foreground'
     || event.event_type.startsWith('ticket.')
     || event.event_type.startsWith('work_order.')
+    || event.entity_type === 'work_order_group_request'
     || event.work_order_id !== undefined;
 }
 
@@ -62,6 +65,9 @@ export function eventFromData(
 export function targetFor(event: NotificationSyncEvent): Href | null {
   if (event.request_id || event.entity_type === 'work_order_group_request') {
     const id = event.request_id ?? event.entity_id;
+    if (event.event_type === 'lab_work_order_group.requested') {
+      return { pathname: '/(technician)/tickets', params: id ? { groupRequestId: String(id), requestKind: 'groups' } : { requestKind: 'groups' } };
+    }
     return { pathname: '/(technician)/work-orders', params: id ? { groupRequestId: String(id) } : {} };
   }
   if (event.conversation_id || event.entity_type === 'communication') {

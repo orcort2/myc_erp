@@ -69,6 +69,13 @@ for (const profile of ['Operativo Jr', 'Operativo Sr']) {
 test('sólo la capacidad explícita habilita solicitudes de grupos anticipados', () => {
   assert.equal(deriveMobileCapabilities(user('client', ['work_orders.create'])).canRequestWorkOrderGroups, false);
   assert.equal(deriveMobileCapabilities(user('client', ['work_orders.group.request'])).canRequestWorkOrderGroups, true);
+  assert.equal(deriveMobileCapabilities(user('internal', ['*'])).canRequestWorkOrderGroups, false);
+});
+
+test('creación directa de grupo exige actor internal y permiso explícito', () => {
+  assert.equal(deriveMobileCapabilities(user('client', ['lab_work_order_groups.create'])).canCreateWorkOrderGroupsDirect, false);
+  assert.equal(deriveMobileCapabilities(user('internal', ['lab_work_order_groups.create'])).canCreateWorkOrderGroupsDirect, true);
+  assert.equal(deriveMobileCapabilities(user('internal', ['*'])).canCreateWorkOrderGroupsDirect, true);
 });
 
 test('staff conserva compatibilidad LAB y Comunicaciones', () => {

@@ -640,6 +640,6 @@ vínculo comercial exacto y no pasa por el motor evolutivo de Servicio General.
 
 ## Flujo implementado 2026-08-26 — Grupo anticipado OT LAB
 
-`Operativo Sr → pending (0 folios) → claim/in_review → aprobar → lock solicitud + secuenciador → N OTs enlazadas → approved + root → commit → notificación/realtime`. Rechazo exige motivo y no toca el secuenciador. Staff directo usa la misma materialización.
+`Operativo Sr → pending (0 folios, 0 conversación) → claim/in_review + handler + conversación requester/handler → aprobar → lock solicitud + secuenciador → N OTs enlazadas → approved + root → commit → mensaje/notificación/realtime`. Rechazo exige motivo y no toca el secuenciador. Staff internal con `lab_work_order_groups.create` usa la misma materialización directamente desde Web/Mobile, sin request ni aprobación.
 
-`actor_type=client → POST alta individual/adicional → 403`. En administración, la bandeja presenta separadamente reaperturas y solicitudes de grupo. Click de notificación intenta marcar lectura y, aun si ese efecto falla, resuelve `entity_type + entity_id/metadata` para abrir solicitud, ticket, OT, conversación o ETS cuando existe superficie real.
+`actor_type=client → POST alta individual/grupo directo/adicional → 403`; `actor_type=internal → POST external group-request → 403`. En Mobile administrativo, Solicitudes presenta separadamente reaperturas y grupos, con claim/decisión sujetos a permiso y handler. El Home suma sólo reaperturas y grupos `pending` que el actor puede procesar. La notificación `requested` abre esa bandeja y el request exacto; `in_review/approved/rejected` abre el detalle externo con folios o motivo.

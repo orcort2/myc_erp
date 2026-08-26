@@ -17,9 +17,11 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
-import { hasPermission } from '@/src/permissions/permissions';
+import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { affectsTickets, RefreshGate } from '@/src/notifications/refresh-policy';
+import { filterGroupRequests, type RequestInboxKind, visibleRequestKinds } from '@/src/requests/request-inbox';
+import type { LabWorkOrderGroupRequest } from '@/src/types/lab-work-order';
 import type { OperationalTicket, SignaturePolicy, TicketStatus } from '@/src/types/operational-ticket';
 
 const PAGE_SIZE = 25;
@@ -31,12 +33,20 @@ const STATUS_LABELS: Record<TicketStatus, string> = {
   resolved: 'Resuelto',
   cancelled: 'Cancelado',
 };
+const GROUP_STATUS_LABELS: Record<LabWorkOrderGroupRequest['status'], string> = {
+  pending: 'Pendiente',
+  in_review: 'En atención',
+  approved: 'Aprobada',
+  rejected: 'Rechazada',
+};
 
 export default function TicketsScreen() {
   const { authorizedFetch, isLoading: authLoading, user } = useAuth();
   const { publishLocalChange, subscribe } = useNotificationSync();
-  const params = useLocalSearchParams<{ ticketId?: string }>();
+  const params = useLocalSearchParams<{ ticketId?: string; groupRequestId?: string; requestKind?: string }>();
+  const capabilities = deriveMobileCapabilities(user);
   const [items, setItems] = useState<OperationalTicket[]>([]);
+  const [groupRequests, setGroupRequests] = useState<LabWorkOrderGroupRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -45,6 +55,8 @@ export default function TicketsScreen() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selected, setSelected] = useState<OperationalTicket | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<LabWorkOrderGroupRequest | null>(null);
+  const [kind, setKind] = useState<RequestInboxKind>('all');
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -69,19 +81,27 @@ export default function TicketsScreen() {
         status !== 'all' ? `status=${status}` : '',
         debouncedSearch ? `search=${encodeURIComponent(debouncedSearch)}` : '',
       ].filter(Boolean).join('&');
-      const next = await request<OperationalTicket[]>(`/mobile/v1/technician/tickets?${query}`);
+      const [next, groups] = await Promise.all([
+        capabilities.canReadTickets
+          ? request<OperationalTicket[]>(`/mobile/v1/technician/tickets?${query}`)
+          : Promise.resolve([]),
+        reset && capabilities.canReadWorkOrderGroupRequests
+          ? request<LabWorkOrderGroupRequest[]>('/mobile/v1/technician/lab-work-orders/group-requests/review')
+          : Promise.resolve(null),
+      ]);
       setItems((current) => {
         const updated = reset ? next : [...current, ...next];
         itemCount.current = updated.length;
         return updated;
       });
+      if (groups) setGroupRequests(groups);
       setHasMore(next.length === PAGE_SIZE);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Intenta nuevamente');
     } finally {
       if (reset) setLoading(false); else setLoadingMore(false);
     }
-  }, [debouncedSearch, request, status]);
+  }, [capabilities.canReadTickets, capabilities.canReadWorkOrderGroupRequests, debouncedSearch, request, status]);
 
   const refreshSelected = useCallback(async (ticketId?: number) => {
     const id = ticketId ?? selected?.id;
@@ -102,7 +122,7 @@ export default function TicketsScreen() {
   }, [search]);
 
   useEffect(() => {
-    if (user) load(true);
+    if (user && (capabilities.canReadTickets || capabilities.canReadWorkOrderGroupRequests)) load(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, status, user]);
 
@@ -129,6 +149,15 @@ export default function TicketsScreen() {
       refreshSelected(id);
     }
   }, [params.ticketId, refreshSelected, user]);
+
+  const openedGroupDeepLinkId = useRef<number | null>(null);
+  useEffect(() => {
+    const id = Number(params.groupRequestId);
+    if (id <= 0 || !user || openedGroupDeepLinkId.current === id || !groupRequests.length) return;
+    openedGroupDeepLinkId.current = id;
+    setKind('groups');
+    setSelectedGroup(groupRequests.find((item) => item.id === id) ?? null);
+  }, [groupRequests, params.groupRequestId, user]);
 
   async function review(action: 'approve' | 'reject', signaturePolicy?: SignaturePolicy) {
     if (!selected) return;
@@ -158,19 +187,72 @@ export default function TicketsScreen() {
     }
   }
 
+  async function claimGroupRequest() {
+    if (!selectedGroup) return;
+    setBusy(true);
+    try {
+      const updated = await request<LabWorkOrderGroupRequest>(
+        `/mobile/v1/technician/lab-work-orders/group-requests/${selectedGroup.id}/claim`,
+        { method: 'POST' },
+      );
+      setSelectedGroup(updated);
+      await load(true);
+    } catch (claimError) {
+      Alert.alert('No fue posible tomar la solicitud', claimError instanceof Error ? claimError.message : 'Intenta nuevamente');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function decideGroupRequest(action: 'approve' | 'reject') {
+    if (!selectedGroup) return;
+    if (action === 'reject' && !comment.trim()) {
+      Alert.alert('Motivo requerido', 'Escribe el motivo del rechazo.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await request<LabWorkOrderGroupRequest>(
+        `/mobile/v1/technician/lab-work-orders/group-requests/${selectedGroup.id}/${action}`,
+        {
+          method: 'POST',
+          ...(action === 'reject' ? { body: JSON.stringify({ reason: comment.trim() }) } : {}),
+        },
+      );
+      setSelectedGroup(updated);
+      setComment('');
+      await load(true);
+    } catch (decisionError) {
+      Alert.alert('No fue posible decidir la solicitud', decisionError instanceof Error ? decisionError.message : 'Intenta nuevamente');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (authLoading) return <View style={styles.center}><ActivityIndicator /></View>;
   if (!user) return <Redirect href="/(auth)/login" />;
-  const canReview = hasPermission(user.permissions, 'tickets.review');
+  const canReview = capabilities.canReviewTickets;
+  const requestVisibility = visibleRequestKinds(kind);
+  const visibleGroups = filterGroupRequests(groupRequests, status, debouncedSearch);
 
   return (
     <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.screen}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Inicio</Text></Pressable>
-        <Text style={styles.title}>Tickets</Text>
-        <Text style={styles.subtitle}>{canReview ? 'Solicitudes operativas por revisar' : 'Tus solicitudes operativas'}</Text>
+        <Text style={styles.title}>Solicitudes</Text>
+        <Text style={styles.subtitle}>{capabilities.canReadWorkOrderGroupRequests ? 'Reaperturas y grupos anticipados por revisar' : 'Tus solicitudes operativas'}</Text>
       </View>
       <View style={styles.filters}>
         <TextInput onChangeText={setSearch} placeholder="Buscar cliente o motivo" style={styles.input} value={search} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {([
+            ['all', 'Todas'], ['reopenings', 'Reaperturas'], ['groups', 'Grupos OT'],
+          ] as const).map(([value, label]) => (
+            <Pressable key={value} onPress={() => setKind(value)} style={[styles.chip, kind === value && styles.chipActive]}>
+              <Text style={[styles.chipText, kind === value && styles.chipTextActive]}>{label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {([
             ['all', 'Todos'], ['pending', 'Pendientes'], ['in_progress', 'En proceso'],
@@ -185,10 +267,10 @@ export default function TicketsScreen() {
       {loading ? <ActivityIndicator style={styles.loader} /> : (
         <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
           {!!error && <Text style={styles.error}>{error}</Text>}
-          {items.map((ticket) => (
+          {requestVisibility.showTickets && items.map((ticket) => (
             <Pressable key={ticket.id} onPress={() => { setSelected(ticket); setComment(''); }} style={styles.card}>
               <View style={styles.cardTop}>
-                <Text style={styles.folio}>OT {ticket.work_order_folio}</Text>
+                <Text style={styles.folio}>Reapertura · OT {ticket.work_order_folio}</Text>
                 <Text style={styles.status}>{STATUS_LABELS[ticket.status]}</Text>
               </View>
               <Text style={styles.client}>{ticket.client_name}</Text>
@@ -196,8 +278,20 @@ export default function TicketsScreen() {
               <Text style={styles.meta}>{ticket.requested_by_name} · {new Date(ticket.created_at).toLocaleDateString()}</Text>
             </Pressable>
           ))}
-          {!items.length && !error && <Text style={styles.empty}>No hay tickets que coincidan con los filtros.</Text>}
-          {hasMore && <Pressable disabled={loadingMore} onPress={() => load(false)} style={styles.more}>{loadingMore ? <ActivityIndicator /> : <Text style={styles.moreText}>Cargar más</Text>}</Pressable>}
+          {requestVisibility.showGroups && visibleGroups.map((group) => (
+            <Pressable key={`group-${group.id}`} onPress={() => { setSelectedGroup(group); setComment(''); }} style={styles.card}>
+              <View style={styles.cardTop}>
+                <Text style={styles.folio}>Grupo anticipado · #{group.id}</Text>
+                <Text style={styles.status}>{GROUP_STATUS_LABELS[group.status]}</Text>
+              </View>
+              <Text style={styles.client}>{group.client_name}</Text>
+              <Text style={styles.reason}>{group.quantity} OT · {group.operator_client_name}</Text>
+              <Text style={styles.meta}>{group.requested_by_name} · {new Date(group.created_at).toLocaleDateString()}{group.handled_by_name ? ` · Atiende ${group.handled_by_name}` : ''}</Text>
+              {!!group.folios.length && <Text style={styles.reason}>Folios: {group.folios.join(', ')}</Text>}
+            </Pressable>
+          ))}
+          {(!requestVisibility.showTickets || !items.length) && (!requestVisibility.showGroups || !visibleGroups.length) && !error && <Text style={styles.empty}>No hay solicitudes que coincidan con los filtros.</Text>}
+          {requestVisibility.showTickets && hasMore && <Pressable disabled={loadingMore} onPress={() => load(false)} style={styles.more}>{loadingMore ? <ActivityIndicator /> : <Text style={styles.moreText}>Cargar más</Text>}</Pressable>}
         </ScrollView>
       )}
 
@@ -222,6 +316,34 @@ export default function TicketsScreen() {
                 <Pressable disabled={busy} onPress={() => review('approve', 'invalidate')} style={styles.secondary}><Text style={styles.secondaryText}>Aprobar y requerir nuevas firmas</Text></Pressable>
                 <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
               </>}
+            </ScrollView>}
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </Modal>
+      <Modal animationType="slide" onRequestClose={() => setSelectedGroup(null)} visible={!!selectedGroup}>
+        <SafeAreaProvider>
+          <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Solicitud de grupo #{selectedGroup?.id}</Text>
+              <Pressable onPress={() => setSelectedGroup(null)}><Text style={styles.close}>Cerrar</Text></Pressable>
+            </View>
+            {selectedGroup && <ScrollView contentContainerStyle={styles.modalContent}>
+              <Text style={styles.folio}>{selectedGroup.quantity} órdenes de trabajo</Text>
+              <Text style={styles.detailStatus}>{GROUP_STATUS_LABELS[selectedGroup.status]}</Text>
+              <Text style={styles.detailLabel}>Organización operadora</Text><Text style={styles.detail}>{selectedGroup.operator_client_name}</Text>
+              <Text style={styles.detailLabel}>Solicitante</Text><Text style={styles.detail}>{selectedGroup.requested_by_name}</Text>
+              <Text style={styles.detailLabel}>Cliente final</Text><Text style={styles.detail}>{selectedGroup.client_name}</Text>
+              <Text style={styles.detailLabel}>Fecha</Text><Text style={styles.detail}>{new Date(selectedGroup.created_at).toLocaleString()}</Text>
+              <Text style={styles.detailLabel}>Handler</Text><Text style={styles.detail}>{selectedGroup.handled_by_name ?? 'Sin asignar'}</Text>
+              {!!selectedGroup.folios.length && <><Text style={styles.detailLabel}>Folios asignados</Text><Text style={styles.detail}>{selectedGroup.folios.join(', ')}</Text></>}
+              {!!selectedGroup.decision_reason && <><Text style={styles.detailLabel}>Motivo</Text><Text style={styles.detail}>{selectedGroup.decision_reason}</Text></>}
+              {selectedGroup.status === 'pending' && capabilities.canClaimWorkOrderGroupRequests && <Pressable disabled={busy} onPress={claimGroupRequest} style={styles.primary}><Text style={styles.primaryText}>Tomar solicitud</Text></Pressable>}
+              {selectedGroup.status === 'in_review' && selectedGroup.handled_by_user_id === user.id && capabilities.canDecideWorkOrderGroupRequests && <>
+                <TextInput multiline onChangeText={setComment} placeholder="Motivo requerido para rechazo" style={[styles.input, styles.comment]} value={comment} />
+                <Pressable disabled={busy} onPress={() => decideGroupRequest('approve')} style={styles.primary}><Text style={styles.primaryText}>Aprobar y materializar grupo</Text></Pressable>
+                <Pressable disabled={busy || !comment.trim()} onPress={() => decideGroupRequest('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar solicitud</Text></Pressable>
+              </>}
+              {!!selectedGroup.conversation_id && <Pressable style={styles.secondary} onPress={() => { const id = selectedGroup.conversation_id; setSelectedGroup(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }}><Text style={styles.secondaryText}>Abrir conversación</Text></Pressable>}
             </ScrollView>}
           </SafeAreaView>
         </SafeAreaProvider>

@@ -338,9 +338,9 @@ queda **EN REVISIÓN**.
 
 ## Alcance implementado 2026-08-26 — Grupos anticipados OT LAB
 
-Solicitud externa, claim, aprobación/rechazo, creación directa Web, materialización transaccional de N folios, conversación, notificación, realtime y visualización Mobile/Web. No se alteran ETS productivo, firma LAB, Tickets, PDF ni límite de 10 equipos.
+Solicitud externa, claim, aprobación/rechazo, creación directa Web/Mobile internal, materialización transaccional de N folios, conversación posterior al claim, notificación, realtime y visualización Mobile/Web. No se alteran ETS productivo, firma LAB, Tickets, PDF ni límite de 10 equipos.
 
-La alta individual y adicional LAB queda fuera del alcance de actores externos; sólo staff conserva esas operaciones. La bandeja Web presenta tickets y requests sin normalizarlos artificialmente, y los destinos de notificación reutilizables cubren las superficies reales disponibles.
+La alta individual, grupo directo y adicional LAB quedan fuera del alcance de actores externos; sólo staff autorizado conserva esas operaciones. Las bandejas Web/Mobile presentan tickets y requests sin normalizarlos artificialmente. Mobile compone ambas fuentes en UI para evitar otro contrato backend y usa el mismo servicio de decisión existente.
 
 ## Alcance implementado 2026-08-18 — ETS Venta
 

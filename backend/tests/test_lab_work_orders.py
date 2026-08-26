@@ -40,7 +40,7 @@ from app.schemas.lab_work_order import LabWorkOrderGroupCreate
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.lab_work_orders import _allocate_folio, create_additional_work_order
 from app.services.lab_work_orders import delete_work_order
-from app.services.lab_work_orders import create_group_request, claim_group_request, reject_group_request
+from app.services.lab_work_orders import create_group_request, claim_group_request, create_work_order_group, reject_group_request
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket
 
 
@@ -142,11 +142,9 @@ def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab
             operator_client_id=operator.id,
         )
         request_id = request.id
-        conversation_id = request.conversation_id
+        assert request.conversation_id is None
         assert db.scalar(select(func.count(LabWorkOrder.id))) == 0
-        created_message = db.scalar(select(CommunicationMessage).where(CommunicationMessage.conversation_id == conversation_id))
-        assert created_message.message_type == "system"
-        assert "solicitó un grupo de 2 órdenes" in created_message.body
+        assert db.scalar(select(func.count(CommunicationConversation.id))) == 0
         admin_notification = db.scalar(select(Notification).where(Notification.entity_type == "work_order_group_request"))
         assert admin_notification.entity_id == request_id
     headers = auth(tokens["admin"])
@@ -155,7 +153,10 @@ def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab
     assert inbox.json()[0]["id"] == request_id
     assert inbox.json()[0]["operator_client_name"] == "Operador"
     assert inbox.json()[0]["requested_by_name"] == "LAB tech"
-    assert client.post(f"/api/lab-work-order-groups/requests/{request_id}/claim", headers=headers).status_code == 200
+    claimed = client.post(f"/api/lab-work-order-groups/requests/{request_id}/claim", headers=headers)
+    assert claimed.status_code == 200
+    conversation_id = claimed.json()["conversation_id"]
+    assert conversation_id is not None
     first = client.post(f"/api/lab-work-order-groups/requests/{request_id}/approve", headers=headers)
     second = client.post(f"/api/lab-work-order-groups/requests/{request_id}/approve", headers=headers)
     assert first.status_code == second.status_code == 200
@@ -166,6 +167,7 @@ def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab
         conversation = db.get(CommunicationConversation, conversation_id)
         assert {participant.username for participant in conversation.participants} == {"lab-tech", "lab-admin"}
         messages = list(db.scalars(select(CommunicationMessage).where(CommunicationMessage.conversation_id == conversation_id).order_by(CommunicationMessage.sequence)))
+        assert any("solicitó un grupo de 2 órdenes" in message.body for message in messages)
         assert any("está atendiendo" in message.body for message in messages)
         assert any("Folios asignados: 6400, 6401" in message.body for message in messages)
 
@@ -180,6 +182,9 @@ def test_group_request_has_one_handler_and_rejection_message_without_folios(lab_
         competitor = db.scalar(select(User).where(User.username == "lab-capture"))
         request = create_group_request(db, LabWorkOrderGroupCreate(**create_payload("Cliente rechazado"), quantity=3), requester, operator_client_id=operator.id)
         claimed = claim_group_request(db, request.id, admin)
+        with pytest.raises(HTTPException) as missing_reason:
+            reject_group_request(db, request.id, admin, "")
+        assert missing_reason.value.status_code == 422
         with pytest.raises(HTTPException) as conflict:
             claim_group_request(db, request.id, competitor)
         assert conflict.value.status_code == 409
@@ -190,6 +195,23 @@ def test_group_request_has_one_handler_and_rejection_message_without_folios(lab_
         assert db.scalar(select(func.count(LabWorkOrder.id))) == 0
         messages = list(db.scalars(select(CommunicationMessage).where(CommunicationMessage.conversation_id == rejected.conversation_id)))
         assert any("rechazó la solicitud. Motivo: Capacidad no disponible" in item.body for item in messages)
+
+
+def test_postgresql_concurrent_direct_groups_do_not_duplicate_folios(postgres_lab_context):
+    _client, factory, _tokens = postgres_lab_context
+    payload = LabWorkOrderGroupCreate(**create_payload("Cliente concurrente"), quantity=2)
+
+    def create_group(index: int) -> list[int]:
+        with factory() as db:
+            user = db.scalar(select(User).where(User.username == "postgres-admin"))
+            created = create_work_order_group(db, payload, user, operator_client_id=None)
+            return [item.folio for item in created.related_work_orders]
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        groups = list(pool.map(create_group, range(2)))
+
+    assert all(group[1] == group[0] + 1 for group in groups)
+    assert sorted(folio for group in groups for folio in group) == [6400, 6401, 6402, 6403]
 
 
 @pytest.fixture()

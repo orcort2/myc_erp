@@ -299,17 +299,23 @@ def _request_read(db: Session, request: LabWorkOrderGroupRequest) -> LabWorkOrde
 
 
 def _ensure_request_conversation(
-    db: Session, request: LabWorkOrderGroupRequest, requester: User
+    db: Session,
+    request: LabWorkOrderGroupRequest,
+    requester: User,
+    handler: User,
 ) -> CommunicationConversation:
     conversation = db.get(CommunicationConversation, request.conversation_id) if request.conversation_id else None
     if conversation is not None:
+        for participant in (requester, handler):
+            if all(item.id != participant.id for item in conversation.participants):
+                conversation.participants.append(participant)
         return conversation
     conversation = CommunicationConversation(
         conversation_type="client",
         client_id=request.operator_client_id,
         title=f"Solicitud de grupo OT LAB #{request.id}",
         created_by_user_id=requester.id,
-        participants=[requester],
+        participants=[requester, handler],
     )
     db.add(conversation)
     db.flush()
@@ -476,7 +482,6 @@ def create_group_request(
     )
     db.add(request)
     db.flush()
-    _ensure_request_conversation(db, request, user)
     for staff in db.scalars(select(User).where(User.is_active.is_(True))).all():
         if staff.id == user.id or not user_has_permission(staff, "lab_work_order_groups.requests.read"):
             continue
@@ -493,6 +498,7 @@ def create_group_request(
             metadata_json={
                 "request_id": request.id,
                 "frontend_path": f"/lab-work-order-groups?request_id={request.id}",
+                "mobile_path": "/(technician)/tickets",
             },
         )
         db.add(notification)
@@ -539,9 +545,9 @@ def claim_group_request(db: Session, request_id: int, user: User) -> LabWorkOrde
     request.handled_by_user_id = user.id
     request.claimed_at = datetime.now(timezone.utc)
     requester = db.get(User, request.requested_by_user_id)
-    conversation = _ensure_request_conversation(db, request, requester)
-    if all(item.id != user.id for item in conversation.participants):
-        conversation.participants.append(user)
+    if requester is None:
+        raise HTTPException(status_code=409, detail="El solicitante ya no está disponible")
+    conversation = _ensure_request_conversation(db, request, requester, user)
     _append_request_system_message(db, conversation, user, f"{user.full_name} está atendiendo la solicitud.", f"{request.id}:claimed")
     _notify_request_user(db, request, user, "lab_work_order_group.in_review", "Solicitud OT LAB en revisión", "Un administrador tomó tu solicitud.")
     commit_and_dispatch_notifications(db)

@@ -322,3 +322,5 @@ con precheck y estrategia segura específicos.
 `operator_client_id` gobierna ownership. El grupo anticipado conserva `root_work_order_id`, usa el secuenciador institucional en bloque y no crea otro agregado de firma. El cliente final permanece como snapshot documental.
 
 La removibilidad externa exige guard explícito por `actor_type`, aunque existan permisos legacy en tokens o sesiones. `WorkOrderGroupRequest` y `OperationalTicket` sólo se componen en presentación. La navegación de notificaciones es una función transversal basada en identidad, nunca en título/body.
+
+La conversación no forma parte del estado `pending`: nace en claim, cuando ya existen requester y handler autorizados. La bandeja Mobile compone las dos APIs existentes en lugar de introducir un endpoint agregado, porque sus lifecycles, permisos y modelos permanecen independientes; el contador suma únicamente sus proyecciones accionables.

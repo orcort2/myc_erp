@@ -25,10 +25,10 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Sección | Archivos |
 | --- | ---: |
 | Backend | 475 |
-| Frontend | 207 |
+| Frontend | 210 |
 | Scripts | 52 |
 | Recursos | 4 |
-| Configuración | 106 |
+| Configuración | 108 |
 | Documentación | 164 |
 | Pruebas | 79 |
 
@@ -643,6 +643,8 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | frontend/src/pages/LabWorkOrderGroupsPage.jsx | frontend/src/pages | Página React | Compone la pantalla de LabWorkOrderGroupsPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Experimental |
 | frontend/src/pages/LoginPage.jsx | frontend/src/pages | Página React | Compone la pantalla de LoginPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Estable |
 | frontend/src/pages/ModulePage.jsx | frontend/src/pages | Página React | Compone la pantalla de ModulePage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Estable |
+| frontend/src/pages/NotificationCenterPage.jsx | frontend/src/pages | Página React | Compone la pantalla de NotificationCenterPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Estable |
+| frontend/src/pages/ProceduresPage.jsx | frontend/src/pages | Página React | Compone la pantalla de ProceduresPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Estable |
 | frontend/src/pages/QualityPage.jsx | Calidad | Página operativa | Revisa Masters y navega certificados consecutivos dentro del mismo modal por contexto OT/ETS/lista visible; protege cargas concurrentes, conserva posición y refresca certificado, historial, readiness, tarjetas y contadores después de aprobar, regresar o autenticar. | API readiness/descarga/autenticación/auditoría, certificados, agrupación OT y navegación secuencial | Personal de Calidad | Crítico | Estable |
 | frontend/src/pages/QuotationsPage.jsx | frontend/src/pages | Cotizaciones y catálogo comercial | Exige el Master genérico de Verificación, abre el ETS backend-authoritative y aplica ESC jerárquico sin creación manual. | React, APIs Cotizaciones/Catálogo, Control Documental y ConfirmDialog | Usuarios comerciales | Crítico | En revisión |
 | frontend/src/pages/ResolutionCenterPage.jsx | frontend/src/pages | Consola de Resoluciones | Implementa vistas institucionales, formularios por metadata, expediente completo y la familia Herramientas administrativas sin reglas de dominio ni estado paralelo. | API interna, utilidades y sistema visual | Usuarios operativos, administradores y auditores | Crítico | En revisión |
@@ -650,6 +652,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | frontend/src/pages/SettingsPage.jsx | Administración/Frontend | Página por capacidades | Filtra secciones/hijos de Ajustes por permisos efectivos y corrige la selección activa cuando una capacidad desaparece. | settingsNavigation, accessControl y SettingsLayout | Usuarios administrativos autorizados | Alto | Estable |
 | frontend/src/pages/SignatureLabPage.jsx | frontend/src/pages | Página React | Compone la pantalla de SignatureLabPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Experimental |
 | frontend/src/pages/StandardsPage.jsx | frontend/src/pages | Página React | Compone la pantalla de StandardsPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Estable |
+| frontend/src/pages/UncertaintyPage.jsx | frontend/src/pages | Página React | Compone la pantalla de UncertaintyPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Estable |
 | frontend/src/pages/certificateAuthenticationAuthority.test.js | frontend/src/pages | Prueba de superficie canónica | Impide reintroducir acciones de autenticación en ETS o un cliente masivo y confirma que Calidad conserva la única acción frontend. | Node test, QualityPage, ServiceOrdersPage y api.js | Gate frontend del P0 de autenticación | Alto | Estable |
 | frontend/src/pages/communications.css | frontend/src/pages | Página React | Compone la pantalla de communications, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Estable |
 | frontend/src/pages/labs/DocumentDesignerLabPage.jsx | frontend/src/pages | Página React | Compone la pantalla de DocumentDesignerLabPage, su estado, acciones de usuario y llamadas a API. | api.js, componentes y utilidades de presentación | Enrutador de App y usuarios del ERP | Alto | Experimental |
@@ -882,6 +885,8 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/realtime/realtime-client.ts | myc-mobile/src/realtime | Máquina de conexión realtime | Gestiona socket, backoff, refresh único por 4401, resync, comandos y cleanup sin persistencia paralela. | WebSocket React Native, backoff y tipos | RealtimeProvider y pruebas | Crítico | En revisión |
 | myc-mobile/src/realtime/reconnection-policy.ts | myc-mobile/src/realtime | Política de reconexión | Calcula backoff exponencial con jitter/tope y clasifica cierres recuperables. | JavaScript timers | RealtimeClient | Alto | En revisión |
 | myc-mobile/src/realtime/types.ts | myc-mobile/src/realtime | Tipos realtime v1 | Declara estados, envelope, listeners, callbacks de reconciliación y comandos. | TypeScript | Provider y cliente realtime | Alto | En revisión |
+| myc-mobile/src/requests/request-inbox.test.ts | myc-mobile/src/requests | Archivo de soporte | Mantiene la capacidad de request inbox.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
+| myc-mobile/src/requests/request-inbox.ts | myc-mobile/src/requests | Archivo de soporte | Mantiene la capacidad de request inbox dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/services/auth.service.test.ts | MYC Mobile/Autenticación | Prueba del cliente auth Mobile | Verifica endpoint dedicado, normalización de email, propagación de actor/scope en Viewer/Jr/Sr y mensaje backend de acceso denegado. | node:test, tsx y mobile-auth-client | Suite MYC Mobile y revisión de seguridad | Alto | En revisión |
 | myc-mobile/src/services/auth.service.ts | myc-mobile/src/services | Archivo de soporte | Mantiene la capacidad de auth.service dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/services/communications.ts | myc-mobile/src/services | Cliente REST de Comunicaciones | Centraliza listado, detalle, historial, sync, mensajes, recibos, directorio, menciones y creación de conversaciones. | Fetch autenticado y tipos Communication | CommunicationsProvider y pantallas | Crítico | En revisión |

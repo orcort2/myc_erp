@@ -76,6 +76,8 @@ export type EquipmentData = Omit<LabEquipment, 'id' | 'position'>;
 
 export type LabWorkOrderGroupRequest = {
   id: number;
+  operator_client_id: number;
+  requested_by_user_id: number;
   quantity: number;
   status: 'pending' | 'in_review' | 'approved' | 'rejected';
   root_work_order_id: number | null;
@@ -85,6 +87,9 @@ export type LabWorkOrderGroupRequest = {
   operator_client_name: string;
   requested_by_name: string;
   handled_by_name: string | null;
+  handled_by_user_id: number | null;
+  claimed_at: string | null;
+  decided_at: string | null;
   folios: number[];
   created_at: string;
 };

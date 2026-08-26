@@ -280,4 +280,4 @@ Toda auditoría posterior debe actualizar este archivo sólo con conclusiones ve
 
 Backend, migración, RBAC, transacción idempotente, Comunicaciones y superficies Mobile/Web están implementados. Falta QA físico multiusuario y concurrencia PostgreSQL opt-in; no está SELLADO.
 
-Las cuatro fallas del primer QA físico quedaron corregidas: bypass de alta externa, bandeja unificada de necesidades con modelos separados, vínculo/navegación de conversación y destinos estructurados de notificación. Continúa `EN DESARROLLO` hasta repetir aceptación física.
+La revisión quirúrgica separó capabilities por `actor_type`, añadió grupo directo Mobile sólo para internal, movió la conversación de create a claim, incorporó grupos a Solicitudes/Home Mobile, reparó detalle/deep links y restauró las páginas Web ajenas eliminadas accidentalmente. Continúa `EN DESARROLLO` hasta repetir aceptación física y ejecutar la concurrencia opt-in PostgreSQL.
