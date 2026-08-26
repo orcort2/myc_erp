@@ -24,6 +24,7 @@ export type NotificationSyncEvent = {
   ticket_id?: number;
   work_order_id?: number;
   conversation_id?: number;
+  request_id?: number;
   source: 'push' | 'foreground' | 'local' | 'realtime';
   dedupe_key?: string;
 };

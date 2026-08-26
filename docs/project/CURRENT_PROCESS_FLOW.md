@@ -637,3 +637,9 @@ asesor ejecuta una inicialización explícita que usa únicamente el snapshot. L
 propuesta/selección de Hojas de Campo continúa en su servicio vigente.
 Venta conserva `evolution_enabled=false`; Calibración posterior valida el
 vínculo comercial exacto y no pasa por el motor evolutivo de Servicio General.
+
+## Flujo implementado 2026-08-26 — Grupo anticipado OT LAB
+
+`Operativo Sr → pending (0 folios) → claim/in_review → aprobar → lock solicitud + secuenciador → N OTs enlazadas → approved + root → commit → notificación/realtime`. Rechazo exige motivo y no toca el secuenciador. Staff directo usa la misma materialización.
+
+`actor_type=client → POST alta individual/adicional → 403`. En administración, la bandeja presenta separadamente reaperturas y solicitudes de grupo. Click de notificación intenta marcar lectura y, aun si ese efecto falla, resuelve `entity_type + entity_id/metadata` para abrir solicitud, ticket, OT, conversación o ETS cuando existe superficie real.

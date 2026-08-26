@@ -5,6 +5,7 @@ import {
   affectsTickets,
   affectsWorkOrders,
   eventFromData,
+  markReadThenNavigate,
   NotificationEventDeduper,
   resolveNotificationResponse,
   RefreshGate,
@@ -65,6 +66,27 @@ test('targetFor resolves a communication, ticket or work order deep link', () =>
     { pathname: '/(technician)/work-orders', params: { workOrderId: '42' } },
   );
   assert.equal(targetFor(eventFromData({}, 'push', 'id-4')), null);
+});
+
+test('targetFor opens a structured group request at its Mobile root', () => {
+  assert.deepEqual(
+    targetFor(eventFromData({ entity_type: 'work_order_group_request', entity_id: 17, request_id: 17 }, 'push', 'request-17')),
+    { pathname: '/(technician)/work-orders', params: { groupRequestId: '17' } },
+  );
+});
+
+test('a read failure does not prevent notification navigation', async () => {
+  let navigated = false;
+
+  await assert.rejects(
+    markReadThenNavigate(
+      async () => { throw new Error('read failed'); },
+      () => { navigated = true; },
+    ),
+    /read failed/,
+  );
+
+  assert.equal(navigated, true);
 });
 
 // MOB-003: Notifications.getLastNotificationResponseAsync() keeps returning

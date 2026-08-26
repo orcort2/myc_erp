@@ -1698,6 +1698,13 @@ function closeTechnicalSubEts() {
   }, [serviceOrders, isDetailOpen]);
 
   useEffect(() => {
+    const serviceOrderId = Number(new URLSearchParams(window.location.search).get('service_order_id') || 0);
+    if (!serviceOrderId || isDetailOpen || !serviceOrders.length) return;
+    const order = serviceOrders.find((item) => item.id === serviceOrderId);
+    if (order) openOrderDetail(order);
+  }, [serviceOrders, isDetailOpen]);
+
+  useEffect(() => {
     if (!selectedOrder?.id) {
       setCertificateReleaseReadiness(null);
       return undefined;

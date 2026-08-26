@@ -12,6 +12,7 @@ export type MobileCapabilities = {
   canCreateTickets: boolean;
   canReadTickets: boolean;
   canUseCommunications: boolean;
+  canRequestWorkOrderGroups: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -21,8 +22,9 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     canAccessMobile: hasPermission(permissions, 'mobile.access'),
     canReadWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.read_organization'),
-    canCreateWorkOrders: hasLegacyLabAccess
-      || hasPermission(permissions, 'work_orders.create'),
+    canCreateWorkOrders: user?.actor_type === 'internal' && (
+      hasLegacyLabAccess || hasPermission(permissions, 'work_orders.create')
+    ),
     canExecuteWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.execute'),
     canManageEquipment: hasLegacyLabAccess
@@ -40,5 +42,6 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       || hasPermission(permissions, 'communications.view')
       || hasPermission(permissions, 'communications.create')
     )),
+    canRequestWorkOrderGroups: hasPermission(permissions, 'work_orders.group.request'),
   };
 }

@@ -28,6 +28,7 @@ test('mobile.access no concede capacidades operativas implícitas', () => {
   assert.equal(capabilities.canManageEquipment, false);
   assert.equal(capabilities.canCaptureSignatures, false);
   assert.equal(capabilities.canUseCommunications, false);
+  assert.equal(capabilities.canRequestWorkOrderGroups, false);
 });
 
 test('Viewer externo sólo habilita lectura organizacional', () => {
@@ -57,13 +58,18 @@ for (const profile of ['Operativo Jr', 'Operativo Sr']) {
       'mobile_tickets.read',
     ];
     const capabilities = deriveMobileCapabilities(user('client', permissions));
-    assert.equal(capabilities.canCreateWorkOrders, true);
+    assert.equal(capabilities.canCreateWorkOrders, false);
     assert.equal(capabilities.canExecuteWorkOrders, true);
     assert.equal(capabilities.canManageEquipment, true);
     assert.equal(capabilities.canCaptureSignatures, true);
     assert.equal(permissions.some((permission) => permission.startsWith('folios.')), false);
   });
 }
+
+test('sólo la capacidad explícita habilita solicitudes de grupos anticipados', () => {
+  assert.equal(deriveMobileCapabilities(user('client', ['work_orders.create'])).canRequestWorkOrderGroups, false);
+  assert.equal(deriveMobileCapabilities(user('client', ['work_orders.group.request'])).canRequestWorkOrderGroups, true);
+});
 
 test('staff conserva compatibilidad LAB y Comunicaciones', () => {
   const capabilities = deriveMobileCapabilities(user('internal', [

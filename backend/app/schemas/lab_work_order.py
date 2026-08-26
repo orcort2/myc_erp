@@ -28,6 +28,49 @@ class LabWorkOrderCreate(BaseModel):
         return value
 
 
+class LabWorkOrderGroupCreate(LabWorkOrderCreate):
+    quantity: int = Field(ge=1, le=50)
+
+
+class LabWorkOrderGroupRequestRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    operator_client_id: int
+    operator_client_name: str
+    requested_by_user_id: int
+    requested_by_name: str
+    quantity: int
+    status: str
+    handled_by_user_id: int | None
+    handled_by_name: str | None
+    claimed_at: datetime | None
+    decided_at: datetime | None
+    decision_reason: str | None
+    root_work_order_id: int | None
+    conversation_id: int | None
+    folios: list[int] = Field(default_factory=list)
+    reception_date: date
+    departure_date: date
+    client_name: str
+    address: str
+    contact_name: str | None
+    contact_phone: str | None
+    contact_email: str | None
+    postal_code: str | None
+    city: str | None
+    state_name: str | None
+    purchase_order: str | None
+    notes: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class LabWorkOrderGroupDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: str | None = Field(default=None, max_length=2000)
+
+
 class LabWorkOrderUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -131,6 +174,7 @@ class LabWorkOrderRead(BaseModel):
     sequence_number: int
     signature_session_id: int | None
     created_by_user_id: int
+    operator_client_id: int | None
     reception_date: date
     departure_date: date
     client_name: str

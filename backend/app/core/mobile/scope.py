@@ -16,7 +16,7 @@ def ensure_lab_work_order_scope(
     owned = db.scalar(
         select(LabWorkOrder.id).where(
             LabWorkOrder.id == work_order_id,
-            LabWorkOrder.client_id == context.client_id,
+            LabWorkOrder.operator_client_id == context.client_id,
         )
     )
     if owned is None:

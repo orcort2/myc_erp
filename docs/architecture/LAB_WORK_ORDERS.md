@@ -6,6 +6,14 @@
 
 # Órdenes de Trabajo LAB
 
+## Grupos anticipados (Bloque 2, 2026-08-26)
+
+Un grupo anticipado reutiliza `root_work_order_id`; no introduce otra identidad para firma, Tickets o PDF. `_allocate_folio_block` toma una sola vez el lock institucional y reserva N folios consecutivos únicamente dentro de la transacción que crea las N filas. Una solicitud externa `pending`/`in_review` no toca el secuenciador. La aprobación bloquea la solicitud, materializa el grupo, guarda `root_work_order_id` y cambia a `approved` antes del commit; un retry devuelve ese grupo.
+
+`operator_client_id` es exclusivamente el tenant derivado de `MobileSecurityContext`. `client_name`, dirección y contacto son el snapshot documental del cliente final. Operativo Sr requiere `work_orders.group.request`; Viewer y Jr no la reciben. La creación directa y decisiones administrativas usan permisos `lab_work_order_groups.*`.
+
+Ningún actor `client` puede usar POST de alta individual ni crear una OT adicional. Esta frontera se aplica en router además del RBAC y la UI. Staff conserva ambos flujos. La bandeja administrativa compone tickets y solicitudes como proyecciones separadas. `WorkOrderGroupRequest` continúa siendo la fuente de verdad y su conversación sólo contexto; claim garantiza solicitante y handler como participantes.
+
 ## Autoridad y aislamiento
 
 El LAB resuelve captura operativa temporal desde iPhone sin crear ni modificar

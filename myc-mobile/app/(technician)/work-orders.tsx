@@ -45,6 +45,7 @@ import type {
   LabEquipment,
   LabListItem,
   LabWorkOrder,
+  LabWorkOrderGroupRequest,
 } from '@/src/types/lab-work-order';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -121,8 +122,10 @@ function FormSection({
 export default function WorkOrdersScreen() {
   const { authorizedFetch, isLoading: authLoading, refreshSession, session, user } = useAuth();
   const { publishLocalChange, subscribe } = useNotificationSync();
-  const params = useLocalSearchParams<{ workOrderId?: string }>();
+  const params = useLocalSearchParams<{ workOrderId?: string; groupRequestId?: string }>();
   const [items, setItems] = useState<LabListItem[]>([]);
+  const [groupRequests, setGroupRequests] = useState<LabWorkOrderGroupRequest[]>([]);
+  const [selectedGroupRequest, setSelectedGroupRequest] = useState<LabWorkOrderGroupRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [listError, setListError] = useState('');
@@ -134,6 +137,8 @@ export default function WorkOrdersScreen() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'completed'>('all');
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [requestMode, setRequestMode] = useState(false);
+  const [groupQuantity, setGroupQuantity] = useState('2');
   const [step, setStep] = useState<Step>('general');
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
@@ -150,6 +155,7 @@ export default function WorkOrdersScreen() {
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
   const signatureSubmitRef = useRef(false);
+  const capabilities = deriveMobileCapabilities(user);
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -208,6 +214,16 @@ export default function WorkOrdersScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedClient, debouncedFolio, statusFilter, user]);
 
+  useEffect(() => {
+    if (!capabilities.canRequestWorkOrderGroups) return;
+    request<LabWorkOrderGroupRequest[]>('/mobile/v1/technician/lab-work-orders/group-requests').then(setGroupRequests).catch(() => undefined);
+  }, [capabilities.canRequestWorkOrderGroups, request]);
+  useEffect(() => {
+    const requestId = Number(params.groupRequestId);
+    if (!requestId || !groupRequests.length) return;
+    setSelectedGroupRequest(groupRequests.find((item) => item.id === requestId) ?? null);
+  }, [groupRequests, params.groupRequestId]);
+
   useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));
 
   useEffect(() => subscribe((event) => {
@@ -253,11 +269,11 @@ export default function WorkOrdersScreen() {
 
   const {
     canCreateTickets,
-    canCreateWorkOrders,
+    canCreateWorkOrders, canRequestWorkOrderGroups,
     canExecuteWorkOrders,
     canManageEquipment,
     canCaptureSignatures,
-  } = deriveMobileCapabilities(user);
+  } = capabilities;
   const editable = workOrder?.status === 'draft' && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
   const canSaveEquipment = useMemo(
@@ -266,12 +282,18 @@ export default function WorkOrdersScreen() {
   );
 
   function startNew() {
+    setRequestMode(false);
     setGeneral(emptyGeneral());
     setWorkOrder(null);
     setStep('general');
     setSignatureFlowState(null);
     setSignatureDrawing(false);
     setOpen(true);
+  }
+
+  function startGroupRequest() {
+    startNew();
+    setRequestMode(true);
   }
 
   function clearFilters() {
@@ -348,7 +370,9 @@ export default function WorkOrdersScreen() {
     if (!general.client_name.trim()) return;
     setBusy(true);
     try {
-      const path = workOrder
+      const path = requestMode
+        ? '/mobile/v1/technician/lab-work-orders/group-requests'
+        : workOrder
         ? `/mobile/v1/technician/lab-work-orders/${workOrder.id}`
         : '/mobile/v1/technician/lab-work-orders';
       const detail = await request<LabWorkOrder>(path, {
@@ -364,8 +388,14 @@ export default function WorkOrdersScreen() {
           purchase_order: general.purchase_order || null,
           notes: general.notes || null,
           ...(workOrder ? { expected_edit_version: workOrder.edit_version } : {}),
+          ...(requestMode ? { quantity: Number(groupQuantity) } : {}),
         }),
       });
+      if (requestMode) {
+        Alert.alert('Solicitud enviada', 'Los folios se asignarán únicamente cuando un administrador la apruebe.');
+        setOpen(false);
+        return;
+      }
       setWorkOrder(detail);
       setStep('capture');
       publishLocalChange({
@@ -687,6 +717,8 @@ export default function WorkOrdersScreen() {
         </View>
       </View>
       {canCreateWorkOrders && <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>}
+      {canRequestWorkOrderGroups && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={startGroupRequest}><Text style={styles.secondaryText}>Solicitar grupo anticipado</Text></Pressable>}
+      {canRequestWorkOrderGroups && groupRequests.length > 0 && <View style={styles.filters}><Text style={styles.filterLabel}>Mis solicitudes de grupo</Text>{groupRequests.map((item) => <Pressable key={item.id} onPress={() => setSelectedGroupRequest(item)}><Text style={styles.status}>#{item.id} · {item.quantity} OT · {item.status}{item.folios.length ? ` · folios ${item.folios.join(', ')}` : ' · sin folios'}</Text></Pressable>)}</View>}
       {loading ? <ActivityIndicator style={styles.loader} /> : (
         <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
           {!!listError && (
@@ -738,6 +770,7 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.sectionDescription}>Captura esta información una sola vez. Las OT adicionales la heredarán automáticamente.</Text>
                   </View>
                   <FormSection title="Servicio y cliente">
+                    {requestMode && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <Field label="Fecha de recepción (AAAA-MM-DD)" required value={general.reception_date} onChangeText={(value) => setGeneral({ ...general, reception_date: value })} />
                     <Field label="Fecha de salida (AAAA-MM-DD)" required value={general.departure_date} onChangeText={(value) => setGeneral({ ...general, departure_date: value })} />
                     <Field label="Empresa / cliente" required value={general.client_name} onChangeText={(value) => setGeneral({ ...general, client_name: value })} />
@@ -751,7 +784,7 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  <Pressable disabled={!general.client_name.trim() || busy} style={styles.primary} onPress={createWorkOrder}><Text style={styles.primaryText}>{workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
+                  <Pressable disabled={!general.client_name.trim() || busy || (requestMode && (Number(groupQuantity) < 1 || Number(groupQuantity) > 50))} style={styles.primary} onPress={createWorkOrder}><Text style={styles.primaryText}>{requestMode ? 'Enviar solicitud sin reservar folios' : workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
                 </>
               )}
 
@@ -785,7 +818,7 @@ export default function WorkOrdersScreen() {
                   ))}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
                   {editable && canManageEquipment && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
-                  {editable && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
+                  {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
                   <Pressable disabled={!workOrder.equipment.length} style={[styles.primary, !workOrder.equipment.length && styles.disabled]} onPress={() => setStep('review')}><Text style={styles.primaryText}>Continuar</Text></Pressable>
                 </>
               )}
@@ -917,6 +950,9 @@ export default function WorkOrdersScreen() {
           )}
         </SafeAreaView>
         </SafeAreaProvider>
+      </Modal>
+      <Modal animationType="fade" onRequestClose={() => setSelectedGroupRequest(null)} transparent visible={Boolean(selectedGroupRequest)}>
+        <View style={styles.overlay}><View style={styles.dialog}><Text style={styles.modalTitle}>Solicitud #{selectedGroupRequest?.id}</Text><Text style={styles.client}>{selectedGroupRequest?.client_name}</Text><Text style={styles.status}>Estado: {selectedGroupRequest?.status}</Text><Text style={styles.status}>{selectedGroupRequest?.folios.length ? `Folios: ${selectedGroupRequest.folios.join(', ')}` : 'Todavía no hay folios asignados.'}</Text>{selectedGroupRequest?.decision_reason && <Text style={styles.errorText}>Motivo: {selectedGroupRequest.decision_reason}</Text>}{selectedGroupRequest?.conversation_id && <Pressable style={styles.secondary} onPress={() => { const id = selectedGroupRequest.conversation_id; setSelectedGroupRequest(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }}><Text style={styles.secondaryText}>Abrir conversación</Text></Pressable>}<Pressable style={styles.cancel} onPress={() => setSelectedGroupRequest(null)}><Text>Cerrar</Text></Pressable></View></View>
       </Modal>
     </SafeAreaView>
   );

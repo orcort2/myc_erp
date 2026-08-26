@@ -61,6 +61,7 @@ class PortalPermissionCode(StrEnum):
     WORK_ORDERS_READ_ORGANIZATION = "work_orders.read_organization"
     WORK_ORDERS_CREATE = "work_orders.create"
     WORK_ORDERS_EXECUTE = "work_orders.execute"
+    WORK_ORDERS_GROUP_REQUEST = "work_orders.group.request"
     EQUIPMENT_READ = "equipment.read"
     EQUIPMENT_WRITE = "equipment.write"
     FIELD_SHEETS_READ = "field_sheets.read"

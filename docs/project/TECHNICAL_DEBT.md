@@ -60,3 +60,8 @@ No incluye funcionalidades futuras. Cada elemento corresponde a una condición p
 ## Criterio de retiro
 
 Una deuda se elimina sólo cuando la condición deja de existir y la validación queda registrada. Si la solución propuesta cambia el alcance funcional, primero debe actualizarse [`CURRENT_SCOPE.md`](CURRENT_SCOPE.md); no se debe convertir una mejora futura en deuda vigente.
+
+## Deuda agregada 2026-08-26
+
+- TD-055 (P1): QA físico de solicitud/claim/decisión/realtime con Sr/Jr/Viewer/staff.
+- TD-056 (P2): realtime por rooms de usuario en hub in-memory; la fase multi-worker deberá adoptar transporte compartido sin canal paralelo.

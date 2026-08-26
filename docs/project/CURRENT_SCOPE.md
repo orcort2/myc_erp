@@ -336,6 +336,12 @@ de permisos, cambios funcionales en Tickets/OT/ETS, build EAS y despliegue. La
 aceptación física en dos dispositivos permanece pendiente; por eso el frente
 queda **EN REVISIÓN**.
 
+## Alcance implementado 2026-08-26 — Grupos anticipados OT LAB
+
+Solicitud externa, claim, aprobación/rechazo, creación directa Web, materialización transaccional de N folios, conversación, notificación, realtime y visualización Mobile/Web. No se alteran ETS productivo, firma LAB, Tickets, PDF ni límite de 10 equipos.
+
+La alta individual y adicional LAB queda fuera del alcance de actores externos; sólo staff conserva esas operaciones. La bandeja Web presenta tickets y requests sin normalizarlos artificialmente, y los destinos de notificación reutilizables cubren las superficies reales disponibles.
+
 ## Alcance implementado 2026-08-18 — ETS Venta
 
 - Configuración estructurada de Venta en catálogo: identificación individual,

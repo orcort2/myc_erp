@@ -18,14 +18,13 @@ import FlowTestPage from './FlowTestPage.jsx';
 import LoginPage from './LoginPage.jsx';
 import ModulePage from './ModulePage.jsx';
 import CommunicationsPage from './CommunicationsPage.jsx';
-import ProceduresPage from './ProceduresPage.jsx';
 import QualityPage from './QualityPage.jsx';
 import QuotationsPage from './QuotationsPage.jsx';
 import ResolutionCenterPage from './ResolutionCenterPage.jsx';
 import ServiceOrdersPage from './ServiceOrdersPage.jsx';
+import LabWorkOrderGroupsPage from './LabWorkOrderGroupsPage.jsx';
 import SettingsPage from './SettingsPage.jsx';
 import StandardsPage from './StandardsPage.jsx';
-import UncertaintyPage from './UncertaintyPage.jsx';
 import SignatureLabPage from './SignatureLabPage.jsx';
 import DocumentDesignerLabPage from './labs/DocumentDesignerLabPage.jsx';
 import FieldSheetLabPage from './labs/FieldSheetLabPage.jsx';
@@ -199,6 +198,8 @@ export function App() {
         <QuotationsPage user={user} />
       ) : selectedModule?.key === 'serviceOrders' ? (
         <ServiceOrdersPage user={user} />
+      ) : selectedModule?.key === 'labWorkOrderGroups' ? (
+        <LabWorkOrderGroupsPage user={user} />
       ) : selectedModule?.key === 'equipment' ? (
         <EquipmentPage module={selectedModule} timestamp={now} />
       ) : selectedModule?.key === 'certificates' ? (
@@ -211,10 +212,6 @@ export function App() {
         <DocumentLibraryPage user={user} />
       ) : selectedModule?.key === 'standards' ? (
         <StandardsPage />
-      ) : selectedModule?.key === 'procedures' ? (
-        <ProceduresPage />
-      ) : selectedModule?.key === 'uncertainty' ? (
-        <UncertaintyPage />
       ) : selectedModule?.key === 'finance' ? (
         <BillingPage user={user} />
       ) : selectedModule?.key === 'flowTest' ? (

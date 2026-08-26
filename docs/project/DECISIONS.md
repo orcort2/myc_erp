@@ -316,3 +316,9 @@ historia. Cada definición conserva versión, riesgo y permisos propios y delega
 en un servicio propietario transaccional. La reparación estructural y la
 migración masiva de operaciones de otros dominios permanecen fuera hasta contar
 con precheck y estrategia segura específicos.
+
+## D-2026-08-26 — Tenant operador separado del cliente documental LAB
+
+`operator_client_id` gobierna ownership. El grupo anticipado conserva `root_work_order_id`, usa el secuenciador institucional en bloque y no crea otro agregado de firma. El cliente final permanece como snapshot documental.
+
+La removibilidad externa exige guard explícito por `actor_type`, aunque existan permisos legacy en tokens o sesiones. `WorkOrderGroupRequest` y `OperationalTicket` sólo se componen en presentación. La navegación de notificaciones es una función transversal basada en identidad, nunca en título/body.

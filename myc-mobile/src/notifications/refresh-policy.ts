@@ -53,12 +53,17 @@ export function eventFromData(
     ticket_id: numberValue(data.ticket_id),
     work_order_id: numberValue(data.work_order_id),
     conversation_id: numberValue(data.conversation_id),
+    request_id: numberValue(data.request_id),
     source,
     dedupe_key: key,
   };
 }
 
 export function targetFor(event: NotificationSyncEvent): Href | null {
+  if (event.request_id || event.entity_type === 'work_order_group_request') {
+    const id = event.request_id ?? event.entity_id;
+    return { pathname: '/(technician)/work-orders', params: id ? { groupRequestId: String(id) } : {} };
+  }
   if (event.conversation_id || event.entity_type === 'communication') {
     const id = event.conversation_id ?? event.entity_id;
     return id
@@ -69,10 +74,22 @@ export function targetFor(event: NotificationSyncEvent): Href | null {
     const id = event.ticket_id ?? event.entity_id;
     return { pathname: '/(technician)/tickets', params: id ? { ticketId: String(id) } : {} };
   }
-  if (event.work_order_id) {
-    return { pathname: '/(technician)/work-orders', params: { workOrderId: String(event.work_order_id) } };
+  if (event.work_order_id || ['work_order', 'lab_work_order'].includes(event.entity_type ?? '')) {
+    const id = event.work_order_id ?? event.entity_id;
+    return { pathname: '/(technician)/work-orders', params: id ? { workOrderId: String(id) } : {} };
   }
   return null;
+}
+
+export async function markReadThenNavigate(
+  markRead: () => Promise<unknown>,
+  navigate: () => void,
+): Promise<void> {
+  try {
+    await markRead();
+  } finally {
+    navigate();
+  }
 }
 
 export type NotificationResponseLike = {

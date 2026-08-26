@@ -23,6 +23,7 @@ from app.core.db import Base, get_db
 from app.core.security import create_access_token
 from app.main import app
 from app.models.folio_sequence import InstitutionalFolioSequence
+from app.models.client import Client
 from app.models.audit_log import AuditLog
 from app.models.lab_work_order import (
     LabWorkOrder,
@@ -31,12 +32,15 @@ from app.models.lab_work_order import (
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
 from app.models.notification import Notification
+from app.models.communication import CommunicationConversation, CommunicationMessage
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
 from app.schemas.operational_ticket import TicketReject, TicketReview
+from app.schemas.lab_work_order import LabWorkOrderGroupCreate
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.lab_work_orders import _allocate_folio, create_additional_work_order
 from app.services.lab_work_orders import delete_work_order
+from app.services.lab_work_orders import create_group_request, claim_group_request, reject_group_request
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket
 
 
@@ -107,6 +111,85 @@ def lab_context():
         yield client, factory, tokens
     finally:
         app.dependency_overrides.clear()
+
+
+def test_staff_direct_group_materializes_consecutive_real_orders(lab_context):
+    client, factory, tokens = lab_context
+    payload = {**create_payload("Cliente final documental"), "quantity": 3}
+    response = client.post(
+        "/api/lab-work-order-groups", json=payload, headers=auth(tokens["admin"])
+    )
+    assert response.status_code == 201, response.text
+    assert [item["folio"] for item in response.json()["related_work_orders"]] == [6400, 6401, 6402]
+    with factory() as db:
+        rows = list(db.scalars(select(LabWorkOrder).order_by(LabWorkOrder.sequence_number)).all())
+        assert len(rows) == 3
+        assert {item.root_work_order_id for item in rows} == {rows[0].id}
+        assert all(item.client_name == "Cliente final documental" for item in rows)
+
+
+def test_group_request_approval_is_idempotent_and_pending_consumes_no_folios(lab_context):
+    client, factory, tokens = lab_context
+    with factory() as db:
+        operator = Client(legal_name="Operador", commercial_name="Operador")
+        db.add(operator)
+        db.flush()
+        requester = db.scalar(select(User).where(User.username == "lab-tech"))
+        request = create_group_request(
+            db,
+            LabWorkOrderGroupCreate(**create_payload("Cliente final"), quantity=2),
+            requester,
+            operator_client_id=operator.id,
+        )
+        request_id = request.id
+        conversation_id = request.conversation_id
+        assert db.scalar(select(func.count(LabWorkOrder.id))) == 0
+        created_message = db.scalar(select(CommunicationMessage).where(CommunicationMessage.conversation_id == conversation_id))
+        assert created_message.message_type == "system"
+        assert "solicitó un grupo de 2 órdenes" in created_message.body
+        admin_notification = db.scalar(select(Notification).where(Notification.entity_type == "work_order_group_request"))
+        assert admin_notification.entity_id == request_id
+    headers = auth(tokens["admin"])
+    inbox = client.get("/api/lab-work-order-groups/requests", headers=headers)
+    assert inbox.status_code == 200
+    assert inbox.json()[0]["id"] == request_id
+    assert inbox.json()[0]["operator_client_name"] == "Operador"
+    assert inbox.json()[0]["requested_by_name"] == "LAB tech"
+    assert client.post(f"/api/lab-work-order-groups/requests/{request_id}/claim", headers=headers).status_code == 200
+    first = client.post(f"/api/lab-work-order-groups/requests/{request_id}/approve", headers=headers)
+    second = client.post(f"/api/lab-work-order-groups/requests/{request_id}/approve", headers=headers)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["root_work_order_id"] == second.json()["root_work_order_id"]
+    with factory() as db:
+        assert db.scalar(select(func.count(LabWorkOrder.id))) == 2
+        assert list(db.scalars(select(LabWorkOrder.folio).order_by(LabWorkOrder.folio))) == [6400, 6401]
+        conversation = db.get(CommunicationConversation, conversation_id)
+        assert {participant.username for participant in conversation.participants} == {"lab-tech", "lab-admin"}
+        messages = list(db.scalars(select(CommunicationMessage).where(CommunicationMessage.conversation_id == conversation_id).order_by(CommunicationMessage.sequence)))
+        assert any("está atendiendo" in message.body for message in messages)
+        assert any("Folios asignados: 6400, 6401" in message.body for message in messages)
+
+
+def test_group_request_has_one_handler_and_rejection_message_without_folios(lab_context):
+    _client, factory, _tokens = lab_context
+    with factory() as db:
+        operator = Client(legal_name="Operador B", commercial_name="Operador B")
+        db.add(operator); db.flush()
+        requester = db.scalar(select(User).where(User.username == "lab-tech"))
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        competitor = db.scalar(select(User).where(User.username == "lab-capture"))
+        request = create_group_request(db, LabWorkOrderGroupCreate(**create_payload("Cliente rechazado"), quantity=3), requester, operator_client_id=operator.id)
+        claimed = claim_group_request(db, request.id, admin)
+        with pytest.raises(HTTPException) as conflict:
+            claim_group_request(db, request.id, competitor)
+        assert conflict.value.status_code == 409
+        rejected = reject_group_request(db, request.id, admin, "Capacidad no disponible")
+        assert rejected.status == "rejected"
+        assert rejected.handled_by_user_id == claimed.handled_by_user_id == admin.id
+        assert rejected.folios == []
+        assert db.scalar(select(func.count(LabWorkOrder.id))) == 0
+        messages = list(db.scalars(select(CommunicationMessage).where(CommunicationMessage.conversation_id == rejected.conversation_id)))
+        assert any("rechazó la solicitud. Motivo: Capacidad no disponible" in item.body for item in messages)
 
 
 @pytest.fixture()

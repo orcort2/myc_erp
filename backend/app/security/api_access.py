@@ -345,6 +345,15 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
             actor="mobile_actor",
         )
 
+    if path.startswith("/api/lab-work-order-groups"):
+        if path.endswith("/claim"):
+            return _permission("lab_work_order_groups.requests.claim", administrative=True)
+        if path.endswith(("/approve", "/reject")):
+            return _permission("lab_work_order_groups.requests.decide", administrative=True)
+        if path.endswith("/requests"):
+            return _permission("lab_work_order_groups.requests.read", administrative=True)
+        return _permission("lab_work_order_groups.create", administrative=True)
+
     if path.startswith("/api/mobile/v1/"):
         return AccessPolicy(
             AccessType.MOBILE,

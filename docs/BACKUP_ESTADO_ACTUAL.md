@@ -47,11 +47,11 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 
 ## Respaldo oficial
 
-- `backup_erp_myc_antes_prueba.sql` existe, mide `75,534,807` bytes y fue
-  regenerado el 2026-08-26 12:07:11 CST.
+- `backup_erp_myc_antes_prueba.sql` existe, mide `75,546,835` bytes y fue
+  regenerado el 2026-08-26 13:45:14 CST.
 - SHA-256:
-  `b23598cfcc3a728ab09734d01d0750eda681dde60061c86bda2cdec18addfcbc`.
-- Su `alembic_version` verificable es `d6f2a4c8e0b1` y coincide con el head
+  `f2225f704e0ce906173f9b8f7868c7dc7cb3d6248bb46760f9bcf1e0a746a3a7`.
+- Su `alembic_version` verificable es `e7a3c5d9f1b2` y coincide con el head
   único actual del código.
 
 ## Validaciones de este corte documental
@@ -135,3 +135,11 @@ Actualizar este archivo sólo cuando cambien migraciones, respaldo, validaciones
 o pendientes operativos del corte. No copiar aquí contratos completos ni
 declarar estados de módulos: esas responsabilidades pertenecen a los documentos
 canónicos enlazados al inicio.
+
+## Corte 2026-08-26 — Grupos anticipados OT LAB
+
+- Alembic local: `e7a3c5d9f1b2 (head)`; renombra ownership LAB a `operator_client_id` y crea solicitudes estructuradas.
+- Validado: materialización N, aprobación idempotente, aislamiento Mobile, capability Sr y builds.
+- Pendiente: QA físico y concurrencia PostgreSQL opt-in.
+
+Corrección QA posterior: RBAC externo sin `work_orders.create`, guard 403 por actor, bandeja tickets/requests, conversación contextual verificable y navegación reusable de notificaciones Web/Mobile. La regresión final obtuvo 38 pruebas backend del contexto/comunicaciones/notificaciones/realtime y 8 LAB aprobadas con 1 omitida; Web aprobó 2 pruebas de navegación y Mobile 32 pruebas distribuidas entre capacidades, navegación, realtime y comunicaciones. Vite, Expo lint, compilación Python, clasificación de 470 rutas, Alembic check y `git diff --check` quedaron correctos. No requirió migración adicional sobre `e7a3c5d9f1b2`.

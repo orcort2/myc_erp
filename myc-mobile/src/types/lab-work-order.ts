@@ -73,3 +73,18 @@ export type GeneralData = {
 };
 
 export type EquipmentData = Omit<LabEquipment, 'id' | 'position'>;
+
+export type LabWorkOrderGroupRequest = {
+  id: number;
+  quantity: number;
+  status: 'pending' | 'in_review' | 'approved' | 'rejected';
+  root_work_order_id: number | null;
+  decision_reason: string | null;
+  conversation_id: number | null;
+  client_name: string;
+  operator_client_name: string;
+  requested_by_name: string;
+  handled_by_name: string | null;
+  folios: number[];
+  created_at: string;
+};
