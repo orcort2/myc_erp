@@ -47,11 +47,11 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 
 ## Respaldo oficial
 
-- `backup_erp_myc_antes_prueba.sql` existe, mide `75,534,807` bytes y fue
-  regenerado el 2026-08-26 12:07:11 CST.
+- `backup_erp_myc_antes_prueba.sql` existe, mide `75,546,835` bytes y fue
+  regenerado el 2026-08-26 13:45:14 CST.
 - SHA-256:
-  `b23598cfcc3a728ab09734d01d0750eda681dde60061c86bda2cdec18addfcbc`.
-- Su `alembic_version` verificable es `d6f2a4c8e0b1` y coincide con el head
+  `f2225f704e0ce906173f9b8f7868c7dc7cb3d6248bb46760f9bcf1e0a746a3a7`.
+- Su `alembic_version` verificable es `e7a3c5d9f1b2` y coincide con el head
   único actual del código.
 
 ## Validaciones de este corte documental
@@ -135,3 +135,11 @@ Actualizar este archivo sólo cuando cambien migraciones, respaldo, validaciones
 o pendientes operativos del corte. No copiar aquí contratos completos ni
 declarar estados de módulos: esas responsabilidades pertenecen a los documentos
 canónicos enlazados al inicio.
+
+## Corte 2026-08-26 — Grupos anticipados OT LAB
+
+- Alembic local: `e7a3c5d9f1b2 (head)`; renombra ownership LAB a `operator_client_id` y crea solicitudes estructuradas.
+- Validado: materialización N, aprobación idempotente, aislamiento Mobile, capability Sr y builds.
+- Pendiente: QA físico y concurrencia PostgreSQL opt-in.
+
+Corrección quirúrgica de revisión: capabilities separadas por actor, endpoints Mobile internal, conversación creada sólo en claim, bandeja/contador Mobile agregado, modal/deep links reparados y páginas Web ajenas restauradas. La suite backend completa obtuvo 655 aprobadas, 6 omitidas y 19 subtests; conserva una falla preexistente de edición posterior a firma fuera del alcance del Bloque 2. Las regresiones focales quedaron verdes (21 de seguridad y 43 LAB/Communications/Notifications/Realtime, con 6 omisiones PostgreSQL), Web aprobó 2 pruebas y Mobile 80. Vite transformó 1,747 módulos; typecheck explícito, Expo lint y export iOS/Android/Web fueron correctos. El inventario clasifica 475 rutas. No se modificó la base ni se creó migración adicional sobre `e7a3c5d9f1b2`; el respaldo oficial permanece vigente.

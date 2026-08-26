@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -15,8 +15,11 @@ from app.models.client_portal_membership import ClientPortalMembership
 from app.models.client_portal_membership_role import ClientPortalMembershipRole
 from app.models.client_portal_role import ClientPortalRole
 from app.models.communication import CommunicationConversation
+from app.models.lab_work_order import LabWorkOrderGroupRequest
 from app.models.notification import PushDevice
 from app.models.user import Role, User
+from app.schemas.lab_work_order import LabWorkOrderCreate
+from app.services.lab_work_orders import create_work_order
 from app.realtime.authentication import RealtimeIdentity
 from app.routers.client_portal import _ensure_portal_managed_roles
 from app.routers.realtime import _can_access_conversation
@@ -54,16 +57,18 @@ def mobile_security_api():
     Base.metadata.create_all(engine)
     with Session(engine, expire_on_commit=False) as db:
         technician = Role(name="Tecnico", description="Técnico MYC")
+        administrator = Role(name="Administrador", description="Administrador MYC")
         advisor = Role(name="Asesor", description="Sin acceso Mobile")
-        db.add_all([technician, advisor])
+        db.add_all([technician, administrator, advisor])
         db.flush()
         staff = _user("staff@myc.example.com", account_type="internal", role=technician)
+        admin = _user("admin@myc.example.com", account_type="internal", role=administrator)
         staff_without_mobile = _user(
             "advisor@myc.example.com", account_type="internal", role=advisor
         )
         client_a = Client(legal_name="Cliente A", commercial_name="Cliente A")
         client_b = Client(legal_name="Cliente B", commercial_name="Cliente B")
-        db.add_all([staff, staff_without_mobile, client_a, client_b])
+        db.add_all([staff, admin, staff_without_mobile, client_a, client_b])
         db.commit()
         ensure_portal_catalog(db)
 
@@ -73,6 +78,7 @@ def mobile_security_api():
             ("jr", "external_operator_jr", client_a),
             ("sr", "external_operator_sr", client_a),
             ("other", "external_operator_jr", client_b),
+            ("other_sr", "external_operator_sr", client_b),
             ("portal_only", "viewer", client_a),
         ):
             user = _user(f"{key}@client.example.com", account_type="client_portal")
@@ -99,6 +105,7 @@ def mobile_security_api():
         api = TestClient(app)
         yield api, db, {
             "staff": staff,
+            "admin": admin,
             "staff_without_mobile": staff_without_mobile,
             "client_a": client_a,
             "client_b": client_b,
@@ -131,7 +138,7 @@ def _work_order_payload(client_name: str) -> dict:
 
 
 def test_internal_mobile_access_is_explicit_and_keeps_internal_scope(mobile_security_api):
-    api, _, data = mobile_security_api
+    api, db, data = mobile_security_api
     accepted = _login(api, data["staff"].email)
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["user"]["actor_type"] == "internal"
@@ -297,20 +304,147 @@ def test_viewer_has_no_implicit_operational_permissions(mobile_security_api):
     assert denied.status_code == 403
 
 
+def test_external_operators_cannot_create_direct_lab_work_orders(mobile_security_api):
+    api, _, data = mobile_security_api
+    for key in ("jr", "sr"):
+        token = _login(api, data[key].email)
+        response = api.post(
+            "/api/mobile/v1/technician/lab-work-orders",
+            headers=_headers(token),
+            json=_work_order_payload("Cliente final"),
+        )
+        assert response.status_code == 403
+
+
+def test_internal_authorized_actor_keeps_direct_lab_creation(mobile_security_api):
+    api, _, data = mobile_security_api
+    token = _login(api, data["staff"].email)
+    response = api.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        headers=_headers(token),
+        json=_work_order_payload("Cliente staff"),
+    )
+    assert response.status_code == 201, response.text
+
+
+def test_only_sr_creates_group_request_and_other_tenant_cannot_list_it(mobile_security_api):
+    api, _, data = mobile_security_api
+    payload = {**_work_order_payload("Cliente final solicitado"), "quantity": 3}
+    for key in ("viewer", "jr"):
+        denied = api.post(
+            "/api/mobile/v1/technician/lab-work-orders/group-requests",
+            headers=_headers(_login(api, data[key].email)),
+            json=payload,
+        )
+        assert denied.status_code == 403
+    sr = _login(api, data["sr"].email)
+    created = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        headers=_headers(sr),
+        json=payload,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "pending"
+    assert created.json()["folios"] == []
+    assert created.json()["conversation_id"] is None
+    admin = _login(api, data["admin"].email)
+    claimed = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/group-requests/{created.json()['id']}/claim",
+        headers=_headers(admin),
+    )
+    assert claimed.status_code == 200, claimed.text
+    conversation_id = claimed.json()["conversation_id"]
+    assert conversation_id is not None
+    assert api.get(
+        f"/api/communications/conversations/{conversation_id}", headers=_headers(sr)
+    ).status_code == 200
+    assert api.get(
+        f"/api/communications/conversations/{conversation_id}", headers=_headers(admin)
+    ).status_code == 200
+    own = api.get(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        headers=_headers(sr),
+    )
+    assert [item["id"] for item in own.json()] == [created.json()["id"]]
+    other = _login(api, data["other"].email)
+    assert api.get(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        headers=_headers(other),
+    ).status_code == 403
+    other_sr = _login(api, data["other_sr"].email)
+    assert api.get(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        headers=_headers(other_sr),
+    ).json() == []
+    assert api.get(
+        f"/api/communications/conversations/{conversation_id}", headers=_headers(other_sr)
+    ).status_code in {403, 404}
+
+
+def test_internal_cannot_use_external_request_but_can_create_direct_group(mobile_security_api):
+    api, db, data = mobile_security_api
+    staff_response = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/groups",
+        headers=_headers(_login(api, data["staff"].email)),
+        json={**_work_order_payload("Sin permiso"), "quantity": 2},
+    )
+    assert staff_response.status_code == 403
+
+    token = _login(api, data["admin"].email)
+    headers = _headers(token)
+    payload = {**_work_order_payload("Cliente directo"), "quantity": 3}
+
+    external_route = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        headers=headers,
+        json=payload,
+    )
+    assert external_route.status_code == 403
+
+    direct = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/groups",
+        headers=headers,
+        json=payload,
+    )
+    assert direct.status_code == 201, direct.text
+    assert [item["folio"] for item in direct.json()["related_work_orders"]] == [6400, 6401, 6402]
+    assert db.scalar(select(func.count(LabWorkOrderGroupRequest.id))) == 0
+
+
+def test_client_cannot_create_direct_group(mobile_security_api):
+    api, _, data = mobile_security_api
+    sr_headers = _headers(_login(api, data["sr"].email))
+    response = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/groups",
+        headers=sr_headers,
+        json={**_work_order_payload("Cliente directo denegado"), "quantity": 2},
+    )
+    assert response.status_code == 403
+    forged_tenant = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        headers=sr_headers,
+        json={
+            **_work_order_payload("Tenant forjado"),
+            "quantity": 2,
+            "operator_client_id": data["client_b"].id,
+        },
+    )
+    assert forged_tenant.status_code == 422
+
+
 def test_client_scope_blocks_cross_tenant_list_read_write_and_subresources(
     mobile_security_api,
 ):
-    api, _, data = mobile_security_api
-    jr = _login(api, data["jr"].email)
-    created = api.post(
-        "/api/mobile/v1/technician/lab-work-orders",
-        headers=_headers(jr),
-        json=_work_order_payload("Nombre no autoritativo"),
+    api, db, data = mobile_security_api
+    created = create_work_order(
+        db,
+        LabWorkOrderCreate(**_work_order_payload("Nombre documental")),
+        data["jr"],
+        operator_client_id=data["client_a"].id,
     )
-    assert created.status_code == 201, created.text
-    work_order_id = created.json()["id"]
-    assert created.json()["client_name"] == "Cliente A"
+    work_order_id = created.id
 
+    jr = _login(api, data["jr"].email)
     other = _login(api, data["other"].email)
     listed = api.get(
         "/api/mobile/v1/technician/lab-work-orders", headers=_headers(other)
@@ -318,6 +452,7 @@ def test_client_scope_blocks_cross_tenant_list_read_write_and_subresources(
     assert listed.status_code == 200
     assert listed.json() == []
     base = f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}"
+    assert api.post(f"{base}/additional", headers=_headers(jr)).status_code == 403
     assert api.get(base, headers=_headers(other)).status_code == 404
     assert (
         api.patch(base, headers=_headers(other), json={"notes": "IDOR"}).status_code
@@ -361,18 +496,18 @@ def test_client_scope_blocks_cross_tenant_list_read_write_and_subresources(
 
 
 def test_same_client_users_share_organization_read_scope(mobile_security_api):
-    api, _, data = mobile_security_api
-    jr = _login(api, data["jr"].email)
-    created = api.post(
-        "/api/mobile/v1/technician/lab-work-orders",
-        headers=_headers(jr),
-        json=_work_order_payload("Ignorado"),
+    api, db, data = mobile_security_api
+    created = create_work_order(
+        db,
+        LabWorkOrderCreate(**_work_order_payload("Cliente compartido")),
+        data["jr"],
+        operator_client_id=data["client_a"].id,
     )
     viewer = _login(api, data["viewer"].email)
     listed = api.get(
         "/api/mobile/v1/technician/lab-work-orders", headers=_headers(viewer)
     )
-    assert [item["id"] for item in listed.json()] == [created.json()["id"]]
+    assert [item["id"] for item in listed.json()] == [created.id]
 
 
 def test_external_actor_is_denied_from_unreviewed_product_mobile_routes(

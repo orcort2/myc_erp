@@ -130,7 +130,7 @@ def list_tickets(
     query = _ticket_query()
     if client_id is not None:
         query = query.join(OperationalTicket.work_order).where(
-            LabWorkOrder.client_id == client_id
+            LabWorkOrder.operator_client_id == client_id
         )
     elif not _can_view_all(user):
         query = query.where(OperationalTicket.requested_by_user_id == user.id)

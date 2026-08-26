@@ -6,6 +6,13 @@ const ENTITY_DESTINATIONS = {
   quote: '/dashboard#cotizaciones',
   service: '/dashboard#servicios',
   ets: '/dashboard#servicios',
+  service_order: '/dashboard#servicios',
+  work_order_group_request: '/lab-work-order-groups',
+  ticket: '/lab-work-order-groups',
+  work_order: '/lab-work-order-groups',
+  lab_work_order: '/lab-work-order-groups',
+  conversation: '/communications',
+  communication: '/communications',
 };
 
 export function getNotificationDestination(notification) {
@@ -28,7 +35,16 @@ export function getNotificationDestination(notification) {
   const query = new URLSearchParams();
 
   if (notification.entity_id != null) {
-    query.set('entity_id', String(notification.entity_id));
+    const parameter = notification.entity_type === 'work_order_group_request'
+      ? 'request_id'
+      : notification.entity_type === 'ticket'
+        ? 'ticket_id'
+        : ['conversation', 'communication'].includes(notification.entity_type)
+          ? 'conversation_id'
+          : notification.entity_type === 'service_order'
+            ? 'service_order_id'
+            : 'work_order_id';
+    query.set(parameter, String(notification.entity_id));
   }
 
   if (notification.activity_message_id != null) {

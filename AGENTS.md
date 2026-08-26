@@ -86,3 +86,61 @@ El modelo persistente debe ser general para el Motor y no especializarse en el
 primer caso de uso. Debe preservar versionado, inmutabilidad histórica,
 integridad referencial, reconstrucción completa de una resolución y
 compatibilidad con las fases posteriores.
+
+## Directriz permanente de MYC Mobile y operación externa temporal
+
+MYC Mobile es una superficie móvil del ERP MYC y no un sistema operativo
+independiente. Su arquitectura de largo plazo debe reutilizar las autoridades
+canónicas del ERP para identidad, permisos, clientes, ETS, órdenes de trabajo,
+equipos, documentos, comunicaciones y demás dominios compartidos.
+
+MYC Mobile evolucionará progresivamente hacia una versión móvil y acotada del
+ERP para staff administrativo y técnicos MYC. No se deben crear dentro de
+Mobile motores de negocio, máquinas de estados, generadores de folios,
+autoridades documentales ni modelos productivos paralelos cuando exista una
+autoridad canónica equivalente en el ERP.
+
+### Operación externa
+
+El acceso de organizaciones/clientes externos mediante MYC Mobile es una
+capacidad TRANSITORIA.
+
+Toda funcionalidad exclusiva de operadores externos debe diseñarse para poder
+ser eliminada quirúrgicamente en el futuro sin modificar ni degradar las
+autoridades productivas permanentes del ERP o la experiencia Mobile destinada
+a staff y técnicos MYC.
+
+Se debe separar explícitamente entre:
+
+1. capacidades canónicas y permanentes del ERP;
+2. adaptadores, policies y presentación propios de MYC Mobile;
+3. capacidades exclusivas y temporales del operador externo.
+
+Una necesidad del operador externo puede reutilizar o motivar una capacidad
+genérica útil para MYC, pero la lógica específica del externo no debe
+incorporarse dentro de la autoridad canónica.
+
+Ejemplo:
+
+    create_work_order_group()          ← permanente/canónico
+        ↑
+        ├── Staff MYC                  ← permanente
+        └── external request/approval  ← temporal
+
+Al retirar la operación externa deben poder eliminarse sus permisos, requests,
+approval workflows, endpoints, UI, notificaciones y policies específicas sin
+reescribir creación de OT, numeración, grupos, ETS, firmas, PDFs,
+Communications ni las funciones Mobile de staff/técnicos.
+
+No introducir estados específicos del operador externo en entidades canónicas
+cuando ese estado pertenezca al workflow temporal externo.
+
+No duplicar autoridades productivas para facilitar la removibilidad: la
+removibilidad debe obtenerse mediante desacoplamiento de la capa temporal,
+no mediante duplicación del núcleo.
+
+Cuando una implementación temporal requiera modificar una autoridad canónica,
+el cambio sólo es aceptable si constituye una mejora genérica, backward
+compatible y útil independientemente de la existencia del operador externo.
+En caso contrario, implementar la necesidad mediante una capa externa
+desacoplada o detenerse y reportar la dependencia.

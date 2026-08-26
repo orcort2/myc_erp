@@ -75,6 +75,7 @@ from app.models.invoice import (
 from app.models.linked_company import LinkedCompany
 from app.models.lab_work_order import (
     LabWorkOrder,
+    LabWorkOrderGroupRequest,
     LabWorkOrderEquipment,
     LabWorkOrderSignature,
     LabWorkOrderSignatureSession,
@@ -240,6 +241,7 @@ __all__ = [
     "InvoiceSettings",
     "LinkedCompany",
     "LabWorkOrder",
+    "LabWorkOrderGroupRequest",
     "LabWorkOrderEquipment",
     "LabWorkOrderSignature",
     "LabWorkOrderSignatureSession",

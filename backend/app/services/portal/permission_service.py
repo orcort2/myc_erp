@@ -24,7 +24,6 @@ ROLE_PERMISSIONS = {
     "external_operator_jr": {
         "mobile.access",
         "work_orders.read_organization",
-        "work_orders.create",
         "work_orders.execute",
         "equipment.read",
         "equipment.write",
@@ -37,8 +36,10 @@ ROLE_PERMISSIONS = {
     "external_operator_sr": {
         "mobile.access",
         "work_orders.read_organization",
-        "work_orders.create",
         "work_orders.execute",
+        "work_orders.group.request",
+        "communications.view",
+        "communications.create",
         "equipment.read",
         "equipment.write",
         "field_sheets.read",
@@ -136,6 +137,15 @@ def ensure_portal_catalog(db: Session) -> None:
         elif code in ROLE_PRESENTATION:
             role.name, role.description = ROLE_PRESENTATION[code]
         existing = {item.permission_id for item in db.scalars(select(ClientPortalRolePermission).where(ClientPortalRolePermission.role_id == role.id)).all()}
+        if code in {"external_operator_jr", "external_operator_sr"}:
+            obsolete = permissions["work_orders.create"].id
+            stale_link = db.scalar(select(ClientPortalRolePermission).where(
+                ClientPortalRolePermission.role_id == role.id,
+                ClientPortalRolePermission.permission_id == obsolete,
+            ))
+            if stale_link is not None:
+                db.delete(stale_link)
+                existing.discard(obsolete)
         for permission_code in permission_codes:
             permission = permissions[permission_code]
             if permission.id not in existing:

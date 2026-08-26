@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
+import { eventFromData, markReadThenNavigate, targetFor } from '@/src/notifications/refresh-policy';
 import type { MobileNotification, NotificationPage, NotificationSyncEvent } from '@/src/types/notification';
 
 const PAGE_SIZE = 25;
@@ -56,17 +57,21 @@ export default function NotificationsScreen() {
   useEffect(() => subscribe((_event: NotificationSyncEvent) => { load(true); }), [load, subscribe]);
 
   async function open(item: MobileNotification) {
-    if (!item.read_at) {
-      await authorizedFetch(apiUrl(`/mobile/v1/notifications/${item.id}/read`), { method: 'POST' });
-      setItems((current) => current.map((value) => value.id === item.id ? { ...value, read_at: new Date().toISOString() } : value));
-      await refreshUnread();
-    }
-    const ticketId = Number(item.metadata_json.ticket_id ?? (item.entity_type === 'ticket' ? item.entity_id : 0));
-    const workOrderId = Number(item.metadata_json.work_order_id ?? 0);
-    const conversationId = Number(item.metadata_json.conversation_id ?? (item.entity_type === 'communication' ? item.entity_id : 0));
-    if (conversationId) router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(conversationId) } });
-    else if (ticketId) router.push({ pathname: '/(technician)/tickets', params: { ticketId: String(ticketId) } });
-    else if (workOrderId) router.push({ pathname: '/(technician)/work-orders', params: { workOrderId: String(workOrderId) } });
+    await markReadThenNavigate(async () => {
+      if (!item.read_at) {
+        await authorizedFetch(apiUrl(`/mobile/v1/notifications/${item.id}/read`), { method: 'POST' });
+        setItems((current) => current.map((value) => value.id === item.id ? { ...value, read_at: new Date().toISOString() } : value));
+        await refreshUnread();
+      }
+    }, () => {
+      const target = targetFor(eventFromData({
+        ...item.metadata_json,
+        entity_type: item.entity_type,
+        entity_id: item.entity_id,
+        event_type: item.notification_type,
+      }, 'local', `notification:${item.id}`));
+      if (target) router.push(target);
+    });
   }
 
   async function readAll() {

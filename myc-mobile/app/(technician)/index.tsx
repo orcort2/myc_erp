@@ -14,6 +14,8 @@ import { useCommunications } from '@/src/communications/CommunicationsProvider';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { apiUrl } from '@/src/api/client';
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
+import { actionableRequestCount } from '@/src/requests/request-inbox';
+import type { LabWorkOrderGroupRequest } from '@/src/types/lab-work-order';
 import type { OperationalTicket } from '@/src/types/operational-ticket';
 
 export default function TechnicianHome() {
@@ -21,24 +23,37 @@ export default function TechnicianHome() {
   const { unreadCount } = useNotificationSync();
   const { unreadCount: communicationUnreadCount } = useCommunications();
 
-  const [pendingTickets, setPendingTickets] = useState<number | null>(null);
-  const { canCreateWorkOrders, canReadWorkOrders, canReadTickets, canUseCommunications } =
-    deriveMobileCapabilities(user);
+  const [pendingRequests, setPendingRequests] = useState<number | null>(null);
+  const capabilities = deriveMobileCapabilities(user);
+  const {
+    canClaimWorkOrderGroupRequests,
+    canCreateWorkOrders,
+    canReadTickets,
+    canReadWorkOrderGroupRequests,
+    canReadWorkOrders,
+    canReviewTickets,
+    canUseCommunications,
+  } = capabilities;
 
   useEffect(() => {
-    if (!user || !canReadTickets) return;
-
-    authorizedFetch(
-      apiUrl('/mobile/v1/technician/tickets?status=pending&limit=25')
-    )
-      .then(async (response) =>
-        response.ok
-          ? (response.json() as Promise<OperationalTicket[]>)
-          : []
-      )
-      .then((tickets) => setPendingTickets(tickets.length))
-      .catch(() => setPendingTickets(null));
-  }, [authorizedFetch, canReadTickets, user]);
+    if (!user || (!canReviewTickets && !canClaimWorkOrderGroupRequests)) {
+      setPendingRequests(0);
+      return;
+    }
+    Promise.all([
+      canReviewTickets
+        ? authorizedFetch(apiUrl('/mobile/v1/technician/tickets?status=pending&limit=100')).then((response) => response.ok ? response.json() as Promise<OperationalTicket[]> : [])
+        : Promise.resolve([] as OperationalTicket[]),
+      canClaimWorkOrderGroupRequests
+        ? authorizedFetch(apiUrl('/mobile/v1/technician/lab-work-orders/group-requests/review')).then((response) => response.ok ? response.json() as Promise<LabWorkOrderGroupRequest[]> : [])
+        : Promise.resolve([] as LabWorkOrderGroupRequest[]),
+    ])
+      .then(([tickets, groups]) => setPendingRequests(actionableRequestCount(tickets, groups, {
+        canReviewTickets,
+        canClaimGroups: canClaimWorkOrderGroupRequests,
+      })))
+      .catch(() => setPendingRequests(null));
+  }, [authorizedFetch, canClaimWorkOrderGroupRequests, canReviewTickets, user]);
 
   if (isLoading) {
     return (
@@ -99,18 +114,18 @@ export default function TechnicianHome() {
           </Text>
         </Pressable>}
 
-        {canReadTickets && (
+        {(canReadTickets || canReadWorkOrderGroupRequests) && (
           <Pressable
             style={styles.module}
             onPress={() => router.push('/(technician)/tickets')}
           >
-            <Text style={styles.moduleTitle}>Tickets</Text>
+            <Text style={styles.moduleTitle}>Solicitudes</Text>
 
             <Text style={styles.moduleText}>
-              {pendingTickets === null
+              {pendingRequests === null
                 ? 'Solicitudes operativas'
-                : `${pendingTickets} pendiente${
-                    pendingTickets === 1 ? '' : 's'
+                : `${pendingRequests} pendiente${
+                    pendingRequests === 1 ? '' : 's'
                   }`}
             </Text>
           </Pressable>

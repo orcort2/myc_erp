@@ -45,6 +45,7 @@ import type {
   LabEquipment,
   LabListItem,
   LabWorkOrder,
+  LabWorkOrderGroupRequest,
 } from '@/src/types/lab-work-order';
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -121,8 +122,10 @@ function FormSection({
 export default function WorkOrdersScreen() {
   const { authorizedFetch, isLoading: authLoading, refreshSession, session, user } = useAuth();
   const { publishLocalChange, subscribe } = useNotificationSync();
-  const params = useLocalSearchParams<{ workOrderId?: string }>();
+  const params = useLocalSearchParams<{ workOrderId?: string; groupRequestId?: string }>();
   const [items, setItems] = useState<LabListItem[]>([]);
+  const [groupRequests, setGroupRequests] = useState<LabWorkOrderGroupRequest[]>([]);
+  const [selectedGroupRequest, setSelectedGroupRequest] = useState<LabWorkOrderGroupRequest | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [listError, setListError] = useState('');
@@ -134,6 +137,8 @@ export default function WorkOrdersScreen() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'completed'>('all');
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
+  const [groupMode, setGroupMode] = useState<'none' | 'request' | 'direct'>('none');
+  const [groupQuantity, setGroupQuantity] = useState('2');
   const [step, setStep] = useState<Step>('general');
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
@@ -150,6 +155,7 @@ export default function WorkOrdersScreen() {
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
   const signatureSubmitRef = useRef(false);
+  const capabilities = deriveMobileCapabilities(user);
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -208,6 +214,18 @@ export default function WorkOrdersScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedClient, debouncedFolio, statusFilter, user]);
 
+  useEffect(() => {
+    if (!capabilities.canRequestWorkOrderGroups) return;
+    request<LabWorkOrderGroupRequest[]>('/mobile/v1/technician/lab-work-orders/group-requests').then(setGroupRequests).catch(() => undefined);
+  }, [capabilities.canRequestWorkOrderGroups, request]);
+  const openedGroupRequestId = useRef<number | null>(null);
+  useEffect(() => {
+    const requestId = Number(params.groupRequestId);
+    if (!requestId || !groupRequests.length || openedGroupRequestId.current === requestId) return;
+    openedGroupRequestId.current = requestId;
+    setSelectedGroupRequest(groupRequests.find((item) => item.id === requestId) ?? null);
+  }, [groupRequests, params.groupRequestId]);
+
   useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));
 
   useEffect(() => subscribe((event) => {
@@ -253,11 +271,11 @@ export default function WorkOrdersScreen() {
 
   const {
     canCreateTickets,
-    canCreateWorkOrders,
+    canCreateWorkOrders, canRequestWorkOrderGroups, canCreateWorkOrderGroupsDirect,
     canExecuteWorkOrders,
     canManageEquipment,
     canCaptureSignatures,
-  } = deriveMobileCapabilities(user);
+  } = capabilities;
   const editable = workOrder?.status === 'draft' && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
   const canSaveEquipment = useMemo(
@@ -266,12 +284,23 @@ export default function WorkOrdersScreen() {
   );
 
   function startNew() {
+    setGroupMode('none');
     setGeneral(emptyGeneral());
     setWorkOrder(null);
     setStep('general');
     setSignatureFlowState(null);
     setSignatureDrawing(false);
     setOpen(true);
+  }
+
+  function startGroupRequest() {
+    startNew();
+    setGroupMode('request');
+  }
+
+  function startDirectGroup() {
+    startNew();
+    setGroupMode('direct');
   }
 
   function clearFilters() {
@@ -348,7 +377,11 @@ export default function WorkOrdersScreen() {
     if (!general.client_name.trim()) return;
     setBusy(true);
     try {
-      const path = workOrder
+      const path = groupMode === 'request'
+        ? '/mobile/v1/technician/lab-work-orders/group-requests'
+        : groupMode === 'direct'
+        ? '/mobile/v1/technician/lab-work-orders/groups'
+        : workOrder
         ? `/mobile/v1/technician/lab-work-orders/${workOrder.id}`
         : '/mobile/v1/technician/lab-work-orders';
       const detail = await request<LabWorkOrder>(path, {
@@ -364,10 +397,21 @@ export default function WorkOrdersScreen() {
           purchase_order: general.purchase_order || null,
           notes: general.notes || null,
           ...(workOrder ? { expected_edit_version: workOrder.edit_version } : {}),
+          ...(groupMode !== 'none' ? { quantity: Number(groupQuantity) } : {}),
         }),
       });
+      if (groupMode === 'request') {
+        Alert.alert('Solicitud enviada', 'Los folios se asignarán únicamente cuando un administrador la apruebe.');
+        setOpen(false);
+        request<LabWorkOrderGroupRequest[]>('/mobile/v1/technician/lab-work-orders/group-requests').then(setGroupRequests).catch(() => undefined);
+        return;
+      }
       setWorkOrder(detail);
       setStep('capture');
+      if (groupMode === 'direct') {
+        Alert.alert('Grupo creado', `Se materializaron ${detail.related_work_orders.length} OT con folios consecutivos.`);
+        setGroupMode('none');
+      }
       publishLocalChange({
         event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id,
       });
@@ -687,6 +731,9 @@ export default function WorkOrdersScreen() {
         </View>
       </View>
       {canCreateWorkOrders && <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>}
+      {canCreateWorkOrderGroupsDirect && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={startDirectGroup}><Text style={styles.secondaryText}>+ Crear grupo anticipado</Text></Pressable>}
+      {canRequestWorkOrderGroups && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={startGroupRequest}><Text style={styles.secondaryText}>Solicitar grupo anticipado</Text></Pressable>}
+      {canRequestWorkOrderGroups && groupRequests.length > 0 && <View style={styles.filters}><Text style={styles.filterLabel}>Mis solicitudes de grupo</Text>{groupRequests.map((item) => <Pressable key={item.id} onPress={() => setSelectedGroupRequest(item)}><Text style={styles.status}>#{item.id} · {item.quantity} OT · {item.status}{item.folios.length ? ` · folios ${item.folios.join(', ')}` : ' · sin folios'}</Text></Pressable>)}</View>}
       {loading ? <ActivityIndicator style={styles.loader} /> : (
         <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
           {!!listError && (
@@ -738,6 +785,7 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.sectionDescription}>Captura esta información una sola vez. Las OT adicionales la heredarán automáticamente.</Text>
                   </View>
                   <FormSection title="Servicio y cliente">
+                    {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <Field label="Fecha de recepción (AAAA-MM-DD)" required value={general.reception_date} onChangeText={(value) => setGeneral({ ...general, reception_date: value })} />
                     <Field label="Fecha de salida (AAAA-MM-DD)" required value={general.departure_date} onChangeText={(value) => setGeneral({ ...general, departure_date: value })} />
                     <Field label="Empresa / cliente" required value={general.client_name} onChangeText={(value) => setGeneral({ ...general, client_name: value })} />
@@ -751,7 +799,7 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  <Pressable disabled={!general.client_name.trim() || busy} style={styles.primary} onPress={createWorkOrder}><Text style={styles.primaryText}>{workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
+                  <Pressable disabled={!general.client_name.trim() || busy || (groupMode !== 'none' && (Number(groupQuantity) < 1 || Number(groupQuantity) > 50))} style={styles.primary} onPress={createWorkOrder}><Text style={styles.primaryText}>{groupMode === 'request' ? 'Enviar solicitud sin reservar folios' : groupMode === 'direct' ? 'Crear grupo y asignar folios' : workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
                 </>
               )}
 
@@ -785,7 +833,7 @@ export default function WorkOrdersScreen() {
                   ))}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
                   {editable && canManageEquipment && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
-                  {editable && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
+                  {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
                   <Pressable disabled={!workOrder.equipment.length} style={[styles.primary, !workOrder.equipment.length && styles.disabled]} onPress={() => setStep('review')}><Text style={styles.primaryText}>Continuar</Text></Pressable>
                 </>
               )}
@@ -918,6 +966,132 @@ export default function WorkOrdersScreen() {
         </SafeAreaView>
         </SafeAreaProvider>
       </Modal>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setSelectedGroupRequest(null)}
+        transparent
+        visible={Boolean(selectedGroupRequest)}
+      >
+        <View style={styles.requestOverlay}>
+          <View style={styles.requestDialog}>
+            <View style={styles.requestHeader}>
+              <View style={styles.requestHeaderCopy}>
+                <Text style={styles.requestEyebrow}>GRUPO DE ÓRDENES</Text>
+                <Text style={styles.requestTitle}>
+                  Solicitud #{selectedGroupRequest?.id}
+                </Text>
+                <Text style={styles.requestClient}>
+                  {selectedGroupRequest?.client_name}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.requestStatusBadge,
+                  selectedGroupRequest?.status === 'approved' &&
+                    styles.requestStatusApproved,
+                  selectedGroupRequest?.status === 'rejected' &&
+                    styles.requestStatusRejected,
+                  selectedGroupRequest?.status === 'in_review' &&
+                    styles.requestStatusReview,
+                ]}
+              >
+                <Text style={styles.requestStatusText}>
+                  {selectedGroupRequest?.status === 'pending'
+                    ? 'Pendiente'
+                    : selectedGroupRequest?.status === 'in_review'
+                      ? 'En revisión'
+                      : selectedGroupRequest?.status === 'approved'
+                        ? 'Aprobada'
+                        : selectedGroupRequest?.status === 'rejected'
+                          ? 'Rechazada'
+                          : selectedGroupRequest?.status}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.requestSummary}>
+              <View style={styles.requestSummaryItem}>
+                <Text style={styles.requestSummaryLabel}>Órdenes solicitadas</Text>
+                <Text style={styles.requestSummaryValue}>
+                  {selectedGroupRequest?.quantity ?? 0}
+                </Text>
+              </View>
+
+              <View style={styles.requestSummaryDivider} />
+
+              <View style={styles.requestSummaryItem}>
+                <Text style={styles.requestSummaryLabel}>Estado</Text>
+                <Text style={styles.requestSummaryValueSmall}>
+                  {selectedGroupRequest?.status === 'pending'
+                    ? 'Pendiente'
+                    : selectedGroupRequest?.status === 'in_review'
+                      ? 'En revisión'
+                      : selectedGroupRequest?.status === 'approved'
+                        ? 'Aprobada'
+                        : selectedGroupRequest?.status === 'rejected'
+                          ? 'Rechazada'
+                          : selectedGroupRequest?.status}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.requestSection}>
+              <Text style={styles.requestSectionLabel}>Folios asignados</Text>
+
+              {selectedGroupRequest?.folios.length ? (
+                <View style={styles.requestFolios}>
+                  {selectedGroupRequest.folios.map((folio) => (
+                    <View key={folio} style={styles.requestFolioChip}>
+                      <Text style={styles.requestFolioText}>{folio}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.requestMuted}>
+                  Todavía no hay folios asignados.
+                </Text>
+              )}
+            </View>
+
+            {!!selectedGroupRequest?.decision_reason && (
+              <View style={styles.requestRejection}>
+                <Text style={styles.requestRejectionLabel}>Motivo del rechazo</Text>
+                <Text style={styles.requestRejectionText}>
+                  {selectedGroupRequest.decision_reason}
+                </Text>
+              </View>
+            )}
+
+            {!!selectedGroupRequest?.conversation_id && (
+              <Pressable
+                style={styles.requestConversationButton}
+                onPress={() => {
+                  const id = selectedGroupRequest.conversation_id;
+                  setSelectedGroupRequest(null);
+                  router.push({
+                    pathname: '/(technician)/communications/[id]',
+                    params: { id: String(id) },
+                  });
+                }}
+              >
+                <Text style={styles.requestConversationText}>
+                  Abrir conversación
+                </Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={styles.requestCloseButton}
+              onPress={() => setSelectedGroupRequest(null)}
+            >
+              <Text style={styles.requestCloseText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+      
+      
     </SafeAreaView>
   );
 }
@@ -1398,6 +1572,23 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
 
+  requestOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    backgroundColor: 'rgba(16,28,38,0.58)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+
+  requestDialog: {
+    backgroundColor: '#fff',
+    borderRadius: 18,
+    gap: 8,
+    maxWidth: 520,
+    padding: 22,
+    width: '100%',
+  },
+
   overlayCard: {
     backgroundColor: '#f4f7f9',
     borderTopLeftRadius: 24,
@@ -1527,5 +1718,187 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
+  },
+
+  requestHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+
+  requestHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  requestEyebrow: {
+    color: '#0067a8',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+
+  requestTitle: {
+    color: '#142b3a',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+
+  requestClient: {
+    color: '#566874',
+    fontSize: 15,
+    marginTop: 5,
+  },
+
+  requestStatusBadge: {
+    backgroundColor: '#e8edf1',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  requestStatusApproved: {
+    backgroundColor: '#dff3e5',
+  },
+
+  requestStatusRejected: {
+    backgroundColor: '#f8dfe2',
+  },
+
+  requestStatusReview: {
+    backgroundColor: '#fff1c9',
+  },
+
+  requestStatusText: {
+    color: '#314956',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  requestSummary: {
+    backgroundColor: '#f4f7f9',
+    borderRadius: 14,
+    flexDirection: 'row',
+    marginTop: 20,
+    padding: 14,
+  },
+
+  requestSummaryItem: {
+    flex: 1,
+  },
+
+  requestSummaryDivider: {
+    backgroundColor: '#d9e1e6',
+    marginHorizontal: 14,
+    width: 1,
+  },
+
+  requestSummaryLabel: {
+    color: '#74838e',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+
+  requestSummaryValue: {
+    color: '#142b3a',
+    fontSize: 26,
+    fontWeight: '800',
+  },
+
+  requestSummaryValueSmall: {
+    color: '#142b3a',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  requestSection: {
+    marginTop: 22,
+  },
+
+  requestSectionLabel: {
+    color: '#344553',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+
+  requestFolios: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  requestFolioChip: {
+    backgroundColor: '#e9f3fa',
+    borderColor: '#b7d5e8',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+
+  requestFolioText: {
+    color: '#0067a8',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  requestMuted: {
+    color: '#72818c',
+    fontSize: 14,
+  },
+
+  requestRejection: {
+    backgroundColor: '#fff0f1',
+    borderRadius: 12,
+    marginTop: 18,
+    padding: 14,
+  },
+
+  requestRejectionLabel: {
+    color: '#8d1f2d',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+
+  requestRejectionText: {
+    color: '#75333c',
+    lineHeight: 20,
+  },
+
+  requestConversationButton: {
+    alignItems: 'center',
+    borderColor: '#0067a8',
+    borderRadius: 11,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    marginTop: 22,
+    minHeight: 50,
+  },
+
+  requestConversationText: {
+    color: '#0067a8',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  requestCloseButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    minHeight: 44,
+  },
+
+  requestCloseText: {
+    color: '#465964',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });

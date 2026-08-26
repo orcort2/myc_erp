@@ -62,7 +62,7 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     created_by_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=False
     )
-    client_id: Mapped[int | None] = mapped_column(
+    operator_client_id: Mapped[int | None] = mapped_column(
         ForeignKey("clients.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     reception_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -115,7 +115,53 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="LabWorkOrderRevision.revision_number",
     )
-    client: Mapped["Client | None"] = relationship()
+    operator_client: Mapped["Client | None"] = relationship()
+
+
+class LabWorkOrderGroupRequest(IntegerPkMixin, TimestampMixin, Base):
+    """Solicitud externa que reserva folios sólo al aprobarse."""
+
+    __tablename__ = "lab_work_order_group_requests"
+    __table_args__ = (
+        CheckConstraint("quantity BETWEEN 1 AND 50", name="ck_lab_group_request_quantity"),
+        CheckConstraint(
+            "status IN ('pending', 'in_review', 'approved', 'rejected')",
+            name="ck_lab_group_request_status",
+        ),
+    )
+
+    operator_client_id: Mapped[int] = mapped_column(
+        ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    requested_by_user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    handled_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(Text)
+    root_work_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lab_work_orders.id", ondelete="RESTRICT"), nullable=True, unique=True
+    )
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("communication_conversations.id", ondelete="SET NULL"), nullable=True, unique=True
+    )
+    reception_date: Mapped[date] = mapped_column(Date, nullable=False)
+    departure_date: Mapped[date] = mapped_column(Date, nullable=False)
+    client_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    address: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    contact_name: Mapped[str | None] = mapped_column(String(180))
+    contact_phone: Mapped[str | None] = mapped_column(String(60))
+    contact_email: Mapped[str | None] = mapped_column(String(255))
+    postal_code: Mapped[str | None] = mapped_column(String(20))
+    city: Mapped[str | None] = mapped_column(String(120))
+    state_name: Mapped[str | None] = mapped_column(String(120))
+    purchase_order: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
 
 
 class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):

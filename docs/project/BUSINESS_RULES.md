@@ -211,3 +211,11 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    Centro no sustituye `.propose`, `.authorize` o `.execute`.
 5. La reconstrucción usa exclusivamente la cotización aceptada y su snapshot
    congelado; nunca reinterpreta históricos con el catálogo vigente.
+
+## Regla verificada 2026-08-26 — Grupos anticipados OT LAB
+
+Una solicitud externa pendiente o en revisión no consume folios. Sólo Operativo Sr con `work_orders.group.request` puede solicitar. Aprobar materializa N OTs reales consecutivas y la decisión en una transacción idempotente; rechazar exige motivo. `operator_client_id` identifica al tenant y los datos generales al cliente final documental.
+
+Viewer, Jr y Sr externos no pueden crear una OT LAB individual ni adicional, incluso invocando manualmente el endpoint. Operativo Sr crea exclusivamente solicitudes. Las notificaciones navegan por identidad estructurada; marcar como leída es un efecto independiente y no la autoridad de navegación.
+
+Una solicitud `pending` no tiene conversación. Sólo el claim por staff autorizado crea o reutiliza el contexto con solicitante y handler; aprobar/rechazar no crea chats paralelos. Un actor `internal`, incluso con `*`, nunca usa el endpoint externo: crea directamente sólo con `lab_work_order_groups.create` y no genera solicitud.

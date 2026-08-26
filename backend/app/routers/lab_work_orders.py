@@ -1,15 +1,19 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.services.auth import require_permission
 from app.core.mobile.scope import ensure_lab_work_order_scope
 from app.core.mobile.security import MobileSecurityContext, require_mobile_permission
 from app.schemas.lab_work_order import (
     LabEquipmentWrite,
     LabSignatureGroupWrite,
     LabWorkOrderCreate,
+    LabWorkOrderGroupCreate,
+    LabWorkOrderGroupDecision,
+    LabWorkOrderGroupRequestRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
     LabWorkOrderUpdate,
@@ -20,6 +24,12 @@ from app.services.lab_work_orders import (
     complete_group,
     create_additional_work_order,
     create_work_order,
+    create_work_order_group,
+    create_group_request,
+    list_group_requests,
+    claim_group_request,
+    approve_group_request,
+    reject_group_request,
     delete_work_order,
     delete_equipment,
     export_all,
@@ -37,6 +47,156 @@ router = APIRouter(
     prefix="/mobile/v1/technician/lab-work-orders",
     tags=["mobile-lab-work-orders"],
 )
+staff_router = APIRouter(prefix="/lab-work-order-groups", tags=["lab-work-order-groups"])
+
+
+@router.post("/group-requests", response_model=LabWorkOrderGroupRequestRead, status_code=201)
+def request_lab_work_order_group(
+    payload: LabWorkOrderGroupCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.group.request")
+    ),
+) -> LabWorkOrderGroupRequestRead:
+    if context.actor_type != "client" or context.client_id is None:
+        raise HTTPException(
+            status_code=403,
+            detail="La solicitud anticipada está disponible únicamente para actores externos",
+        )
+    return create_group_request(
+        db, payload, context.user, operator_client_id=context.client_id
+    )
+
+
+@router.get("/group-requests", response_model=list[LabWorkOrderGroupRequestRead])
+def get_mobile_group_requests(
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.group.request")
+    ),
+) -> list[LabWorkOrderGroupRequestRead]:
+    if context.actor_type != "client" or context.client_id is None:
+        raise HTTPException(
+            status_code=403,
+            detail="La consulta externa requiere una organización vinculada",
+        )
+    return list_group_requests(db, operator_client_id=context.client_id)
+
+
+@router.post("/groups", response_model=LabWorkOrderRead, status_code=201)
+def create_mobile_staff_group(
+    payload: LabWorkOrderGroupCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.create")
+    ),
+) -> LabWorkOrderRead:
+    if context.actor_type != "internal":
+        raise HTTPException(
+            status_code=403,
+            detail="La creación directa de grupos está reservada a staff MYC",
+        )
+    return create_work_order_group(db, payload, context.user, operator_client_id=None)
+
+
+@router.get("/group-requests/review", response_model=list[LabWorkOrderGroupRequestRead])
+def get_mobile_staff_group_requests(
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.read")
+    ),
+) -> list[LabWorkOrderGroupRequestRead]:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La bandeja de revisión es exclusiva de staff MYC")
+    return list_group_requests(db)
+
+
+@router.post("/group-requests/{request_id}/claim", response_model=LabWorkOrderGroupRequestRead)
+def claim_mobile_staff_group_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.claim")
+    ),
+) -> LabWorkOrderGroupRequestRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La atención de solicitudes es exclusiva de staff MYC")
+    return claim_group_request(db, request_id, context.user)
+
+
+@router.post("/group-requests/{request_id}/approve", response_model=LabWorkOrderGroupRequestRead)
+def approve_mobile_staff_group_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.decide")
+    ),
+) -> LabWorkOrderGroupRequestRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La decisión de solicitudes es exclusiva de staff MYC")
+    return approve_group_request(db, request_id, context.user)
+
+
+@router.post("/group-requests/{request_id}/reject", response_model=LabWorkOrderGroupRequestRead)
+def reject_mobile_staff_group_request(
+    request_id: int,
+    payload: LabWorkOrderGroupDecision,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_order_groups.requests.decide")
+    ),
+) -> LabWorkOrderGroupRequestRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La decisión de solicitudes es exclusiva de staff MYC")
+    return reject_group_request(db, request_id, context.user, payload.reason)
+
+
+@staff_router.post("", response_model=LabWorkOrderRead, status_code=201)
+def create_staff_group(
+    payload: LabWorkOrderGroupCreate,
+    operator_client_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("lab_work_order_groups.create")),
+) -> LabWorkOrderRead:
+    return create_work_order_group(
+        db, payload, user, operator_client_id=operator_client_id
+    )
+
+
+@staff_router.get("/requests", response_model=list[LabWorkOrderGroupRequestRead])
+def get_staff_group_requests(
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission("lab_work_order_groups.requests.read")),
+) -> list[LabWorkOrderGroupRequestRead]:
+    return list_group_requests(db)
+
+
+@staff_router.post("/requests/{request_id}/claim", response_model=LabWorkOrderGroupRequestRead)
+def claim_staff_group_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("lab_work_order_groups.requests.claim")),
+) -> LabWorkOrderGroupRequestRead:
+    return claim_group_request(db, request_id, user)
+
+
+@staff_router.post("/requests/{request_id}/approve", response_model=LabWorkOrderGroupRequestRead)
+def approve_staff_group_request(
+    request_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("lab_work_order_groups.requests.decide")),
+) -> LabWorkOrderGroupRequestRead:
+    return approve_group_request(db, request_id, user)
+
+
+@staff_router.post("/requests/{request_id}/reject", response_model=LabWorkOrderGroupRequestRead)
+def reject_staff_group_request(
+    request_id: int,
+    payload: LabWorkOrderGroupDecision,
+    db: Session = Depends(get_db),
+    user=Depends(require_permission("lab_work_order_groups.requests.decide")),
+) -> LabWorkOrderGroupRequestRead:
+    return reject_group_request(db, request_id, user, payload.reason)
 
 
 @router.post("", response_model=LabWorkOrderRead, status_code=201)
@@ -47,11 +207,16 @@ def create_lab_work_order(
         require_mobile_permission("work_orders.create", "lab_work_orders.use")
     ),
 ) -> LabWorkOrderRead:
+    if context.actor_type == "client":
+        raise HTTPException(
+            status_code=403,
+            detail="Los actores externos deben solicitar un grupo de OT",
+        )
     return create_work_order(
         db,
         payload,
         context.user,
-        client_id=context.client_id,
+        operator_client_id=context.client_id,
     )
 
 
@@ -74,7 +239,7 @@ def list_lab_work_orders(
         work_order_status=status,
         offset=offset,
         limit=limit,
-        client_id=context.client_id,
+        operator_client_id=context.client_id,
     )
 
 
@@ -132,7 +297,7 @@ def patch_lab_work_order(
         work_order_id,
         payload,
         context.user,
-        client_id=context.client_id,
+        operator_client_id=context.client_id,
     )
 
 
@@ -192,6 +357,11 @@ def create_lab_additional_work_order(
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
+    if context.actor_type == "client":
+        raise HTTPException(
+            status_code=403,
+            detail="Los actores externos no pueden materializar OT adicionales",
+        )
     return create_additional_work_order(db, work_order_id, context.user)
 
 

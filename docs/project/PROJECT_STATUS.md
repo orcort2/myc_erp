@@ -275,3 +275,9 @@ workflows de otras categorías.
 ## Regla de mantenimiento
 
 Toda auditoría posterior debe actualizar este archivo sólo con conclusiones verificadas. Las auditorías conservan la evidencia y la fecha del corte, pero dejan de ser autoridad de avance en cuanto este documento incorpora un corte posterior.
+
+## Grupos anticipados OT LAB — `EN DESARROLLO`
+
+Backend, migración, RBAC, transacción idempotente, Comunicaciones y superficies Mobile/Web están implementados. Falta QA físico multiusuario y concurrencia PostgreSQL opt-in; no está SELLADO.
+
+La revisión quirúrgica separó capabilities por `actor_type`, añadió grupo directo Mobile sólo para internal, movió la conversación de create a claim, incorporó grupos a Solicitudes/Home Mobile, reparó detalle/deep links y restauró las páginas Web ajenas eliminadas accidentalmente. Continúa `EN DESARROLLO` hasta repetir aceptación física y ejecutar la concurrencia opt-in PostgreSQL.

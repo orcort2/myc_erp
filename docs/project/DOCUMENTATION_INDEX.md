@@ -250,3 +250,5 @@ La documentación forma parte del desarrollo. Toda tarea que modifique comportam
 | Archivo nuevo o responsabilidad material | `PROJECT_FILE_REGISTRY.md` |
 
 Antes de finalizar se deben corregir referencias cruzadas y comprobar ausencia de contradicciones, reglas duplicadas, decisiones incompatibles y estados divergentes. Toda respuesta final debe contener `## Documentación actualizada`, incluso cuando la conclusión sea que no hubo cambios documentales, en cuyo caso debe incluir la justificación.
+
+Auditoría vigente del Bloque 2 OT LAB: [`../audits/MOBILE_WORK_ORDER_GROUPS_BLOCK_2_AUDIT_2026-08-26.md`](../audits/MOBILE_WORK_ORDER_GROUPS_BLOCK_2_AUDIT_2026-08-26.md).

@@ -23,6 +23,7 @@ import QualityPage from './QualityPage.jsx';
 import QuotationsPage from './QuotationsPage.jsx';
 import ResolutionCenterPage from './ResolutionCenterPage.jsx';
 import ServiceOrdersPage from './ServiceOrdersPage.jsx';
+import LabWorkOrderGroupsPage from './LabWorkOrderGroupsPage.jsx';
 import SettingsPage from './SettingsPage.jsx';
 import StandardsPage from './StandardsPage.jsx';
 import UncertaintyPage from './UncertaintyPage.jsx';
@@ -199,6 +200,8 @@ export function App() {
         <QuotationsPage user={user} />
       ) : selectedModule?.key === 'serviceOrders' ? (
         <ServiceOrdersPage user={user} />
+      ) : selectedModule?.key === 'labWorkOrderGroups' ? (
+        <LabWorkOrderGroupsPage user={user} />
       ) : selectedModule?.key === 'equipment' ? (
         <EquipmentPage module={selectedModule} timestamp={now} />
       ) : selectedModule?.key === 'certificates' ? (

@@ -11,7 +11,13 @@ export type MobileCapabilities = {
   canCaptureSignatures: boolean;
   canCreateTickets: boolean;
   canReadTickets: boolean;
+  canReviewTickets: boolean;
   canUseCommunications: boolean;
+  canRequestWorkOrderGroups: boolean;
+  canCreateWorkOrderGroupsDirect: boolean;
+  canReadWorkOrderGroupRequests: boolean;
+  canClaimWorkOrderGroupRequests: boolean;
+  canDecideWorkOrderGroupRequests: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -21,8 +27,9 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     canAccessMobile: hasPermission(permissions, 'mobile.access'),
     canReadWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.read_organization'),
-    canCreateWorkOrders: hasLegacyLabAccess
-      || hasPermission(permissions, 'work_orders.create'),
+    canCreateWorkOrders: user?.actor_type === 'internal' && (
+      hasLegacyLabAccess || hasPermission(permissions, 'work_orders.create')
+    ),
     canExecuteWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.execute'),
     canManageEquipment: hasLegacyLabAccess
@@ -34,11 +41,24 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     canCreateTickets: hasPermission(permissions, 'tickets.create')
       || hasPermission(permissions, 'mobile_tickets.create'),
     canReadTickets: hasPermission(permissions, 'tickets.view_own')
+      || hasPermission(permissions, 'tickets.view_all')
       || hasPermission(permissions, 'mobile_tickets.read'),
+    canReviewTickets: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'tickets.review'),
     canUseCommunications: Boolean(user && (
       user.actor_type === 'internal'
       || hasPermission(permissions, 'communications.view')
       || hasPermission(permissions, 'communications.create')
     )),
+    canRequestWorkOrderGroups: user?.actor_type === 'client'
+      && hasPermission(permissions, 'work_orders.group.request'),
+    canCreateWorkOrderGroupsDirect: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_work_order_groups.create'),
+    canReadWorkOrderGroupRequests: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_work_order_groups.requests.read'),
+    canClaimWorkOrderGroupRequests: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_work_order_groups.requests.claim'),
+    canDecideWorkOrderGroupRequests: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_work_order_groups.requests.decide'),
   };
 }

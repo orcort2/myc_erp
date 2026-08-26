@@ -135,6 +135,14 @@ export default function CommunicationsPage({ user }) {
 
   useEffect(() => {
     Promise.all([loadConversations(), getCommunicationDirectory().then(setDirectory)]).catch(() => {});
+    const conversationId = Number(new URLSearchParams(window.location.search).get('conversation_id') || 0);
+    if (conversationId) {
+      setSection('messages');
+      getCommunicationConversation(conversationId).then((detail) => {
+        setConversationKind(detail.conversation_type);
+        setSelected(detail);
+      }).catch(() => setCommunicationError('No fue posible abrir la conversación solicitada.'));
+    }
     const timer = window.setInterval(() => loadConversations({ silent: true }), POLL_MS);
     return () => window.clearInterval(timer);
   }, []);
