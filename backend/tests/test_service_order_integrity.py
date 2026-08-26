@@ -125,9 +125,9 @@ def test_create_update_and_deactivate_characterize_actor_audit(db: Session):
         ServiceOrderUpdate(notes="Actualizada"),
         user_id=user.id,
     )
-    deactivated = deactivate_service_order(db, order.id, user_id=user.id)
-
-    assert deactivated.deleted_by == user.id
+    with pytest.raises(HTTPException) as raised:
+        deactivate_service_order(db, order.id, user_id=user.id)
+    assert raised.value.detail["code"] == "administrative_resolution_required"
     audits = list(
         db.scalars(
             select(AuditLog)
@@ -137,7 +137,6 @@ def test_create_update_and_deactivate_characterize_actor_audit(db: Session):
                     {
                         "service_order.created",
                         "service_order.updated",
-                        "service_order.deactivated",
                     }
                 )
             )
@@ -147,13 +146,10 @@ def test_create_update_and_deactivate_characterize_actor_audit(db: Session):
     assert [item.action for item in audits] == [
         "service_order.created",
         "service_order.updated",
-        "service_order.deactivated",
     ]
     assert all(item.user_id == user.id for item in audits)
     assert audits[1].previous_values == {"notes": "Inicial"}
     assert audits[1].new_values == {"notes": "Actualizada"}
-    assert audits[2].previous_values == {"is_active": True}
-    assert audits[2].new_values == {"is_active": False}
 
 
 def test_requested_and_authorized_do_not_mutate_ets_or_invoice(

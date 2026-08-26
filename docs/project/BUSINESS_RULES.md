@@ -195,3 +195,18 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
    ETS mixto no cierra partidas de otras categorías.
 7. La inicialización histórica es explícita, idempotente, auditada y usa sólo
    el snapshot, nunca el catálogo actual.
+
+## Reglas de herramientas administrativas ETS — 2026-08-25
+
+1. Una cotización aceptada con ETS inactivo no puede materializar otro ETS por
+   el flujo ordinario; debe abrir una resolución administrativa.
+2. Restaurar, reconstruir y dar de baja son definiciones distintas. Restaurar
+   conserva ID, folio, snapshots y partidas; reconstruir sólo procede cuando
+   no existe ETS activo ni inactivo; la baja conserva historia y estado de OT.
+3. Equipos, certificados, Captura, facturas, firmas/ciclos, ejecución de Venta
+   o estado distinto de `scheduled` bloquean el efecto automático.
+4. Toda herramienta exige permiso de dominio por etapa, análisis, simulación,
+   autorización, revalidación y ejecución durable. El permiso general del
+   Centro no sustituye `.propose`, `.authorize` o `.execute`.
+5. La reconstrucción usa exclusivamente la cotización aceptada y su snapshot
+   congelado; nunca reinterpreta históricos con el catálogo vigente.

@@ -86,7 +86,6 @@ from app.services.service_orders import (
     close_service_order,
     confirm_signature_cycle,
     create_service_order,
-    deactivate_service_order,
     delete_service_work_order,
     execute_service_order_exception,
     get_service_order,
@@ -889,10 +888,20 @@ def close_service_order_route(
 def delete_service_order(
     service_order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("service_orders.delete")),
 ) -> Response:
-    deactivate_service_order(db, service_order_id, user_id=current_user.id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "administrative_resolution_required",
+            "message": (
+                "La baja de un ETS requiere precheck, autorización y ejecución "
+                "en el Centro de Resoluciones."
+            ),
+            "service_order_id": service_order_id,
+            "resolution_route": "/resolutions",
+        },
+    )
 
 
 @router.delete(

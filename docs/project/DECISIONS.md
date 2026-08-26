@@ -304,3 +304,14 @@ sin importar código web ni alterar la política de sesión grupal o reapertura.
 recibe en `false` y el backend acepta el POST; sólo la política de reapertura lo
 combina con sesión preservada. Un tap se descarta por distancia normalizada y
 la validación local exige un stroke significativo antes de avanzar.
+
+## D-2026-08-25 — Herramientas administrativas sobre el Motor vigente
+
+Las operaciones extraordinarias se incorporan como familia declarativa
+`administrative_tools` del registro instalado, no como un segundo motor ni
+como ramas por dominio en el Centro. El primer alcance distingue restaurar el
+mismo ETS, reconstruir desde cotización aceptada y dar de baja preservando
+historia. Cada definición conserva versión, riesgo y permisos propios y delega
+en un servicio propietario transaccional. La reparación estructural y la
+migración masiva de operaciones de otros dominios permanecen fuera hasta contar
+con precheck y estrategia segura específicos.

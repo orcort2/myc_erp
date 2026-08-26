@@ -21,6 +21,14 @@ from app.resolution_integrations.certificates.domain import (
     CertificateResolutionContext,
     CertificateResolutionRequest,
 )
+from app.resolution_integrations.service_order_administration import (
+    build_service_order_administration_integrations,
+)
+from app.resolution_integrations.service_order_administration.domain import (
+    ServiceOrderAdministrationFacts,
+    ServiceOrderAdministrationContext,
+    ServiceOrderAdministrationRequest,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +61,7 @@ def build_installed_resolution_integrations(
     *,
     certificate_integration=None,
     additional_equipment_integration=None,
+    service_order_administration_integrations=None,
 ) -> tuple[InstalledResolutionIntegration, ...]:
     """Fuente institucional de definiciones, componentes y handlers activos."""
 
@@ -64,10 +73,15 @@ def build_installed_resolution_integrations(
         additional_equipment_integration
         or build_additional_equipment_resolution_integration(session_factory)
     )
-    return (
+    administrative = (
+        service_order_administration_integrations
+        or build_service_order_administration_integrations(session_factory)
+    )
+    installed = [
         InstalledResolutionIntegration(
             integration=certificate,
             presentation={
+                "family": "domain_resolution",
                 "name": "Retiro de certificado liberado incorrectamente",
                 "description": certificate.definition.description,
                 "domain": "certificates",
@@ -142,6 +156,7 @@ def build_installed_resolution_integrations(
         InstalledResolutionIntegration(
             integration=additional,
             presentation={
+                "family": "domain_resolution",
                 "name": "Conciliación de equipo adicional",
                 "description": additional.definition.description,
                 "domain": "service_orders",
@@ -214,6 +229,71 @@ def build_installed_resolution_integrations(
             ),
             request_snapshot=lambda request: request.snapshot(),
         ),
+    ]
+    operation_by_type = {
+        "service_order.restore_soft_deleted": "restore",
+        "service_order.rebuild_from_accepted_quotation": "rebuild",
+        "service_order.void_preserving_history": "void",
+    }
+    metadata = {
+        "restore": ("Restaurar ETS retirado", "service_order", "ETS", "ID del ETS", "high"),
+        "rebuild": ("Reconstruir ETS faltante", "quotation", "Cotización", "ID de cotización aceptada", "critical"),
+        "void": ("Dar de baja ETS", "service_order", "ETS", "ID del ETS", "critical"),
+    }
+    for integration in administrative:
+        operation = operation_by_type[str(integration.definition.resolution_type)]
+        name, object_type, subject, placeholder, risk = metadata[operation]
+        installed.append(InstalledResolutionIntegration(
+            integration=integration,
+            presentation={
+                "family": "administrative_tools",
+                "name": name,
+                "description": integration.definition.description,
+                "domain": "service_orders",
+                "object_type": object_type,
+                "object_route": "/dashboard#ordenes-servicio",
+                "risk_level": risk,
+                "capabilities": ("context", "analysis", "plan", "simulation", "authorization", "distributed_execution"),
+                "required_permissions": (
+                    f"service_orders.administration.{operation}.propose",
+                    f"service_orders.administration.{operation}.authorize",
+                    f"service_orders.administration.{operation}.execute",
+                ),
+                "supports_simulation": True,
+                "supports_compensation": False,
+                "parameter_schema": {
+                    "type": "object", "additionalProperties": False,
+                    "required": ["reason"],
+                    "properties": {"reason": {"type": "string", "title": "Motivo institucional", "minLength": 3, "maxLength": 2000, "ui:widget": "textarea", "ui:rows": 4}},
+                },
+                "labels": {"subject": subject, "subject_placeholder": placeholder, "create_title": name, "analysis": "Precheck administrativo", "simulation": "Impacto y evidencia preservada", "result": "Resultado administrativo"},
+                "warnings": ("Requiere análisis, simulación y autorización separada antes de ejecutar.",),
+                "strategy_keys": (operation, "no_action"),
+                "plan_summary": name,
+                "expected_impacts": (f"service_order:{operation}",),
+                "preserved_entities": ("quotation.snapshot", "service_order.source_snapshot", "certificates", "invoices"),
+                "step_description": name,
+            },
+            request_factory=lambda subject_id, parameters, operation=operation: ServiceOrderAdministrationRequest(
+                operation=operation, subject_id=int(subject_id), reason=str(parameters["reason"])
+            ),
+            context_hydrator=_administration_context,
+            request_snapshot=lambda request: request.snapshot(),
+        ))
+    return tuple(installed)
+
+
+def _administration_context(snapshot: Mapping[str, Any]):
+    facts = dict(snapshot["facts"])
+    facts.pop("allowed", None)
+    for key in (
+        "inactive_order_ids", "blockers", "warnings",
+        "affected_entities", "proposed_changes",
+    ):
+        facts[key] = tuple(facts[key])
+    return ServiceOrderAdministrationContext(
+        facts=ServiceOrderAdministrationFacts(**facts),
+        request=ServiceOrderAdministrationRequest(**snapshot["request"]),
     )
 
 

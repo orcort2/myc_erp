@@ -92,15 +92,15 @@ function DynamicParameterField({ definition, name, onChange, value }) {
   );
 }
 
-function CreateResolutionDialog({ definitions, onClose, onCreated }) {
+function CreateResolutionDialog({ definitions, initialDefinitionKey = '', initialSubjectId = '', onClose, onCreated }) {
   const [definitionKey, setDefinitionKey] = useState(
-    definitions[0] ? `${definitions[0].resolution_type}@${definitions[0].version}` : ''
+    initialDefinitionKey || (definitions[0] ? `${definitions[0].resolution_type}@${definitions[0].version}` : '')
   );
   const definition = definitions.find(
     (item) => `${item.resolution_type}@${item.version}` === definitionKey
   ) ?? definitions[0];
   const [form, setForm] = useState({
-    subject_id: '',
+    subject_id: initialSubjectId,
     title: definitions[0]?.labels?.create_title || '',
     priority: 'normal',
     parameters: {}
@@ -420,6 +420,7 @@ function ResolutionDetailDialog({ capabilities, detail, loading, onClose, onRefr
 }
 
 export default function ResolutionCenterPage() {
+  const initialQuery = useMemo(() => new URLSearchParams(window.location.search), []);
   const [items, setItems] = useState([]);
   const [nextCursor, setNextCursor] = useState(null);
   const [filters, setFilters] = useState({
@@ -446,6 +447,10 @@ export default function ResolutionCenterPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [createDefinitionKey, setCreateDefinitionKey] = useState('');
+  const [workspaceTab, setWorkspaceTab] = useState(
+    initialQuery.get('family') === 'administrative_tools' ? 'tools' : 'pending'
+  );
   const [error, setError] = useState('');
   const loadingRef = useRef(false);
 
@@ -457,6 +462,22 @@ export default function ResolutionCenterPage() {
       ])
     )
   }), [filters]);
+
+  const visibleItems = useMemo(() => {
+    const states = {
+      pending: new Set(['draft', 'context_ready']),
+      review: new Set(['analyzed', 'planned', 'simulated']),
+      authorization: new Set(['pending_authorization', 'authorized', 'ready_for_execution']),
+      executed: new Set(['completed', 'compensated']),
+      failed: new Set(['failed', 'blocked'])
+    };
+    return states[workspaceTab] ? items.filter((item) => states[workspaceTab].has(item.lifecycle_status)) : items;
+  }, [items, workspaceTab]);
+
+  const administrativeDefinitions = useMemo(
+    () => definitions.filter((definition) => definition.family === 'administrative_tools'),
+    [definitions]
+  );
 
   const loadList = useCallback(async ({ append = false } = {}) => {
     if (loadingRef.current) return;
@@ -542,7 +563,7 @@ export default function ResolutionCenterPage() {
           <h1>Centro de Resoluciones</h1>
           <span>Consulta, prepara, autoriza y sigue resoluciones operadas por el Motor real.</span>
         </div>
-        {capabilities?.can_create ? <button className="primary-button" onClick={() => setCreateOpen(true)} type="button"><Plus size={18} /> Nueva resolución</button> : null}
+        {capabilities?.can_create ? <button className="primary-button" onClick={() => { setCreateDefinitionKey(''); setCreateOpen(true); }} type="button"><Plus size={18} /> Nueva resolución</button> : null}
       </header>
 
       {indicators ? <section aria-label="Indicadores del Motor" className="resolution-indicators">
@@ -558,7 +579,27 @@ export default function ResolutionCenterPage() {
         ].map(([label, value]) => <article key={label}><small>{label}</small><strong>{value}</strong></article>)}
       </section> : null}
 
-      <div className="resolution-toolbar">
+      <nav aria-label="Vistas del Centro" className="resolution-workspace-tabs">
+        {[
+          ['pending', 'Pendientes'], ['review', 'En revisión'],
+          ['authorization', 'Requieren autorización'], ['executed', 'Ejecutadas'],
+          ['failed', 'Fallidas'], ['tools', 'Herramientas']
+        ].map(([key, label]) => (
+          <button className={workspaceTab === key ? 'is-active' : ''} key={key} onClick={() => setWorkspaceTab(key)} type="button">{label}</button>
+        ))}
+      </nav>
+
+      {workspaceTab === 'tools' ? <section className="resolution-tools" aria-label="Herramientas administrativas">
+        <header><div><span className="resolution-eyebrow">Operaciones extraordinarias</span><h2>Herramientas administrativas</h2></div><p>Cada acción crea un expediente; analiza bloqueantes y simula cambios antes de autorizar.</p></header>
+        <div className="resolution-tools__grid">
+          {administrativeDefinitions.map((definition) => {
+            const key = `${definition.resolution_type}@${definition.version}`;
+            return <article key={key}><ShieldCheck size={22} /><div><h3>{definition.name}</h3><p>{definition.description}</p><small>Riesgo {definition.risk_level} · v{definition.version}</small></div><button className="primary-button" onClick={() => { setCreateDefinitionKey(key); setCreateOpen(true); }} type="button">Abrir precheck</button></article>;
+          })}
+        </div>
+      </section> : null}
+
+      {workspaceTab !== 'tools' ? <><div className="resolution-toolbar">
         <label className="resolution-search"><Search size={18} /><input onChange={(event) => setFilters({ ...filters, search: event.target.value })} placeholder="ID, certificado, ETS, factura, cliente…" value={filters.search} /></label>
         <label><Filter size={16} /><select onChange={(event) => setFilters({ ...filters, lifecycle_status: event.target.value })} value={filters.lifecycle_status}><option value="">Todos los estados</option><option value="draft">Borrador</option><option value="pending_authorization">Por autorizar</option><option value="ready_for_execution">Lista para ejecutar</option><option value="executing">Ejecutando</option><option value="completed">Completada</option><option value="blocked">Bloqueada</option><option value="failed">Fallida</option></select></label>
         <label><AlertTriangle size={16} /><select onChange={(event) => setFilters({ ...filters, blocked: event.target.value })} value={filters.blocked}><option value="">Todas</option><option value="true">Sólo bloqueadas</option><option value="false">Excluir bloqueadas</option></select></label>
@@ -584,11 +625,11 @@ export default function ResolutionCenterPage() {
 
       {error ? <div className="resolution-page-error"><AlertTriangle size={18} />{error}</div> : null}
       <div className="resolution-table-card">
-        {loading ? <div className="resolution-loading"><LoaderCircle className="spin" /> Cargando resoluciones…</div> : items.length ? (
+        {loading ? <div className="resolution-loading"><LoaderCircle className="spin" /> Cargando resoluciones…</div> : visibleItems.length ? (
           <div className="resolution-table-scroll">
             <table>
               <thead><tr><th>Resolución</th><th>Objeto</th><th>Actores</th><th>Estados</th><th>Fechas</th><th>Intentos</th><th>Resultado</th><th /></tr></thead>
-              <tbody>{items.map((item) => (
+              <tbody>{visibleItems.map((item) => (
                 <tr key={item.public_id} onClick={() => openDetail(item.public_id)}>
                   <td><strong>{item.title}</strong><small>{item.public_id}</small><small>{item.resolution_type}</small></td>
                   <td><strong>{item.subject_label || item.subject_id}</strong><small>{item.subject_type}</small></td>
@@ -605,8 +646,9 @@ export default function ResolutionCenterPage() {
         ) : <div className="resolution-empty"><FileSearch size={34} /><h2>Sin resoluciones</h2><p>No hay resultados para los filtros actuales.</p></div>}
         {nextCursor ? <button className="resolution-load-more" onClick={() => loadList({ append: true })} type="button">Cargar más</button> : null}
       </div>
+      </> : null}
 
-      {createOpen ? <CreateResolutionDialog definitions={definitions} onClose={() => setCreateOpen(false)} onCreated={(publicId) => { setCreateOpen(false); loadList(); openDetail(publicId); }} /> : null}
+      {createOpen ? <CreateResolutionDialog definitions={definitions} initialDefinitionKey={createDefinitionKey} initialSubjectId={initialQuery.get('subject_id') || ''} onClose={() => setCreateOpen(false)} onCreated={(publicId) => { setCreateOpen(false); loadList(); openDetail(publicId); }} /> : null}
       {selectedId ? <ResolutionDetailDialog capabilities={capabilities} detail={detail} loading={detailLoading} onClose={() => { setSelectedId(''); setDetail(null); }} onRefresh={() => loadDetail(selectedId)} onStage={runStage} /> : null}
     </section>
   );

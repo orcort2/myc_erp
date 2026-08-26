@@ -97,7 +97,9 @@ Fase 13 consolida metadata institucional, formularios dinámicos, indicadores,
 expediente y el vertical Certificados end-to-end; fue aprobada mediante
 `bb76e3b`. Fase 14 instala la composición institucional única y el vertical
 `service_order.resolve_additional_equipment@1.0`; está `TERMINADA` y queda
-`EN REVISIÓN`. La IA
+`EN REVISIÓN`. Fase 15 agrega la familia Herramientas administrativas y las
+operaciones ETS diferenciadas de restauración, reconstrucción desde cotización
+aceptada y baja histórica; está `IMPLEMENTADA — EN REVISIÓN`. La IA
 permanece como posibilidad futura opcional no autorizada.
 
 El sprint **Integridad ETS** está **APROBADO CON OBSERVACIONES**. El router ya no

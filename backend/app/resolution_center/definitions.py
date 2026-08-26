@@ -27,6 +27,7 @@ class ResolutionPresentation:
     """Metadata versionada que permite construir la consola sin condicionales."""
 
     name: str
+    family: str
     description: str
     domain: str
     object_type: str

@@ -180,3 +180,12 @@ contrato está en
 y su cierre en
 [`../../closures/RESOLUTION_ENGINE_PHASE_14.md`](../../closures/RESOLUTION_ENGINE_PHASE_14.md).
 La IA permanece como posibilidad futura opcional no autorizada.
+
+La Fase 15 — Herramientas administrativas está `IMPLEMENTADA` y `EN REVISIÓN`.
+Agrega la familia declarativa `administrative_tools` y tres definiciones ETS
+separadas para restaurar el mismo expediente, reconstruir desde una cotización
+aceptada sólo cuando no existe ningún ETS, y dar de baja un ETS prístino sin
+reescribir OT ni snapshots. La baja directa queda cerrada y el worker,
+seguridad, idempotencia y auditoría continúan siendo los del Motor vigente. El
+contrato y sus límites están en
+[`32_PHASE_15_ADMINISTRATIVE_TOOLS.md`](32_PHASE_15_ADMINISTRATIVE_TOOLS.md).

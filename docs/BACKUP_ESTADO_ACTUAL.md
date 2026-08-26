@@ -25,7 +25,8 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - Los contratos transversales obligatorios del Workbench de Facturación,
   acreditación de Calibración y Servicios Compuestos permanecen definidos en
   `docs/architecture/`; este snapshot no los reproduce.
-- El Motor de Resoluciones llega a Fase 14 terminada y en revisión. Su entrada
+- El Motor de Resoluciones llega a Fase 15 implementada y en revisión. La fase
+  agrega Herramientas administrativas ETS sin otro motor ni migración. Su entrada
   normativa es
   [`architecture/resolution-engine/README.MD`](architecture/resolution-engine/README.MD).
 - MYC Mobile continúa como LAB temporal aislado del flujo productivo, conforme
@@ -39,7 +40,7 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - La consulta de `alembic current` contra la base local no respondió dentro de
   30 segundos durante esta auditoría documental; por tanto, no se afirma un
   head local sin evidencia.
-- Esta consolidación no modificó modelos, migraciones, esquema ni datos.
+- Este cambio no modificó modelos, migraciones, esquema ni datos.
 
 ## Respaldo oficial
 
@@ -69,12 +70,11 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
   contratos de capacidades y seguridad.
 - Este archivo se redujo de 440 líneas a un snapshot operativo sin repetir el
   estado, alcance, flujo, reglas ni deuda del canon.
-- Esta consolidación no modificó código de backend, frontend, Mobile, base de
-  datos, migraciones, endpoints, schemas ni servicios.
-- El árbol estaba limpio al iniciar. Durante la auditoría aparecieron cambios
-  funcionales concurrentes en Cotizaciones/ETS y sus pruebas, ajenos a esta
-  tarea; se preservaron sin editar ni atribuirles validaciones. El registro de
-  archivos los inventaría porque forman parte del árbol visible actual.
+- Fase 15 modificó backend/frontend del Centro, permisos, continuidad ETS,
+  pruebas, inventario HTTP y documentación. No modificó Mobile, modelos,
+  migraciones, esquema, base local ni el respaldo SQL.
+- El inventario HTTP se regeneró contra el runtime actual: 456 operaciones
+  clasificadas deny-by-default y CSV sincronizado.
 
 ## Pendientes operativos
 
@@ -90,6 +90,22 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - Validación ejecutada: 75 pruebas backend y 12 subtests, 55 pruebas frontend y
   build Vite correctos. El cambio permanece **EN REVISIÓN**; no hubo migración
   ni modificación de la base local o del respaldo SQL.
+
+### Corte funcional 2026-08-25 — Herramientas administrativas ETS
+
+- La familia `administrative_tools` instala restauración, reconstrucción y baja
+  como definiciones versionadas distintas sobre el Motor/worker existente.
+- La baja ordinaria quedó cerrada; la creación automática no sustituye un ETS
+  inactivo y dirige al Centro. Baja/restauración sólo operan sobre ETS prístino;
+  reconstrucción sólo procede cuando no existe ningún ETS previo.
+- El Centro presenta las vistas Pendientes, En revisión, Requieren autorización,
+  Ejecutadas, Fallidas y Herramientas. La pantalla ETS enlaza al precheck con su
+  ID contextual.
+- Validación focal/regresión ejecutada: 167 pruebas backend, 7 subtests backend
+  y 57 pruebas frontend correctas; conformidad de seguridad sincronizada a 456
+  rutas, build Vite y compilación Python correctos. `git diff --check` se
+  ejecuta después de la sincronización final del inventario.
+- Estado: **IMPLEMENTADA — EN REVISIÓN**. Sin commit ni push.
 
 1. Resolver la divergencia entre el head del código y el respaldo oficial
    registrada como TD-051.

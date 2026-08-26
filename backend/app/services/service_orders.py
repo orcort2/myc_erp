@@ -655,6 +655,28 @@ def create_service_order(
                 existing_order_id,
             )
 
+        inactive_order_id = db.scalar(
+            select(ServiceOrder.id)
+            .where(
+                ServiceOrder.quotation_id == payload.quotation_id,
+                ServiceOrder.is_active.is_(False),
+            )
+            .order_by(ServiceOrder.id.asc())
+            .limit(1)
+        )
+        if inactive_order_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "inactive_service_order_requires_resolution",
+                    "message": (
+                        "La cotización conserva un ETS inactivo. Use el Centro "
+                        "de Resoluciones para restaurarlo o determinar una reconstrucción."
+                    ),
+                    "service_order_id": inactive_order_id,
+                },
+            )
+
     # ------------------------------------------------------------
     # Validaciones
     # ------------------------------------------------------------
@@ -1455,29 +1477,18 @@ def execute_service_order_exception(
 def deactivate_service_order(
     db: Session, service_order_id: int, *, user_id: int
 ) -> ServiceOrder:
-    user_id = _require_actor_id(user_id)
-    service_order = get_service_order(db, service_order_id)
-    service_order.is_active = False
-    service_order.deleted_at = datetime.now(timezone.utc)
-    service_order.deleted_by = user_id
-
-    for work_order in service_order.work_orders:
-        work_order.is_active = False
-        work_order.status = "cancelled"
-        work_order.deleted_at = service_order.deleted_at
-        work_order.deleted_by = user_id
-
-    write_audit_log(
-        db,
-        action="service_order.deactivated",
-        entity="service_orders",
-        entity_id=service_order.id,
-        user_id=user_id,
-        previous_values={"is_active": True},
-        new_values={"is_active": False},
+    _require_actor_id(user_id)
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "administrative_resolution_required",
+            "message": (
+                "La baja de un ETS sólo puede ejecutarse mediante una "
+                "resolución administrativa autorizada."
+            ),
+            "service_order_id": service_order_id,
+        },
     )
-    db.commit()
-    return service_order
 
 
 def delete_service_work_order(

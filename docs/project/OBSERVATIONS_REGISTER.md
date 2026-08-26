@@ -35,6 +35,7 @@ no se duplican aquí.
 | OBS-043 | ETS/Calidad UX | ETS conserva estados contextuales y Calidad es el único autenticador, pero falta validación visual autenticada en varios anchos y con datos representativos. | parcial | Cierre de autenticación; auditoría 2026-08-10 |
 | OBS-044 | Calidad UX | Anterior/Siguiente y retorno contextual están implementados; falta E2E autenticado con certificados reales visibles en la bandeja. | parcial | Navegación consecutiva de Calidad 2026-07-21 |
 | OBS-045 | Excepciones transversales | Equipo adicional usa el Motor y ETS separa solicitud/autorización/ejecución; los demás dominios requieren evaluación individual sin convertir el Motor en flujo fiscal o propietario. | parcial | Fase 14; Sprint Integridad ETS |
+| OBS-046 | Herramientas administrativas | ETS ya distingue restauración, reconstrucción y baja prístina mediante el Motor; faltan reparación estructural segura, búsquedas contextuales y adopción gradual en otros dominios. | parcial | Fase 15; auditoría administrativa 2026-08-25 |
 
 ## Resoluciones retiradas del registro activo
 

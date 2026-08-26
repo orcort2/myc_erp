@@ -133,6 +133,11 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   `service_order.resolve_additional_equipment@1.0`: propuesta offline/ERP,
   análisis, plan, simulación sin efectos, autorización, revalidación, cola,
   worker, alta idempotente y compensación limitada. La IA no está autorizada.
+  Fase 15, `EN REVISIÓN`, incorpora la familia `administrative_tools` y las
+  definiciones ETS `restore_soft_deleted`, `rebuild_from_accepted_quotation` y
+  `void_preserving_history`; reutiliza el Motor/worker, bloquea dependencias
+  consumidas y no incluye todavía reparación estructural genérica ni
+  herramientas administrativas de otros dominios.
 
 La existencia en esta lista no implica cierre; el estado autorizado está en [`PROJECT_STATUS.md`](PROJECT_STATUS.md).
 

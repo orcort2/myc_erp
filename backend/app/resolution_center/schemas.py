@@ -16,6 +16,7 @@ class ResolutionDefinitionResource(CenterModel):
     resolution_type: str
     version: str
     name: str
+    family: str
     description: str
     domain: str
     object_type: str

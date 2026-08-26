@@ -140,6 +140,7 @@ class ResolutionCenterWorkflowService:
                     resolution_type=str(definition.resolution_type),
                     version=str(definition.version),
                     name=presentation.name,
+                    family=presentation.family,
                     description=presentation.description,
                     domain=presentation.domain,
                     object_type=presentation.object_type,
@@ -460,11 +461,20 @@ class ResolutionCenterWorkflowService:
                             presentation.expected_impacts
                         )
                     },
-                    criticality=presentation.risk_level,
+                    criticality={
+                        "low": "low",
+                        "medium": "normal",
+                        "high": "high",
+                        "critical": "irreversible",
+                    }[presentation.risk_level],
                     retry_policy={"mode": "distributed_deterministic"},
-                    is_compensable=True,
-                    compensation_operation_key=step.compensation_operation_key,
-                    compensation_payload=step.compensation_payload,
+                    is_compensable=bool(snapshot.get("is_compensable")),
+                    compensation_operation_key=snapshot.get(
+                        "compensation_operation_key"
+                    ),
+                    compensation_payload=snapshot.get(
+                        "compensation_payload", {}
+                    ),
                     step_hash=canonical_sha256(snapshot),
                 )
             )

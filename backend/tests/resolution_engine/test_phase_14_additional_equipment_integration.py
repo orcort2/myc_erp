@@ -186,9 +186,12 @@ def test_installed_composition_publishes_both_verticals_without_domain_branches(
 
     assert [entry.key for entry in center.list()] == [
         ("certificate.resolve_incorrect_release", "1.0"),
+        ("service_order.rebuild_from_accepted_quotation", "1.0"),
         ("service_order.resolve_additional_equipment", "1.0"),
+        ("service_order.restore_soft_deleted", "1.0"),
+        ("service_order.void_preserving_history", "1.0"),
     ]
-    assert len(integrations) == 2
+    assert len(integrations) == 5
     additional = center.resolve(
         "service_order.resolve_additional_equipment",
         "1.0",

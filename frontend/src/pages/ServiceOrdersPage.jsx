@@ -44,7 +44,6 @@ import {
   createFieldSheet,
   deleteEquipment,
   deleteFieldSheet,
-  deleteServiceOrder,
   deleteServiceWorkOrder,
   getFieldSheet,
   getCertificateReleaseReadiness,
@@ -2999,28 +2998,6 @@ function closeTechnicalSubEts() {
     });
   }
 
-  async function handleDeleteServiceOrder() {
-    if (!selectedOrder) return;
-    openConfirm({
-      title: 'Eliminar orden de servicio',
-      message: `La orden ${selectedOrder.folio} se eliminará de la operación visible.\nNo se eliminará físicamente: se conservará trazabilidad y el backend validará equipos, hojas y certificados relacionados.`,
-      confirmText: 'Eliminar',
-      variant: 'danger',
-      onConfirm: async () => {
-        setError('');
-        setNotice('');
-        try {
-          await deleteServiceOrder(selectedOrder.id);
-          closeOrderDetail();
-          setNotice('Orden de servicio eliminada de la operación visible');
-          await loadServiceOrderData();
-        } catch (requestError) {
-          setError(requestError.message);
-        }
-      }
-    });
-  }
-
   function handleDeleteWorkOrder(workOrder) {
     if (!selectedOrder || !workOrder || isLegacyWorkOrder(workOrder)) return;
     const clientName = getClientDisplayName(clientsById.get(selectedOrder.client_id));
@@ -3282,7 +3259,7 @@ function closeTechnicalSubEts() {
                       <button onClick={() => setActiveTab('documents')} type="button">Exportar</button>
                       <button disabled type="button">Duplicar</button>
                       <button disabled type="button">Archivar</button>
-                      <button className="is-danger" onClick={handleDeleteServiceOrder} type="button">Eliminar</button>
+                      <a className="is-danger" href={`/resolutions?subject_type=service_order&subject_id=${selectedOrder.id}&family=administrative_tools`}>Resolver baja o restauración</a>
                     </div>
                   ) : null}
                 </div>

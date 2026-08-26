@@ -140,7 +140,21 @@ ETS/móvil/Centro → propuesta con reconciliation_id
 
 Un replay exacto recupera el equipo por conciliación. La compensación sólo
 cancela equipo `registered`, reserva `expected` y OT propia vacía. La fase
-queda `EN REVISIÓN`; Fase 15 no está abierta.
+queda `EN REVISIÓN`.
+
+Fase 15 incorpora operaciones extraordinarias ETS sin crear otro flujo:
+
+```text
+Herramientas administrativas → seleccionar restaurar / reconstruir / baja
+→ contexto y precheck read-only → análisis → plan → simulación
+→ autorización separada → revalidación exacta → cola durable → worker
+→ servicio propietario ETS bajo transacción → referencias/auditoría/Actividad
+```
+
+Restaurar conserva el mismo ETS. Reconstruir usa una cotización aceptada sólo
+si no existe ningún ETS previo. Dar de baja sólo retira un ETS prístino sin
+cancelar ni reescribir sus OT. La creación ordinaria y el endpoint DELETE no
+pueden sustituir este proceso.
 
 Para `certificate.resolve_incorrect_release`, el provider obtiene un snapshot
 read-only; análisis, estrategia, plan y simulación son deterministas; el
