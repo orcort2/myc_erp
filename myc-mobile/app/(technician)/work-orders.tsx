@@ -966,9 +966,132 @@ export default function WorkOrdersScreen() {
         </SafeAreaView>
         </SafeAreaProvider>
       </Modal>
-      <Modal animationType="fade" onRequestClose={() => setSelectedGroupRequest(null)} transparent visible={Boolean(selectedGroupRequest)}>
-        <View style={styles.requestOverlay}><View style={styles.requestDialog}><Text style={styles.modalTitle}>Solicitud #{selectedGroupRequest?.id}</Text><Text style={styles.client}>{selectedGroupRequest?.client_name}</Text><Text style={styles.status}>Cantidad: {selectedGroupRequest?.quantity} OT</Text><Text style={styles.status}>Estado: {selectedGroupRequest?.status}</Text><Text style={styles.status}>{selectedGroupRequest?.folios.length ? `Folios: ${selectedGroupRequest.folios.join(', ')}` : 'Todavía no hay folios asignados.'}</Text>{selectedGroupRequest?.decision_reason && <Text style={styles.errorText}>Motivo: {selectedGroupRequest.decision_reason}</Text>}{selectedGroupRequest?.conversation_id && <Pressable style={styles.secondary} onPress={() => { const id = selectedGroupRequest.conversation_id; setSelectedGroupRequest(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }}><Text style={styles.secondaryText}>Abrir conversación</Text></Pressable>}<Pressable style={styles.cancel} onPress={() => setSelectedGroupRequest(null)}><Text>Cerrar</Text></Pressable></View></View>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setSelectedGroupRequest(null)}
+        transparent
+        visible={Boolean(selectedGroupRequest)}
+      >
+        <View style={styles.requestOverlay}>
+          <View style={styles.requestDialog}>
+            <View style={styles.requestHeader}>
+              <View style={styles.requestHeaderCopy}>
+                <Text style={styles.requestEyebrow}>GRUPO DE ÓRDENES</Text>
+                <Text style={styles.requestTitle}>
+                  Solicitud #{selectedGroupRequest?.id}
+                </Text>
+                <Text style={styles.requestClient}>
+                  {selectedGroupRequest?.client_name}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.requestStatusBadge,
+                  selectedGroupRequest?.status === 'approved' &&
+                    styles.requestStatusApproved,
+                  selectedGroupRequest?.status === 'rejected' &&
+                    styles.requestStatusRejected,
+                  selectedGroupRequest?.status === 'in_review' &&
+                    styles.requestStatusReview,
+                ]}
+              >
+                <Text style={styles.requestStatusText}>
+                  {selectedGroupRequest?.status === 'pending'
+                    ? 'Pendiente'
+                    : selectedGroupRequest?.status === 'in_review'
+                      ? 'En revisión'
+                      : selectedGroupRequest?.status === 'approved'
+                        ? 'Aprobada'
+                        : selectedGroupRequest?.status === 'rejected'
+                          ? 'Rechazada'
+                          : selectedGroupRequest?.status}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.requestSummary}>
+              <View style={styles.requestSummaryItem}>
+                <Text style={styles.requestSummaryLabel}>Órdenes solicitadas</Text>
+                <Text style={styles.requestSummaryValue}>
+                  {selectedGroupRequest?.quantity ?? 0}
+                </Text>
+              </View>
+
+              <View style={styles.requestSummaryDivider} />
+
+              <View style={styles.requestSummaryItem}>
+                <Text style={styles.requestSummaryLabel}>Estado</Text>
+                <Text style={styles.requestSummaryValueSmall}>
+                  {selectedGroupRequest?.status === 'pending'
+                    ? 'Pendiente'
+                    : selectedGroupRequest?.status === 'in_review'
+                      ? 'En revisión'
+                      : selectedGroupRequest?.status === 'approved'
+                        ? 'Aprobada'
+                        : selectedGroupRequest?.status === 'rejected'
+                          ? 'Rechazada'
+                          : selectedGroupRequest?.status}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.requestSection}>
+              <Text style={styles.requestSectionLabel}>Folios asignados</Text>
+
+              {selectedGroupRequest?.folios.length ? (
+                <View style={styles.requestFolios}>
+                  {selectedGroupRequest.folios.map((folio) => (
+                    <View key={folio} style={styles.requestFolioChip}>
+                      <Text style={styles.requestFolioText}>{folio}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.requestMuted}>
+                  Todavía no hay folios asignados.
+                </Text>
+              )}
+            </View>
+
+            {!!selectedGroupRequest?.decision_reason && (
+              <View style={styles.requestRejection}>
+                <Text style={styles.requestRejectionLabel}>Motivo del rechazo</Text>
+                <Text style={styles.requestRejectionText}>
+                  {selectedGroupRequest.decision_reason}
+                </Text>
+              </View>
+            )}
+
+            {!!selectedGroupRequest?.conversation_id && (
+              <Pressable
+                style={styles.requestConversationButton}
+                onPress={() => {
+                  const id = selectedGroupRequest.conversation_id;
+                  setSelectedGroupRequest(null);
+                  router.push({
+                    pathname: '/(technician)/communications/[id]',
+                    params: { id: String(id) },
+                  });
+                }}
+              >
+                <Text style={styles.requestConversationText}>
+                  Abrir conversación
+                </Text>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={styles.requestCloseButton}
+              onPress={() => setSelectedGroupRequest(null)}
+            >
+              <Text style={styles.requestCloseText}>Cerrar</Text>
+            </Pressable>
+          </View>
+        </View>
       </Modal>
+      
+      
     </SafeAreaView>
   );
 }
@@ -1595,5 +1718,187 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '800',
+  },
+
+  requestHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'space-between',
+  },
+
+  requestHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  requestEyebrow: {
+    color: '#0067a8',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginBottom: 5,
+  },
+
+  requestTitle: {
+    color: '#142b3a',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+
+  requestClient: {
+    color: '#566874',
+    fontSize: 15,
+    marginTop: 5,
+  },
+
+  requestStatusBadge: {
+    backgroundColor: '#e8edf1',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+
+  requestStatusApproved: {
+    backgroundColor: '#dff3e5',
+  },
+
+  requestStatusRejected: {
+    backgroundColor: '#f8dfe2',
+  },
+
+  requestStatusReview: {
+    backgroundColor: '#fff1c9',
+  },
+
+  requestStatusText: {
+    color: '#314956',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  requestSummary: {
+    backgroundColor: '#f4f7f9',
+    borderRadius: 14,
+    flexDirection: 'row',
+    marginTop: 20,
+    padding: 14,
+  },
+
+  requestSummaryItem: {
+    flex: 1,
+  },
+
+  requestSummaryDivider: {
+    backgroundColor: '#d9e1e6',
+    marginHorizontal: 14,
+    width: 1,
+  },
+
+  requestSummaryLabel: {
+    color: '#74838e',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+
+  requestSummaryValue: {
+    color: '#142b3a',
+    fontSize: 26,
+    fontWeight: '800',
+  },
+
+  requestSummaryValueSmall: {
+    color: '#142b3a',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  requestSection: {
+    marginTop: 22,
+  },
+
+  requestSectionLabel: {
+    color: '#344553',
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 10,
+    textTransform: 'uppercase',
+  },
+
+  requestFolios: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  requestFolioChip: {
+    backgroundColor: '#e9f3fa',
+    borderColor: '#b7d5e8',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+  },
+
+  requestFolioText: {
+    color: '#0067a8',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  requestMuted: {
+    color: '#72818c',
+    fontSize: 14,
+  },
+
+  requestRejection: {
+    backgroundColor: '#fff0f1',
+    borderRadius: 12,
+    marginTop: 18,
+    padding: 14,
+  },
+
+  requestRejectionLabel: {
+    color: '#8d1f2d',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+
+  requestRejectionText: {
+    color: '#75333c',
+    lineHeight: 20,
+  },
+
+  requestConversationButton: {
+    alignItems: 'center',
+    borderColor: '#0067a8',
+    borderRadius: 11,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    marginTop: 22,
+    minHeight: 50,
+  },
+
+  requestConversationText: {
+    color: '#0067a8',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  requestCloseButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+    minHeight: 44,
+  },
+
+  requestCloseText: {
+    color: '#465964',
+    fontSize: 15,
+    fontWeight: '700',
   },
 });
