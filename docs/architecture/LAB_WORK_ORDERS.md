@@ -195,11 +195,21 @@ tickets/notificaciones exclusivos, conserva la auditoría histórica y registra
 
 Si quedan hermanas, conserva sesiones de firma, tickets, revisiones y
 notificaciones todavía compartidos. Al borrar la raíz, la primera superviviente
-se vuelve raíz y las sesiones del grupo se reparentan; al borrar cualquier
-posición se recompone `previous_work_order_id` y se compacta
+se vuelve raíz y las sesiones del grupo se reparentan. Si el grupo nació de una
+`LabWorkOrderGroupRequest`, esa solicitud se bloquea en la misma transacción y
+su `root_work_order_id` apunta a la nueva raíz; al borrar la última OT queda en
+`NULL`, sin cambiar `approved`, handler, decisión, conversación ni trazabilidad.
+Al borrar cualquier posición se recompone `previous_work_order_id` y se compacta
 `sequence_number`. Si era la última OT, elimina también sus sesiones/firmas
 exclusivas. PDFs y firmas son binarios dentro de PostgreSQL, no archivos del
 filesystem, y todas las mutaciones comparten un commit con rollback explícito.
+
+El borrado nunca modifica `InstitutionalFolioSequence`: los folios consumidos no
+se compactan ni reutilizan. El evento estructurado
+`lab_work_order.group_materialized` conserva la lista original de folios. La
+proyección actual de una solicitud sin raíz devuelve `folios=[]`; decidir si la
+UI histórica requiere un snapshot propio permanece como deuda separada y no
+forma parte de la reconciliación referencial.
 
 La app muestra la acción sólo con la capacidad efectiva, usa confirmación
 nativa con folio/cliente, impide doble envío y vuelve a consultar el listado

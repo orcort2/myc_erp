@@ -36,14 +36,14 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único derivado de las 108 revisiones versionadas:
-  `d6f2a4c8e0b1` (`mobile_security_context`).
-- PostgreSQL local quedó en `d6f2a4c8e0b1 (head)`, comprobado con Alembic
-  después de un preflight sin memberships activas duplicadas. El SQL PostgreSQL
-  upgrade/downgrade de la revisión también se verificó en modo offline.
-- La revisión agrega `lab_work_orders.client_id` nullable y un índice parcial
-  único para una membership `active` por usuario. La revisión se aplicó a la
-  base local y su catálogo RBAC contiene los tres roles externos Mobile.
+- Head único vigente: `e7a3c5d9f1b2`
+  (`lab_anticipated_work_order_groups`).
+- PostgreSQL local quedó en `e7a3c5d9f1b2 (head)` y `alembic check` no detectó
+  operaciones nuevas. La columna
+  `lab_work_order_group_requests.root_work_order_id` admite `NULL` y conserva
+  una FK `ON DELETE RESTRICT` hacia `lab_work_orders.id`.
+- La corrección de borrado LAB no modifica esquema ni datos locales; no requiere
+  migración adicional ni regeneración del respaldo SQL.
 
 ## Respaldo oficial
 
@@ -143,3 +143,20 @@ canónicos enlazados al inicio.
 - Pendiente: QA físico y concurrencia PostgreSQL opt-in.
 
 Corrección quirúrgica de revisión: capabilities separadas por actor, endpoints Mobile internal, conversación creada sólo en claim, bandeja/contador Mobile agregado, modal/deep links reparados y páginas Web ajenas restauradas. La suite backend completa obtuvo 655 aprobadas, 6 omitidas y 19 subtests; conserva una falla preexistente de edición posterior a firma fuera del alcance del Bloque 2. Las regresiones focales quedaron verdes (21 de seguridad y 43 LAB/Communications/Notifications/Realtime, con 6 omisiones PostgreSQL), Web aprobó 2 pruebas y Mobile 80. Vite transformó 1,747 módulos; typecheck explícito, Expo lint y export iOS/Android/Web fueron correctos. El inventario clasifica 475 rutas. No se modificó la base ni se creó migración adicional sobre `e7a3c5d9f1b2`; el respaldo oficial permanece vigente.
+
+## Corte 2026-08-26 — Borrado de grupos anticipados OT LAB
+
+- `delete_work_order()` bloquea y reconcilia la solicitud aprobada dentro de la
+  misma transacción: nueva raíz cuando hay hermanas o `NULL` al borrar la última.
+- Solicitud, estado `approved`, handler, timestamps y conversación sobreviven;
+  el secuenciador LAB no cambia y los folios eliminados no se reutilizan.
+- La FK física causante era
+  `lab_work_order_group_requests_root_work_order_id_fkey` (`ON DELETE RESTRICT`);
+  la columna ya admite `NULL`, por lo que no se creó migración.
+- Validación: borrados focales `9 passed`; regresión LAB/Notifications/
+  Communications/Realtime `45 passed, 6 skipped, 1 deselected`; compilación
+  Python correcta; Alembic local/head `e7a3c5d9f1b2` y `alembic check` limpio.
+  La ejecución sin exclusión conserva una única falla preexistente ajena al
+  cambio: edición crítica posterior a firma espera 200 y recibe 409.
+- Pendiente: TD-057 registra que la proyección visual queda sin folios cuando ya
+  no existen OTs, aunque auditoría y conversación conservan la evidencia.

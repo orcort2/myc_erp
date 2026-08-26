@@ -203,7 +203,10 @@ conserva el resultado documentado de 17/18 por desfases patch preexistentes.
 La pantalla móvil continúa mostrando exclusivamente LAB 6400–6999 y agrega
 eliminación administrativa individual con capacidad propia, confirmación,
 refetch y layout estable para clientes largos. Backend cubre dependencias
-exclusivas, raíz/cadena, firma/ticket/revisión compartidos y rollback.
+exclusivas, raíz/cadena, firma/ticket/revisión compartidos y rollback. Desde el
+corte 2026-08-26 también reconcilia transaccionalmente las solicitudes
+anticipadas aprobadas: reparenta su raíz o la deja nula al eliminar la última OT,
+sin borrar solicitud/conversación, cambiar la decisión ni reutilizar folios.
 La captura de firmas móvil ya permite orientación nativa dinámica, usa pasos
 Cliente → Técnico, reconstruye strokes normalizados al redimensionar, entrega
 el gesto al canvas sólo durante el trazo y liga la captura a

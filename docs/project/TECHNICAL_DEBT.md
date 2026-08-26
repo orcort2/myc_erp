@@ -65,3 +65,4 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
 
 - TD-055 (P1): QA físico de solicitud/claim/decisión/realtime con Sr/Jr/Viewer/staff.
 - TD-056 (P2): realtime por rooms de usuario en hub in-memory; la fase multi-worker deberá adoptar transporte compartido sin canal paralelo.
+- TD-057 (P2): una `LabWorkOrderGroupRequest` aprobada cuyo grupo fue eliminado conserva los folios originales en el evento estructurado `lab_work_order.group_materialized` y en la conversación, pero su proyección `LabWorkOrderGroupRequestRead.folios` devuelve `[]` al quedar `root_work_order_id=NULL`. Decidir si la consulta histórica necesita un snapshot estructurado propio y, sólo entonces, diseñar su migración; no reconstruir desde huecos ni reutilizar folios.

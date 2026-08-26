@@ -28,6 +28,7 @@ from app.models.audit_log import AuditLog
 from app.models.lab_work_order import (
     LabWorkOrder,
     LabWorkOrderEquipment,
+    LabWorkOrderGroupRequest,
     LabWorkOrderSignatureSession,
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
@@ -1224,6 +1225,15 @@ def test_delete_additional_lab_order_preserves_root_and_shared_signatures(lab_co
         assert db.get(LabWorkOrder, extra["id"]) is None
         assert db.get(LabWorkOrderSignatureSession, signature_session_id) is not None
 
+    response = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 204, response.text
+    with factory() as db:
+        assert db.get(LabWorkOrder, root["id"]) is None
+        assert db.get(LabWorkOrderSignatureSession, signature_session_id) is None
+
 
 def test_delete_root_lab_order_reparents_group_and_shared_session(lab_context):
     client, factory, tokens = lab_context
@@ -1247,6 +1257,146 @@ def test_delete_root_lab_order_reparents_group_and_shared_session(lab_context):
         session = db.get(LabWorkOrderSignatureSession, signature_session_id)
         assert session is not None
         assert session.root_work_order_id == extra["id"]
+
+
+def _approved_lab_group_request(
+    client: TestClient,
+    factory: sessionmaker,
+    tokens: dict[str, str],
+    *,
+    quantity: int = 2,
+) -> tuple[dict, dict]:
+    with factory() as db:
+        operator = Client(
+            legal_name="Operador histórico LAB",
+            commercial_name="Operador histórico LAB",
+        )
+        db.add(operator)
+        db.flush()
+        requester = db.scalar(select(User).where(User.username == "lab-tech"))
+        assert requester is not None
+        request = create_group_request(
+            db,
+            LabWorkOrderGroupCreate(
+                **create_payload("Cliente histórico LAB"), quantity=quantity
+            ),
+            requester,
+            operator_client_id=operator.id,
+        )
+        request_id = request.id
+
+    headers = auth(tokens["admin"])
+    claimed = client.post(
+        f"/api/lab-work-order-groups/requests/{request_id}/claim", headers=headers
+    )
+    assert claimed.status_code == 200, claimed.text
+    approved = client.post(
+        f"/api/lab-work-order-groups/requests/{request_id}/approve", headers=headers
+    )
+    assert approved.status_code == 200, approved.text
+    root = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{approved.json()['root_work_order_id']}",
+        headers=auth(tokens["tech"]),
+    )
+    assert root.status_code == 200, root.text
+    return approved.json(), root.json()
+
+
+def test_delete_requested_group_additional_then_root_preserves_request_history_and_folios(
+    lab_context,
+):
+    client, factory, tokens = lab_context
+    request, root = _approved_lab_group_request(client, factory, tokens)
+    additional = root["related_work_orders"][1]
+    request_id = request["id"]
+    conversation_id = request["conversation_id"]
+    requested_by_user_id = request["requested_by_user_id"]
+    handled_by_user_id = request["handled_by_user_id"]
+    created_at = request["created_at"]
+    decided_at = request["decided_at"]
+
+    additional_delete = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{additional['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert additional_delete.status_code == 204, additional_delete.text
+    with factory() as db:
+        stored = db.get(LabWorkOrderGroupRequest, request_id)
+        assert stored is not None
+        assert stored.root_work_order_id == root["id"]
+
+    root_delete = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert root_delete.status_code == 204, root_delete.text
+
+    with factory() as db:
+        stored = db.get(LabWorkOrderGroupRequest, request_id)
+        assert stored is not None
+        assert stored.root_work_order_id is None
+        assert stored.status == "approved"
+        assert stored.conversation_id == conversation_id
+        assert stored.requested_by_user_id == requested_by_user_id
+        assert stored.handled_by_user_id == handled_by_user_id
+        assert stored.quantity == 2
+        assert stored.client_name == "Cliente histórico LAB"
+        assert stored.created_at.isoformat() == created_at
+        assert stored.decided_at.isoformat() == decided_at
+        assert db.get(CommunicationConversation, conversation_id) is not None
+        materialization = db.scalar(
+            select(AuditLog).where(
+                AuditLog.action == "lab_work_order.group_materialized",
+                AuditLog.entity_id == root["id"],
+            )
+        )
+        assert materialization is not None
+        assert materialization.new_values["folios"] == [6400, 6401]
+
+    next_group = client.post(
+        "/api/lab-work-order-groups",
+        json={**create_payload("Folio posterior"), "quantity": 1},
+        headers=auth(tokens["admin"]),
+    )
+    assert next_group.status_code == 201, next_group.text
+    assert next_group.json()["folio"] == 6402
+
+
+def test_delete_requested_group_root_reparents_request_then_nulls_it_on_last_delete(
+    lab_context,
+):
+    client, factory, tokens = lab_context
+    request, root = _approved_lab_group_request(client, factory, tokens)
+    replacement = root["related_work_orders"][1]
+
+    root_delete = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{root['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert root_delete.status_code == 204, root_delete.text
+
+    with factory() as db:
+        stored = db.get(LabWorkOrderGroupRequest, request["id"])
+        survivor = db.get(LabWorkOrder, replacement["id"])
+        assert stored is not None
+        assert stored.root_work_order_id == replacement["id"]
+        assert stored.status == "approved"
+        assert survivor is not None
+        assert survivor.root_work_order_id == replacement["id"]
+        assert survivor.previous_work_order_id is None
+        assert survivor.sequence_number == 1
+
+    last_delete = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{replacement['id']}",
+        headers=auth(tokens["admin"]),
+    )
+    assert last_delete.status_code == 204, last_delete.text
+    with factory() as db:
+        stored = db.get(LabWorkOrderGroupRequest, request["id"])
+        assert stored is not None
+        assert stored.root_work_order_id is None
+        assert stored.status == "approved"
+        assert stored.conversation_id == request["conversation_id"]
 
 
 def test_delete_middle_lab_order_repairs_chain_without_deleting_sisters(lab_context):

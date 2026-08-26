@@ -716,6 +716,20 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             )
 
         replacement = survivors[0] if survivors else None
+        group_requests: list[LabWorkOrderGroupRequest] = []
+        if work_order.id == root_id:
+            group_requests = list(
+                db.scalars(
+                    select(LabWorkOrderGroupRequest)
+                    .where(LabWorkOrderGroupRequest.root_work_order_id == root_id)
+                    .with_for_update()
+                ).all()
+            )
+            for group_request in group_requests:
+                group_request.root_work_order_id = (
+                    replacement.id if replacement is not None else None
+                )
+
         orphan_sessions: list[LabWorkOrderSignatureSession] = []
         if replacement is not None and work_order.id == root_id:
             sessions = list(
@@ -797,6 +811,9 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             },
             new_values={
                 "surviving_work_order_ids": [item.id for item in survivors],
+                "reconciled_group_request_ids": [
+                    request.id for request in group_requests
+                ],
             },
         )
         db.commit()
