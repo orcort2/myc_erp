@@ -10,7 +10,10 @@ export type AuthUser = {
   full_name: string;
   is_active: boolean;
   permissions: string[];
-  roles: Role[];
+  roles?: Role[];
+  actor_type: 'internal' | 'client';
+  client_id: number | null;
+  membership_id: number | null;
 };
 
 export type TokenPair = {

@@ -2,16 +2,21 @@
 
 > Estado: vigente; lecturas productivas y entrega ETS Venta acotada
 >
-> Corte verificado: 2026-08-17
+> Corte verificado: 2026-08-26
 
 ## Propósito
 
 El namespace `/api/mobile/v1/technician` ofrece lecturas productivas y una
-mutación acotada para entregas ETS Venta asignadas. Reutiliza el access JWT interno y no
+mutación acotada para entregas ETS Venta asignadas. Reutiliza el contexto Mobile interno y no
 modifica ni sustituye `/api/service-orders`, `/api/equipment` o
 `/api/field-sheets` del ERP web.
 
 ## Autoridad y permisos
+
+Estos endpoints productivos permanecen exclusivos de `actor_type=internal`.
+`mobile.access` no los expone a usuarios externos; el contrato común de sesión
+y la superficie LAB cliente se documentan en
+[`MOBILE_SECURITY_CONTEXT.md`](MOBILE_SECURITY_CONTEXT.md).
 
 - ETS, OT y equipos exigen `service_orders.read_assigned`.
 - Hojas de Campo exigen conjuntamente `service_orders.read_assigned` y

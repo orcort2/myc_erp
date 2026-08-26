@@ -34,7 +34,7 @@ export default function UserModal({ accountType = 'internal', activity = [], ava
 
   return <div className="modal-backdrop" onMouseDown={backdrop}>
     <div aria-modal="true" className="client-modal settings-user-modal settings-user-modal--complete" onMouseDown={(event) => event.stopPropagation()} role="dialog">
-      <header className="section-heading settings-user-modal__header"><div><p>{portal ? 'Portal del Cliente' : 'Usuarios internos'}</p><h2>{mode === 'create' ? 'Nuevo usuario' : form.full_name || 'Detalle de usuario'}</h2><small>{portal ? 'Cuenta externa y organización vinculada' : `@${form.username || 'nuevo'}`}</small></div><button aria-label="Cerrar" className="modal-close-button" onClick={close} type="button">×</button></header>
+      <header className="section-heading settings-user-modal__header"><div><p>{portal ? 'Usuario externo' : 'Staff MYC'}</p><h2>{mode === 'create' ? 'Nuevo usuario' : form.full_name || 'Detalle de usuario'}</h2><small>{portal ? 'Cuenta externa y organización vinculada para Portal y/o MYC Mobile' : `@${form.username || 'nuevo'}`}</small></div><button aria-label="Cerrar" className="modal-close-button" onClick={close} type="button">×</button></header>
       <div className="client-modal-tabs settings-user-tabs" role="tablist">{TABS.map((item) => <button className={tab === item ? 'client-modal-tab is-active' : 'client-modal-tab'} key={item} onClick={() => setTab(item)} role="tab" type="button">{item}</button>)}</div>
       <form className="settings-user-form settings-user-modal__body" onSubmit={onSubmit}>
         {tab === 'Perfil' ? <div className="settings-user-grid">

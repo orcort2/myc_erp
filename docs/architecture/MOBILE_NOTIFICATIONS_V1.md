@@ -2,7 +2,7 @@
 >
 > Tipo: Arquitectura vigente
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-26
 
 # Notificaciones operativas MYC Mobile V1
 
@@ -29,8 +29,10 @@ API autenticada  ← centro / detalle / contador no leído
   dispositivos activos por usuario. Un registro repetido actualiza el mismo
   token; si cambia de usuario, queda reasignado exclusivamente al nuevo.
 - El logout desactiva el dispositivo autenticado sin borrar historia.
-- Listado, contador y lectura reutilizan `/api/notifications`; todos filtran
-  por el usuario autenticado. Administrar un dispositivo ajeno responde 404.
+- MYC Mobile usa `/api/mobile/v1/notifications`; listado, contador, lectura y
+  dispositivos filtran por el usuario del `MobileSecurityContext`.
+  Administrar un dispositivo ajeno responde 404. Las rutas web internas
+  `/api/notifications` conservan su contrato.
 - `read_at` es la única autoridad de lectura y el badge se deriva del conteo
   persistente de no leídas. `delivery_status` no demuestra que una persona la
   haya visto.
@@ -87,10 +89,10 @@ Motor.
 
 - `POST /api/mobile/v1/notifications/devices`
 - `DELETE /api/mobile/v1/notifications/devices/{device_id}`
-- `GET /api/notifications?limit=&offset=&unread_only=`
-- `GET /api/notifications/unread-count`
-- `POST /api/notifications/{notification_id}/read`
-- `POST /api/notifications/read-all`
+- `GET /api/mobile/v1/notifications?limit=&offset=&unread_only=`
+- `GET /api/mobile/v1/notifications/unread-count`
+- `POST /api/mobile/v1/notifications/{notification_id}/read`
+- `POST /api/mobile/v1/notifications/read-all`
 
 ## Garantías y límites V1
 

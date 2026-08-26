@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-08-25
+> Corte verificado: 2026-08-26
 
 # Flujo operativo actual
 
@@ -471,6 +471,21 @@ esa empresa y protege al último administrador activo.
 ## Flujo temporal OT LAB móvil
 
 ```text
+login Mobile
+→ backend autentica User
+→ internal: permisos internos, sin Client
+→ client: membership active única + Client activo + permisos externos
+→ exige mobile.access
+→ access/refresh conserva actor; cada request revalida base
+```
+
+Para cliente, crear/listar/abrir/modificar OT LAB deriva siempre
+`context.client_id`; el nombre enviado no decide organización. Detalle, equipo,
+firma, PDF, revisión y Ticket de otro cliente responden 404 o 403 según si la
+denegación ocurre por ownership o por falta de capacidad. Staff conserva el
+scope previo y puede leer históricos sin `client_id`.
+
+```text
 Login interno técnico
 → OT's → Generar orden
 → backend asigna folio LAB 6400..6999
@@ -556,7 +571,7 @@ polling global.
 ## Flujo de Comunicaciones — Etapas A–I
 
 ```text
-sesión interna válida en MYC Mobile
+sesión Mobile válida (staff o cliente autorizado)
 → RealtimeProvider ofrece protocolo v1 + access JWT
 → backend valida JWT y vuelve a resolver User en base
 → acepta socket y une exclusivamente user:{id}
@@ -564,7 +579,8 @@ sesión interna válida en MYC Mobile
 → provider queda connected
 
 conversation.subscribe(conversation_id)
-→ backend consulta ownership
+→ backend consulta permiso, participación y ownership
+→ cliente exige conversation_type=client y mismo client_id
 → autorizado: une conversation:{id}
 → ajeno: realtime.error sin unirse
 

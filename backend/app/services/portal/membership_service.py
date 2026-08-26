@@ -16,6 +16,7 @@ from app.models.client_link_request import ClientLinkRequest
 from app.models.portal_registration import PortalRegistration
 from app.models.notification import Notification
 from app.core.portal.constants import ClientLinkRequestStatus, PortalRegistrationStatus
+from app.services.portal.membership_policy import ensure_single_active_membership
 
 
 def _load(db: Session, membership_id: int) -> ClientPortalMembership:
@@ -76,6 +77,7 @@ def create_membership(db: Session, *, client_id: int, user_id: int, role_codes: 
         raise HTTPException(status_code=404, detail="Cliente o cuenta del portal no encontrados")
     if db.scalar(select(ClientPortalMembership).where(ClientPortalMembership.client_id == client_id, ClientPortalMembership.user_id == user_id)):
         raise HTTPException(status_code=409, detail="La membresía ya existe")
+    ensure_single_active_membership(db, user_id=user_id)
     roles = _roles(db, client_id, role_codes)
     item = ClientPortalMembership(client_id=client_id, user_id=user_id, status=ClientPortalMembershipStatus.ACTIVE.value, is_primary_contact=primary, approved_by=actor_id, approved_at=datetime.now(timezone.utc))
     db.add(item); db.flush()
@@ -99,6 +101,12 @@ def _protect_last_admin(db: Session, item: ClientPortalMembership, new_codes: li
 
 def update_status(db: Session, membership_id: int, status_value: str, actor_id: int, reason: str) -> dict:
     item = _load(db, membership_id)
+    if status_value == ClientPortalMembershipStatus.ACTIVE.value:
+        ensure_single_active_membership(
+            db,
+            user_id=item.user_id,
+            exclude_membership_id=item.id,
+        )
     if status_value in {ClientPortalMembershipStatus.SUSPENDED.value, ClientPortalMembershipStatus.REVOKED.value}:
         _protect_last_admin(db, item)
     now = datetime.now(timezone.utc)
@@ -217,6 +225,7 @@ def resolve_link_request(db: Session, request_id: int, *, approve: bool, reason:
         if db.scalar(select(ClientPortalMembership).where(ClientPortalMembership.client_id == item.proposed_client_id, ClientPortalMembership.user_id == registration.user_id)):
             raise HTTPException(status_code=409, detail="La cuenta ya está vinculada")
         roles = _roles(db, item.proposed_client_id, role_codes)
+        ensure_single_active_membership(db, user_id=registration.user_id)
         membership = ClientPortalMembership(client_id=item.proposed_client_id, user_id=registration.user_id, status=ClientPortalMembershipStatus.ACTIVE.value, approved_by=actor_id, approved_at=now)
         db.add(membership); db.flush()
         for role in roles:

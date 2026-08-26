@@ -42,7 +42,13 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
 
 
-def resolve_active_membership(db: Session, user_id: int, membership_id: int | None = None) -> ClientPortalMembership:
+def resolve_active_membership(
+    db: Session,
+    user_id: int,
+    membership_id: int | None = None,
+    *,
+    require_portal_enabled: bool = True,
+) -> ClientPortalMembership:
     query = select(ClientPortalMembership).where(
         ClientPortalMembership.user_id == user_id,
         ClientPortalMembership.status == ClientPortalMembershipStatus.ACTIVE.value,
@@ -54,9 +60,10 @@ def resolve_active_membership(db: Session, user_id: int, membership_id: int | No
         raise HTTPException(status_code=403, detail="La cuenta no tiene una membresía activa única")
     if not memberships[0].client.is_active:
         raise HTTPException(status_code=403, detail="El cliente vinculado no está activo")
-    configuration = db.scalar(select(ClientPortal).where(ClientPortal.client_id == memberships[0].client_id, ClientPortal.is_active.is_(True)))
-    if configuration is not None and not configuration.is_enabled:
-        raise HTTPException(status_code=403, detail="El portal del cliente está deshabilitado")
+    if require_portal_enabled:
+        configuration = db.scalar(select(ClientPortal).where(ClientPortal.client_id == memberships[0].client_id, ClientPortal.is_active.is_(True)))
+        if configuration is not None and not configuration.is_enabled:
+            raise HTTPException(status_code=403, detail="El portal del cliente está deshabilitado")
     return memberships[0]
 
 

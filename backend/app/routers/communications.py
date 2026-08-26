@@ -17,7 +17,7 @@ from app.schemas.communication import (
     CommunicationReceiptUpdate,
     CommunicationSyncRead,
 )
-from app.services.auth import get_current_user
+from app.core.mobile.security import get_communications_user
 from app.services.communications import (
     _message_read,
     add_message,
@@ -38,7 +38,7 @@ router = APIRouter(prefix="/communications", tags=["communications"])
 
 @router.get("/directory", response_model=CommunicationDirectoryRead)
 def get_directory(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+    db: Session = Depends(get_db), current_user: User = Depends(get_communications_user)
 ):
     return list_directory(db, current_user)
 
@@ -48,7 +48,7 @@ def get_mentions(
     unread_only: bool = Query(default=False),
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     return list_mentions(db, current_user.id, unread_only=unread_only, limit=limit)
 
@@ -59,7 +59,7 @@ def get_conversations(
         default=None, pattern="^(internal|group|client)$"
     ),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     return list_conversations(db, current_user.id, conversation_type)
 
@@ -73,7 +73,7 @@ def post_conversation(
     payload: CommunicationConversationCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     try:
         conversation, initial_message, notification_ids = create_conversation(
@@ -118,7 +118,7 @@ def get_conversation_detail_route(
     conversation_id: int,
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     conversation = get_conversation_detail(
         db, conversation_id, current_user.id, limit=limit
@@ -137,7 +137,7 @@ def get_messages(
     before_sequence: int | None = Query(default=None, ge=1),
     limit: int = Query(default=50, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     return get_message_page(
         db,
@@ -156,7 +156,7 @@ def get_message_sync(
     after_sequence: int = Query(default=0, ge=0),
     limit: int = Query(default=100, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     return sync_messages(
         db,
@@ -177,7 +177,7 @@ def post_message(
     payload: CommunicationMessageCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     message, participant_ids, notification_ids, created = add_message(
         db,
@@ -222,7 +222,7 @@ def post_receipts(
     payload: CommunicationReceiptUpdate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_communications_user),
 ):
     receipt, participant_ids = update_receipts(
         db, conversation_id, current_user.id, payload

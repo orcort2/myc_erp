@@ -62,6 +62,9 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     created_by_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True, nullable=False
     )
+    client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("clients.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
     reception_date: Mapped[date] = mapped_column(Date, nullable=False)
     departure_date: Mapped[date] = mapped_column(Date, nullable=False)
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -112,6 +115,7 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         order_by="LabWorkOrderRevision.revision_number",
     )
+    client: Mapped["Client | None"] = relationship()
 
 
 class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
@@ -197,3 +201,4 @@ class LabWorkOrderSignature(IntegerPkMixin, TimestampMixin, Base):
 
 
 from app.models.lab_work_order_revision import LabWorkOrderRevision  # noqa: E402
+from app.models.client import Client  # noqa: E402

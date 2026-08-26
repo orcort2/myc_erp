@@ -19,6 +19,7 @@ from app.models.portal_invitation_role import PortalInvitationRole
 from app.services.audit_logs import write_audit_log
 from app.services.portal.account_service import create_portal_account, get_user_by_email
 from app.services.portal.mail_service import send_invitation_email
+from app.services.portal.membership_policy import ensure_single_active_membership
 
 
 def _hash(token: str) -> str:
@@ -52,6 +53,9 @@ def create_invitation(db: Session, *, client_id: int, email: str, full_name: str
     configuration = db.scalar(select(ClientPortal).where(ClientPortal.client_id == client_id, ClientPortal.is_active.is_(True)))
     if configuration is not None and (not configuration.is_enabled or not configuration.allow_invitations):
         raise HTTPException(status_code=409, detail="Las invitaciones están deshabilitadas para este cliente")
+    existing_user = get_user_by_email(db, email)
+    if existing_user is not None and existing_user.account_type == "client_portal":
+        ensure_single_active_membership(db, user_id=existing_user.id)
     roles = list(db.scalars(select(ClientPortalRole).where(ClientPortalRole.code.in_(role_codes), ClientPortalRole.is_active.is_(True), (ClientPortalRole.client_id.is_(None)) | (ClientPortalRole.client_id == client_id))).all())
     if {r.code for r in roles} != set(role_codes):
         raise HTTPException(status_code=422, detail="Uno o más roles no son asignables al cliente")
@@ -123,6 +127,7 @@ def accept_invitation(db: Session, token: str, *, username: str, full_name: str,
     existing = db.scalar(select(ClientPortalMembership).where(ClientPortalMembership.client_id == invitation.client_id, ClientPortalMembership.user_id == user.id))
     if existing is not None:
         raise HTTPException(status_code=409, detail="La cuenta ya está vinculada con este cliente")
+    ensure_single_active_membership(db, user_id=user.id)
     membership = ClientPortalMembership(client_id=invitation.client_id, user_id=user.id, status=ClientPortalMembershipStatus.ACTIVE.value, approved_by=invitation.invited_by, approved_at=datetime.now(timezone.utc))
     db.add(membership)
     db.flush()

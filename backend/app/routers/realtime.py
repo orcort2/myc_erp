@@ -37,24 +37,31 @@ def get_realtime_session_factory() -> SessionFactory:
 
 
 def _can_access_conversation(
-    db: Session, *, conversation_id: int, user_id: int
+    db: Session, *, conversation_id: int, identity
 ) -> bool:
     participant = exists().where(
         communication_participants.c.conversation_id == CommunicationConversation.id,
-        communication_participants.c.user_id == user_id,
+        communication_participants.c.user_id == identity.user_id,
     )
-    return bool(
-        db.scalar(
-            select(CommunicationConversation.id).where(
-                CommunicationConversation.id == conversation_id,
-                CommunicationConversation.archived_at.is_(None),
-                or_(
-                    participant,
-                    CommunicationConversation.created_by_user_id == user_id,
-                ),
-            )
+    query = select(CommunicationConversation.id).where(
+        CommunicationConversation.id == conversation_id,
+        CommunicationConversation.archived_at.is_(None),
+        or_(
+            participant,
+            CommunicationConversation.created_by_user_id == identity.user_id,
+        ),
+    )
+    if identity.actor_type == "client":
+        if not {
+            "communications.view",
+            "communications.create",
+        }.intersection(identity.permissions):
+            return False
+        query = query.where(
+            CommunicationConversation.conversation_type == "client",
+            CommunicationConversation.client_id == identity.client_id,
         )
-    )
+    return bool(db.scalar(query))
 
 
 async def _close_rejected(websocket: WebSocket, *, code: int) -> None:
@@ -69,6 +76,7 @@ async def _handle_command(
     session_factory: SessionFactory,
     connection: Any,
     command: dict[str, Any],
+    identity,
 ) -> None:
     event = command.get("event")
     data = command.get("data") if isinstance(command.get("data"), dict) else {}
@@ -97,7 +105,7 @@ async def _handle_command(
         conversation_id = 0
     with session_factory() as db:
         allowed = conversation_id > 0 and _can_access_conversation(
-            db, conversation_id=conversation_id, user_id=connection.user_id
+            db, conversation_id=conversation_id, identity=identity
         )
         actor_name = db.scalar(
             select(User.full_name).where(User.id == connection.user_id)
@@ -183,6 +191,8 @@ async def realtime_websocket(
             {
                 "user_id": identity_user_id,
                 "connection_id": connection.id,
+                "actor_type": identity.actor_type,
+                "client_id": identity.client_id,
             },
         ),
     )
@@ -213,6 +223,7 @@ async def realtime_websocket(
                 session_factory=session_factory,
                 connection=connection,
                 command=command,
+                identity=identity,
             )
     except WebSocketDisconnect as exc:
         logger.info(

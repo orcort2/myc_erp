@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-08-24
+> Corte verificado: 2026-08-26
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -15,17 +15,20 @@ productivo no puede depender de tablas, rutas o tipos LAB. La app no consulta
 `/api/service-orders/...` para listar, abrir, documentar o eliminar OT LAB.
 
 El namespace protegido es
-`/api/mobile/v1/technician/lab-work-orders`. `lab_work_orders.use` habilita el
-flujo operativo a Técnicos y `lab_work_orders.export` reserva la exportación
+`/api/mobile/v1/technician/lab-work-orders`. Staff conserva
+`lab_work_orders.use`; clientes usan permisos externos por operación y scope
+obligatorio de `ClientPortalMembership.client_id`. `lab_work_orders.export` reserva la exportación
 integral a autoridad administrativa. `lab_work_orders.delete` reserva el
 borrado individual a Administrador mediante su comodín institucional `*`, sin
 asignación a roles ordinarios. El guard transversal conserva deny-by-default y
-JWT interno; no existe autenticador LAB alterno.
+`MobileSecurityContext`; el contrato está en
+[`MOBILE_SECURITY_CONTEXT.md`](MOBILE_SECURITY_CONTEXT.md).
 
 ## Agregado persistente
 
-- `LabWorkOrder`: datos generales manuales, folio, cadena de grupo, estado y
-  PDF final inmutable.
+- `LabWorkOrder`: datos generales, `client_id` nullable, folio, cadena de
+  grupo, estado y PDF final inmutable. El cliente es obligatorio cuando el
+  actor es externo y nulo sigue siendo válido para históricos/staff.
 - `LabWorkOrderEquipment`: hasta diez equipos exclusivos de la OT; sólo
   instrumento, marca, identificación, serie, informe opcional y condición
   física booleana.

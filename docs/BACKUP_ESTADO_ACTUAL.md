@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-08-25
+> Corte actualizado: 2026-08-26
 
 # Estado operativo actual del ERP MYC
 
@@ -29,31 +29,30 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
   agrega Herramientas administrativas ETS sin otro motor ni migración. Su entrada
   normativa es
   [`architecture/resolution-engine/README.MD`](architecture/resolution-engine/README.MD).
-- MYC Mobile continúa como LAB temporal aislado del flujo productivo, conforme
-  a [`../myc-mobile/AGENTS.md`](../myc-mobile/AGENTS.md).
+- MYC Mobile continúa como LAB temporal aislado del flujo productivo y ahora
+  admite staff/cliente mediante `MobileSecurityContext`, conforme a
+  [`architecture/MOBILE_SECURITY_CONTEXT.md`](architecture/MOBILE_SECURITY_CONTEXT.md).
 
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único derivado de las 107 revisiones versionadas:
-  `c4e0ead1af28` (`fix_repair_timestamp_defaults`).
-- La consulta de `alembic current` contra la base local no respondió dentro de
-  30 segundos durante esta auditoría documental; por tanto, no se afirma un
-  head local sin evidencia.
-- Este cambio no modificó modelos, migraciones, esquema ni datos.
+- Head único derivado de las 108 revisiones versionadas:
+  `d6f2a4c8e0b1` (`mobile_security_context`).
+- PostgreSQL local quedó en `d6f2a4c8e0b1 (head)`, comprobado con Alembic
+  después de un preflight sin memberships activas duplicadas. El SQL PostgreSQL
+  upgrade/downgrade de la revisión también se verificó en modo offline.
+- La revisión agrega `lab_work_orders.client_id` nullable y un índice parcial
+  único para una membership `active` por usuario. La revisión se aplicó a la
+  base local y su catálogo RBAC contiene los tres roles externos Mobile.
 
 ## Respaldo oficial
 
-- `backup_erp_myc_antes_prueba.sql` existe, mide `75,050,260` bytes y fue
-  modificado por última vez el 2026-08-17 18:53:35 CST.
+- `backup_erp_myc_antes_prueba.sql` existe, mide `75,534,807` bytes y fue
+  regenerado el 2026-08-26 12:07:11 CST.
 - SHA-256:
-  `f2280b0e003f582601462b269f3b3fb1165e58d00acf247d8c8564f691b81b14`.
-- Su `alembic_version` verificable es `f7c9d1e3a5b7`; no coincide con el head
-  actual del código `c4e0ead1af28`.
-- La discrepancia queda pendiente: se debe actualizar primero la base local de
-  forma controlada y regenerar el respaldo conforme a
-  [`architecture/database/SCHEMA_RECOVERY.md`](architecture/database/SCHEMA_RECOVERY.md).
-  Esta auditoría no alteró la base y por ello no regeneró el dump.
+  `b23598cfcc3a728ab09734d01d0750eda681dde60061c86bda2cdec18addfcbc`.
+- Su `alembic_version` verificable es `d6f2a4c8e0b1` y coincide con el head
+  único actual del código.
 
 ## Validaciones de este corte documental
 
@@ -73,10 +72,27 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - Fase 15 modificó backend/frontend del Centro, permisos, continuidad ETS,
   pruebas, inventario HTTP y documentación. No modificó Mobile, modelos,
   migraciones, esquema, base local ni el respaldo SQL.
-- El inventario HTTP se regeneró contra el runtime actual: 456 operaciones
+- El inventario HTTP se regeneró contra el runtime actual: 463 operaciones
   clasificadas deny-by-default y CSV sincronizado.
 
 ## Pendientes operativos
+
+### Corte funcional 2026-08-26 — Seguridad MYC Mobile
+
+- Login/refresh Mobile distingue staff y cliente; `mobile.access` es gate de
+  sesión y cada operación conserva permiso explícito.
+- Viewer/Operativo Jr/Operativo Sr se persisten en RBAC externo. Membership
+  activa única se valida en backend y se refuerza con índice parcial.
+- OT LAB, equipos, firmas, PDFs, revisiones y Tickets aplican scope de cliente;
+  rutas productivas Mobile permanecen exclusivamente internas.
+- Realtime exige permiso, participación y mismo cliente; dispositivos/push y
+  centro de notificaciones conservan ownership por usuario.
+- Validación hasta este corte: 69 tests backend focalizados, 26 de regresión
+  adicional, 73 tests Mobile, 9 tests frontend de administración,
+  lint/TypeScript Mobile, export Expo iOS/Android/Web, build Vite, migración
+  local y SQL Alembic offline correctos. LAB obtuvo 21 passed/5 skipped y una
+  falla preexistente reproducida también desde `HEAD`. Falta QA físico; no hubo
+  commit, push ni despliegue.
 
 ### Corte funcional 2026-08-25 — QA Verificación
 
@@ -102,17 +118,15 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
   Ejecutadas, Fallidas y Herramientas. La pantalla ETS enlaza al precheck con su
   ID contextual.
 - Validación focal/regresión ejecutada: 167 pruebas backend, 7 subtests backend
-  y 57 pruebas frontend correctas; conformidad de seguridad sincronizada a 456
+  y 57 pruebas frontend correctas; conformidad de seguridad sincronizada a 463
   rutas, build Vite y compilación Python correctos. `git diff --check` se
   ejecuta después de la sincronización final del inventario.
 - Estado: **IMPLEMENTADA — EN REVISIÓN**. Sin commit ni push.
 
-1. Resolver la divergencia entre el head del código y el respaldo oficial
-   registrada como TD-051.
-2. Completar los bloqueadores de producción registrados en
+1. Completar los bloqueadores de producción registrados en
    `TECHNICAL_DEBT.md`, especialmente sesiones/RBAC, CFDI productivo,
    E2E físico/browser, CI/CD, observabilidad y almacenamiento durable.
-3. Mantener las validaciones físicas pendientes de Mobile, Comunicaciones,
+2. Mantener las validaciones físicas pendientes de Mobile, Comunicaciones,
    ETS Venta, Mantenimiento y Verificación según sus TD vigentes.
 
 ## Regla de mantenimiento

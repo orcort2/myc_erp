@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y bitácoras cronológicas retiradas conservadas por Git
 >
-> Corte verificado: 2026-08-25
+> Corte verificado: 2026-08-26
 
 # Reglas de negocio vigentes
 
@@ -96,6 +96,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-065 | Verificación / Masters | El Master del concepto de Verificación es una referencia genérica inicial dentro del bonche. Sólo mientras existe inicial y no existe final, el backend puede resolver una coincidencia única por fingerprint contra Masters activos registrados con `service_type=verification` y congelar documento/versión final, actor, origen e historial. Desde entonces ese final es autoridad histórica: cargas y llamadas idempotentes usan el mismo snapshot sin nueva resolución, historial ni auditoría; A→B se rechaza aunque no exista evidencia identificada. Nombre, código, descripción, revisiones y registro institucional vigentes no reinterpretan el equipo. | Equipment, documentos controlados, Captura y Calidad | 2026-08-25 |
 | BR-066 | Cotizaciones / ETS | La transición a `accepted` y la materialización del ETS son una sola operación backend transaccional e idempotente. El lock de Cotización y la búsqueda por `quotation_id` garantizan un solo ETS activo; el frontend no ejecuta una creación adicional. | `quotations.py`, `service_orders.py`, schema de Cotización y suite Venta/Cotizaciones | 2026-08-25 |
 | BR-067 | Catálogo / Verificación | Crear o actualizar Verificación exige Master genérico `certificate_master` activo, versión activa no caducada y XLSX disponible. El legacy nulo es legible, pero no actualizable ni materializable en un ETS nuevo; reparar requiere sustitución explícita para no reinterpretar snapshots. | `catalog_items.py`, `service_orders.py`, Catálogo y suite de identidad operacional | 2026-08-25 |
+| BR-068 | MYC Mobile | `mobile.access` sólo autoriza entrada. Staff conserva RBAC interno y scope vigente; cliente usa una membership activa única, RBAC externo y `client_id` derivado en backend. Claims o payloads no conceden organización. Viewer sólo lee; Jr/Sr operan LAB sin folios. Las rutas productivas no revisadas permanecen deny para cliente. | [`../architecture/MOBILE_SECURITY_CONTEXT.md`](../architecture/MOBILE_SECURITY_CONTEXT.md), contexto/guards Mobile y suites de scope | 2026-08-26 |
 
 ## Reglas históricas no vigentes como obligación actual
 

@@ -2,7 +2,7 @@
 >
 > Tipo: Arquitectura vigente
 >
-> Corte verificado: 2026-08-17 — Etapas A–I implementadas
+> Corte verificado: 2026-08-26 — Etapas A–I y contexto Mobile implementados
 
 # Comunicaciones y transporte realtime
 
@@ -44,9 +44,13 @@ backplane probado entre procesos. Rooms y envelope no deben cambiar.
 
 `WS /api/realtime/ws` negocia `myc.realtime.v1` y
 `auth.<access-jwt>`. El token no viaja en URL. Antes de aceptar, el backend
-valida firma, expiración y `token_type=access`, y vuelve a resolver un usuario
-interno activo. Al expirar cierra con `4401`; MYC Mobile usa exclusivamente
-`AuthProvider.refreshSession` y `POST /auth/refresh`, y después reconecta.
+valida firma, expiración y `token_type=access`, y vuelve a resolver usuario,
+actor, permisos y scope desde base. Admite staff Mobile y cliente Mobile con
+`mobile.access`; un cliente sólo puede suscribirse a una conversación de tipo
+`client` de su mismo `client_id`, donde sea participante y tenga permiso
+explícito de Comunicaciones. Los perfiles externos iniciales no lo incluyen.
+Al expirar cierra con `4401`; MYC Mobile usa `AuthProvider.refreshSession` y
+`POST /mobile/v1/auth/refresh`, y después reconecta.
 
 Rooms vigentes:
 

@@ -125,15 +125,22 @@ def list_tickets(
     search: str | None = None,
     offset: int = 0,
     limit: int = 25,
+    client_id: int | None = None,
 ) -> list[TicketRead]:
     query = _ticket_query()
-    if not _can_view_all(user):
+    if client_id is not None:
+        query = query.join(OperationalTicket.work_order).where(
+            LabWorkOrder.client_id == client_id
+        )
+    elif not _can_view_all(user):
         query = query.where(OperationalTicket.requested_by_user_id == user.id)
     if ticket_status:
         query = query.where(OperationalTicket.status == ticket_status)
     if search and search.strip():
         value = f"%{search.strip()}%"
-        query = query.join(OperationalTicket.work_order).where(
+        if client_id is None:
+            query = query.join(OperationalTicket.work_order)
+        query = query.where(
             LabWorkOrder.client_name.ilike(value)
             | OperationalTicket.reason.ilike(value)
         )
@@ -145,8 +152,18 @@ def list_tickets(
     return [_read(ticket) for ticket in tickets]
 
 
-def get_ticket(db: Session, ticket_id: int, user: User) -> TicketRead:
+def get_ticket(
+    db: Session,
+    ticket_id: int,
+    user: User,
+    *,
+    client_id: int | None = None,
+) -> TicketRead:
     ticket = _get_ticket(db, ticket_id)
+    if client_id is not None and ticket.work_order.client_id != client_id:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    if client_id is not None:
+        return _read(ticket)
     if ticket.requested_by_user_id != user.id and not _can_view_all(user):
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
     return _read(ticket)

@@ -15,6 +15,53 @@ ROLE_PERMISSIONS = {
     "billing": {"portal.read", "profile.view", "profile.update", "client.view", "invoices.view", "invoices.download", "payments.view", "communications.view", "communications.create"},
     "operations": {"portal.read", "profile.view", "profile.update", "client.view", "services.view", "equipment.view", "certificates.view", "communications.view", "communications.create"},
     "viewer": {"portal.read", "profile.view", "client.view", "quotations.view", "services.view", "equipment.view", "certificates.view", "invoices.view", "payments.view", "communications.view"},
+    "external_viewer": {
+        "mobile.access",
+        "work_orders.read_organization",
+        "equipment.read",
+        "field_sheets.read",
+    },
+    "external_operator_jr": {
+        "mobile.access",
+        "work_orders.read_organization",
+        "work_orders.create",
+        "work_orders.execute",
+        "equipment.read",
+        "equipment.write",
+        "field_sheets.read",
+        "field_sheets.capture",
+        "signatures.capture",
+        "mobile_tickets.create",
+        "mobile_tickets.read",
+    },
+    "external_operator_sr": {
+        "mobile.access",
+        "work_orders.read_organization",
+        "work_orders.create",
+        "work_orders.execute",
+        "equipment.read",
+        "equipment.write",
+        "field_sheets.read",
+        "field_sheets.capture",
+        "signatures.capture",
+        "mobile_tickets.create",
+        "mobile_tickets.read",
+    },
+}
+
+ROLE_PRESENTATION = {
+    "external_viewer": (
+        "Viewer externo",
+        "Lectura Mobile limitada a la organización vinculada.",
+    ),
+    "external_operator_jr": (
+        "Operativo Jr",
+        "Operación Mobile dentro de la organización, sin facultades de folios.",
+    ),
+    "external_operator_sr": (
+        "Operativo Sr",
+        "Operación Mobile senior; folios permanecen fuera de alcance.",
+    ),
 }
 
 
@@ -78,10 +125,16 @@ def ensure_portal_catalog(db: Session) -> None:
     for code, permission_codes in ROLE_PERMISSIONS.items():
         role = roles.get(code)
         if role is None:
-            role = ClientPortalRole(code=code, name=code.replace("_", " ").title(), description="Rol base institucional del Portal del Cliente", is_system=True, client_id=None)
+            name, description = ROLE_PRESENTATION.get(
+                code,
+                (code.replace("_", " ").title(), "Rol base institucional del Portal del Cliente"),
+            )
+            role = ClientPortalRole(code=code, name=name, description=description, is_system=True, client_id=None)
             db.add(role)
             db.flush()
             roles[code] = role
+        elif code in ROLE_PRESENTATION:
+            role.name, role.description = ROLE_PRESENTATION[code]
         existing = {item.permission_id for item in db.scalars(select(ClientPortalRolePermission).where(ClientPortalRolePermission.role_id == role.id)).all()}
         for permission_code in permission_codes:
             permission = permissions[permission_code]

@@ -12,11 +12,22 @@ def serialize(role: ClientPortalRole) -> dict:
     return {"id": role.id, "client_id": role.client_id, "code": role.code, "name": role.name, "description": role.description, "is_system": role.is_system, "permission_codes": [link.permission.code for link in role.role_permissions]}
 
 
-def list_roles(db: Session, client_id: int | None = None) -> list[dict]:
+def list_roles(
+    db: Session,
+    client_id: int | None = None,
+    *,
+    include_mobile: bool = True,
+) -> list[dict]:
     query = select(ClientPortalRole).where(ClientPortalRole.is_active.is_(True)).options(selectinload(ClientPortalRole.role_permissions).selectinload(ClientPortalRolePermission.permission)).order_by(ClientPortalRole.is_system.desc(), ClientPortalRole.name)
     if client_id is not None:
         query = query.where((ClientPortalRole.client_id.is_(None)) | (ClientPortalRole.client_id == client_id))
-    return [serialize(role) for role in db.scalars(query).all()]
+    roles = [serialize(role) for role in db.scalars(query).all()]
+    if not include_mobile:
+        roles = [
+            role for role in roles
+            if "mobile.access" not in role["permission_codes"]
+        ]
+    return roles
 
 
 def list_permissions(db: Session) -> list[ClientPortalPermission]:

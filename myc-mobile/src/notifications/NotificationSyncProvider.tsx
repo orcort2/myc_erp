@@ -71,7 +71,7 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
 
   const refreshUnread = useCallback(async () => {
     if (!userRef.current) return;
-    const response = await authorizedFetch(apiUrl('/notifications/unread-count'));
+    const response = await authorizedFetch(apiUrl('/mobile/v1/notifications/unread-count'));
     if (!response.ok) return;
     const payload = await response.json() as { count: number };
     setUnreadCount(payload.count);

@@ -52,7 +52,23 @@ def get_portal_company_roles(
     db: Session = Depends(get_db),
     context: PortalSecurityContext = Depends(require_portal_permission("roles.view")),
 ):
-    return list_roles(db, context.client.id)
+    return list_roles(db, context.client.id, include_mobile=False)
+
+
+def _ensure_portal_managed_roles(
+    db: Session,
+    client_id: int,
+    role_codes: list[str],
+) -> None:
+    assignable = {
+        role["code"]
+        for role in list_roles(db, client_id, include_mobile=False)
+    }
+    if not set(role_codes).issubset(assignable):
+        raise HTTPException(
+            status_code=403,
+            detail="Los perfiles de MYC Mobile sólo pueden ser asignados por staff MYC",
+        )
 
 
 @router.post("/users/invitations", response_model=PortalInvitationRead, status_code=201)
@@ -61,6 +77,7 @@ def invite_portal_company_user(
     db: Session = Depends(get_db),
     context: PortalSecurityContext = Depends(require_portal_permission("users.invite")),
 ):
+    _ensure_portal_managed_roles(db, context.client.id, payload.role_codes)
     return create_invitation(db, client_id=context.client.id, email=payload.email, full_name=payload.full_name, role_codes=payload.role_codes, notes=payload.notes, actor_id=context.user.id)
 
 
@@ -77,6 +94,7 @@ def update_portal_company_user_roles(
     context: PortalSecurityContext = Depends(require_portal_permission("users.manage")),
 ):
     _ensure_membership_scope(db, context.client.id, membership_id)
+    _ensure_portal_managed_roles(db, context.client.id, payload.role_codes)
     return replace_roles(db, membership_id, payload.role_codes, context.user.id)
 
 

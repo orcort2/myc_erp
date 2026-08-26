@@ -25,6 +25,7 @@ import type {
   CommunicationMessage,
   MentionDraft,
 } from '@/src/types/communication';
+import { hasPermission } from '@/src/permissions/permissions';
 
 type CommunicationsValue = {
   conversations: CommunicationConversation[];
@@ -68,9 +69,16 @@ export function CommunicationsProvider({ children }: PropsWithChildren) {
   const typingStop = useRef(new Map<number, ReturnType<typeof setTimeout>>());
   const typingLastSent = useRef(new Map<number, number>());
   messagesRef.current = messagesByConversation;
+  const canUseCommunications = Boolean(
+    user && (
+      user.actor_type === 'internal'
+      || hasPermission(user.permissions, 'communications.view')
+      || hasPermission(user.permissions, 'communications.create')
+    )
+  );
 
   const refreshConversations = useCallback(async () => {
-    if (!user) return;
+    if (!user || !canUseCommunications) return;
     try {
       const next = await fetchConversations(authorizedFetch);
       setConversations(next);
@@ -78,18 +86,18 @@ export function CommunicationsProvider({ children }: PropsWithChildren) {
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'No fue posible actualizar Comunicaciones');
     }
-  }, [authorizedFetch, user]);
+  }, [authorizedFetch, canUseCommunications, user]);
 
   const acknowledge = useCallback(async (
     conversationId: number, messages: CommunicationMessage[], read: boolean,
   ) => {
-    if (!user) return;
+    if (!user || !canUseCommunications) return;
     const ids = messages
       .filter((message) => message.id > 0 && message.sender.id !== user.id)
       .map((message) => message.id);
     if (!ids.length) return;
     await markMessages(authorizedFetch, conversationId, ids, read ? 'read' : 'delivered');
-  }, [authorizedFetch, user]);
+  }, [authorizedFetch, canUseCommunications, user]);
 
   const openConversation = useCallback(async (id: number) => {
     setIsLoading(true);
@@ -314,13 +322,13 @@ export function CommunicationsProvider({ children }: PropsWithChildren) {
   }), [authorizedFetch, refreshConversations, registerResynchronizer]);
 
   useEffect(() => {
-    if (user) refreshConversations().catch(() => undefined);
+    if (user && canUseCommunications) refreshConversations().catch(() => undefined);
     else {
       setConversations([]);
       setMessagesByConversation({});
       activeConversation.current = null;
     }
-  }, [refreshConversations, user]);
+  }, [canUseCommunications, refreshConversations, user]);
 
   useEffect(() => () => {
     typingExpiry.current.forEach(clearTimeout);

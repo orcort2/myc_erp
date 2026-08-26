@@ -57,6 +57,18 @@ class PortalRoleScope(StrEnum):
 class PortalPermissionCode(StrEnum):
     PORTAL_READ = "portal.read"
 
+    MOBILE_ACCESS = "mobile.access"
+    WORK_ORDERS_READ_ORGANIZATION = "work_orders.read_organization"
+    WORK_ORDERS_CREATE = "work_orders.create"
+    WORK_ORDERS_EXECUTE = "work_orders.execute"
+    EQUIPMENT_READ = "equipment.read"
+    EQUIPMENT_WRITE = "equipment.write"
+    FIELD_SHEETS_READ = "field_sheets.read"
+    FIELD_SHEETS_CAPTURE = "field_sheets.capture"
+    SIGNATURES_CAPTURE = "signatures.capture"
+    MOBILE_TICKETS_CREATE = "mobile_tickets.create"
+    MOBILE_TICKETS_READ = "mobile_tickets.read"
+
     PROFILE_VIEW = "profile.view"
     PROFILE_UPDATE = "profile.update"
 
@@ -96,6 +108,9 @@ SYSTEM_PORTAL_ROLE_CODES = frozenset(
         "billing",
         "operations",
         "viewer",
+        "external_viewer",
+        "external_operator_jr",
+        "external_operator_sr",
     }
 )
 

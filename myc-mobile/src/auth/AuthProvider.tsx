@@ -45,8 +45,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     user: session?.user ?? null,
     async login(email, password) {
       const next = await loginRequest(email, password);
-      const canUseLab = next.user.permissions.includes('*') || next.user.permissions.includes('lab_work_orders.use');
-      if (!canUseLab) throw new Error('Tu usuario no tiene acceso a las OT LAB');
+      const canUseMobile = next.user.permissions.includes('*') || next.user.permissions.includes('mobile.access');
+      if (!canUseMobile) throw new Error('Tu usuario no tiene acceso a MYC Mobile');
       await writeSession(next);
       setSession(next);
       return next.user;

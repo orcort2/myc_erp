@@ -4,14 +4,18 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.models.user import User
+from app.core.mobile.scope import ensure_lab_work_order_scope
+from app.core.mobile.security import (
+    MobileSecurityContext,
+    require_internal_mobile_permission,
+    require_mobile_permission,
+)
 from app.schemas.operational_ticket import (
     ReopenTicketCreate,
     TicketRead,
     TicketReject,
     TicketReview,
 )
-from app.services.auth import require_permission
 from app.services.operational_tickets import (
     approve_reopen_ticket,
     create_reopen_ticket,
@@ -31,9 +35,12 @@ router = APIRouter(
 def create_ticket(
     payload: ReopenTicketCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("tickets.create")),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.create", "tickets.create")
+    ),
 ) -> TicketRead:
-    return create_reopen_ticket(db, payload, current_user)
+    ensure_lab_work_order_scope(db, payload.work_order_id, context)
+    return create_reopen_ticket(db, payload, context.user)
 
 
 @router.get("", response_model=list[TicketRead])
@@ -45,15 +52,18 @@ def get_tickets(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("tickets.view_own")),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.read", "tickets.view_own")
+    ),
 ) -> list[TicketRead]:
     return list_tickets(
         db,
-        current_user,
+        context.user,
         ticket_status=status,
         search=search,
         offset=offset,
         limit=limit,
+        client_id=context.client_id,
     )
 
 
@@ -61,9 +71,12 @@ def get_tickets(
 def get_ticket_detail(
     ticket_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("tickets.view_own")),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.read", "tickets.view_own")
+    ),
 ) -> TicketRead:
-    return get_ticket(db, ticket_id, current_user)
+    ticket = get_ticket(db, ticket_id, context.user, client_id=context.client_id)
+    return ticket
 
 
 @router.post("/{ticket_id}/approve", response_model=TicketRead)
@@ -71,9 +84,9 @@ def approve_ticket(
     ticket_id: int,
     payload: TicketReview,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("tickets.review")),
+    context: MobileSecurityContext = Depends(require_internal_mobile_permission("tickets.review")),
 ) -> TicketRead:
-    return approve_reopen_ticket(db, ticket_id, payload, current_user)
+    return approve_reopen_ticket(db, ticket_id, payload, context.user)
 
 
 @router.post("/{ticket_id}/reject", response_model=TicketRead)
@@ -81,6 +94,6 @@ def reject_ticket_endpoint(
     ticket_id: int,
     payload: TicketReject,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("tickets.review")),
+    context: MobileSecurityContext = Depends(require_internal_mobile_permission("tickets.review")),
 ) -> TicketRead:
-    return reject_ticket(db, ticket_id, payload, current_user)
+    return reject_ticket(db, ticket_id, payload, context.user)

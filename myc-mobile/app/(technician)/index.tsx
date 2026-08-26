@@ -13,7 +13,7 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { useCommunications } from '@/src/communications/CommunicationsProvider';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { apiUrl } from '@/src/api/client';
-import { hasPermission } from '@/src/permissions/permissions';
+import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import type { OperationalTicket } from '@/src/types/operational-ticket';
 
 export default function TechnicianHome() {
@@ -22,9 +22,11 @@ export default function TechnicianHome() {
   const { unreadCount: communicationUnreadCount } = useCommunications();
 
   const [pendingTickets, setPendingTickets] = useState<number | null>(null);
+  const { canCreateWorkOrders, canReadWorkOrders, canReadTickets, canUseCommunications } =
+    deriveMobileCapabilities(user);
 
   useEffect(() => {
-    if (!user || !hasPermission(user.permissions, 'tickets.view_own')) return;
+    if (!user || !canReadTickets) return;
 
     authorizedFetch(
       apiUrl('/mobile/v1/technician/tickets?status=pending&limit=25')
@@ -36,7 +38,7 @@ export default function TechnicianHome() {
       )
       .then((tickets) => setPendingTickets(tickets.length))
       .catch(() => setPendingTickets(null));
-  }, [authorizedFetch, user]);
+  }, [authorizedFetch, canReadTickets, user]);
 
   if (isLoading) {
     return (
@@ -53,7 +55,9 @@ export default function TechnicianHome() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.eyebrow}>MYC · Área técnica</Text>
+        <Text style={styles.eyebrow}>
+          {user.actor_type === 'client' ? 'MYC · Organización vinculada' : 'MYC · Área técnica'}
+        </Text>
 
         <Text style={styles.title}>Hola, {user.full_name}</Text>
 
@@ -67,17 +71,19 @@ export default function TechnicianHome() {
           </Text>
         </Pressable>
 
-        <Pressable
+        {canReadWorkOrders && <Pressable
           style={styles.module}
           onPress={() => router.push('/(technician)/work-orders')}
         >
           <Text style={styles.moduleTitle}>OT&apos;s</Text>
           <Text style={styles.moduleText}>
-            Crear y cerrar órdenes de trabajo LAB
+            {canCreateWorkOrders
+              ? 'Crear y gestionar órdenes de trabajo LAB'
+              : 'Consultar órdenes de trabajo de tu organización'}
           </Text>
-        </Pressable>
+        </Pressable>}
 
-        <Pressable
+        {canUseCommunications && <Pressable
           style={styles.module}
           onPress={() => router.push('/(technician)/communications')}
         >
@@ -91,9 +97,9 @@ export default function TechnicianHome() {
           <Text style={styles.moduleText}>
             Mensajes, menciones y Tickets en tiempo real
           </Text>
-        </Pressable>
+        </Pressable>}
 
-        {hasPermission(user.permissions, 'tickets.view_own') && (
+        {canReadTickets && (
           <Pressable
             style={styles.module}
             onPress={() => router.push('/(technician)/tickets')}

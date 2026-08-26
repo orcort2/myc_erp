@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import String, cast, delete, func, select, text, update
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.client import Client
 from app.models.folio_sequence import InstitutionalFolioSequence
 from app.models.lab_work_order import (
     LabWorkOrder,
@@ -228,12 +229,25 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
     return result
 
 
-def create_work_order(db: Session, payload: LabWorkOrderCreate, user: User) -> LabWorkOrderRead:
+def create_work_order(
+    db: Session,
+    payload: LabWorkOrderCreate,
+    user: User,
+    *,
+    client_id: int | None = None,
+) -> LabWorkOrderRead:
+    values = payload.model_dump()
+    if client_id is not None:
+        client = db.get(Client, client_id)
+        if client is None or not client.is_active:
+            raise HTTPException(status_code=403, detail="Cliente Mobile no disponible")
+        values["client_name"] = client.commercial_name or client.legal_name
     work_order = LabWorkOrder(
         folio=_allocate_folio(db),
         sequence_number=1,
         created_by_user_id=user.id,
-        **payload.model_dump(),
+        client_id=client_id,
+        **values,
     )
     db.add(work_order)
     db.flush()
@@ -258,8 +272,11 @@ def list_work_orders(
     work_order_status: str | None = None,
     offset: int = 0,
     limit: int = 25,
+    client_id: int | None = None,
 ) -> list[LabWorkOrderListItem]:
     query = _query_with_relations()
+    if client_id is not None:
+        query = query.where(LabWorkOrder.client_id == client_id)
     if folio and folio.strip():
         query = query.where(cast(LabWorkOrder.folio, String).contains(folio.strip()))
     if client and client.strip():
@@ -435,12 +452,22 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
 
 
 def update_work_order(
-    db: Session, work_order_id: int, payload: LabWorkOrderUpdate, user: User
+    db: Session,
+    work_order_id: int,
+    payload: LabWorkOrderUpdate,
+    user: User,
+    *,
+    client_id: int | None = None,
 ) -> LabWorkOrderRead:
     work_order = _get(db, work_order_id, lock=True)
     group = _group(db, work_order, lock=True)
     _ensure_group_editable(group)
     updates = payload.model_dump(exclude_unset=True)
+    if client_id is not None:
+        client = db.get(Client, client_id)
+        if client is None or not client.is_active:
+            raise HTTPException(status_code=403, detail="Cliente Mobile no disponible")
+        updates["client_name"] = client.commercial_name or client.legal_name
     expected_edit_version = updates.pop("expected_edit_version", None)
     _check_edit_version(group, expected_edit_version)
     reception = updates.get("reception_date", work_order.reception_date)
@@ -616,6 +643,7 @@ def create_additional_work_order(db: Session, work_order_id: int, user: User) ->
         previous_work_order_id=source.id,
         sequence_number=source.sequence_number + 1,
         created_by_user_id=user.id,
+        client_id=source.client_id,
         revision_number=source.revision_number,
         edit_version=source.edit_version,
         reopened_at=source.reopened_at,

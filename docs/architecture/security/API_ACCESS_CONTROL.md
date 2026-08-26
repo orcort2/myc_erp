@@ -4,7 +4,7 @@
 >
 > Autoridad: Alta para clasificación y enforcement HTTP
 >
-> Corte verificado: 2026-08-17
+> Corte verificado: 2026-08-26
 
 # Control de acceso de la API
 
@@ -46,11 +46,17 @@ conversación. Su contrato específico está en
 | Autenticada con ownership | identidad más pertenencia validada por el servicio | conversaciones/recursos con alcance propio |
 | Consumidor del Motor | contexto de consumidor y organización | API pública v1 del Motor; no usa la sesión interna |
 | Portal cliente | access JWT, rol/permisos de portal y cliente derivado | listados y descargas aisladas por cliente |
+| Contexto Mobile | Mobile access JWT y `MobileSecurityContext` | actor interno o cliente, capacidades backend y alcance tenant derivado |
 | Administrativa | access JWT y permiso administrativo | usuarios, auditoría y configuración institucional |
 
 ## Excepciones públicas canónicas
 
-La allowlist básica contiene exactamente seis operaciones: `GET /`,
+La allowlist contiene las operaciones de bootstrap/autenticación expresamente
+registradas para ERP, Portal y MYC Mobile. En Mobile sólo `POST
+/api/mobile/v1/auth/login` y `POST /api/mobile/v1/auth/refresh` son públicas;
+`GET /api/mobile/v1/auth/me` y toda la superficie funcional exigen un
+`MobileSecurityContext` válido con `mobile.access`. La allowlist ERP contiene
+exactamente seis operaciones: `GET /`,
 `GET /api/health`, `GET /api/auth/registration-status`, `POST
 /api/auth/register`, `POST /api/auth/login` y `POST /api/auth/refresh`. El
 registro sólo permite crear el primer Administrador; después del bootstrap
@@ -63,13 +69,21 @@ operaciones `/api/public/resolution-engine/v1/*` conservan el
 `ENABLE_DEVELOPER_PORTAL`; el valor por defecto es falso. Swagger, ReDoc y
 OpenAPI dependen de `ENABLE_API_DOCS`, también falso por defecto.
 
-## Autenticación interna y JWT
+## Autenticación interna, Mobile y JWT
 
 Sólo `token_type=access` puede resolver una identidad HTTP interna. Refresh se
 acepta únicamente en renovación; tipo, firma y expiración son obligatorios, y
 el usuario se vuelve a resolver desde backend para comprobar actividad y roles
 vigentes. El frontend recibe permisos efectivos calculados desde los roles del
 backend; no envía ni declara autoridad.
+
+MYC Mobile resuelve su identidad exclusivamente en
+`backend/app/core/mobile/security.py`. Un actor interno conserva la autoridad
+de roles MYC; un actor cliente deriva `client_id` y membresía activa desde
+backend. El guard transversal clasifica la familia Mobile, mientras cada router
+aplica la capacidad concreta y el servicio impone ownership/tenant scope. Los
+JWT internos legacy sólo se aceptan como actores internos durante la transición;
+nunca se reinterpretan como cliente.
 
 En producción `Settings` rechaza secreto ausente, conocido, de ejemplo, menor
 de 32 caracteres, con baja diversidad o con menos de 100 bits de entropía

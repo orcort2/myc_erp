@@ -78,6 +78,7 @@ ROLE_PERMISSIONS = {
         "sat_catalogs.manage_aliases",
     },
     "Tecnico": {
+        "mobile.access",
         "resolution_center.read",
         *ACTIVITY_CONTRIBUTOR_PERMISSIONS,
         "equipment.read",
@@ -236,6 +237,7 @@ ROLE_PERMISSIONS = {
         "service_orders.repair.sign",
     },
     "Desarrollador": {
+        "mobile.access",
         "resolution_center.*",
         "service_orders.administration.restore.propose",
         "service_orders.administration.restore.authorize",

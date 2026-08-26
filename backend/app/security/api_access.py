@@ -30,6 +30,7 @@ class AccessType(StrEnum):
     CONSUMER = "resolution_engine_consumer"
     PORTAL = "client_portal_ownership"
     ADMINISTRATIVE = "administrative"
+    MOBILE = "mobile_context"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +51,8 @@ PUBLIC_OPERATIONS = {
     ("POST", "/api/auth/register"),
     ("POST", "/api/auth/login"),
     ("POST", "/api/auth/refresh"),
+    ("POST", "/api/mobile/v1/auth/login"),
+    ("POST", "/api/mobile/v1/auth/refresh"),
     ("POST", "/api/portal/auth/login"),
     ("POST", "/api/portal/auth/refresh"),
     ("POST", "/api/portal/registration"),
@@ -334,54 +337,21 @@ def classify_operation(method: str, path: str, tags: Iterable[str]) -> AccessPol
     if key == ("GET", "/api/auth/me"):
         return AccessPolicy(AccessType.AUTHENTICATED, "access_jwt")
 
-    if path.startswith("/api/mobile/v1/notifications"):
-        return AccessPolicy(AccessType.AUTHENTICATED, "internal_access_jwt")
-
-    if path.startswith("/api/mobile/v1/technician/field-sheets"):
+    if path == "/api/mobile/v1/auth/me":
         return AccessPolicy(
-            AccessType.PERMISSION,
-            "internal_access_jwt",
-            permission="field_sheets.read",
-            ownership="service_order.technician_id=current_user.id; also requires service_orders.read_assigned",
-            actor="internal_user",
+            AccessType.MOBILE,
+            "mobile_access_jwt",
+            permission="mobile.access",
+            actor="mobile_actor",
         )
 
-    if path.startswith("/api/mobile/v1/technician/sale-deliveries"):
+    if path.startswith("/api/mobile/v1/"):
         return AccessPolicy(
-            AccessType.PERMISSION,
-            "internal_access_jwt",
-            permission="service_orders.sales.deliver",
-            ownership="sale_delivery.technician_id=current_user.id",
-            actor="internal_user",
-        )
-
-    if path == "/api/mobile/v1/technician/lab-work-orders/export":
-        return _permission("lab_work_orders.export")
-
-    if (
-        method.upper() == "DELETE"
-        and path.startswith("/api/mobile/v1/technician/lab-work-orders/")
-        and "/equipment/" not in path
-    ):
-        return _permission("lab_work_orders.delete")
-
-    if path.startswith("/api/mobile/v1/technician/tickets"):
-        if path.endswith("/approve") or path.endswith("/reject"):
-            return _permission("tickets.review")
-        if method.upper() == "POST":
-            return _permission("tickets.create")
-        return _permission("tickets.view_own")
-
-    if path.startswith("/api/mobile/v1/technician/lab-work-orders"):
-        return _permission("lab_work_orders.use")
-
-    if path.startswith("/api/mobile/v1/technician/"):
-        return AccessPolicy(
-            AccessType.PERMISSION,
-            "internal_access_jwt",
-            permission="service_orders.read_assigned",
-            ownership="technician_id=current_user.id",
-            actor="internal_user",
+            AccessType.MOBILE,
+            "mobile_access_jwt",
+            permission="mobile.access",
+            ownership="MobileSecurityContext",
+            actor="mobile_actor",
         )
 
     tag_list = list(tags)
@@ -435,6 +405,28 @@ def enforce_api_access(
             raise HTTPException(status_code=403, detail="Permiso del portal insuficiente")
         request.state.portal_context = context
         return
+
+    if policy.access_type == AccessType.MOBILE:
+        from app.core.mobile.security import resolve_mobile_token
+
+        request.state.mobile_context = resolve_mobile_token(db, token)
+        return
+
+    if policy.access_type == AccessType.OWNERSHIP:
+        from app.core.mobile.security import resolve_mobile_token
+        from app.core.security import decode_token
+
+        auth_context = decode_token(token).get("auth_context", "internal")
+        if auth_context in {"mobile_internal", "mobile_client"}:
+            mobile_context = resolve_mobile_token(db, token)
+            if mobile_context.actor_type == "client" and not {
+                "communications.view",
+                "communications.create",
+            }.intersection(mobile_context.permissions):
+                raise HTTPException(status_code=403, detail="Comunicaciones no autorizadas")
+            request.state.mobile_context = mobile_context
+            request.state.current_user = mobile_context.user
+            return
 
     user = resolve_access_token_user(db, token)
     if policy.permission and not user_has_permission(user, policy.permission):

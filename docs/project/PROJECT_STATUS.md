@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: auditorías fechadas, cierres técnicos, bitácoras, especificaciones V2/V3 y cualquier declaración histórica de avance o sellado
 >
-> Corte verificado: 2026-08-24 — Verificación metrológica cerrada en código y en revisión física
+> Corte verificado: 2026-08-26 — contexto de seguridad Mobile internal/client terminado en código y en revisión física
 
 # Estado actual del ERP MYC
 
@@ -126,13 +126,16 @@ Tipo Producto/Servicio quedó desacoplado de la ruta ETS: Venta se selecciona
 explícitamente para cualquiera de los dos y ningún Producto se vuelve `sale`
 por su clasificación fiscal. El frente permanece **EN REVISIÓN**.
 
-El acceso móvil técnico backend está **TERMINADO — EN REVISIÓN**: ocho rutas de
-sólo lectura cubren ETS, OT, Equipos y Hojas de Campo con ownership por técnico,
-404 opaco y permisos compuestos. Esa entrega no modificó el ERP web ni la app.
-MYC Mobile incorpora ahora, como integración administrativa separada, listado y
-expediente productivo con eliminación por `service_orders.delete`, confirmación,
-tratamiento de `204/403/404/409`, exclusión LAB y reconciliación inmediata. La
-validación física iOS/Android permanece pendiente y no cambia el estado global.
+El contexto de seguridad MYC Mobile está **TERMINADO — EN REVISIÓN**: login y
+refresh propios distinguen staff/cliente, `mobile.access` reemplaza el gate
+general LAB, `MobileSecurityContext` resuelve permisos y membresía desde base,
+y una restricción parcial impide dos organizaciones activas. Viewer/Operativo
+Jr/Operativo Sr viven en RBAC externo. La superficie LAB aplica `client_id` en
+listas, detalle y writes; las ocho rutas productivas ETS/OT/Equipos/Hojas de
+Campo y Venta permanecen exclusivas de staff. Realtime y push aceptan contexto
+Mobile sin rooms ni dispositivos ajenos. La migración PostgreSQL local y el
+respaldo oficial están alineados con el head; faltan migración productiva y
+validación física iOS/Android. No cambia el estado global.
 
 1. La Contención de Seguridad Etapa 1 quedó **APROBADA Y CERRADA**:
    deny-by-default, JWT productivo seguro, clasificación 383/383 y portal
@@ -220,6 +223,11 @@ eliminación y nombres largos en
 Android/iPhone. El LAB es provisional
 y debe retirarse sólo después de exportación íntegra verificada.
 No cambia el estado ni el contrato de las OT/firmas productivas.
+
+Desde 2026-08-26, usuarios externos autorizados pueden consultar u operar LAB
+según permisos de su perfil y exclusivamente para su `Client`. Históricos con
+`client_id=null` permanecen internos. Viewer no recibe altas, cambios, firmas
+ni Tickets; Jr/Sr comparten la operación vigente, sin capacidad de folios.
 
 Desde el corte 2026-08-14 el LAB incorpora búsqueda SQL por folio/cliente,
 estado y paginación; Tickets propios/globales; aprobación y rechazo por

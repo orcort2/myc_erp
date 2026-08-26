@@ -39,7 +39,7 @@ export default function NotificationsScreen() {
     setError('');
     try {
       const offset = reset ? 0 : requestedOffset;
-      const response = await authorizedFetch(apiUrl(`/notifications?limit=${PAGE_SIZE}&offset=${offset}&unread_only=${unreadOnly}`));
+      const response = await authorizedFetch(apiUrl(`/mobile/v1/notifications?limit=${PAGE_SIZE}&offset=${offset}&unread_only=${unreadOnly}`));
       if (!response.ok) throw new Error(await readApiError(response));
       const page = await response.json() as NotificationPage;
       setItems((current) => reset ? page.items : [...current, ...page.items]);
@@ -57,7 +57,7 @@ export default function NotificationsScreen() {
 
   async function open(item: MobileNotification) {
     if (!item.read_at) {
-      await authorizedFetch(apiUrl(`/notifications/${item.id}/read`), { method: 'POST' });
+      await authorizedFetch(apiUrl(`/mobile/v1/notifications/${item.id}/read`), { method: 'POST' });
       setItems((current) => current.map((value) => value.id === item.id ? { ...value, read_at: new Date().toISOString() } : value));
       await refreshUnread();
     }
@@ -70,7 +70,7 @@ export default function NotificationsScreen() {
   }
 
   async function readAll() {
-    await authorizedFetch(apiUrl('/notifications/read-all'), { method: 'POST' });
+    await authorizedFetch(apiUrl('/mobile/v1/notifications/read-all'), { method: 'POST' });
     setItems((current) => current.map((item) => ({ ...item, read_at: item.read_at ?? new Date().toISOString() })));
     await refreshUnread();
   }

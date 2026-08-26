@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-08-17
+> Corte verificado: 2026-08-26
 
 # Alcance actual del ERP MYC
 
@@ -22,6 +22,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
 
 - Autenticación, usuarios, roles estáticos, permisos efectivos, guard API
   deny-by-default y auditoría.
+- Autenticación específica de MYC Mobile con actores `internal`/`client`,
+  `mobile.access`, contexto resuelto desde base, RBAC externo persistido,
+  máximo una membresía activa por usuario y scope de cliente sobre OT LAB,
+  equipos, firmas, PDF, revisiones, Tickets, push y realtime autorizado.
 - Dashboard y navegación principal.
 - Clientes, contactos dependientes, datos fiscales, constancias e importación/exportación.
 - Cotizaciones, catálogo de conceptos embebido, Servicios Simples/Compuestos, snapshots y PDF. Tipo Producto/Servicio es comercial/fiscal e independiente de `operational_category`; Venta puede seleccionarse con ambos tipos y un Producto con otra categoría no se convierte en `sale`. El snapshot conserva identidad/configuración por componente sin refresco silencioso al reabrir o editar. Un compuesto permanece como concepto comercial único y se expande sólo al crear el ETS.
@@ -277,6 +281,24 @@ implementado y forma parte del alcance vigente.
 
 Quedan fuera IA, cálculos metrológicos, otros tipos de Ticket, publicación EAS
 y extensión al agregado productivo ETS.
+
+## Alcance implementado 2026-08-26 — Seguridad y scope MYC Mobile
+
+- `User` permanece como identidad única; los tokens Mobile distinguen staff y
+  cliente sin convertir cuentas externas en roles internos o técnicos falsos.
+- Viewer externo, Operativo Jr y Operativo Sr son roles persistidos del RBAC
+  externo. `mobile.access` sólo abre sesión; permisos operativos se evalúan por
+  endpoint y la autoadministración del Portal no puede otorgarlos.
+- Un usuario externo conserva una sola membership `active`; suspendidas,
+  revocadas, rechazadas y pendientes permanecen como historia.
+- OT LAB creadas por cliente se vinculan al `Client` derivado y todas sus
+  listas, detalles y subrecursos aplican scope. Staff conserva el flujo previo.
+- Las superficies productivas Mobile de ETS, OT, Equipos, Hojas de Campo y
+  Venta permanecen bloqueadas para `client` hasta una fase explícita.
+
+Quedan fuera folios Mobile, reposición, eventos realtime de folios, cambio de
+organización, revocación server-side por JTI y renombrado del route group
+`(technician)`.
 
 ## Alcance implementado 2026-08-14 — Notificaciones móviles V1
 

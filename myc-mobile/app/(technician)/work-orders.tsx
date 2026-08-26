@@ -30,6 +30,7 @@ import {
   type SignaturePayload,
 } from '@/src/components/signatures/signature-flow-state';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
+import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import { affectsWorkOrders, RefreshGate } from '@/src/notifications/refresh-policy';
 import {
   canDeleteLabWorkOrder,
@@ -250,7 +251,14 @@ export default function WorkOrdersScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.workOrderId, user]);
 
-  const editable = workOrder?.status === 'draft';
+  const {
+    canCreateTickets,
+    canCreateWorkOrders,
+    canExecuteWorkOrders,
+    canManageEquipment,
+    canCaptureSignatures,
+  } = deriveMobileCapabilities(user);
+  const editable = workOrder?.status === 'draft' && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
   const canSaveEquipment = useMemo(
     () => equipment.instrument.trim() && equipment.brand.trim() && equipment.identification.trim() && equipment.serial_number.trim(),
@@ -678,7 +686,7 @@ export default function WorkOrdersScreen() {
           </Pressable>
         </View>
       </View>
-      <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>
+      {canCreateWorkOrders && <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>}
       {loading ? <ActivityIndicator style={styles.loader} /> : (
         <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
           {!!listError && (
@@ -770,13 +778,13 @@ export default function WorkOrdersScreen() {
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => (
-                    <Pressable key={item.id} style={styles.equipmentRow} onPress={() => editable && showEquipmentEditor(item)}>
+                    <Pressable key={item.id} style={styles.equipmentRow} onPress={() => editable && canManageEquipment && showEquipmentEditor(item)}>
                       <View style={styles.flex}><Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text><Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text></View>
                       <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
                     </Pressable>
                   ))}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
-                  {editable && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
+                  {editable && canManageEquipment && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
                   {editable && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
                   <Pressable disabled={!workOrder.equipment.length} style={[styles.primary, !workOrder.equipment.length && styles.disabled]} onPress={() => setStep('review')}><Text style={styles.primaryText}>Continuar</Text></Pressable>
                 </>
@@ -788,11 +796,11 @@ export default function WorkOrdersScreen() {
                   {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s)</Text>)}
                   <Text style={styles.notice}>Las firmas se capturarán una sola vez y se aplicarán a todos los PDFs del grupo. Después de firmar no se podrán agregar OT ni equipos.</Text>
                   <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Editar equipos</Text></Pressable>
-                  {canSkipSignaturesAfterReopen(workOrder) ? (
+                  {canExecuteWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
                     <Pressable style={styles.primary} onPress={completeGroup}><Text style={styles.primaryText}>Cerrar orden</Text></Pressable>
-                  ) : (
+                  ) : canCaptureSignatures ? (
                     <Pressable style={styles.primary} onPress={openSignatureFlow}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
-                  )}
+                  ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no capturar firmas.</Text>}
                 </>
               )}
 
@@ -818,7 +826,7 @@ export default function WorkOrdersScreen() {
                 <>
                   <Text style={styles.sectionTitle}>Grupo firmado</Text>
                   <Text style={styles.notice}>La misma sesión de firma quedó vinculada a {workOrder.related_work_orders.length} OT. El grupo ya está bloqueado para nuevas OT y equipos.</Text>
-                  <Pressable style={styles.primary} onPress={completeGroup}><Text style={styles.primaryText}>Finalizar grupo y generar PDFs</Text></Pressable>
+                  {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={completeGroup}><Text style={styles.primaryText}>Finalizar grupo y generar PDFs</Text></Pressable>}
                 </>
               )}
 
@@ -828,7 +836,7 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
                   <Pressable style={styles.primary} onPress={() => downloadPdf('print')}><Text style={styles.primaryText}>Ver / imprimir OT {workOrder.folio}</Text></Pressable>
                   <Pressable style={styles.secondary} onPress={() => downloadPdf('share')}><Text style={styles.secondaryText}>Compartir OT {workOrder.folio}</Text></Pressable>
-                  <Pressable style={styles.secondary} onPress={() => setTicketOpen(true)}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>
+                  {canCreateTickets && <Pressable style={styles.secondary} onPress={() => setTicketOpen(true)}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>}
                 </>
               )}
 
@@ -882,7 +890,7 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
-          {ticketOpen && (
+          {ticketOpen && canCreateTickets && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

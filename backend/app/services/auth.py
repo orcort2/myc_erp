@@ -225,6 +225,14 @@ def user_has_permission(user: User, permission: str) -> bool:
     return False
 
 
+def effective_user_permissions(user: User) -> set[str]:
+    permissions: set[str] = set()
+    for role in user.roles:
+        if role.is_active:
+            permissions.update(ROLE_PERMISSIONS.get(role.name, set()))
+    return permissions
+
+
 def require_permission(permission: str):
     def dependency(current_user: User = Depends(get_current_user)) -> User:
         if not user_has_permission(current_user, permission):

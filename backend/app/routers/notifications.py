@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models.user import User
+from app.core.mobile.security import MobileSecurityContext, get_mobile_context
 from app.schemas.notification import (
     NotificationListRead,
     NotificationMarkRead,
@@ -35,18 +36,76 @@ mobile_router = APIRouter(
 def post_push_device(
     payload: PushDeviceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: MobileSecurityContext = Depends(get_mobile_context),
 ):
-    return register_push_device(db, payload, current_user)
+    return register_push_device(db, payload, context.user)
 
 
 @mobile_router.delete("/devices/{device_id}", response_model=PushDeviceRead)
 def delete_push_device(
     device_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    context: MobileSecurityContext = Depends(get_mobile_context),
 ):
-    return deactivate_push_device(db, device_id, current_user)
+    return deactivate_push_device(db, device_id, context.user)
+
+
+@mobile_router.get("", response_model=NotificationListRead)
+def get_mobile_notifications(
+    unread_only: bool = Query(default=False),
+    notification_type: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(get_mobile_context),
+):
+    notifications, total = list_notifications(
+        db,
+        user_id=context.user.id,
+        unread_only=unread_only,
+        notification_type=notification_type,
+        offset=offset,
+        limit=limit,
+    )
+    return NotificationListRead(items=notifications, total=total)
+
+
+@mobile_router.get("/unread-count", response_model=NotificationUnreadCountRead)
+def get_mobile_notifications_unread_count(
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(get_mobile_context),
+):
+    return NotificationUnreadCountRead(
+        count=get_unread_notification_count(db, user_id=context.user.id)
+    )
+
+
+@mobile_router.post("/{notification_id}/read", response_model=NotificationRead)
+def post_mobile_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(get_mobile_context),
+):
+    notification = mark_notification_read(
+        db,
+        notification_id=notification_id,
+        user_id=context.user.id,
+    )
+    if notification is None:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    db.commit()
+    db.refresh(notification)
+    return notification
+
+
+@mobile_router.post("/read-all", response_model=NotificationMarkRead)
+def post_mobile_notifications_read_all(
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(get_mobile_context),
+):
+    mark_all_notifications_read(db, user_id=context.user.id)
+    db.commit()
+    return NotificationMarkRead(success=True)
 
 
 @router.get(
