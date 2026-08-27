@@ -493,16 +493,17 @@ Login interno técnico
 → equipos compactos (máximo 10 por OT)
 → al llenar 10: backend crea OT adicional y hereda generales
 → navegación por todas las OT del mismo root_work_order_id
-→ revisión del grupo completo
-→ botón LAB existente “Continuar a firmas”
+→ revisión del grupo histórico y estados por folio
+→ elegir “Finalizar grupo abierto” o “Finalizar sólo OT {folio}”
+→ grupal exige equipo en todas las OT draft participantes; individual sólo en la elegida
 → firma cliente (nombre trim + stroke real)
 → transición local
 → firma técnico (nombre trim + stroke real)
-→ validación final de root_work_order_id + lock anti-submit
-→ POST LAB único aunque signature_required=false en una OT inicial
-→ backend valida estado/equipos/sesión; error exacto conserva captura del grupo
-→ sesión compartida bloquea inmediatamente todo el grupo
-→ finalizar genera y congela un PDF por OT
+→ validación final del contexto de cohorte + lock anti-submit
+→ POST grupal o individual explícito aunque signature_required=false en una OT inicial
+→ backend bloquea raíz, versiona sesión y valida sólo participantes
+→ finalizar genera y congela PDF exclusivamente para la cohorte
+→ hermanas draft permanecen editables y una completed queda históricamente congelada
 → iOS abre impresión o compartir para el folio seleccionado
 → Administrador puede confirmar y eliminar una OT LAB individual
 → backend repara raíz/cadena y conserva recursos compartidos
@@ -512,11 +513,11 @@ Login interno técnico
 Dentro del canvas, Pointer Events y captura de puntero conservan el stroke y el
 scroll nativo se pausa sólo mientras el dedo dibuja; fuera del canvas vuelve a
 operar normalmente. Los puntos se guardan normalizados y se repintan con el DPR
-actual, por lo que una rotación no borra la firma. Refetch, objetos nuevos,
-rerender, cierre/reapertura visual y selección de una OT hermana conservan la
-captura si `root_work_order_id` no cambia. Una raíz distinta limpia nombres,
-strokes, `hasDrawing`, PNG y paso, crea el contexto vacío del grupo nuevo y no
-mantiene un caché que permita recuperar después el borrador anterior.
+actual, por lo que una rotación no borra la firma. Refetch, objetos nuevos y
+rerender conservan la captura si no cambia el contexto de cohorte. Grupo usa
+`root_work_order_id`; individual usa el ID de la OT. Cambiar modalidad, OT
+individual o raíz limpia nombres, strokes, `hasDrawing`, PNG y paso, sin caché
+recuperable.
 Un tap no habilita avance: `pointerup` elimina strokes sin dos puntos/distancia
 `0.01`, emite la captura final y TypeScript repite esa validación. El botón sólo
 se habilita después de recibir `postMessage` con un trazo significativo.
@@ -540,9 +541,10 @@ compacta `sequence_number`. `204`/`404` cierran el detalle y refrescan desde el
 backend; `403`, `409` o red mantienen la OT local. Ninguna llamada usa
 `/api/service-orders/...`.
 
-Desde 2026-08-14, una OT `completed` sólo vuelve a edición mediante Ticket. El
+Desde 2026-08-27, una OT `completed` sólo vuelve a edición mediante Ticket. El
 técnico solicita; la OT sigue cerrada; Calidad/autoridad rechaza o aprueba una
-política de firma; el backend crea snapshots del grupo y abre revisión N+1;
+política de firma; el backend crea snapshots de la cohorte de sesión y abre
+revisión N+1 sólo para ella;
 cada edición valida `edit_version`; los cambios estructurales invalidan la
 firma activa; el cierre exige firma válida, genera PDF nuevo y resuelve el
 Ticket. El PDF y firma anteriores permanecen consultables.

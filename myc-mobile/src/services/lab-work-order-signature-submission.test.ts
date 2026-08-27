@@ -6,7 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import type { SignaturePayload } from '../components/signatures/signature-flow-state';
 import type { LabWorkOrder } from '../types/lab-work-order';
-import { postLabGroupSignatures } from './lab-work-order-signature-submission';
+import {
+  postLabCompletion,
+  postLabGroupSignatures,
+  postLabSignatures,
+} from './lab-work-order-signature-submission';
 
 const payload: SignaturePayload = {
   client: {
@@ -78,17 +82,42 @@ test('the exact backend error propagates without clearing or replacing it locall
   );
 });
 
+test('individual signatures and completion use their explicit backend routes', async () => {
+  const calls: string[] = [];
+  const workOrder = { id: 812 } as LabWorkOrder;
+  const request = async <T>(path: string) => {
+    calls.push(path);
+    return workOrder as T;
+  };
+
+  await postLabSignatures({
+    payload,
+    request,
+    scope: 'individual',
+    signedAt: '2026-08-27T12:00:00.000Z',
+    workOrder,
+  });
+  await postLabCompletion({ request, scope: 'individual', workOrder });
+  await postLabCompletion({ request, scope: 'group', workOrder });
+
+  assert.deepEqual(calls, [
+    '/mobile/v1/technician/lab-work-orders/812/signatures/individual',
+    '/mobile/v1/technician/lab-work-orders/812/complete/individual',
+    '/mobile/v1/technician/lab-work-orders/812/complete',
+  ]);
+});
+
 test('applySignatures delegates to the POST without a signature_required guard', () => {
   const screenSource = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
     'utf8',
   );
   const handlerStart = screenSource.indexOf('async function applySignatures');
-  const handlerEnd = screenSource.indexOf('async function completeGroup', handlerStart);
+  const handlerEnd = screenSource.indexOf('async function completeClosure', handlerStart);
   const handlerSource = screenSource.slice(handlerStart, handlerEnd);
 
   assert.ok(handlerStart >= 0 && handlerEnd > handlerStart);
-  assert.match(handlerSource, /workOrder\.root_work_order_id !== capturedContextId/);
-  assert.match(handlerSource, /postLabGroupSignatures\(\{ payload, request, signedAt, workOrder \}\)/);
+  assert.match(handlerSource, /labClosureContextId\(workOrder, closureScope\) !== capturedContextId/);
+  assert.match(handlerSource, /postLabSignatures\(\{/);
   assert.doesNotMatch(handlerSource, /signature_required/);
 });

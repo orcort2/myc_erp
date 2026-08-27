@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-08-26
+> Corte verificado: 2026-08-27
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -13,6 +13,10 @@ Un grupo anticipado reutiliza `root_work_order_id`; no introduce otra identidad 
 `operator_client_id` es exclusivamente el tenant derivado de `MobileSecurityContext`; el payload externo no puede elegirlo. `client_name`, dirección y contacto son el snapshot documental del cliente final. Operativo Sr requiere `work_orders.group.request`; Viewer y Jr no la reciben. El listado externo conserva la regla organizacional vigente: un actor autorizado ve las solicitudes de su `operator_client_id`, nunca las de otro tenant. La creación directa y decisiones administrativas usan permisos `lab_work_order_groups.*` y actor `internal`.
 
 Ningún actor `client` puede usar POST de alta individual, grupo directo ni crear una OT adicional. Esta frontera se aplica en router además del RBAC y la UI. Staff autorizado conserva alta individual y puede materializar directamente un grupo desde Web o Mobile reutilizando `create_work_order_group`; no crea `WorkOrderGroupRequest` ni pasa por aprobación.
+El rol interno Técnico recibe deliberadamente `lab_work_order_groups.create`,
+pero no `lab_work_order_groups.requests.read`, `.claim` ni `.decide`: puede
+materializar directamente y no entra al workflow administrativo temporal del
+operador externo.
 
 La bandeja administrativa Mobile compone `OperationalTicket` y `WorkOrderGroupRequest` como proyecciones separadas y calcula pendientes accionables con dos consultas acotadas, sin endpoint/modelo agregado nuevo. `WorkOrderGroupRequest` continúa siendo la fuente de verdad. Durante `pending`, `conversation_id` es nulo; el claim atómico asigna handler, crea o reutiliza la conversación, agrega exclusivamente requester/handler y sólo entonces publica mensajes system. Approve/reject reutilizan ese vínculo sin duplicarlo.
 
@@ -42,8 +46,9 @@ asignación a roles ordinarios. El guard transversal conserva deny-by-default y
 - `LabWorkOrderEquipment`: hasta diez equipos exclusivos de la OT; sólo
   instrumento, marca, identificación, serie, informe opcional y condición
   física booleana.
-- `LabWorkOrderSignatureSession`: una sesión versionada por grupo, con actor y
-  fecha del servidor.
+- `LabWorkOrderSignatureSession`: una sesión de cohorte versionada por raíz
+  histórica, con actor y fecha del servidor. Una raíz puede conservar varias
+  sesiones y cada OT referencia la sesión que realmente la cerró.
 - `OperationalTicket` y `LabWorkOrderRevision`: solicitud operativa y snapshot
   documental inmutable de cada cierre anterior.
 - `LabWorkOrderSignature`: exactamente una firma de técnico y una de cliente,
@@ -52,24 +57,43 @@ asignación a roles ordinarios. El guard transversal conserva deny-by-default y
 Sólo `created_by_user_id` y `signed_by_user_id` referencian `users` para
 trazabilidad. No hay FK a agregados productivos.
 
-## Grupo de captura y firma
+## Grupo histórico y cohorte de cierre
 
 La OT raíz se autorreferencia mediante `root_work_order_id`. Las adicionales
 conservan además `previous_work_order_id` y `sequence_number`; el folio visible
-nunca se usa como FK. Los datos generales se capturan una vez y toda edición
-previa a firma se propaga al grupo.
+nunca se usa como FK. Los datos generales se capturan una vez. Mientras existan
+hermanas `draft`, una edición general se propaga exclusivamente a esas
+integrantes editables; una OT `completed` queda congelada aunque otra hermana
+cambie después.
 
 Una OT adicional sólo puede nacer desde la última OT del grupo cuando contiene
 10 equipos. Hereda datos generales, empieza con 0/10 y recibe su folio en el
 backend. Cada OT conserva su PDF individual.
 
-En el cierre inicial, la firma se captura una sola vez después de revisar todo el grupo. Una única
-`LabWorkOrderSignatureSession` conserva los dos binarios y cada OT referencia
-esa misma sesión. En cuanto se firma, todas las OT pasan a
-`ready_for_signatures`; desde ese momento se rechazan nuevas OT, equipos,
-ediciones o eliminaciones operativas. La eliminación administrativa individual
-permanece disponible con permiso específico. La finalización genera y congela todos los PDFs y
-transiciona el grupo completo a `completed`.
+`root_work_order_id`, `previous_work_order_id`, `sequence_number` y los folios
+representan parentesco operativo/histórico; nunca se recalculan por cerrar una
+cohorte. `_group()` conserva expresamente esa semántica completa.
+
+El cierre ofrece dos operaciones backend explícitas. El cierre grupal toma las
+OT `draft` abiertas de la raíz, exige al menos un equipo en cada participante,
+crea una sesión Cliente + Técnico y la asigna sólo a ellas. El cierre individual
+exige equipo únicamente en la OT elegida y crea una sesión exclusiva. En ambos
+casos la sesión lleva versión única `(root_work_order_id, version)`; el servicio
+bloquea primero la raíz histórica para serializar `max(version) + 1`.
+
+La finalización opera sobre las OT no completadas que comparten la sesión del
+folio seleccionado. Sólo esas filas reciben PDF, hash, fecha y `completed`; las
+hermanas abiertas conservan edición y una OT ya completada no se regenera ni
+invalida. Agregar una OT evolutiva continúa permitido sólo desde la última OT
+`draft` con diez equipos. La eliminación administrativa individual permanece
+disponible con permiso específico.
+
+Auditoría distingue `individual_signed`/`individual_completed` de los eventos
+grupales y registra raíz, sesión, IDs participantes y `scope`. No se infiere la
+modalidad por el número de integrantes: el detalle proyecta `signature_scope`
+desde esa evidencia para que Mobile reanude el endpoint correcto tras refetch.
+Sólo sesiones legacy sin evento estructurado usan el tamaño de la sesión como
+fallback compatible.
 
 Este contrato es una excepción temporal y aislada a los ciclos de firma del
 ETS productivo descritos por ADR-004/BR-007; no los modifica.
@@ -98,7 +122,10 @@ draft → ready_for_signatures → completed
                    snapshot → draft (revisión N+1)
 ```
 
-La reapertura sólo ocurre al aprobar un Ticket y afecta coherentemente al grupo.
+La reapertura sólo ocurre al aprobar un Ticket y afecta a la cohorte histórica
+identificada por la `signature_session_id` de la OT solicitada. Una sesión
+individual reabre sólo esa OT; una sesión compartida reabre sólo sus
+participantes, nunca hermanas de otra cohorte.
 El PDF y la firma anteriores permanecen en la revisión histórica. La política
 `preserve` admite cambios no sustantivos; cualquier cambio estructural invalida
 automáticamente la firma activa y exige una nueva sesión. El contrato detallado
@@ -160,20 +187,16 @@ normalizada acumulada mínima de `0.01`; un tap o movimiento despreciable se
 retira antes de `postMessage`, y la validación TypeScript vuelve a comprobar la
 misma condición antes de habilitar avance o envío.
 
-La captura temporal se eleva a la pantalla OT y se liga exclusivamente a
-`root_work_order_id`, identidad canónica estable del grupo LAB. Refetch,
-reemplazo del objeto `workOrder`, rerender, rotación, cierre/reapertura visual
-del modal y navegación entre OT hermanas conservan nombres, paso, strokes,
-`hasDrawing` y PNG mientras la raíz sea la misma. Ningún `id` de OT individual,
-referencia React, versión, timestamp, equipo ni estado visual participa en esa
-identidad.
+La captura temporal se eleva a la pantalla OT y se liga al contexto de cierre:
+`root_work_order_id` para cierre grupal y `work_order.id` para cierre individual.
+Refetch, rerender y rotación conservan el borrador sólo si ese contexto no
+cambia. Cambiar de modalidad o elegir otra OT individual descarta la captura,
+evitando aplicar firmas a una cohorte distinta.
 
-Al recibir una raíz distinta se sustituye el borrador completo por uno vacío ya
-asociado al grupo nuevo; por ello Grupo A → Grupo B → Grupo A no recupera la
-captura anterior. Iniciar una OT sin raíz, eliminar el contexto o completar el
-POST también retira el borrador. Antes del envío se vuelve a comparar la raíz
-capturada con la del grupo abierto. Un error de backend conserva nombres y
-strokes sólo para reintento en ese mismo grupo; un lock lógico impide doble
+Al recibir un contexto distinto se sustituye el borrador completo por uno vacío
+y no existe caché recuperable. Antes del envío se vuelve a comparar el contexto
+capturado con la modalidad y OT activas. Un error backend conserva nombres y
+strokes sólo para reintento en esa misma cohorte; un lock lógico impide doble
 transición y doble POST.
 
 `signature_required` no autoriza la firma inicial. Una OT LAB nueva `draft`
@@ -225,8 +248,10 @@ LAB tras `204` o `404`. `403`, `409` y errores de red conservan el detalle.
 | POST | `/{id}/equipment` | agregar hasta 10 |
 | PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / eliminar antes de firma |
 | POST | `/{id}/additional` | crear la siguiente OT del grupo |
-| POST | `/{id}/signatures` | crear una sesión y bloquear el grupo |
-| POST | `/{id}/complete` | generar todos los PDFs y completar |
+| POST | `/{id}/signatures` | firmar la cohorte de OT abiertas del grupo histórico |
+| POST | `/{id}/signatures/individual` | firmar únicamente la OT seleccionada |
+| POST | `/{id}/complete` | completar la cohorte compartida del folio seleccionado |
+| POST | `/{id}/complete/individual` | completar idempotentemente una sesión exclusiva |
 | GET | `/{id}/pdf` | entregar PDF individual final |
 | GET | `/{id}/revisions` | historial documental |
 | GET | `/{id}/revisions/{revision}/pdf` | PDF histórico inmutable |
@@ -245,7 +270,9 @@ signatures/session-{id}-{type}.png
 pdf/OT-{folio}.pdf
 ```
 
-El manifiesto registra totales, folios y SHA-256 de PDFs/firmas. Antes de
+El ZIP admite varias sesiones/versiones para una misma raíz y cada fila de
+`work_orders.json` conserva su `signature_session_id`. El manifiesto registra
+totales, folios y SHA-256 de PDFs/firmas. Antes de
 retirar el LAB se debe: bloquear nuevas altas; exportar; comparar total de OT y
 equipos; verificar checksums y abrir muestras; custodiar el ZIP; después
 retirar app, rutas, servicios, permisos y modelos; y sólo al final ejecutar una

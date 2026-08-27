@@ -15,7 +15,7 @@ from app.models.client_portal_membership import ClientPortalMembership
 from app.models.client_portal_membership_role import ClientPortalMembershipRole
 from app.models.client_portal_role import ClientPortalRole
 from app.models.communication import CommunicationConversation
-from app.models.lab_work_order import LabWorkOrderGroupRequest
+from app.models.lab_work_order import LabWorkOrder, LabWorkOrderGroupRequest
 from app.models.notification import PushDevice
 from app.models.user import Role, User
 from app.schemas.lab_work_order import LabWorkOrderCreate
@@ -383,32 +383,91 @@ def test_only_sr_creates_group_request_and_other_tenant_cannot_list_it(mobile_se
 
 def test_internal_cannot_use_external_request_but_can_create_direct_group(mobile_security_api):
     api, db, data = mobile_security_api
-    staff_response = api.post(
-        "/api/mobile/v1/technician/lab-work-orders/groups",
-        headers=_headers(_login(api, data["staff"].email)),
-        json={**_work_order_payload("Sin permiso"), "quantity": 2},
-    )
-    assert staff_response.status_code == 403
-
-    token = _login(api, data["admin"].email)
-    headers = _headers(token)
-    payload = {**_work_order_payload("Cliente directo"), "quantity": 3}
+    staff_login = _login(api, data["staff"].email)
+    assert staff_login.status_code == 200, staff_login.text
+    staff_user = staff_login.json()["user"]
+    assert staff_user["actor_type"] == "internal"
+    assert "lab_work_order_groups.create" in staff_user["permissions"]
+    assert not {
+        "lab_work_order_groups.requests.read",
+        "lab_work_order_groups.requests.claim",
+        "lab_work_order_groups.requests.decide",
+    }.intersection(staff_user["permissions"])
+    staff_headers = _headers(staff_login)
+    payload = {**_work_order_payload("Cliente directo Técnico"), "quantity": 3}
 
     external_route = api.post(
         "/api/mobile/v1/technician/lab-work-orders/group-requests",
-        headers=headers,
+        headers=staff_headers,
         json=payload,
     )
     assert external_route.status_code == 403
 
     direct = api.post(
         "/api/mobile/v1/technician/lab-work-orders/groups",
-        headers=headers,
+        headers=staff_headers,
         json=payload,
     )
     assert direct.status_code == 201, direct.text
-    assert [item["folio"] for item in direct.json()["related_work_orders"]] == [6400, 6401, 6402]
+    direct_body = direct.json()
+    assert [item["folio"] for item in direct_body["related_work_orders"]] == [
+        6400,
+        6401,
+        6402,
+    ]
+    assert set(db.scalars(select(LabWorkOrder.root_work_order_id)).all()) == {
+        direct_body["id"]
+    }
+    assert db.scalar(select(func.count(LabWorkOrder.id))) == 3
     assert db.scalar(select(func.count(LabWorkOrderGroupRequest.id))) == 0
+
+    client_headers = _headers(_login(api, data["sr"].email))
+    requested = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        headers=client_headers,
+        json={**_work_order_payload("Cliente externo autorizado"), "quantity": 2},
+    )
+    assert requested.status_code == 201, requested.text
+    request_id = requested.json()["id"]
+    assert requested.json()["status"] == "pending"
+    assert requested.json()["folios"] == []
+
+    client_direct = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/groups",
+        headers=client_headers,
+        json={**_work_order_payload("Directo externo prohibido"), "quantity": 2},
+    )
+    assert client_direct.status_code == 403
+
+    assert api.get(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests/review",
+        headers=staff_headers,
+    ).status_code == 403
+    assert api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/group-requests/{request_id}/claim",
+        headers=staff_headers,
+    ).status_code == 403
+    assert api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/group-requests/{request_id}/approve",
+        headers=staff_headers,
+    ).status_code == 403
+    assert api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/group-requests/{request_id}/reject",
+        headers=staff_headers,
+        json={"reason": "No debe poder decidir"},
+    ).status_code == 403
+    assert db.scalar(
+        select(LabWorkOrderGroupRequest.status).where(
+            LabWorkOrderGroupRequest.id == request_id
+        )
+    ) == "pending"
+
+    admin_headers = _headers(_login(api, data["admin"].email))
+    claimed = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/group-requests/{request_id}/claim",
+        headers=admin_headers,
+    )
+    assert claimed.status_code == 200, claimed.text
 
 
 def test_client_cannot_create_direct_group(mobile_security_api):
@@ -487,6 +546,17 @@ def test_client_scope_blocks_cross_tenant_list_read_write_and_subresources(
         ).status_code
         == 404
     )
+    assert (
+        api.post(
+            f"{base}/signatures/individual",
+            headers=_headers(other),
+            json={"technician": signature, "client": signature},
+        ).status_code
+        == 404
+    )
+    assert api.post(
+        f"{base}/complete/individual", headers=_headers(other)
+    ).status_code == 404
     assert api.get(f"{base}/pdf", headers=_headers(other)).status_code == 404
     assert api.get(f"{base}/revisions", headers=_headers(other)).status_code == 404
     assert (

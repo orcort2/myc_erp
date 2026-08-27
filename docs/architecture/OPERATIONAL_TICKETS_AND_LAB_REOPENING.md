@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-08-14
+> Corte verificado: 2026-08-27
 >
 > Alcance: Tickets operativos y reapertura documental controlada de OT LAB
 
@@ -13,8 +13,8 @@ OT completed
   → técnico crea REOPEN_WORK_ORDER
   → ticket pending; la OT permanece cerrada
   → revisor rechaza, o aprueba con preserve/invalidate
-  → snapshot inmutable de cada OT del grupo y PDF anterior
-  → grupo draft, revisión N+1, ticket in_progress
+  → snapshot inmutable de cada OT de la cohorte de firma y PDF anterior
+  → cohorte draft, revisión N+1, ticket in_progress
   → edición con edit_version
   → cambio crítico invalida automáticamente la firma activa
   → firma nueva si es requerida
@@ -29,23 +29,25 @@ reapertura en la misma transacción y deja el ticket directamente
 
 ## Inmutabilidad y revisiones
 
-Antes de reabrir, cada integrante del grupo genera un
+Antes de reabrir, cada integrante de la cohorte que comparte la
+`signature_session_id` genera un
 `LabWorkOrderRevision` con snapshot de datos/equipos, sesión de firma, PDF,
 checksum y número de revisión. El registro activo incrementa
 `revision_number`, limpia únicamente su PDF corriente y conserva el folio.
 Los PDFs históricos se descargan por revisión y nunca se sobrescriben.
 
-Las firmas históricas tampoco se borran. La restricción de sesión cambia de
-una sesión única por raíz a una versión única por `(root_work_order_id,
-version)`, permitiendo una nueva sesión sin duplicar firmas dentro de una
-misma revisión.
+Las firmas históricas tampoco se borran. Una sesión individual reabre sólo su
+OT; una sesión compartida reabre sólo sus integrantes. Las hermanas de otra
+cohorte bajo la misma raíz no reciben snapshot, revisión ni desbloqueo. La
+versión continúa siendo única por `(root_work_order_id, version)`.
 
 ## Clasificación determinista de cambios
 
 Pueden preservar firma: contacto, teléfono, correo, código postal, ciudad,
 estado, orden de compra, observaciones y `report_number` de equipo.
 
-Invalidan automáticamente la firma activa del grupo: cliente, fechas,
+Invalidan automáticamente la firma activa de los miembros abiertos afectados:
+cliente, fechas,
 domicilio, agregar/eliminar OT o equipo, instrumento, marca, identificación,
 serie y condición física. La autorización `preserve` no puede evitar esta
 regla backend. La autorización `invalidate` exige nuevas firmas desde el
@@ -95,7 +97,7 @@ independiente o conjunta.
 
 ## Auditoría y concurrencia
 
-Se auditan creación, rechazo, aprobación/reapertura, campos modificados,
+Se auditan creación, rechazo, aprobación/reapertura de la cohorte, campos modificados,
 invalidación automática, firma, cierre y actores. La resolución adquiere un
 `FOR UPDATE` exclusivamente sobre la fila de `operational_tickets`; las
 relaciones eager-loaded se consultan después dentro de la misma transacción y

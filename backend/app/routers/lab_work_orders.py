@@ -22,6 +22,7 @@ from app.schemas.operational_ticket import LabRevisionRead
 from app.services.lab_work_orders import (
     add_equipment,
     complete_group,
+    complete_individual,
     create_additional_work_order,
     create_work_order,
     create_work_order_group,
@@ -37,6 +38,7 @@ from app.services.lab_work_orders import (
     get_work_order,
     list_work_orders,
     sign_group,
+    sign_individual,
     update_equipment,
     update_work_order,
 )
@@ -378,6 +380,19 @@ def create_lab_group_signatures(
     return sign_group(db, work_order_id, payload, context.user)
 
 
+@router.post("/{work_order_id}/signatures/individual", response_model=LabWorkOrderRead)
+def create_lab_individual_signatures(
+    work_order_id: int,
+    payload: LabSignatureGroupWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("signatures.capture", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return sign_individual(db, work_order_id, payload, context.user)
+
+
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)
 def complete_lab_group(
     work_order_id: int,
@@ -388,6 +403,18 @@ def complete_lab_group(
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return complete_group(db, work_order_id, context.user)
+
+
+@router.post("/{work_order_id}/complete/individual", response_model=LabWorkOrderRead)
+def complete_lab_individual(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.execute", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return complete_individual(db, work_order_id, context.user)
 
 
 @router.get("/{work_order_id}/pdf")

@@ -37,9 +37,13 @@ from app.models.communication import CommunicationConversation, CommunicationMes
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
 from app.schemas.operational_ticket import TicketReject, TicketReview
-from app.schemas.lab_work_order import LabWorkOrderGroupCreate
+from app.schemas.lab_work_order import LabSignatureGroupWrite, LabWorkOrderGroupCreate
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
-from app.services.lab_work_orders import _allocate_folio, create_additional_work_order
+from app.services.lab_work_orders import (
+    _allocate_folio,
+    create_additional_work_order,
+    sign_individual,
+)
 from app.services.lab_work_orders import delete_work_order
 from app.services.lab_work_orders import create_group_request, claim_group_request, create_work_order_group, reject_group_request
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket
@@ -511,6 +515,335 @@ def test_one_signature_session_completes_and_locks_entire_group(lab_context):
         assert "Avenida Ejemplo 123, Tlaquepaque" not in rendered_text
 
 
+def _create_anticipated_lab_group(
+    client: TestClient, tokens: dict[str, str], *, quantity: int = 3
+) -> tuple[dict, list[dict]]:
+    created = client.post(
+        "/api/lab-work-order-groups",
+        json={**create_payload("Cohortes LAB"), "quantity": quantity},
+        headers=auth(tokens["admin"]),
+    )
+    assert created.status_code == 201, created.text
+    root = created.json()
+    return root, root["related_work_orders"]
+
+
+def test_partial_individual_then_open_group_closure_preserves_historical_group(
+    lab_context,
+):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    root, related = _create_anticipated_lab_group(client, tokens)
+    root_id, second_id, third_id = [item["id"] for item in related]
+    root_endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root_id}"
+    second_endpoint = f"/api/mobile/v1/technician/lab-work-orders/{second_id}"
+    third_endpoint = f"/api/mobile/v1/technician/lab-work-orders/{third_id}"
+
+    added = client.post(
+        f"{root_endpoint}/equipment", json=equipment_payload(1), headers=headers
+    )
+    assert added.status_code == 201, added.text
+    group_sign = client.post(
+        f"{root_endpoint}/signatures", json=signatures_payload(), headers=headers
+    )
+    assert group_sign.status_code == 409
+
+    individual_sign = client.post(
+        f"{root_endpoint}/signatures/individual",
+        json=signatures_payload(),
+        headers=headers,
+    )
+    assert individual_sign.status_code == 200, individual_sign.text
+    session_a = individual_sign.json()["signature_session_id"]
+    assert session_a is not None
+    assert individual_sign.json()["signature_scope"] == "individual"
+    assert client.post(f"{root_endpoint}/complete", headers=headers).status_code == 409
+    assert client.get(f"{second_endpoint}/pdf", headers=headers).status_code == 409
+
+    individual_complete = client.post(
+        f"{root_endpoint}/complete/individual", headers=headers
+    )
+    assert individual_complete.status_code == 200, individual_complete.text
+    completed_root = individual_complete.json()
+    assert completed_root["status"] == "completed"
+    assert client.post(
+        f"{root_endpoint}/complete/individual", headers=headers
+    ).status_code == 200
+    assert client.post(
+        f"{root_endpoint}/signatures/individual",
+        json=signatures_payload(),
+        headers=headers,
+    ).status_code == 409
+    assert client.patch(
+        root_endpoint, json={"notes": "No debe editarse"}, headers=headers
+    ).status_code == 409
+
+    frozen = {
+        "signature_session_id": completed_root["signature_session_id"],
+        "final_pdf_sha256": completed_root["final_pdf_sha256"],
+        "client_name": completed_root["client_name"],
+        "root_work_order_id": completed_root["root_work_order_id"],
+        "sequence_number": completed_root["sequence_number"],
+    }
+    frozen_pdf_at = datetime.fromisoformat(
+        completed_root["final_pdf_generated_at"].replace("Z", "+00:00")
+    ).replace(tzinfo=None)
+    frozen_completed_at = datetime.fromisoformat(
+        completed_root["completed_at"].replace("Z", "+00:00")
+    ).replace(tzinfo=None)
+    with factory() as db:
+        frozen_pdf = db.get(LabWorkOrder, root_id).final_pdf
+
+    second = client.get(second_endpoint, headers=headers).json()
+    changed = client.patch(
+        second_endpoint,
+        json={
+            "client_name": "Cohortes LAB abiertas",
+            "expected_edit_version": second["edit_version"],
+        },
+        headers=headers,
+    )
+    assert changed.status_code == 200, changed.text
+    assert client.post(
+        f"{second_endpoint}/equipment",
+        json={
+            **equipment_payload(2),
+            "expected_edit_version": changed.json()["edit_version"],
+        },
+        headers=headers,
+    ).status_code == 201
+    third = client.get(third_endpoint, headers=headers).json()
+    assert client.post(
+        f"{third_endpoint}/equipment",
+        json={
+            **equipment_payload(3),
+            "expected_edit_version": third["edit_version"],
+        },
+        headers=headers,
+    ).status_code == 201
+
+    root_after_edits = client.get(root_endpoint, headers=headers).json()
+    assert {key: root_after_edits[key] for key in frozen} == frozen
+    assert datetime.fromisoformat(
+        root_after_edits["final_pdf_generated_at"].replace("Z", "+00:00")
+    ).replace(tzinfo=None) == frozen_pdf_at
+    assert datetime.fromisoformat(
+        root_after_edits["completed_at"].replace("Z", "+00:00")
+    ).replace(tzinfo=None) == frozen_completed_at
+
+    signed_open_cohort = client.post(
+        f"{second_endpoint}/signatures",
+        json=signatures_payload(),
+        headers=headers,
+    )
+    assert signed_open_cohort.status_code == 200, signed_open_cohort.text
+    session_b = signed_open_cohort.json()["signature_session_id"]
+    assert session_b not in {None, session_a}
+    assert signed_open_cohort.json()["signature_scope"] == "group"
+    related_after_sign = signed_open_cohort.json()["related_work_orders"]
+    assert [item["status"] for item in related_after_sign] == [
+        "completed",
+        "ready_for_signatures",
+        "ready_for_signatures",
+    ]
+    assert [item["signature_session_id"] for item in related_after_sign] == [
+        session_a,
+        session_b,
+        session_b,
+    ]
+    assert client.post(
+        f"{second_endpoint}/complete/individual", headers=headers
+    ).status_code == 409
+
+    completed_open_cohort = client.post(
+        f"{second_endpoint}/complete", headers=headers
+    )
+    assert completed_open_cohort.status_code == 200, completed_open_cohort.text
+    assert all(
+        item["status"] == "completed"
+        for item in completed_open_cohort.json()["related_work_orders"]
+    )
+    root_final = client.get(root_endpoint, headers=headers).json()
+    assert {key: root_final[key] for key in frozen} == frozen
+    assert datetime.fromisoformat(
+        root_final["final_pdf_generated_at"].replace("Z", "+00:00")
+    ).replace(tzinfo=None) == frozen_pdf_at
+    assert datetime.fromisoformat(
+        root_final["completed_at"].replace("Z", "+00:00")
+    ).replace(tzinfo=None) == frozen_completed_at
+
+    with factory() as db:
+        group = list(
+            db.scalars(
+                select(LabWorkOrder).order_by(LabWorkOrder.sequence_number)
+            )
+        )
+        assert len(group) == 3
+        assert {item.root_work_order_id for item in group} == {root_id}
+        assert [item.signature_session_id for item in group] == [
+            session_a,
+            session_b,
+            session_b,
+        ]
+        sessions = list(
+            db.scalars(
+                select(LabWorkOrderSignatureSession)
+                .where(LabWorkOrderSignatureSession.root_work_order_id == root_id)
+                .order_by(LabWorkOrderSignatureSession.version)
+            )
+        )
+        assert [(item.id, item.version) for item in sessions] == [
+            (session_a, 1),
+            (session_b, 2),
+        ]
+        assert group[0].final_pdf == frozen_pdf
+        audits = list(
+            db.scalars(
+                select(AuditLog).where(
+                    AuditLog.action.in_(
+                        (
+                            "lab_work_order.individual_signed",
+                            "lab_work_order.individual_completed",
+                            "lab_work_order.group_signed",
+                            "lab_work_order.group_completed",
+                        )
+                    )
+                )
+            )
+        )
+        assert {item.new_values["scope"] for item in audits} == {
+            "individual",
+            "group",
+        }
+
+    exported = client.get(
+        "/api/mobile/v1/technician/lab-work-orders/export",
+        headers=auth(tokens["admin"]),
+    )
+    assert exported.status_code == 200, exported.text
+    with zipfile.ZipFile(io.BytesIO(exported.content)) as archive:
+        names = archive.namelist()
+        exported_orders = json.loads(archive.read("work_orders.json"))
+    assert len([name for name in names if name.startswith("pdf/")]) == 3
+    assert len(
+        [
+            name
+            for name in names
+            if name.startswith("signatures/session-") and name.endswith(".json")
+        ]
+    ) == 2
+    assert len(
+        [
+            name
+            for name in names
+            if name.startswith("signatures/session-") and name.endswith(".png")
+        ]
+    ) == 4
+    assert [item["signature_session_id"] for item in exported_orders] == [
+        session_a,
+        session_b,
+        session_b,
+    ]
+
+
+def test_individual_closure_requires_equipment_and_reopens_only_its_cohort(
+    lab_context,
+):
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    root, related = _create_anticipated_lab_group(client, tokens)
+    root_id, second_id, _third_id = [item["id"] for item in related]
+    root_endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root_id}"
+    second_endpoint = f"/api/mobile/v1/technician/lab-work-orders/{second_id}"
+
+    assert client.post(
+        f"{root_endpoint}/signatures/individual",
+        json=signatures_payload(),
+        headers=tech_headers,
+    ).status_code == 409
+    client.post(
+        f"{root_endpoint}/equipment", json=equipment_payload(1), headers=tech_headers
+    )
+    assert client.post(
+        f"{root_endpoint}/signatures/individual",
+        json=signatures_payload(),
+        headers=tech_headers,
+    ).status_code == 200
+    closed = client.post(
+        f"{root_endpoint}/complete/individual", headers=tech_headers
+    )
+    assert closed.status_code == 200, closed.text
+
+    second_before = client.get(second_endpoint, headers=tech_headers).json()
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": root_id,
+            "reason": "Corrección individual",
+            "description": "Reabrir sólo la cohorte individual cerrada.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=tech_headers,
+    )
+    assert ticket.status_code == 201, ticket.text
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket.json()['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=auth(tokens["admin"]),
+    )
+    assert approved.status_code == 200, approved.text
+
+    reopened_root = client.get(root_endpoint, headers=tech_headers).json()
+    second_after = client.get(second_endpoint, headers=tech_headers).json()
+    assert reopened_root["status"] == "draft"
+    assert reopened_root["revision_number"] == 2
+    assert reopened_root["signature_preserved"] is True
+    assert second_after["status"] == "draft"
+    assert second_after["revision_number"] == second_before["revision_number"]
+    assert second_after["edit_version"] == second_before["edit_version"]
+
+    reclosed = client.post(
+        f"{root_endpoint}/complete/individual", headers=tech_headers
+    )
+    assert reclosed.status_code == 200, reclosed.text
+    assert reclosed.json()["status"] == "completed"
+
+
+@pytest.mark.skipif(
+    not os.getenv("LAB_POSTGRES_TEST_URL"),
+    reason="requiere LAB_POSTGRES_TEST_URL para probar versiones concurrentes",
+)
+def test_postgresql_concurrent_individual_cohorts_get_distinct_versions(
+    postgres_lab_context,
+):
+    client, factory, tokens = postgres_lab_context
+    root, related = _create_anticipated_lab_group(client, tokens, quantity=2)
+    ids = [item["id"] for item in related]
+    for index, work_order_id in enumerate(ids, start=1):
+        response = client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}/equipment",
+            json=equipment_payload(index),
+            headers=auth(tokens["tech"]),
+        )
+        assert response.status_code == 201, response.text
+    payload = LabSignatureGroupWrite(**signatures_payload())
+
+    def sign(work_order_id: int) -> tuple[int, int]:
+        with factory() as db:
+            user = db.scalar(select(User).where(User.username == "postgres-tech"))
+            assert user is not None
+            result = sign_individual(db, work_order_id, payload, user)
+            assert result.signature_session is not None
+            return result.signature_session.id, result.signature_session.version
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        sessions = sorted(pool.map(sign, ids), key=lambda item: item[1])
+
+    assert [version for _session_id, version in sessions] == [1, 2]
+    assert len({session_id for session_id, _version in sessions}) == 2
+    assert root["root_work_order_id"] == root["id"]
+
+
 def test_requires_equipment_and_both_valid_signatures(lab_context):
     client, _factory, tokens = lab_context
     headers = auth(tokens["tech"])
@@ -526,6 +859,30 @@ def test_requires_equipment_and_both_valid_signatures(lab_context):
     invalid["client"]["signature_data_url"] = "data:image/png;base64,bm90LXBuZw=="
     assert client.post(f"{endpoint}/signatures", json=invalid, headers=headers).status_code == 422
     assert client.post(f"{endpoint}/complete", headers=headers).status_code == 409
+
+
+def test_individual_endpoint_keeps_single_work_order_flow_available(lab_context):
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    created = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload("OT individual"),
+        headers=headers,
+    ).json()
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{created['id']}"
+    assert client.post(
+        f"{endpoint}/equipment", json=equipment_payload(1), headers=headers
+    ).status_code == 201
+    signed = client.post(
+        f"{endpoint}/signatures/individual",
+        json=signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
+    completed = client.post(f"{endpoint}/complete/individual", headers=headers)
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["root_work_order_id"] == created["id"]
 
 
 def test_folio_never_exceeds_6999(lab_context):
@@ -809,10 +1166,8 @@ def test_reopen_preserve_edit_existing_equipment_keeps_signature(lab_context):
     assert closed_body["signature_required"] is False
 
 
-def test_original_critical_edit_before_close_still_invalidates_signature(lab_context):
-    """MOB-001 CASO C (regresión): un cambio crítico ANTES del primer cierre
-    (sin reopen_ticket_id) debe seguir invalidando la firma, igual que antes
-    de este fix."""
+def test_ready_for_signatures_remains_locked_until_formal_reopening(lab_context):
+    """Una OT firmada no vuelve a draft por una edición ordinaria."""
     client, _factory, tokens = lab_context
     headers = auth(tokens["tech"])
     root = client.post(
@@ -831,12 +1186,11 @@ def test_original_critical_edit_before_close_still_invalidates_signature(lab_con
         json={"client_name": "Cliente Renombrado"},
         headers=headers,
     )
-    assert changed.status_code == 200, changed.text
-    body = changed.json()
-    assert body["signature_session_id"] is None
-    assert body["signature_required"] is True
-    assert body["signature_preserved"] is False
-    assert signature_session_id is not None
+    assert changed.status_code == 409, changed.text
+    unchanged = client.get(endpoint, headers=headers).json()
+    assert unchanged["status"] == "ready_for_signatures"
+    assert unchanged["signature_session_id"] == signature_session_id
+    assert unchanged["signature_required"] is False
 
 
 def test_structural_change_invalidates_signature_and_requires_new_signature(lab_context):

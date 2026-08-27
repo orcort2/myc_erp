@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-08-26
+> Corte actualizado: 2026-08-27
 
 # Estado operativo actual del ERP MYC
 
@@ -42,8 +42,9 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
   operaciones nuevas. La columna
   `lab_work_order_group_requests.root_work_order_id` admite `NULL` y conserva
   una FK `ON DELETE RESTRICT` hacia `lab_work_orders.id`.
-- La corrección de borrado LAB no modifica esquema ni datos locales; no requiere
-  migración adicional ni regeneración del respaldo SQL.
+- La evolución de cohortes LAB no modifica esquema ni datos locales; reutiliza
+  `signature_session_id` y la versión por raíz, por lo que no requiere migración
+  adicional ni regeneración del respaldo SQL.
 
 ## Respaldo oficial
 
@@ -72,10 +73,31 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - Fase 15 modificó backend/frontend del Centro, permisos, continuidad ETS,
   pruebas, inventario HTTP y documentación. No modificó Mobile, modelos,
   migraciones, esquema, base local ni el respaldo SQL.
-- El inventario HTTP se regeneró contra el runtime actual: 463 operaciones
+- El inventario HTTP se regeneró contra el runtime actual: 477 operaciones
   clasificadas deny-by-default y CSV sincronizado.
 
 ## Pendientes operativos
+
+### Corte funcional 2026-08-27 — Cohortes de cierre OT LAB
+
+- `root_work_order_id` conserva parentesco histórico; una
+  `LabWorkOrderSignatureSession` identifica exclusivamente la cohorte cerrada.
+- Backend admite firma/finalización grupal de las OT abiertas o individual de
+  la seleccionada, con doble firma, PDF propio, auditoría explícita y versión
+  serializada por lock de raíz. Las completadas quedan congeladas.
+- Reapertura por Ticket sigue la sesión y no desbloquea hermanas de otra
+  cohorte. Mobile ofrece ambas modalidades y conserva navegación/PDF por folio.
+- La regresión de seguridad obsoleta quedó alineada con el contrato vigente:
+  Técnico internal crea grupo directo, no usa `group-requests` ni recibe
+  capacidades administrativas; Operativo Sr externo solicita pero no crea
+  directo. Seguridad Mobile aprobó 21/21 y LAB 30 aprobadas/7 PostgreSQL
+  omitidas por entorno. Suite backend completa: 661 aprobadas, 7 omitidas y 19
+  subtests, sin fallas. Mobile conserva 85 pruebas, lint, TypeScript y export
+  Expo iOS/Android/Web correctos.
+- `compileall`, inventario API de 477 operaciones, registro de archivos,
+  `alembic heads`, `alembic check` y `git diff --check` quedaron correctos.
+- No hubo migración, cambio de datos, commit, push ni despliegue. Permanecen
+  pendientes el QA físico Android/iPhone y la concurrencia PostgreSQL opt-in.
 
 ### Corte funcional 2026-08-26 — Seguridad MYC Mobile
 
@@ -156,7 +178,8 @@ Corrección quirúrgica de revisión: capabilities separadas por actor, endpoint
 - Validación: borrados focales `9 passed`; regresión LAB/Notifications/
   Communications/Realtime `45 passed, 6 skipped, 1 deselected`; compilación
   Python correcta; Alembic local/head `e7a3c5d9f1b2` y `alembic check` limpio.
-  La ejecución sin exclusión conserva una única falla preexistente ajena al
-  cambio: edición crítica posterior a firma espera 200 y recibe 409.
+  La expectativa antigua de edición crítica posterior a firma fue corregida
+  posteriormente para exigir el bloqueo 409 vigente; la suite global actual
+  está verde.
 - Pendiente: TD-057 registra que la proyección visual queda sin folios cuando ya
   no existen OTs, aunque auditoría y conversación conservan la evidencia.

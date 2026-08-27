@@ -196,10 +196,14 @@ volumen; requieren decisión operativa y etapa propia.
 ## OT LAB temporal móvil — `EN DESARROLLO`
 
 El vertical backend/móvil está terminado técnicamente: agregado aislado, folios
-6400–6999, máximo 10 equipos, adicionales encadenadas, firma única compartida,
-bloqueo grupal, PDFs individuales y exportación verificable. Las pruebas LAB,
-conformidad API, PostgreSQL, TypeScript y lint están verdes; Expo Doctor
-conserva el resultado documentado de 17/18 por desfases patch preexistentes.
+6400–6999, máximo 10 equipos, adicionales encadenadas, grupo histórico estable,
+cohortes de firma grupal o individual, PDFs individuales y exportación
+multisesión verificable. Las pruebas focales LAB, conformidad API, TypeScript,
+lint y export Expo están verdes; la concurrencia PostgreSQL de versiones queda
+opt-in y pendiente de entorno. La prueba de seguridad ya reconoce que Técnico
+internal crea grupos directos, pero no usa ni administra solicitudes externas;
+la suite backend global está verde. Expo Doctor conserva el resultado
+documentado de 17/18 por desfases patch preexistentes.
 La pantalla móvil continúa mostrando exclusivamente LAB 6400–6999 y agrega
 eliminación administrativa individual con capacidad propia, confirmación,
 refetch y layout estable para clientes largos. Backend cubre dependencias
@@ -207,12 +211,17 @@ exclusivas, raíz/cadena, firma/ticket/revisión compartidos y rollback. Desde e
 corte 2026-08-26 también reconcilia transaccionalmente las solicitudes
 anticipadas aprobadas: reparenta su raíz o la deja nula al eliminar la última OT,
 sin borrar solicitud/conversación, cambiar la decisión ni reutilizar folios.
+Desde 2026-08-27, un grupo anticipado parcialmente lleno puede cerrar sólo la
+OT operativamente terminada; las hermanas abiertas conservan folios, raíz y
+edición. Un cierre grupal posterior excluye las completadas y genera una nueva
+versión de sesión. La reapertura por Ticket sigue la cohorte de la sesión y no
+desbloquea otras hermanas.
+
 La captura de firmas móvil ya permite orientación nativa dinámica, usa pasos
 Cliente → Técnico, reconstruye strokes normalizados al redimensionar, entrega
-el gesto al canvas sólo durante el trazo y liga la captura a
-`root_work_order_id`; refetch, rerender, reapertura visual y OT hermanas
-conservan el borrador, mientras una raíz diferente lo reemplaza sin recuperar
-capturas previas. Conserva el botón y endpoint LAB existentes.
+el gesto al canvas sólo durante el trazo y liga la captura al contexto de la
+cohorte elegida; refetch/rerender lo conservan, mientras cambiar modalidad o
+participante lo reemplaza sin recuperar capturas previas.
 La regresión que impedía el POST inicial por interpretar
 `signature_required=false` como prohibición quedó retirada: prueba de handler y
 backend efímero confirman `draft/false → POST 200 → ready_for_signatures →

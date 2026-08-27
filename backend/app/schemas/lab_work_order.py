@@ -161,6 +161,7 @@ class LabRelatedWorkOrderRead(BaseModel):
     folio: int
     sequence_number: int
     status: str
+    signature_session_id: int | None
     equipment_count: int
 
 
@@ -173,6 +174,7 @@ class LabWorkOrderRead(BaseModel):
     previous_work_order_id: int | None
     sequence_number: int
     signature_session_id: int | None
+    signature_scope: str | None = None
     created_by_user_id: int
     operator_client_id: int | None
     reception_date: date

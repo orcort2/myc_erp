@@ -19,7 +19,11 @@ from app.schemas.operational_ticket import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.auth import user_has_permission
-from app.services.lab_work_orders import _get, _group, _root_id
+from app.services.lab_work_orders import (
+    _get,
+    _lock_historical_group,
+    _signature_cohort,
+)
 from app.services.notification_events import (
     notify_ticket_approved,
     notify_ticket_created,
@@ -217,13 +221,17 @@ def approve_reopen_ticket(
     ):
         raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
 
-    work_order = _get(db, ticket.work_order_id, lock=True)
-    group = _group(db, work_order, lock=True)
-    if any(item.status != "completed" for item in group):
+    work_order, historical_group = _lock_historical_group(db, ticket.work_order_id)
+    if work_order.status != "completed":
         raise HTTPException(status_code=409, detail="OT_NOT_CLOSED")
+    cohort = _signature_cohort(
+        historical_group, work_order, include_completed=True
+    )
+    if not cohort or any(item.status != "completed" for item in cohort):
+        raise HTTPException(status_code=409, detail="CLOSURE_COHORT_NOT_CLOSED")
     now = datetime.now(timezone.utc)
     preserve = payload.signature_policy == "preserve"
-    for item in group:
+    for item in cohort:
         db.add(
             LabWorkOrderRevision(
                 work_order_id=item.id,
@@ -267,7 +275,9 @@ def approve_reopen_ticket(
         new_values={
             "status": "in_progress",
             "signature_policy": payload.signature_policy,
-            "work_order_ids": [item.id for item in group],
+            "root_work_order_id": work_order.root_work_order_id,
+            "signature_session_id": work_order.signature_session_id,
+            "work_order_ids": [item.id for item in cohort],
             "revision": work_order.revision_number,
         },
     )

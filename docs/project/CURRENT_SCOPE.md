@@ -188,15 +188,17 @@ La existencia en esta lista no implica cierre; el estado autorizado está en [`P
 - Folios backend 6400–6999 con namespace y lock independientes.
 - Hasta 10 equipos por OT, edición/eliminación antes de firma y OT adicional
   encadenada con datos generales heredados.
-- Una sesión de firma técnico/cliente para todo el grupo; la firma bloquea altas
-  y edición y la finalización genera un PDF institucional por OT.
+- Una sesión de firma técnico/cliente por cohorte: todas las OT abiertas
+  participantes o sólo la seleccionada. La firma bloquea esas integrantes y
+  la finalización genera un PDF institucional exclusivamente para cada OT de
+  la cohorte.
 - Captura secuencial Cliente → Técnico con orientación portrait/landscape,
   strokes normalizados que sobreviven al resize, ownership temporal del gesto
   frente al ScrollView, `hasDrawing`, nombres recortados, lock anti-submit y
-  contexto explícito exclusivamente por `root_work_order_id`. El borrador se
-  conserva en refetch, rerender, reapertura visual y navegación entre OT
-  hermanas; una raíz distinta lo reemplaza por una captura vacía, sin recuperar
-  estados antiguos al volver. Tap/movimiento despreciable no cuenta como firma.
+  contexto explícito por raíz para grupo y por ID de OT para individual. El
+  borrador se conserva en refetch/rerender de la misma cohorte; otra modalidad,
+  OT individual o raíz lo reemplaza por una captura vacía, sin recuperar estados
+  antiguos al volver. Tap/movimiento despreciable no cuenta como firma.
   `signature_required` se limita a reapertura/invalidez previa y no bloquea el
   POST inicial; la autoridad de aceptación permanece en backend. No existe
   dependencia del frontend ERP.
@@ -341,6 +343,20 @@ queda **EN REVISIÓN**.
 Solicitud externa, claim, aprobación/rechazo, creación directa Web/Mobile internal, materialización transaccional de N folios, conversación posterior al claim, notificación, realtime y visualización Mobile/Web. No se alteran ETS productivo, firma LAB, Tickets, PDF ni límite de 10 equipos.
 
 La alta individual, grupo directo y adicional LAB quedan fuera del alcance de actores externos; sólo staff autorizado conserva esas operaciones. Las bandejas Web/Mobile presentan tickets y requests sin normalizarlos artificialmente. Mobile compone ambas fuentes en UI para evitar otro contrato backend y usa el mismo servicio de decisión existente.
+
+## Alcance implementado 2026-08-27 — Cohortes de cierre OT LAB
+
+El parentesco histórico permanece en `root_work_order_id`. Una sesión de firma
+representa una cohorte: puede abarcar todas las OT `draft` abiertas y equipadas
+del grupo o únicamente la OT seleccionada. La finalización, PDF, hash,
+invalidación y reapertura se limitan a esa sesión; las completadas quedan
+congeladas y las hermanas abiertas siguen editables. Mobile ofrece ambas
+modalidades cuando existe grupo real y explica por qué el cierre grupal se
+bloquea si alguna participante carece de equipos.
+
+No se incorporan estados, tablas ni migraciones; no cambian folios, cadena,
+firmas productivas, ETS, Certificados ni Facturación. La aceptación física
+Android/iPhone de este alcance permanece pendiente.
 
 ## Alcance implementado 2026-08-18 — ETS Venta
 

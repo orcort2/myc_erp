@@ -38,7 +38,15 @@ import {
   LabWorkOrderDeletionCoordinator,
 } from '@/src/services/lab-work-order-deletion';
 import { canSkipSignaturesAfterReopen } from '@/src/services/lab-work-order-signature-policy';
-import { postLabGroupSignatures } from '@/src/services/lab-work-order-signature-submission';
+import {
+  deriveLabClosureOptions,
+  labClosureContextId,
+  type LabClosureScope,
+} from '@/src/services/lab-work-order-closure';
+import {
+  postLabCompletion,
+  postLabSignatures,
+} from '@/src/services/lab-work-order-signature-submission';
 import type {
   EquipmentData,
   GeneralData,
@@ -74,6 +82,18 @@ const emptyEquipment = (): EquipmentData => ({
 });
 
 type Step = 'general' | 'capture' | 'review' | 'signatures' | 'completed';
+
+function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
+  if (workOrder.signature_scope) return workOrder.signature_scope;
+  if (workOrder.signature_session_id == null) return 'group';
+  const activeCohortSize = workOrder.related_work_orders.filter(
+    (item) => item.status !== 'completed'
+      && item.signature_session_id === workOrder.signature_session_id,
+  ).length;
+  return workOrder.related_work_orders.length > 1 && activeCohortSize === 1
+    ? 'individual'
+    : 'group';
+}
 
 function Field({
   label,
@@ -146,6 +166,7 @@ export default function WorkOrdersScreen() {
   const [equipment, setEquipment] = useState<EquipmentData>(emptyEquipment);
   const [signatureFlowState, setSignatureFlowState] = useState<SignatureFlowState | null>(null);
   const [signatureDrawing, setSignatureDrawing] = useState(false);
+  const [closureScope, setClosureScope] = useState<LabClosureScope>('group');
   const [ticketOpen, setTicketOpen] = useState(false);
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
@@ -235,21 +256,22 @@ export default function WorkOrdersScreen() {
     if (workOrder && (!targetId || targetId === workOrder.id)) {
       request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`)
         .then((detail) => {
-          const sameSignatureGroup = signatureFlowState?.rootWorkOrderId === detail.root_work_order_id;
+          const contextId = labClosureContextId(detail, closureScope);
+          const sameSignatureCohort = signatureFlowState?.rootWorkOrderId === contextId;
           setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
             clientName: detail.contact_name ?? '',
-            rootWorkOrderId: detail.root_work_order_id,
+            rootWorkOrderId: contextId,
             technicianName: user?.full_name ?? '',
           }));
-          if (!sameSignatureGroup) setSignatureDrawing(false);
+          if (!sameSignatureCohort) setSignatureDrawing(false);
           setWorkOrder(detail);
-          setStep((current) => sameSignatureGroup && current === 'signatures'
+          setStep((current) => sameSignatureCohort && current === 'signatures'
             ? current
             : detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
         })
         .catch(() => undefined);
     }
-  }), [refreshActive, request, signatureFlowState?.rootWorkOrderId, subscribe, user?.full_name, workOrder]);
+  }), [closureScope, refreshActive, request, signatureFlowState?.rootWorkOrderId, subscribe, user?.full_name, workOrder]);
 
   // MOB-003: `user` gets a new object reference on every silent token
   // refresh (see AuthProvider.authorizedFetch -> refreshSession), which
@@ -278,6 +300,10 @@ export default function WorkOrdersScreen() {
   } = capabilities;
   const editable = workOrder?.status === 'draft' && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
+  const closureOptions = useMemo(
+    () => workOrder ? deriveLabClosureOptions(workOrder) : null,
+    [workOrder],
+  );
   const canSaveEquipment = useMemo(
     () => equipment.instrument.trim() && equipment.brand.trim() && equipment.identification.trim() && equipment.serial_number.trim(),
     [equipment],
@@ -290,6 +316,7 @@ export default function WorkOrdersScreen() {
     setStep('general');
     setSignatureFlowState(null);
     setSignatureDrawing(false);
+    setClosureScope('group');
     setOpen(true);
   }
 
@@ -340,13 +367,16 @@ export default function WorkOrdersScreen() {
     setBusy(true);
     try {
       const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`);
-      const sameSignatureGroup = signatureFlowState?.rootWorkOrderId === detail.root_work_order_id;
+      const nextScope = inferClosureScope(detail);
+      const contextId = labClosureContextId(detail, nextScope);
+      const sameSignatureCohort = signatureFlowState?.rootWorkOrderId === contextId;
+      setClosureScope(nextScope);
       setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
         clientName: detail.contact_name ?? '',
-        rootWorkOrderId: detail.root_work_order_id,
+        rootWorkOrderId: contextId,
         technicianName: user?.full_name ?? '',
       }));
-      if (!sameSignatureGroup) setSignatureDrawing(false);
+      if (!sameSignatureCohort) setSignatureDrawing(false);
       setWorkOrder(detail);
       setGeneral({
         reception_date: detail.reception_date,
@@ -362,7 +392,7 @@ export default function WorkOrdersScreen() {
         purchase_order: detail.purchase_order ?? '',
         notes: detail.notes ?? '',
       });
-      setStep((current) => sameSignatureGroup && current === 'signatures'
+      setStep((current) => sameSignatureCohort && current === 'signatures'
         ? current
         : detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
       setOpen(true);
@@ -426,15 +456,21 @@ export default function WorkOrdersScreen() {
     setBusy(true);
     try {
       const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`);
-      if (signatureFlowState && detail.root_work_order_id !== signatureFlowState.rootWorkOrderId) {
+      const nextScope = inferClosureScope(detail);
+      const contextId = labClosureContextId(detail, nextScope);
+      if (signatureFlowState && contextId !== signatureFlowState.rootWorkOrderId) {
         setSignatureDrawing(false);
       }
+      setClosureScope(nextScope);
       setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
         clientName: detail.contact_name ?? '',
-        rootWorkOrderId: detail.root_work_order_id,
+        rootWorkOrderId: contextId,
         technicianName: user?.full_name ?? '',
       }));
       setWorkOrder(detail);
+      setStep(detail.status === 'completed'
+        ? 'completed'
+        : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
     } catch (error) {
       Alert.alert('No fue posible cambiar de OT', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -510,14 +546,16 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  function openSignatureFlow() {
+  function openSignatureFlow(scope: LabClosureScope) {
     if (!workOrder) {
       Alert.alert('No hay un grupo activo', 'Abre nuevamente la orden antes de capturar firmas.');
       return;
     }
-    setSignatureFlowState((current) => reconcileSignatureFlowState(current, {
+    const contextId = labClosureContextId(workOrder, scope);
+    setClosureScope(scope);
+    setSignatureFlowState(() => reconcileSignatureFlowState(null, {
       clientName: workOrder.contact_name ?? '',
-      rootWorkOrderId: workOrder.root_work_order_id,
+      rootWorkOrderId: contextId,
       technicianName: user?.full_name ?? '',
     }));
     setStep('signatures');
@@ -525,7 +563,7 @@ export default function WorkOrdersScreen() {
 
   async function applySignatures(payload: SignaturePayload, capturedContextId: number) {
     if (signatureSubmitRef.current) throw new Error('Las firmas ya se están guardando.');
-    if (!workOrder || workOrder.root_work_order_id !== capturedContextId) {
+    if (!workOrder || labClosureContextId(workOrder, closureScope) !== capturedContextId) {
       setSignatureFlowState(null);
       setSignatureDrawing(false);
       throw new Error('El grupo activo cambió. Captura nuevamente las firmas.');
@@ -534,7 +572,13 @@ export default function WorkOrdersScreen() {
     setBusy(true);
     const signedAt = new Date().toISOString();
     try {
-      const detail = await postLabGroupSignatures({ payload, request, signedAt, workOrder });
+      const detail = await postLabSignatures({
+        payload,
+        request,
+        scope: closureScope,
+        signedAt,
+        workOrder,
+      });
       setWorkOrder(detail);
       setSignatureFlowState(null);
       setSignatureDrawing(false);
@@ -547,14 +591,11 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  async function completeGroup() {
+  async function completeClosure(scope: LabClosureScope = closureScope) {
     if (!workOrder) return;
     setBusy(true);
     try {
-      const detail = await request<LabWorkOrder>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/complete`,
-        { method: 'POST' },
-      );
+      const detail = await postLabCompletion({ request, scope, workOrder });
       setWorkOrder(detail);
       setStep('completed');
       await refresh();
@@ -761,7 +802,7 @@ export default function WorkOrdersScreen() {
         <SafeAreaProvider>
         <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modalScreen}>
           <View style={styles.modalHeader}>
-            <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>Firma única para todo el grupo</Text></View>
+            <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>Grupo histórico · cierre por grupo</Text></View>
             <Pressable disabled={deleting || signatureSubmitRef.current} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
@@ -810,6 +851,7 @@ export default function WorkOrdersScreen() {
                       <Pressable key={item.id} onPress={() => selectRelated(item.id)} style={[styles.relatedChip, item.id === workOrder.id && styles.relatedActive]}>
                         <Text style={[styles.relatedFolio, item.id === workOrder.id && styles.relatedActiveText]}>{item.folio}</Text>
                         <Text style={[styles.relatedCount, item.id === workOrder.id && styles.relatedActiveText]}>{item.equipment_count}/10</Text>
+                        <Text style={[styles.relatedStatus, item.id === workOrder.id && styles.relatedActiveText]}>{item.status === 'completed' ? 'Cerrada' : item.status === 'ready_for_signatures' ? 'Firmada' : 'Abierta'}</Text>
                       </Pressable>
                     ))}
                   </ScrollView>
@@ -840,22 +882,47 @@ export default function WorkOrdersScreen() {
 
               {workOrder && step === 'review' && (
                 <>
-                  <Text style={styles.sectionTitle}>Revisión del grupo</Text>
-                  {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s)</Text>)}
-                  <Text style={styles.notice}>Las firmas se capturarán una sola vez y se aplicarán a todos los PDFs del grupo. Después de firmar no se podrán agregar OT ni equipos.</Text>
+                  <Text style={styles.sectionTitle}>Elegir alcance del cierre</Text>
+                  {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s) · {item.status === 'completed' ? 'cerrada' : item.status === 'ready_for_signatures' ? 'firmada' : 'abierta'}</Text>)}
+                  <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. Cada firma cierra únicamente la OT elegida.</Text>
                   <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Editar equipos</Text></Pressable>
                   {canExecuteWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
-                    <Pressable style={styles.primary} onPress={completeGroup}><Text style={styles.primaryText}>Cerrar orden</Text></Pressable>
+                    <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar OT individual reabierta</Text></Pressable>
                   ) : canCaptureSignatures ? (
-                    <Pressable style={styles.primary} onPress={openSignatureFlow}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
+                    <>
+                      {closureOptions?.hasHistoricalSiblings && (
+                        <>
+                          <Pressable
+                            disabled={!closureOptions.canFinalizeGroup}
+                            onPress={() => openSignatureFlow('group')}
+                            style={[styles.primary, !closureOptions.canFinalizeGroup && styles.disabled]}
+                          >
+                            <Text style={styles.primaryText}>Finalizar grupo activo ({closureOptions.groupParticipantCount} OT)</Text>
+                          </Pressable>
+                          {!!closureOptions.groupMissingEquipmentCount && (
+                            <Text style={styles.notice}>{closureOptions.groupMissingEquipmentCount} OT todavía no tienen equipos; el cierre grupal no está disponible.</Text>
+                          )}
+                          <Pressable
+                            disabled={!closureOptions.canFinalizeIndividual}
+                            onPress={() => openSignatureFlow('individual')}
+                            style={[styles.secondary, !closureOptions.canFinalizeIndividual && styles.disabled]}
+                          >
+                            <Text style={styles.secondaryText}>Finalizar sólo OT {workOrder.folio}</Text>
+                          </Pressable>
+                        </>
+                      )}
+                      {!closureOptions?.hasHistoricalSiblings && (
+                        <Pressable style={styles.primary} onPress={() => openSignatureFlow('group')}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
+                      )}
+                    </>
                   ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no capturar firmas.</Text>}
                 </>
               )}
 
               {workOrder && step === 'signatures' && workOrder.status === 'draft' && (
-                signatureFlowState?.rootWorkOrderId === workOrder.root_work_order_id ? (
+                signatureFlowState?.rootWorkOrderId === labClosureContextId(workOrder, closureScope) ? (
                   <MobileSignatureFlow
-                    currentContextId={workOrder.root_work_order_id}
+                    currentContextId={labClosureContextId(workOrder, closureScope)}
                     key={signatureFlowState.rootWorkOrderId}
                     onDrawingChange={setSignatureDrawing}
                     onStateChange={setSignatureFlowState}
@@ -864,7 +931,7 @@ export default function WorkOrdersScreen() {
                   />
                 ) : (
                   <View style={styles.errorState}>
-                    <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto del grupo.</Text>
+                    <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto de cierre.</Text>
                     <Pressable onPress={() => setStep('review')}><Text style={styles.retry}>Volver a revisión</Text></Pressable>
                   </View>
                 )
@@ -872,9 +939,9 @@ export default function WorkOrdersScreen() {
 
               {workOrder && step === 'signatures' && workOrder.status === 'ready_for_signatures' && (
                 <>
-                  <Text style={styles.sectionTitle}>Grupo firmado</Text>
-                  <Text style={styles.notice}>La misma sesión de firma quedó vinculada a {workOrder.related_work_orders.length} OT. El grupo ya está bloqueado para nuevas OT y equipos.</Text>
-                  {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={completeGroup}><Text style={styles.primaryText}>Finalizar grupo y generar PDFs</Text></Pressable>}
+                  <Text style={styles.sectionTitle}>OT individual firmada</Text>
+                  <Text style={styles.notice}>Esta sesión quedó vinculada a {closureOptions?.activeCohortSize || 1} OT. Las demás OT del grupo histórico conservan su estado y podrán cerrarse después.</Text>
+                  {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cierre individual y generar PDF</Text></Pressable>}
                 </>
               )}
 
@@ -1492,6 +1559,12 @@ const styles = StyleSheet.create({
   relatedCount: {
     color: '#556571',
     fontSize: 12,
+  },
+
+  relatedStatus: {
+    color: '#64748b',
+    fontSize: 10,
+    marginTop: 2,
   },
 
   relatedActiveText: {

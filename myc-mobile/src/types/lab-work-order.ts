@@ -14,6 +14,7 @@ export type LabRelatedWorkOrder = {
   folio: number;
   sequence_number: number;
   status: 'draft' | 'ready_for_signatures' | 'completed';
+  signature_session_id: number | null;
   equipment_count: number;
 };
 
@@ -24,6 +25,7 @@ export type LabWorkOrder = {
   previous_work_order_id: number | null;
   sequence_number: number;
   signature_session_id: number | null;
+  signature_scope: 'group' | 'individual' | null;
   reception_date: string;
   departure_date: string;
   client_name: string;
