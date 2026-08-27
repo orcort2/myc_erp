@@ -109,6 +109,7 @@ ROLE_PERMISSIONS = {
         "service_orders.sales.deliver",
         "service_orders.maintenance.execute",
         "service_orders.repair.execute",
+        "lab_work_order_groups.create",
         "lab_work_orders.use",
         "tickets.create",
         "tickets.view_own",
