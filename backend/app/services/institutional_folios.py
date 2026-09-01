@@ -26,12 +26,13 @@ def _existing_certificate_max(
         select(Certificate.folio).where(Certificate.folio.like(f"{prefix}%"))
     ).all()
     compact_year_prefix = f"{prefix}{issued_on:%y}"
+    canonical_year_marker = f"-{issued_on:%m}-{issued_on:%y}-"
     verification_year_marker = f"-{issued_on:%y}-"
     sequences = []
     for value in values:
         if not value or len(value) < 4 or not value[-4:].isdigit():
             continue
-        if value.startswith(compact_year_prefix) or (
+        if value.startswith(compact_year_prefix) or canonical_year_marker in value or (
             prefix == "MYCV" and verification_year_marker in value
         ):
             sequences.append(int(value[-4:]))
@@ -117,6 +118,8 @@ def build_certificate_folio(
         issued_on=issued_on,
     )
     if service_type == "verification":
+        return f"{prefix}-{issued_on:%m}-{issued_on:%y}-{sequence:04d}"
+    if normalized_type in {ServiceType.ACCREDITED, ServiceType.TRACEABLE}:
         return f"{prefix}-{issued_on:%m}-{issued_on:%y}-{sequence:04d}"
     return f"{prefix}{issued_on:%y%m}{sequence:04d}"
 

@@ -16,6 +16,7 @@ from app.models.client_portal_membership_role import ClientPortalMembershipRole
 from app.models.client_portal_role import ClientPortalRole
 from app.models.communication import CommunicationConversation
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderGroupRequest
+from app.models.linked_company import LinkedCompany
 from app.models.notification import PushDevice
 from app.models.user import Role, User
 from app.schemas.lab_work_order import LabWorkOrderCreate
@@ -314,6 +315,155 @@ def test_external_operators_cannot_create_direct_lab_work_orders(mobile_security
             json=_work_order_payload("Cliente final"),
         )
         assert response.status_code == 403
+
+
+def test_lab_clients_are_strictly_tenant_scoped_for_external_operators(mobile_security_api):
+    api, _, data = mobile_security_api
+    headers_a = _headers(_login(api, data["jr"].email))
+    headers_b = _headers(_login(api, data["other"].email))
+    headers_staff = _headers(_login(api, data["staff"].email))
+    payload_a = {"company": "Cliente tenant A", "address": "Calle A", "attention": "Contacto A"}
+    payload_b = {"company": "Cliente tenant B", "address": "Calle B", "attention": "Contacto B"}
+    assert api.post("/api/mobile/v1/technician/lab-clients", json=payload_a, headers=headers_a).status_code == 201
+    assert api.post("/api/mobile/v1/technician/lab-clients", json=payload_b, headers=headers_b).status_code == 201
+
+    names_a = {item["company"] for item in api.get("/api/mobile/v1/technician/lab-clients", headers=headers_a).json()}
+    names_b = {item["company"] for item in api.get("/api/mobile/v1/technician/lab-clients", headers=headers_b).json()}
+    names_staff = {item["company"] for item in api.get("/api/mobile/v1/technician/lab-clients", headers=headers_staff).json()}
+    assert names_a == {"Cliente tenant A"}
+    assert names_b == {"Cliente tenant B"}
+    assert names_staff == set()
+
+
+def test_external_linked_sheet_can_start_pending_and_does_not_block_closure(mobile_security_api):
+    api, db, data = mobile_security_api
+    sr_headers = _headers(_login(api, data["sr"].email))
+    admin_headers = _headers(_login(api, data["admin"].email))
+    lab_client = api.post(
+        "/api/mobile/v1/technician/lab-clients",
+        json={"company": "Cliente externo", "address": "Calle externa", "attention": "Responsable externo"},
+        headers=sr_headers,
+    ).json()
+    request_payload = {
+        **_work_order_payload("Snapshot enviado no autoritativo"),
+        "lab_client_id": lab_client["id"],
+        "quantity": 1,
+    }
+    group_request = api.post(
+        "/api/mobile/v1/technician/lab-work-orders/group-requests",
+        json=request_payload,
+        headers=sr_headers,
+    )
+    assert group_request.status_code == 201, group_request.text
+    request_id = group_request.json()["id"]
+    assert api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/group-requests/{request_id}/claim",
+        headers=admin_headers,
+    ).status_code == 200
+    approved = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/group-requests/{request_id}/approve",
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+    order_id = approved.json()["root_work_order_id"]
+    added = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+        json={
+            "instrument": "Instrumento externo",
+            "brand": "Marca",
+            "identification": "EXT-1",
+            "serial_number": "SER-EXT",
+            "report_number": None,
+            "is_good_condition": True,
+        },
+        headers=sr_headers,
+    )
+    assert added.status_code == 201, added.text
+    equipment_id = added.json()["equipment"][0]["id"]
+    linked = LinkedCompany(
+        name="Vinculado externo",
+        abbreviation="VEXT",
+        default_certificate_prefix="VEXT",
+        is_enabled=True,
+    )
+    db.add(linked)
+    db.commit()
+    service = api.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service",
+        json={"service_type": "linked", "linked_company_id": linked.id},
+        headers=sr_headers,
+    )
+    assert service.status_code == 200, service.text
+    assert service.json()["equipment"][0]["folio_status"] == "pending"
+    assert service.json()["equipment"][0]["certificate_folio"] is None
+    assert api.get(
+        "/api/mobile/v1/technician/lab-work-orders/field-sheet-templates",
+        headers=sr_headers,
+    ).status_code == 200
+    sheet = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=sr_headers,
+    )
+    assert sheet.status_code == 201, sheet.text
+    assert sheet.json()["status"] == "draft"
+
+    signed_at = datetime.now(timezone.utc).isoformat()
+    signatures = {
+        "technician": {"signer_name": "Operador", "signed_at": signed_at, "version": 1, "signature_data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="},
+        "client": {"signer_name": "Cliente", "signed_at": signed_at, "version": 1, "signature_data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="},
+    }
+    signed = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
+        json=signatures,
+        headers=sr_headers,
+    )
+    assert signed.status_code == 200, signed.text
+    completed = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete",
+        headers=sr_headers,
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+
+
+def test_external_certificate_block_limit_and_admin_resolution(mobile_security_api):
+    api, _, data = mobile_security_api
+    external_headers = _headers(_login(api, data["jr"].email))
+    admin_headers = _headers(_login(api, data["admin"].email))
+    valid = api.post(
+        "/api/mobile/v1/technician/tickets/certificate-block",
+        json={
+            "accredited_quantity": 70,
+            "traceable_quantity": 30,
+            "reason": "Bloque semanal",
+            "description": "Reserva para calibraciones externas",
+        },
+        headers=external_headers,
+    )
+    assert valid.status_code == 201, valid.text
+    invalid = api.post(
+        "/api/mobile/v1/technician/tickets/certificate-block",
+        json={
+            "accredited_quantity": 100,
+            "traceable_quantity": 100,
+            "reason": "Demasiados folios",
+            "description": "Debe rechazarse por exceder el máximo combinado",
+        },
+        headers=external_headers,
+    )
+    assert invalid.status_code == 422
+    resolved = api.post(
+        f"/api/mobile/v1/technician/tickets/{valid.json()['id']}/resolve",
+        json={"authorized_folio": None, "comment": "Bloque autorizado"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+    folios = resolved.json()["resolution_snapshot"]["folios"]
+    assert len(folios["MYCA"]) == 70
+    assert len(folios["MYCT"]) == 30
+    assert folios["MYCA"][0].endswith("-4700")
+    assert folios["MYCT"][0].endswith("-1640")
 
 
 def test_internal_authorized_actor_keeps_direct_lab_creation(mobile_security_api):

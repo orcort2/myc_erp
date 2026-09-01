@@ -11,17 +11,25 @@ from app.core.mobile.security import (
     require_mobile_permission,
 )
 from app.schemas.operational_ticket import (
+    CertificateFolioBlockCreate,
+    FolioTicketCreate,
+    PartialCloseTicketCreate,
     ReopenTicketCreate,
     TicketRead,
     TicketReject,
     TicketReview,
+    TicketResolve,
 )
 from app.services.operational_tickets import (
     approve_reopen_ticket,
+    create_certificate_block_ticket,
+    create_folio_ticket,
+    create_partial_close_ticket,
     create_reopen_ticket,
     get_ticket,
     list_tickets,
     reject_ticket,
+    resolve_operational_ticket,
 )
 
 
@@ -41,6 +49,47 @@ def create_ticket(
 ) -> TicketRead:
     ensure_lab_work_order_scope(db, payload.work_order_id, context)
     return create_reopen_ticket(db, payload, context.user)
+
+
+@router.post("/folio", response_model=TicketRead, status_code=201)
+def create_folio_request(
+    payload: FolioTicketCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.create", "tickets.create")
+    ),
+) -> TicketRead:
+    ensure_lab_work_order_scope(db, payload.work_order_id, context)
+    return create_folio_ticket(
+        db, payload, context.user, operator_client_id=context.client_id
+    )
+
+
+@router.post("/partial-close", response_model=TicketRead, status_code=201)
+def create_partial_close_request(
+    payload: PartialCloseTicketCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.create", "tickets.create")
+    ),
+) -> TicketRead:
+    ensure_lab_work_order_scope(db, payload.work_order_id, context)
+    return create_partial_close_ticket(
+        db, payload, context.user, operator_client_id=context.client_id
+    )
+
+
+@router.post("/certificate-block", response_model=TicketRead, status_code=201)
+def create_certificate_block_request(
+    payload: CertificateFolioBlockCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.create", "tickets.create")
+    ),
+) -> TicketRead:
+    return create_certificate_block_ticket(
+        db, payload, context.user, operator_client_id=context.client_id
+    )
 
 
 @router.get("", response_model=list[TicketRead])
@@ -87,6 +136,18 @@ def approve_ticket(
     context: MobileSecurityContext = Depends(require_internal_mobile_permission("tickets.review")),
 ) -> TicketRead:
     return approve_reopen_ticket(db, ticket_id, payload, context.user)
+
+
+@router.post("/{ticket_id}/resolve", response_model=TicketRead)
+def resolve_ticket(
+    ticket_id: int,
+    payload: TicketResolve,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_internal_mobile_permission("lab_folios.resolve")
+    ),
+) -> TicketRead:
+    return resolve_operational_ticket(db, ticket_id, payload, context.user)
 
 
 @router.post("/{ticket_id}/reject", response_model=TicketRead)

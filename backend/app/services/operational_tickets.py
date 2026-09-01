@@ -7,15 +7,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.lab_work_order import LabWorkOrder
+from app.models.lab_work_order import LabWorkOrderEquipment
+from app.models.communication import CommunicationConversation
 from app.models.lab_work_order_revision import LabWorkOrderRevision
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.schemas.operational_ticket import (
     LabRevisionRead,
+    CertificateFolioBlockCreate,
+    FolioTicketCreate,
+    PartialCloseTicketCreate,
     ReopenTicketCreate,
     TicketRead,
     TicketReject,
     TicketReview,
+    TicketResolve,
 )
 from app.services.audit_logs import write_audit_log
 from app.services.auth import user_has_permission
@@ -23,6 +29,8 @@ from app.services.lab_work_orders import (
     _get,
     _lock_historical_group,
     _signature_cohort,
+    _allocate_lab_certificate_folio,
+    _missing_completed_sheets,
 )
 from app.services.notification_events import (
     notify_ticket_approved,
@@ -35,6 +43,7 @@ from app.services.push_notifications import commit_and_dispatch_notifications
 def _ticket_query():
     return select(OperationalTicket).options(
         joinedload(OperationalTicket.work_order),
+        joinedload(OperationalTicket.equipment),
         joinedload(OperationalTicket.requested_by),
     )
 
@@ -45,8 +54,10 @@ def _read(ticket: OperationalTicket) -> TicketRead:
         type=ticket.type,
         status=ticket.status,
         work_order_id=ticket.work_order_id,
-        work_order_folio=ticket.work_order.folio,
-        client_name=ticket.work_order.client_name,
+        equipment_id=ticket.equipment_id,
+        operator_client_id=ticket.operator_client_id,
+        work_order_folio=ticket.work_order.folio if ticket.work_order else None,
+        client_name=ticket.work_order.client_name if ticket.work_order else None,
         requested_by_user_id=ticket.requested_by_user_id,
         requested_by_name=ticket.requested_by.full_name,
         reviewed_by_user_id=ticket.reviewed_by_user_id,
@@ -54,6 +65,14 @@ def _read(ticket: OperationalTicket) -> TicketRead:
         description=ticket.description,
         requested_signature_policy=ticket.requested_signature_policy,
         final_signature_policy=ticket.final_signature_policy,
+        linked_company_id=ticket.linked_company_id,
+        conversation_id=ticket.conversation_id,
+        automatic_folio=ticket.automatic_folio,
+        requested_folio=ticket.requested_folio,
+        authorized_folio=ticket.authorized_folio,
+        accredited_quantity=ticket.accredited_quantity,
+        traceable_quantity=ticket.traceable_quantity,
+        resolution_snapshot=ticket.resolution_snapshot,
         decision_comment=ticket.decision_comment,
         created_at=ticket.created_at,
         reviewed_at=ticket.reviewed_at,
@@ -86,7 +105,7 @@ def create_reopen_ticket(
     db: Session, payload: ReopenTicketCreate, user: User
 ) -> TicketRead:
     work_order = _get(db, payload.work_order_id, lock=True)
-    if work_order.status != "completed":
+    if work_order.status not in {"completed", "partially_closed"}:
         raise HTTPException(status_code=409, detail="OT_NOT_CLOSED")
     existing = db.scalar(
         select(OperationalTicket.id).where(
@@ -121,6 +140,165 @@ def create_reopen_ticket(
     return _read(_get_ticket(db, ticket.id))
 
 
+def _attach_conversation(db: Session, ticket: OperationalTicket, user: User) -> None:
+    conversation = CommunicationConversation(
+        conversation_type="client" if ticket.operator_client_id else "internal",
+        client_id=ticket.operator_client_id,
+        ticket_id=ticket.id,
+        title=f"Solicitud LAB #{ticket.id} · {ticket.type}",
+        created_by_user_id=user.id,
+        participants=[user],
+    )
+    db.add(conversation)
+    db.flush()
+    ticket.conversation_id = conversation.id
+
+
+def create_folio_ticket(
+    db: Session,
+    payload: FolioTicketCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> TicketRead:
+    work_order = _get(db, payload.work_order_id, lock=True)
+    equipment = db.scalar(
+        select(LabWorkOrderEquipment).where(
+            LabWorkOrderEquipment.id == payload.equipment_id,
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+        )
+    )
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    expected_type = "linked_folio" if equipment.service_type == "linked" else "manual_myc_folio"
+    if payload.type != expected_type:
+        raise HTTPException(status_code=422, detail="El tipo de solicitud no corresponde al servicio")
+    if payload.type == "manual_myc_folio" and not (payload.requested_folio or "").strip():
+        raise HTTPException(status_code=422, detail="Indica el folio MYC manual solicitado")
+    existing = db.scalar(
+        select(OperationalTicket.id).where(
+            OperationalTicket.equipment_id == equipment.id,
+            OperationalTicket.type == payload.type,
+            OperationalTicket.status == "pending",
+        )
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="El equipo ya tiene una solicitud de folio pendiente")
+    ticket = OperationalTicket(
+        type=payload.type,
+        status="pending",
+        work_order_id=work_order.id,
+        equipment_id=equipment.id,
+        operator_client_id=operator_client_id,
+        linked_company_id=equipment.linked_company_id,
+        requested_by_user_id=user.id,
+        reason=payload.reason.strip(),
+        description=payload.description.strip(),
+        automatic_folio=equipment.automatic_certificate_folio,
+        requested_folio=(payload.requested_folio or "").strip() or None,
+    )
+    db.add(ticket)
+    db.flush()
+    _attach_conversation(db, ticket, user)
+    equipment.folio_ticket_id = ticket.id
+    equipment.folio_status = "pending"
+    write_audit_log(
+        db,
+        action="lab_folio.requested",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        new_values={
+            "type": ticket.type,
+            "work_order_id": work_order.id,
+            "equipment_id": equipment.id,
+            "automatic_folio": ticket.automatic_folio,
+            "requested_folio": ticket.requested_folio,
+            "linked_company_id": ticket.linked_company_id,
+        },
+    )
+    db.commit()
+    return _read(_get_ticket(db, ticket.id))
+
+
+def create_partial_close_ticket(
+    db: Session,
+    payload: PartialCloseTicketCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> TicketRead:
+    if operator_client_id is not None:
+        raise HTTPException(status_code=403, detail="La excepción de cierre parcial es exclusiva de staff MYC")
+    work_order = _get(db, payload.work_order_id, lock=True)
+    if work_order.status != "draft":
+        raise HTTPException(status_code=409, detail="La OT no admite una excepción de cierre")
+    missing = _missing_completed_sheets([work_order])
+    if not missing:
+        raise HTTPException(status_code=409, detail="La OT no tiene hojas pendientes")
+    ticket = OperationalTicket(
+        type="partial_close",
+        status="pending",
+        work_order_id=work_order.id,
+        operator_client_id=None,
+        requested_by_user_id=user.id,
+        reason=payload.reason.strip(),
+        description=payload.description.strip(),
+        resolution_snapshot={"pending_items": missing},
+    )
+    db.add(ticket)
+    db.flush()
+    _attach_conversation(db, ticket, user)
+    write_audit_log(
+        db,
+        action="lab_partial_close.requested",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        new_values={"work_order_id": work_order.id, "pending_items": missing},
+    )
+    db.commit()
+    return _read(_get_ticket(db, ticket.id))
+
+
+def create_certificate_block_ticket(
+    db: Session,
+    payload: CertificateFolioBlockCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> TicketRead:
+    if operator_client_id is None:
+        raise HTTPException(status_code=403, detail="Los bloques temporales son para operadores externos")
+    total = payload.accredited_quantity + payload.traceable_quantity
+    if total < 1 or total > 100:
+        raise HTTPException(status_code=422, detail="La solicitud admite máximo 100 folios combinados")
+    ticket = OperationalTicket(
+        type="certificate_folio_block",
+        status="pending",
+        work_order_id=None,
+        operator_client_id=operator_client_id,
+        requested_by_user_id=user.id,
+        reason=payload.reason.strip(),
+        description=payload.description.strip(),
+        accredited_quantity=payload.accredited_quantity,
+        traceable_quantity=payload.traceable_quantity,
+    )
+    db.add(ticket)
+    db.flush()
+    _attach_conversation(db, ticket, user)
+    write_audit_log(
+        db,
+        action="lab_certificate_block.requested",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        new_values={"MYCA": payload.accredited_quantity, "MYCT": payload.traceable_quantity, "total": total},
+    )
+    db.commit()
+    return _read(_get_ticket(db, ticket.id))
+
+
 def list_tickets(
     db: Session,
     user: User,
@@ -133,20 +311,15 @@ def list_tickets(
 ) -> list[TicketRead]:
     query = _ticket_query()
     if client_id is not None:
-        query = query.join(OperationalTicket.work_order).where(
-            LabWorkOrder.operator_client_id == client_id
-        )
+        query = query.where(OperationalTicket.operator_client_id == client_id)
     elif not _can_view_all(user):
         query = query.where(OperationalTicket.requested_by_user_id == user.id)
     if ticket_status:
         query = query.where(OperationalTicket.status == ticket_status)
     if search and search.strip():
         value = f"%{search.strip()}%"
-        if client_id is None:
-            query = query.join(OperationalTicket.work_order)
-        query = query.where(
-            LabWorkOrder.client_name.ilike(value)
-            | OperationalTicket.reason.ilike(value)
+        query = query.outerjoin(OperationalTicket.work_order).where(
+            LabWorkOrder.client_name.ilike(value) | OperationalTicket.reason.ilike(value)
         )
     tickets = db.scalars(
         query.order_by(OperationalTicket.created_at.desc(), OperationalTicket.id.desc())
@@ -164,7 +337,7 @@ def get_ticket(
     client_id: int | None = None,
 ) -> TicketRead:
     ticket = _get_ticket(db, ticket_id)
-    if client_id is not None and ticket.work_order.client_id != client_id:
+    if client_id is not None and ticket.operator_client_id != client_id:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
     if client_id is not None:
         return _read(ticket)
@@ -222,12 +395,12 @@ def approve_reopen_ticket(
         raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
 
     work_order, historical_group = _lock_historical_group(db, ticket.work_order_id)
-    if work_order.status != "completed":
+    if work_order.status not in {"completed", "partially_closed"}:
         raise HTTPException(status_code=409, detail="OT_NOT_CLOSED")
     cohort = _signature_cohort(
         historical_group, work_order, include_completed=True
     )
-    if not cohort or any(item.status != "completed" for item in cohort):
+    if not cohort or any(item.status not in {"completed", "partially_closed"} for item in cohort):
         raise HTTPException(status_code=409, detail="CLOSURE_COHORT_NOT_CLOSED")
     now = datetime.now(timezone.utc)
     preserve = payload.signature_policy == "preserve"
@@ -296,6 +469,9 @@ def reject_ticket(
     ticket.reviewed_by_user_id = user.id
     ticket.reviewed_at = datetime.now(timezone.utc)
     ticket.decision_comment = payload.comment.strip()
+    if ticket.type == "manual_myc_folio" and ticket.equipment is not None:
+        ticket.equipment.certificate_folio = ticket.equipment.automatic_certificate_folio
+        ticket.equipment.folio_status = "reserved"
     write_audit_log(
         db,
         action="ticket.rejected",
@@ -303,10 +479,101 @@ def reject_ticket(
         entity_id=ticket.id,
         user_id=user.id,
         previous_values={"status": "pending"},
-        new_values={"status": "rejected"},
+        new_values={
+            "status": "rejected",
+            "automatic_folio_restored": (
+                ticket.equipment.automatic_certificate_folio
+                if ticket.type == "manual_myc_folio" and ticket.equipment is not None
+                else None
+            ),
+        },
     )
     notify_ticket_rejected(db, ticket, user)
     commit_and_dispatch_notifications(db)
+    return _read(_get_ticket(db, ticket.id))
+
+
+def resolve_operational_ticket(
+    db: Session, ticket_id: int, payload: TicketResolve, user: User
+) -> TicketRead:
+    ticket = _get_ticket(db, ticket_id, lock=True)
+    if ticket.status != "pending":
+        raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
+    now = datetime.now(timezone.utc)
+    if ticket.type == "certificate_folio_block":
+        myca = [
+            _allocate_lab_certificate_folio(db, "MYCA")
+            for _ in range(ticket.accredited_quantity or 0)
+        ]
+        myct = [
+            _allocate_lab_certificate_folio(db, "MYCT")
+            for _ in range(ticket.traceable_quantity or 0)
+        ]
+        ticket.resolution_snapshot = {"folios": {"MYCA": myca, "MYCT": myct}, "used": {}}
+        action = "lab_certificate_block.approved"
+    elif ticket.type in {"manual_myc_folio", "linked_folio"}:
+        folio = (payload.authorized_folio or "").strip()
+        if not folio:
+            raise HTTPException(status_code=422, detail="El folio autorizado es obligatorio")
+        duplicate = db.scalar(
+            select(LabWorkOrderEquipment.id).where(
+                LabWorkOrderEquipment.certificate_folio == folio,
+                LabWorkOrderEquipment.id != ticket.equipment_id,
+            )
+        )
+        if duplicate is not None:
+            raise HTTPException(status_code=409, detail="El folio ya está asignado a otro equipo LAB")
+        equipment = db.scalar(
+            select(LabWorkOrderEquipment)
+            .where(LabWorkOrderEquipment.id == ticket.equipment_id)
+            .with_for_update()
+        )
+        if equipment is None:
+            raise HTTPException(status_code=409, detail="El equipo solicitado ya no está disponible")
+        equipment.certificate_folio = folio
+        equipment.folio_status = "authorized"
+        equipment.folio_ticket_id = ticket.id
+        ticket.authorized_folio = folio
+        ticket.resolution_snapshot = {
+            "automatic_folio_preserved": equipment.automatic_certificate_folio,
+            "final_folio": folio,
+            "linked_company_id": equipment.linked_company_id,
+            "linked_company_name_snapshot": equipment.linked_company_name_snapshot,
+        }
+        action = "lab_folio.authorized"
+    elif ticket.type == "partial_close":
+        if ticket.work_order is None:
+            raise HTTPException(status_code=409, detail="La OT ya no está disponible")
+        work_order = _get(db, ticket.work_order.id, lock=True)
+        missing = _missing_completed_sheets([work_order])
+        work_order.partial_close_ticket_id = ticket.id
+        work_order.partial_close_pending_snapshot = {"items": missing, "approved_at": now.isoformat()}
+        ticket.resolution_snapshot = work_order.partial_close_pending_snapshot
+        action = "lab_partial_close.approved"
+    else:
+        raise HTTPException(status_code=409, detail="La solicitud requiere el flujo específico de reapertura")
+    ticket.status = "resolved"
+    ticket.reviewed_by_user_id = user.id
+    ticket.reviewed_at = now
+    ticket.resolved_at = now
+    ticket.decision_comment = payload.comment
+    conversation = db.get(CommunicationConversation, ticket.conversation_id) if ticket.conversation_id else None
+    if conversation is not None and all(item.id != user.id for item in conversation.participants):
+        conversation.participants.append(user)
+    write_audit_log(
+        db,
+        action=action,
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        previous_values={"status": "pending"},
+        new_values={
+            "status": "resolved",
+            "authorized_folio": ticket.authorized_folio,
+            "resolution_snapshot": ticket.resolution_snapshot,
+        },
+    )
+    db.commit()
     return _read(_get_ticket(db, ticket.id))
 
 

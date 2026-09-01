@@ -7,13 +7,23 @@ export type LabEquipment = {
   serial_number: string;
   report_number: string | null;
   is_good_condition: boolean;
+  service_type: 'accredited' | 'traceable' | 'linked' | null;
+  linked_company_id: number | null;
+  linked_company_name_snapshot: string | null;
+  linked_company_prefix_snapshot: string | null;
+  certificate_folio: string | null;
+  automatic_certificate_folio: string | null;
+  folio_status: 'unassigned' | 'pending' | 'reserved' | 'authorized';
+  folio_ticket_id: number | null;
+  field_sheet_id: number | null;
+  field_sheet_status: string | null;
 };
 
 export type LabRelatedWorkOrder = {
   id: number;
   folio: number;
   sequence_number: number;
-  status: 'draft' | 'ready_for_signatures' | 'completed';
+  status: 'draft' | 'ready_for_signatures' | 'completed' | 'partially_closed' | 'cancelled';
   signature_session_id: number | null;
   equipment_count: number;
 };
@@ -38,12 +48,15 @@ export type LabWorkOrder = {
   state_name: string | null;
   purchase_order: string | null;
   notes: string | null;
-  status: 'draft' | 'ready_for_signatures' | 'completed';
+  status: 'draft' | 'ready_for_signatures' | 'completed' | 'partially_closed' | 'cancelled';
+  lab_client_id: number | null;
   revision_number: number;
   edit_version: number;
   reopen_ticket_id: number | null;
   signature_required: boolean;
   signature_preserved: boolean;
+  partial_close_ticket_id: number | null;
+  cancellation_reason: string | null;
   equipment: LabEquipment[];
   related_work_orders: LabRelatedWorkOrder[];
 };
@@ -55,11 +68,13 @@ export type LabListItem = {
   reception_date: string;
   status: string;
   equipment_count: number;
+  completed_equipment_count: number;
   revision_number: number;
   signature_required: boolean;
 };
 
 export type GeneralData = {
+  lab_client_id: number | null;
   reception_date: string;
   departure_date: string;
   client_name: string;
@@ -74,7 +89,70 @@ export type GeneralData = {
   notes: string;
 };
 
-export type EquipmentData = Omit<LabEquipment, 'id' | 'position'>;
+export type EquipmentData = Pick<LabEquipment,
+  'instrument' | 'brand' | 'identification' | 'serial_number' | 'report_number' | 'is_good_condition'
+>;
+
+export type LabClient = {
+  id: number;
+  operator_client_id: number | null;
+  company: string;
+  address: string;
+  attention: string;
+};
+
+export type LinkedCompany = {
+  id: number;
+  name: string;
+  default_certificate_prefix: string;
+};
+
+export type FieldSheetTemplate = {
+  template_key: string;
+  name: string;
+  version: number;
+  blocks: {
+    key: string;
+    title: string;
+    block_type: string;
+    capture_visible?: boolean;
+    fields?: { key: string; label: string; required?: boolean; visible?: boolean; field_type?: string }[];
+  }[];
+  result_sections: {
+    key: string;
+    title: string;
+    rows: number;
+    allow_add_rows?: boolean;
+    max_rows?: number | null;
+    columns: { key: string; label: string; source?: string; required?: boolean; editable?: boolean }[];
+  }[];
+};
+
+export type FieldSheetResultRow = {
+  id?: number;
+  section_key: string;
+  row_number: number;
+  pattern_value?: string | null;
+  ibc_value_1?: string | null;
+  ibc_value_2?: string | null;
+  ibc_value_3?: string | null;
+  unit?: string | null;
+  notes?: string | null;
+  row_data: Record<string, string>;
+};
+
+export type LabFieldSheet = {
+  id: number;
+  status: string;
+  template_key: string;
+  template_definition: FieldSheetTemplate;
+  capture_values: Record<string, unknown>;
+  initial_condition: string | null;
+  final_condition: string | null;
+  observations: string | null;
+  evidence_notes: string | null;
+  results_rows: FieldSheetResultRow[];
+};
 
 export type LabWorkOrderGroupRequest = {
   id: number;

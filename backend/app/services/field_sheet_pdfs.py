@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from re import sub
+from types import SimpleNamespace
 from unicodedata import normalize
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -79,10 +80,24 @@ def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[
 
 
 def _render_html(field_sheet: FieldSheet, template_definition: dict, institution: dict) -> str:
-    equipment = field_sheet.equipment
-    service_order = equipment.service_order
-    client = service_order.client
-    certificate = next((item for item in equipment.certificates if item.is_active), None)
+    lab_equipment = field_sheet.lab_equipment
+    equipment = field_sheet.equipment or lab_equipment
+    if lab_equipment is not None:
+        order = lab_equipment.work_order
+        client = SimpleNamespace(
+            commercial_name=order.client_name.upper(),
+            legal_name=order.client_name.upper(),
+        )
+        service_order = SimpleNamespace(
+            client=client,
+            quotation=SimpleNamespace(folio=order.purchase_order) if order.purchase_order else None,
+            work_order_number=order.folio,
+        )
+        certificate = None
+    else:
+        service_order = equipment.service_order
+        client = service_order.client
+        certificate = next((item for item in equipment.certificates if item.is_active), None)
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
         autoescape=select_autoescape(("html", "xml")),
@@ -97,6 +112,8 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict, institution
         if field_sheet.certificate_client_mode == "different" and field_sheet.certificate_client_company
         else client.commercial_name or client.legal_name
     )
+    if lab_equipment is not None:
+        client_name = str(client_name or "").upper()
     client_attention = (
         field_sheet.attention
         if field_sheet.attention
@@ -104,19 +121,28 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict, institution
         if field_sheet.certificate_client_mode == "different"
         else client.commercial_name or client.legal_name
     )
+    if lab_equipment is not None:
+        client_attention = str(client_attention or "").upper()
     client_address = (
         field_sheet.address
         or (field_sheet.certificate_client_address if field_sheet.certificate_client_mode == "different" else None)
     )
+    if lab_equipment is not None:
+        client_address = str(client_address or "").upper()
     capture_values = field_sheet.capture_values or {}
     equipment_values = {
         "name": capture_values.get("instrument") or equipment.name,
-        "range_or_capacity": capture_values.get("scope") or equipment.range_or_capacity,
+        "range_or_capacity": capture_values.get("scope") or getattr(equipment, "range_or_capacity", None),
         "brand": capture_values.get("brand") or equipment.brand,
-        "model": capture_values.get("model") or equipment.model,
+        "model": capture_values.get("model") or getattr(equipment, "model", None),
         "serial_number": capture_values.get("serial_number") or equipment.serial_number,
         "internal_id": capture_values.get("internal_id") or equipment.internal_id,
     }
+    if lab_equipment is not None:
+        equipment_values = {
+            key: value.upper() if isinstance(value, str) else value
+            for key, value in equipment_values.items()
+        }
     logo_path = resolve_logo_path(institution, PROJECT_ROOT)
     return template.render(
         field_sheet=field_sheet,
@@ -127,7 +153,11 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict, institution
         client_attention=client_attention,
         client_address=client_address,
         capture_values=capture_values,
-        certificate_folio=(certificate.expected_folio or certificate.folio) if certificate else "-",
+        certificate_folio=(
+            lab_equipment.certificate_folio
+            if lab_equipment is not None
+            else (certificate.expected_folio or certificate.folio) if certificate else "-"
+        ),
         template_definition=template_definition,
         institution=institution,
         signatures=field_sheet.signatures,
@@ -149,7 +179,8 @@ def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
         institution = institutional_snapshot(get_or_create_institutional_configuration(db))
     html = _render_html(field_sheet, template_definition, institution)
     pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
-    equipment_name = field_sheet.equipment.name or f"equipo-{field_sheet.equipment_id}"
+    equipment = field_sheet.equipment or field_sheet.lab_equipment
+    equipment_name = equipment.name or f"equipo-{field_sheet.equipment_id or field_sheet.lab_equipment_id}"
     return (
         pdf,
         f"Hoja_Campo_{field_sheet.work_order_number or field_sheet.id}_{_filename(equipment_name)}.pdf",

@@ -91,7 +91,8 @@ class FieldSheetResultRead(FieldSheetResultBase):
 
 
 class FieldSheetBase(BaseModel):
-    equipment_id: int
+    equipment_id: int | None = None
+    lab_equipment_id: int | None = None
     work_order_id: int | None = None
     template_key: FieldSheetTemplateKey = "general"
     calibration_procedure_id: int | None = None
@@ -209,6 +210,7 @@ class FieldSheetRead(FieldSheetBase):
     returned_to_technician_by_id: int | None = None
     returned_to_technician_reason: str | None = None
     reserved_certificate_folio: str | None = None
+    lab_signature_session_id: int | None = None
     template_definition: FieldSheetTemplateRead | dict | None = None
     template_definition_version: int | None = None
     institutional_snapshot: dict | None = None

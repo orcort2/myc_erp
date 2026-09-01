@@ -468,10 +468,10 @@ def test_service_type_aliases_and_linked_prefix_are_canonical():
 def test_certificate_and_work_order_sequences_follow_2026_and_annual_rules(db):
     assert build_certificate_folio(
         db, service_type="accredited", issued_on=date(2026, 7, 1)
-    ) == "MYCA26078000"
+    ) == "MYCA-07-26-8000"
     assert build_certificate_folio(
         db, service_type="traceable", issued_on=date(2026, 7, 1)
-    ) == "MYCT26078000"
+    ) == "MYCT-07-26-8000"
     assert build_certificate_folio(
         db,
         service_type="linked",
@@ -486,6 +486,6 @@ def test_certificate_and_work_order_sequences_follow_2026_and_annual_rules(db):
     ) == "BESS26078000"
     assert build_certificate_folio(
         db, service_type="accredited", issued_on=date(2027, 1, 1)
-    ) == "MYCA27011000"
+    ) == "MYCA-01-27-1000"
     assert next_work_order_number(db, issued_on=date(2026, 7, 1)) == 7000
     assert next_work_order_number(db, issued_on=date(2027, 1, 1)) == 1000

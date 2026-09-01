@@ -18,6 +18,9 @@ export type MobileCapabilities = {
   canReadWorkOrderGroupRequests: boolean;
   canClaimWorkOrderGroupRequests: boolean;
   canDecideWorkOrderGroupRequests: boolean;
+  canDownloadLabPackages: boolean;
+  canManageLabClients: boolean;
+  canImportLabClients: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -60,5 +63,13 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       && hasPermission(permissions, 'lab_work_order_groups.requests.claim'),
     canDecideWorkOrderGroupRequests: user?.actor_type === 'internal'
       && hasPermission(permissions, 'lab_work_order_groups.requests.decide'),
+    canDownloadLabPackages: hasPermission(permissions, 'lab_packages.download')
+      || hasPermission(permissions, 'work_orders.read_organization')
+      || hasLegacyLabAccess,
+    canManageLabClients: hasPermission(permissions, 'lab_clients.create')
+      || hasPermission(permissions, 'work_orders.group.request')
+      || hasLegacyLabAccess,
+    canImportLabClients: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_clients.import'),
   };
 }

@@ -14,6 +14,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from pypdf import PdfReader
+from openpyxl import Workbook
 from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -32,6 +33,7 @@ from app.models.lab_work_order import (
     LabWorkOrderSignatureSession,
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
+from app.models.linked_company import LinkedCompany
 from app.models.notification import Notification
 from app.models.communication import CommunicationConversation, CommunicationMessage
 from app.models.operational_ticket import OperationalTicket
@@ -343,7 +345,9 @@ def test_lab_security_and_initial_folio(lab_context):
     client, _factory, tokens = lab_context
     url = "/api/mobile/v1/technician/lab-work-orders"
     assert client.get(url).status_code == 401
-    assert client.get(url, headers=auth(tokens["capture"])).status_code == 403
+    capture_response = client.get(url, headers=auth(tokens["capture"]))
+    assert capture_response.status_code == 200
+    assert capture_response.json() == []
 
     first = client.post(url, json=create_payload(), headers=auth(tokens["tech"]))
     second = client.post(url, json=create_payload("Otro"), headers=auth(tokens["tech"]))
@@ -351,6 +355,207 @@ def test_lab_security_and_initial_folio(lab_context):
     assert second.status_code == 201, second.text
     assert [first.json()["folio"], second.json()["folio"]] == [6400, 6401]
     assert first.json()["root_work_order_id"] == first.json()["id"]
+
+
+def test_lab_client_xlsx_import_normalizes_exact_identity_without_collapsing_company(lab_context):
+    client, _factory, tokens = lab_context
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["CLIENTE", "CONTACTO", "DIRECCIÓN"])
+    sheet.append(["Honda de México", "Ing. Juan Pérez", "Av. Industria 123"])
+    sheet.append(["  HÓNDA de mexico ", "ING JUAN PEREZ", "Av Industria 123"])
+    sheet.append(["Honda de México", "Lic. Ana Pérez", "Av. Industria 123"])
+    sheet.append(["Honda de México", "Ing. Juan Pérez", "Av. Industria 456"])
+    sheet.append(["", "Contacto inválido", "Sin cliente"])
+    content = io.BytesIO()
+    workbook.save(content)
+
+    response = client.post(
+        "/api/mobile/v1/technician/lab-clients/import",
+        files={"upload": ("clientes.xlsx", content.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "new": 3,
+        "skipped": 1,
+        "invalid": 1,
+        "errors": [{"row": 6, "reason": "Faltan Empresa, Dirección o Atención a"}],
+    }
+    listed = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Honda",
+        headers=auth(tokens["tech"]),
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()) == 3
+    assert {item["attention"] for item in listed.json()} == {"Ing. Juan Pérez", "Lic. Ana Pérez"}
+
+
+def test_modern_lab_flow_uses_independent_sequences_and_linked_manual_folio(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    created_client = client.post(
+        "/api/mobile/v1/technician/lab-clients",
+        json={"company": "Cliente moderno", "address": "Calle Uno 10", "attention": "Ing. Responsable"},
+        headers=headers,
+    )
+    assert created_client.status_code == 201, created_client.text
+    with factory() as db:
+        linked = LinkedCompany(
+            name="Laboratorio vinculado",
+            abbreviation="LV-TEST",
+            default_certificate_prefix="LVT",
+            is_enabled=True,
+        )
+        db.add(linked)
+        db.commit()
+        linked_id = linked.id
+
+    payload = create_payload("Este valor se reemplaza por snapshot")
+    payload["lab_client_id"] = created_client.json()["id"]
+    order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders", json=payload, headers=headers
+    )
+    assert order.status_code == 201, order.text
+    assert order.json()["client_name"] == "Cliente moderno"
+    order_id = order.json()["id"]
+    equipment_ids = []
+    for index in range(1, 4):
+        added = client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+            json=equipment_payload(index),
+            headers=headers,
+        )
+        assert added.status_code == 201
+        equipment_ids.append(added.json()["equipment"][-1]["id"])
+
+    accredited = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/service",
+        json={"service_type": "accredited", "linked_company_id": None}, headers=headers,
+    )
+    traceable = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[1]}/service",
+        json={"service_type": "traceable", "linked_company_id": None}, headers=headers,
+    )
+    linked_response = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[2]}/service",
+        json={"service_type": "linked", "linked_company_id": linked_id}, headers=headers,
+    )
+    assert accredited.status_code == traceable.status_code == linked_response.status_code == 200
+    month_year = date.today().strftime("%m-%y")
+    assert accredited.json()["equipment"][0]["certificate_folio"] == f"MYCA-{month_year}-4700"
+    assert traceable.json()["equipment"][1]["certificate_folio"] == f"MYCT-{month_year}-1640"
+    linked_equipment = linked_response.json()["equipment"][2]
+    assert linked_equipment["certificate_folio"] is None
+    assert linked_equipment["folio_status"] == "pending"
+    assert linked_equipment["linked_company_name_snapshot"] == "Laboratorio vinculado"
+    assert linked_equipment["linked_company_prefix_snapshot"] == "LVT"
+    linked_ticket = client.post(
+        "/api/mobile/v1/technician/tickets/folio",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_ids[2],
+            "type": "linked_folio",
+            "requested_folio": None,
+            "reason": "Autoridad vinculada",
+            "description": "Solicitar el identificador autorizado por Calidad",
+        },
+        headers=headers,
+    )
+    assert linked_ticket.status_code == 201, linked_ticket.text
+    assert linked_ticket.json()["conversation_id"] is not None
+    authorized_literal = "cap-y/26 001-a"
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{linked_ticket.json()['id']}/resolve",
+        json={"authorized_folio": authorized_literal, "comment": "Autorizado por Admin"},
+        headers=auth(tokens["admin"]),
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["authorized_folio"] == authorized_literal
+    refreshed = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers
+    ).json()
+    assert refreshed["equipment"][2]["certificate_folio"] == authorized_literal
+    assert refreshed["equipment"][2]["folio_status"] == "authorized"
+    with factory() as db:
+        sequences = {
+            row.prefix: row.next_value
+            for row in db.scalars(
+                select(InstitutionalFolioSequence).where(
+                    InstitutionalFolioSequence.document_type == "lab_certificate"
+                )
+            )
+        }
+    assert sequences == {"MYCA": 4701, "MYCT": 1641}
+
+    blocked = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
+        json=signatures_payload(), headers=headers,
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["code"] == "LAB_FIELD_SHEETS_INCOMPLETE"
+    assert [item["equipment_position"] for item in blocked.json()["detail"]["items"]] == [1, 2, 3]
+
+    created_sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"}, headers=headers,
+    )
+    assert created_sheet.status_code == 201, created_sheet.text
+    sheet_json = created_sheet.json()
+    assert sheet_json["company"] == "Cliente moderno"
+    assert sheet_json["attention"] == "Ing. Responsable"
+    assert sheet_json["capture_values"]["instrument"] == "Instrumento 1"
+    assert sheet_json["template_definition"]["template_key"] == "general"
+    original_row_count = len(sheet_json["results_rows"])
+    section = sheet_json["template_definition"]["result_sections"][0]
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(sheet_json["results_rows"])
+    ]
+    if section.get("allow_add_rows"):
+        rows.append({
+            "section_key": section["key"],
+            "row_number": max(row["row_number"] for row in rows if row["section_key"] == section["key"]) + 1,
+            "row_data": {"result": "2.00"},
+        })
+    updated_sheet = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert updated_sheet.status_code == 200, updated_sheet.text
+    if section.get("allow_add_rows"):
+        assert len(updated_sheet.json()["results_rows"]) == original_row_count + 1
+    completed_sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed_sheet.status_code == 200, completed_sheet.text
+    assert completed_sheet.json()["status"] == "completed"
+    blocked_after_one_sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
+        json=signatures_payload(), headers=headers,
+    )
+    assert blocked_after_one_sheet.status_code == 409
+    assert [item["equipment_position"] for item in blocked_after_one_sheet.json()["detail"]["items"]] == [2, 3]
+
+    capture_write = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/service",
+        json={"service_type": "traceable", "linked_company_id": None},
+        headers=auth(tokens["capture"]),
+    )
+    assert capture_write.status_code == 403
+    package = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/package",
+        headers=auth(tokens["capture"]),
+    )
+    assert package.status_code == 200
+    assert package.content.startswith(b"%PDF")
 
 
 def test_equipment_crud_limit_and_no_model(lab_context):
@@ -489,8 +694,8 @@ def test_one_signature_session_completes_and_locks_entire_group(lab_context):
     assert completed.status_code == 200, completed.text
     assert all(item["status"] == "completed" for item in completed.json()["related_work_orders"])
     for work_order_id, expected_folio, expected_instrument in (
-        (root["id"], "6400", "Instrumento 1"),
-        (extra["id"], "6401", "Instrumento 11"),
+            (root["id"], "6400", "INSTRUMENTO 1"),
+            (extra["id"], "6401", "INSTRUMENTO 11"),
     ):
         pdf = client.get(
             f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}/pdf",
@@ -503,11 +708,11 @@ def test_one_signature_session_completes_and_locks_entire_group(lab_context):
         )
         assert expected_folio in rendered_text
         assert expected_instrument in rendered_text
-        assert "Técnico LAB" in rendered_text
-        assert "Cliente LAB" in rendered_text
+        assert "TÉCNICO LAB" in rendered_text
+        assert "CLIENTE LAB" in rendered_text
         assert "CLIENTE PRUEBA" in rendered_text
-        assert rendered_text.count("Avenida Ejemplo 123") == 1
-        assert "Persona Prueba" in rendered_text
+        assert rendered_text.count("AVENIDA EJEMPLO 123") == 1
+        assert "PERSONA PRUEBA" in rendered_text
         assert "45601" in rendered_text
         assert "Tlaquepaque" in rendered_text
         assert "Jalisco" in rendered_text
@@ -969,7 +1174,7 @@ def test_work_order_structured_filters_are_combinable_paginated_and_protected(la
     assert [item["folio"] for item in first_page] == [6402, 6401]
     assert [item["folio"] for item in second_page] == [6400]
     assert client.get(url).status_code == 401
-    assert client.get(url, headers=auth(tokens["capture"])).status_code == 403
+    assert client.get(url, headers=auth(tokens["capture"])).status_code == 200
 
 
 def _completed_work_order(client: TestClient, token: str, name: str = "Cliente Ticket") -> dict:

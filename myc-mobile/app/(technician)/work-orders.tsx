@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import * as DocumentPicker from 'expo-document-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useFocusEffect } from '@react-navigation/native';
@@ -24,6 +25,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignatureFlow';
+import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
 import {
   reconcileSignatureFlowState,
   type SignatureFlowState,
@@ -31,6 +33,7 @@ import {
 } from '@/src/components/signatures/signature-flow-state';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
+import { hasPermission } from '@/src/permissions/permissions';
 import { affectsWorkOrders, RefreshGate } from '@/src/notifications/refresh-policy';
 import {
   canDeleteLabWorkOrder,
@@ -51,6 +54,7 @@ import type {
   EquipmentData,
   GeneralData,
   LabEquipment,
+  LabClient,
   LabListItem,
   LabWorkOrder,
   LabWorkOrderGroupRequest,
@@ -59,6 +63,7 @@ import type {
 const today = () => new Date().toISOString().slice(0, 10);
 const PAGE_SIZE = 25;
 const emptyGeneral = (): GeneralData => ({
+  lab_client_id: null,
   reception_date: today(),
   departure_date: today(),
   client_name: '',
@@ -81,7 +86,17 @@ const emptyEquipment = (): EquipmentData => ({
   is_good_condition: true,
 });
 
-type Step = 'general' | 'capture' | 'review' | 'signatures' | 'completed';
+type Step = 'general' | 'capture' | 'technical' | 'review' | 'signatures' | 'completed';
+type TicketDialogMode = 'reopen' | 'partial' | 'cancel';
+
+const TERMINAL_STATUSES = new Set(['completed', 'partially_closed', 'cancelled']);
+const statusPresentation = (status: string) => ({
+  completed: { label: 'CERRADA', color: '#16834b' },
+  partially_closed: { label: 'CERRADA PARCIALMENTE', color: '#d87913' },
+  cancelled: { label: 'CANCELADA', color: '#c73636' },
+  ready_for_signatures: { label: 'EN PROCESO', color: '#d7a51b' },
+  draft: { label: 'EN PROCESO', color: '#d7a51b' },
+}[status] ?? { label: status.toUpperCase(), color: '#d7a51b' });
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
   if (workOrder.signature_scope) return workOrder.signature_scope;
@@ -168,10 +183,15 @@ export default function WorkOrdersScreen() {
   const [signatureDrawing, setSignatureDrawing] = useState(false);
   const [closureScope, setClosureScope] = useState<LabClosureScope>('group');
   const [ticketOpen, setTicketOpen] = useState(false);
+  const [ticketDialogMode, setTicketDialogMode] = useState<TicketDialogMode>('reopen');
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [labClients, setLabClients] = useState<LabClient[]>([]);
+  const [clientSearch, setClientSearch] = useState('');
+  const [creatingClient, setCreatingClient] = useState(false);
+  const [newClient, setNewClient] = useState({ company: '', address: '', attention: '' });
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
@@ -267,7 +287,7 @@ export default function WorkOrdersScreen() {
           setWorkOrder(detail);
           setStep((current) => sameSignatureCohort && current === 'signatures'
             ? current
-            : detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+            : TERMINAL_STATUSES.has(detail.status) ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
         })
         .catch(() => undefined);
     }
@@ -297,9 +317,14 @@ export default function WorkOrdersScreen() {
     canExecuteWorkOrders,
     canManageEquipment,
     canCaptureSignatures,
+    canCaptureFieldSheets,
+    canDownloadLabPackages,
+    canManageLabClients,
+    canImportLabClients,
   } = capabilities;
   const editable = workOrder?.status === 'draft' && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
+  const canCancel = !!user && hasPermission(user.permissions, 'lab_work_orders.cancel');
   const closureOptions = useMemo(
     () => workOrder ? deriveLabClosureOptions(workOrder) : null,
     [workOrder],
@@ -318,6 +343,63 @@ export default function WorkOrdersScreen() {
     setSignatureDrawing(false);
     setClosureScope('group');
     setOpen(true);
+    void loadLabClients();
+  }
+
+  async function loadLabClients(search = '') {
+    try {
+      const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+      setLabClients(await request<LabClient[]>(`/mobile/v1/technician/lab-clients${query}`));
+    } catch { setLabClients([]); }
+  }
+
+  function selectLabClient(client: LabClient) {
+    setGeneral((current) => ({
+      ...current,
+      lab_client_id: client.id,
+      client_name: client.company,
+      address: client.address,
+      contact_name: client.attention,
+    }));
+    setClientSearch(client.company);
+  }
+
+  async function createInlineLabClient() {
+    if (!newClient.company.trim() || !newClient.address.trim() || !newClient.attention.trim()) return;
+    setBusy(true);
+    try {
+      const client = await request<LabClient>('/mobile/v1/technician/lab-clients', {
+        method: 'POST', body: JSON.stringify(newClient),
+      });
+      setLabClients((current) => [client, ...current.filter((item) => item.id !== client.id)]);
+      selectLabClient(client);
+      setCreatingClient(false);
+      setNewClient({ company: '', address: '', attention: '' });
+    } catch (error) {
+      Alert.alert('No fue posible crear el cliente', error instanceof Error ? error.message : 'Revisa los datos');
+    } finally { setBusy(false); }
+  }
+
+  async function importLabClients() {
+    const picked = await DocumentPicker.getDocumentAsync({
+      copyToCacheDirectory: true,
+      multiple: false,
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    if (picked.canceled) return;
+    setBusy(true);
+    try {
+      const asset = picked.assets[0];
+      const form = new FormData();
+      form.append('upload', { uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as unknown as Blob);
+      const response = await authorizedFetch(apiUrl('/mobile/v1/technician/lab-clients/import'), { method: 'POST', body: form });
+      if (!response.ok) throw new Error(await readApiError(response));
+      const summary = await response.json() as { new: number; skipped: number; invalid: number };
+      await loadLabClients(clientSearch);
+      Alert.alert('Importación terminada', `${summary.new} nuevos · ${summary.skipped} omitidos · ${summary.invalid} inválidos`);
+    } catch (error) {
+      Alert.alert('No fue posible importar', error instanceof Error ? error.message : 'Revisa el XLSX');
+    } finally { setBusy(false); }
   }
 
   function startGroupRequest() {
@@ -363,6 +445,39 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  async function submitOperationalAction() {
+    if (!workOrder || !ticketReason.trim() || !ticketDescription.trim()) return;
+    if (ticketDialogMode === 'reopen') return requestReopening();
+    setBusy(true);
+    try {
+      if (ticketDialogMode === 'cancel') {
+        const detail = await request<LabWorkOrder>(
+          `/mobile/v1/technician/lab-work-orders/${workOrder.id}/cancel`,
+          { method: 'POST', body: JSON.stringify({ reason: `${ticketReason.trim()}: ${ticketDescription.trim()}` }) },
+        );
+        setWorkOrder(detail);
+        setStep('completed');
+        Alert.alert('OT cancelada', `La OT ${detail.folio} permanece disponible para auditoría.`);
+      } else {
+        await request('/mobile/v1/technician/tickets/partial-close', {
+          method: 'POST',
+          body: JSON.stringify({
+            work_order_id: workOrder.id,
+            reason: ticketReason.trim(),
+            description: ticketDescription.trim(),
+          }),
+        });
+        Alert.alert('Excepción solicitada', 'Admin debe aprobarla antes del cierre parcial.');
+      }
+      setTicketOpen(false);
+      setTicketReason('');
+      setTicketDescription('');
+      await refresh(true);
+    } catch (error) {
+      Alert.alert('No fue posible completar la acción', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
   async function openExisting(id: number) {
     setBusy(true);
     try {
@@ -378,7 +493,9 @@ export default function WorkOrdersScreen() {
       }));
       if (!sameSignatureCohort) setSignatureDrawing(false);
       setWorkOrder(detail);
+      setClientSearch(detail.client_name);
       setGeneral({
+        lab_client_id: detail.lab_client_id,
         reception_date: detail.reception_date,
         departure_date: detail.departure_date,
         client_name: detail.client_name,
@@ -394,7 +511,7 @@ export default function WorkOrdersScreen() {
       });
       setStep((current) => sameSignatureCohort && current === 'signatures'
         ? current
-        : detail.status === 'completed' ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+        : TERMINAL_STATUSES.has(detail.status) ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
       setOpen(true);
     } catch (error) {
       Alert.alert('No fue posible abrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -468,7 +585,7 @@ export default function WorkOrdersScreen() {
         technicianName: user?.full_name ?? '',
       }));
       setWorkOrder(detail);
-      setStep(detail.status === 'completed'
+      setStep(TERMINAL_STATUSES.has(detail.status)
         ? 'completed'
         : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
     } catch (error) {
@@ -627,6 +744,24 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  async function downloadPackage(action: 'print' | 'share', group = false) {
+    if (!workOrder || !session) return;
+    setBusy(true);
+    try {
+      const uri = `${FileSystem.cacheDirectory}PAQUETE-${group ? 'GRUPO-' : ''}${workOrder.folio}.pdf`;
+      const result = await FileSystem.downloadAsync(
+        apiUrl(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/package?group=${group}`),
+        uri,
+        { headers: { Authorization: `Bearer ${session.access_token}` } },
+      );
+      if (result.status !== 200) throw new Error(`No fue posible descargar el paquete (${result.status})`);
+      if (action === 'print') await Print.printAsync({ uri: result.uri });
+      else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      Alert.alert('No fue posible abrir el paquete', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
   async function performWorkOrderDeletion(target: LabWorkOrder) {
     if (deletionCoordinator.current.isDeleting) return;
     setDeleting(true);
@@ -774,6 +909,7 @@ export default function WorkOrdersScreen() {
       {canCreateWorkOrders && <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>}
       {canCreateWorkOrderGroupsDirect && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={startDirectGroup}><Text style={styles.secondaryText}>+ Crear grupo anticipado</Text></Pressable>}
       {canRequestWorkOrderGroups && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={startGroupRequest}><Text style={styles.secondaryText}>Solicitar grupo anticipado</Text></Pressable>}
+      {canImportLabClients && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={importLabClients}><Text style={styles.secondaryText}>Importar Clientes LAB · XLSX</Text></Pressable>}
       {canRequestWorkOrderGroups && groupRequests.length > 0 && <View style={styles.filters}><Text style={styles.filterLabel}>Mis solicitudes de grupo</Text>{groupRequests.map((item) => <Pressable key={item.id} onPress={() => setSelectedGroupRequest(item)}><Text style={styles.status}>#{item.id} · {item.quantity} OT · {item.status}{item.folios.length ? ` · folios ${item.folios.join(', ')}` : ' · sin folios'}</Text></Pressable>)}</View>}
       {loading ? <ActivityIndicator style={styles.loader} /> : (
         <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
@@ -783,12 +919,14 @@ export default function WorkOrdersScreen() {
               <Pressable onPress={() => refresh(true)}><Text style={styles.retry}>Reintentar</Text></Pressable>
             </View>
           )}
-          {items.map((item) => (
-            <Pressable key={item.id} style={styles.card} onPress={() => openExisting(item.id)}>
+          {items.map((item) => {
+            const presentation = statusPresentation(item.status);
+            return (
+            <Pressable key={item.id} style={[styles.card, styles.statusStripe, { borderLeftColor: presentation.color }]} onPress={() => openExisting(item.id)}>
               <View style={styles.cardContent}><Text style={styles.folio}>OT {item.folio}</Text><Text ellipsizeMode="tail" numberOfLines={2} style={styles.client}>{item.client_name}</Text></View>
-              <View style={styles.cardRight}><Text style={styles.count}>{item.equipment_count}/10</Text><Text style={styles.status}>{item.status}</Text></View>
+              <View style={styles.cardRight}><Text style={styles.count}>{item.completed_equipment_count}/{item.equipment_count} equipos</Text><Text style={styles.status}>{presentation.label}</Text></View>
             </Pressable>
-          ))}
+          );})}
           {!items.length && !listError && <Text style={styles.empty}>No hay órdenes que coincidan con los filtros.</Text>}
           {hasMore && (
             <Pressable disabled={loadingMore} onPress={() => refresh(false)} style={styles.loadMore}>
@@ -829,18 +967,32 @@ export default function WorkOrdersScreen() {
                     {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <Field label="Fecha de recepción (AAAA-MM-DD)" required value={general.reception_date} onChangeText={(value) => setGeneral({ ...general, reception_date: value })} />
                     <Field label="Fecha de salida (AAAA-MM-DD)" required value={general.departure_date} onChangeText={(value) => setGeneral({ ...general, departure_date: value })} />
-                    <Field label="Empresa / cliente" required value={general.client_name} onChangeText={(value) => setGeneral({ ...general, client_name: value })} />
+                    <Field label="Buscar cliente" required value={clientSearch} onChangeText={(value) => { setClientSearch(value); setGeneral({ ...general, lab_client_id: null }); void loadLabClients(value); }} />
+                    {!!clientSearch.trim() && !general.lab_client_id && labClients.slice(0, 8).map((client) => (
+                      <Pressable key={client.id} style={styles.clientChoice} onPress={() => selectLabClient(client)}>
+                        <Text style={styles.clientChoiceTitle}>{client.company}</Text>
+                        <Text style={styles.clientChoiceMeta}>{client.address} · Atención: {client.attention}</Text>
+                      </Pressable>
+                    ))}
+                    {canManageLabClients && <Pressable style={styles.secondary} onPress={() => setCreatingClient((value) => !value)}><Text style={styles.secondaryText}>+ Crear cliente</Text></Pressable>}
+                    {creatingClient && <View style={styles.inlineClient}>
+                      <Field label="Empresa" required value={newClient.company} onChangeText={(value) => setNewClient({ ...newClient, company: value })} />
+                      <Field label="Dirección completa" required multiline value={newClient.address} onChangeText={(value) => setNewClient({ ...newClient, address: value })} />
+                      <Field label="Atención a" required value={newClient.attention} onChangeText={(value) => setNewClient({ ...newClient, attention: value })} />
+                      <Pressable disabled={busy || !newClient.company.trim() || !newClient.address.trim() || !newClient.attention.trim()} style={styles.primary} onPress={createInlineLabClient}><Text style={styles.primaryText}>Guardar y seleccionar</Text></Pressable>
+                    </View>}
+                    {!!general.lab_client_id && <View style={styles.selectedClient}><Text style={styles.clientChoiceTitle}>{general.client_name}</Text><Text style={styles.clientChoiceMeta}>{general.address}</Text></View>}
                     <Field label="Atención / contacto" value={general.contact_name} onChangeText={(value) => setGeneral({ ...general, contact_name: value })} />
                   </FormSection>
                   <FormSection title="Ubicación y referencia">
-                    <Field label="Domicilio" multiline value={general.address} onChangeText={(value) => setGeneral({ ...general, address: value })} />
+                    {!general.lab_client_id && <Field label="Domicilio" multiline value={general.address} onChangeText={(value) => setGeneral({ ...general, address: value })} />}
                     <Field label="C.P." value={general.postal_code} onChangeText={(value) => setGeneral({ ...general, postal_code: value })} />
                     <Field label="Ciudad" value={general.city} onChangeText={(value) => setGeneral({ ...general, city: value })} />
                     <Field label="Estado" value={general.state_name} onChangeText={(value) => setGeneral({ ...general, state_name: value })} />
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  <Pressable disabled={!general.client_name.trim() || busy || (groupMode !== 'none' && (Number(groupQuantity) < 1 || Number(groupQuantity) > 50))} style={styles.primary} onPress={createWorkOrder}><Text style={styles.primaryText}>{groupMode === 'request' ? 'Enviar solicitud sin reservar folios' : groupMode === 'direct' ? 'Crear grupo y asignar folios' : workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
+                  <Pressable disabled={!general.lab_client_id || busy || (groupMode !== 'none' && (Number(groupQuantity) < 1 || Number(groupQuantity) > 50))} style={[styles.primary, (!general.lab_client_id || busy) && styles.disabled]} onPress={createWorkOrder}><Text style={styles.primaryText}>{groupMode === 'request' ? 'Enviar solicitud sin reservar folios' : groupMode === 'direct' ? 'Crear grupo y asignar folios' : workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
                 </>
               )}
 
@@ -851,7 +1003,7 @@ export default function WorkOrdersScreen() {
                       <Pressable key={item.id} onPress={() => selectRelated(item.id)} style={[styles.relatedChip, item.id === workOrder.id && styles.relatedActive]}>
                         <Text style={[styles.relatedFolio, item.id === workOrder.id && styles.relatedActiveText]}>{item.folio}</Text>
                         <Text style={[styles.relatedCount, item.id === workOrder.id && styles.relatedActiveText]}>{item.equipment_count}/10</Text>
-                        <Text style={[styles.relatedStatus, item.id === workOrder.id && styles.relatedActiveText]}>{item.status === 'completed' ? 'Cerrada' : item.status === 'ready_for_signatures' ? 'Firmada' : 'Abierta'}</Text>
+                        <Text style={[styles.relatedStatus, item.id === workOrder.id && styles.relatedActiveText]}>{statusPresentation(item.status).label}</Text>
                       </Pressable>
                     ))}
                   </ScrollView>
@@ -876,7 +1028,27 @@ export default function WorkOrdersScreen() {
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
                   {editable && canManageEquipment && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
                   {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
-                  <Pressable disabled={!workOrder.equipment.length} style={[styles.primary, !workOrder.equipment.length && styles.disabled]} onPress={() => setStep('review')}><Text style={styles.primaryText}>Continuar</Text></Pressable>
+                  <Pressable disabled={!workOrder.equipment.length} style={[styles.primary, !workOrder.equipment.length && styles.disabled]} onPress={() => setStep('technical')}><Text style={styles.primaryText}>Continuar a captura</Text></Pressable>
+                </>
+              )}
+
+              {workOrder && step === 'technical' && (
+                <>
+                  <View style={styles.sectionIntro}>
+                    <Text style={styles.sectionEyebrow}>CAPTURA TÉCNICA</Text>
+                    <Text style={styles.sectionTitle}>Servicio, folio y hoja por equipo</Text>
+                    <Text style={styles.sectionDescription}>Las plantillas y sus validaciones provienen del motor canónico del ERP.</Text>
+                  </View>
+                  <LabTechnicalCapture
+                    canCapture={canCaptureFieldSheets}
+                    external={user.actor_type === 'client'}
+                    onUpdated={setWorkOrder}
+                    request={request}
+                    workOrder={workOrder}
+                  />
+                  {editable && <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Volver a equipos</Text></Pressable>}
+                  {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => setStep('review')}><Text style={styles.primaryText}>Continuar a cierre</Text></Pressable>}
+                  {canDownloadLabPackages && <Pressable style={styles.secondary} onPress={() => downloadPackage('share')}><Text style={styles.secondaryText}>Descargar paquete disponible</Text></Pressable>}
                 </>
               )}
 
@@ -885,7 +1057,8 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.sectionTitle}>Elegir alcance del cierre</Text>
                   {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s) · {item.status === 'completed' ? 'cerrada' : item.status === 'ready_for_signatures' ? 'firmada' : 'abierta'}</Text>)}
                   <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. Cada firma cierra únicamente la OT elegida.</Text>
-                  <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Editar equipos</Text></Pressable>
+                  <Pressable style={styles.secondary} onPress={() => setStep('technical')}><Text style={styles.secondaryText}>Revisar captura técnica</Text></Pressable>
+                  {canCreateTickets && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar excepción de cierre parcial</Text></Pressable>}
                   {canExecuteWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
                     <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar OT individual reabierta</Text></Pressable>
                   ) : canCaptureSignatures ? (
@@ -947,17 +1120,20 @@ export default function WorkOrdersScreen() {
 
               {workOrder && step === 'completed' && (
                 <>
-                  <Text style={styles.sectionTitle}>OT {workOrder.folio} finalizada</Text>
+                  <Text style={styles.sectionTitle}>OT {workOrder.folio} · {statusPresentation(workOrder.status).label}</Text>
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
-                  <Pressable style={styles.primary} onPress={() => downloadPdf('print')}><Text style={styles.primaryText}>Ver / imprimir OT {workOrder.folio}</Text></Pressable>
-                  <Pressable style={styles.secondary} onPress={() => downloadPdf('share')}><Text style={styles.secondaryText}>Compartir OT {workOrder.folio}</Text></Pressable>
-                  {canCreateTickets && <Pressable style={styles.secondary} onPress={() => setTicketOpen(true)}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>}
+                  {workOrder.status !== 'cancelled' && <Pressable style={styles.primary} onPress={() => downloadPdf('print')}><Text style={styles.primaryText}>Ver / imprimir OT {workOrder.folio}</Text></Pressable>}
+                  {workOrder.status !== 'cancelled' && <Pressable style={styles.secondary} onPress={() => downloadPdf('share')}><Text style={styles.secondaryText}>Compartir OT {workOrder.folio}</Text></Pressable>}
+                  {canDownloadLabPackages && <Pressable style={styles.secondary} onPress={() => downloadPackage('share', false)}><Text style={styles.secondaryText}>Descargar paquete de esta OT</Text></Pressable>}
+                  {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <Pressable style={styles.secondary} onPress={() => downloadPackage('share', true)}><Text style={styles.secondaryText}>Descargar paquete del grupo</Text></Pressable>}
+                  {canCreateTickets && workOrder.status !== 'cancelled' && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>}
                 </>
               )}
 
               {workOrder && canDelete && (
                 <View style={styles.dangerZone}>
                   <Text style={styles.dangerTitle}>Acciones administrativas</Text>
+                  {canCancel && workOrder.status !== 'cancelled' && <Pressable style={styles.cancelWorkOrder} onPress={() => { setTicketDialogMode('cancel'); setTicketOpen(true); }}><Text style={styles.cancelWorkOrderText}>Cancelar y conservar OT</Text></Pressable>}
                   <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
                   <Pressable
                     disabled={busy || deleting}
@@ -1005,7 +1181,7 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
-          {ticketOpen && canCreateTickets && (
+          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel)) && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1017,14 +1193,14 @@ export default function WorkOrdersScreen() {
                   keyboardShouldPersistTaps="handled"
                 >
                   <View style={styles.overlayHandle} />
-                  <Text style={styles.sectionEyebrow}>TICKET DE REAPERTURA</Text>
-                  <Text style={styles.sectionTitle}>¿Por qué necesitas modificar esta orden?</Text>
-                  <Text style={styles.sectionDescription}>La OT permanecerá cerrada hasta que la solicitud sea aprobada.</Text>
+                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : 'TICKET DE REAPERTURA'}</Text>
+                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : '¿Por qué necesitas modificar esta orden?'}</Text>
+                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : 'La solicitud requiere resolución de Admin.'}</Text>
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
                   <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />
                   <View style={styles.actionRow}>
                     <Pressable style={styles.cancel} onPress={() => setTicketOpen(false)}><Text>Cancelar</Text></Pressable>
-                    <Pressable disabled={!ticketReason.trim() || !ticketDescription.trim()} style={styles.save} onPress={requestReopening}><Text style={styles.primaryText}>Enviar solicitud</Text></Pressable>
+                    <Pressable disabled={!ticketReason.trim() || !ticketDescription.trim()} style={styles.save} onPress={submitOperationalAction}><Text style={styles.primaryText}>{ticketDialogMode === 'cancel' ? 'Cancelar OT' : 'Enviar solicitud'}</Text></Pressable>
                   </View>
                 </ScrollView>
               </KeyboardAvoidingView>
@@ -1343,6 +1519,10 @@ const styles = StyleSheet.create({
     padding: 16,
   },
 
+  statusStripe: {
+    borderLeftWidth: 6,
+  },
+
   cardContent: {
     flex: 1,
     minWidth: 0,
@@ -1499,6 +1679,40 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     paddingHorizontal: 16,
     paddingTop: 18,
+  },
+
+  clientChoice: {
+    backgroundColor: '#f5f8fa',
+    borderColor: '#cbd7df',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 11,
+  },
+
+  clientChoiceTitle: {
+    color: '#142b3a',
+    fontWeight: '800',
+  },
+
+  clientChoiceMeta: {
+    color: '#667582',
+    fontSize: 12,
+    marginTop: 3,
+  },
+
+  inlineClient: {
+    backgroundColor: '#eef4f7',
+    borderRadius: 12,
+    gap: 8,
+    padding: 12,
+  },
+
+  selectedClient: {
+    backgroundColor: '#e4f4ef',
+    borderColor: '#75b9a7',
+    borderRadius: 10,
+    borderWidth: 1,
+    padding: 11,
   },
 
   formSectionTitle: {
@@ -1777,6 +1991,22 @@ const styles = StyleSheet.create({
     color: '#6f363d',
     lineHeight: 20,
     marginBottom: 16,
+  },
+
+  cancelWorkOrder: {
+    alignItems: 'center',
+    borderColor: '#c36b18',
+    borderRadius: 11,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    marginBottom: 14,
+    minHeight: 50,
+  },
+
+  cancelWorkOrderText: {
+    color: '#a5530b',
+    fontSize: 15,
+    fontWeight: '800',
   },
 
   deleteWorkOrder: {

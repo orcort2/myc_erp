@@ -73,6 +73,7 @@ from app.models.invoice import (
     InvoiceSettings,
 )
 from app.models.linked_company import LinkedCompany
+from app.models.lab_client import LabClient
 from app.models.lab_work_order import (
     LabWorkOrder,
     LabWorkOrderGroupRequest,

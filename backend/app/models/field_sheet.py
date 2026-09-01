@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -9,8 +9,22 @@ from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 
 class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     __tablename__ = "field_sheets"
+    __table_args__ = (
+        CheckConstraint(
+            "(equipment_id IS NOT NULL AND lab_equipment_id IS NULL) OR "
+            "(equipment_id IS NULL AND lab_equipment_id IS NOT NULL)",
+            name="ck_field_sheets_exactly_one_equipment_owner",
+        ),
+        UniqueConstraint("lab_equipment_id", name="uq_field_sheets_lab_equipment_id"),
+    )
 
-    equipment_id: Mapped[int] = mapped_column(ForeignKey("equipment.id"), index=True)
+    equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id"), index=True)
+    lab_equipment_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lab_work_order_equipment.id", ondelete="CASCADE"), index=True
+    )
+    lab_signature_session_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lab_work_order_signature_sessions.id", ondelete="RESTRICT"), index=True
+    )
 
     work_order_id: Mapped[int | None] = mapped_column(
         ForeignKey("service_work_orders.id"),
@@ -76,7 +90,10 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     # de cliente/equipo (incluye overrides y campos declarativos por plantilla).
     capture_values: Mapped[dict | None] = mapped_column(JSON)
 
-    equipment: Mapped["Equipment"] = relationship(back_populates="field_sheets")
+    equipment: Mapped["Equipment | None"] = relationship(back_populates="field_sheets")
+    lab_equipment: Mapped["LabWorkOrderEquipment | None"] = relationship(
+        back_populates="field_sheet"
+    )
 
     work_order: Mapped["ServiceWorkOrder | None"] = relationship()
 
@@ -119,6 +136,9 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
         for certificate in self.certificates:
             if certificate.is_active:
                 return certificate.expected_folio or certificate.folio
+
+        if self.lab_equipment is not None:
+            return self.lab_equipment.certificate_folio
 
         equipment = self.equipment
         if equipment is None:

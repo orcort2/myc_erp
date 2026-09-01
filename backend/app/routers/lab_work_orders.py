@@ -9,6 +9,9 @@ from app.core.mobile.scope import ensure_lab_work_order_scope
 from app.core.mobile.security import MobileSecurityContext, require_mobile_permission
 from app.schemas.lab_work_order import (
     LabEquipmentWrite,
+    LabEquipmentServiceWrite,
+    LabCancellationWrite,
+    LabFieldSheetCreate,
     LabSignatureGroupWrite,
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
@@ -18,9 +21,13 @@ from app.schemas.lab_work_order import (
     LabWorkOrderRead,
     LabWorkOrderUpdate,
 )
+from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
+from app.schemas.field_sheet_template import FieldSheetTemplateRead
 from app.schemas.operational_ticket import LabRevisionRead
 from app.services.lab_work_orders import (
     add_equipment,
+    assign_equipment_service,
+    cancel_work_order,
     complete_group,
     complete_individual,
     create_additional_work_order,
@@ -42,6 +49,16 @@ from app.services.lab_work_orders import (
     update_equipment,
     update_work_order,
 )
+from app.services.field_sheet_templates import list_field_sheet_templates
+from app.services.lab_field_sheets import (
+    complete_lab_field_sheet,
+    create_lab_field_sheet,
+    read_lab_field_sheet,
+    update_lab_field_sheet,
+)
+from app.services.lab_packages import generate_lab_package
+from app.models.linked_company import LinkedCompany
+from sqlalchemy import select
 from app.services.operational_tickets import get_revision_pdf, list_revisions
 
 
@@ -260,6 +277,34 @@ def export_lab_work_orders(
     )
 
 
+@router.get("/field-sheet-templates", response_model=list[FieldSheetTemplateRead])
+def get_lab_field_sheet_templates(
+    db: Session = Depends(get_db),
+    _context: MobileSecurityContext = Depends(
+        require_mobile_permission("field_sheet_templates.read")
+    ),
+) -> list[FieldSheetTemplateRead]:
+    return list_field_sheet_templates(db, include_all=False)
+
+
+@router.get("/linked-companies")
+def get_lab_linked_companies(
+    db: Session = Depends(get_db),
+    _context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
+    ),
+) -> list[dict]:
+    rows = db.scalars(
+        select(LinkedCompany)
+        .where(LinkedCompany.is_active.is_(True))
+        .order_by(LinkedCompany.name)
+    ).all()
+    return [
+        {"id": item.id, "name": item.name, "default_certificate_prefix": item.default_certificate_prefix}
+        for item in rows
+    ]
+
+
 @router.get("/{work_order_id}", response_model=LabWorkOrderRead)
 def get_lab_work_order(
     work_order_id: int,
@@ -314,6 +359,84 @@ def create_lab_equipment(
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return add_equipment(db, work_order_id, payload, context.user)
+
+
+@router.put("/{work_order_id}/equipment/{equipment_id}/service", response_model=LabWorkOrderRead)
+def put_lab_equipment_service(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentServiceWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("field_sheets.capture", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return assign_equipment_service(
+        db,
+        work_order_id,
+        equipment_id,
+        payload,
+        context.user,
+        external=context.actor_type == "client",
+    )
+
+
+@router.post("/{work_order_id}/equipment/{equipment_id}/field-sheet", response_model=FieldSheetRead, status_code=201)
+def post_lab_field_sheet(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabFieldSheetCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("field_sheets.capture", "lab_work_orders.use")
+    ),
+) -> FieldSheetRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return create_lab_field_sheet(
+        db, work_order_id, equipment_id, payload, context.user,
+        external=context.actor_type == "client",
+    )
+
+
+@router.get("/{work_order_id}/equipment/{equipment_id}/field-sheet", response_model=FieldSheetRead)
+def get_lab_field_sheet(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
+    ),
+) -> FieldSheetRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return read_lab_field_sheet(db, work_order_id, equipment_id)
+
+
+@router.patch("/{work_order_id}/equipment/{equipment_id}/field-sheet", response_model=FieldSheetRead)
+def patch_lab_field_sheet(
+    work_order_id: int,
+    equipment_id: int,
+    payload: FieldSheetUpdate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("field_sheets.capture", "lab_work_orders.use")
+    ),
+) -> FieldSheetRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return update_lab_field_sheet(db, work_order_id, equipment_id, payload, context.user)
+
+
+@router.post("/{work_order_id}/equipment/{equipment_id}/field-sheet/complete", response_model=FieldSheetRead)
+def post_complete_lab_field_sheet(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("field_sheets.capture", "lab_work_orders.use")
+    ),
+) -> FieldSheetRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return complete_lab_field_sheet(db, work_order_id, equipment_id, context.user)
 
 
 @router.patch("/{work_order_id}/equipment/{equipment_id}", response_model=LabWorkOrderRead)
@@ -377,7 +500,13 @@ def create_lab_group_signatures(
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return sign_group(db, work_order_id, payload, context.user)
+    return sign_group(
+        db,
+        work_order_id,
+        payload,
+        context.user,
+        require_completed_sheets=context.actor_type == "internal",
+    )
 
 
 @router.post("/{work_order_id}/signatures/individual", response_model=LabWorkOrderRead)
@@ -390,7 +519,13 @@ def create_lab_individual_signatures(
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return sign_individual(db, work_order_id, payload, context.user)
+    return sign_individual(
+        db,
+        work_order_id,
+        payload,
+        context.user,
+        require_completed_sheets=context.actor_type == "internal",
+    )
 
 
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)
@@ -432,6 +567,40 @@ def get_lab_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
     )
+
+
+@router.get("/{work_order_id}/package")
+def get_lab_package(
+    work_order_id: int,
+    group: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_packages.download", "work_orders.read_organization")
+    ),
+) -> Response:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    content, filename = generate_lab_package(
+        db, work_order_id, context.user, group=group
+    )
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.post("/{work_order_id}/cancel", response_model=LabWorkOrderRead)
+def post_cancel_lab_work_order(
+    work_order_id: int,
+    payload: LabCancellationWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_orders.cancel")
+    ),
+) -> LabWorkOrderRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La cancelación está reservada a Admin")
+    return cancel_work_order(db, work_order_id, context.user, payload.reason)
 
 
 @router.get("/{work_order_id}/revisions", response_model=list[LabRevisionRead])

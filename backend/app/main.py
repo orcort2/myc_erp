@@ -26,6 +26,7 @@ from app.routers import (
     documents,
     equipment,
     field_sheets,
+    lab_clients,
     health,
     invoices,
     integrations,
@@ -152,6 +153,7 @@ include_api_router(service_orders.router, prefix="/api")
 include_api_router(technical_profiles.router, prefix="/api")
 include_api_router(equipment.router, prefix="/api")
 include_api_router(field_sheets.router, prefix="/api")
+include_api_router(lab_clients.router, prefix="/api")
 include_api_router(certificates.router, prefix="/api")
 include_api_router(communications.router, prefix="/api")
 include_api_router(invoices.router, prefix="/api")

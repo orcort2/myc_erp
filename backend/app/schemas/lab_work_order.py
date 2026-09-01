@@ -18,6 +18,7 @@ class LabWorkOrderCreate(BaseModel):
     state_name: str | None = Field(default=None, max_length=120)
     purchase_order: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=4000)
+    lab_client_id: int | None = Field(default=None, gt=0)
 
     @field_validator("departure_date")
     @classmethod
@@ -37,6 +38,7 @@ class LabWorkOrderGroupRequestRead(BaseModel):
 
     id: int
     operator_client_id: int
+    lab_client_id: int | None
     operator_client_name: str
     requested_by_user_id: int
     requested_by_name: str
@@ -86,6 +88,7 @@ class LabWorkOrderUpdate(BaseModel):
     state_name: str | None = Field(default=None, max_length=120)
     purchase_order: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=4000)
+    lab_client_id: int | None = Field(default=None, gt=0)
     expected_edit_version: int | None = Field(default=None, ge=1)
 
 
@@ -109,8 +112,59 @@ class LabEquipmentRead(LabEquipmentBase):
 
     id: int
     position: int
+    service_type: str | None = None
+    linked_company_id: int | None = None
+    linked_company_name_snapshot: str | None = None
+    linked_company_prefix_snapshot: str | None = None
+    certificate_folio: str | None = None
+    automatic_certificate_folio: str | None = None
+    folio_status: str = "unassigned"
+    folio_ticket_id: int | None = None
+    field_sheet_id: int | None = None
+    field_sheet_status: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class LabEquipmentServiceWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    service_type: str = Field(pattern="^(accredited|traceable|linked)$")
+    linked_company_id: int | None = Field(default=None, gt=0)
+
+
+class LabManualFolioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requested_folio: str = Field(min_length=1, max_length=120)
+    reason: str = Field(min_length=3, max_length=180)
+    description: str = Field(min_length=3, max_length=4000)
+
+
+class LabLinkedFolioRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=180)
+    description: str = Field(min_length=3, max_length=4000)
+
+
+class LabCancellationWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class LabPartialCloseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=180)
+    description: str = Field(min_length=3, max_length=4000)
+
+
+class LabFieldSheetCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    template_key: str = Field(min_length=1, max_length=60)
 
 
 class LabSignatureWrite(BaseModel):
@@ -177,6 +231,7 @@ class LabWorkOrderRead(BaseModel):
     signature_scope: str | None = None
     created_by_user_id: int
     operator_client_id: int | None
+    lab_client_id: int | None
     reception_date: date
     departure_date: date
     client_name: str
@@ -191,6 +246,12 @@ class LabWorkOrderRead(BaseModel):
     notes: str | None
     status: str
     completed_at: datetime | None
+    partially_closed_at: datetime | None = None
+    partial_close_ticket_id: int | None = None
+    partial_close_pending_snapshot: dict | None = None
+    cancelled_at: datetime | None = None
+    cancelled_by_user_id: int | None = None
+    cancellation_reason: str | None = None
     final_pdf_sha256: str | None
     final_pdf_generated_at: datetime | None
     revision_number: int
@@ -214,6 +275,7 @@ class LabWorkOrderListItem(BaseModel):
     reception_date: date
     status: str
     equipment_count: int
+    completed_equipment_count: int = 0
     created_at: datetime
     revision_number: int
     signature_required: bool

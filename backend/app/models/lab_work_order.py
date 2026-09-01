@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     LargeBinary,
     String,
     Text,
@@ -28,7 +29,7 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
         CheckConstraint("folio BETWEEN 6400 AND 6999", name="ck_lab_work_order_folio_range"),
         CheckConstraint("sequence_number >= 1", name="ck_lab_work_order_sequence"),
         CheckConstraint(
-            "status IN ('draft', 'ready_for_signatures', 'completed')",
+            "status IN ('draft', 'ready_for_signatures', 'completed', 'partially_closed', 'cancelled')",
             name="ck_lab_work_order_status",
         ),
         UniqueConstraint(
@@ -65,6 +66,9 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     operator_client_id: Mapped[int | None] = mapped_column(
         ForeignKey("clients.id", ondelete="RESTRICT"), index=True, nullable=True
     )
+    lab_client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lab_clients.id", ondelete="RESTRICT"), index=True, nullable=True
+    )
     reception_date: Mapped[date] = mapped_column(Date, nullable=False)
     departure_date: Mapped[date] = mapped_column(Date, nullable=False)
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -79,6 +83,22 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="draft", index=True, nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    partially_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    partial_close_ticket_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "operational_tickets.id",
+            ondelete="RESTRICT",
+            name="fk_lab_work_orders_partial_close_ticket_id",
+            use_alter=True,
+        ),
+        index=True,
+    )
+    partial_close_pending_snapshot: Mapped[dict | None] = mapped_column(JSON)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    cancelled_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    cancellation_reason: Mapped[str | None] = mapped_column(Text)
     final_pdf: Mapped[bytes | None] = mapped_column(LargeBinary)
     final_pdf_sha256: Mapped[str | None] = mapped_column(String(64))
     final_pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -116,6 +136,7 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
         order_by="LabWorkOrderRevision.revision_number",
     )
     operator_client: Mapped["Client | None"] = relationship()
+    lab_client: Mapped["LabClient | None"] = relationship()
 
 
 class LabWorkOrderGroupRequest(IntegerPkMixin, TimestampMixin, Base):
@@ -132,6 +153,9 @@ class LabWorkOrderGroupRequest(IntegerPkMixin, TimestampMixin, Base):
 
     operator_client_id: Mapped[int] = mapped_column(
         ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    lab_client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lab_clients.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     requested_by_user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
@@ -181,8 +205,26 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     serial_number: Mapped[str] = mapped_column(String(160), nullable=False)
     report_number: Mapped[str | None] = mapped_column(String(160))
     is_good_condition: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    service_type: Mapped[str | None] = mapped_column(String(20), index=True)
+    linked_company_id: Mapped[int | None] = mapped_column(
+        ForeignKey("linked_companies.id", ondelete="RESTRICT"), index=True
+    )
+    linked_company_name_snapshot: Mapped[str | None] = mapped_column(String(255))
+    linked_company_prefix_snapshot: Mapped[str | None] = mapped_column(String(12))
+    certificate_folio: Mapped[str | None] = mapped_column(String(120), unique=True, index=True)
+    automatic_certificate_folio: Mapped[str | None] = mapped_column(String(40), index=True)
+    folio_status: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="unassigned", index=True
+    )
+    folio_ticket_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operational_tickets.id", ondelete="RESTRICT", use_alter=True), index=True
+    )
 
     work_order: Mapped[LabWorkOrder] = relationship(back_populates="equipment")
+    linked_company: Mapped["LinkedCompany | None"] = relationship()
+    field_sheet: Mapped["FieldSheet | None"] = relationship(
+        back_populates="lab_equipment", uselist=False
+    )
 
     @property
     def name(self) -> str:
@@ -248,3 +290,6 @@ class LabWorkOrderSignature(IntegerPkMixin, TimestampMixin, Base):
 
 from app.models.lab_work_order_revision import LabWorkOrderRevision  # noqa: E402
 from app.models.client import Client  # noqa: E402
+from app.models.field_sheet import FieldSheet  # noqa: E402
+from app.models.lab_client import LabClient  # noqa: E402
+from app.models.linked_company import LinkedCompany  # noqa: E402

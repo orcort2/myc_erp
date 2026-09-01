@@ -20,6 +20,9 @@ from app.models.communication import (
     CommunicationMessageReceipt,
 )
 from app.models.folio_sequence import InstitutionalFolioSequence
+from app.models.field_sheet import FieldSheet
+from app.models.lab_client import LabClient
+from app.models.linked_company import LinkedCompany
 from app.models.lab_work_order import (
     LabWorkOrder,
     LabWorkOrderEquipment,
@@ -33,6 +36,7 @@ from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.schemas.lab_work_order import (
     LabEquipmentWrite,
+    LabEquipmentServiceWrite,
     LabSignatureGroupWrite,
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
@@ -58,6 +62,9 @@ LAB_FOLIO_MIN = 6400
 LAB_FOLIO_MAX = 6999
 LAB_SEQUENCE_YEAR = 0
 LAB_SEQUENCE_PREFIX = "LAB"
+LAB_CERTIFICATE_SEQUENCE_YEAR = 0
+LAB_CERTIFICATE_LIMIT = 7999
+LAB_CERTIFICATE_STARTS = {"MYCA": 4700, "MYCT": 1640}
 GENERAL_FIELDS = (
     "reception_date",
     "departure_date",
@@ -71,6 +78,7 @@ GENERAL_FIELDS = (
     "state_name",
     "purchase_order",
     "notes",
+    "lab_client_id",
 )
 CRITICAL_GENERAL_FIELDS = {"reception_date", "departure_date", "client_name", "address"}
 CRITICAL_EQUIPMENT_FIELDS = {
@@ -80,7 +88,7 @@ CRITICAL_EQUIPMENT_FIELDS = {
 
 def _query_with_relations():
     return select(LabWorkOrder).options(
-        selectinload(LabWorkOrder.equipment),
+        selectinload(LabWorkOrder.equipment).selectinload(LabWorkOrderEquipment.field_sheet),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
         ),
@@ -88,7 +96,11 @@ def _query_with_relations():
 
 
 def _get(db: Session, work_order_id: int, *, lock: bool = False) -> LabWorkOrder:
-    query = _query_with_relations().where(LabWorkOrder.id == work_order_id)
+    query = (
+        _query_with_relations()
+        .where(LabWorkOrder.id == work_order_id)
+        .execution_options(populate_existing=True)
+    )
     if lock:
         query = query.with_for_update()
     work_order = db.scalar(query)
@@ -102,9 +114,12 @@ def _root_id(work_order: LabWorkOrder) -> int:
 
 
 def _group(db: Session, work_order: LabWorkOrder, *, lock: bool = False) -> list[LabWorkOrder]:
-    query = _query_with_relations().where(
-        LabWorkOrder.root_work_order_id == _root_id(work_order)
-    ).order_by(LabWorkOrder.sequence_number)
+    query = (
+        _query_with_relations()
+        .where(LabWorkOrder.root_work_order_id == _root_id(work_order))
+        .order_by(LabWorkOrder.sequence_number)
+        .execution_options(populate_existing=True)
+    )
     if lock:
         query = query.with_for_update()
     return list(db.scalars(query).all())
@@ -112,7 +127,7 @@ def _group(db: Session, work_order: LabWorkOrder, *, lock: bool = False) -> list
 
 def _open_group_members(group: list[LabWorkOrder]) -> list[LabWorkOrder]:
     """Return non-final members without changing historical group identity."""
-    return [item for item in group if item.status != "completed"]
+    return [item for item in group if item.status not in {"completed", "partially_closed", "cancelled"}]
 
 
 def _editable_group_members(group: list[LabWorkOrder]) -> list[LabWorkOrder]:
@@ -129,7 +144,7 @@ def _signature_cohort(
         item
         for item in group
         if item.signature_session_id == work_order.signature_session_id
-        and (include_completed or item.status != "completed")
+        and (include_completed or item.status not in {"completed", "partially_closed", "cancelled"})
     ]
 
 
@@ -292,6 +307,11 @@ def _allocate_folio(db: Session) -> int:
 def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
     group = _group(db, work_order)
     result = LabWorkOrderRead.model_validate(work_order)
+    by_id = {item.id: item for item in work_order.equipment}
+    for projected in result.equipment:
+        source = by_id[projected.id]
+        projected.field_sheet_id = source.field_sheet.id if source.field_sheet else None
+        projected.field_sheet_status = source.field_sheet.status if source.field_sheet else None
     result.signature_scope = _recorded_signature_scope(
         db, work_order.signature_session_id
     )
@@ -445,6 +465,23 @@ def create_work_order(
     operator_client_id: int | None = None,
 ) -> LabWorkOrderRead:
     values = payload.model_dump()
+    lab_client_id = values.get("lab_client_id")
+    if lab_client_id is not None:
+        client = db.scalar(
+            select(LabClient).where(
+                LabClient.id == lab_client_id,
+                LabClient.operator_client_id.is_(None)
+                if operator_client_id is None
+                else LabClient.operator_client_id == operator_client_id,
+            )
+        )
+        if client is None:
+            raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
+        values.update(
+            client_name=client.company,
+            address=client.address,
+            contact_name=client.attention,
+        )
     work_order = LabWorkOrder(
         folio=_allocate_folio(db),
         sequence_number=1,
@@ -477,6 +514,19 @@ def _materialize_group(
 ) -> LabWorkOrder:
     """Create an anticipated LAB group atomically; caller owns the commit."""
     values = payload.model_dump(exclude={"quantity"})
+    lab_client_id = values.get("lab_client_id")
+    if lab_client_id is not None:
+        client = db.scalar(
+            select(LabClient).where(
+                LabClient.id == lab_client_id,
+                LabClient.operator_client_id.is_(None)
+                if operator_client_id is None
+                else LabClient.operator_client_id == operator_client_id,
+            )
+        )
+        if client is None:
+            raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
+        values.update(client_name=client.company, address=client.address, contact_name=client.attention)
     folios = _allocate_folio_block(db, payload.quantity)
     root: LabWorkOrder | None = None
     previous: LabWorkOrder | None = None
@@ -708,7 +758,9 @@ def list_work_orders(
     if work_order_status == "open":
         query = query.where(LabWorkOrder.status.in_(("draft", "ready_for_signatures")))
     elif work_order_status == "completed":
-        query = query.where(LabWorkOrder.status == "completed")
+        query = query.where(
+            LabWorkOrder.status.in_(("completed", "partially_closed", "cancelled"))
+        )
     items = list(
         db.scalars(
             query.order_by(LabWorkOrder.folio.desc()).offset(offset).limit(limit)
@@ -724,6 +776,10 @@ def list_work_orders(
             reception_date=item.reception_date,
             status=item.status,
             equipment_count=len(item.equipment),
+            completed_equipment_count=sum(
+                1 for equipment in item.equipment
+                if equipment.field_sheet is not None and equipment.field_sheet.status == "completed"
+            ),
             created_at=item.created_at,
             revision_number=item.revision_number,
             signature_required=item.signature_required,
@@ -892,6 +948,37 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
         ) from exc
 
 
+def cancel_work_order(
+    db: Session, work_order_id: int, user: User, reason: str
+) -> LabWorkOrderRead:
+    work_order = _get(db, work_order_id, lock=True)
+    if work_order.status == "cancelled":
+        return _read(db, work_order)
+    if work_order.status in {"completed", "partially_closed"}:
+        raise HTTPException(status_code=409, detail="Una OT cerrada requiere reapertura antes de cancelar")
+    now = datetime.now(timezone.utc)
+    previous = work_order.status
+    work_order.status = "cancelled"
+    work_order.cancelled_at = now
+    work_order.cancelled_by_user_id = user.id
+    work_order.cancellation_reason = reason.strip()
+    write_audit_log(
+        db,
+        action="lab_work_order.cancelled",
+        entity="lab_work_orders",
+        entity_id=work_order.id,
+        user_id=user.id,
+        previous_values={"status": previous},
+        new_values={
+            "status": "cancelled",
+            "cancelled_at": now.isoformat(),
+            "cancellation_reason": work_order.cancellation_reason,
+        },
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
 def update_work_order(
     db: Session,
     work_order_id: int,
@@ -906,6 +993,18 @@ def update_work_order(
     editable_members = _editable_group_members(group)
     updates = payload.model_dump(exclude_unset=True)
     expected_edit_version = updates.pop("expected_edit_version", None)
+    if "lab_client_id" in updates:
+        client = db.scalar(
+            select(LabClient).where(
+                LabClient.id == updates["lab_client_id"],
+                LabClient.operator_client_id.is_(None)
+                if operator_client_id is None
+                else LabClient.operator_client_id == operator_client_id,
+            )
+        )
+        if client is None:
+            raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
+        updates.update(client_name=client.company, address=client.address, contact_name=client.attention)
     _check_edit_version(editable_members, expected_edit_version)
     reception = updates.get("reception_date", work_order.reception_date)
     departure = updates.get("departure_date", work_order.departure_date)
@@ -1023,6 +1122,148 @@ def update_equipment(
         entity_id=equipment.id,
         user_id=user.id,
         new_values={"work_order_id": work_order.id},
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def _allocate_lab_certificate_folio(db: Session, prefix: str) -> str:
+    if prefix not in LAB_CERTIFICATE_STARTS:
+        raise HTTPException(status_code=422, detail="Serie LAB no soportada")
+    lock_key = f"lab_certificate:{prefix}"
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": lock_key})
+    counter = db.scalar(
+        select(InstitutionalFolioSequence)
+        .where(
+            InstitutionalFolioSequence.document_type == "lab_certificate",
+            InstitutionalFolioSequence.prefix == prefix,
+            InstitutionalFolioSequence.year == LAB_CERTIFICATE_SEQUENCE_YEAR,
+        )
+        .with_for_update()
+    )
+    start = LAB_CERTIFICATE_STARTS[prefix]
+    if counter is None:
+        counter = InstitutionalFolioSequence(
+            document_type="lab_certificate",
+            prefix=prefix,
+            year=LAB_CERTIFICATE_SEQUENCE_YEAR,
+            next_value=start,
+        )
+        db.add(counter)
+        db.flush()
+    sequence = max(counter.next_value, start)
+    if sequence > LAB_CERTIFICATE_LIMIT:
+        raise HTTPException(status_code=409, detail=f"Se agotó la secuencia temporal {prefix}")
+    counter.next_value = sequence + 1
+    today = date.today()
+    db.flush()
+    return f"{prefix}-{today:%m}-{today:%y}-{sequence:04d}"
+
+
+def assign_equipment_service(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentServiceWrite,
+    user: User,
+    *,
+    external: bool,
+) -> LabWorkOrderRead:
+    work_order = _get(db, work_order_id, lock=True)
+    _ensure_members_editable([work_order])
+    equipment = db.scalar(
+        select(LabWorkOrderEquipment)
+        .where(
+            LabWorkOrderEquipment.id == equipment_id,
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+        )
+        .with_for_update()
+    )
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    if equipment.field_sheet is not None:
+        raise HTTPException(status_code=409, detail="La hoja existente congela el tipo de servicio")
+
+    linked = None
+    if payload.service_type == "linked":
+        if payload.linked_company_id is not None:
+            linked = db.scalar(
+                select(LinkedCompany).where(
+                    LinkedCompany.id == payload.linked_company_id,
+                    LinkedCompany.is_active.is_(True),
+                )
+            )
+            if linked is None:
+                raise HTTPException(status_code=404, detail="Empresa vinculada no encontrada")
+        elif not external:
+            raise HTTPException(status_code=422, detail="Selecciona la empresa vinculada")
+    elif payload.linked_company_id is not None:
+        raise HTTPException(status_code=422, detail="LinkedCompany sólo aplica a Vinculado")
+
+    previous = {
+        "service_type": equipment.service_type,
+        "certificate_folio": equipment.certificate_folio,
+        "folio_status": equipment.folio_status,
+    }
+    equipment.service_type = payload.service_type
+    equipment.linked_company_id = linked.id if linked else None
+    equipment.linked_company_name_snapshot = linked.name if linked else None
+    equipment.linked_company_prefix_snapshot = linked.default_certificate_prefix if linked else None
+    equipment.certificate_folio = None
+    equipment.automatic_certificate_folio = None
+    equipment.folio_ticket_id = None
+    if payload.service_type in {"accredited", "traceable"}:
+        prefix = "MYCA" if payload.service_type == "accredited" else "MYCT"
+        folio = None
+        if external:
+            requests = db.scalars(
+                select(OperationalTicket)
+                .where(
+                    OperationalTicket.type == "certificate_folio_block",
+                    OperationalTicket.operator_client_id == work_order.operator_client_id,
+                    OperationalTicket.status == "resolved",
+                )
+                .order_by(OperationalTicket.created_at)
+                .with_for_update()
+            ).all()
+            for request in requests:
+                snapshot = dict(request.resolution_snapshot or {})
+                available = list((snapshot.get("folios") or {}).get(prefix) or [])
+                used = dict(snapshot.get("used") or {})
+                folio = next((value for value in available if value not in used), None)
+                if folio:
+                    used[folio] = {"equipment_id": equipment.id, "assigned_at": datetime.now(timezone.utc).isoformat()}
+                    request.resolution_snapshot = {**snapshot, "used": used}
+                    break
+        else:
+            folio = _allocate_lab_certificate_folio(db, prefix)
+        if folio:
+            equipment.certificate_folio = folio
+            equipment.automatic_certificate_folio = folio
+            equipment.folio_status = "reserved"
+            action = "lab_equipment.folio_reserved"
+        else:
+            equipment.folio_status = "pending"
+            action = "lab_equipment.service_assigned"
+    else:
+        equipment.folio_status = "pending"
+        action = "lab_equipment.service_assigned"
+    write_audit_log(
+        db,
+        action=action,
+        entity="lab_work_order_equipment",
+        entity_id=equipment.id,
+        user_id=user.id,
+        previous_values=previous,
+        new_values={
+            "service_type": equipment.service_type,
+            "linked_company_id": equipment.linked_company_id,
+            "linked_company_name_snapshot": equipment.linked_company_name_snapshot,
+            "linked_company_prefix_snapshot": equipment.linked_company_prefix_snapshot,
+            "certificate_folio": equipment.certificate_folio,
+            "folio_status": equipment.folio_status,
+        },
     )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
@@ -1224,6 +1465,9 @@ def _sign_members(
         item.status = "ready_for_signatures"
         item.signature_required = False
         item.signature_preserved = False
+        for equipment in item.equipment:
+            if equipment.field_sheet is not None:
+                equipment.field_sheet.lab_signature_session_id = session.id
     write_audit_log(
         db,
         action=(
@@ -1245,8 +1489,40 @@ def _sign_members(
     return _read(db, _get(db, work_order.id))
 
 
+def _missing_completed_sheets(members: list[LabWorkOrder]) -> list[dict]:
+    return [
+        {
+            "work_order_id": item.id,
+            "work_order_folio": item.folio,
+            "equipment_id": equipment.id,
+            "equipment_position": equipment.position,
+            "equipment": equipment.instrument,
+            "field_sheet_status": equipment.field_sheet.status if equipment.field_sheet else "missing",
+        }
+        for item in members
+        for equipment in item.equipment
+        # Historical OT created before the LAB client/capture contract remain
+        # closable. Every OT created by the evolved flow carries lab_client_id
+        # and therefore requires a completed sheet for each equipment item.
+        if item.lab_client_id is not None
+        if equipment.field_sheet is None or equipment.field_sheet.status != "completed"
+    ]
+
+
+def _ensure_staff_sheet_prerequisites(members: list[LabWorkOrder]) -> None:
+    missing = _missing_completed_sheets(members)
+    exempt_ids = {item.id for item in members if item.partial_close_ticket_id is not None}
+    blocking = [item for item in missing if item["work_order_id"] not in exempt_ids]
+    if blocking:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "LAB_FIELD_SHEETS_INCOMPLETE", "items": blocking},
+        )
+
+
 def sign_group(
-    db: Session, work_order_id: int, payload: LabSignatureGroupWrite, user: User
+    db: Session, work_order_id: int, payload: LabSignatureGroupWrite, user: User,
+    *, require_completed_sheets: bool = False,
 ) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
     _ensure_members_editable([work_order])
@@ -1262,6 +1538,8 @@ def sign_group(
             status_code=409,
             detail="Todas las OT abiertas de la cohorte deben tener al menos un equipo",
         )
+    if require_completed_sheets:
+        _ensure_staff_sheet_prerequisites(members)
     return _sign_members(
         db,
         work_order=work_order,
@@ -1273,7 +1551,8 @@ def sign_group(
 
 
 def sign_individual(
-    db: Session, work_order_id: int, payload: LabSignatureGroupWrite, user: User
+    db: Session, work_order_id: int, payload: LabSignatureGroupWrite, user: User,
+    *, require_completed_sheets: bool = False,
 ) -> LabWorkOrderRead:
     work_order, _group_members = _lock_historical_group(db, work_order_id)
     _ensure_members_editable([work_order])
@@ -1283,6 +1562,8 @@ def sign_individual(
         raise HTTPException(
             status_code=409, detail="La OT debe tener al menos un equipo"
         )
+    if require_completed_sheets:
+        _ensure_staff_sheet_prerequisites([work_order])
     return _sign_members(
         db,
         work_order=work_order,
@@ -1323,7 +1604,9 @@ def _complete_members(
         item.final_pdf_sha256 = hashlib.sha256(pdf).hexdigest()
         item.final_pdf_generated_at = completed_at
         item.completed_at = completed_at
-        item.status = "completed"
+        item.status = "partially_closed" if item.partial_close_ticket_id else "completed"
+        if item.partial_close_ticket_id:
+            item.partially_closed_at = completed_at
         item.signature_preserved = bool(item.reopen_ticket_id and item.signature_preserved)
     ticket_ids = {item.reopen_ticket_id for item in members if item.reopen_ticket_id}
     if ticket_ids:
@@ -1364,7 +1647,7 @@ def _complete_members(
 
 def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
-    if work_order.status == "completed":
+    if work_order.status in {"completed", "partially_closed"}:
         return _read(db, work_order)
     if _recorded_signature_scope(db, work_order.signature_session_id) == "individual":
         raise HTTPException(
@@ -1383,7 +1666,7 @@ def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderR
 
 def complete_individual(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
-    if work_order.status == "completed":
+    if work_order.status in {"completed", "partially_closed"}:
         return _read(db, work_order)
     if _recorded_signature_scope(db, work_order.signature_session_id) == "group":
         raise HTTPException(
@@ -1407,7 +1690,7 @@ def complete_individual(db: Session, work_order_id: int, user: User) -> LabWorkO
 
 def get_pdf(db: Session, work_order_id: int) -> tuple[bytes, str]:
     work_order = _get(db, work_order_id)
-    if work_order.status != "completed" or not work_order.final_pdf:
+    if work_order.status not in {"completed", "partially_closed"} or not work_order.final_pdf:
         raise HTTPException(status_code=409, detail="La OT LAB aún no tiene PDF final")
     return (
         work_order.final_pdf,

@@ -18,6 +18,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
+import { hasPermission } from '@/src/permissions/permissions';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { affectsTickets, RefreshGate } from '@/src/notifications/refresh-policy';
 import { filterGroupRequests, type RequestInboxKind, visibleRequestKinds } from '@/src/requests/request-inbox';
@@ -39,6 +40,13 @@ const GROUP_STATUS_LABELS: Record<LabWorkOrderGroupRequest['status'], string> = 
   approved: 'Aprobada',
   rejected: 'Rechazada',
 };
+const TICKET_TYPE_LABELS: Record<OperationalTicket['type'], string> = {
+  reopen_work_order: 'Reapertura',
+  manual_myc_folio: 'Folio MYC manual',
+  linked_folio: 'Folio Vinculado',
+  partial_close: 'Cierre parcial',
+  certificate_folio_block: 'Folios certificados',
+};
 
 export default function TicketsScreen() {
   const { authorizedFetch, isLoading: authLoading, user } = useAuth();
@@ -59,6 +67,10 @@ export default function TicketsScreen() {
   const [kind, setKind] = useState<RequestInboxKind>('all');
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
+  const [newRequestOpen, setNewRequestOpen] = useState(false);
+  const [accreditedQuantity, setAccreditedQuantity] = useState('0');
+  const [traceableQuantity, setTraceableQuantity] = useState('0');
+  const [authorizedFolio, setAuthorizedFolio] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
@@ -178,13 +190,60 @@ export default function TicketsScreen() {
         entity_type: 'ticket',
         entity_id: updated.id,
         ticket_id: updated.id,
-        work_order_id: updated.work_order_id,
+        work_order_id: updated.work_order_id ?? undefined,
       });
     } catch (reviewError) {
       Alert.alert('No fue posible revisar el ticket', reviewError instanceof Error ? reviewError.message : 'Intenta nuevamente');
     } finally {
       setBusy(false);
     }
+  }
+
+  async function createCertificateBlockRequest() {
+    const accredited = Number(accreditedQuantity) || 0;
+    const traceable = Number(traceableQuantity) || 0;
+    if (accredited + traceable < 1 || accredited + traceable > 100) {
+      Alert.alert('Cantidad inválida', 'La suma de MYCA y MYCT debe estar entre 1 y 100.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await request('/mobile/v1/technician/tickets/certificate-block', {
+        method: 'POST',
+        body: JSON.stringify({
+          accredited_quantity: accredited,
+          traceable_quantity: traceable,
+          reason: 'Folios certificados',
+          description: `Reserva solicitada: ${accredited} MYCA y ${traceable} MYCT`,
+        }),
+      });
+      setNewRequestOpen(false);
+      setAccreditedQuantity('0');
+      setTraceableQuantity('0');
+      await load(true);
+      Alert.alert('Solicitud enviada', 'Admin resolverá el bloque y conservará la conversación y auditoría.');
+    } catch (requestError) {
+      Alert.alert('No fue posible crear la solicitud', requestError instanceof Error ? requestError.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
+  async function resolveSelected() {
+    if (!selected) return;
+    const needsFolio = selected.type === 'manual_myc_folio' || selected.type === 'linked_folio';
+    if (needsFolio && !authorizedFolio.trim()) return;
+    setBusy(true);
+    try {
+      const updated = await request<OperationalTicket>(
+        `/mobile/v1/technician/tickets/${selected.id}/resolve`,
+        { method: 'POST', body: JSON.stringify({ authorized_folio: needsFolio ? authorizedFolio.trim() : null, comment: comment.trim() || null }) },
+      );
+      setSelected(updated);
+      setAuthorizedFolio('');
+      setComment('');
+      await load(true);
+    } catch (resolveError) {
+      Alert.alert('No fue posible resolver', resolveError instanceof Error ? resolveError.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
   }
 
   async function claimGroupRequest() {
@@ -232,6 +291,7 @@ export default function TicketsScreen() {
   if (authLoading) return <View style={styles.center}><ActivityIndicator /></View>;
   if (!user) return <Redirect href="/(auth)/login" />;
   const canReview = capabilities.canReviewTickets;
+  const canResolve = !!user && hasPermission(user.permissions, 'lab_folios.resolve');
   const requestVisibility = visibleRequestKinds(kind);
   const visibleGroups = filterGroupRequests(groupRequests, status, debouncedSearch);
 
@@ -243,6 +303,7 @@ export default function TicketsScreen() {
         <Text style={styles.subtitle}>{capabilities.canReadWorkOrderGroupRequests ? 'Reaperturas y grupos anticipados por revisar' : 'Tus solicitudes operativas'}</Text>
       </View>
       <View style={styles.filters}>
+        {capabilities.canCreateTickets && <Pressable style={styles.primary} onPress={() => setNewRequestOpen(true)}><Text style={styles.primaryText}>+ Nueva solicitud</Text></Pressable>}
         <TextInput onChangeText={setSearch} placeholder="Buscar cliente o motivo" style={styles.input} value={search} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {([
@@ -270,10 +331,10 @@ export default function TicketsScreen() {
           {requestVisibility.showTickets && items.map((ticket) => (
             <Pressable key={ticket.id} onPress={() => { setSelected(ticket); setComment(''); }} style={styles.card}>
               <View style={styles.cardTop}>
-                <Text style={styles.folio}>Reapertura · OT {ticket.work_order_folio}</Text>
+                <Text style={styles.folio}>{TICKET_TYPE_LABELS[ticket.type]}{ticket.work_order_folio ? ` · OT ${ticket.work_order_folio}` : ''}</Text>
                 <Text style={styles.status}>{STATUS_LABELS[ticket.status]}</Text>
               </View>
-              <Text style={styles.client}>{ticket.client_name}</Text>
+              {!!ticket.client_name && <Text style={styles.client}>{ticket.client_name}</Text>}
               <Text style={styles.reason}>{ticket.reason}</Text>
               <Text style={styles.meta}>{ticket.requested_by_name} · {new Date(ticket.created_at).toLocaleDateString()}</Text>
             </Pressable>
@@ -303,20 +364,47 @@ export default function TicketsScreen() {
               <Pressable onPress={() => setSelected(null)}><Text style={styles.close}>Cerrar</Text></Pressable>
             </View>
             {selected && <ScrollView contentContainerStyle={styles.modalContent}>
-              <Text style={styles.folio}>OT {selected.work_order_folio} · {selected.client_name}</Text>
+              <Text style={styles.folio}>{TICKET_TYPE_LABELS[selected.type]}{selected.work_order_folio ? ` · OT ${selected.work_order_folio}` : ''}</Text>
               <Text style={styles.detailStatus}>{STATUS_LABELS[selected.status]}</Text>
               <Text style={styles.detailLabel}>Motivo</Text><Text style={styles.detail}>{selected.reason}</Text>
               <Text style={styles.detailLabel}>Descripción</Text><Text style={styles.detail}>{selected.description}</Text>
               <Text style={styles.detailLabel}>Solicitante</Text><Text style={styles.detail}>{selected.requested_by_name}</Text>
+              {!!selected.automatic_folio && <><Text style={styles.detailLabel}>Folio automático preservado</Text><Text style={styles.detail}>{selected.automatic_folio}</Text></>}
+              {!!selected.requested_folio && <><Text style={styles.detailLabel}>Folio solicitado</Text><Text style={styles.detail}>{selected.requested_folio}</Text></>}
+              {!!selected.authorized_folio && <><Text style={styles.detailLabel}>Folio autorizado</Text><Text style={styles.detail}>{selected.authorized_folio}</Text></>}
+              {selected.type === 'certificate_folio_block' && <Text style={styles.detail}>{selected.accredited_quantity ?? 0} MYCA + {selected.traceable_quantity ?? 0} MYCT</Text>}
               {!!selected.decision_comment && <><Text style={styles.detailLabel}>Decisión</Text><Text style={styles.detail}>{selected.decision_comment}</Text></>}
-              {canReview && selected.status === 'pending' && <>
+              {canReview && selected.type === 'reopen_work_order' && selected.status === 'pending' && <>
                 <Text style={styles.warning}>Si durante la edición se realiza un cambio estructural, el backend invalidará automáticamente las firmas existentes.</Text>
                 <TextInput multiline onChangeText={setComment} placeholder="Comentario de decisión" style={[styles.input, styles.comment]} value={comment} />
                 <Pressable disabled={busy} onPress={() => review('approve', 'preserve')} style={styles.primary}><Text style={styles.primaryText}>Aprobar conservando firma</Text></Pressable>
                 <Pressable disabled={busy} onPress={() => review('approve', 'invalidate')} style={styles.secondary}><Text style={styles.secondaryText}>Aprobar y requerir nuevas firmas</Text></Pressable>
                 <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
               </>}
+              {canResolve && selected.type !== 'reopen_work_order' && selected.status === 'pending' && <>
+                {(selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && <TextInput autoCapitalize="characters" onChangeText={setAuthorizedFolio} placeholder="Folio completo autorizado" style={styles.input} value={authorizedFolio} />}
+                <TextInput multiline onChangeText={setComment} placeholder="Comentario de resolución" style={[styles.input, styles.comment]} value={comment} />
+                <Pressable disabled={busy || ((selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && !authorizedFolio.trim())} onPress={resolveSelected} style={styles.primary}><Text style={styles.primaryText}>Resolver solicitud</Text></Pressable>
+                <Pressable disabled={busy || !comment.trim()} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
+              </>}
+              {!!selected.conversation_id && <Pressable style={styles.secondary} onPress={() => { const id = selected.conversation_id; setSelected(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }}><Text style={styles.secondaryText}>Abrir conversación</Text></Pressable>}
             </ScrollView>}
+          </SafeAreaView>
+        </SafeAreaProvider>
+      </Modal>
+      <Modal animationType="slide" onRequestClose={() => setNewRequestOpen(false)} visible={newRequestOpen}>
+        <SafeAreaProvider>
+          <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modal}>
+            <View style={styles.modalHeader}><Text style={styles.modalTitle}>Nueva solicitud</Text><Pressable onPress={() => setNewRequestOpen(false)}><Text style={styles.close}>Cerrar</Text></Pressable></View>
+            <ScrollView contentContainerStyle={styles.modalContent}>
+              <Text style={styles.detailLabel}>Folios OT</Text><Pressable style={styles.secondary} onPress={() => { setNewRequestOpen(false); router.push('/(technician)/work-orders'); }}><Text style={styles.secondaryText}>Ir a solicitud de grupo OT</Text></Pressable>
+              <Text style={styles.detailLabel}>Folios certificados</Text>
+              <Text style={styles.detail}>Máximo 100 combinados entre MYCA y MYCT.</Text>
+              <TextInput keyboardType="number-pad" onChangeText={setAccreditedQuantity} placeholder="Cantidad MYCA" style={styles.input} value={accreditedQuantity} />
+              <TextInput keyboardType="number-pad" onChangeText={setTraceableQuantity} placeholder="Cantidad MYCT" style={[styles.input, { marginTop: 10 }]} value={traceableQuantity} />
+              <Pressable disabled={busy} style={styles.primary} onPress={createCertificateBlockRequest}><Text style={styles.primaryText}>Solicitar bloque</Text></Pressable>
+              <Text style={styles.detailLabel}>Folio MYC manual / Vinculado</Text><Text style={styles.detail}>Se solicita desde el equipo correspondiente para conservar OT, servicio, folio automático y procedencia.</Text>
+            </ScrollView>
           </SafeAreaView>
         </SafeAreaProvider>
       </Modal>

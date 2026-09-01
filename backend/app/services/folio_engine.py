@@ -63,7 +63,7 @@ def suggest_certificate_folio(
             else:
                 normalized = normalize_service_type(service_type)
                 prefix = "MYCA" if normalized and normalized.value == "accredited" else "MYCT"
-                suggested = f"{prefix}{folio_date:%y%m}{sequence:04d}"
+                suggested = f"{prefix}-{folio_date:%m}-{folio_date:%y}-{sequence:04d}"
         else:
             suggested = build_certificate_folio(
                 db,

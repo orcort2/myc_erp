@@ -66,7 +66,7 @@ class CommunicationConversation(TimestampMixin, Base):
 
     participants: Mapped[list["User"]] = relationship(secondary=communication_participants)
     client: Mapped["Client | None"] = relationship()
-    ticket: Mapped["OperationalTicket | None"] = relationship()
+    ticket: Mapped["OperationalTicket | None"] = relationship(foreign_keys=[ticket_id])
     messages: Mapped[list["CommunicationMessage"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",

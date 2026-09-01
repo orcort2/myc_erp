@@ -74,6 +74,8 @@ def _serialize_result_rows(rows: list[FieldSheetResult]) -> list[dict]:
 def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
     return {
         "equipment_id": field_sheet.equipment_id,
+        "lab_equipment_id": field_sheet.lab_equipment_id,
+        "lab_signature_session_id": field_sheet.lab_signature_session_id,
         "work_order_id": field_sheet.work_order_id,
         "calibration_procedure_id": field_sheet.calibration_procedure_id,
         "template_key": field_sheet.template_key,
@@ -521,6 +523,7 @@ def list_field_sheets(
             selectinload(FieldSheet.results_rows),
             selectinload(FieldSheet.signatures),
             selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
+            selectinload(FieldSheet.lab_equipment),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.client),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.quotation),
             selectinload(FieldSheet.calibration_procedure),
@@ -549,6 +552,7 @@ def get_field_sheet(db: Session, field_sheet_id: int) -> FieldSheet:
             selectinload(FieldSheet.results_rows),
             selectinload(FieldSheet.signatures),
             selectinload(FieldSheet.equipment).selectinload(Equipment.certificates),
+            selectinload(FieldSheet.lab_equipment),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.client),
             selectinload(FieldSheet.equipment).selectinload(Equipment.service_order).selectinload(ServiceOrder.quotation),
             selectinload(FieldSheet.calibration_procedure),
