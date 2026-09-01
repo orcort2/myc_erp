@@ -46,6 +46,27 @@ export function inferStepForStatus(status: LabWorkOrderStatus | string): Step {
 }
 
 /**
+ * Fase 5: al reconciliar un evento realtime o reabrir una OT (deep link),
+ * work-orders.tsx evita interrumpir una firma en curso del mismo cohorte
+ * conservando el paso 'signatures' aunque llegue una actualización de
+ * status. Pero eso nunca puede sustituir un status terminal ya confirmado
+ * por backend (completed/partially_closed/cancelled) -- si el cohorte ya
+ * cerró (p.ej. otro dispositivo/sesión lo cerró), el paso debe reflejar
+ * 'completed' de inmediato, no quedarse mostrando una pantalla de firma
+ * para una OT que el backend ya considera cerrada.
+ */
+export function resolveStepAfterStatusUpdate(
+  currentStep: Step,
+  sameSignatureCohort: boolean,
+  nextStatus: LabWorkOrderStatus | string,
+): Step {
+  const preserveSignatures = sameSignatureCohort
+    && currentStep === 'signatures'
+    && !TERMINAL_STATUSES.has(nextStatus as LabWorkOrderStatus);
+  return preserveSignatures ? currentStep : inferStepForStatus(nextStatus);
+}
+
+/**
  * Fase 3: la recepción (equipo, cliente documental, servicio, cliente
  * receptor) sólo es editable mientras la OT sigue en 'draft' -- una vez
  * firmada (received_signed en adelante) queda de sólo lectura en Mobile,

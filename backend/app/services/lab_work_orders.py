@@ -1881,6 +1881,36 @@ def _missing_completed_sheets(members: list[LabWorkOrder]) -> list[dict]:
     ]
 
 
+def _unresolved_folio_equipment(members: list[LabWorkOrder]) -> list[dict]:
+    """Fase 5: frontera de cierre autoritativa para folios. La captura
+    externa (Fase 3, _ensure_capture_allowed) puede avanzar con un folio
+    Vinculado todavía "pending" -- eso es deliberado, para no bloquear al
+    cliente mientras MYC resuelve la autorización. Pero el cierre staff sí
+    exige el folio ya resuelto: una FieldSheet completed no implica un folio
+    documental resuelto, y sin esto la OT podía cerrar con MYCA/MYCT sin
+    reservar o Vinculado sin autorizar. Misma frontera histórica que
+    _missing_completed_sheets (item.lab_client_id is not None)."""
+    return [
+        {
+            "work_order_id": item.id,
+            "work_order_folio": item.folio,
+            "equipment_id": equipment.id,
+            "equipment_position": equipment.position,
+            "equipment": equipment.instrument,
+            "service_type": equipment.service_type,
+            "folio_status": equipment.folio_status,
+        }
+        for item in members
+        for equipment in item.equipment
+        if item.lab_client_id is not None
+        if (
+            equipment.service_type in {"accredited", "traceable"}
+            and equipment.folio_status not in {"reserved", "authorized"}
+        )
+        or (equipment.service_type == "linked" and equipment.folio_status != "authorized")
+    ]
+
+
 def _ensure_staff_sheet_prerequisites(members: list[LabWorkOrder]) -> None:
     missing = _missing_completed_sheets(members)
     exempt_ids = {item.id for item in members if item.partial_close_ticket_id is not None}
@@ -1889,6 +1919,12 @@ def _ensure_staff_sheet_prerequisites(members: list[LabWorkOrder]) -> None:
         raise HTTPException(
             status_code=409,
             detail={"code": "LAB_FIELD_SHEETS_INCOMPLETE", "items": blocking},
+        )
+    unresolved_folios = _unresolved_folio_equipment(members)
+    if unresolved_folios:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "LAB_FOLIOS_UNRESOLVED", "items": unresolved_folios},
         )
 
 

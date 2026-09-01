@@ -19,7 +19,8 @@
     "test:auth": "tsx --test src/services/auth.service.test.ts",
     "test:mobile-capabilities": "tsx --test src/permissions/mobile-capabilities.test.ts",
     "test:field-sheet-payload": "tsx --test src/services/field-sheet-payload.test.ts",
-    "test:lab-documentary-client": "tsx --test src/services/lab-documentary-client.test.ts"
+    "test:lab-documentary-client": "tsx --test src/services/lab-documentary-client.test.ts",
+    "test:lab-work-order-step": "tsx --test src/services/lab-work-order-step.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

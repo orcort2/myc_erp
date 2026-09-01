@@ -622,7 +622,11 @@ def complete_lab_group(
     work_order_id: int,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        require_mobile_permission("work_orders.execute", "lab_work_orders.use")
+        # Fase 5: cierre técnico es autoridad de nivel superior -- Operativo
+        # Jr conserva work_orders.execute (captura/operación ordinaria) pero
+        # no work_orders.close; sólo Operativo Sr y staff interno
+        # (lab_work_orders.use) pueden cerrar.
+        require_mobile_permission("work_orders.close", "lab_work_orders.use")
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
@@ -637,7 +641,7 @@ def complete_lab_individual(
     work_order_id: int,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        require_mobile_permission("work_orders.execute", "lab_work_orders.use")
+        require_mobile_permission("work_orders.close", "lab_work_orders.use")
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)

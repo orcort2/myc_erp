@@ -66,6 +66,67 @@ for (const profile of ['Operativo Jr', 'Operativo Sr']) {
   });
 }
 
+test('Fase 5: Operativo Jr no adquiere autoridad de cierre técnico (work_orders.close)', () => {
+  // Perfil real de external_operator_jr (backend/app/services/portal/permission_service.py):
+  // conserva work_orders.execute (operación ordinaria/captura) pero nunca work_orders.close.
+  const capabilities = deriveMobileCapabilities(user('client', [
+    'mobile.access',
+    'work_orders.read_organization',
+    'work_orders.execute',
+    'equipment.read',
+    'equipment.write',
+    'field_sheets.read',
+    'field_sheets.capture',
+    'field_sheet_templates.read',
+    'lab_clients.read',
+    'lab_clients.create',
+    'signatures.capture',
+    'mobile_tickets.create',
+    'mobile_tickets.read',
+  ]));
+  assert.equal(capabilities.canExecuteWorkOrders, true);
+  assert.equal(capabilities.canCaptureFieldSheets, true);
+  assert.equal(capabilities.canCaptureSignatures, true);
+  assert.equal(capabilities.canCloseWorkOrders, false);
+});
+
+test('Fase 5: Operativo Sr hereda las capacidades de Jr y suma cierre técnico, sin volverse admin global', () => {
+  // Perfil real de external_operator_sr: mismas capacidades de Jr, más
+  // work_orders.close y work_orders.group.request -- nunca capacidades
+  // reservadas a actor_type === 'internal' (grupos directos, importación de
+  // clientes LAB, revisión de tickets, etc.), ni un wildcard '*'.
+  const capabilities = deriveMobileCapabilities(user('client', [
+    'mobile.access',
+    'work_orders.read_organization',
+    'work_orders.execute',
+    'work_orders.close',
+    'work_orders.group.request',
+    'communications.view',
+    'communications.create',
+    'equipment.read',
+    'equipment.write',
+    'field_sheets.read',
+    'field_sheets.capture',
+    'field_sheet_templates.read',
+    'lab_clients.read',
+    'lab_clients.create',
+    'signatures.capture',
+    'mobile_tickets.create',
+    'mobile_tickets.read',
+  ]));
+  assert.equal(capabilities.canExecuteWorkOrders, true);
+  assert.equal(capabilities.canCaptureFieldSheets, true);
+  assert.equal(capabilities.canCloseWorkOrders, true);
+  assert.equal(capabilities.canRequestWorkOrderGroups, true);
+  // Capacidades exclusivas de staff interno: nunca se conceden a un actor 'client'.
+  assert.equal(capabilities.canCreateWorkOrderGroupsDirect, false);
+  assert.equal(capabilities.canReadWorkOrderGroupRequests, false);
+  assert.equal(capabilities.canClaimWorkOrderGroupRequests, false);
+  assert.equal(capabilities.canDecideWorkOrderGroupRequests, false);
+  assert.equal(capabilities.canImportLabClients, false);
+  assert.equal(capabilities.canReviewTickets, false);
+});
+
 test('sólo la capacidad explícita habilita solicitudes de grupos anticipados', () => {
   assert.equal(deriveMobileCapabilities(user('client', ['work_orders.create'])).canRequestWorkOrderGroups, false);
   assert.equal(deriveMobileCapabilities(user('client', ['work_orders.group.request'])).canRequestWorkOrderGroups, true);
@@ -136,5 +197,6 @@ test('staff conserva compatibilidad LAB y Comunicaciones', () => {
   assert.equal(capabilities.canReadWorkOrders, true);
   assert.equal(capabilities.canCreateWorkOrders, true);
   assert.equal(capabilities.canExecuteWorkOrders, true);
+  assert.equal(capabilities.canCloseWorkOrders, true);
   assert.equal(capabilities.canUseCommunications, true);
 });

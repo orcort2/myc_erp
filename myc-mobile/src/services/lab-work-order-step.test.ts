@@ -8,6 +8,7 @@ import {
   flowContextLabel,
   inferStepForStatus,
   isReceptionEditable,
+  resolveStepAfterStatusUpdate,
   statusPresentation,
 } from './lab-work-order-step';
 
@@ -49,6 +50,41 @@ test('20. los estados terminales (completed, partially_closed, cancelled) siguen
   assert.equal(inferStepForStatus('completed'), 'completed');
   assert.equal(inferStepForStatus('partially_closed'), 'completed');
   assert.equal(inferStepForStatus('cancelled'), 'completed');
+});
+
+// Fase 5: work-orders.tsx evita interrumpir una firma en curso del mismo
+// cohorte conservando el paso 'signatures' cuando llega un evento realtime,
+// pero eso nunca puede sustituir un status terminal ya confirmado por
+// backend -- un estado visual local jamás gana sobre el estado real.
+test('Fase 5: conserva "signatures" ante un evento del mismo cohorte mientras el status siga sin cerrar', () => {
+  assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'in_progress'), 'signatures');
+  assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'ready_to_close'), 'signatures');
+});
+
+test('Fase 5: un status terminal del mismo cohorte SIEMPRE gana sobre "signatures" conservado', () => {
+  assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'completed'), 'completed');
+  assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'partially_closed'), 'completed');
+  assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'cancelled'), 'completed');
+});
+
+test('Fase 5: un cohorte distinto nunca conserva "signatures" -- siempre re-deriva del status real', () => {
+  assert.equal(resolveStepAfterStatusUpdate('signatures', false, 'in_progress'), 'technical');
+  assert.equal(resolveStepAfterStatusUpdate('signatures', false, 'completed'), 'completed');
+});
+
+test('Fase 5: fuera del paso "signatures" siempre re-deriva del status real, sin excepción', () => {
+  assert.equal(resolveStepAfterStatusUpdate('technical', true, 'ready_to_close'), 'review');
+  assert.equal(resolveStepAfterStatusUpdate('review', true, 'completed'), 'completed');
+});
+
+test('Fase 5: ambos puntos de reconciliación en work-orders.tsx usan resolveStepAfterStatusUpdate, no el carve-out inline anterior', () => {
+  const source = screenSource();
+  const occurrences = source.split('resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status)').length - 1;
+  assert.equal(occurrences, 2);
+  // El carve-out inline (paso 'signatures' conservado sin mirar si el status
+  // ya es terminal) quedó reemplazado por completo -- si reaparece, alguien
+  // reintrodujo el bug que Fase 5 corrigió.
+  assert.equal(source.includes("current === 'signatures'\n"), false);
 });
 
 test('10. received_signed se presenta como "RECEPCIÓN FIRMADA"', () => {

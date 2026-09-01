@@ -712,9 +712,15 @@ def test_client_scope_blocks_cross_tenant_list_read_write_and_subresources(
         ).status_code
         == 404
     )
+    # Fase 5: "other" es external_operator_jr, que ya nunca tiene
+    # work_orders.close (ver app/services/portal/permission_service.py) --
+    # el rechazo de permiso ahora ocurre antes de evaluar el scope de tenant,
+    # igual que /additional arriba, así que el código pasa a ser 403 en vez
+    # de 404 (la ausencia de la autoridad es universal, no depende de a
+    # quién pertenezca la OT).
     assert api.post(
         f"{base}/complete/individual", headers=_headers(other)
-    ).status_code == 404
+    ).status_code == 403
     assert api.get(f"{base}/pdf", headers=_headers(other)).status_code == 404
     assert api.get(f"{base}/revisions", headers=_headers(other)).status_code == 404
     assert (

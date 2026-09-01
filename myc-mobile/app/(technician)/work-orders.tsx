@@ -65,6 +65,7 @@ import {
   flowContextLabel,
   inferStepForStatus,
   isReceptionEditable,
+  resolveStepAfterStatusUpdate,
   statusPresentation,
   type Step,
 } from '@/src/services/lab-work-order-step';
@@ -306,9 +307,7 @@ export default function WorkOrdersScreen() {
           }));
           if (!sameSignatureCohort) setSignatureDrawing(false);
           setWorkOrder(detail);
-          setStep((current) => sameSignatureCohort && current === 'signatures'
-            ? current
-            : inferStepForStatus(detail.status));
+          setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status));
         })
         .catch(() => undefined);
     }
@@ -336,6 +335,7 @@ export default function WorkOrdersScreen() {
     canCreateTickets,
     canCreateWorkOrders, canRequestWorkOrderGroups, canCreateWorkOrderGroupsDirect,
     canExecuteWorkOrders,
+    canCloseWorkOrders,
     canManageEquipment,
     canCaptureSignatures,
     canCaptureFieldSheets,
@@ -526,9 +526,7 @@ export default function WorkOrdersScreen() {
         purchase_order: detail.purchase_order ?? '',
         notes: detail.notes ?? '',
       });
-      setStep((current) => sameSignatureCohort && current === 'signatures'
-        ? current
-        : inferStepForStatus(detail.status));
+      setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status));
       setOpen(true);
     } catch (error) {
       Alert.alert('No fue posible abrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -1128,9 +1126,9 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. El cierre aplica únicamente a la OT o cohorte elegida al firmar la recepción.</Text>
                   <Pressable style={styles.secondary} onPress={() => setStep('technical')}><Text style={styles.secondaryText}>Revisar captura técnica</Text></Pressable>
                   {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar excepción de cierre parcial</Text></Pressable>}
-                  {canExecuteWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
+                  {canCloseWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
                     <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar OT individual reabierta</Text></Pressable>
-                  ) : canExecuteWorkOrders ? (
+                  ) : canCloseWorkOrders ? (
                     <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}>
                       <Text style={styles.primaryText}>
                         {closureScope === 'group' && closureOptions?.hasHistoricalSiblings
@@ -1224,13 +1222,13 @@ export default function WorkOrdersScreen() {
                 closureOptions?.isSingleOtSignatureSession !== false ? (
                   <>
                     <Text style={styles.sectionTitle}>Firma completada</Text>
-                    {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar y generar PDFs</Text></Pressable>}
+                    {canCloseWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar y generar PDFs</Text></Pressable>}
                   </>
                 ) : (
                   <>
                     <Text style={styles.sectionTitle}>OT individual firmada</Text>
                     <Text style={styles.notice}>Esta sesión quedó vinculada a {closureOptions.activeCohortSize} OT. Las demás OT del grupo histórico conservan su estado y podrán cerrarse después.</Text>
-                    {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cierre individual y generar PDF</Text></Pressable>}
+                    {canCloseWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cierre individual y generar PDF</Text></Pressable>}
                   </>
                 )
               )}

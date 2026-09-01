@@ -40,6 +40,7 @@ ROLE_PERMISSIONS = {
         "mobile.access",
         "work_orders.read_organization",
         "work_orders.execute",
+        "work_orders.close",
         "work_orders.group.request",
         "communications.view",
         "communications.create",
@@ -67,7 +68,7 @@ ROLE_PRESENTATION = {
     ),
     "external_operator_sr": (
         "Operativo Sr",
-        "Operación Mobile senior; folios permanecen fuera de alcance.",
+        "Operación Mobile senior con autoridad de cierre técnico de OT; folios permanecen fuera de alcance.",
     ),
 }
 
