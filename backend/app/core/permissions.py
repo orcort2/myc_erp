@@ -128,6 +128,15 @@ ROLE_PERMISSIONS = {
         "work_orders.read_organization",
         "lab_packages.download",
         "lab_clients.read",
+        # Fase 3: permiso mínimo y exclusivo para capturar FieldSheets LAB una
+        # vez que la recepción ya quedó firmada (received_signed/in_progress).
+        # Deliberadamente NO se usa field_sheets.capture ni lab_work_orders.use
+        # aquí: ambos códigos también habilitan endpoints de equipo/servicio/
+        # cliente documental/cierre en el router LAB, y Captura no debe poder
+        # crear OT, editar recepción, tocar equipo/servicio/folio ni firmar ni
+        # cerrar administrativamente (ver ensure_lab_work_order_scope y los
+        # gates de app/routers/lab_work_orders.py).
+        "lab_field_sheets.capture",
         "field_sheets.read",
         "field_sheets.create",
         "field_sheets.update",

@@ -205,10 +205,20 @@ def _completed_work_order(client: TestClient, access_token: str, name: str) -> d
         headers=headers,
     ).json()
     base = f"/api/mobile/v1/technician/lab-work-orders/{created['id']}"
-    client.post(base + "/equipment", json={"instrument": "Equipo", "brand": "MYC", "identification": "ID", "serial_number": name, "report_number": None, "is_good_condition": True}, headers=headers)
+    added = client.post(base + "/equipment", json={"instrument": "Equipo", "brand": "MYC", "identification": "ID", "serial_number": name, "report_number": None, "is_good_condition": True}, headers=headers)
+    equipment_id = added.json()["equipment"][-1]["id"]
+    # Fase 3: la recepción sólo se firma con el servicio del equipo ya
+    # elegido (ver _ensure_reception_prerequisites); "traceable" reserva un
+    # folio MYCT real sin requerir LinkedCompany.
+    client.put(
+        base + f"/equipment/{equipment_id}/service",
+        json={"service_type": "traceable", "linked_company_id": None},
+        headers=headers,
+    )
     signed_at = datetime.now(timezone.utc).isoformat()
     signature = {"signer_name": "Persona", "signed_at": signed_at, "version": 1, "signature_data_url": PNG}
-    client.post(base + "/signatures", json={"technician": signature, "client": signature}, headers=headers)
+    signed = client.post(base + "/signatures", json={"technician": signature, "client": signature}, headers=headers)
+    assert signed.status_code == 200, signed.text
     response = client.post(base + "/complete", headers=headers)
     assert response.status_code == 200, response.text
     return response.json()

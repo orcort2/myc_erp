@@ -24,6 +24,7 @@ from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
     institutional_snapshot,
 )
+from app.services.lab_work_orders import _missing_completed_sheets
 
 
 def get_lab_equipment(
@@ -51,7 +52,12 @@ def get_lab_equipment(
 
 
 def _ensure_capture_allowed(equipment: LabWorkOrderEquipment, *, external: bool) -> None:
-    if equipment.work_order.status != "draft":
+    # Fase 3: la captura técnica (FieldSheets) sólo procede DESPUÉS de que la
+    # recepción quedó firmada -- ya no en draft. received_signed cubre el
+    # arranque; in_progress cubre la captura ya en marcha (ver
+    # create_lab_field_sheet, que hace la transición received_signed ->
+    # in_progress en la primera hoja creada).
+    if equipment.work_order.status not in {"received_signed", "in_progress"}:
         raise HTTPException(status_code=409, detail="La OT no admite captura técnica")
     if equipment.service_type is None:
         raise HTTPException(status_code=409, detail="Selecciona el tipo de servicio")
@@ -103,11 +109,32 @@ def create_lab_field_sheet(
         purchase_order_or_quotation=order.purchase_order,
         initial_condition="BUENA" if equipment.is_good_condition else "REQUIERE REVISIÓN",
         capture_values=capture_values,
+        # Fase 3: la sesión de firma HISTÓRICA aplicable ya es conocida y
+        # estable en este momento -- la OT sólo admite crear hojas cuando ya
+        # está received_signed/in_progress, es decir, ya firmó recepción. No
+        # se usa "la última sesión" como autoridad; se lee directamente la
+        # sesión vigente de ESTA OT (nunca se reescribe después).
+        lab_signature_session_id=order.signature_session_id,
     )
     sheet.results_rows = build_default_result_rows(definition)
     sheet.signatures = _default_signature_slots(definition, sheet)
     db.add(sheet)
     db.flush()
+    # Fase 3: la primera mutación técnica real (la primera FieldSheet que se
+    # crea para la OT) es el punto canónico received_signed -> in_progress --
+    # backend-authoritative, no depende de que Mobile navegue a ninguna
+    # pantalla.
+    if order.status == "received_signed":
+        order.status = "in_progress"
+        write_audit_log(
+            db,
+            action="lab_work_order.capture_started",
+            entity="lab_work_orders",
+            entity_id=order.id,
+            user_id=user.id,
+            previous_values={"status": "received_signed"},
+            new_values={"status": "in_progress", "field_sheet_id": sheet.id},
+        )
     write_audit_log(
         db,
         action="lab_field_sheet.created",
@@ -200,5 +227,22 @@ def complete_lab_field_sheet(
         previous_values={"status": previous},
         new_values={"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()},
     )
+    # Fase 3: cuando esta era la última hoja pendiente de la OT, el trabajo
+    # técnico normal queda completo -- in_progress -> ready_to_close,
+    # backend-authoritative (reutiliza _missing_completed_sheets, la misma
+    # autoridad que ya exigía hojas completas para cerrar; sólo cambia el
+    # momento en que se evalúa).
+    order = equipment.work_order
+    if order.status == "in_progress" and not _missing_completed_sheets([order]):
+        order.status = "ready_to_close"
+        write_audit_log(
+            db,
+            action="lab_work_order.ready_to_close",
+            entity="lab_work_orders",
+            entity_id=order.id,
+            user_id=user.id,
+            previous_values={"status": "in_progress"},
+            new_values={"status": "ready_to_close"},
+        )
     db.commit()
     return read_lab_field_sheet(db, work_order_id, equipment_id)

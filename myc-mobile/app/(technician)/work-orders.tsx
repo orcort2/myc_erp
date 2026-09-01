@@ -61,6 +61,12 @@ import {
   postLabCompletion,
   postLabSignatures,
 } from '@/src/services/lab-work-order-signature-submission';
+import {
+  inferStepForStatus,
+  isReceptionEditable,
+  statusPresentation,
+  type Step,
+} from '@/src/services/lab-work-order-step';
 import type {
   GeneralData,
   LabEquipment,
@@ -87,17 +93,7 @@ const emptyGeneral = (): GeneralData => ({
   purchase_order: '',
   notes: '',
 });
-type Step = 'general' | 'capture' | 'technical' | 'review' | 'signatures' | 'completed';
 type TicketDialogMode = 'reopen' | 'partial' | 'cancel';
-
-const TERMINAL_STATUSES = new Set(['completed', 'partially_closed', 'cancelled']);
-const statusPresentation = (status: string) => ({
-  completed: { label: 'CERRADA', color: '#16834b' },
-  partially_closed: { label: 'CERRADA PARCIALMENTE', color: '#d87913' },
-  cancelled: { label: 'CANCELADA', color: '#c73636' },
-  ready_for_signatures: { label: 'EN PROCESO', color: '#d7a51b' },
-  draft: { label: 'EN PROCESO', color: '#d7a51b' },
-}[status] ?? { label: status.toUpperCase(), color: '#d7a51b' });
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
   if (workOrder.signature_scope) return workOrder.signature_scope;
@@ -290,7 +286,7 @@ export default function WorkOrdersScreen() {
           setWorkOrder(detail);
           setStep((current) => sameSignatureCohort && current === 'signatures'
             ? current
-            : TERMINAL_STATUSES.has(detail.status) ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+            : inferStepForStatus(detail.status));
         })
         .catch(() => undefined);
     }
@@ -325,7 +321,7 @@ export default function WorkOrdersScreen() {
     canManageLabClients,
     canImportLabClients,
   } = capabilities;
-  const editable = workOrder?.status === 'draft' && canExecuteWorkOrders;
+  const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
   const canCancel = !!user && hasPermission(user.permissions, 'lab_work_orders.cancel');
   const closureOptions = useMemo(
@@ -510,7 +506,7 @@ export default function WorkOrdersScreen() {
       });
       setStep((current) => sameSignatureCohort && current === 'signatures'
         ? current
-        : TERMINAL_STATUSES.has(detail.status) ? 'completed' : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+        : inferStepForStatus(detail.status));
       setOpen(true);
     } catch (error) {
       Alert.alert('No fue posible abrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -584,9 +580,7 @@ export default function WorkOrdersScreen() {
         technicianName: user?.full_name ?? '',
       }));
       setWorkOrder(detail);
-      setStep(TERMINAL_STATUSES.has(detail.status)
-        ? 'completed'
-        : detail.status === 'ready_for_signatures' ? 'signatures' : 'capture');
+      setStep(inferStepForStatus(detail.status));
     } catch (error) {
       Alert.alert('No fue posible cambiar de OT', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -1066,7 +1060,19 @@ export default function WorkOrdersScreen() {
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
                   {editable && canManageEquipment && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
                   {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
-                  <Pressable disabled={!workOrder.equipment.length} style={[styles.primary, !workOrder.equipment.length && styles.disabled]} onPress={() => setStep('technical')}><Text style={styles.primaryText}>Continuar a captura</Text></Pressable>
+                  {/* Fase 3: la recepción se firma ANTES de la captura técnica.
+                      Una OT reabierta con "preserve" ya conserva una firma de
+                      recepción válida (canSkipSignaturesAfterReopen) -- no debe
+                      pedirse otra, así que salta directo a captura técnica. */}
+                  <Pressable
+                    disabled={!workOrder.equipment.length}
+                    style={[styles.primary, !workOrder.equipment.length && styles.disabled]}
+                    onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
+                  >
+                    <Text style={styles.primaryText}>
+                      {canSkipSignaturesAfterReopen(workOrder) ? 'Continuar a captura técnica' : 'Continuar a revisión de recepción'}
+                    </Text>
+                  </Pressable>
                 </>
               )}
 
@@ -1090,48 +1096,89 @@ export default function WorkOrdersScreen() {
                 </>
               )}
 
+              {/* Fase 3: la recepción ya quedó firmada antes de este paso -- el
+                  cierre sólo confirma que el trabajo técnico terminó, nunca
+                  vuelve a pedir firma (ver step 'signatures' para eso). */}
               {workOrder && step === 'review' && (
                 <>
-                  <Text style={styles.sectionTitle}>Elegir alcance del cierre</Text>
-                  {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s) · {item.status === 'completed' ? 'cerrada' : item.status === 'ready_for_signatures' ? 'firmada' : 'abierta'}</Text>)}
-                  <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. Cada firma cierra únicamente la OT elegida.</Text>
+                  <Text style={styles.sectionTitle}>Confirmar cierre</Text>
+                  {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s) · {item.status === 'completed' ? 'cerrada' : item.status === 'ready_to_close' ? 'lista para cerrar' : item.status === 'ready_for_signatures' ? 'firmada' : 'en captura'}</Text>)}
+                  <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. El cierre aplica únicamente a la OT o cohorte elegida al firmar la recepción.</Text>
                   <Pressable style={styles.secondary} onPress={() => setStep('technical')}><Text style={styles.secondaryText}>Revisar captura técnica</Text></Pressable>
                   {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar excepción de cierre parcial</Text></Pressable>}
                   {canExecuteWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
                     <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar OT individual reabierta</Text></Pressable>
-                  ) : canCaptureSignatures ? (
-                    <>
-                      {closureOptions?.hasHistoricalSiblings && (
-                        <>
-                          <Pressable
-                            disabled={!closureOptions.canFinalizeGroup}
-                            onPress={() => openSignatureFlow('group')}
-                            style={[styles.primary, !closureOptions.canFinalizeGroup && styles.disabled]}
-                          >
-                            <Text style={styles.primaryText}>Finalizar grupo activo ({closureOptions.groupParticipantCount} OT)</Text>
-                          </Pressable>
-                          {!!closureOptions.groupMissingEquipmentCount && (
-                            <Text style={styles.notice}>{closureOptions.groupMissingEquipmentCount} OT todavía no tienen equipos; el cierre grupal no está disponible.</Text>
-                          )}
-                          <Pressable
-                            disabled={!closureOptions.canFinalizeIndividual}
-                            onPress={() => openSignatureFlow('individual')}
-                            style={[styles.secondary, !closureOptions.canFinalizeIndividual && styles.disabled]}
-                          >
-                            <Text style={styles.secondaryText}>Finalizar sólo OT {workOrder.folio}</Text>
-                          </Pressable>
-                        </>
-                      )}
-                      {!closureOptions?.hasHistoricalSiblings && (
-                        <Pressable style={styles.primary} onPress={() => openSignatureFlow('group')}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
-                      )}
-                    </>
-                  ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no capturar firmas.</Text>}
+                  ) : canExecuteWorkOrders ? (
+                    <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}>
+                      <Text style={styles.primaryText}>
+                        {closureScope === 'group' && closureOptions?.hasHistoricalSiblings
+                          ? `Cerrar grupo activo (${closureOptions.activeCohortSize} OT)`
+                          : `Cerrar OT ${workOrder.folio}`}
+                      </Text>
+                    </Pressable>
+                  ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no cerrarla.</Text>}
                 </>
               )}
 
+              {/* Fase 3: REVISIÓN DE RECEPCIÓN + firma -- ocurre ANTES de la
+                  captura técnica. La firma representa que MYC y el cliente
+                  aceptan los equipos y condiciones recibidos, no que el
+                  trabajo técnico terminó. */}
               {workOrder && step === 'signatures' && workOrder.status === 'draft' && (
-                signatureFlowState?.rootWorkOrderId === labClosureContextId(workOrder, closureScope) ? (
+                signatureFlowState == null ? (
+                  <>
+                    <View style={styles.sectionIntro}>
+                      <Text style={styles.sectionEyebrow}>REVISIÓN DE RECEPCIÓN</Text>
+                      <Text style={styles.sectionTitle}>¿Qué está recibiendo MYC?</Text>
+                      <Text style={styles.sectionDescription}>Técnico y cliente confirman los equipos y condiciones recibidos para ejecutar el servicio -- no el trabajo técnico en sí.</Text>
+                    </View>
+                    <View style={styles.summary}>
+                      <Text style={styles.summaryClient}>Cliente receptor: {workOrder.client_name}</Text>
+                      <Text style={styles.summaryLine}>OT {workOrder.folio}</Text>
+                    </View>
+                    {workOrder.equipment.map((item) => {
+                      const summary = describeEquipmentSummary(item, workOrder.client_name);
+                      return (
+                        <View key={item.id} style={styles.equipmentRow}>
+                          <View style={styles.flex}>
+                            <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
+                            <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
+                            <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''} · Folio: {summary.folio}</Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+                    <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Volver a equipos</Text></Pressable>
+                    {canCaptureSignatures ? (
+                      <>
+                        {closureOptions?.hasHistoricalSiblings && (
+                          <>
+                            <Pressable
+                              disabled={!closureOptions.canFinalizeGroup}
+                              onPress={() => openSignatureFlow('group')}
+                              style={[styles.primary, !closureOptions.canFinalizeGroup && styles.disabled]}
+                            >
+                              <Text style={styles.primaryText}>Firmar recepción del grupo ({closureOptions.groupParticipantCount} OT)</Text>
+                            </Pressable>
+                            {!!closureOptions.groupMissingEquipmentCount && (
+                              <Text style={styles.notice}>{closureOptions.groupMissingEquipmentCount} OT todavía no tienen equipos; la firma grupal no está disponible.</Text>
+                            )}
+                            <Pressable
+                              disabled={!closureOptions.canFinalizeIndividual}
+                              onPress={() => openSignatureFlow('individual')}
+                              style={[styles.secondary, !closureOptions.canFinalizeIndividual && styles.disabled]}
+                            >
+                              <Text style={styles.secondaryText}>Firmar sólo OT {workOrder.folio}</Text>
+                            </Pressable>
+                          </>
+                        )}
+                        {!closureOptions?.hasHistoricalSiblings && (
+                          <Pressable style={styles.primary} onPress={() => openSignatureFlow('group')}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
+                        )}
+                      </>
+                    ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no capturar firmas.</Text>}
+                  </>
+                ) : signatureFlowState.rootWorkOrderId === labClosureContextId(workOrder, closureScope) ? (
                   <MobileSignatureFlow
                     currentContextId={labClosureContextId(workOrder, closureScope)}
                     key={signatureFlowState.rootWorkOrderId}
@@ -1143,11 +1190,15 @@ export default function WorkOrdersScreen() {
                 ) : (
                   <View style={styles.errorState}>
                     <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto de cierre.</Text>
-                    <Pressable onPress={() => setStep('review')}><Text style={styles.retry}>Volver a revisión</Text></Pressable>
+                    <Pressable onPress={() => setStep('capture')}><Text style={styles.retry}>Volver a equipos</Text></Pressable>
                   </View>
                 )
               )}
 
+              {/* Legacy: OT firmada bajo el flujo anterior a Fase 3 (recepción
+                  y cierre técnico en un solo paso). Se conserva tal cual para
+                  no falsear historicidad -- el nuevo flujo nunca produce este
+                  status. */}
               {workOrder && step === 'signatures' && workOrder.status === 'ready_for_signatures' && (
                 closureOptions?.isSingleOtSignatureSession !== false ? (
                   <>
@@ -1161,6 +1212,18 @@ export default function WorkOrdersScreen() {
                     {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cierre individual y generar PDF</Text></Pressable>}
                   </>
                 )
+              )}
+
+              {/* Fase 3: confirmación inmediatamente después de firmar la
+                  recepción -- la sección administrativa (equipo/servicio/
+                  cliente) ya quedó de sólo lectura (ver `editable`, gateado
+                  por status === 'draft'; backend también lo bloquea). */}
+              {workOrder && step === 'signatures' && workOrder.status !== 'draft' && workOrder.status !== 'ready_for_signatures' && (
+                <>
+                  <Text style={styles.sectionTitle}>Recepción firmada</Text>
+                  <Text style={styles.notice}>Técnico y cliente confirmaron los equipos y condiciones recibidos. La recepción queda de sólo lectura; continúa a la captura técnica.</Text>
+                  <Pressable style={styles.primary} onPress={() => setStep('technical')}><Text style={styles.primaryText}>Continuar a captura técnica</Text></Pressable>
+                </>
               )}
 
               {workOrder && step === 'completed' && (

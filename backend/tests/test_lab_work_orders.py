@@ -346,6 +346,29 @@ def equipment_payload(index: int, **extra) -> dict:
     }
 
 
+def configure_default_services(
+    client: TestClient, headers: dict[str, str], work_order_id: int, *, service_type: str = "traceable"
+) -> None:
+    """Fase 3: la recepción sólo puede firmarse cuando cada equipo trae una
+    configuración operacional coherente (servicio elegido y, si aplica,
+    folio ya reservado). 'traceable' reserva un folio MYCT real vía el
+    allocator existente sin requerir LinkedCompany, así que sirve como
+    configuración por defecto para pruebas que no ejercitan el servicio en
+    sí, sólo el ciclo de firma/cierre."""
+    detail = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}", headers=headers
+    ).json()
+    for item in detail["equipment"]:
+        if item["service_type"] is not None:
+            continue
+        response = client.put(
+            f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}/equipment/{item['id']}/service",
+            json={"service_type": service_type, "linked_company_id": None},
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+
+
 def signatures_payload() -> dict:
     signed_at = datetime.now(timezone.utc).isoformat()
     return {
@@ -581,9 +604,19 @@ def test_modern_lab_flow_uses_independent_sequences_and_linked_manual_folio(lab_
         }
     assert sequences == {"MYCA": 4701, "MYCT": 1641}
 
-    blocked = client.post(
+    # Fase 3: los tres equipos ya están coherentes (folio reservado/vinculado
+    # congelado, el vinculado con folio autorizado aparte) -- la recepción sí
+    # puede firmarse; lo que queda bloqueado es el CIERRE, porque ninguna
+    # FieldSheet fue capturada todavía.
+    signed = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
         json=signatures_payload(), headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
+    assert signed.json()["status"] == "received_signed"
+    blocked = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete",
+        headers=headers,
     )
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == "LAB_FIELD_SHEETS_INCOMPLETE"
@@ -630,11 +663,14 @@ def test_modern_lab_flow_uses_independent_sequences_and_linked_manual_folio(lab_
     )
     assert completed_sheet.status_code == 200, completed_sheet.text
     assert completed_sheet.json()["status"] == "completed"
+    with factory() as db:
+        assert db.get(LabWorkOrder, order_id).status == "in_progress"
     blocked_after_one_sheet = client.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
-        json=signatures_payload(), headers=headers,
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete",
+        headers=headers,
     )
     assert blocked_after_one_sheet.status_code == 409
+    assert blocked_after_one_sheet.json()["detail"]["code"] == "LAB_FIELD_SHEETS_INCOMPLETE"
     assert [item["equipment_position"] for item in blocked_after_one_sheet.json()["detail"]["items"]] == [2, 3]
 
     capture_write = client.put(
@@ -762,6 +798,8 @@ def test_one_signature_session_completes_and_locks_entire_group(lab_context):
         json=equipment_payload(11),
         headers=headers,
     )
+    configure_default_services(client, headers, root["id"])
+    configure_default_services(client, headers, extra["id"])
 
     signed = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{extra['id']}/signatures",
@@ -773,7 +811,7 @@ def test_one_signature_session_completes_and_locks_entire_group(lab_context):
     with factory() as db:
         group = list(db.scalars(select(LabWorkOrder).order_by(LabWorkOrder.folio)))
         assert {item.signature_session_id for item in group} == {signature_session_id}
-        assert all(item.status == "ready_for_signatures" for item in group)
+        assert all(item.status == "received_signed" for item in group)
 
     assert client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{extra['id']}/equipment",
@@ -846,6 +884,7 @@ def test_partial_individual_then_open_group_closure_preserves_historical_group(
     )
     assert group_sign.status_code == 409
 
+    configure_default_services(client, headers, root_id)
     individual_sign = client.post(
         f"{root_endpoint}/signatures/individual",
         json=signatures_payload(),
@@ -929,6 +968,8 @@ def test_partial_individual_then_open_group_closure_preserves_historical_group(
         root_after_edits["completed_at"].replace("Z", "+00:00")
     ).replace(tzinfo=None) == frozen_completed_at
 
+    configure_default_services(client, headers, second_id)
+    configure_default_services(client, headers, third_id)
     signed_open_cohort = client.post(
         f"{second_endpoint}/signatures",
         json=signatures_payload(),
@@ -941,8 +982,8 @@ def test_partial_individual_then_open_group_closure_preserves_historical_group(
     related_after_sign = signed_open_cohort.json()["related_work_orders"]
     assert [item["status"] for item in related_after_sign] == [
         "completed",
-        "ready_for_signatures",
-        "ready_for_signatures",
+        "received_signed",
+        "received_signed",
     ]
     assert [item["signature_session_id"] for item in related_after_sign] == [
         session_a,
@@ -1062,6 +1103,7 @@ def test_individual_closure_requires_equipment_and_reopens_only_its_cohort(
     client.post(
         f"{root_endpoint}/equipment", json=equipment_payload(1), headers=tech_headers
     )
+    configure_default_services(client, tech_headers, root_id)
     assert client.post(
         f"{root_endpoint}/signatures/individual",
         json=signatures_payload(),
@@ -1153,6 +1195,7 @@ def test_requires_equipment_and_both_valid_signatures(lab_context):
     endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root['id']}"
     assert client.post(f"{endpoint}/signatures", json=signatures_payload(), headers=headers).status_code == 409
     client.post(f"{endpoint}/equipment", json=equipment_payload(1), headers=headers)
+    configure_default_services(client, headers, root["id"])
     invalid = signatures_payload()
     invalid["client"]["signature_data_url"] = "data:image/png;base64,bm90LXBuZw=="
     assert client.post(f"{endpoint}/signatures", json=invalid, headers=headers).status_code == 422
@@ -1171,6 +1214,7 @@ def test_individual_endpoint_keeps_single_work_order_flow_available(lab_context)
     assert client.post(
         f"{endpoint}/equipment", json=equipment_payload(1), headers=headers
     ).status_code == 201
+    configure_default_services(client, headers, created["id"])
     signed = client.post(
         f"{endpoint}/signatures/individual",
         json=signatures_payload(),
@@ -1351,7 +1395,9 @@ def _completed_work_order(client: TestClient, token: str, name: str = "Cliente T
     ).json()
     endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root['id']}"
     client.post(f"{endpoint}/equipment", json=equipment_payload(1), headers=headers)
-    client.post(f"{endpoint}/signatures", json=signatures_payload(), headers=headers)
+    configure_default_services(client, headers, root["id"])
+    signed = client.post(f"{endpoint}/signatures", json=signatures_payload(), headers=headers)
+    assert signed.status_code == 200, signed.text
     completed = client.post(f"{endpoint}/complete", headers=headers)
     assert completed.status_code == 200, completed.text
     return completed.json()
@@ -1547,6 +1593,7 @@ def test_ready_for_signatures_remains_locked_until_formal_reopening(lab_context)
     ).json()
     endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root['id']}"
     client.post(f"{endpoint}/equipment", json=equipment_payload(1), headers=headers)
+    configure_default_services(client, headers, root["id"])
     signed = client.post(f"{endpoint}/signatures", json=signatures_payload(), headers=headers)
     assert signed.status_code == 200, signed.text
     signature_session_id = signed.json()["signature_session_id"]
@@ -1558,7 +1605,7 @@ def test_ready_for_signatures_remains_locked_until_formal_reopening(lab_context)
     )
     assert changed.status_code == 409, changed.text
     unchanged = client.get(endpoint, headers=headers).json()
-    assert unchanged["status"] == "ready_for_signatures"
+    assert unchanged["status"] == "received_signed"
     assert unchanged["signature_session_id"] == signature_session_id
     assert unchanged["signature_required"] is False
 
@@ -1597,6 +1644,7 @@ def test_structural_change_invalidates_signature_and_requires_new_signature(lab_
     assert changed.json()["signature_session_id"] is None
     endpoint = f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}"
     assert client.post(f"{endpoint}/complete", headers=tech_headers).status_code == 409
+    configure_default_services(client, tech_headers, work_order["id"])
     resigned = client.post(
         f"{endpoint}/signatures", json=signatures_payload(), headers=tech_headers
     )
@@ -1921,6 +1969,8 @@ def _signed_lab_group(client: TestClient, token: str) -> tuple[dict, dict, int]:
         json=equipment_payload(11),
         headers=headers,
     )
+    configure_default_services(client, headers, root["id"])
+    configure_default_services(client, headers, extra["id"])
     signed = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{root['id']}/signatures",
         json=signatures_payload(),

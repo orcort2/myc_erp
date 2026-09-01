@@ -104,6 +104,12 @@ test('individual and group signature capture use distinct cohort contexts', () =
 });
 
 test('the screen exposes explicit group and individual actions', () => {
+  // Fase 3: firmar la recepción (grupo/individual) ya no ocurre en el paso
+  // de cierre -- el botón real ahora vive en el paso 'signatures' (revisión
+  // de recepción) y se llama "Firmar recepción...", no "Finalizar...". El
+  // paso 'review' (cierre) sigue distinguiendo grupo/individual, pero para
+  // CERRAR, no para firmar (ver work-orders.tsx: `Cerrar grupo activo` /
+  // `Cerrar OT ${workOrder.folio}`).
   const source = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
     'utf8',
@@ -112,12 +118,13 @@ test('the screen exposes explicit group and individual actions', () => {
     resolve(dirname(fileURLToPath(import.meta.url)), './lab-work-order-signature-submission.ts'),
     'utf8',
   );
-  assert.match(source, /Finalizar grupo/);
-  assert.match(source, /Finalizar sólo OT \{workOrder\.folio\}/);
+  assert.match(source, /Firmar recepción del grupo/);
+  assert.match(source, /Firmar sólo OT \{workOrder\.folio\}/);
+  assert.match(source, /Cerrar OT \$\{workOrder\.folio\}/);
   assert.match(source, /groupMissingEquipmentCount/);
   assert.match(serviceSource, /signatures\/individual/);
   assert.match(serviceSource, /complete\/individual/);
-  assert.match(source, /setStep\(detail\.status === 'completed'/);
+  assert.match(source, /inferStepForStatus/);
 });
 
 test('the partial-close exception is gated on a real multi-OT cohort, not just permission', () => {

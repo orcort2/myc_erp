@@ -34,15 +34,27 @@ export function labClosureContextId(
   return scope === 'individual' ? workOrder.id : workOrder.root_work_order_id;
 }
 
+const TERMINAL_CLOSURE_STATUSES = new Set(['completed', 'partially_closed', 'cancelled']);
+
 export function deriveLabClosureOptions(
   workOrder: LabWorkOrder,
 ): LabClosureOptions {
+  // Candidatas a FIRMAR recepción: siguen en draft (Fase 3 firma la
+  // recepción, no el cierre técnico) y sin sesión de firma todavía.
   const groupCandidates = workOrder.related_work_orders.filter(
     (item) => item.status === 'draft' && item.signature_session_id == null,
   );
   const groupMissingEquipmentCount = groupCandidates.filter(
     (item) => item.equipment_count === 0,
   ).length;
+  // Candidatas a la EXCEPCIÓN DE CIERRE PARCIAL: cualquier OT del grupo que
+  // todavía no llegó a un estado terminal -- ya no sólo "draft", porque tras
+  // Fase 3 la recepción se firma antes de capturar, así que una OT abierta
+  // en el momento del cierre normalmente está received_signed/in_progress/
+  // ready_to_close, no draft.
+  const openCandidates = workOrder.related_work_orders.filter(
+    (item) => !TERMINAL_CLOSURE_STATUSES.has(item.status),
+  );
   const activeCohortSize = workOrder.signature_session_id == null
     ? 0
     : workOrder.related_work_orders.filter(
@@ -60,7 +72,7 @@ export function deriveLabClosureOptions(
     groupMissingEquipmentCount,
     groupParticipantCount: groupCandidates.length,
     hasHistoricalSiblings: workOrder.related_work_orders.length > 1,
-    hasEligiblePartialCloseCohort: groupCandidates.length > 1,
+    hasEligiblePartialCloseCohort: openCandidates.length > 1,
     isSingleOtSignatureSession: activeCohortSize <= 1,
   };
 }

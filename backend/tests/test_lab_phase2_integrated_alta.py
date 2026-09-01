@@ -193,6 +193,21 @@ def configured_payload(
     return body
 
 
+def _signatures_payload() -> dict:
+    import base64
+
+    png = "data:image/png;base64," + base64.b64encode(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+    ).decode()
+    signed_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "technician": {"signer_name": "Técnico", "signed_at": signed_at, "version": 1, "signature_data_url": png},
+        "client": {"signer_name": "Cliente", "signed_at": signed_at, "version": 1, "signature_data_url": png},
+    }
+
+
 def _create_order(client, headers, **overrides) -> int:
     order = client.post(
         "/api/mobile/v1/technician/lab-work-orders",
@@ -1186,6 +1201,13 @@ def test_field_sheet_ownership_unchanged(phase2_context):
         headers=headers,
     )
     equipment_id = created.json()["equipment"][-1]["id"]
+    # Fase 3: la captura FieldSheet sólo procede tras la recepción firmada.
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
+        json=_signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
     sheet = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
         json={"template_key": "general"},

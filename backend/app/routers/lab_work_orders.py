@@ -478,7 +478,9 @@ def post_lab_field_sheet(
     payload: LabFieldSheetCreate,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        require_mobile_permission("field_sheets.capture", "lab_work_orders.use")
+        require_mobile_permission(
+            "field_sheets.capture", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
     ),
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
@@ -494,7 +496,9 @@ def get_lab_field_sheet(
     equipment_id: int,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
+        require_mobile_permission(
+            "work_orders.read_organization", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
     ),
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
@@ -508,7 +512,9 @@ def patch_lab_field_sheet(
     payload: FieldSheetUpdate,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        require_mobile_permission("field_sheets.capture", "lab_work_orders.use")
+        require_mobile_permission(
+            "field_sheets.capture", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
     ),
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
@@ -521,7 +527,9 @@ def post_complete_lab_field_sheet(
     equipment_id: int,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        require_mobile_permission("field_sheets.capture", "lab_work_orders.use")
+        require_mobile_permission(
+            "field_sheets.capture", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
     ),
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
@@ -588,14 +596,12 @@ def create_lab_group_signatures(
         require_mobile_permission("signatures.capture", "lab_work_orders.use")
     ),
 ) -> LabWorkOrderRead:
+    """Fase 3: firma de RECEPCIÓN (equipos y condiciones recibidos), no de
+    cierre técnico. Produce draft -> received_signed cuando ambas firmas son
+    válidas y la cohorte cumple los prerrequisitos de recepción (ver
+    sign_group/_ensure_reception_prerequisites)."""
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return sign_group(
-        db,
-        work_order_id,
-        payload,
-        context.user,
-        require_completed_sheets=context.actor_type == "internal",
-    )
+    return sign_group(db, work_order_id, payload, context.user)
 
 
 @router.post("/{work_order_id}/signatures/individual", response_model=LabWorkOrderRead)
@@ -608,13 +614,7 @@ def create_lab_individual_signatures(
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return sign_individual(
-        db,
-        work_order_id,
-        payload,
-        context.user,
-        require_completed_sheets=context.actor_type == "internal",
-    )
+    return sign_individual(db, work_order_id, payload, context.user)
 
 
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)
@@ -626,7 +626,10 @@ def complete_lab_group(
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return complete_group(db, work_order_id, context.user)
+    return complete_group(
+        db, work_order_id, context.user,
+        require_completed_sheets=context.actor_type == "internal",
+    )
 
 
 @router.post("/{work_order_id}/complete/individual", response_model=LabWorkOrderRead)
@@ -638,7 +641,10 @@ def complete_lab_individual(
     ),
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return complete_individual(db, work_order_id, context.user)
+    return complete_individual(
+        db, work_order_id, context.user,
+        require_completed_sheets=context.actor_type == "internal",
+    )
 
 
 @router.get("/{work_order_id}/pdf")

@@ -1,3 +1,17 @@
+// Fase 3: recepción firmada + máquina de estados. 'ready_for_signatures' se
+// conserva como legacy (OT firmada bajo el flujo anterior a esta fase);
+// el flujo nuevo nunca lo produce, pero un registro histórico puede seguir
+// trayéndolo desde el backend y debe presentarse/cerrarse igual que antes.
+export type LabWorkOrderStatus =
+  | 'draft'
+  | 'received_signed'
+  | 'in_progress'
+  | 'ready_for_signatures'
+  | 'ready_to_close'
+  | 'completed'
+  | 'partially_closed'
+  | 'cancelled';
+
 export type LabEquipment = {
   id: number;
   position: number;
@@ -28,7 +42,7 @@ export type LabRelatedWorkOrder = {
   id: number;
   folio: number;
   sequence_number: number;
-  status: 'draft' | 'ready_for_signatures' | 'completed' | 'partially_closed' | 'cancelled';
+  status: LabWorkOrderStatus;
   signature_session_id: number | null;
   equipment_count: number;
 };
@@ -53,7 +67,7 @@ export type LabWorkOrder = {
   state_name: string | null;
   purchase_order: string | null;
   notes: string | null;
-  status: 'draft' | 'ready_for_signatures' | 'completed' | 'partially_closed' | 'cancelled';
+  status: LabWorkOrderStatus;
   lab_client_id: number | null;
   revision_number: number;
   edit_version: number;

@@ -37,8 +37,14 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       || hasPermission(permissions, 'work_orders.execute'),
     canManageEquipment: hasLegacyLabAccess
       || hasPermission(permissions, 'equipment.write'),
+    // Fase 3: lab_field_sheets.capture es el permiso mínimo de Captura --
+    // sólo habilita capturar FieldSheets LAB (después de received_signed),
+    // deliberadamente distinto de field_sheets.capture/lab_work_orders.use
+    // (esos también habilitan mutar equipo/servicio/cliente documental y
+    // firmar/cerrar en el backend -- ver app/routers/lab_work_orders.py).
     canCaptureFieldSheets: hasLegacyLabAccess
-      || hasPermission(permissions, 'field_sheets.capture'),
+      || hasPermission(permissions, 'field_sheets.capture')
+      || hasPermission(permissions, 'lab_field_sheets.capture'),
     canCaptureSignatures: hasLegacyLabAccess
       || hasPermission(permissions, 'signatures.capture'),
     canCreateTickets: hasPermission(permissions, 'tickets.create')

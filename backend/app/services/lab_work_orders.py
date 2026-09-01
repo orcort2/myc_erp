@@ -768,7 +768,11 @@ def list_work_orders(
     if client and client.strip():
         query = query.where(LabWorkOrder.client_name.ilike(f"%{client.strip()}%"))
     if work_order_status == "open":
-        query = query.where(LabWorkOrder.status.in_(("draft", "ready_for_signatures")))
+        query = query.where(
+            LabWorkOrder.status.in_(
+                ("draft", "received_signed", "in_progress", "ready_for_signatures", "ready_to_close")
+            )
+        )
     elif work_order_status == "completed":
         query = query.where(
             LabWorkOrder.status.in_(("completed", "partially_closed", "cancelled"))
@@ -1759,6 +1763,50 @@ def _recorded_signature_scope(
     return None
 
 
+def _equipment_reception_gap(equipment: LabWorkOrderEquipment) -> str | None:
+    """Fase 3: describe por qué un equipo aún no puede recibirse (firmarse),
+    o None si ya está coherente. El cliente documental no se valida aquí --
+    'order' siempre hereda client_name (NOT NULL en la OT) y 'different'
+    siempre exige un snapshot de empresa no vacío (CHECK constraint de Fase
+    1), así que ambos modos son resolubles por construcción."""
+    if equipment.service_type is None:
+        return "Selecciona el tipo de servicio"
+    if equipment.service_type in {"accredited", "traceable"} and equipment.folio_status not in {
+        "reserved", "authorized"
+    }:
+        return "El equipo requiere folio MYCA/MYCT asignado"
+    if equipment.service_type == "linked" and equipment.linked_company_id is None:
+        return "Selecciona la empresa vinculada"
+    return None
+
+
+def _ensure_reception_prerequisites(members: list[LabWorkOrder]) -> None:
+    """Fase 3: antes de firmar la recepción (draft -> received_signed), cada
+    equipo de la cohorte debe traer una configuración operacional coherente.
+    Vinculado con folio de autorización pendiente SÍ puede firmar recepción
+    -- esa autorización sigue siendo un requisito técnico posterior (no se
+    reconstruye aquí el flujo de tickets linked_folio)."""
+    incomplete = [
+        {
+            "work_order_id": item.id,
+            "work_order_folio": item.folio,
+            "equipment_id": equipment.id,
+            "equipment_position": equipment.position,
+            "equipment": equipment.instrument,
+            "reason": reason,
+        }
+        for item in members
+        for equipment in item.equipment
+        for reason in [_equipment_reception_gap(equipment)]
+        if reason is not None
+    ]
+    if incomplete:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "LAB_RECEPTION_INCOMPLETE", "items": incomplete},
+        )
+
+
 def _sign_members(
     db: Session,
     *,
@@ -1768,6 +1816,18 @@ def _sign_members(
     user: User,
     scope: str,
 ) -> LabWorkOrderRead:
+    """Fase 3: la firma representa CONFORMIDAD DE RECEPCIÓN (equipos y
+    condiciones aceptados para ejecutar el servicio), no el cierre técnico.
+    Reutiliza exactamente _create_signature_session (misma autoridad de
+    firma técnico/cliente que ya existía); sólo cambia el estado resultante
+    y el momento del flujo en que se invoca (antes de FieldSheets, no
+    después). No se reasignan FieldSheets existentes a esta sesión aquí --
+    bajo el nuevo flujo no existen todavía en el caso normal, y en el caso de
+    una reapertura que invalidó la firma, unas hojas ya capturadas bajo la
+    sesión histórica anterior no deben reescribirse hacia la nueva (ver
+    sección 16: no sobrescribir la sesión histórica). Las FieldSheets nuevas
+    se vinculan a la sesión vigente en el momento de su propia creación
+    (create_lab_field_sheet)."""
     root_work_order_id = _root_id(work_order)
     session = _create_signature_session(
         db,
@@ -1777,12 +1837,9 @@ def _sign_members(
     )
     for item in members:
         item.signature_session_id = session.id
-        item.status = "ready_for_signatures"
+        item.status = "received_signed"
         item.signature_required = False
         item.signature_preserved = False
-        for equipment in item.equipment:
-            if equipment.field_sheet is not None:
-                equipment.field_sheet.lab_signature_session_id = session.id
     write_audit_log(
         db,
         action=(
@@ -1835,9 +1892,29 @@ def _ensure_staff_sheet_prerequisites(members: list[LabWorkOrder]) -> None:
         )
 
 
+def _closable_status(item: LabWorkOrder) -> bool:
+    """Fase 3: el cierre normal exige ready_to_close (trabajo técnico
+    completo, ver complete_lab_field_sheet). 'ready_for_signatures' se
+    conserva como equivalente legacy -- una OT firmada bajo el flujo anterior
+    a esta fase puede seguir cerrando exactamente igual que antes, sin
+    fingir que pasó por recepción/ready_to_close. Una OT sin lab_client_id
+    (anterior al contrato de cliente LAB/captura) conserva la excepción ya
+    existente de _missing_completed_sheets: no requiere FieldSheets
+    completas para cerrar, así que basta con que ya esté firmada
+    (received_signed/in_progress), sin necesidad de alcanzar ready_to_close.
+    Una reapertura 'preserve' vuelve a draft con la firma histórica intacta
+    (signature_preserved=True) -- exactamente el mismo camino de cierre que
+    ya existía antes de esta fase, sin necesidad de re-pasar por
+    received_signed/ready_to_close."""
+    if item.status in {"ready_to_close", "ready_for_signatures"}:
+        return True
+    if item.lab_client_id is None and item.status in {"received_signed", "in_progress"}:
+        return True
+    return item.status == "draft" and bool(item.reopen_ticket_id) and item.signature_preserved
+
+
 def sign_group(
     db: Session, work_order_id: int, payload: LabSignatureGroupWrite, user: User,
-    *, require_completed_sheets: bool = False,
 ) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
     _ensure_members_editable([work_order])
@@ -1853,8 +1930,7 @@ def sign_group(
             status_code=409,
             detail="Todas las OT abiertas de la cohorte deben tener al menos un equipo",
         )
-    if require_completed_sheets:
-        _ensure_staff_sheet_prerequisites(members)
+    _ensure_reception_prerequisites(members)
     return _sign_members(
         db,
         work_order=work_order,
@@ -1867,7 +1943,6 @@ def sign_group(
 
 def sign_individual(
     db: Session, work_order_id: int, payload: LabSignatureGroupWrite, user: User,
-    *, require_completed_sheets: bool = False,
 ) -> LabWorkOrderRead:
     work_order, _group_members = _lock_historical_group(db, work_order_id)
     _ensure_members_editable([work_order])
@@ -1877,8 +1952,7 @@ def sign_individual(
         raise HTTPException(
             status_code=409, detail="La OT debe tener al menos un equipo"
         )
-    if require_completed_sheets:
-        _ensure_staff_sheet_prerequisites([work_order])
+    _ensure_reception_prerequisites([work_order])
     return _sign_members(
         db,
         work_order=work_order,
@@ -1896,6 +1970,7 @@ def _complete_members(
     members: list[LabWorkOrder],
     user: User,
     scope: str,
+    require_completed_sheets: bool = True,
 ) -> LabWorkOrderRead:
     if not members or any(
         item.signature_session_id is None or item.signature_required for item in members
@@ -1903,8 +1978,27 @@ def _complete_members(
         raise HTTPException(
             status_code=409, detail="La cohorte requiere las firmas de técnico y cliente"
         )
-    if any(item.status not in {"draft", "ready_for_signatures"} for item in members):
-        raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
+    if require_completed_sheets:
+        # El detalle de hojas faltantes (por equipo) es más informativo que un
+        # simple INVALID_STATE_TRANSITION, así que se revisa primero -- para
+        # cualquier miembro no exento, si ya está ready_to_close no puede
+        # haber hojas faltantes (invariante mantenido por
+        # complete_lab_field_sheet), y si aún no llegó, esto explica
+        # exactamente qué falta.
+        _ensure_staff_sheet_prerequisites(members)
+        if any(not _closable_status(item) for item in members):
+            raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
+    else:
+        # Fase 3 preserva el comportamiento previo a esta fase para actores
+        # externos: nunca estuvieron sujetos al requisito de hojas completas
+        # (antes se evaluaba, condicionado a actor interno, en el momento de
+        # firmar; ahora ese momento es el cierre). Sólo se exige que la
+        # recepción ya esté firmada.
+        if any(
+            not _closable_status(item) and item.status not in {"received_signed", "in_progress"}
+            for item in members
+        ):
+            raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
     session_ids = {item.signature_session_id for item in members}
     if len(session_ids) != 1:
         raise HTTPException(
@@ -1960,7 +2054,9 @@ def _complete_members(
     return _read(db, _get(db, work_order.id))
 
 
-def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
+def complete_group(
+    db: Session, work_order_id: int, user: User, *, require_completed_sheets: bool = True
+) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
     if work_order.status in {"completed", "partially_closed"}:
         return _read(db, work_order)
@@ -1976,10 +2072,13 @@ def complete_group(db: Session, work_order_id: int, user: User) -> LabWorkOrderR
         members=members,
         user=user,
         scope="group",
+        require_completed_sheets=require_completed_sheets,
     )
 
 
-def complete_individual(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
+def complete_individual(
+    db: Session, work_order_id: int, user: User, *, require_completed_sheets: bool = True
+) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
     if work_order.status in {"completed", "partially_closed"}:
         return _read(db, work_order)
@@ -2000,6 +2099,7 @@ def complete_individual(db: Session, work_order_id: int, user: User) -> LabWorkO
         members=members,
         user=user,
         scope="individual",
+        require_completed_sheets=require_completed_sheets,
     )
 
 

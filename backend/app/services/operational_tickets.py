@@ -279,7 +279,11 @@ def create_partial_close_ticket(
     if operator_client_id is not None:
         raise HTTPException(status_code=403, detail="La excepción de cierre parcial es exclusiva de staff MYC")
     work_order = _get(db, payload.work_order_id, lock=True)
-    if work_order.status != "draft":
+    # Fase 3: el cierre parcial excusa hojas pendientes de una OT que sigue en
+    # trabajo técnico activo (recepción ya firmada) -- ya no "draft", que
+    # ahora es sólo el estado previo a la recepción. No genera ni requiere
+    # una nueva firma de recepción (ver sección 17: son conceptos distintos).
+    if work_order.status not in {"received_signed", "in_progress"}:
         raise HTTPException(status_code=409, detail="La OT no admite una excepción de cierre")
     group = _group(db, work_order, lock=True)
     if len(_open_group_members(group)) <= 1:
@@ -483,6 +487,15 @@ def approve_reopen_ticket(
         item.signature_required = not preserve
         if not preserve:
             item.signature_session_id = None
+        # Fase 3: sin cambios aquí -- la distinción preserve/invalidate ya
+        # gobierna correctamente qué ediciones invalidan la firma de
+        # recepción (ver CRITICAL_GENERAL_FIELDS/CRITICAL_EQUIPMENT_FIELDS y
+        # _member_signatures_preserved en lab_work_orders.py: con preserve,
+        # sólo cambios estructurales -- p.ej. agregar equipo -- invalidan;
+        # correcciones de datos ya existentes no). "draft" sigue siendo el
+        # estado de reapertura para ambas políticas; _closable_status permite
+        # completar directamente desde draft cuando la reapertura fue
+        # preserve, igual que antes de esta fase.
         item.status = "draft"
         item.completed_at = None
         item.final_pdf = None

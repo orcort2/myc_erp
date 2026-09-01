@@ -143,6 +143,22 @@ def equipment_payload(index: int, **extra) -> dict:
     }
 
 
+def _signatures_payload() -> dict:
+    import base64
+    from datetime import datetime, timezone
+
+    png = "data:image/png;base64," + base64.b64encode(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        )
+    ).decode()
+    signed_at = datetime.now(timezone.utc).isoformat()
+    return {
+        "technician": {"signer_name": "Técnico", "signed_at": signed_at, "version": 1, "signature_data_url": png},
+        "client": {"signer_name": "Cliente", "signed_at": signed_at, "version": 1, "signature_data_url": png},
+    }
+
+
 def _setup_order_with_equipment(client, headers, *, count: int = 1) -> tuple[int, list[int]]:
     order = client.post(
         "/api/mobile/v1/technician/lab-work-orders", json=create_payload(), headers=headers
@@ -707,6 +723,13 @@ def test_field_sheet_ownership_regression_productive_and_lab_intact(lab_context)
         json={"service_type": "accredited", "linked_company_id": None},
         headers=headers,
     )
+    # Fase 3: la captura FieldSheet sólo procede tras la recepción firmada.
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
+        json=_signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
     created = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
         json={"template_key": "general"},
@@ -752,20 +775,14 @@ def test_signature_session_model_unchanged(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(client, headers)
-    from datetime import datetime, timezone
-    import base64
-    png = "data:image/png;base64," + base64.b64encode(
-        base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-        )
-    ).decode()
-    signed_at = datetime.now(timezone.utc).isoformat()
+    client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/service",
+        json={"service_type": "traceable", "linked_company_id": None},
+        headers=headers,
+    )
     signed = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
-        json={
-            "technician": {"signer_name": "Técnico", "signed_at": signed_at, "version": 1, "signature_data_url": png},
-            "client": {"signer_name": "Cliente", "signed_at": signed_at, "version": 1, "signature_data_url": png},
-        },
+        json=_signatures_payload(),
         headers=headers,
     )
     assert signed.status_code == 200, signed.text

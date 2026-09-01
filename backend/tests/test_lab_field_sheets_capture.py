@@ -165,6 +165,15 @@ def _setup_order_with_equipment(client, headers, *, count: int = 2) -> tuple[int
             headers=headers,
         )
         assert service.status_code == 200, service.text
+    # Fase 3: la captura FieldSheet sólo procede tras la recepción firmada
+    # (draft -> received_signed); todo equipo aquí ya está coherente
+    # (servicio + folio MYCA), así que la firma de recepción siempre procede.
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
+        json=signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
     return order_id, equipment_ids
 
 
@@ -410,14 +419,11 @@ def test_lab_field_sheet_signature_resolves_technician_and_leaves_quality_slots_
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    # Fase 3: la recepción ya quedó firmada dentro de _setup_order_with_equipment
+    # (requisito para poder capturar); la FieldSheet toma su
+    # lab_signature_session_id de esa sesión vigente en el momento de crearse
+    # (create_lab_field_sheet), sin necesidad de firmar de nuevo aquí.
     sheet_id = _create_and_complete_field_sheet(client, headers, order_id, equipment_ids[0])
-
-    signed = client.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
-        json=signatures_payload(),
-        headers=headers,
-    )
-    assert signed.status_code == 200, signed.text
 
     with factory() as db:
         sheet = db.get(FieldSheet, sheet_id)
@@ -461,7 +467,12 @@ def test_lab_field_sheet_signature_resolution_is_historical_not_latest_group_ses
     members = group.json()["related_work_orders"]
     assert len(members) == 2
 
-    sheet_ids = []
+    # Fase 3: la recepción se firma ANTES de capturar -- así que cada miembro
+    # configura su equipo/servicio y firma su propia recepción individual
+    # antes de que su FieldSheet pueda crearse. sheet[0] toma la sesión
+    # vigente de member[0] (v1) al crearse; luego, cuando member[1] firma por
+    # separado (v2, sobre el mismo root histórico), sheet[0] no debe migrar.
+    equipment_ids = []
     for member in members:
         added = client.post(
             f"/api/mobile/v1/technician/lab-work-orders/{member['id']}/equipment",
@@ -476,7 +487,7 @@ def test_lab_field_sheet_signature_resolution_is_historical_not_latest_group_ses
             headers=tech_headers,
         )
         assert service.status_code == 200, service.text
-        sheet_ids.append(_create_and_complete_field_sheet(client, tech_headers, member["id"], equipment_id))
+        equipment_ids.append(equipment_id)
 
     first_signed = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{members[0]['id']}/signatures/individual",
@@ -484,6 +495,10 @@ def test_lab_field_sheet_signature_resolution_is_historical_not_latest_group_ses
         headers=tech_headers,
     )
     assert first_signed.status_code == 200, first_signed.text
+
+    sheet_ids = [
+        _create_and_complete_field_sheet(client, tech_headers, members[0]["id"], equipment_ids[0])
+    ]
 
     with factory() as db:
         first_sheet = db.get(FieldSheet, sheet_ids[0])
@@ -500,6 +515,9 @@ def test_lab_field_sheet_signature_resolution_is_historical_not_latest_group_ses
         headers=tech_headers,
     )
     assert second_signed.status_code == 200, second_signed.text
+    sheet_ids.append(
+        _create_and_complete_field_sheet(client, tech_headers, members[1]["id"], equipment_ids[1])
+    )
 
     with factory() as db:
         first_sheet = db.get(FieldSheet, sheet_ids[0])
@@ -529,12 +547,6 @@ def test_generate_field_sheet_pdf_prints_technician_signature_and_keeps_quality_
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
     sheet_id = _create_and_complete_field_sheet(client, headers, order_id, equipment_ids[0], template_key="presion")
-    signed = client.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
-        json=signatures_payload(),
-        headers=headers,
-    )
-    assert signed.status_code == 200, signed.text
 
     with factory() as db:
         pdf_bytes, _filename = generate_field_sheet_pdf(db, sheet_id)
@@ -640,6 +652,12 @@ def test_partial_close_ticket_accepted_for_a_real_multi_ot_cohort(lab_context):
         json={"service_type": "accredited", "linked_company_id": None},
         headers=tech_headers,
     )
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{members[0]['id']}/signatures/individual",
+        json=signatures_payload(),
+        headers=tech_headers,
+    )
+    assert signed.status_code == 200, signed.text
     client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{members[0]['id']}/equipment/{equipment_id}/field-sheet",
         json={"template_key": "general"},

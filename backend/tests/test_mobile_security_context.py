@@ -400,14 +400,9 @@ def test_external_linked_sheet_can_start_pending_and_does_not_block_closure(mobi
         "/api/mobile/v1/technician/lab-work-orders/field-sheet-templates",
         headers=sr_headers,
     ).status_code == 200
-    sheet = api.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"template_key": "general"},
-        headers=sr_headers,
-    )
-    assert sheet.status_code == 201, sheet.text
-    assert sheet.json()["status"] == "draft"
 
+    # Fase 3: la captura FieldSheet sólo procede tras la recepción firmada --
+    # la firma se mueve ANTES de la captura (draft -> received_signed).
     signed_at = datetime.now(timezone.utc).isoformat()
     signatures = {
         "technician": {"signer_name": "Operador", "signed_at": signed_at, "version": 1, "signature_data_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="},
@@ -419,6 +414,19 @@ def test_external_linked_sheet_can_start_pending_and_does_not_block_closure(mobi
         headers=sr_headers,
     )
     assert signed.status_code == 200, signed.text
+    assert signed.json()["status"] == "received_signed"
+
+    sheet = api.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=sr_headers,
+    )
+    assert sheet.status_code == 201, sheet.text
+    assert sheet.json()["status"] == "draft"
+
+    # La hoja se queda en "draft" (sin completar) -- para un actor externo
+    # esto sigue sin bloquear el cierre, exactamente igual que antes de esta
+    # fase (nunca estuvieron sujetos al requisito de hojas completas).
     completed = api.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete",
         headers=sr_headers,
