@@ -17,6 +17,11 @@ export type LabEquipment = {
   folio_ticket_id: number | null;
   field_sheet_id: number | null;
   field_sheet_status: string | null;
+  certificate_client_mode: 'order' | 'different';
+  final_lab_client_id: number | null;
+  final_client_company_snapshot: string | null;
+  final_client_address_snapshot: string | null;
+  final_client_attention_snapshot: string | null;
 };
 
 export type LabRelatedWorkOrder = {

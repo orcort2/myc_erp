@@ -102,6 +102,32 @@ test('permisos productivos genéricos de Captura (field_sheets.create/update) no
   assert.equal(capabilities.canCreateWorkOrderGroupsDirect, false);
 });
 
+test('Fase 2: Captura no ve el alta integrada de equipo (mismo gate que "Añadir equipo")', () => {
+  // La nueva pantalla de alta integrada (equipo + cliente documental + servicio)
+  // se gatea con la MISMA capacidad canManageEquipment que ya usa "+ Añadir
+  // equipo" -- no se introduce una capacidad nueva más permisiva.
+  const capabilities = deriveMobileCapabilities(user('internal', [
+    'mobile.access',
+    'work_orders.read_organization',
+    'field_sheets.create',
+    'field_sheets.update',
+  ]));
+  assert.equal(capabilities.canManageEquipment, false);
+});
+
+test('Fase 2 hardening: el mismo gate bloquea también abrir "Editar equipo" (LabEquipmentForm mode=edit)', () => {
+  // showEquipmentEditor(item) para un equipo YA guardado usa la misma
+  // capacidad canManageEquipment que el alta -- un usuario sin permisos no
+  // puede abrir el formulario de edición, ni siquiera en modo lectura.
+  const capabilities = deriveMobileCapabilities(user('internal', [
+    'mobile.access',
+    'work_orders.read_organization',
+    'field_sheets.create',
+    'field_sheets.update',
+  ]));
+  assert.equal(capabilities.canManageEquipment, false);
+});
+
 test('staff conserva compatibilidad LAB y Comunicaciones', () => {
   const capabilities = deriveMobileCapabilities(user('internal', [
     'mobile.access',

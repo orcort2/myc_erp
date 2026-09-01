@@ -8,6 +8,8 @@ from app.services.auth import require_permission
 from app.core.mobile.scope import ensure_lab_work_order_scope
 from app.core.mobile.security import MobileSecurityContext, require_mobile_permission
 from app.schemas.lab_work_order import (
+    LabEquipmentCertificateClientWrite,
+    LabEquipmentConfiguredCreate,
     LabEquipmentWrite,
     LabEquipmentServiceWrite,
     LabCancellationWrite,
@@ -31,6 +33,7 @@ from app.services.lab_work_orders import (
     complete_group,
     complete_individual,
     create_additional_work_order,
+    create_configured_equipment,
     create_work_order,
     create_work_order_group,
     create_group_request,
@@ -44,8 +47,10 @@ from app.services.lab_work_orders import (
     get_pdf,
     get_work_order,
     list_work_orders,
+    set_equipment_certificate_client,
     sign_group,
     sign_individual,
+    update_configured_equipment,
     update_equipment,
     update_work_order,
 )
@@ -379,6 +384,90 @@ def put_lab_equipment_service(
         payload,
         context.user,
         external=context.actor_type == "client",
+    )
+
+
+@router.post(
+    "/{work_order_id}/equipment/configured", response_model=LabWorkOrderRead, status_code=201
+)
+def post_lab_equipment_configured(
+    work_order_id: int,
+    payload: LabEquipmentConfiguredCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("equipment.write", "field_sheets.capture", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    """Fase 2F: alta integrada -- equipo + cliente documental + servicio/folio
+    en una sola operación atómica. Equivalente funcional a encadenar POST
+    equipment + PATCH certificate-client + PUT service, pero con una única
+    transacción (ver create_configured_equipment). Los tres endpoints
+    anteriores se conservan intactos para compatibilidad."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return create_configured_equipment(
+        db,
+        work_order_id,
+        payload,
+        context.user,
+        operator_client_id=context.client_id,
+        external=context.actor_type == "client",
+    )
+
+
+@router.patch(
+    "/{work_order_id}/equipment/{equipment_id}/configured", response_model=LabWorkOrderRead
+)
+def patch_lab_equipment_configured(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentConfiguredCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("equipment.write", "field_sheets.capture", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    """Fase 2 hardening: edición integrada -- datos del equipo + cliente
+    documental + servicio/folio de un equipo YA EXISTENTE, en una sola
+    transacción (ver update_configured_equipment). El botón único "Guardar"
+    de la edición Mobile ahora corresponde a UNA sola llamada: si el 409 de
+    folio ya reservado ocurre, ningún otro cambio de la edición persiste. Los
+    endpoints PATCH equipo / PATCH certificate-client / PUT service se
+    conservan intactos para compatibilidad."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return update_configured_equipment(
+        db,
+        work_order_id,
+        equipment_id,
+        payload,
+        context.user,
+        operator_client_id=context.client_id,
+        external=context.actor_type == "client",
+    )
+
+
+@router.patch(
+    "/{work_order_id}/equipment/{equipment_id}/certificate-client", response_model=LabWorkOrderRead
+)
+def patch_lab_equipment_certificate_client(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentCertificateClientWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("equipment.write", "field_sheets.capture", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    """Fase 2C/2G: editar el cliente documental de un equipo ya existente,
+    mientras la OT siga editable. La FK es procedencia; el snapshot es la
+    autoridad histórica (set_equipment_certificate_client, Fase 1A)."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return set_equipment_certificate_client(
+        db,
+        work_order_id,
+        equipment_id,
+        payload,
+        context.user,
+        operator_client_id=context.client_id,
     )
 
 

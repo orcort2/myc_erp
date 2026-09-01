@@ -132,9 +132,16 @@ class LabEquipmentRead(LabEquipmentBase):
 
 
 class LabEquipmentCertificateClientWrite(BaseModel):
-    """Fase 1A/1B: contrato del cliente documental por equipo. Todavía no está
-    conectado a ningún endpoint mobile-facing (eso es Fase 2); sirve para que
-    el servicio/las pruebas de dominio tengan una entrada validada única."""
+    """Fase 1A/1B: contrato del cliente documental por equipo. Fase 2 lo
+    conecta al alta integrada de equipo (create_configured_equipment) y al
+    endpoint dedicado de edición.
+
+    Endurecimiento (Fase 2 hardening): cuando se envía final_lab_client_id,
+    los tres campos de snapshot son puramente informativos -- el backend
+    SIEMPRE los resuelve desde el LabClient autorizado y descarta lo que
+    llegue aquí (ver _set_equipment_certificate_client_core). Por eso dejan
+    de ser obligatorios en ese caso: sólo son la autoridad cuando NO hay
+    final_lab_client_id (cliente final sin referencia de catálogo)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -157,9 +164,11 @@ class LabEquipmentCertificateClientWrite(BaseModel):
                     "El modo 'order' no admite cliente final ni snapshots: el documento "
                     "hereda cliente/dirección/atención de la OT"
                 )
-        else:
-            if not (self.final_client_company_snapshot or "").strip():
-                raise ValueError("El modo 'different' requiere el snapshot de empresa")
+        elif self.final_lab_client_id is None and not (self.final_client_company_snapshot or "").strip():
+            raise ValueError(
+                "El modo 'different' requiere final_lab_client_id o, en su ausencia, "
+                "el snapshot de empresa"
+            )
         return self
 
 
@@ -168,6 +177,21 @@ class LabEquipmentServiceWrite(BaseModel):
 
     service_type: str = Field(pattern="^(accredited|traceable|linked)$")
     linked_company_id: int | None = Field(default=None, gt=0)
+
+
+class LabEquipmentConfiguredCreate(BaseModel):
+    """Fase 2E: alta integrada (equipo + cliente documental + servicio/folio)
+    como una sola operación. Compone los contratos existentes en vez de
+    duplicarlos: cada sección se valida con su propio schema de Fase 1/2."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    equipment: LabEquipmentWrite
+    certificate_client: LabEquipmentCertificateClientWrite | None = Field(
+        default=None,
+        description="Si se omite, el equipo queda en certificate_client_mode='order' (default).",
+    )
+    service: LabEquipmentServiceWrite
 
 
 class LabManualFolioRequest(BaseModel):

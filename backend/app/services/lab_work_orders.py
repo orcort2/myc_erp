@@ -36,6 +36,7 @@ from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.schemas.lab_work_order import (
     LabEquipmentCertificateClientWrite,
+    LabEquipmentConfiguredCreate,
     LabEquipmentWrite,
     LabEquipmentServiceWrite,
     LabSignatureGroupWrite,
@@ -474,6 +475,7 @@ def create_work_order(
                 LabClient.operator_client_id.is_(None)
                 if operator_client_id is None
                 else LabClient.operator_client_id == operator_client_id,
+                LabClient.is_active.is_(True),
             )
         )
         if client is None:
@@ -523,6 +525,7 @@ def _materialize_group(
                 LabClient.operator_client_id.is_(None)
                 if operator_client_id is None
                 else LabClient.operator_client_id == operator_client_id,
+                LabClient.is_active.is_(True),
             )
         )
         if client is None:
@@ -1009,6 +1012,7 @@ def update_work_order(
                 LabClient.operator_client_id.is_(None)
                 if operator_client_id is None
                 else LabClient.operator_client_id == operator_client_id,
+                LabClient.is_active.is_(True),
             )
         )
         if client is None:
@@ -1052,16 +1056,17 @@ def update_work_order(
     return _read(db, _get(db, work_order.id))
 
 
-def add_equipment(
-    db: Session, work_order_id: int, payload: LabEquipmentWrite, user: User
-) -> LabWorkOrderRead:
-    work_order = _get(db, work_order_id, lock=True)
-    group = _group(db, work_order, lock=True)
-    _ensure_members_editable([work_order])
-    editable_members = _editable_group_members(group)
-    values = payload.model_dump()
-    expected_edit_version = values.pop("expected_edit_version", None)
-    _check_edit_version(editable_members, expected_edit_version)
+def _add_equipment_core(
+    db: Session,
+    work_order: LabWorkOrder,
+    group: list[LabWorkOrder],
+    editable_members: list[LabWorkOrder],
+    values: dict,
+    user: User,
+) -> LabWorkOrderEquipment:
+    """Núcleo sin commit de add_equipment: crea la fila y hace flush, pero deja
+    la transacción abierta para que un caller (el endpoint público, o Fase 2
+    create_configured_equipment) decida cuándo confirmar/hacer rollback."""
     if work_order.reopen_ticket_id:
         invalidate_member_signatures(
             db,
@@ -1090,8 +1095,60 @@ def add_equipment(
         user_id=user.id,
         new_values={"work_order_id": work_order.id, "position": equipment.position},
     )
+    return equipment
+
+
+def add_equipment(
+    db: Session, work_order_id: int, payload: LabEquipmentWrite, user: User
+) -> LabWorkOrderRead:
+    work_order = _get(db, work_order_id, lock=True)
+    group = _group(db, work_order, lock=True)
+    _ensure_members_editable([work_order])
+    editable_members = _editable_group_members(group)
+    values = payload.model_dump()
+    expected_edit_version = values.pop("expected_edit_version", None)
+    _check_edit_version(editable_members, expected_edit_version)
+    _add_equipment_core(db, work_order, group, editable_members, values, user)
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
+
+
+def _update_equipment_core(
+    db: Session,
+    work_order: LabWorkOrder,
+    group: list[LabWorkOrder],
+    editable_members: list[LabWorkOrder],
+    equipment: LabWorkOrderEquipment,
+    values: dict,
+    user: User,
+) -> LabWorkOrderEquipment:
+    """Núcleo sin commit de update_equipment: actualiza los datos básicos del
+    equipo y hace flush, sin confirmar la transacción -- para que el endpoint
+    público y update_configured_equipment (Fase 2 hardening) puedan decidir
+    cuándo confirmar/revertir."""
+    changed_fields = sorted(
+        key for key, value in values.items() if getattr(equipment, key) != value
+    )
+    affected_signature_members = _affected_signature_members(group, work_order)
+    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields) and not _member_signatures_preserved(
+        affected_signature_members
+    ):
+        invalidate_member_signatures(
+            db, affected_signature_members, user, fields=changed_fields
+        )
+    for key, value in values.items():
+        setattr(equipment, key, value)
+    if changed_fields:
+        _bump_edit_version(editable_members)
+    write_audit_log(
+        db,
+        action="lab_work_order.equipment_updated",
+        entity="lab_work_order_equipment",
+        entity_id=equipment.id,
+        user_id=user.id,
+        new_values={"work_order_id": work_order.id},
+    )
+    return equipment
 
 
 def update_equipment(
@@ -1116,28 +1173,7 @@ def update_equipment(
     )
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
-    changed_fields = sorted(
-        key for key, value in values.items() if getattr(equipment, key) != value
-    )
-    affected_signature_members = _affected_signature_members(group, work_order)
-    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields) and not _member_signatures_preserved(
-        affected_signature_members
-    ):
-        invalidate_member_signatures(
-            db, affected_signature_members, user, fields=changed_fields
-        )
-    for key, value in values.items():
-        setattr(equipment, key, value)
-    if changed_fields:
-        _bump_edit_version(editable_members)
-    write_audit_log(
-        db,
-        action="lab_work_order.equipment_updated",
-        entity="lab_work_order_equipment",
-        entity_id=equipment.id,
-        user_id=user.id,
-        new_values={"work_order_id": work_order.id},
-    )
+    _update_equipment_core(db, work_order, group, editable_members, equipment, values, user)
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
 
@@ -1163,30 +1199,33 @@ def resolve_equipment_certificate_client(
     }
 
 
-def set_equipment_certificate_client(
+def _set_equipment_certificate_client_core(
     db: Session,
-    work_order_id: int,
-    equipment_id: int,
+    equipment: LabWorkOrderEquipment,
     payload: LabEquipmentCertificateClientWrite,
     user: User,
     *,
     operator_client_id: int | None,
-) -> LabWorkOrderRead:
-    """Fase 1A: fija el cliente documental de un equipo LAB, independiente del
-    cliente de la OT. No crea Client productivo, no crea otro motor de
-    FieldSheets: sólo persiste columnas propias de LabWorkOrderEquipment. La
-    FK final_lab_client_id es procedencia; el snapshot es la autoridad
-    histórica y no se resincroniza si el LabClient de origen cambia después."""
-    work_order = _get(db, work_order_id, lock=True)
-    _ensure_members_editable([work_order])
-    equipment = db.scalar(
-        select(LabWorkOrderEquipment).where(
-            LabWorkOrderEquipment.id == equipment_id,
-            LabWorkOrderEquipment.work_order_id == work_order.id,
-        )
-    )
-    if equipment is None:
-        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+) -> None:
+    """Núcleo sin commit de set_equipment_certificate_client. Fase 1A: fija el
+    cliente documental de un equipo LAB, independiente del cliente de la OT.
+    No crea Client productivo, no crea otro motor de FieldSheets: sólo
+    persiste columnas propias de LabWorkOrderEquipment. La FK
+    final_lab_client_id es procedencia; el snapshot es la autoridad histórica
+    y no se resincroniza si el LabClient de origen cambia después.
+
+    Endurecimiento de seguridad: cuando el payload trae final_lab_client_id,
+    el backend es la única autoridad para los snapshots -- se cargan SIEMPRE
+    desde el LabClient validado (existe, is_active, mismo operator_client_id),
+    nunca desde company/address/attention que Mobile haya podido enviar. Un
+    payload manipulado que combine un final_lab_client_id real con snapshots
+    falsos no puede persistir el dato falso: se descarta en silencio y se usa
+    el LabClient real. Sólo si no hay final_lab_client_id (cliente final sin
+    referencia de catálogo) se confía en el snapshot que trae el payload.
+    """
+    company_snapshot = payload.final_client_company_snapshot
+    address_snapshot = payload.final_client_address_snapshot
+    attention_snapshot = payload.final_client_attention_snapshot
     if payload.final_lab_client_id is not None:
         origin = db.scalar(
             select(LabClient).where(
@@ -1194,15 +1233,19 @@ def set_equipment_certificate_client(
                 LabClient.operator_client_id.is_(None)
                 if operator_client_id is None
                 else LabClient.operator_client_id == operator_client_id,
+                LabClient.is_active.is_(True),
             )
         )
         if origin is None:
             raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
+        company_snapshot = origin.company
+        address_snapshot = origin.address or None
+        attention_snapshot = origin.attention or None
     equipment.certificate_client_mode = payload.certificate_client_mode
     equipment.final_lab_client_id = payload.final_lab_client_id
-    equipment.final_client_company_snapshot = payload.final_client_company_snapshot
-    equipment.final_client_address_snapshot = payload.final_client_address_snapshot
-    equipment.final_client_attention_snapshot = payload.final_client_attention_snapshot
+    equipment.final_client_company_snapshot = company_snapshot
+    equipment.final_client_address_snapshot = address_snapshot
+    equipment.final_client_attention_snapshot = attention_snapshot
     write_audit_log(
         db,
         action="lab_work_order.equipment_certificate_client_set",
@@ -1213,6 +1256,30 @@ def set_equipment_certificate_client(
             "certificate_client_mode": equipment.certificate_client_mode,
             "final_lab_client_id": equipment.final_lab_client_id,
         },
+    )
+
+
+def set_equipment_certificate_client(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentCertificateClientWrite,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> LabWorkOrderRead:
+    work_order = _get(db, work_order_id, lock=True)
+    _ensure_members_editable([work_order])
+    equipment = db.scalar(
+        select(LabWorkOrderEquipment).where(
+            LabWorkOrderEquipment.id == equipment_id,
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+        )
+    )
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    _set_equipment_certificate_client_core(
+        db, equipment, payload, user, operator_client_id=operator_client_id
     )
     db.commit()
     return _read(db, _get(db, work_order.id))
@@ -1252,29 +1319,44 @@ def _allocate_lab_certificate_folio(db: Session, prefix: str) -> str:
     return f"{prefix}-{today:%m}-{today:%y}-{sequence:04d}"
 
 
-def assign_equipment_service(
+def _assign_equipment_service_core(
     db: Session,
-    work_order_id: int,
-    equipment_id: int,
+    work_order: LabWorkOrder,
+    equipment: LabWorkOrderEquipment,
     payload: LabEquipmentServiceWrite,
     user: User,
     *,
     external: bool,
-) -> LabWorkOrderRead:
-    work_order = _get(db, work_order_id, lock=True)
-    _ensure_members_editable([work_order])
-    equipment = db.scalar(
-        select(LabWorkOrderEquipment)
-        .where(
-            LabWorkOrderEquipment.id == equipment_id,
-            LabWorkOrderEquipment.work_order_id == work_order.id,
-        )
-        .with_for_update()
-    )
-    if equipment is None:
-        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+) -> LabWorkOrderEquipment:
+    """Núcleo sin commit de assign_equipment_service.
+
+    Fase 2G: si el equipo YA tiene un folio MYCA/MYCT reservado o autorizado,
+    la trazabilidad prohíbe liberarlo/reasignarlo en silencio (no hay política
+    existente de invalidar-y-reservar-otro para este flujo). Reconfirmar
+    exactamente el mismo servicio es un no-op seguro; cualquier otro cambio se
+    bloquea con 409 explícito en vez de reciclar el folio ya emitido.
+    """
     if equipment.field_sheet is not None:
         raise HTTPException(status_code=409, detail="La hoja existente congela el tipo de servicio")
+    folio_already_secured = (
+        equipment.certificate_folio is not None
+        or equipment.folio_status in {"reserved", "authorized"}
+    )
+    if folio_already_secured:
+        unchanged = (
+            equipment.service_type == payload.service_type
+            and equipment.linked_company_id == payload.linked_company_id
+        )
+        if unchanged:
+            return equipment
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "El equipo ya tiene un folio MYCA/MYCT reservado; cambiar el "
+                "servicio requiere el flujo de reapertura/ticket existente, no "
+                "se libera ni reutiliza el folio en curso"
+            ),
+        )
 
     linked = None
     if payload.service_type == "linked":
@@ -1356,6 +1438,148 @@ def assign_equipment_service(
             "folio_status": equipment.folio_status,
         },
     )
+    return equipment
+
+
+def assign_equipment_service(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentServiceWrite,
+    user: User,
+    *,
+    external: bool,
+) -> LabWorkOrderRead:
+    work_order = _get(db, work_order_id, lock=True)
+    _ensure_members_editable([work_order])
+    equipment = db.scalar(
+        select(LabWorkOrderEquipment)
+        .where(
+            LabWorkOrderEquipment.id == equipment_id,
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+        )
+        .with_for_update()
+    )
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    _assign_equipment_service_core(db, work_order, equipment, payload, user, external=external)
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def create_configured_equipment(
+    db: Session,
+    work_order_id: int,
+    payload: LabEquipmentConfiguredCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+    external: bool,
+) -> LabWorkOrderRead:
+    """Fase 2E: alta integrada de equipo — datos del equipo + cliente
+    documental + servicio/folio — como una sola operación atómica.
+
+    Reutiliza exactamente las mismas autoridades que los endpoints
+    individuales (_add_equipment_core / _set_equipment_certificate_client_core
+    / _assign_equipment_service_core) sin duplicar su lógica; sólo mueve el
+    límite de commit al final para que un fallo en cualquier paso (p.ej. no
+    hay más folios MYCA disponibles) revierta TODO, incluido el equipo recién
+    creado — nunca debe quedar un equipo huérfano parcialmente configurado.
+    """
+    try:
+        work_order = _get(db, work_order_id, lock=True)
+        group = _group(db, work_order, lock=True)
+        _ensure_members_editable([work_order])
+        editable_members = _editable_group_members(group)
+        equipment_values = payload.equipment.model_dump()
+        expected_edit_version = equipment_values.pop("expected_edit_version", None)
+        _check_edit_version(editable_members, expected_edit_version)
+
+        equipment = _add_equipment_core(
+            db, work_order, group, editable_members, equipment_values, user
+        )
+
+        certificate_client = payload.certificate_client
+        if certificate_client is not None and certificate_client.certificate_client_mode == "different":
+            _set_equipment_certificate_client_core(
+                db, equipment, certificate_client, user, operator_client_id=operator_client_id
+            )
+
+        _assign_equipment_service_core(
+            db, work_order, equipment, payload.service, user, external=external
+        )
+    except Exception:
+        db.rollback()
+        raise
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def update_configured_equipment(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentConfiguredCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+    external: bool,
+) -> LabWorkOrderRead:
+    """Fase 2 hardening: edición integrada de un equipo ya existente -- datos
+    del equipo + cliente documental + servicio/folio como una sola operación
+    atómica, análoga a create_configured_equipment. El botón único "Guardar"
+    de Mobile debe corresponder a UNA sola transacción backend: si cualquier
+    parte falla (p.ej. 409 porque el folio ya está reserved/authorized),
+    absolutamente nada de la edición persiste -- ni los datos básicos, ni el
+    cliente documental, ni edit_version quedan a medio actualizar.
+
+    Reutiliza exactamente los mismos núcleos sin commit que ya usan
+    update_equipment / set_equipment_certificate_client / assign_equipment_service
+    (_update_equipment_core, _set_equipment_certificate_client_core,
+    _assign_equipment_service_core); no duplica ninguna de sus reglas
+    (versión de edición, invalidación de firmas, guard de folio ya
+    reservado, autoridad de snapshot de LabClient, scope de LinkedCompany).
+    """
+    try:
+        work_order = _get(db, work_order_id, lock=True)
+        group = _group(db, work_order, lock=True)
+        _ensure_members_editable([work_order])
+        editable_members = _editable_group_members(group)
+        equipment = db.scalar(
+            select(LabWorkOrderEquipment)
+            .where(
+                LabWorkOrderEquipment.id == equipment_id,
+                LabWorkOrderEquipment.work_order_id == work_order.id,
+            )
+            .with_for_update()
+        )
+        if equipment is None:
+            raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+
+        equipment_values = payload.equipment.model_dump()
+        expected_edit_version = equipment_values.pop("expected_edit_version", None)
+        _check_edit_version(editable_members, expected_edit_version)
+
+        _update_equipment_core(db, work_order, group, editable_members, equipment, equipment_values, user)
+
+        # A diferencia de create_configured_equipment, aquí SIEMPRE se aplica
+        # el cliente documental (incluido el 'order' implícito por omisión):
+        # el equipo puede venir de un 'different' previo y el usuario eligió
+        # volver a 'order' en el formulario -- omitir la llamada dejaría el
+        # 'different' anterior sin revertir.
+        certificate_client = payload.certificate_client or LabEquipmentCertificateClientWrite(
+            certificate_client_mode="order"
+        )
+        _set_equipment_certificate_client_core(
+            db, equipment, certificate_client, user, operator_client_id=operator_client_id
+        )
+
+        _assign_equipment_service_core(
+            db, work_order, equipment, payload.service, user, external=external
+        )
+    except Exception:
+        db.rollback()
+        raise
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
 

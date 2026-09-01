@@ -26,6 +26,17 @@ import { apiUrl, ApiError, readApiError, readApiErrorDetail } from '@/src/api/cl
 import { useAuth } from '@/src/auth/AuthProvider';
 import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignatureFlow';
 import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
+import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
+import {
+  buildConfiguredEquipmentPayload,
+  buildEquipmentEditRequestBody,
+  describeEquipmentSummary,
+  diffEquipmentEdit,
+  hasEquipmentEditChanges,
+  hydrateEquipmentFormValues,
+  type EquipmentFormValues,
+} from '@/src/services/lab-equipment-configured-payload';
+import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
 import {
   reconcileSignatureFlowState,
   type SignatureFlowState,
@@ -51,7 +62,6 @@ import {
   postLabSignatures,
 } from '@/src/services/lab-work-order-signature-submission';
 import type {
-  EquipmentData,
   GeneralData,
   LabEquipment,
   LabClient,
@@ -77,15 +87,6 @@ const emptyGeneral = (): GeneralData => ({
   purchase_order: '',
   notes: '',
 });
-const emptyEquipment = (): EquipmentData => ({
-  instrument: '',
-  brand: '',
-  identification: '',
-  serial_number: '',
-  report_number: null,
-  is_good_condition: true,
-});
-
 type Step = 'general' | 'capture' | 'technical' | 'review' | 'signatures' | 'completed';
 type TicketDialogMode = 'reopen' | 'partial' | 'cancel';
 
@@ -178,7 +179,6 @@ export default function WorkOrdersScreen() {
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
   const [equipmentEditor, setEquipmentEditor] = useState<LabEquipment | 'new' | null>(null);
-  const [equipment, setEquipment] = useState<EquipmentData>(emptyEquipment);
   const [signatureFlowState, setSignatureFlowState] = useState<SignatureFlowState | null>(null);
   const [signatureDrawing, setSignatureDrawing] = useState(false);
   const [closureScope, setClosureScope] = useState<LabClosureScope>('group');
@@ -331,10 +331,6 @@ export default function WorkOrdersScreen() {
   const closureOptions = useMemo(
     () => workOrder ? deriveLabClosureOptions(workOrder) : null,
     [workOrder],
-  );
-  const canSaveEquipment = useMemo(
-    () => equipment.instrument.trim() && equipment.brand.trim() && equipment.identification.trim() && equipment.serial_number.trim(),
-    [equipment],
   );
 
   function startNew() {
@@ -600,31 +596,63 @@ export default function WorkOrdersScreen() {
 
   function showEquipmentEditor(item: LabEquipment | 'new') {
     setEquipmentEditor(item);
-    setEquipment(item === 'new' ? emptyEquipment() : {
-      instrument: item.instrument,
-      brand: item.brand,
-      identification: item.identification,
-      serial_number: item.serial_number,
-      report_number: item.report_number,
-      is_good_condition: item.is_good_condition,
-    });
   }
 
-  async function saveEquipment() {
-    if (!workOrder || !equipmentEditor || !canSaveEquipment) return;
+  // Fase 2 hardening (endurecimiento de consistencia): la edición completa es
+  // UNA sola transacción backend (PATCH .../equipment/{id}/configured), igual
+  // que el alta (Fase 2E). Mobile sigue calculando el diff sólo para decidir
+  // si vale la pena hacer la llamada (hasEquipmentEditChanges) -- si algo
+  // cambió, se manda la configuración completa (equipo + cliente documental +
+  // servicio) y el backend aplica o revierte todo junto; ya no hay estado
+  // parcial posible.
+  async function saveEquipmentEdit(values: EquipmentFormValues) {
+    if (!workOrder || !equipmentEditor || equipmentEditor === 'new') return;
+    const initial = hydrateEquipmentFormValues(equipmentEditor);
+    const changes = diffEquipmentEdit(initial, values);
+    if (!hasEquipmentEditChanges(changes)) {
+      setEquipmentEditor(null);
+      return;
+    }
     setBusy(true);
-    const path = equipmentEditor === 'new'
-      ? `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment`
-      : `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipmentEditor.id}`;
     try {
-      const detail = await request<LabWorkOrder>(path, {
-        method: equipmentEditor === 'new' ? 'POST' : 'PATCH',
-        body: JSON.stringify({ ...equipment, expected_edit_version: workOrder.edit_version }),
-      });
+      const body = buildEquipmentEditRequestBody(values, workOrder.edit_version);
+      const detail = await request<LabWorkOrder>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipmentEditor.id}/configured`,
+        { method: 'PATCH', body: JSON.stringify(body) },
+      );
+      setWorkOrder(detail);
+      if (shouldResetFormAfterSubmit('success')) {
+        setEquipmentEditor(null);
+      }
+      publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+    } catch (error) {
+      // shouldResetFormAfterSubmit('error') === false: el modal NO se cierra
+      // ni se limpia. Al ser una sola transacción, un 409 (folio ya
+      // reservado, etc.) garantiza que NADA de la edición quedó a medias --
+      // ni datos básicos ni cliente documental.
+      Alert.alert('No fue posible guardar los cambios', error instanceof Error ? error.message : 'Revisa los datos');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Fase 2E/2F: alta integrada -- equipo + cliente documental + servicio/folio
+  // como una sola operación atómica (POST .../equipment/configured). Reutiliza
+  // el mismo endpoint que backend expone para no duplicar la orquestación acá.
+  async function saveConfiguredEquipment(values: EquipmentFormValues) {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      const payload = buildConfiguredEquipmentPayload(values.equipment, values.documentaryClient, values.service);
+      const detail = await request<LabWorkOrder>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/configured`,
+        { method: 'POST', body: JSON.stringify(payload) },
+      );
       setWorkOrder(detail);
       setEquipmentEditor(null);
       publishLocalChange({ event_type: detail.signature_required ? 'ticket.signature_required' : 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
+      // El formulario NO se limpia ni se cierra en error: shouldResetFormAfterSubmit('error') === false.
       Alert.alert('No fue posible guardar el equipo', error instanceof Error ? error.message : 'Revisa los datos');
     } finally {
       setBusy(false);
@@ -1022,12 +1050,19 @@ export default function WorkOrdersScreen() {
                     </Pressable>
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
-                  {workOrder.equipment.map((item) => (
-                    <Pressable key={item.id} style={styles.equipmentRow} onPress={() => editable && canManageEquipment && showEquipmentEditor(item)}>
-                      <View style={styles.flex}><Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text><Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text></View>
-                      <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
-                    </Pressable>
-                  ))}
+                  {workOrder.equipment.map((item) => {
+                    const summary = describeEquipmentSummary(item, workOrder.client_name);
+                    return (
+                      <Pressable key={item.id} style={styles.equipmentRow} onPress={() => editable && canManageEquipment && showEquipmentEditor(item)}>
+                        <View style={styles.flex}>
+                          <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
+                          <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
+                          <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''} · Folio: {summary.folio}</Text>
+                        </View>
+                        <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
+                      </Pressable>
+                    );
+                  })}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
                   {editable && canManageEquipment && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
                   {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
@@ -1170,23 +1205,36 @@ export default function WorkOrdersScreen() {
                 >
                   <View style={styles.overlayHandle} />
                   <Text style={styles.sectionEyebrow}>EQUIPO DE LA OT {workOrder?.folio}</Text>
-                  <Text style={styles.sectionTitle}>{equipmentEditor === 'new' ? 'Añadir equipo' : 'Editar equipo'}</Text>
-                  <Text style={styles.sectionDescription}>Registra únicamente los datos que aparecerán en la orden institucional.</Text>
-                  <Field label="Instrumento" required value={equipment.instrument} onChangeText={(value) => setEquipment({ ...equipment, instrument: value })} />
-                  <Field label="Marca" required value={equipment.brand} onChangeText={(value) => setEquipment({ ...equipment, brand: value })} />
-                  <Field label="Identificación" required value={equipment.identification} onChangeText={(value) => setEquipment({ ...equipment, identification: value })} />
-                  <Field label="Serie" required value={equipment.serial_number} onChangeText={(value) => setEquipment({ ...equipment, serial_number: value })} />
-                  <Field label="Informe (opcional)" value={equipment.report_number ?? ''} onChangeText={(value) => setEquipment({ ...equipment, report_number: value || null })} />
-                  <Text style={styles.fieldLabel}>Estado físico</Text>
-                  <View style={styles.conditionRow}>
-                    <Pressable onPress={() => setEquipment({ ...equipment, is_good_condition: true })} style={[styles.condition, equipment.is_good_condition && styles.conditionSelected]}><Text style={styles.conditionText}>✓ Bueno</Text></Pressable>
-                    <Pressable onPress={() => setEquipment({ ...equipment, is_good_condition: false })} style={[styles.condition, !equipment.is_good_condition && styles.conditionBadSelected]}><Text style={styles.conditionText}>X Malo</Text></Pressable>
-                  </View>
-                  <View style={styles.actionRow}>
-                    <Pressable style={styles.cancel} onPress={() => setEquipmentEditor(null)}><Text>Cancelar</Text></Pressable>
-                    <Pressable disabled={!canSaveEquipment} style={styles.save} onPress={saveEquipment}><Text style={styles.primaryText}>Guardar equipo</Text></Pressable>
-                  </View>
-                  {equipmentEditor !== 'new' && <Pressable onPress={removeEquipment}><Text style={styles.delete}>Eliminar equipo</Text></Pressable>}
+                  {equipmentEditor === 'new' ? (
+                    <>
+                      <Text style={styles.sectionTitle}>Añadir equipo</Text>
+                      <Text style={styles.sectionDescription}>Datos del equipo, cliente documental y servicio en una sola operación.</Text>
+                      <LabEquipmentForm
+                        busy={busy}
+                        mode="create"
+                        onCancel={() => setEquipmentEditor(null)}
+                        onSubmit={saveConfiguredEquipment}
+                        request={request}
+                        workOrderClientName={workOrder?.client_name ?? ''}
+                      />
+                    </>
+                  ) : equipmentEditor ? (
+                    <>
+                      <Text style={styles.sectionTitle}>Editar equipo</Text>
+                      <Text style={styles.sectionDescription}>Datos del equipo, cliente documental y servicio. El folio se muestra de referencia y no se edita aquí.</Text>
+                      <LabEquipmentForm
+                        busy={busy}
+                        folioDisplay={describeEquipmentSummary(equipmentEditor, workOrder?.client_name ?? '').folio}
+                        initialValues={hydrateEquipmentFormValues(equipmentEditor)}
+                        mode="edit"
+                        onCancel={() => setEquipmentEditor(null)}
+                        onSubmit={saveEquipmentEdit}
+                        request={request}
+                        workOrderClientName={workOrder?.client_name ?? ''}
+                      />
+                      <Pressable onPress={removeEquipment}><Text style={styles.delete}>Eliminar equipo</Text></Pressable>
+                    </>
+                  ) : null}
                 </ScrollView>
               </KeyboardAvoidingView>
             </View>
