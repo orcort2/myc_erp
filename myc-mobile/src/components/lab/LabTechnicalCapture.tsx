@@ -10,6 +10,8 @@ import type {
   LinkedCompany,
 } from '@/src/types/lab-work-order';
 import { labelPrintService } from '@/src/services/label-print-service';
+import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
+import { ApiError } from '@/src/api/client';
 
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -22,20 +24,6 @@ type Props = {
 };
 
 const serviceLabels = { accredited: 'Acreditado', traceable: 'Trazable', linked: 'Vinculado' } as const;
-
-// Claves que son columnas reales de FieldSheet (ver backend/app/schemas/field_sheet.py
-// FieldSheetUpdate) y por lo tanto deben viajar a nivel superior del payload, no dentro
-// de capture_values. Todo lo que no esté aquí (instrument, brand, model, serial_number,
-// internal_id, scope, ...) se guarda en capture_values, que es lo que el PDF de equipo lee.
-const directFields = new Set([
-  'attention', 'company', 'address', 'reception_date', 'calibration_date', 'next_calibration_date',
-  'initial_condition', 'final_condition', 'observations', 'evidence_notes', 'minimum_division',
-  'location', 'calibration_place', 'environment_humidity_start', 'environment_humidity_end',
-  'environment_temperature_start', 'environment_temperature_end', 'units', 'method',
-  'environmental_conditions', 'technician_notes', 'results', 'pattern_used',
-  'calibrated_by', 'reviewed_by', 'report_made_by', 'purchase_order_or_quotation',
-  'equipment_general_condition',
-]);
 
 // Campos calculados/congelados que el backend expone pero que FieldSheetUpdate no acepta
 // (reserved_certificate_folio es un @property; work_order_number se fija al crear la hoja).
@@ -197,28 +185,47 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
   async function saveSheet(complete = false) {
     if (!activeEquipment || !sheet) return;
     setBusy(true);
+    let saved: LabFieldSheet;
     try {
-      const captureValues = Object.fromEntries(Object.entries(values).filter(([key]) => !directFields.has(key)));
-      const direct = Object.fromEntries(Object.entries(values).filter(([key]) => directFields.has(key)));
-      const saved = await request<LabFieldSheet>(
+      const { direct, captureValues } = normalizeFieldSheetPayload(values, sheet);
+      saved = await request<LabFieldSheet>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
         { method: 'PATCH', body: JSON.stringify({ ...direct, capture_values: captureValues, results_rows: rows }) },
       );
-      if (complete) {
-        await request<LabFieldSheet>(
-          `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/complete`,
-          { method: 'POST' },
-        );
-        const updated = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
-        onUpdated(updated);
-        setActiveEquipment(null);
-        setSheet(null);
-      } else {
-        setSheet(saved);
-        Alert.alert('Hoja guardada', 'Los cambios quedaron en esta instancia; la plantilla no fue modificada.');
-      }
     } catch (error) {
-      Alert.alert(complete ? 'No fue posible completar la hoja' : 'No fue posible guardar', error instanceof Error ? error.message : 'Revisa los campos requeridos');
+      // A) payload inválido técnicamente en el PATCH (tipos, formato): no es
+      // que la hoja esté incompleta, es que el dato en sí no es aceptable.
+      Alert.alert('No fue posible guardar', error instanceof Error ? error.message : 'Revisa los campos requeridos');
+      setBusy(false);
+      return;
+    }
+    if (!complete) {
+      setSheet(saved);
+      Alert.alert('Hoja guardada', 'Los cambios quedaron en esta instancia; la plantilla no fue modificada.');
+      setBusy(false);
+      return;
+    }
+    try {
+      await request<LabFieldSheet>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/complete`,
+        { method: 'POST' },
+      );
+      const updated = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
+      onUpdated(updated);
+      setActiveEquipment(null);
+      setSheet(null);
+    } catch (error) {
+      // B) el PATCH fue válido y quedó guardado como borrador; lo que falta
+      // es completitud técnica para poder cerrar la hoja. Si el motor ya
+      // conoce la lista de campos faltantes (FieldSheetUpdate/`missing_fields`),
+      // se muestra tal cual en vez del mensaje genérico de error del servidor.
+      setSheet(saved);
+      if (error instanceof ApiError && error.missingFields && error.missingFields.length > 0) {
+        const bullets = error.missingFields.map((field) => `• ${FIELD_LABELS[field] ?? field}`).join('\n');
+        Alert.alert('No se puede completar la hoja', `Faltan:\n${bullets}`);
+      } else {
+        Alert.alert('No se puede completar la hoja', error instanceof Error ? error.message : 'Revisa los campos requeridos');
+      }
     } finally { setBusy(false); }
   }
 

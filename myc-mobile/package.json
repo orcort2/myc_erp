@@ -17,7 +17,8 @@
     "test:signature-flow": "tsx --test src/components/signatures/signature-flow-state.test.ts src/services/lab-work-order-signature-submission.test.ts",
     "test:push-notification-policy": "tsx --test src/services/push-notification-policy.test.ts",
     "test:auth": "tsx --test src/services/auth.service.test.ts",
-    "test:mobile-capabilities": "tsx --test src/permissions/mobile-capabilities.test.ts"
+    "test:mobile-capabilities": "tsx --test src/permissions/mobile-capabilities.test.ts",
+    "test:field-sheet-payload": "tsx --test src/services/field-sheet-payload.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

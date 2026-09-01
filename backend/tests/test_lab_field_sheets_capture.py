@@ -219,6 +219,115 @@ def test_mobile_equivalent_payload_round_trips_into_the_pdf(lab_context, templat
         assert expected.upper() in rendered_text, f"{expected!r} missing from {template_key} PDF"
 
 
+def test_patch_field_sheet_rejects_empty_string_for_typed_date_and_boolean_fields(lab_context):
+    """FieldSheetUpdate types reception_date/calibration_date/next_calibration_date as
+    date | None and equipment_general_condition as bool | None. '' is not a valid value
+    for either type in Pydantic — this locks in that the backend correctly rejects it
+    with 422 rather than silently coercing it. Mobile's normalizeFieldSheetPayload() is
+    what must turn a cleared date/boolean input into null before it ever reaches here."""
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created_sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created_sheet.status_code == 201, created_sheet.text
+
+    for field_name in ("calibration_date", "next_calibration_date", "equipment_general_condition"):
+        response = client.patch(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+            json={field_name: ""},
+            headers=headers,
+        )
+        assert response.status_code == 422, f"{field_name}='' should be rejected: {response.text}"
+
+
+def test_patch_field_sheet_accepts_null_for_typed_date_and_boolean_fields(lab_context):
+    """The counterpart of the rejection test above: this is exactly the payload shape
+    normalizeFieldSheetPayload() must produce (null, not '') for a technician who typed
+    then cleared a date/boolean field — and it must succeed."""
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created_sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created_sheet.status_code == 201, created_sheet.text
+
+    response = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={
+            "calibration_date": None,
+            "next_calibration_date": None,
+            "equipment_general_condition": None,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["calibration_date"] is None
+    assert body["next_calibration_date"] is None
+    assert body["equipment_general_condition"] is None
+
+
+def test_draft_patch_succeeds_despite_incomplete_technical_data(lab_context):
+    """Saving as draft (PATCH) must never require completeness — only POST /complete
+    runs _validate_ready_to_complete. A field sheet missing final_condition/observations
+    must still accept a partial PATCH."""
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created_sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created_sheet.status_code == 201, created_sheet.text
+    assert created_sheet.json()["final_condition"] is None
+    assert created_sheet.json()["observations"] is None
+
+    response = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"units": "mm"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "in_progress"
+    assert response.json()["final_condition"] is None
+
+
+def test_complete_lab_field_sheet_returns_structured_missing_fields(lab_context):
+    """POST /complete on an incomplete LAB field sheet must surface the same
+    structured {message, missing_fields} detail the generic engine already
+    produces (_validate_ready_to_complete), not a bare/flattened string —
+    mobile relies on `missing_fields` to render the bullet list."""
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created_sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created_sheet.status_code == 201, created_sheet.text
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert isinstance(detail, dict)
+    assert detail["message"]
+    assert isinstance(detail["missing_fields"], list)
+    assert "final_condition" in detail["missing_fields"]
+    assert "observations_or_evidence_notes" in detail["missing_fields"]
+
+
 def test_captura_role_cannot_delete_a_lab_field_sheet_via_generic_endpoint(lab_context):
     client, factory, tokens = lab_context
     tech_headers = auth(tokens["tech"])

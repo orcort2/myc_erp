@@ -22,7 +22,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { apiUrl, readApiError } from '@/src/api/client';
+import { apiUrl, ApiError, readApiError, readApiErrorDetail } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignatureFlow';
 import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
@@ -202,7 +202,10 @@ export default function WorkOrdersScreen() {
     const headers = new Headers(init?.headers);
     if (init?.body) headers.set('Content-Type', 'application/json');
     const response = await authorizedFetch(apiUrl(path), { ...init, headers });
-    if (!response.ok) throw new Error(await readApiError(response));
+    if (!response.ok) {
+      const detail = await readApiErrorDetail(response);
+      throw new ApiError(detail.message, response.status, detail.missingFields);
+    }
     return response.json() as Promise<T>;
   }, [authorizedFetch]);
 
