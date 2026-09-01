@@ -1061,7 +1061,7 @@ export default function WorkOrdersScreen() {
                   {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s) · {item.status === 'completed' ? 'cerrada' : item.status === 'ready_for_signatures' ? 'firmada' : 'abierta'}</Text>)}
                   <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. Cada firma cierra únicamente la OT elegida.</Text>
                   <Pressable style={styles.secondary} onPress={() => setStep('technical')}><Text style={styles.secondaryText}>Revisar captura técnica</Text></Pressable>
-                  {canCreateTickets && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar excepción de cierre parcial</Text></Pressable>}
+                  {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar excepción de cierre parcial</Text></Pressable>}
                   {canExecuteWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
                     <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar OT individual reabierta</Text></Pressable>
                   ) : canCaptureSignatures ? (
@@ -1114,11 +1114,18 @@ export default function WorkOrdersScreen() {
               )}
 
               {workOrder && step === 'signatures' && workOrder.status === 'ready_for_signatures' && (
-                <>
-                  <Text style={styles.sectionTitle}>OT individual firmada</Text>
-                  <Text style={styles.notice}>Esta sesión quedó vinculada a {closureOptions?.activeCohortSize || 1} OT. Las demás OT del grupo histórico conservan su estado y podrán cerrarse después.</Text>
-                  {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cierre individual y generar PDF</Text></Pressable>}
-                </>
+                closureOptions?.isSingleOtSignatureSession !== false ? (
+                  <>
+                    <Text style={styles.sectionTitle}>Firma completada</Text>
+                    {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar y generar PDFs</Text></Pressable>}
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.sectionTitle}>OT individual firmada</Text>
+                    <Text style={styles.notice}>Esta sesión quedó vinculada a {closureOptions.activeCohortSize} OT. Las demás OT del grupo histórico conservan su estado y podrán cerrarse después.</Text>
+                    {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cierre individual y generar PDF</Text></Pressable>}
+                  </>
+                )
               )}
 
               {workOrder && step === 'completed' && (

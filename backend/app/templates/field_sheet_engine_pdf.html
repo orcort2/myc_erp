@@ -7,7 +7,7 @@
       size: Letter portrait;
       background: #ffffff;
       margin: 12mm 10mm 14mm;
-      @bottom-left { content: "{{ institution.document_code }} · {{ institution.initial_revision }}"; font: 7pt Arial; color: #475467; }
+      @bottom-left { content: "{{ institution.document_code }} | {{ institution.initial_revision }}"; font: 7pt Arial; color: #475467; }
       @bottom-right { content: "Página " counter(page) " de " counter(pages); font: 7pt Arial; color: #475467; }
     }
     * { box-sizing: border-box; }

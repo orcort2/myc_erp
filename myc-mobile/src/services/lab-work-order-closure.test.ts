@@ -29,7 +29,56 @@ test('a partially filled historical group keeps individual closure enabled', () 
     groupMissingEquipmentCount: 2,
     groupParticipantCount: 3,
     hasHistoricalSiblings: true,
+    hasEligiblePartialCloseCohort: true,
+    isSingleOtSignatureSession: true,
   });
+});
+
+test('a lone OT with no live siblings does not offer the partial-close exception', () => {
+  const value = workOrder();
+  value.related_work_orders = [
+    { id: 1, status: 'draft', equipment_count: 1, signature_session_id: null },
+  ] as LabWorkOrder['related_work_orders'];
+  const options = deriveLabClosureOptions(value);
+  assert.equal(options.groupParticipantCount, 1);
+  assert.equal(options.hasEligiblePartialCloseCohort, false);
+});
+
+test('fully-historical (already closed) siblings do not make a solo OT eligible for partial close', () => {
+  const value = workOrder();
+  value.related_work_orders = [
+    { id: 1, status: 'draft', equipment_count: 1, signature_session_id: null },
+    { id: 2, status: 'completed', equipment_count: 1, signature_session_id: 10 },
+    { id: 3, status: 'cancelled', equipment_count: 1, signature_session_id: null },
+  ] as LabWorkOrder['related_work_orders'];
+  const options = deriveLabClosureOptions(value);
+  // hasHistoricalSiblings is true (3 all-time siblings), but none of them are
+  // currently open/eligible -- the exception must stay hidden regardless.
+  assert.equal(options.hasHistoricalSiblings, true);
+  assert.equal(options.hasEligiblePartialCloseCohort, false);
+});
+
+test('a real multi-OT signature session is not presented as a single-OT closure', () => {
+  const value = workOrder();
+  value.signature_session_id = 42;
+  value.related_work_orders = [
+    { id: 1, status: 'ready_for_signatures', equipment_count: 1, signature_session_id: 42 },
+    { id: 2, status: 'ready_for_signatures', equipment_count: 1, signature_session_id: 42 },
+  ] as LabWorkOrder['related_work_orders'];
+  const options = deriveLabClosureOptions(value);
+  assert.equal(options.activeCohortSize, 2);
+  assert.equal(options.isSingleOtSignatureSession, false);
+});
+
+test('a single-OT signature session is presented with the short copy', () => {
+  const value = workOrder();
+  value.signature_session_id = 42;
+  value.related_work_orders = [
+    { id: 1, status: 'ready_for_signatures', equipment_count: 1, signature_session_id: 42 },
+  ] as LabWorkOrder['related_work_orders'];
+  const options = deriveLabClosureOptions(value);
+  assert.equal(options.activeCohortSize, 1);
+  assert.equal(options.isSingleOtSignatureSession, true);
 });
 
 test('completed members are excluded from the next group closure cohort', () => {
@@ -69,4 +118,22 @@ test('the screen exposes explicit group and individual actions', () => {
   assert.match(serviceSource, /signatures\/individual/);
   assert.match(serviceSource, /complete\/individual/);
   assert.match(source, /setStep\(detail\.status === 'completed'/);
+});
+
+test('the partial-close exception is gated on a real multi-OT cohort, not just permission', () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
+    'utf8',
+  );
+  assert.match(source, /canCreateTickets && closureOptions\?\.hasEligiblePartialCloseCohort/);
+});
+
+test('the post-signature copy shows the short single-OT presentation by default', () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
+    'utf8',
+  );
+  assert.match(source, /isSingleOtSignatureSession/);
+  assert.match(source, /Firma completada/);
+  assert.match(source, /Cerrar y generar PDFs/);
 });

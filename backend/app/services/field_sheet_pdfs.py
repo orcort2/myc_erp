@@ -10,6 +10,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
 from app.models.field_sheet import FieldSheet, FieldSheetResult
+from app.models.lab_work_order import LabWorkOrderSignatureSession
 from app.services.field_sheets import get_field_sheet
 from app.services.field_sheet_templates import get_field_sheet_template
 from app.services.institutional_configurations import (
@@ -79,7 +80,57 @@ def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[
     return sections
 
 
-def _render_html(field_sheet: FieldSheet, template_definition: dict, institution: dict) -> str:
+def _resolve_field_sheet_signatures(db, field_sheet: FieldSheet) -> list:
+    """Una OT LAB se firma una sola vez, en el nivel de la OT/cohorte (ver
+    lab_work_orders._sign_members), no por hoja: FieldSheetSignature nunca se
+    llena para hojas LAB (update_lab_field_sheet excluye "signatures" del
+    payload a propósito). La autoridad real es la misma que ya usa el PDF de
+    OT (lab_work_order_pdfs.generate_lab_work_order_pdf): la sesión resuelta
+    específicamente por field_sheet.lab_signature_session_id (frozen al
+    firmar, no "la firma más reciente del grupo" — así una sesión posterior
+    de otra OT del mismo grupo histórico nunca cambia lo que esta hoja ya
+    mostró). Sólo se proyecta en memoria para el render; no se persiste nada.
+
+    Mapping documental (sólo hay firma de técnico/cliente en la sesión LAB,
+    hay tres slots en la hoja):
+    - calibrated_by ("Calibró"): el técnico que ejecutó el servicio -> firma
+      de la sesión LAB tipo "technician".
+    - reviewed_by ("Revisó") / report_made_by ("Elaboró informe"): etapas de
+      Calidad posteriores que el cierre LAB no produce -> quedan Pendiente,
+      igual que hoy. Nunca se usa la firma del cliente para llenar estos
+      slots ni ninguno de la hoja: la aceptación del cliente pertenece al
+      PDF de OT (bloque "RECIBIÓ"/aceptación), no a la hoja de campo.
+    - Sheets productivas (equipment_id, no LAB): comportamiento intacto,
+      se devuelven las FieldSheetSignature reales tal cual.
+    """
+    if field_sheet.lab_equipment_id is None or field_sheet.lab_signature_session_id is None:
+        return list(field_sheet.signatures)
+
+    session = db.get(LabWorkOrderSignatureSession, field_sheet.lab_signature_session_id)
+    technician = next(
+        (item for item in (session.signatures if session else []) if item.signature_type == "technician"),
+        None,
+    )
+    resolved = []
+    for slot in field_sheet.signatures:
+        if slot.role == "calibrated_by" and technician is not None:
+            resolved.append(
+                SimpleNamespace(
+                    role=slot.role,
+                    display_label=slot.display_label,
+                    name=technician.signer_name,
+                    signature_data=technician.signature_data_url,
+                    signed_at=technician.signed_at,
+                )
+            )
+        else:
+            resolved.append(slot)
+    return resolved
+
+
+def _render_html(
+    field_sheet: FieldSheet, template_definition: dict, institution: dict, signatures: list
+) -> str:
     lab_equipment = field_sheet.lab_equipment
     equipment = field_sheet.equipment or lab_equipment
     if lab_equipment is not None:
@@ -164,7 +215,7 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict, institution
         ),
         template_definition=template_definition,
         institution=institution,
-        signatures=field_sheet.signatures,
+        signatures=signatures,
         sections=_group_sections(field_sheet, template_definition),
         row_value=_row_value,
         checkbox=_checkbox,
@@ -181,7 +232,8 @@ def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
     institution = field_sheet.institutional_snapshot_json
     if not institution:
         institution = institutional_snapshot(get_or_create_institutional_configuration(db))
-    html = _render_html(field_sheet, template_definition, institution)
+    signatures = _resolve_field_sheet_signatures(db, field_sheet)
+    html = _render_html(field_sheet, template_definition, institution, signatures)
     pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
     equipment = field_sheet.equipment or field_sheet.lab_equipment
     equipment_name = (

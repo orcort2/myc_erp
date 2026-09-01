@@ -27,7 +27,9 @@ from app.services.audit_logs import write_audit_log
 from app.services.auth import user_has_permission
 from app.services.lab_work_orders import (
     _get,
+    _group,
     _lock_historical_group,
+    _open_group_members,
     _signature_cohort,
     _allocate_lab_certificate_folio,
     _missing_completed_sheets,
@@ -233,6 +235,12 @@ def create_partial_close_ticket(
     work_order = _get(db, payload.work_order_id, lock=True)
     if work_order.status != "draft":
         raise HTTPException(status_code=409, detail="La OT no admite una excepción de cierre")
+    group = _group(db, work_order, lock=True)
+    if len(_open_group_members(group)) <= 1:
+        raise HTTPException(
+            status_code=409,
+            detail="La excepción de cierre parcial requiere un grupo con más de una OT relevante",
+        )
     missing = _missing_completed_sheets([work_order])
     if not missing:
         raise HTTPException(status_code=409, detail="La OT no tiene hojas pendientes")
