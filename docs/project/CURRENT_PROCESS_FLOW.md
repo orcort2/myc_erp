@@ -493,17 +493,17 @@ Login interno técnico
 → equipos compactos (máximo 10 por OT)
 → al llenar 10: backend crea OT adicional y hereda generales
 → navegación por todas las OT del mismo root_work_order_id
-→ revisión del grupo histórico y estados por folio
-→ elegir “Finalizar grupo abierto” o “Finalizar sólo OT {folio}”
-→ grupal exige equipo en todas las OT draft participantes; individual sólo en la elegida
-→ firma cliente (nombre trim + stroke real)
-→ transición local
-→ firma técnico (nombre trim + stroke real)
-→ validación final del contexto de cohorte + lock anti-submit
-→ POST grupal o individual explícito aunque signature_required=false en una OT inicial
-→ backend bloquea raíz, versiona sesión y valida sólo participantes
-→ finalizar genera y congela PDF exclusivamente para la cohorte
-→ hermanas draft permanecen editables y una completed queda históricamente congelada
+→ revisión de recepción del grupo histórico y estados por folio
+→ elegir recepción grupal o sólo OT {folio}
+→ backend valida equipo/servicio/cliente documental y folio/LinkedCompany aplicable
+→ firma técnico y firma cliente se conservan localmente hasta estar ambas válidas
+→ validación final del contexto + lock anti-submit
+→ un único POST grupal o individual crea la sesión completa
+→ draft → received_signed; la recepción queda congelada
+→ crear la primera FieldSheet → in_progress
+→ completar todas las FieldSheets requeridas → ready_to_close
+→ cerrar sin pedir otra firma → completed y PDF de la cohorte elegida
+→ hermanas abiertas conservan su estado y una completed queda históricamente congelada
 → iOS abre impresión o compartir para el folio seleccionado
 → Administrador puede confirmar y eliminar una OT LAB individual
 → backend repara raíz/cadena y conserva recursos compartidos

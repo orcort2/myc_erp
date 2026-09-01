@@ -358,6 +358,28 @@ No se incorporan estados, tablas ni migraciones; no cambian folios, cadena,
 firmas productivas, ETS, Certificados ni Facturación. La aceptación física
 Android/iPhone de este alcance permanece pendiente.
 
+## Alcance implementado 2026-09-01 — Recepción y ejecución técnica LAB Fase 3
+
+La doble firma LAB ahora confirma recepción, no cierre. El flujo nuevo es
+`draft → received_signed → in_progress → ready_to_close → completed`; la
+primera transición técnica ocurre sólo al crear la primera FieldSheet y la
+última hoja requerida completa habilita el cierre. `ready_for_signatures`
+permanece únicamente para históricos.
+
+Backend valida previamente equipos, servicio, folios MYCA/MYCT, empresa
+vinculada y cliente documental; congela la recepción firmada; enlaza cada hoja
+a la sesión exacta vigente al crearla; preserva reapertura, grupos, recepción
+individual, partial close y la excepción externa existente. Captura usa el
+permiso mínimo `lab_field_sheets.capture`, sin recibir facultades
+administrativas. Mobile presenta revisión de recepción, doble firma local con
+un único POST, estados y navegación nuevos, resumen read-only y cierre sin
+volver a firmar.
+
+No se agregan migraciones ni se cambian MYCA/MYCT, rangos, LabClient,
+plantillas/imprimibles, NIIMBOT o entidades productivas. El QA físico
+Android/iPhone y las observaciones de FieldSheets auditadas por separado siguen
+fuera de este cierre técnico.
+
 ## Alcance implementado 2026-08-18 — ETS Venta
 
 - Configuración estructurada de Venta en catálogo: identificación individual,

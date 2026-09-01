@@ -62,6 +62,7 @@ import {
   postLabSignatures,
 } from '@/src/services/lab-work-order-signature-submission';
 import {
+  flowContextLabel,
   inferStepForStatus,
   isReceptionEditable,
   statusPresentation,
@@ -965,7 +966,7 @@ export default function WorkOrdersScreen() {
         <SafeAreaProvider>
         <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modalScreen}>
           <View style={styles.modalHeader}>
-            <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>Grupo histórico · cierre por grupo</Text></View>
+            <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>{flowContextLabel(step, workOrder?.status)}</Text></View>
             <Pressable disabled={deleting || signatureSubmitRef.current} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
@@ -1189,7 +1190,7 @@ export default function WorkOrdersScreen() {
                   />
                 ) : (
                   <View style={styles.errorState}>
-                    <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto de cierre.</Text>
+                    <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto de recepción.</Text>
                     <Pressable onPress={() => setStep('capture')}><Text style={styles.retry}>Volver a equipos</Text></Pressable>
                   </View>
                 )

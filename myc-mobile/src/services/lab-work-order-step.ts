@@ -57,3 +57,19 @@ export function inferStepForStatus(status: LabWorkOrderStatus | string): Step {
 export function isReceptionEditable(status: LabWorkOrderStatus | string): boolean {
   return status === 'draft';
 }
+
+/**
+ * Contexto breve del modal. Durante la firma inicial el lenguaje debe ser de
+ * recepción: en Fase 3 todavía no existe un cierre técnico que confirmar.
+ */
+export function flowContextLabel(
+  step: Step,
+  status: LabWorkOrderStatus | string | undefined,
+): string {
+  if (step === 'signatures' && status === 'draft') return 'Revisión y firma de recepción';
+  if (step === 'technical' && (status === 'received_signed' || status === 'in_progress')) {
+    return 'Captura técnica';
+  }
+  if (step === 'review' || status === 'ready_to_close') return 'Cierre técnico';
+  return 'Grupo histórico';
+}

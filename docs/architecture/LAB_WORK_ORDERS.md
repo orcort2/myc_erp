@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-08-27
+> Corte verificado: 2026-09-01
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -46,9 +46,10 @@ asignación a roles ordinarios. El guard transversal conserva deny-by-default y
 - `LabWorkOrderEquipment`: hasta diez equipos exclusivos de la OT; sólo
   instrumento, marca, identificación, serie, informe opcional y condición
   física booleana.
-- `LabWorkOrderSignatureSession`: una sesión de cohorte versionada por raíz
+- `LabWorkOrderSignatureSession`: una sesión de recepción versionada por raíz
   histórica, con actor y fecha del servidor. Una raíz puede conservar varias
-  sesiones y cada OT referencia la sesión que realmente la cerró.
+  sesiones y cada OT referencia la recepción que estaba vigente al iniciar su
+  ejecución técnica; la sesión no representa por sí sola un cierre.
 - `OperationalTicket` y `LabWorkOrderRevision`: solicitud operativa y snapshot
   documental inmutable de cada cierre anterior.
 - `LabWorkOrderSignature`: exactamente una firma de técnico y una de cliente,
@@ -57,7 +58,7 @@ asignación a roles ordinarios. El guard transversal conserva deny-by-default y
 Sólo `created_by_user_id` y `signed_by_user_id` referencian `users` para
 trazabilidad. No hay FK a agregados productivos.
 
-## Grupo histórico y cohorte de cierre
+## Grupo histórico, recepción y cohorte de cierre
 
 La OT raíz se autorreferencia mediante `root_work_order_id`. Las adicionales
 conservan además `previous_work_order_id` y `sequence_number`; el folio visible
@@ -74,19 +75,24 @@ backend. Cada OT conserva su PDF individual.
 representan parentesco operativo/histórico; nunca se recalculan por cerrar una
 cohorte. `_group()` conserva expresamente esa semántica completa.
 
-El cierre ofrece dos operaciones backend explícitas. El cierre grupal toma las
-OT `draft` abiertas de la raíz, exige al menos un equipo en cada participante,
-crea una sesión Cliente + Técnico y la asigna sólo a ellas. El cierre individual
-exige equipo únicamente en la OT elegida y crea una sesión exclusiva. En ambos
-casos la sesión lleva versión única `(root_work_order_id, version)`; el servicio
-bloquea primero la raíz histórica para serializar `max(version) + 1`.
+La recepción ofrece dos operaciones backend explícitas. La recepción grupal
+toma las OT `draft` abiertas de la raíz, exige al menos un equipo configurado
+en cada participante y crea una sesión Cliente + Técnico sólo para ellas. La
+recepción individual exige equipo configurado únicamente en la OT elegida y
+crea una sesión exclusiva. En ambos casos la sesión lleva versión única
+`(root_work_order_id, version)`; el servicio bloquea primero la raíz histórica
+para serializar `max(version) + 1`. El payload exige las dos firmas: Mobile
+mantiene la primera únicamente en estado local y el backend no persiste una
+sesión incompleta.
 
-La finalización opera sobre las OT no completadas que comparten la sesión del
-folio seleccionado. Sólo esas filas reciben PDF, hash, fecha y `completed`; las
-hermanas abiertas conservan edición y una OT ya completada no se regenera ni
-invalida. Agregar una OT evolutiva continúa permitido sólo desde la última OT
-`draft` con diez equipos. La eliminación administrativa individual permanece
-disponible con permiso específico.
+El cierre conserva cohortes independientes del parentesco histórico y de la
+modalidad de recepción. Opera sobre las OT no completadas que comparten la
+sesión del folio seleccionado y que ya satisfacen su estado técnico. Sólo esas
+filas reciben PDF, hash, fecha y `completed`; las hermanas abiertas conservan
+su propio avance y una OT ya completada no se regenera ni invalida. Agregar una
+OT evolutiva continúa permitido sólo desde la última OT `draft` con diez
+equipos. La eliminación administrativa individual permanece disponible con
+permiso específico.
 
 Auditoría distingue `individual_signed`/`individual_completed` de los eventos
 grupales y registra raíz, sesión, IDs participantes y `scope`. No se infiere la
@@ -149,13 +155,45 @@ es temporal por diseño (ver `myc-mobile/AGENTS.md`, "Naturaleza temporal del
 LAB") y se espera que sea retirado antes de que ese solape se vuelva relevante
 en la práctica.
 
-## Estados y reapertura
+## Estados, Hojas de Campo y reapertura
 
 ```text
-draft → ready_for_signatures → completed
-                              ↓ Ticket aprobado
-                   snapshot → draft (revisión N+1)
+draft
+  → firma de recepción técnico + cliente
+  → received_signed
+  → creación real de la primera FieldSheet
+  → in_progress
+  → todas las FieldSheets requeridas completas
+  → ready_to_close
+  → cierre
+  → completed
 ```
+
+`ready_for_signatures` queda exclusivamente como compatibilidad histórica: un
+registro previo puede cerrarse sin convertirse artificialmente a
+`received_signed`, sin otra firma y sin reasignar su sesión. El flujo nuevo no
+produce ese estado.
+
+La firma exige: al menos un equipo por OT participante; `service_type` en cada
+equipo; MYCA/MYCT `reserved` o `authorized` para acreditado/trazable;
+`LinkedCompany` para vinculado, cuyo folio puede seguir pendiente; y cliente
+documental resoluble por el snapshot vigente. La validación precede a la
+creación de la sesión y el lock de grupo evita una recepción parcial.
+
+Después de `received_signed`, datos generales, cliente receptor, composición e
+identidad de equipos, cliente documental, servicio, empresa vinculada y folios
+quedan congelados por backend con `409`. Sólo crear realmente la primera
+`FieldSheet` cambia la OT a `in_progress`; abrir, consultar, navegar o refrescar
+no cambia estado. La hoja guarda exactamente
+`work_order.signature_session_id` al crearla y nunca se reancla buscando la
+última versión de la raíz. Completar la última hoja requerida mueve, en la
+misma transacción, `in_progress → ready_to_close`.
+
+El rol Captura obtiene únicamente `lab_field_sheets.capture` para leer la OT y
+crear/editar/completar sus hojas después de recepción. No recibe por esa clave
+alta o edición de OT/equipo, firma, folios, cierre, cancelación ni revisión de
+Tickets. Los actores externos no reciben ese permiso interno y conservan
+tenant scope y la excepción histórica de cierre sin hojas.
 
 La reapertura sólo ocurre al aprobar un Ticket y afecta a la cohorte histórica
 identificada por la `signature_session_id` de la OT solicitada. Una sesión
@@ -200,9 +238,9 @@ permitidos por la política nativa de Expo SDK 54. Cualquier binario instalado
 que todavía contenga el lock portrait requiere una build nativa posterior para
 recibir este cambio; esta intervención no genera ni distribuye esa build.
 
-El único acceso canónico sigue siendo **Continuar a firmas** dentro de la
-revisión LAB. La experiencia móvil reimplementa de forma autónoma la jerarquía
-visual MYC como pasos Cliente → Técnico, transición local y guardado real. No
+El acceso canónico es **Continuar a revisión de recepción** antes de la captura
+técnica. La experiencia móvil reutiliza la jerarquía visual MYC como pasos de
+firma técnico/cliente, transición local y un único guardado real. No
 importa componentes, CSS, estado, servicios ni endpoints de `frontend/` y no
 reproduce el morph del botón web.
 
@@ -222,8 +260,8 @@ normalizada acumulada mínima de `0.01`; un tap o movimiento despreciable se
 retira antes de `postMessage`, y la validación TypeScript vuelve a comprobar la
 misma condición antes de habilitar avance o envío.
 
-La captura temporal se eleva a la pantalla OT y se liga al contexto de cierre:
-`root_work_order_id` para cierre grupal y `work_order.id` para cierre individual.
+La captura temporal se eleva a la pantalla OT y se liga al contexto de recepción:
+`root_work_order_id` para recepción grupal y `work_order.id` para recepción individual.
 Refetch, rerender y rotación conservan el borrador sólo si ese contexto no
 cambia. Cambiar de modalidad o elegir otra OT individual descarta la captura,
 evitando aplicar firmas a una cohorte distinta.
@@ -247,6 +285,9 @@ reintento y muestra su detalle, sin limpiarlo por flags de refetch.
 
 `DELETE /api/mobile/v1/technician/lab-work-orders/{id}` exige
 `lab_work_orders.delete` y acepta `draft`, `ready_for_signatures` o `completed`.
+El servicio vigente acepta además los estados Fase 3
+`received_signed`, `in_progress` y `ready_to_close`; el permiso, ownership y la
+conservación/reparentado transaccional siguen siendo obligatorios.
 El servicio bloquea la OT y el grupo, elimina equipos, PDF actual, revisiones y
 tickets/notificaciones exclusivos, conserva la auditoría histórica y registra
 `lab_work_order.deleted` con folio, raíz y supervivientes.
@@ -283,8 +324,8 @@ LAB tras `204` o `404`. `403`, `409` y errores de red conservan el detalle.
 | POST | `/{id}/equipment` | agregar hasta 10 |
 | PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / eliminar antes de firma |
 | POST | `/{id}/additional` | crear la siguiente OT del grupo |
-| POST | `/{id}/signatures` | firmar la cohorte de OT abiertas del grupo histórico |
-| POST | `/{id}/signatures/individual` | firmar únicamente la OT seleccionada |
+| POST | `/{id}/signatures` | firmar la recepción de la cohorte abierta del grupo histórico |
+| POST | `/{id}/signatures/individual` | firmar la recepción únicamente de la OT seleccionada |
 | POST | `/{id}/complete` | completar la cohorte compartida del folio seleccionado |
 | POST | `/{id}/complete/individual` | completar idempotentemente una sesión exclusiva |
 | GET | `/{id}/pdf` | entregar PDF individual final |

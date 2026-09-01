@@ -4,7 +4,12 @@ import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { inferStepForStatus, isReceptionEditable, statusPresentation } from './lab-work-order-step';
+import {
+  flowContextLabel,
+  inferStepForStatus,
+  isReceptionEditable,
+  statusPresentation,
+} from './lab-work-order-step';
 
 function screenSource(): string {
   return readFileSync(
@@ -63,6 +68,12 @@ test('11 y 12. received_signed ya no es editable -- equipo/cliente/servicio qued
 
 test('sólo draft admite editar la recepción', () => {
   assert.equal(isReceptionEditable('draft'), true);
+});
+
+test('la revisión de recepción no usa lenguaje de cierre', () => {
+  assert.equal(flowContextLabel('signatures', 'draft'), 'Revisión y firma de recepción');
+  assert.equal(flowContextLabel('technical', 'received_signed'), 'Captura técnica');
+  assert.equal(flowContextLabel('review', 'ready_to_close'), 'Cierre técnico');
 });
 
 test('11. received_signed oculta agregar equipo (editable gatea "+ Añadir equipo")', () => {

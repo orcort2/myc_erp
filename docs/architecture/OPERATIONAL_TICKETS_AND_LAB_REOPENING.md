@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-08-27
+> Corte verificado: 2026-09-01
 >
 > Alcance: Tickets operativos y reapertura documental controlada de OT LAB
 
@@ -17,7 +17,8 @@ OT completed
   → cohorte draft, revisión N+1, ticket in_progress
   → edición con edit_version
   → cambio crítico invalida automáticamente la firma activa
-  → firma nueva si es requerida
+  → nueva recepción técnico+cliente si la sesión fue invalidada
+  → captura técnica vuelve a satisfacer FieldSheets cuando aplique
   → cierre genera PDF nuevo y resuelve el ticket
 ```
 
@@ -36,7 +37,9 @@ checksum y número de revisión. El registro activo incrementa
 `revision_number`, limpia únicamente su PDF corriente y conserva el folio.
 Los PDFs históricos se descargan por revisión y nunca se sobrescriben.
 
-Las firmas históricas tampoco se borran. Una sesión individual reabre sólo su
+Las firmas históricas tampoco se borran. Las FieldSheets históricas conservan
+el `lab_signature_session_id` exacto con el que nacieron y nunca se reescriben
+hacia una sesión posterior. Una sesión individual reabre sólo su
 OT; una sesión compartida reabre sólo sus integrantes. Las hermanas de otra
 cohorte bajo la misma raíz no reciben snapshot, revisión ni desbloqueo. La
 versión continúa siendo única por `(root_work_order_id, version)`.

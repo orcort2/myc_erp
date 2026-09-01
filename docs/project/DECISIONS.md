@@ -97,7 +97,7 @@ Se adopta `MaintenanceExecution` como proyección uno-a-uno de `ServiceUnit` y `
 | ADR-077 | 2026-08-24 | Verificación es una variante parametrizada del pipeline metrológico, no un agregado `VerificationExecution`. `ServiceOrderItem.operational_category` y `Equipment.service_order_item_id` discriminan el proceso; `certificate_type=verification` lo distingue sin falsear `calibration_scope`. | Auditoría de contratos, servicios de Equipment/Certificados/Folios/Captura, frontend ETS y suites backend/frontend | Conserva lifecycle, autenticación, versiones y liberación compartidos; permite una versión futura posterior a Ajuste sin sobrescribir V1. No abre Ajuste ni reapertura transversal. |
 | ADR-078 | 2026-08-25 | Verificación distingue Master genérico inicial y Master específico final dentro del snapshot JSON de Equipment. La resolución institucional por fingerprint sólo opera en la transición inicial→final. Una vez congelados documento y versión final, la carga valida exclusivamente contra ese snapshot histórico y no consulta estado vigente; A→A es idempotente sin nueva historia/auditoría y A→B se rechaza aunque aún no exista evidencia identificada. | `equipment.py`, `capture_packages.py`, Control Documental y pruebas XLSX/ZIP | Evita selección manual obligatoria y reinterpretación histórica por revisiones, perfiles, interpretaciones o Masters activos posteriores, sin tabla ni motor paralelo. |
 | ADR-079 | 2026-08-24 | Las firmas de MYC Mobile siguen siendo LAB autónomo. La decisión original ligaba la captura sólo a `root_work_order_id`; ADR-086 amplía ese contexto a raíz para grupo e ID de OT para individual. Siguen vigentes strokes normalizados, descarte completo al cambiar contexto, ausencia de caché, validación de trazo real y admisión backend independiente de `signature_required`. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), componentes móviles y pruebas de estado/handler | Impide reutilizar firmas entre contextos, evita bloquear firmas iniciales válidas y no cambia esquema ni reglas productivas. |
-| ADR-086 | 2026-08-27 | En LAB, el grupo es parentesco histórico y la sesión es cohorte de cierre. El backend ofrece firma/finalización grupal sobre OT abiertas o individual sobre una OT; cada sesión conserva doble firma y versión por raíz. Las completadas son inmutables frente a hermanas y la reapertura sigue la sesión. Mobile liga el borrador a raíz en modalidad grupal y a OT en individual. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicios LAB/Tickets y suites backend/móvil | Sustituye únicamente el acoplamiento “una sesión por todo el grupo” de ADR-071/ADR-079; no cambia cadena, folios, esquema ni dominios productivos. Continúa **EN DESARROLLO** hasta QA físico y concurrencia PostgreSQL opt-in. |
+| ADR-086 | 2026-08-27 | En LAB, el grupo es parentesco histórico y la sesión puede abarcar recepción grupal o individual; las cohortes de cierre permanecen independientes. Cada sesión conserva doble firma y versión por raíz. Las completadas son inmutables frente a hermanas y la reapertura sigue la sesión aplicable. Mobile liga el borrador a raíz en modalidad grupal y a OT en individual. Desde Fase 3 la sesión acredita recepción, no cierre. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicios LAB/Tickets y suites backend/móvil | Sustituye únicamente el acoplamiento “una sesión por todo el grupo” de ADR-071/ADR-079; no cambia cadena, folios, esquema ni dominios productivos. Continúa **EN DESARROLLO** hasta QA físico y concurrencia PostgreSQL opt-in. |
 
 ## Decisiones expresamente no confirmadas
 
@@ -325,3 +325,18 @@ con precheck y estrategia segura específicos.
 La removibilidad externa exige guard explícito por `actor_type`, aunque existan permisos legacy en tokens o sesiones. `WorkOrderGroupRequest` y `OperationalTicket` sólo se componen en presentación. La navegación de notificaciones es una función transversal basada en identidad, nunca en título/body.
 
 La conversación no forma parte del estado `pending`: nace en claim, cuando ya existen requester y handler autorizados. La bandeja Mobile compone las dos APIs existentes en lugar de introducir un endpoint agregado, porque sus lifecycles, permisos y modelos permanecen independientes; el contador suma únicamente sus proyecciones accionables.
+
+## D-2026-09-01 — Firma LAB como recepción previa a FieldSheets
+
+`LabWorkOrderSignatureSession` se reutiliza como evidencia de recepción
+técnico+cliente y deja de significar cierre en el flujo nuevo. No se crea otro
+sistema de firmas: Mobile mantiene el primer trazo local y el backend recibe
+ambos en un solo payload transaccional. La sesión se asigna al producir
+`received_signed`; cada FieldSheet congela esa FK al crearla.
+
+La ejecución técnica se expresa con `in_progress` y `ready_to_close` sin
+reintroducir `ready_for_signatures`. El estado legacy conserva su cierre
+histórico. Grupo, recepción y cohorte de cierre no se identifican
+artificialmente entre sí; reapertura y partial close mantienen sus contratos.
+El permiso `lab_field_sheets.capture` abre sólo captura interna y no se deriva
+de `lab_work_orders.use`.

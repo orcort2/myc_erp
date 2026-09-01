@@ -197,7 +197,8 @@ volumen; requieren decisión operativa y etapa propia.
 
 El vertical backend/móvil está terminado técnicamente: agregado aislado, folios
 6400–6999, máximo 10 equipos, adicionales encadenadas, grupo histórico estable,
-cohortes de firma grupal o individual, PDFs individuales y exportación
+recepción técnico+cliente grupal o individual, cohortes de cierre independientes,
+PDFs individuales y exportación
 multisesión verificable. Las pruebas focales LAB, conformidad API, TypeScript,
 lint y export Expo están verdes; la concurrencia PostgreSQL de versiones queda
 opt-in y pendiente de entorno. La prueba de seguridad ya reconoce que Técnico
@@ -217,16 +218,25 @@ edición. Un cierre grupal posterior excluye las completadas y genera una nueva
 versión de sesión. La reapertura por Ticket sigue la cohorte de la sesión y no
 desbloquea otras hermanas.
 
+Desde 2026-09-01, la sesión LAB acredita recepción y el flujo nuevo queda
+`draft → received_signed → in_progress → ready_to_close → completed`.
+La creación de la primera FieldSheet y la finalización de la última requerida
+son las únicas transiciones técnicas; el cierre no solicita otra firma.
+`ready_for_signatures` permanece exclusivamente como compatibilidad histórica.
+Captura opera hojas mediante `lab_field_sheets.capture`, sin facultades de
+equipo, cliente, servicio, folio, firma o cierre.
+
 La captura de firmas móvil ya permite orientación nativa dinámica, usa pasos
 Cliente → Técnico, reconstruye strokes normalizados al redimensionar, entrega
 el gesto al canvas sólo durante el trazo y liga la captura al contexto de la
 cohorte elegida; refetch/rerender lo conservan, mientras cambiar modalidad o
 participante lo reemplaza sin recuperar capturas previas.
 La regresión que impedía el POST inicial por interpretar
-`signature_required=false` como prohibición quedó retirada: prueba de handler y
-backend efímero confirman `draft/false → POST 200 → ready_for_signatures →
-complete 200`. Los taps ya no cuentan como firma. Falta repetir la cadena táctil
-completa en dispositivo físico.
+`signature_required=false` como prohibición quedó retirada: Mobile conserva la
+primera firma sólo localmente y un único POST con ambas firmas produce
+`received_signed`; el backend no persiste sesiones incompletas. Los taps ya no
+cuentan como firma. Falta repetir la cadena táctil completa y el nuevo recorrido
+de recepción/captura/cierre en dispositivo físico.
 
 No se marca `CASI SELLADO` ni `SELLADO`: la versión operativa anterior fue
 validada físicamente, pero el sprint nuevo requiere repetir orientación,
