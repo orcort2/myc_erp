@@ -24,20 +24,10 @@ export const navigation = [
   { label: 'Patrones', icon: Ruler, path: '/dashboard#patrones', permissions: ['standards.read'] },
   { label: 'Facturación', icon: Banknote, path: '/dashboard#facturacion', permissions: ['invoices.read'] },
   { label: 'Comunicaciones', icon: MessagesSquare, path: '/communications', permissions: [] },
-  { label: 'Grupos OT LAB', icon: FileCheck2, path: '/lab-work-order-groups', permissions: ['lab_work_order_groups.requests.read', 'lab_work_order_groups.create'] },
   { label: 'Ajustes', icon: Settings, path: '/dashboard#configuracion', permissions: ['settings.institutional.read', 'users.read', 'users.manage', 'audit_logs.read', 'field_sheet_templates.read'] }
 ];
 
 export const modules = [
-  {
-    key: 'labWorkOrderGroups',
-    name: 'Grupos anticipados OT LAB',
-    description: 'Creación directa y aprobación institucional de solicitudes sin consumo anticipado de folios.',
-    icon: FileCheck2,
-    path: '/lab-work-order-groups',
-    status: 'Activo',
-    permissions: ['lab_work_order_groups.requests.read', 'lab_work_order_groups.create']
-  },
   {
     key: 'resolutions',
     name: 'Centro de Resoluciones',

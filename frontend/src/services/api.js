@@ -2149,11 +2149,6 @@ export function getPortalConfiguration(clientId) { return request(`/client-porta
 export function savePortalConfiguration(clientId, payload) { return request(`/client-portal/configuration/${clientId}`, { method: 'PUT', body: JSON.stringify(payload) }); }
 
 export function getPortalCompanyUsers() { return request('/client-portal/users', { portal: true }); }
-export function listLabGroupRequests() { return request('/lab-work-order-groups/requests'); }
-export function claimLabGroupRequest(id) { return request(`/lab-work-order-groups/requests/${id}/claim`, { method: 'POST' }); }
-export function approveLabGroupRequest(id) { return request(`/lab-work-order-groups/requests/${id}/approve`, { method: 'POST' }); }
-export function rejectLabGroupRequest(id, reason) { return request(`/lab-work-order-groups/requests/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); }
-export function createLabWorkOrderGroup(payload, operatorClientId) { return request(`/lab-work-order-groups${operatorClientId ? `?operator_client_id=${operatorClientId}` : ''}`, { method: 'POST', body: JSON.stringify(payload) }); }
 export function listOperationalRequests() { return request('/mobile/v1/technician/tickets?limit=100'); }
 export function getPortalCompanyInvitations() { return request('/client-portal/users/invitations', { portal: true }); }
 export function getPortalCompanyRoles() { return request('/client-portal/users/roles', { portal: true }); }

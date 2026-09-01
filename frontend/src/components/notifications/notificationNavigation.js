@@ -7,10 +7,6 @@ const ENTITY_DESTINATIONS = {
   service: '/dashboard#servicios',
   ets: '/dashboard#servicios',
   service_order: '/dashboard#servicios',
-  work_order_group_request: '/lab-work-order-groups',
-  ticket: '/lab-work-order-groups',
-  work_order: '/lab-work-order-groups',
-  lab_work_order: '/lab-work-order-groups',
   conversation: '/communications',
   communication: '/communications',
 };
@@ -35,15 +31,14 @@ export function getNotificationDestination(notification) {
   const query = new URLSearchParams();
 
   if (notification.entity_id != null) {
-    const parameter = notification.entity_type === 'work_order_group_request'
-      ? 'request_id'
-      : notification.entity_type === 'ticket'
-        ? 'ticket_id'
-        : ['conversation', 'communication'].includes(notification.entity_type)
-          ? 'conversation_id'
-          : notification.entity_type === 'service_order'
-            ? 'service_order_id'
-            : 'work_order_id';
+    const parameter = ['conversation', 'communication'].includes(
+      notification.entity_type,
+    )
+      ? 'conversation_id'
+      : notification.entity_type === 'service_order'
+        ? 'service_order_id'
+        : 'work_order_id';
+
     query.set(parameter, String(notification.entity_id));
   }
 
@@ -60,6 +55,7 @@ export function getNotificationDestination(notification) {
   }
 
   const [pathname, hash = ''] = basePath.split('#');
+
   return `${pathname}?${query.toString()}${hash ? `#${hash}` : ''}`;
 }
 
