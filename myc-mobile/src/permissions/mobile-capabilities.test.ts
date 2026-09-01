@@ -78,6 +78,30 @@ test('creación directa de grupo exige actor internal y permiso explícito', () 
   assert.equal(deriveMobileCapabilities(user('internal', ['*'])).canCreateWorkOrderGroupsDirect, true);
 });
 
+test('permisos productivos genéricos de Captura (field_sheets.create/update) no filtran a capacidades LAB', () => {
+  // Perfil real del rol Captura (app/core/permissions.py): incluye field_sheets.create
+  // y field_sheets.update para el ERP Web productivo, pero ninguno de los códigos
+  // que el motor LAB exige para mutar (lab_work_orders.use, work_orders.execute/create,
+  // equipment.write, field_sheets.capture, signatures.capture).
+  const capabilities = deriveMobileCapabilities(user('internal', [
+    'mobile.access',
+    'work_orders.read_organization',
+    'lab_packages.download',
+    'lab_clients.read',
+    'field_sheets.read',
+    'field_sheets.create',
+    'field_sheets.update',
+  ]));
+  assert.equal(capabilities.canReadWorkOrders, true);
+  assert.equal(capabilities.canDownloadLabPackages, true);
+  assert.equal(capabilities.canCreateWorkOrders, false);
+  assert.equal(capabilities.canExecuteWorkOrders, false);
+  assert.equal(capabilities.canManageEquipment, false);
+  assert.equal(capabilities.canCaptureFieldSheets, false);
+  assert.equal(capabilities.canCaptureSignatures, false);
+  assert.equal(capabilities.canCreateWorkOrderGroupsDirect, false);
+});
+
 test('staff conserva compatibilidad LAB y Comunicaciones', () => {
   const capabilities = deriveMobileCapabilities(user('internal', [
     'mobile.access',

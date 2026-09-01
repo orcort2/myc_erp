@@ -384,6 +384,8 @@ def approve_reopen_ticket(
     ticket = _get_ticket(db, ticket_id, lock=True)
     if ticket.status != "pending":
         raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
+    if ticket.requested_by_user_id == user.id:
+        raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
     required_permission = (
         "work_orders.reopen_preserve_signatures"
         if payload.signature_policy == "preserve"
@@ -465,6 +467,8 @@ def reject_ticket(
     ticket = _get_ticket(db, ticket_id, lock=True)
     if ticket.status != "pending":
         raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
+    if ticket.requested_by_user_id == user.id:
+        raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
     ticket.status = "rejected"
     ticket.reviewed_by_user_id = user.id
     ticket.reviewed_at = datetime.now(timezone.utc)
@@ -499,6 +503,8 @@ def resolve_operational_ticket(
     ticket = _get_ticket(db, ticket_id, lock=True)
     if ticket.status != "pending":
         raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
+    if ticket.requested_by_user_id == user.id:
+        raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
     now = datetime.now(timezone.utc)
     if ticket.type == "certificate_folio_block":
         myca = [

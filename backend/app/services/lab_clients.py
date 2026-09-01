@@ -148,9 +148,9 @@ async def import_lab_clients_xlsx(
             "address": str(row[positions["DIRECCIÓN"]] or "").strip(),
             "attention": str(row[positions["CONTACTO"]] or "").strip(),
         }
-        if not all(values.values()):
+        if not values["company"]:
             invalid += 1
-            errors.append({"row": row_number, "reason": "Faltan Empresa, Dirección o Atención a"})
+            errors.append({"row": row_number, "reason": "Falta Empresa"})
             continue
         key = tuple(normalize_lab_client_identity(values[name]) for name in ("company", "address", "attention"))
         if key in existing_keys:

@@ -47,7 +47,7 @@ from app.services.lab_work_orders import (
     sign_individual,
 )
 from app.services.lab_work_orders import delete_work_order
-from app.services.lab_work_orders import create_group_request, claim_group_request, create_work_order_group, reject_group_request
+from app.services.lab_work_orders import create_group_request, claim_group_request, create_work_order_group, reject_group_request, approve_group_request
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket
 
 
@@ -202,6 +202,29 @@ def test_group_request_has_one_handler_and_rejection_message_without_folios(lab_
         assert db.scalar(select(func.count(LabWorkOrder.id))) == 0
         messages = list(db.scalars(select(CommunicationMessage).where(CommunicationMessage.conversation_id == rejected.conversation_id)))
         assert any("rechazó la solicitud. Motivo: Capacidad no disponible" in item.body for item in messages)
+
+
+def test_requester_cannot_approve_or_reject_their_own_group_request(lab_context):
+    _client, factory, _tokens = lab_context
+    with factory() as db:
+        operator = Client(legal_name="Operador C", commercial_name="Operador C")
+        db.add(operator)
+        db.flush()
+        requester = db.scalar(select(User).where(User.username == "lab-tech"))
+        request = create_group_request(
+            db,
+            LabWorkOrderGroupCreate(**create_payload("Cliente autoaprobado"), quantity=1),
+            requester,
+            operator_client_id=operator.id,
+        )
+        with pytest.raises(HTTPException) as approve_exc:
+            approve_group_request(db, request.id, requester)
+        assert approve_exc.value.status_code == 403
+        assert approve_exc.value.detail == "TICKET_SELF_APPROVAL_FORBIDDEN"
+        with pytest.raises(HTTPException) as reject_exc:
+            reject_group_request(db, request.id, requester, "No aplica")
+        assert reject_exc.value.status_code == 403
+        assert reject_exc.value.detail == "TICKET_SELF_APPROVAL_FORBIDDEN"
 
 
 def test_postgresql_concurrent_direct_groups_do_not_duplicate_folios(postgres_lab_context):
@@ -380,7 +403,7 @@ def test_lab_client_xlsx_import_normalizes_exact_identity_without_collapsing_com
         "new": 3,
         "skipped": 1,
         "invalid": 1,
-        "errors": [{"row": 6, "reason": "Faltan Empresa, Dirección o Atención a"}],
+        "errors": [{"row": 6, "reason": "Falta Empresa"}],
     }
     listed = client.get(
         "/api/mobile/v1/technician/lab-clients?search=Honda",
@@ -389,6 +412,76 @@ def test_lab_client_xlsx_import_normalizes_exact_identity_without_collapsing_com
     assert listed.status_code == 200
     assert len(listed.json()) == 3
     assert {item["attention"] for item in listed.json()} == {"Ing. Juan Pérez", "Lic. Ana Pérez"}
+
+
+def test_lab_client_xlsx_import_keeps_rows_with_blank_address_or_attention(lab_context):
+    client, _factory, tokens = lab_context
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["CLIENTE", "CONTACTO", "DIRECCIÓN"])
+    sheet.append(["Solo Empresa SA", "", ""])
+    sheet.append(["Sin Dirección SA", "Ing. Contacto", ""])
+    sheet.append(["Sin Contacto SA", "", "Av. Siempre 1"])
+    sheet.append(["", "Contacto huérfano", "Dirección huérfana"])
+    content = io.BytesIO()
+    workbook.save(content)
+
+    response = client.post(
+        "/api/mobile/v1/technician/lab-clients/import",
+        files={"upload": ("clientes.xlsx", content.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "new": 3,
+        "skipped": 0,
+        "invalid": 1,
+        "errors": [{"row": 5, "reason": "Falta Empresa"}],
+    }
+    listed = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Empresa",
+        headers=auth(tokens["tech"]),
+    )
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["address"] == ""
+    assert listed.json()[0]["attention"] == ""
+
+
+def test_work_order_snapshot_completes_blank_catalog_fields_without_overwriting_payload(lab_context):
+    """A LabClient with blank address/attention (allowed since only company is
+    required) must not force an OT snapshot back to blank when the OT payload
+    already supplies its own address/contact_name."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    created_client = client.post(
+        "/api/mobile/v1/technician/lab-clients",
+        json={"company": "Cliente sin datos", "address": "", "attention": ""},
+        headers=headers,
+    )
+    assert created_client.status_code == 201, created_client.text
+
+    payload = create_payload("Se reemplaza por snapshot de empresa")
+    payload["lab_client_id"] = created_client.json()["id"]
+    payload["address"] = "Dirección capturada en la OT"
+    payload["contact_name"] = "Atención capturada en la OT"
+    order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders", json=payload, headers=headers
+    )
+    assert order.status_code == 201, order.text
+    body = order.json()
+    assert body["client_name"] == "Cliente sin datos"
+    assert body["address"] == "Dirección capturada en la OT"
+    assert body["contact_name"] == "Atención capturada en la OT"
+
+    updated = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{body['id']}",
+        json={"lab_client_id": created_client.json()["id"], "address": "Dirección editada de nuevo"},
+        headers=headers,
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["address"] == "Dirección editada de nuevo"
+    assert updated.json()["contact_name"] == "Atención capturada en la OT"
 
 
 def test_modern_lab_flow_uses_independent_sequences_and_linked_manual_folio(lab_context):
@@ -1116,6 +1209,78 @@ def test_folio_never_exceeds_6999(lab_context):
         headers=headers,
     )
     assert exhausted.status_code == 409
+
+
+def test_lab_certificate_folio_never_exceeds_7999(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    with factory() as db:
+        db.add(
+            InstitutionalFolioSequence(
+                document_type="lab_certificate",
+                prefix="MYCA",
+                year=0,
+                next_value=7999,
+            )
+        )
+        db.commit()
+    order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders", json=create_payload(), headers=headers
+    )
+    order_id = order.json()["id"]
+    equipment_ids = []
+    for index in range(1, 3):
+        added = client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+            json=equipment_payload(index),
+            headers=headers,
+        )
+        equipment_ids.append(added.json()["equipment"][-1]["id"])
+    first = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/service",
+        json={"service_type": "accredited", "linked_company_id": None},
+        headers=headers,
+    )
+    assert first.status_code == 200, first.text
+    month_year = date.today().strftime("%m-%y")
+    assert first.json()["equipment"][0]["certificate_folio"] == f"MYCA-{month_year}-7999"
+    exhausted = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[1]}/service",
+        json={"service_type": "accredited", "linked_company_id": None},
+        headers=headers,
+    )
+    assert exhausted.status_code == 409, exhausted.text
+
+
+def test_postgresql_concurrent_lab_certificate_folio_allocation_is_unique():
+    database_url = os.getenv("LAB_POSTGRES_TEST_URL")
+    if not database_url:
+        pytest.skip("requiere LAB_POSTGRES_TEST_URL para probar locks PostgreSQL reales")
+
+    schema = f"lab_cert_lock_{uuid.uuid4().hex}"
+    admin_engine = create_engine(database_url)
+    with admin_engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine = create_engine(database_url, connect_args={"options": f"-csearch_path={schema}"})
+    factory = sessionmaker(bind=engine)
+    Base.metadata.create_all(engine)
+
+    from app.services.lab_work_orders import _allocate_lab_certificate_folio
+
+    def allocate() -> str:
+        with factory() as db:
+            folio = _allocate_lab_certificate_folio(db, "MYCA")
+            db.commit()
+            return folio
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            folios = sorted(pool.map(lambda _index: allocate(), range(2)))
+        month_year = date.today().strftime("%m-%y")
+        assert folios == [f"MYCA-{month_year}-4700", f"MYCA-{month_year}-4701"]
+    finally:
+        with admin_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
 
 
 def test_export_manifest_matches_persisted_counts(lab_context):

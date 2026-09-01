@@ -116,6 +116,7 @@ export type FieldSheetTemplate = {
     title: string;
     block_type: string;
     capture_visible?: boolean;
+    visible_fields?: string[];
     fields?: { key: string; label: string; required?: boolean; visible?: boolean; field_type?: string }[];
   }[];
   result_sections: {
@@ -147,6 +148,28 @@ export type LabFieldSheet = {
   template_key: string;
   template_definition: FieldSheetTemplate;
   capture_values: Record<string, unknown>;
+  work_order_number: number | null;
+  reserved_certificate_folio: string | null;
+  attention: string | null;
+  company: string | null;
+  address: string | null;
+  reception_date: string | null;
+  calibration_date: string | null;
+  next_calibration_date: string | null;
+  calibration_place: string | null;
+  minimum_division: string | null;
+  location: string | null;
+  units: string | null;
+  method: string | null;
+  environment_humidity_start: string | null;
+  environment_humidity_end: string | null;
+  environment_temperature_start: string | null;
+  environment_temperature_end: string | null;
+  equipment_general_condition: boolean | null;
+  calibrated_by: string | null;
+  reviewed_by: string | null;
+  report_made_by: string | null;
+  purchase_order_or_quotation: string | null;
   initial_condition: string | null;
   final_condition: string | null;
   observations: string | null;

@@ -131,12 +131,16 @@ def _render_html(field_sheet: FieldSheet, template_definition: dict, institution
         client_address = str(client_address or "").upper()
     capture_values = field_sheet.capture_values or {}
     equipment_values = {
-        "name": capture_values.get("instrument") or equipment.name,
+        "name": capture_values.get("instrument")
+        or getattr(equipment, "name", None)
+        or getattr(equipment, "instrument", None),
         "range_or_capacity": capture_values.get("scope") or getattr(equipment, "range_or_capacity", None),
         "brand": capture_values.get("brand") or equipment.brand,
         "model": capture_values.get("model") or getattr(equipment, "model", None),
         "serial_number": capture_values.get("serial_number") or equipment.serial_number,
-        "internal_id": capture_values.get("internal_id") or equipment.internal_id,
+        "internal_id": capture_values.get("internal_id")
+        or getattr(equipment, "internal_id", None)
+        or getattr(equipment, "identification", None),
     }
     if lab_equipment is not None:
         equipment_values = {
@@ -180,7 +184,11 @@ def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
     html = _render_html(field_sheet, template_definition, institution)
     pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
     equipment = field_sheet.equipment or field_sheet.lab_equipment
-    equipment_name = equipment.name or f"equipo-{field_sheet.equipment_id or field_sheet.lab_equipment_id}"
+    equipment_name = (
+        getattr(equipment, "name", None)
+        or getattr(equipment, "instrument", None)
+        or f"equipo-{field_sheet.equipment_id or field_sheet.lab_equipment_id}"
+    )
     return (
         pdf,
         f"Hoja_Campo_{field_sheet.work_order_number or field_sheet.id}_{_filename(equipment_name)}.pdf",

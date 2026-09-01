@@ -114,6 +114,41 @@ de fila del contador. También contrasta el máximo persistido. `6999` es válid
 el siguiente alta responde `409` y nunca usa `7000`. La secuencia productiva
 `work_order/OT/año` permanece intacta.
 
+### Folios de certificado LAB (MYCA/MYCT)
+
+Namespace independiente, también sobre `institutional_folio_sequences`, para el
+folio de certificado que se asigna a cada equipo LAB (`_allocate_lab_certificate_folio`,
+`app/services/lab_work_orders.py`):
+
+```text
+document_type = lab_certificate
+prefix = MYCA | MYCT
+year = 0            # sentinel fijo, no particiona por año calendario
+range MYCA = 4700..7999
+range MYCT = 1640..7999
+```
+
+El formato del folio es el mismo dashed `MYCA-{MM}-{AA}-{XXXX}` /
+`MYCT-{MM}-{AA}-{XXXX}` que usa el motor genérico de certificados (ver
+`docs/architecture/folios/CERTIFICATE_AND_WORK_ORDER_FOLIOS.md`), pero es una
+secuencia **completamente independiente**: mismo mecanismo de
+`pg_advisory_xact_lock` + `FOR UPDATE`, mismo piso/techo aplicados en código
+(no hay `CheckConstraint` de rango en `lab_work_order_equipment.certificate_folio`,
+a diferencia del folio numérico de OT que sí lo tiene), y el mismo folio nunca
+se reutiliza tras cancelación o reasignación de servicio.
+
+**Deuda conocida, aceptada explícitamente:** al usar `year = 0` (perpetuo, no
+particionado por año calendario), el rango LAB no vuelve a su piso cada enero
+como sí lo hace el motor genérico (`_initial_value`, `institutional_folios.py`).
+Esto significa que, en teoría, a partir de 2027 los números que emite este
+rango temporal podrían coincidir numéricamente con los que emite el motor
+genérico para el mismo prefijo/año en otra tabla (`certificates.folio` vs.
+`lab_work_order_equipment.certificate_folio`, con unicidad solo dentro de cada
+tabla). No se corrige rediseñando la clave de secuencia porque el vertical LAB
+es temporal por diseño (ver `myc-mobile/AGENTS.md`, "Naturaleza temporal del
+LAB") y se espera que sea retirado antes de que ese solape se vuelva relevante
+en la práctica.
+
 ## Estados y reapertura
 
 ```text

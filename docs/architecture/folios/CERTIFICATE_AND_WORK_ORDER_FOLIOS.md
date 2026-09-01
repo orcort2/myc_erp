@@ -6,16 +6,14 @@
 
 ## Certificados
 
-Formato compacto, sin guiones:
+- Acreditado: `MYCA-{MM}-{AA}-{NNNN}`.
+- Trazable: `MYCT-{MM}-{AA}-{NNNN}`.
+- Vinculado: formato compacto y sin guiones, orden `{PREFIJO_SNAPSHOT}{AA}{MM}{NNNN}`.
+- Verificación usa el formato institucional distinto y obligatorio
+  `MYCV-{MM}-{AA}-{XXXX}`. No admite captura ni edición manual del folio.
 
-- Acreditado: `MYCA{AA}{MM}{NNNN}`.
-- Trazable: `MYCT{AA}{MM}{NNNN}`.
-- Vinculado: `{PREFIJO_SNAPSHOT}{AA}{MM}{NNNN}`.
-
-Verificación usa el formato institucional distinto y obligatorio
-`MYCV-{MM}-{AA}-{XXXX}`. No admite captura ni edición manual del folio.
-
-Ejemplos: `MYCA26078000`, `MYCT26078000`, `CMVG26078000` y `MYCV-08-26-0001`.
+Ejemplos: `MYCA-07-26-8000`, `MYCT-07-26-8000`, `CMVG26078000` (Vinculado) y
+`MYCV-08-26-0001`.
 
 Los contadores se separan por `document_type + prefix + year`. El mes impreso
 es el real de emisión, pero no particiona el contador. Para Calibración, en

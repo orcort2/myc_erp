@@ -1,6 +1,6 @@
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -22,7 +22,7 @@ from app.services.field_sheets import (
     update_field_sheet,
 )
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
-from app.services.auth import require_permission
+from app.services.auth import require_permission, user_has_permission
 
 
 router = APIRouter(prefix="/field-sheets", tags=["field-sheets"])
@@ -112,5 +112,14 @@ def delete_field_sheet(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("field_sheets.update")),
 ) -> Response:
+    field_sheet = get_field_sheet(db, field_sheet_id)
+    if field_sheet.lab_equipment_id is not None and not (
+        user_has_permission(current_user, "field_sheets.capture")
+        or user_has_permission(current_user, "lab_work_orders.use")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Las hojas de campo LAB requieren permiso de captura LAB",
+        )
     deactivate_field_sheet(db, field_sheet_id, user_id=current_user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

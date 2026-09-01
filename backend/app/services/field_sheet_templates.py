@@ -188,7 +188,8 @@ BLOCK_FAMILY_DEFAULTS = {
     "EquipmentDataBlock": {
         "title": "Datos del equipo",
         "visible_fields": [
-            "equipment",
+            "instrument",
+            "scope",
             "brand",
             "model",
             "serial_number",

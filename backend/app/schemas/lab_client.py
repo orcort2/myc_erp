@@ -7,8 +7,8 @@ class LabClientCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     company: str = Field(min_length=1, max_length=255)
-    address: str = Field(min_length=1, max_length=2000)
-    attention: str = Field(min_length=1, max_length=180)
+    address: str = Field(default="", max_length=2000)
+    attention: str = Field(default="", max_length=180)
 
 
 class LabClientRead(LabClientCreate):

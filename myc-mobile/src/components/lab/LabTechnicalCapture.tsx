@@ -22,12 +22,69 @@ type Props = {
 };
 
 const serviceLabels = { accredited: 'Acreditado', traceable: 'Trazable', linked: 'Vinculado' } as const;
+
+// Claves que son columnas reales de FieldSheet (ver backend/app/schemas/field_sheet.py
+// FieldSheetUpdate) y por lo tanto deben viajar a nivel superior del payload, no dentro
+// de capture_values. Todo lo que no esté aquí (instrument, brand, model, serial_number,
+// internal_id, scope, ...) se guarda en capture_values, que es lo que el PDF de equipo lee.
 const directFields = new Set([
+  'attention', 'company', 'address', 'reception_date', 'calibration_date', 'next_calibration_date',
   'initial_condition', 'final_condition', 'observations', 'evidence_notes', 'minimum_division',
   'location', 'calibration_place', 'environment_humidity_start', 'environment_humidity_end',
   'environment_temperature_start', 'environment_temperature_end', 'units', 'method',
   'environmental_conditions', 'technician_notes', 'results', 'pattern_used',
+  'calibrated_by', 'reviewed_by', 'report_made_by', 'purchase_order_or_quotation',
+  'equipment_general_condition',
 ]);
+
+// Campos calculados/congelados que el backend expone pero que FieldSheetUpdate no acepta
+// (reserved_certificate_folio es un @property; work_order_number se fija al crear la hoja).
+// Se muestran de solo lectura y nunca se envían de vuelta.
+const readOnlyFields = new Set(['work_order_number', 'reserved_certificate_folio']);
+
+// Etiquetas en español para las claves declaradas en visible_fields de los bloques
+// canónicos (backend/app/services/field_sheet_templates.py: BLOCK_FAMILY_DEFAULTS).
+const FIELD_LABELS: Record<string, string> = {
+  work_order_number: 'No. de orden de trabajo',
+  reserved_certificate_folio: 'Folio de certificado',
+  attention: 'Atención a',
+  company: 'Empresa',
+  address: 'Dirección',
+  instrument: 'Instrumento',
+  scope: 'Alcance / capacidad',
+  brand: 'Marca',
+  model: 'Modelo',
+  serial_number: 'No. de serie',
+  internal_id: 'ID interno',
+  location: 'Ubicación',
+  minimum_division: 'División mínima',
+  reception_date: 'Fecha de recepción',
+  calibration_date: 'Fecha de calibración',
+  next_calibration_date: 'Próxima calibración',
+  calibration_place: 'Lugar de calibración',
+  environment_humidity_start: 'Humedad inicial',
+  environment_humidity_end: 'Humedad final',
+  environment_temperature_start: 'Temperatura inicial',
+  environment_temperature_end: 'Temperatura final',
+  initial_condition: 'Condición inicial',
+  final_condition: 'Condición final',
+  method: 'Método',
+  units: 'Unidades',
+  observations: 'Observaciones',
+  evidence_notes: 'Notas de evidencia',
+  calibrated_by: 'Calibrado por',
+  reviewed_by: 'Revisado por',
+  report_made_by: 'Reporte elaborado por',
+  purchase_order_or_quotation: 'Orden de compra / cotización',
+};
+
+function buildValues(entity: LabFieldSheet): Record<string, unknown> {
+  const picked: Record<string, unknown> = {};
+  for (const key of directFields) {
+    if (key in entity) picked[key] = (entity as unknown as Record<string, unknown>)[key];
+  }
+  return { ...entity.capture_values, ...picked };
+}
 
 export function LabTechnicalCapture({ canCapture, external, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
@@ -55,8 +112,12 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
   const definition = sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
   const visibleFields = useMemo(() => (definition?.blocks ?? [])
     .filter((block) => block.capture_visible !== false && !block.block_type.includes('Table'))
-    .flatMap((block) => (block.fields ?? []).filter((field) => field.visible !== false)
-      .map((field) => ({ ...field, blockTitle: block.title }))), [definition]);
+    .flatMap((block) => (block.visible_fields ?? []).map((key) => ({
+      key,
+      label: FIELD_LABELS[key] ?? key,
+      readOnly: readOnlyFields.has(key),
+      blockTitle: block.title,
+    }))), [definition]);
 
   async function assignService(equipment: LabEquipment, serviceType: keyof typeof serviceLabels, linkedCompanyId?: number) {
     setBusy(true);
@@ -87,7 +148,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       );
       setSheet(loaded);
       setSelectedTemplate(loaded.template_key);
-      setValues({ ...loaded.capture_values, ...loaded });
+      setValues(buildValues(loaded));
       setRows(loaded.results_rows.map((row) => ({ ...row, row_data: { ...(row.row_data ?? {}) } })));
     } catch (error) {
       Alert.alert('No fue posible abrir la hoja', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -104,7 +165,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
         { method: 'POST', body: JSON.stringify({ template_key: selectedTemplate }) },
       );
       setSheet(created);
-      setValues({ ...created.capture_values, ...created });
+      setValues(buildValues(created));
       setRows(created.results_rows.map((row) => ({ ...row, row_data: { ...(row.row_data ?? {}) } })));
     } catch (error) {
       Alert.alert('No fue posible crear la hoja', error instanceof Error ? error.message : 'Revisa el folio y la plantilla');
@@ -217,7 +278,12 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
           <Pressable disabled={!selectedTemplate || busy || !canCapture} style={[styles.primary, (!selectedTemplate || !canCapture) && styles.disabled]} onPress={createSheet}><Text style={styles.primaryText}>Abrir captura</Text></Pressable>
         </> : <>
           <Text style={styles.status}>Estado: {sheet.status}</Text>
-          {visibleFields.map((field) => <Input key={field.key} label={`${field.label}${field.required ? ' *' : ''}`} value={String(values[field.key] ?? '')} onChange={(value) => setField(field.key, value)} />)}
+          {visibleFields.map((field) => field.readOnly
+            ? <View key={field.key} style={styles.inputGroup}>
+                <Text style={styles.label}>{field.label}</Text>
+                <Text style={styles.status}>{String((sheet as unknown as Record<string, unknown>)[field.key] ?? '-')}</Text>
+              </View>
+            : <Input key={field.key} label={field.label} value={String(values[field.key] ?? '')} onChange={(value) => setField(field.key, value)} />)}
           {(definition?.result_sections ?? []).map((section) => <View key={section.key} style={styles.table}>
             <Text style={styles.tableTitle}>{section.title}</Text>
             {rows.map((row, rowIndex) => row.section_key === section.key ? <View key={`${section.key}-${row.row_number}`} style={styles.tableRow}>

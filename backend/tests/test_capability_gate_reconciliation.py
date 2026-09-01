@@ -68,3 +68,26 @@ def test_reference_standard_delete_is_explicit_and_least_privilege():
         "/api/reference-standard-certificates/uncertainties/{uncertainty_id}",
         ["reference-standard-certificates"],
     ).permission == permission
+
+
+def test_captura_role_is_lab_read_only_despite_generic_field_sheets_permissions():
+    """Captura holds generic field_sheets.create/update (productive ERP flows), but
+    that must never translate into LAB edit/execute capabilities. The LAB routers
+    gate on field_sheets.capture/lab_work_orders.use/etc., not on the generic codes."""
+    captura = ROLE_PERMISSIONS["Captura"]
+    assert "field_sheets.create" in captura
+    assert "field_sheets.update" in captura
+    assert all(
+        permission not in captura
+        for permission in {
+            "lab_work_orders.use",
+            "work_orders.execute",
+            "work_orders.create",
+            "equipment.write",
+            "field_sheets.capture",
+            "signatures.capture",
+            "lab_work_order_groups.create",
+            "lab_work_orders.cancel",
+            "lab_work_orders.delete",
+        }
+    )

@@ -31,10 +31,19 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["operator_client_id"], ["clients.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["created_by_user_id"], ["users.id"], ondelete="RESTRICT"),
     )
-    op.execute(
-        "CREATE UNIQUE INDEX uq_lab_clients_tenant_normalized_identity "
-        "ON lab_clients ((COALESCE(operator_client_id, 0)), normalized_company, "
-        "normalized_address, normalized_attention)"
+    # Índice único funcional (no un UniqueConstraint plano): debe coincidir
+    # exactamente con Index(...) en app/models/lab_client.py para que
+    # `alembic check`/autogenerate no diverjan.
+    op.create_index(
+        "uq_lab_clients_tenant_normalized_identity",
+        "lab_clients",
+        [
+            sa.text("COALESCE(operator_client_id, 0)"),
+            "normalized_company",
+            "normalized_address",
+            "normalized_attention",
+        ],
+        unique=True,
     )
     op.create_index("ix_lab_clients_operator_client_id", "lab_clients", ["operator_client_id"])
     op.create_index("ix_lab_clients_company", "lab_clients", ["company"])
@@ -121,7 +130,12 @@ def upgrade() -> None:
     op.add_column("field_sheets", sa.Column("lab_signature_session_id", sa.Integer()))
     op.create_foreign_key("fk_field_sheets_lab_equipment_id", "field_sheets", "lab_work_order_equipment", ["lab_equipment_id"], ["id"], ondelete="CASCADE")
     op.create_foreign_key("fk_field_sheets_lab_signature_session_id", "field_sheets", "lab_work_order_signature_sessions", ["lab_signature_session_id"], ["id"], ondelete="RESTRICT")
-    op.create_index("ix_field_sheets_lab_equipment_id", "field_sheets", ["lab_equipment_id"], unique=True)
+    # El modelo declara lab_equipment_id con index=True (plain index, para
+    # lookups) más un UniqueConstraint nombrado aparte en __table_args__: son
+    # dos objetos de BD distintos y ambos deben existir para que
+    # `alembic check`/autogenerate no diverjan.
+    op.create_index("ix_field_sheets_lab_equipment_id", "field_sheets", ["lab_equipment_id"])
+    op.create_unique_constraint("uq_field_sheets_lab_equipment_id", "field_sheets", ["lab_equipment_id"])
     op.create_index("ix_field_sheets_lab_signature_session_id", "field_sheets", ["lab_signature_session_id"])
     op.create_check_constraint(
         "ck_field_sheets_exactly_one_equipment_owner", "field_sheets",
@@ -136,6 +150,7 @@ def downgrade() -> None:
     op.execute("DELETE FROM field_sheets WHERE lab_equipment_id IS NOT NULL")
     op.drop_constraint("ck_field_sheets_exactly_one_equipment_owner", "field_sheets", type_="check")
     op.drop_index("ix_field_sheets_lab_signature_session_id", table_name="field_sheets")
+    op.drop_constraint("uq_field_sheets_lab_equipment_id", "field_sheets", type_="unique")
     op.drop_index("ix_field_sheets_lab_equipment_id", table_name="field_sheets")
     op.drop_constraint("fk_field_sheets_lab_signature_session_id", "field_sheets", type_="foreignkey")
     op.drop_constraint("fk_field_sheets_lab_equipment_id", "field_sheets", type_="foreignkey")
@@ -182,6 +197,13 @@ def downgrade() -> None:
     ):
         op.drop_column("lab_work_order_equipment", column)
 
+    # ADVERTENCIA: este downgrade es destructivo y puede fallar. Revierte el
+    # check a solo 3 estados sin migrar filas 'partially_closed'/'cancelled'
+    # existentes; si alguna lab_work_orders está en esos estados, este
+    # create_check_constraint lanzará una violación de constraint. No se
+    # limpia el dato de forma silenciosa: si necesitas bajar la revisión,
+    # resuelve manualmente esas filas primero (o acepta que el downgrade
+    # falle como señal explícita de que hay datos incompatibles).
     op.drop_constraint("ck_lab_work_order_status", "lab_work_orders", type_="check")
     op.create_check_constraint("ck_lab_work_order_status", "lab_work_orders", "status IN ('draft', 'ready_for_signatures', 'completed')")
     op.drop_index("ix_lab_work_orders_cancelled_at", table_name="lab_work_orders")

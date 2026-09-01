@@ -479,8 +479,8 @@ def create_work_order(
             raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
         values.update(
             client_name=client.company,
-            address=client.address,
-            contact_name=client.attention,
+            address=client.address or values.get("address"),
+            contact_name=client.attention or values.get("contact_name"),
         )
     work_order = LabWorkOrder(
         folio=_allocate_folio(db),
@@ -526,7 +526,11 @@ def _materialize_group(
         )
         if client is None:
             raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
-        values.update(client_name=client.company, address=client.address, contact_name=client.attention)
+        values.update(
+            client_name=client.company,
+            address=client.address or values.get("address"),
+            contact_name=client.attention or values.get("contact_name"),
+        )
     folios = _allocate_folio_block(db, payload.quantity)
     root: LabWorkOrder | None = None
     previous: LabWorkOrder | None = None
@@ -681,6 +685,8 @@ def approve_group_request(db: Session, request_id: int, user: User) -> LabWorkOr
             raise HTTPException(status_code=404, detail="Solicitud no encontrada")
         if request.status == "approved" and request.root_work_order_id is not None:
             return _request_read(db, request)
+        if request.requested_by_user_id == user.id:
+            raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
         if request.status != "in_review" or request.handled_by_user_id != user.id:
             raise HTTPException(status_code=409, detail="La solicitud debe estar tomada por el aprobador")
         payload = LabWorkOrderGroupCreate(
@@ -723,6 +729,8 @@ def reject_group_request(
     )
     if request is None:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if request.requested_by_user_id == user.id:
+        raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
     if request.status != "in_review" or request.handled_by_user_id != user.id:
         raise HTTPException(status_code=409, detail="La solicitud debe estar tomada por quien decide")
     request.status = "rejected"
@@ -1004,7 +1012,13 @@ def update_work_order(
         )
         if client is None:
             raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
-        updates.update(client_name=client.company, address=client.address, contact_name=client.attention)
+        # El catálogo manda cuando tiene dato; si el catálogo está vacío (permitido
+        # desde que sólo Empresa es obligatoria), se respeta lo que el propio
+        # payload ya traía como snapshot editable de esta OT, o si tampoco lo trae,
+        # se deja el valor que ya tenía la OT sin tocar.
+        updates["client_name"] = client.company
+        updates["address"] = client.address or updates.get("address", work_order.address)
+        updates["contact_name"] = client.attention or updates.get("contact_name", work_order.contact_name)
     _check_edit_version(editable_members, expected_edit_version)
     reception = updates.get("reception_date", work_order.reception_date)
     departure = updates.get("departure_date", work_order.departure_date)

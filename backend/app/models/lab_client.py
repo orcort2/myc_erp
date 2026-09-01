@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -12,12 +12,20 @@ class LabClient(IntegerPkMixin, TimestampMixin, Base):
 
     __tablename__ = "lab_clients"
     __table_args__ = (
-        UniqueConstraint(
-            "operator_client_id",
+        # Índice único funcional (no un UniqueConstraint plano): COALESCE
+        # normaliza operator_client_id NULL a 0 para que el catálogo interno
+        # MYC (operator_client_id IS NULL) también quede deduplicado por
+        # identidad normalizada, igual que los catálogos externos por tenant.
+        # Debe coincidir exactamente con lo que crea la migración
+        # ab31cd42ef53 (op.create_index con la misma expresión) para que
+        # `alembic check`/autogenerate no diverjan.
+        Index(
+            "uq_lab_clients_tenant_normalized_identity",
+            text("COALESCE(operator_client_id, 0)"),
             "normalized_company",
             "normalized_address",
             "normalized_attention",
-            name="uq_lab_clients_tenant_normalized_identity",
+            unique=True,
         ),
     )
 
