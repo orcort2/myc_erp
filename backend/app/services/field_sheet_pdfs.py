@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -8,6 +9,7 @@ from re import sub
 from types import SimpleNamespace
 from unicodedata import normalize
 
+from fastapi import HTTPException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from weasyprint import HTML
 
@@ -24,7 +26,11 @@ from app.services.institutional_configurations import (
     institutional_snapshot,
     resolve_logo_path,
 )
-from app.services.storage_service import require_deliverable_file, save_validated_content
+from app.services.storage_service import (
+    require_deliverable_file,
+    resolve_storage_path,
+    save_validated_content,
+)
 
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -154,11 +160,20 @@ def resolve_field_sheet_pdf_renderer(field_sheet: FieldSheet, template_definitio
     version = field_sheet.pdf_renderer_version or template_definition.get("pdf_renderer_version") or 1
     legacy_template = template_definition.get("pdf_template")
     if not key:
-        key = (
-            f"legacy:{legacy_template}"
-            if legacy_template in LEGACY_PDF_TEMPLATES
-            else CANONICAL_PDF_RENDERER_KEY
-        )
+        # No explicit renderer identity survived (historical row, unbackfilled
+        # or genuinely unbackfillable). Only fall back when the snapshot's
+        # pdf_template unambiguously names a known renderer -- never default
+        # an unrecognized/missing template to the canonical engine, since that
+        # would silently reinterpret history instead of reporting it.
+        if legacy_template == CANONICAL_PDF_TEMPLATE:
+            key = CANONICAL_PDF_RENDERER_KEY
+        elif legacy_template in LEGACY_PDF_TEMPLATES:
+            key = f"legacy:{legacy_template}"
+        else:
+            raise HTTPException(
+                status_code=409,
+                detail="No existe un renderer reproducible para esta hoja de campo histórica",
+            )
     if key == CANONICAL_PDF_RENDERER_KEY and int(version) == CANONICAL_PDF_RENDERER_VERSION:
         return key, int(version), CANONICAL_PDF_TEMPLATE
     if key.startswith("legacy:") and int(version) == 1:
@@ -452,6 +467,37 @@ def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
     )
 
 
+@contextmanager
+def guard_final_pdf_write(db, field_sheet: FieldSheet):
+    """Compensate a just-written final PDF artifact if the rest of this unit
+    of work fails before its own db.commit() succeeds.
+
+    freeze_final_field_sheet_pdf only flushes; it never commits, because
+    callers (completion flows) still have their own work to do in the same
+    transaction -- certificate updates, audit log, publish_event, sync --
+    before their commit. atomic_write already put the PDF bytes on disk by
+    the time any of that runs. If it then raises, the DB transaction rolls
+    back (final_pdf_path reverts to its previous value) but the file on disk
+    does not roll back with it, leaving an artifact nothing points to.
+
+    Callers must wrap the freeze call and everything up to and including
+    their own db.commit() in this context manager, so a failure anywhere in
+    that span deletes the orphaned file, rolls back the transaction, and
+    re-raises -- instead of leaving the artifact behind.
+    """
+    pre_existing_path = field_sheet.final_pdf_path
+    try:
+        yield
+    except BaseException:
+        written_path = field_sheet.final_pdf_path
+        if written_path and written_path != pre_existing_path:
+            resolved = resolve_storage_path(written_path)
+            if resolved is not None and resolved.is_file():
+                resolved.unlink(missing_ok=True)
+        db.rollback()
+        raise
+
+
 def freeze_final_field_sheet_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
     if field_sheet.final_pdf_path:
         stored = require_deliverable_file(
@@ -492,8 +538,9 @@ def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
     field_sheet = get_field_sheet(db, field_sheet_id)
     if field_sheet.status in FINAL_DOCUMENT_STATUSES:
         needs_persistence = not field_sheet.final_pdf_path
-        content, filename = freeze_final_field_sheet_pdf(db, field_sheet)
-        if needs_persistence:
-            db.commit()
+        with guard_final_pdf_write(db, field_sheet):
+            content, filename = freeze_final_field_sheet_pdf(db, field_sheet)
+            if needs_persistence:
+                db.commit()
         return content, filename
     return _render_pdf(db, field_sheet)

@@ -30,6 +30,7 @@ from app.services.field_sheet_pdfs import (
     generate_field_sheet_pdf,
     resolve_field_sheet_pdf_renderer,
 )
+from app.services.field_sheets import EDITABLE_STATUSES
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket, resolve_operational_ticket
 
 PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(
@@ -263,6 +264,47 @@ def test_legacy_snapshot_resolves_only_its_allowlisted_legacy_renderer():
     )
 
 
+def test_historical_engine_snapshot_resolves_to_canonical_engine_v1():
+    # A historical row backfilled with pdf_renderer_key=NULL (unbackfillable
+    # by the migration's own rules) but whose snapshot unambiguously names the
+    # canonical engine template must still resolve deterministically -- this
+    # is the one case the migration's CASE and the resolver's fallback agree
+    # is genuinely inferable, unlike an unrecognized/missing pdf_template.
+    sheet = FieldSheet(
+        lab_equipment_id=1,
+        template_key="general",
+        pdf_renderer_key=None,
+        pdf_renderer_version=None,
+    )
+    definition = {"pdf_template": "field_sheet_engine_pdf.html"}
+    assert resolve_field_sheet_pdf_renderer(sheet, definition) == (
+        "field_sheet_engine",
+        1,
+        "field_sheet_engine_pdf.html",
+    )
+
+
+def test_historical_unrecognized_template_is_not_silently_reinterpreted():
+    # No pdf_renderer_key on the row, and a pdf_template that names neither
+    # the canonical engine nor any of the known legacy templates. This must
+    # never fall back to the canonical engine by discard -- it must surface
+    # as a clear conflict so nobody downloads a document rendered by a
+    # renderer that was never actually used to produce that history.
+    sheet = FieldSheet(
+        lab_equipment_id=1,
+        template_key="general",
+        pdf_renderer_key=None,
+        pdf_renderer_version=None,
+    )
+    for definition in (
+        {"pdf_template": "some_retired_custom_template.html"},
+        {},
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            resolve_field_sheet_pdf_renderer(sheet, definition)
+        assert exc_info.value.status_code == 409
+
+
 def test_final_field_sheet_pdf_is_frozen_with_sha_and_reused(lab_context, monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "storage_root", str(tmp_path))
     client, factory, tokens = lab_context
@@ -289,6 +331,96 @@ def test_final_field_sheet_pdf_is_frozen_with_sha_and_reused(lab_context, monkey
         assert sheet.final_pdf_generated_at == frozen_at
         assert (tmp_path / frozen_path).stat().st_mtime_ns == first_mtime
     assert first_bytes == second_bytes
+
+
+def test_failure_after_pdf_write_leaves_no_orphaned_artifact(lab_context, monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "storage_root", str(tmp_path))
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    equipment_id = equipment_ids[0]
+
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+
+    import app.services.lab_field_sheets as lab_field_sheets_module
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated failure after the PDF was already written to disk")
+
+    # The freeze itself (the physical write) succeeds; the very next
+    # statement in the same unit of work -- the audit log write -- fails.
+    # guard_final_pdf_write must catch that, delete the artifact it just
+    # wrote, and roll back so the DB and the filesystem agree again.
+    monkeypatch.setattr(lab_field_sheets_module, "write_audit_log", _boom)
+
+    with pytest.raises(RuntimeError):
+        client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+            headers=headers,
+        )
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.status == "in_progress"
+        assert sheet.final_pdf_path is None
+        assert sheet.final_pdf_sha256 is None
+
+    final_dir = tmp_path / "field-sheets" / str(sheet_id) / "final"
+    assert not final_dir.exists() or list(final_dir.iterdir()) == []
+
+
+def test_completed_field_sheet_never_reenters_editable_status(lab_context, monkeypatch, tmp_path):
+    # Documents the current state machine: EDITABLE_STATUSES excludes
+    # "completed" and "under_review", and nothing in this codebase transitions
+    # a FieldSheet's status from either of those back into "rejected" or
+    # "returned_to_technician" (those values are reserved on the schema but
+    # have no producer). This locks that invariant so a frozen PDF can never
+    # go stale behind a re-editable sheet without this test failing first.
+    monkeypatch.setattr(settings, "storage_root", str(tmp_path))
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    sheet_id = _create_and_complete_field_sheet(client, headers, order_id, equipment_ids[0])
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.status == "completed"
+        assert sheet.status not in EDITABLE_STATUSES
+        frozen_path = sheet.final_pdf_path
+        frozen_sha = sheet.final_pdf_sha256
+
+    blocked = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"observations": "Intento de edicion post-congelado"},
+        headers=headers,
+    )
+    assert blocked.status_code == 409, blocked.text
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.final_pdf_path == frozen_path
+        assert sheet.final_pdf_sha256 == frozen_sha
 
 
 def test_structurally_different_families_render_through_same_canonical_engine(lab_context):

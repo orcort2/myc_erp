@@ -29,6 +29,12 @@ def upgrade() -> None:
         "field_sheets",
         sa.Column("final_pdf_generated_at", sa.DateTime(timezone=True), nullable=True),
     )
+    # Only backfill a renderer identity when the historical snapshot
+    # unambiguously names it. Anything else (missing snapshot, unknown
+    # pdf_template) stays NULL/NULL rather than being guessed at -- a
+    # fabricated renderer identity for a row we can't actually reproduce is
+    # worse than an explicit "unknown", which resolve_field_sheet_pdf_renderer
+    # now surfaces as a clear conflict instead of silently rendering it.
     op.execute(
         """
         UPDATE field_sheets
@@ -40,9 +46,18 @@ def upgrade() -> None:
                 'field_sheet_anemometer_pdf.html',
                 'field_sheet_electrical_pdf.html'
             ) THEN 'legacy:' || (template_definition_json ->> 'pdf_template')
-            ELSE 'field_sheet_engine'
+            ELSE NULL
         END,
-        pdf_renderer_version = 1
+        pdf_renderer_version = CASE
+            WHEN COALESCE(template_definition_json ->> 'pdf_template', '') = 'field_sheet_engine_pdf.html'
+                THEN 1
+            WHEN COALESCE(template_definition_json ->> 'pdf_template', '') IN (
+                'field_sheet_general_pdf.html',
+                'field_sheet_anemometer_pdf.html',
+                'field_sheet_electrical_pdf.html'
+            ) THEN 1
+            ELSE NULL
+        END
         """
     )
 

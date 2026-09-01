@@ -847,69 +847,74 @@ def complete_field_sheet(
 
     # Completing is the documentary freeze boundary. The renderer writes the
     # immutable artifact through the shared storage abstraction and persists
-    # its identity in this same transaction.
-    from app.services.field_sheet_pdfs import freeze_final_field_sheet_pdf
+    # its identity in this same transaction. guard_final_pdf_write spans the
+    # write through this function's own commit so a failure anywhere in that
+    # span (certificate updates, audit log, publish_event, sync, commit
+    # itself) deletes the orphaned artifact and rolls back instead of leaving
+    # a frozen PDF that no committed row points to.
+    from app.services.field_sheet_pdfs import freeze_final_field_sheet_pdf, guard_final_pdf_write
 
-    freeze_final_field_sheet_pdf(db, field_sheet)
+    with guard_final_pdf_write(db, field_sheet):
+        freeze_final_field_sheet_pdf(db, field_sheet)
 
-    certificate = db.scalar(
-        select(Certificate).where(
-            Certificate.equipment_id == equipment.id,
-            Certificate.is_active.is_(True),
+        certificate = db.scalar(
+            select(Certificate).where(
+                Certificate.equipment_id == equipment.id,
+                Certificate.is_active.is_(True),
+            )
         )
-    )
 
-    if certificate is not None and certificate.status in {
-        "expected",
-        "field_sheet_ready",
-        "capture_pending",
-        "capture_in_progress",
-        "quality_rejected",
-        "returned_to_technician",
-    }:
-        certificate.field_sheet_id = field_sheet.id
-        certificate.status = "field_sheet_ready"
+        if certificate is not None and certificate.status in {
+            "expected",
+            "field_sheet_ready",
+            "capture_pending",
+            "capture_in_progress",
+            "quality_rejected",
+            "returned_to_technician",
+        }:
+            certificate.field_sheet_id = field_sheet.id
+            certificate.status = "field_sheet_ready"
 
-    sync_service_order_equipment_counts(db, equipment.service_order_id)
+        sync_service_order_equipment_counts(db, equipment.service_order_id)
 
-    write_audit_log(
-        db,
-        action="field_sheet.completed",
-        entity="field_sheets",
-        entity_id=field_sheet.id,
-        user_id=user_id,
-        previous_values={
-            "status": previous_status,
-            "equipment_status": previous_equipment_status,
-        },
-        new_values={
-            "status": "completed",
-            "equipment_status": "calibrated",
-            "certificate_ready": True,
-            "external_certificate_flow": True,
-            "certificate_id": certificate.id if certificate else None,
-            "certificate_status": certificate.status if certificate else None,
-        },
-        comment=payload.comment if payload else None,
-    )
-    publish_event(
-        db,
-        entity_type="field_sheet",
-        entity_id=field_sheet.id,
-        event_code="field_sheet.completed",
-        idempotency_key=f"field_sheet:{field_sheet.id}:completed",
-        body="Hoja de Campo completada y equipo marcado como calibrado.",
-        actor_id=user_id,
-        metadata={
-            "previous_status": previous_status,
-            "status": "completed",
-            "equipment_status": "calibrated",
-        },
-        related_entity_type="equipment",
-        related_entity_id=equipment.id,
-    )
+        write_audit_log(
+            db,
+            action="field_sheet.completed",
+            entity="field_sheets",
+            entity_id=field_sheet.id,
+            user_id=user_id,
+            previous_values={
+                "status": previous_status,
+                "equipment_status": previous_equipment_status,
+            },
+            new_values={
+                "status": "completed",
+                "equipment_status": "calibrated",
+                "certificate_ready": True,
+                "external_certificate_flow": True,
+                "certificate_id": certificate.id if certificate else None,
+                "certificate_status": certificate.status if certificate else None,
+            },
+            comment=payload.comment if payload else None,
+        )
+        publish_event(
+            db,
+            entity_type="field_sheet",
+            entity_id=field_sheet.id,
+            event_code="field_sheet.completed",
+            idempotency_key=f"field_sheet:{field_sheet.id}:completed",
+            body="Hoja de Campo completada y equipo marcado como calibrado.",
+            actor_id=user_id,
+            metadata={
+                "previous_status": previous_status,
+                "status": "completed",
+                "equipment_status": "calibrated",
+            },
+            related_entity_type="equipment",
+            related_entity_id=equipment.id,
+        )
 
-    db.commit()
+        db.commit()
     return get_field_sheet(db, field_sheet.id)
 
 
