@@ -229,3 +229,12 @@ directo. Ese permiso no concede `requests.read`, `requests.claim` ni
 `requests.decide`. Operativo Sr externo puede solicitar con
 `work_orders.group.request`, pero el guard de actor le prohíbe materializar un
 grupo directo.
+
+## Regla verificada 2026-09-01 — Documento final FieldSheet
+
+Una FieldSheet nueva usa renderer canónico versionado. Al alcanzar `completed`
+se congela su PDF con ruta, SHA-256, renderer/versión, versión de definición y
+fecha. Toda descarga posterior devuelve y verifica ese mismo artefacto; una
+ausencia o diferencia de hash bloquea la entrega y no autoriza regeneración
+silenciosa. Los estados editables pueden generar preview dinámico y los
+snapshots históricos conservan su renderer legacy explícito.

@@ -175,6 +175,7 @@ export default function WorkOrdersScreen() {
   const [step, setStep] = useState<Step>('general');
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
+  const [receptionOrders, setReceptionOrders] = useState<LabWorkOrder[]>([]);
   const [equipmentEditor, setEquipmentEditor] = useState<LabEquipment | 'new' | null>(null);
   const [signatureFlowState, setSignatureFlowState] = useState<SignatureFlowState | null>(null);
   const [signatureDrawing, setSignatureDrawing] = useState(false);
@@ -205,6 +206,26 @@ export default function WorkOrdersScreen() {
     }
     return response.json() as Promise<T>;
   }, [authorizedFetch]);
+
+  const receptionOrderIds = workOrder?.related_work_orders.map((item) => item.id).join(',') ?? '';
+
+  useEffect(() => {
+    if (!workOrder || step !== 'signatures' || workOrder.status !== 'draft') {
+      setReceptionOrders([]);
+      return;
+    }
+    if (workOrder.related_work_orders.length <= 1) {
+      setReceptionOrders([workOrder]);
+      return;
+    }
+    let active = true;
+    Promise.all(workOrder.related_work_orders.map((item) => (
+      request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${item.id}`)
+    )))
+      .then((orders) => { if (active) setReceptionOrders(orders); })
+      .catch(() => { if (active) setReceptionOrders([workOrder]); });
+    return () => { active = false; };
+  }, [receptionOrderIds, request, step, workOrder]);
 
   const refresh = useCallback(async (reset = true) => {
     if (reset) setLoading(true);
@@ -1071,7 +1092,7 @@ export default function WorkOrdersScreen() {
                     onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
                   >
                     <Text style={styles.primaryText}>
-                      {canSkipSignaturesAfterReopen(workOrder) ? 'Continuar a captura técnica' : 'Continuar a revisión de recepción'}
+                      {canSkipSignaturesAfterReopen(workOrder) ? 'Continuar a captura técnica' : 'Continuar a recepción de equipos'}
                     </Text>
                   </Pressable>
                 </>
@@ -1121,34 +1142,33 @@ export default function WorkOrdersScreen() {
                 </>
               )}
 
-              {/* Fase 3: REVISIÓN DE RECEPCIÓN + firma -- ocurre ANTES de la
+              {/* Fase 3: recepción de equipos + firma -- ocurre ANTES de la
                   captura técnica. La firma representa que MYC y el cliente
                   aceptan los equipos y condiciones recibidos, no que el
                   trabajo técnico terminó. */}
               {workOrder && step === 'signatures' && workOrder.status === 'draft' && (
                 signatureFlowState == null ? (
                   <>
-                    <View style={styles.sectionIntro}>
-                      <Text style={styles.sectionEyebrow}>REVISIÓN DE RECEPCIÓN</Text>
-                      <Text style={styles.sectionTitle}>¿Qué está recibiendo MYC?</Text>
-                      <Text style={styles.sectionDescription}>Técnico y cliente confirman los equipos y condiciones recibidos para ejecutar el servicio -- no el trabajo técnico en sí.</Text>
-                    </View>
-                    <View style={styles.summary}>
-                      <Text style={styles.summaryClient}>Cliente receptor: {workOrder.client_name}</Text>
-                      <Text style={styles.summaryLine}>OT {workOrder.folio}</Text>
-                    </View>
-                    {workOrder.equipment.map((item) => {
-                      const summary = describeEquipmentSummary(item, workOrder.client_name);
-                      return (
-                        <View key={item.id} style={styles.equipmentRow}>
-                          <View style={styles.flex}>
-                            <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
-                            <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
-                            <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''} · Folio: {summary.folio}</Text>
-                          </View>
-                        </View>
-                      );
-                    })}
+                    <Text style={styles.sectionTitle}>RECEPCIÓN DE EQUIPOS</Text>
+                    {(receptionOrders.length ? receptionOrders : [workOrder]).map((receptionOrder) => (
+                      <View key={receptionOrder.id} style={styles.summary}>
+                        <Text style={styles.summaryLine}>OT {receptionOrder.folio}</Text>
+                        {receptionOrder.equipment.map((item) => {
+                          const summary = describeEquipmentSummary(item, receptionOrder.client_name);
+                          return (
+                            <View key={item.id} style={styles.equipmentRow}>
+                              <View style={styles.flex}>
+                                <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
+                                <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
+                                <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''}</Text>
+                                <Text style={styles.equipmentMeta}>Folio: {summary.folio}</Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                        {!receptionOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
+                      </View>
+                    ))}
                     <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Volver a equipos</Text></Pressable>
                     {canCaptureSignatures ? (
                       <>

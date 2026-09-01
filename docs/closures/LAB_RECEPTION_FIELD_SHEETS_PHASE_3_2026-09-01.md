@@ -47,8 +47,14 @@ payload con técnico y cliente, valida ambas imágenes y crea entonces
   histórica conservan sus contratos.
 - Captura recibe `lab_field_sheets.capture` para leer y operar hojas, sin alta,
   configuración, firma, folios, cierre, cancelación o resolución de Tickets.
-- Mobile muestra revisión de recepción y resumen read-only, presenta estados
-  nuevos y evita lenguaje de cierre durante la recepción.
+- Mobile muestra un único encabezado `RECEPCIÓN DE EQUIPOS`, las OT/equipos de
+  la cohorte y un resumen read-only; refresca la OT desde backend después de
+  crear/completar hoja o solicitar folio.
+- Acreditado/Trazable muestran el folio como generado por sistema; Vinculado
+  conserva el informe opcional y su flujo específico.
+- Nuevas FieldSheets fijan renderer canónico versión 1. Al completar congelan
+  PDF, SHA-256, renderer/versión, versión de definición y fecha en el storage
+  institucional; los tres HTML anteriores permanecen como legacy.
 
 ## Validaciones
 
@@ -63,8 +69,8 @@ payload con técnico y cliente, valida ambas imágenes y crea entonces
 - `npx tsc --noEmit`: correcto.
 - `npm run lint`: correcto.
 - `lab-work-order-closure.test.ts`: correcto dentro de focal y suite completa.
-- Alembic: único head `a3983f9a6ca9`.
-- No se creó ni aplicó migración y no se modificó la base local.
+- Alembic: único head `b71d4a9f2c18`.
+- Se creó la migración `b71d4a9f2c18`; no se modificó la base local del usuario.
 
 ## Pendientes y límites
 

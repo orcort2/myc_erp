@@ -49,6 +49,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | --- | --- |
 | [`../architecture/CATALOGOS_SAT.md`](../architecture/CATALOGOS_SAT.md) | Fuente, importación, versionado y consumo de Catálogos SAT. |
 | [`../architecture/FIELD_SHEET_FIELD_REGISTRY.md`](../architecture/FIELD_SHEET_FIELD_REGISTRY.md) | Claves y semántica canónica de campos de Hojas de Campo. |
+| [`../architecture/FIELD_SHEET_PDF_RENDERER.md`](../architecture/FIELD_SHEET_PDF_RENDERER.md) | Autoridad única, renderer versionado, compatibilidad legacy y artefacto final inmutable de FieldSheets ERP/LAB. |
 | [`../architecture/PERMISSIONS_MATRIX.md`](../architecture/PERMISSIONS_MATRIX.md) | Roles/permisos declarados y brechas de aplicación. |
 | [`../architecture/files/INSTITUTIONAL_FILE_STORAGE.md`](../architecture/files/INSTITUTIONAL_FILE_STORAGE.md) | Contrato vigente de rutas, publicación atómica, checksum, temporales y custodia local institucional. |
 | [`../architecture/files/UPLOAD_SECURITY_POLICY.md`](../architecture/files/UPLOAD_SECURITY_POLICY.md) | Perfiles, límites y validaciones obligatorias para entradas PDF, imagen, texto, ZIP, OOXML y XML. |

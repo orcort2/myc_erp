@@ -91,11 +91,12 @@ test('editable se deriva de isReceptionEditable, no de una comparación de statu
   assert.match(source, /isReceptionEditable\(workOrder\.status\)/);
 });
 
-test('1, 2, 3. el paso de firma muestra una revisión de recepción con cliente receptor y equipos', () => {
+test('1, 2, 3. el paso de firma usa un encabezado único y muestra OT con equipos', () => {
   const source = screenSource();
-  assert.match(source, /REVISIÓN DE RECEPCIÓN/);
-  assert.match(source, /Cliente receptor: \{workOrder\.client_name\}/);
-  assert.match(source, /workOrder\.equipment\.map/);
+  assert.match(source, /RECEPCIÓN DE EQUIPOS/);
+  assert.doesNotMatch(source, /REVISIÓN DE RECEPCIÓN/);
+  assert.doesNotMatch(source, /Cliente receptor:/);
+  assert.match(source, /receptionOrder\.equipment\.map/);
 });
 
 test('4, 5, 6. cada equipo en la revisión de recepción muestra cliente documental, servicio y folio', () => {
@@ -104,8 +105,9 @@ test('4, 5, 6. cada equipo en la revisión de recepción muestra cliente documen
   // (incluyendo "Pendiente" para vinculado sin autorizar, ver
   // lab-equipment-configured-payload.test.ts); aquí sólo se confirma que la
   // revisión de recepción efectivamente los muestra.
-  assert.match(source, /describeEquipmentSummary\(item, workOrder\.client_name\)/);
-  assert.match(source, /summary\.client.*summary\.service.*Folio: \{summary\.folio\}/);
+  assert.match(source, /describeEquipmentSummary\(item, receptionOrder\.client_name\)/);
+  assert.match(source, /summary\.client.*summary\.service/);
+  assert.match(source, /Folio: \{summary\.folio\}/);
 });
 
 test('10. received_signed muestra "Recepción firmada" con acción para continuar a captura técnica', () => {

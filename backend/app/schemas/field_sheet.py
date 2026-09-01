@@ -213,6 +213,12 @@ class FieldSheetRead(FieldSheetBase):
     lab_signature_session_id: int | None = None
     template_definition: FieldSheetTemplateRead | dict | None = None
     template_definition_version: int | None = None
+    pdf_renderer_key: str | None = None
+    pdf_renderer_version: int | None = None
+    final_pdf_path: str | None = None
+    final_pdf_sha256: str | None = None
+    final_pdf_template_definition_version: int | None = None
+    final_pdf_generated_at: datetime | None = None
     institutional_snapshot: dict | None = None
     results_rows: list[FieldSheetResultRead] = Field(default_factory=list)
     calibration_procedure: CalibrationProcedureRead | None = None

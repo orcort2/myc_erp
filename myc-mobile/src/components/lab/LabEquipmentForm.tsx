@@ -93,7 +93,14 @@ export function LabEquipmentForm({
       <Field label="Marca" required value={equipment.brand} onChange={(value) => setEquipment({ ...equipment, brand: value })} />
       <Field label="Identificación" required value={equipment.identification} onChange={(value) => setEquipment({ ...equipment, identification: value })} />
       <Field label="Serie" required value={equipment.serial_number} onChange={(value) => setEquipment({ ...equipment, serial_number: value })} />
-      <Field label="Informe (opcional)" value={equipment.report_number ?? ''} onChange={(value) => setEquipment({ ...equipment, report_number: value || null })} />
+      {service === 'linked' ? (
+        <Field label="Informe (opcional)" value={equipment.report_number ?? ''} onChange={(value) => setEquipment({ ...equipment, report_number: value || null })} />
+      ) : (
+        <View style={styles.fieldGroup}>
+          <Text style={styles.fieldLabel}>Folio de informe</Text>
+          <Text style={styles.readOnlyValue}>{folioIsSecured ? folioDisplay : 'Generado por el sistema'}</Text>
+        </View>
+      )}
       <Text style={styles.fieldLabel}>Estado físico</Text>
       <View style={styles.row}>
         <Pressable onPress={() => setEquipment({ ...equipment, is_good_condition: true })} style={[styles.choice, equipment.is_good_condition && styles.choiceActive]}><Text>✓ Bueno</Text></Pressable>
@@ -171,7 +178,7 @@ export function LabEquipmentForm({
       )}
       {!!validationError && <Text style={styles.error}>{validationError}</Text>}
 
-      {mode === 'edit' && (
+      {mode === 'edit' && service === 'linked' && (
         <>
           <Text style={styles.sectionTitle}>Folio</Text>
           <Text style={styles.notice}>{folioDisplay ?? 'Pendiente'}</Text>
@@ -209,6 +216,7 @@ const styles = StyleSheet.create({
   fieldGroup: { gap: 4 },
   fieldLabel: { color: '#344553', fontSize: 12, fontWeight: '700' },
   fieldInput: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 9, borderWidth: 1, minHeight: 44, paddingHorizontal: 11 },
+  readOnlyValue: { backgroundColor: '#f5f8fa', borderColor: '#dbe4ea', borderRadius: 9, borderWidth: 1, color: '#344553', minHeight: 44, paddingHorizontal: 11, paddingVertical: 12 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   choice: { backgroundColor: '#f5f8fa', borderColor: '#cbd7df', borderRadius: 9, borderWidth: 1, padding: 10 },
   choiceActive: { backgroundColor: '#dff3f1', borderColor: '#008f87' },

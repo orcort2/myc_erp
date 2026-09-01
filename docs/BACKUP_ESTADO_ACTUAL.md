@@ -30,12 +30,12 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único del código verificado: `a3983f9a6ca9`.
-- La revisión `a3983f9a6ca9` declara `down_revision = ab31cd42ef53`.
-- Fase 3 no agrega migraciones ni modifica datos locales. Reutiliza
-  `LabWorkOrder.signature_session_id`,
-  `FieldSheet.lab_signature_session_id` y los estados ya incluidos por la
-  revisión vigente.
+- Head único del código verificado: `b71d4a9f2c18`.
+- La revisión `b71d4a9f2c18` declara `down_revision = a3983f9a6ca9` y agrega a
+  `field_sheets` renderer/versión, referencia y SHA-256 del PDF final, versión
+  de definición congelada y fecha de generación.
+- La migración clasifica renderers históricos por su `pdf_template` sin
+  reescribir `template_definition_json` ni `template_key`.
 - No se aplicó Alembic ni se ejecutaron cambios sobre la base real del usuario;
   por ello no corresponde regenerar `backup_erp_myc_antes_prueba.sql` en este
   trabajo.
@@ -58,21 +58,25 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
   cierre se conservan.
 - Mobile presenta revisión de recepción, resumen completo, read-only posterior,
   estados nuevos, cierre sin loop de firmas y contexto de encabezado correcto.
+- Después de crear/completar FieldSheet o solicitar folio, Mobile recupera la
+  OT desde backend mediante un único helper. La recepción muestra cada OT y sus
+  equipos bajo `RECEPCIÓN DE EQUIPOS`; acreditado/trazable presentan el folio
+  sistémico en modo informativo y Vinculado conserva su flujo.
+- Nuevas FieldSheets fijan `field_sheet_engine` v1. Al completar, el backend
+  publica una vez el PDF en storage institucional y persiste SHA-256 y
+  procedencia; descargas posteriores verifican y reutilizan el mismo archivo.
 
 ## Validaciones
 
-- Backend Fase 3: `46 passed`.
-- Backend LAB focal adicional: `132 passed, 8 skipped`.
-- Backend seguridad/permisos focal: `45 passed`.
-- Backend completo: `811 passed, 8 skipped, 19 subtests passed, 2 failed`.
-  Las dos fallas son deuda preexistente del inventario API: runtime 499 frente
-  al snapshot/test fijado en 477; no corresponden a Fase 3.
-- Mobile focal: `42 passed`.
-- Mobile completo: `157 passed`.
+- Backend LAB/FieldSheet/PDF/esquema focal: `204 passed, 8 skipped, 7 subtests passed`.
+- Regresión concentrada de renderer/Fase 3: `75 passed`.
+- Mobile completo: `159 passed`.
 - TypeScript `npx tsc --noEmit`: correcto.
 - Lint `npm run lint`: correcto.
-- `lab-work-order-closure.test.ts`: correcto.
-- `python -m alembic heads`: `a3983f9a6ca9 (head)`.
+- Build/export Mobile `npx expo export --platform web`: correcto, 36 rutas.
+- Alembic sobre base desechable desde cero: `upgrade head` correcto,
+  `current = b71d4a9f2c18 (head)` y `check = No new upgrade operations detected`.
+- La base desechable fue eliminada; la base ERP local real no fue modificada.
 
 ## Pendientes operativos
 

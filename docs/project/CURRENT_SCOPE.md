@@ -371,12 +371,16 @@ vinculada y cliente documental; congela la recepción firmada; enlaza cada hoja
 a la sesión exacta vigente al crearla; preserva reapertura, grupos, recepción
 individual, partial close y la excepción externa existente. Captura usa el
 permiso mínimo `lab_field_sheets.capture`, sin recibir facultades
-administrativas. Mobile presenta revisión de recepción, doble firma local con
-un único POST, estados y navegación nuevos, resumen read-only y cierre sin
-volver a firmar.
+  administrativas. Mobile presenta `RECEPCIÓN DE EQUIPOS`, carga las OT y sus
+  equipos para recepción grupal, muestra folio generado por sistema en
+  acreditado/trazable y vuelve a consultar la OT tras crear/completar una hoja
+  o solicitar folio; el estado visible siempre procede del backend.
 
-No se agregan migraciones ni se cambian MYCA/MYCT, rangos, LabClient,
-plantillas/imprimibles, NIIMBOT o entidades productivas. El QA físico
+La consolidación documental agrega la migración `b71d4a9f2c18`: nuevas
+FieldSheets usan el renderer declarativo canónico versionado y al completar
+congelan PDF, SHA-256 y procedencia documental en storage institucional. Los
+HTML anteriores siguen sólo para snapshots legacy. No se cambian MYCA/MYCT,
+rangos, LabClient, mappings de plantilla, NIIMBOT o entidades productivas. El QA físico
 Android/iPhone y las observaciones de FieldSheets auditadas por separado siguen
 fuera de este cierre técnico.
 

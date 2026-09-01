@@ -48,6 +48,9 @@ FIELD_SHEET_BLOCK_TYPES = {
     "SectionBlock",
     "AttachmentPlaceholderBlock",
 }
+CANONICAL_PDF_RENDERER_KEY = "field_sheet_engine"
+CANONICAL_PDF_RENDERER_VERSION = 1
+CANONICAL_PDF_TEMPLATE = "field_sheet_engine_pdf.html"
 TABLE_BLOCK_TYPES = {
     "ResultsTableBlock",
     "SimpleComparisonTableBlock",
@@ -838,6 +841,19 @@ def normalize_template_definition(payload: dict) -> dict:
     definition["visible_fields"] = _collect_visible_fields(definition["blocks"])
     definition["result_sections"] = _build_result_sections(definition["blocks"])
     return definition
+
+
+def canonicalize_new_field_sheet_snapshot(definition: dict) -> dict:
+    """Orient only a newly created FieldSheet snapshot to the canonical engine.
+
+    Historical snapshots remain byte-for-byte untouched and continue resolving
+    their legacy ``pdf_template`` through the versioned renderer resolver.
+    """
+    snapshot = deepcopy(definition)
+    snapshot["pdf_template"] = CANONICAL_PDF_TEMPLATE
+    snapshot["pdf_renderer_key"] = CANONICAL_PDF_RENDERER_KEY
+    snapshot["pdf_renderer_version"] = CANONICAL_PDF_RENDERER_VERSION
+    return snapshot
 
 
 def build_fallback_template_definition(template_key: str) -> dict:

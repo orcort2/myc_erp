@@ -17,6 +17,7 @@ from app.core.db import Base, get_db
 from fastapi import HTTPException
 
 from app.core.security import create_access_token
+from app.core.config import settings
 from app.main import app
 from app.models.field_sheet import FieldSheet, FieldSheetSignature
 from app.models.lab_client import LabClient
@@ -24,7 +25,11 @@ from app.models.lab_work_order import LabWorkOrder, LabWorkOrderSignature, LabWo
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
 from app.schemas.operational_ticket import TicketReject, TicketResolve, TicketReview
-from app.services.field_sheet_pdfs import _resolve_field_sheet_signatures, generate_field_sheet_pdf
+from app.services.field_sheet_pdfs import (
+    _resolve_field_sheet_signatures,
+    generate_field_sheet_pdf,
+    resolve_field_sheet_pdf_renderer,
+)
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket, resolve_operational_ticket
 
 PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(
@@ -206,6 +211,111 @@ def _create_and_complete_field_sheet(client, headers, order_id, equipment_id, te
     )
     assert completed.status_code == 200, completed.text
     return sheet_id
+
+
+def test_new_lab_field_sheet_uses_canonical_versioned_renderer_and_refresh_state_contract(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=2)
+
+    first = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert first.status_code == 201, first.text
+    first_body = first.json()
+    assert first_body["pdf_renderer_key"] == "field_sheet_engine"
+    assert first_body["pdf_renderer_version"] == 1
+    assert first_body["template_definition"]["pdf_template"] == "field_sheet_engine_pdf.html"
+    assert client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers
+    ).json()["status"] == "in_progress"
+
+    second = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[1]}/field-sheet",
+        json={"template_key": "presion"},
+        headers=headers,
+    )
+    assert second.status_code == 201, second.text
+    assert client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers
+    ).json()["status"] == "in_progress"
+
+    with factory() as db:
+        persisted = db.get(FieldSheet, first_body["id"])
+        assert persisted.pdf_renderer_key == "field_sheet_engine"
+        assert persisted.pdf_renderer_version == 1
+
+
+def test_legacy_snapshot_resolves_only_its_allowlisted_legacy_renderer():
+    sheet = FieldSheet(
+        lab_equipment_id=1,
+        template_key="general",
+        pdf_renderer_key=None,
+        pdf_renderer_version=None,
+    )
+    definition = {"pdf_template": "field_sheet_general_pdf.html"}
+    assert resolve_field_sheet_pdf_renderer(sheet, definition) == (
+        "legacy:field_sheet_general_pdf.html",
+        1,
+        "field_sheet_general_pdf.html",
+    )
+
+
+def test_final_field_sheet_pdf_is_frozen_with_sha_and_reused(lab_context, monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "storage_root", str(tmp_path))
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    sheet_id = _create_and_complete_field_sheet(client, headers, order_id, equipment_ids[0])
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        frozen_path = sheet.final_pdf_path
+        frozen_sha = sheet.final_pdf_sha256
+        frozen_at = sheet.final_pdf_generated_at
+        assert frozen_path
+        assert frozen_sha and len(frozen_sha) == 64
+        assert sheet.final_pdf_template_definition_version == sheet.template_definition_version
+        first_bytes, _ = generate_field_sheet_pdf(db, sheet_id)
+        first_mtime = (tmp_path / frozen_path).stat().st_mtime_ns
+
+    with factory() as db:
+        second_bytes, _ = generate_field_sheet_pdf(db, sheet_id)
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.final_pdf_path == frozen_path
+        assert sheet.final_pdf_sha256 == frozen_sha
+        assert sheet.final_pdf_generated_at == frozen_at
+        assert (tmp_path / frozen_path).stat().st_mtime_ns == first_mtime
+    assert first_bytes == second_bytes
+
+
+def test_structurally_different_families_render_through_same_canonical_engine(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=2)
+    rendered: dict[str, str] = {}
+    for equipment_id, template_key in zip(equipment_ids, ("general", "electrica"), strict=True):
+        created = client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+            json={"template_key": template_key},
+            headers=headers,
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["pdf_renderer_key"] == "field_sheet_engine"
+        with factory() as db:
+            pdf_bytes, _ = generate_field_sheet_pdf(db, created.json()["id"])
+        rendered[template_key] = re.sub(
+            r"\s+",
+            " ",
+            "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf_bytes)).pages),
+        ).upper()
+
+    assert "TABLA COMPARATIVA" in rendered["general"]
+    assert "VOLTAJE AC" in rendered["electrica"]
+    assert "CORRIENTE DC" in rendered["electrica"]
+    assert "VOLTAJE AC" not in rendered["general"]
 
 
 @pytest.mark.parametrize("template_key", ["vernier", "electrica"])

@@ -88,6 +88,14 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
   const [ticketDescription, setTicketDescription] = useState('');
   const [busy, setBusy] = useState(false);
 
+  async function refreshWorkOrder() {
+    const updated = await request<LabWorkOrder>(
+      `/mobile/v1/technician/lab-work-orders/${workOrder.id}`,
+    );
+    onUpdated(updated);
+    return updated;
+  }
+
   useEffect(() => {
     request<FieldSheetTemplate[]>('/mobile/v1/technician/lab-work-orders/field-sheet-templates')
       .then(setTemplates)
@@ -155,6 +163,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       setSheet(created);
       setValues(buildValues(created));
       setRows(created.results_rows.map((row) => ({ ...row, row_data: { ...(row.row_data ?? {}) } })));
+      await refreshWorkOrder();
     } catch (error) {
       Alert.alert('No fue posible crear la hoja', error instanceof Error ? error.message : 'Revisa el folio y la plantilla');
     } finally { setBusy(false); }
@@ -210,8 +219,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/complete`,
         { method: 'POST' },
       );
-      const updated = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
-      onUpdated(updated);
+      await refreshWorkOrder();
       setActiveEquipment(null);
       setSheet(null);
     } catch (error) {
@@ -244,8 +252,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
           description: ticketDescription.trim(),
         }),
       });
-      const updated = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
-      onUpdated(updated);
+      await refreshWorkOrder();
       setTicketMode(null);
       setActiveEquipment(null);
       Alert.alert('Solicitud enviada', 'Admin resolverá el folio mediante el Ticket y su conversación.');

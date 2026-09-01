@@ -85,6 +85,12 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     apply_certificate_client_to_order: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     template_definition_json: Mapped[dict | None] = mapped_column(JSON)
     template_definition_version: Mapped[int | None] = mapped_column(Integer)
+    pdf_renderer_key: Mapped[str | None] = mapped_column(String(100))
+    pdf_renderer_version: Mapped[int | None] = mapped_column(Integer)
+    final_pdf_path: Mapped[str | None] = mapped_column(Text)
+    final_pdf_sha256: Mapped[str | None] = mapped_column(String(64))
+    final_pdf_template_definition_version: Mapped[int | None] = mapped_column(Integer)
+    final_pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     institutional_snapshot_json: Mapped[dict | None] = mapped_column(JSON)
     # Valores editables propios de la hoja que no deben modificar los maestros
     # de cliente/equipo (incluye overrides y campos declarativos por plantilla).

@@ -12,7 +12,13 @@ from app.models.user import User
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.lab_work_order import LabFieldSheetCreate
 from app.services.audit_logs import write_audit_log
-from app.services.field_sheet_templates import build_default_result_rows, get_template_snapshot
+from app.services.field_sheet_templates import (
+    CANONICAL_PDF_RENDERER_KEY,
+    CANONICAL_PDF_RENDERER_VERSION,
+    build_default_result_rows,
+    canonicalize_new_field_sheet_snapshot,
+    get_template_snapshot,
+)
 from app.services.field_sheets import (
     EDITABLE_STATUSES,
     _apply_results_updates,
@@ -83,6 +89,7 @@ def create_lab_field_sheet(
     if equipment.field_sheet is not None:
         raise HTTPException(status_code=409, detail="El equipo ya tiene una hoja de campo")
     definition, version = get_template_snapshot(db, payload.template_key)
+    definition = canonicalize_new_field_sheet_snapshot(definition)
     order = equipment.work_order
     institution = get_or_create_institutional_configuration(db)
     capture_values = {
@@ -99,6 +106,8 @@ def create_lab_field_sheet(
         template_key=payload.template_key,
         template_definition_json=definition,
         template_definition_version=version,
+        pdf_renderer_key=CANONICAL_PDF_RENDERER_KEY,
+        pdf_renderer_version=CANONICAL_PDF_RENDERER_VERSION,
         institutional_snapshot_json=institutional_snapshot(institution),
         status="draft",
         company=order.client_name,
@@ -218,6 +227,9 @@ def complete_lab_field_sheet(
     _validate_ready_to_complete(sheet)
     previous = sheet.status
     sheet.status = "completed"
+    from app.services.field_sheet_pdfs import freeze_final_field_sheet_pdf
+
+    freeze_final_field_sheet_pdf(db, sheet)
     write_audit_log(
         db,
         action="lab_field_sheet.completed",

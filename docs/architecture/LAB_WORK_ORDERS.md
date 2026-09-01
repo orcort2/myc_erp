@@ -189,6 +189,12 @@ no cambia estado. La hoja guarda exactamente
 última versión de la raíz. Completar la última hoja requerida mueve, en la
 misma transacción, `in_progress → ready_to_close`.
 
+Después del POST de creación, Mobile vuelve a leer la OT y reemplaza su
+proyección con la respuesta backend; no infiere `in_progress`. La misma lectura
+reutilizable se ejecuta al completar hoja y al solicitar folio. Acreditado y
+Trazable presentan el folio como generado por sistema y nunca como informe
+opcional editable; Vinculado conserva su flujo específico.
+
 El rol Captura obtiene únicamente `lab_field_sheets.capture` para leer la OT y
 crear/editar/completar sus hojas después de recepción. No recibe por esa clave
 alta o edición de OT/equipo, firma, folios, cierre, cancelación ni revisión de
@@ -210,6 +216,13 @@ El render reutiliza el formato institucional `work_order_pdf.html` y su
 infraestructura WeasyPrint. Cada PDF muestra folio, datos manuales, hasta diez
 equipos, informe, ✓/X y las firmas compartidas. El binario y SHA-256 quedan en
 la OT para garantizar exportación futura.
+
+Los PDFs propios de FieldSheet no se generan en Mobile: reutilizan
+`field_sheet_pdfs.py`. Las hojas nuevas fijan `field_sheet_engine` versión 1 y
+al completar congelan ruta, SHA-256, versión de renderer/definición y fecha en
+el storage institucional. Las descargas posteriores verifican y devuelven el
+mismo archivo. Los tres HTML anteriores permanecen sólo para snapshots legacy;
+el contrato completo está en `FIELD_SHEET_PDF_RENDERER.md`.
 
 El adaptador LAB conserva separados los campos institucionales: `address` se
 imprime únicamente en DOMICILIO; `postal_code`, `city` y `state_name` se
@@ -238,7 +251,7 @@ permitidos por la política nativa de Expo SDK 54. Cualquier binario instalado
 que todavía contenga el lock portrait requiere una build nativa posterior para
 recibir este cambio; esta intervención no genera ni distribuye esa build.
 
-El acceso canónico es **Continuar a revisión de recepción** antes de la captura
+El acceso canónico es **Continuar a recepción de equipos** antes de la captura
 técnica. La experiencia móvil reutiliza la jerarquía visual MYC como pasos de
 firma técnico/cliente, transición local y un único guardado real. No
 importa componentes, CSS, estado, servicios ni endpoints de `frontend/` y no

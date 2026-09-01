@@ -366,6 +366,13 @@ desactivar ETS; todas las mutaciones HTTP propagan el actor autenticado.
 
 Cada equipo puede tener una Hoja de Campo activa con snapshot de plantilla e identidad institucional. Se capturan resultados y firmas, se completa la hoja y se prepara el paquete de Captura por ETS u OT. El paquete depende de una Plantilla Maestra XLSX activa, vigente, existente y cuyo hash coincida con el snapshot del equipo.
 
+Toda hoja nueva fija `field_sheet_engine` versión 1. Mientras está en borrador
+o captura, su PDF puede ser preview dinámico; al completar, el backend genera y
+publica una vez el PDF final, persiste SHA-256, renderer/versión, versión de
+plantilla y fecha, y las descargas posteriores devuelven ese mismo artefacto
+verificado. Snapshots históricos que señalan los tres HTML legacy conservan su
+renderer y no son reescritos.
+
 Para el Paquete de Captura, `completed`, `under_review` y `approved` representan hojas técnicamente terminadas. La transición `complete` valida condición inicial/final, campos requeridos por plantilla, observaciones o evidencia y resultados estructurados; `Revisó` y `Elaboró informe` pertenecen a etapas posteriores y no bloquean el paquete. El flujo general de Hojas de Campo sigue sin cerrar por semánticas, automatizaciones metrológicas y acciones propias de aprobación/rechazo.
 
 Al devolver el ZIP/Master, cada Excel útil se identifica y persiste con sus validaciones. Si Verificación sólo conserva el Master genérico inicial, el backend resuelve una coincidencia institucional única y congela documento/versión final. Si ese final ya existe, no vuelve a resolver contra el registro vigente: valida exclusivamente contra la ruta y versión congeladas, aunque aparezcan otros Masters o revisiones. El nombre entregado es una ayuda, no una obligación. El primer Master identificado inicia `capture_in_progress` con actor y auditoría; metadatos `._*`, `.DS_Store` y `__MACOSX/` se ignoran. La interfaz muestra el resumen devuelto y vuelve a consultar ETS, certificados y registros de Captura sin exigir recarga manual. `match_status` se conserva como dato legacy y no gobierna la autenticación.

@@ -24,7 +24,10 @@ from app.services.audit_logs import write_audit_log
 from app.services.activity import publish_event
 from app.services.equipment import sync_service_order_equipment_counts
 from app.services.field_sheet_templates import (
+    CANONICAL_PDF_RENDERER_KEY,
+    CANONICAL_PDF_RENDERER_VERSION,
     build_default_result_rows,
+    canonicalize_new_field_sheet_snapshot,
     get_field_sheet_template,
     get_template_snapshot,
 )
@@ -112,6 +115,14 @@ def _serialize_field_sheet(field_sheet: FieldSheet) -> dict:
         "technician_notes": field_sheet.technician_notes,
         "template_definition": field_sheet.template_definition,
         "template_definition_version": field_sheet.template_definition_version,
+        "pdf_renderer_key": field_sheet.pdf_renderer_key,
+        "pdf_renderer_version": field_sheet.pdf_renderer_version,
+        "final_pdf_path": field_sheet.final_pdf_path,
+        "final_pdf_sha256": field_sheet.final_pdf_sha256,
+        "final_pdf_template_definition_version": field_sheet.final_pdf_template_definition_version,
+        "final_pdf_generated_at": field_sheet.final_pdf_generated_at.isoformat()
+        if field_sheet.final_pdf_generated_at
+        else None,
         "institutional_snapshot": field_sheet.institutional_snapshot_json,
         "certificate_client_mode": field_sheet.certificate_client_mode,
         "certificate_client_company": field_sheet.certificate_client_company,
@@ -589,6 +600,7 @@ def create_field_sheet(
         template_definition["version"] = template_version
     else:
         template_definition, template_version = get_template_snapshot(db, payload.template_key)
+    template_definition = canonicalize_new_field_sheet_snapshot(template_definition)
     institution = get_or_create_institutional_configuration(db)
 
     field_sheet = FieldSheet(
@@ -610,6 +622,8 @@ def create_field_sheet(
         template_key=payload.template_key,
         template_definition_json=template_definition,
         template_definition_version=template_version,
+        pdf_renderer_key=CANONICAL_PDF_RENDERER_KEY,
+        pdf_renderer_version=CANONICAL_PDF_RENDERER_VERSION,
         institutional_snapshot_json=institutional_snapshot(institution),
         status="draft",
         work_order_id=payload.work_order_id or equipment.work_order_id,
@@ -735,8 +749,11 @@ def update_field_sheet(
         setattr(field_sheet, key, value)
 
     if template_changed and new_template is not None:
+        template_definition = canonicalize_new_field_sheet_snapshot(template_definition)
         field_sheet.template_definition_json = template_definition
         field_sheet.template_definition_version = template_version
+        field_sheet.pdf_renderer_key = CANONICAL_PDF_RENDERER_KEY
+        field_sheet.pdf_renderer_version = CANONICAL_PDF_RENDERER_VERSION
         field_sheet.results_rows = build_default_result_rows(template_definition)
 
     if payload.results_rows is not None:
@@ -827,6 +844,13 @@ def complete_field_sheet(
 
     field_sheet.status = "completed"
     equipment.status = "calibrated"
+
+    # Completing is the documentary freeze boundary. The renderer writes the
+    # immutable artifact through the shared storage abstraction and persists
+    # its identity in this same transaction.
+    from app.services.field_sheet_pdfs import freeze_final_field_sheet_pdf
+
+    freeze_final_field_sheet_pdf(db, field_sheet)
 
     certificate = db.scalar(
         select(Certificate).where(

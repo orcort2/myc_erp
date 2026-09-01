@@ -340,3 +340,12 @@ histórico. Grupo, recepción y cohorte de cierre no se identifican
 artificialmente entre sí; reapertura y partial close mantienen sus contratos.
 El permiso `lab_field_sheets.capture` abre sólo captura interna y no se deriva
 de `lab_work_orders.use`.
+
+## D-2026-09-01 — Autoridad PDF única y artefacto final de FieldSheets
+
+`field_sheet_pdfs.py` y `field_sheet_engine_pdf.html` forman el renderer
+declarativo único para nuevas FieldSheets ERP/LAB, identificado por clave y
+versión. La definición congelada gobierna bloques, orden, campos, tablas,
+identidad documental y firmas. Al completar se congela el binario en el storage
+institucional con SHA-256; una descarga final nunca reinterpreta la plantilla
+vigente. Los tres HTML anteriores permanecen sólo como compatibilidad legacy.
