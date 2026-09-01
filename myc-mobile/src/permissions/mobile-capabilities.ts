@@ -36,11 +36,12 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     ),
     canExecuteWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.execute'),
-    // Fase 5: cierre técnico (ready_to_close -> completed) es autoridad de
-    // nivel superior -- Operativo Jr conserva work_orders.execute pero no
-    // work_orders.close; sólo Operativo Sr y staff interno (lab_work_orders.use)
-    // pueden cerrar. Backend es la autoridad real (ver app/routers/lab_work_orders.py);
-    // esto sólo evita ofrecer un botón que el backend rechazará.
+    // Fase 5 (corregido post-auditoría): cierre técnico (ready_to_close ->
+    // completed) es autoridad exclusivamente interna de MYC -- ningún actor
+    // externo/portal (Operativo Jr ni Sr) recibe work_orders.close; hoy sólo
+    // staff interno vía lab_work_orders.use puede cerrar. Backend es la
+    // autoridad real (ver app/routers/lab_work_orders.py); esto sólo evita
+    // ofrecer un botón que el backend rechazará.
     canCloseWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.close'),
     canManageEquipment: hasLegacyLabAccess

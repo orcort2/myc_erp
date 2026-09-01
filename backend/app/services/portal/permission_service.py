@@ -40,7 +40,6 @@ ROLE_PERMISSIONS = {
         "mobile.access",
         "work_orders.read_organization",
         "work_orders.execute",
-        "work_orders.close",
         "work_orders.group.request",
         "communications.view",
         "communications.create",
@@ -68,9 +67,19 @@ ROLE_PRESENTATION = {
     ),
     "external_operator_sr": (
         "Operativo Sr",
-        "Operación Mobile senior con autoridad de cierre técnico de OT; folios permanecen fuera de alcance.",
+        "Operación Mobile senior; folios permanecen fuera de alcance.",
     ),
 }
+
+# Corrección (auditoría externa post-Fase 5): work_orders.close es cierre
+# técnico interno de MYC, nunca una facultad de actor externo/portal --
+# ningún rol de este catálogo (external_viewer/operator_jr/operator_sr) debe
+# tenerlo. El catálogo interno de staff (app/core/permissions.py) todavía no
+# formaliza roles "Operativo Jr"/"Operativo Sr" explícitos; hasta que existan,
+# work_orders.close se otorga sólo vía lab_work_orders.use (staff interno ya
+# autorizado, ver require_mobile_permission en los endpoints de cierre LAB).
+# No inventar aquí una migración de roles ni reutilizar estos códigos
+# externos para representar staff interno.
 
 
 def _reconcile_legacy_portal_read(

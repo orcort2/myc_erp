@@ -90,16 +90,17 @@ test('Fase 5: Operativo Jr no adquiere autoridad de cierre técnico (work_orders
   assert.equal(capabilities.canCloseWorkOrders, false);
 });
 
-test('Fase 5: Operativo Sr hereda las capacidades de Jr y suma cierre técnico, sin volverse admin global', () => {
-  // Perfil real de external_operator_sr: mismas capacidades de Jr, más
-  // work_orders.close y work_orders.group.request -- nunca capacidades
+test('Fase 5 (corregido post-auditoría): Operativo Sr externo hereda las capacidades de Jr pero NUNCA cierre técnico interno', () => {
+  // Perfil real de external_operator_sr (backend/app/services/portal/permission_service.py):
+  // mismas capacidades de Jr más work_orders.group.request/communications --
+  // work_orders.close es cierre técnico interno de MYC y no se le asigna a
+  // ningún rol externo/portal, ni Jr ni Sr. Tampoco adquiere capacidades
   // reservadas a actor_type === 'internal' (grupos directos, importación de
   // clientes LAB, revisión de tickets, etc.), ni un wildcard '*'.
   const capabilities = deriveMobileCapabilities(user('client', [
     'mobile.access',
     'work_orders.read_organization',
     'work_orders.execute',
-    'work_orders.close',
     'work_orders.group.request',
     'communications.view',
     'communications.create',
@@ -116,7 +117,7 @@ test('Fase 5: Operativo Sr hereda las capacidades de Jr y suma cierre técnico, 
   ]));
   assert.equal(capabilities.canExecuteWorkOrders, true);
   assert.equal(capabilities.canCaptureFieldSheets, true);
-  assert.equal(capabilities.canCloseWorkOrders, true);
+  assert.equal(capabilities.canCloseWorkOrders, false);
   assert.equal(capabilities.canRequestWorkOrderGroups, true);
   // Capacidades exclusivas de staff interno: nunca se conceden a un actor 'client'.
   assert.equal(capabilities.canCreateWorkOrderGroupsDirect, false);

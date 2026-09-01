@@ -335,7 +335,7 @@ def test_lab_clients_are_strictly_tenant_scoped_for_external_operators(mobile_se
     assert names_staff == set()
 
 
-def test_external_linked_sheet_can_start_pending_and_does_not_block_closure(mobile_security_api):
+def test_external_linked_sheet_can_start_pending_but_close_stays_internal(mobile_security_api):
     api, db, data = mobile_security_api
     sr_headers = _headers(_login(api, data["sr"].email))
     admin_headers = _headers(_login(api, data["admin"].email))
@@ -424,15 +424,17 @@ def test_external_linked_sheet_can_start_pending_and_does_not_block_closure(mobi
     assert sheet.status_code == 201, sheet.text
     assert sheet.json()["status"] == "draft"
 
-    # La hoja se queda en "draft" (sin completar) -- para un actor externo
-    # esto sigue sin bloquear el cierre, exactamente igual que antes de esta
-    # fase (nunca estuvieron sujetos al requisito de hojas completas).
+    # La hoja se queda en "draft" (sin completar) -- eso nunca bloqueó la
+    # captura externa (Fase 3: los actores externos nunca estuvieron sujetos
+    # al requisito de hojas completas). Pero el cierre en sí (work_orders.close,
+    # Fase 5, corregido tras auditoría externa) es autoridad exclusivamente
+    # interna de MYC: ni Jr ni Sr externos pueden cerrar, sin importar el
+    # estado de la hoja o del folio.
     completed = api.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete",
         headers=sr_headers,
     )
-    assert completed.status_code == 200, completed.text
-    assert completed.json()["status"] == "completed"
+    assert completed.status_code == 403, completed.text
 
 
 def test_external_certificate_block_limit_and_admin_resolution(mobile_security_api):

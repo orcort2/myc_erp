@@ -622,10 +622,13 @@ def complete_lab_group(
     work_order_id: int,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        # Fase 5: cierre técnico es autoridad de nivel superior -- Operativo
-        # Jr conserva work_orders.execute (captura/operación ordinaria) pero
-        # no work_orders.close; sólo Operativo Sr y staff interno
-        # (lab_work_orders.use) pueden cerrar.
+        # Fase 5 (corregido post-auditoría): cierre técnico es autoridad
+        # exclusivamente interna de MYC -- ningún actor externo/portal
+        # (external_operator_jr/sr) recibe work_orders.close (ver
+        # app/services/portal/permission_service.py). Hoy sólo staff interno
+        # con lab_work_orders.use puede cerrar; work_orders.close queda
+        # definido para asignarse a un rol interno "Operativo Sr" cuando el
+        # catálogo interno lo formalice.
         require_mobile_permission("work_orders.close", "lab_work_orders.use")
     ),
 ) -> LabWorkOrderRead:

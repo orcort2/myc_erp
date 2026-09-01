@@ -10,9 +10,12 @@ Cubre exclusivamente lo que Fase 5 introduce/verifica:
 - El paquete documental (lab_packages.py) es documentalmente estable para
   una OT cerrada: dos descargas producen el mismo artefacto.
 - Un grupo firmado no admite nueva OT/equipo por vía ordinaria.
-- Separación real Operativo Jr/Operativo Sr: Jr conserva operación ordinaria
-  (work_orders.execute) pero nunca cierre técnico (work_orders.close, nuevo
-  en esta fase); Sr suma cierre sin volverse admin global.
+- work_orders.close (nuevo en esta fase) es cierre técnico EXCLUSIVAMENTE
+  interno de MYC -- corregido tras auditoría externa: ningún actor
+  externo/portal (Operativo Jr NI Sr) lo recibe. Hoy sólo staff interno vía
+  lab_work_orders.use puede cerrar; la asignación fina a un rol interno
+  "Operativo Sr" formal queda pendiente de que el catálogo interno
+  (app/core/permissions.py) lo defina -- no se improvisa aquí.
 - Captura conserva su frontera ya cerrada (Fase 3): captura técnica sin
   mutación administrativa, y ahora tampoco cierre.
 
@@ -582,11 +585,11 @@ def test_external_operator_jr_cannot_close(phase5_context):
     assert db_status(factory, order_id) == "in_progress"
 
 
-def test_external_operator_sr_can_close(phase5_context):
-    """12. Operativo Sr sí tiene autoridad de cierre técnico sobre su propia
-    OT (actor externo, así que no exige FieldSheets completas -- comparte el
-    comportamiento externo ya cerrado en Fase 3; lo que aquí se prueba es
-    exclusivamente el permiso de cierre)."""
+def test_external_operator_sr_cannot_close(phase5_context):
+    """12. Corregido post-auditoría externa: work_orders.close es cierre
+    técnico interno de MYC, nunca una facultad de actor externo/portal.
+    Operativo Sr externo conserva operación ordinaria sobre su propia OT
+    pero NUNCA autoridad de cierre -- ni Jr ni Sr externos la tienen."""
     client, factory, tokens, tenants = phase5_context
     headers = auth(tokens["tech"])
     order_id, _equipment_id = create_and_sign_ready_order(client, headers)
@@ -595,8 +598,8 @@ def test_external_operator_sr_can_close(phase5_context):
         db.commit()
     sr_headers = external_headers(client, "external_sr@client.example.com")
     response = close_individual(client, sr_headers, order_id)
-    assert response.status_code == 200, response.text
-    assert response.json()["status"] == "completed"
+    assert response.status_code == 403, response.text
+    assert db_status(factory, order_id) == "received_signed"
 
 
 def test_capture_role_cannot_close(phase5_context):
