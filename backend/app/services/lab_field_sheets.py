@@ -30,7 +30,7 @@ from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
     institutional_snapshot,
 )
-from app.services.lab_work_orders import _missing_completed_sheets
+from app.services.lab_work_orders import _missing_completed_sheets, resolve_equipment_certificate_client
 
 
 def get_lab_equipment(
@@ -92,6 +92,16 @@ def create_lab_field_sheet(
     definition = canonicalize_new_field_sheet_snapshot(definition)
     order = equipment.work_order
     institution = get_or_create_institutional_configuration(db)
+    # Fase 4: el cliente documental es una autoridad por-equipo, distinta del
+    # cliente receptor de la OT (resolve_equipment_certificate_client es el
+    # único punto de lectura, ver lab_work_orders.py) -- nunca se asume
+    # order.client_name/address/contact_name directamente aquí.
+    documentary_client = resolve_equipment_certificate_client(equipment, order)
+    # Fase 4: prefill de captura con TODOS los datos disponibles hoy en
+    # LabWorkOrderEquipment. model/scope (range_or_capacity)/location/
+    # minimum_division no existen todavía en ese modelo -- no se agregan
+    # columnas sólo para satisfacer este prefill; quedan pendientes de Fase 6
+    # cuando el modelo LAB los incorpore.
     capture_values = {
         "instrument": equipment.instrument,
         "brand": equipment.brand,
@@ -110,9 +120,9 @@ def create_lab_field_sheet(
         pdf_renderer_version=CANONICAL_PDF_RENDERER_VERSION,
         institutional_snapshot_json=institutional_snapshot(institution),
         status="draft",
-        company=order.client_name,
-        address=order.address,
-        attention=order.contact_name,
+        company=documentary_client["company"],
+        address=documentary_client["address"],
+        attention=documentary_client["attention"],
         reception_date=order.reception_date,
         equipment_general_condition=equipment.is_good_condition,
         purchase_order_or_quotation=order.purchase_order,

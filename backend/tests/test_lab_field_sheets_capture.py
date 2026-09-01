@@ -214,6 +214,36 @@ def _create_and_complete_field_sheet(client, headers, order_id, equipment_id, te
     return sheet_id
 
 
+def _complete_existing_field_sheet(client, headers, order_id, equipment_id) -> None:
+    """Como _create_and_complete_field_sheet pero para una hoja ya creada
+    (evita el 409 'ya tiene una hoja de campo' de volver a POSTear)."""
+    loaded = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    )
+    assert loaded.status_code == 200, loaded.text
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(loaded.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+
 def test_new_lab_field_sheet_uses_canonical_versioned_renderer_and_refresh_state_contract(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
@@ -1002,3 +1032,248 @@ def test_ticket_requester_cannot_resolve_their_own_ticket(lab_context, resolver)
             resolver(db, ticket, admin)
         assert excinfo.value.status_code == 403
         assert excinfo.value.detail == "TICKET_SELF_APPROVAL_FORBIDDEN"
+
+
+# --------------------------------------------------------------------------
+# Fase 4 -- Mesa Técnica: cliente documental por equipo, prefill, permisos,
+# frontera de estados y Ticket de plantilla faltante.
+# --------------------------------------------------------------------------
+
+
+def test_documentary_client_is_resolved_per_equipment_not_from_the_receiving_order(lab_context):
+    """Cliente receptor A, cliente documental B -> FieldSheet.company/address/
+    attention = B. Un tercer equipo sin 'different' sigue heredando A."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json=create_payload(client_name="Cliente Receptor A"),
+        headers=headers,
+    )
+    assert order.status_code == 201, order.text
+    order_id = order.json()["id"]
+    equipment_ids = []
+    for index in range(1, 3):
+        added = client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+            json=equipment_payload(index),
+            headers=headers,
+        )
+        assert added.status_code == 201, added.text
+        equipment_ids.append(added.json()["equipment"][-1]["id"])
+
+    # Sólo el equipo 0 recibe un cliente documental distinto; se fija en
+    # draft, como en el flujo real de recepción (LabEquipmentForm).
+    different = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/certificate-client",
+        json={
+            "certificate_client_mode": "different",
+            "final_client_company_snapshot": "Cliente Documental B",
+            "final_client_address_snapshot": "Calle Documental B",
+            "final_client_attention_snapshot": "Ing. Documental B",
+        },
+        headers=headers,
+    )
+    assert different.status_code == 200, different.text
+
+    for equipment_id in equipment_ids:
+        service = client.put(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service",
+            json={"service_type": "accredited", "linked_company_id": None},
+            headers=headers,
+        )
+        assert service.status_code == 200, service.text
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
+        json=signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
+
+    documental_b = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert documental_b.status_code == 201, documental_b.text
+    assert documental_b.json()["company"] == "Cliente Documental B"
+    assert documental_b.json()["address"] == "Calle Documental B"
+    assert documental_b.json()["attention"] == "Ing. Documental B"
+
+    receptor_a = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[1]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert receptor_a.status_code == 201, receptor_a.text
+    assert receptor_a.json()["company"] == "Cliente Receptor A"
+    assert receptor_a.json()["address"] == "Av. Prueba 123"
+    assert receptor_a.json()["attention"] == "Persona Cliente"
+
+
+def test_field_sheet_capture_values_prefill_from_available_equipment_fields(lab_context):
+    """Prefill con todos los datos hoy disponibles en LabWorkOrderEquipment --
+    ni menos (no se ignora ningún campo existente) ni más (no se inventan
+    model/scope/location/minimum_division, que ese modelo aún no tiene)."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    capture_values = created.json()["capture_values"]
+    assert capture_values == {
+        "instrument": "Instrumento 1",
+        "brand": "MYC Test",
+        "serial_number": "SER-1",
+        "internal_id": "ID-1",
+    }
+
+
+def test_field_sheet_template_selection_freezes_snapshot_and_version(lab_context):
+    """Seleccionar plantilla -> template_definition_json/version quedan
+    congelados en la hoja, tal como los devolvió get_template_snapshot."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["template_key"] == "general"
+    assert body["template_definition_version"] >= 1
+    assert body["template_definition"]["pdf_template"] == "field_sheet_engine_pdf.html"
+    with factory() as db:
+        sheet = db.get(FieldSheet, body["id"])
+        assert sheet.template_definition_json["pdf_template"] == body["template_definition"]["pdf_template"]
+        assert sheet.template_definition_json["type"] == "general"
+        assert sheet.template_definition_version == body["template_definition_version"]
+
+
+def test_user_without_capture_permission_gets_403_creating_a_field_sheet(lab_context):
+    """Un usuario sin field_sheets.capture/lab_work_orders.use/
+    lab_field_sheets.capture (ninguna de las 3 autoridades del OR-gate) no
+    puede crear una FieldSheet LAB -- el backend sigue siendo la autoridad,
+    no un botón oculto en Mobile."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    with factory() as db:
+        comercial_role = Role(name="Comercial", description="Comercial")
+        db.add(comercial_role)
+        db.flush()
+        comercial = User(
+            username="lab-comercial",
+            email="lab-comercial@example.test",
+            full_name="LAB Comercial",
+            hashed_password="unused",
+            account_type="internal",
+            status="active",
+            is_active=True,
+            role_id=comercial_role.id,
+            roles=[comercial_role],
+        )
+        db.add(comercial)
+        db.commit()
+        db.refresh(comercial)
+        comercial_id = comercial.id
+    comercial_token = create_access_token(
+        str(comercial_id), extra_claims={"roles": ["Comercial"], "auth_context": "internal"}
+    )
+    denied = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=auth(comercial_token),
+    )
+    assert denied.status_code == 403, denied.text
+    with factory() as db:
+        assert db.get(LabWorkOrder, order_id).equipment  # OT intacta, nada se creó a medias
+
+
+def test_opening_mesa_tecnica_never_mutates_status_only_creating_field_sheets_does(lab_context):
+    """Abrir Mesa Técnica (leer la OT) no cambia received_signed. Crear la
+    primera hoja -> in_progress; la segunda -> sigue in_progress; completar
+    todas -> ready_to_close. Contrato de Fase 3, reverificado aquí porque
+    Fase 4 toca el mismo create_lab_field_sheet que dispara la transición."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=2)
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, order_id).status == "received_signed"
+    for _ in range(3):
+        opened = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
+        assert opened.status_code == 200, opened.text
+        assert opened.json()["status"] == "received_signed"
+
+    first = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert first.status_code == 201, first.text
+    assert client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers
+    ).json()["status"] == "in_progress"
+
+    second = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[1]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert second.status_code == 201, second.text
+    assert client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers
+    ).json()["status"] == "in_progress"
+
+    for equipment_id in equipment_ids:
+        _complete_existing_field_sheet(client, headers, order_id, equipment_id)
+
+    assert client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers
+    ).json()["status"] == "ready_to_close"
+
+
+def test_missing_template_ticket_is_created_and_no_field_sheet_is_invented(lab_context):
+    """'No encuentro la hoja necesaria' reutiliza field_sheet_template_request
+    (ya existente): crea el Ticket, nunca una FieldSheet ni una plantilla
+    arbitraria."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    equipment_id = equipment_ids[0]
+
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-template",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "No existe plantilla para este instrumento",
+            "description": "El instrumento es un patron de referencia sin plantilla configurada en el catalogo.",
+        },
+        headers=headers,
+    )
+    assert ticket.status_code == 201, ticket.text
+    body = ticket.json()
+    assert body["type"] == "field_sheet_template_request"
+    assert body["status"] == "pending"
+    assert body["work_order_id"] == order_id
+    assert body["equipment_id"] == equipment_id
+
+    with factory() as db:
+        ticket_row = db.get(OperationalTicket, body["id"])
+        assert ticket_row is not None
+        assert ticket_row.work_order_id == order_id
+        assert ticket_row.equipment_id == equipment_id
+
+    order = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
+    assert order.status_code == 200, order.text
+    equipment = next(item for item in order.json()["equipment"] if item["id"] == equipment_id)
+    assert equipment["field_sheet_id"] is None
+    assert equipment["field_sheet_status"] is None

@@ -7,10 +7,10 @@ import type {
   LabEquipment,
   LabFieldSheet,
   LabWorkOrder,
-  LinkedCompany,
 } from '@/src/types/lab-work-order';
 import { labelPrintService } from '@/src/services/label-print-service';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
+import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
 import { ApiError } from '@/src/api/client';
 
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -76,13 +76,12 @@ function buildValues(entity: LabFieldSheet): Record<string, unknown> {
 
 export function LabTechnicalCapture({ canCapture, external, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
-  const [linkedCompanies, setLinkedCompanies] = useState<LinkedCompany[]>([]);
   const [activeEquipment, setActiveEquipment] = useState<LabEquipment | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [sheet, setSheet] = useState<LabFieldSheet | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [rows, setRows] = useState<FieldSheetResultRow[]>([]);
-  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'linked_folio' | null>(null);
+  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'linked_folio' | 'field_sheet_template' | null>(null);
   const [requestedFolio, setRequestedFolio] = useState('');
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
@@ -100,9 +99,6 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
     request<FieldSheetTemplate[]>('/mobile/v1/technician/lab-work-orders/field-sheet-templates')
       .then(setTemplates)
       .catch(() => setTemplates([]));
-    request<LinkedCompany[]>('/mobile/v1/technician/lab-work-orders/linked-companies')
-      .then(setLinkedCompanies)
-      .catch(() => setLinkedCompanies([]));
   }, [request]);
 
   const definition = sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
@@ -114,19 +110,6 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       readOnly: readOnlyFields.has(key),
       blockTitle: block.title,
     }))), [definition]);
-
-  async function assignService(equipment: LabEquipment, serviceType: keyof typeof serviceLabels, linkedCompanyId?: number) {
-    setBusy(true);
-    try {
-      const updated = await request<LabWorkOrder>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/service`,
-        { method: 'PUT', body: JSON.stringify({ service_type: serviceType, linked_company_id: linkedCompanyId ?? null }) },
-      );
-      onUpdated(updated);
-    } catch (error) {
-      Alert.alert('No fue posible asignar el servicio', error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally { setBusy(false); }
-  }
 
   async function openSheet(equipment: LabEquipment) {
     setActiveEquipment(equipment);
@@ -238,7 +221,8 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
   }
 
   async function requestFolio() {
-    if (!activeEquipment || !ticketMode || !ticketReason.trim() || !ticketDescription.trim()) return;
+    if (!activeEquipment || (ticketMode !== 'manual_myc_folio' && ticketMode !== 'linked_folio')) return;
+    if (!ticketReason.trim() || !ticketDescription.trim()) return;
     setBusy(true);
     try {
       await request('/mobile/v1/technician/tickets/folio', {
@@ -261,7 +245,44 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
     } finally { setBusy(false); }
   }
 
+  // Fase 4: "No encuentro la hoja necesaria" nunca crea una plantilla ni una
+  // FieldSheet desde Mobile -- únicamente deja constancia mediante el tipo de
+  // Ticket ya existente (field_sheet_template_request, ver
+  // backend/app/services/operational_tickets.py). El equipo y la OT ya
+  // identifican instrumento/servicio/folio por FK; no se duplican aquí.
+  async function requestFieldSheetTemplate() {
+    if (!activeEquipment || ticketMode !== 'field_sheet_template') return;
+    if (!ticketReason.trim() || !ticketDescription.trim()) return;
+    setBusy(true);
+    try {
+      await request('/mobile/v1/technician/tickets/field-sheet-template', {
+        method: 'POST',
+        body: JSON.stringify({
+          work_order_id: workOrder.id,
+          equipment_id: activeEquipment.id,
+          reason: ticketReason.trim(),
+          description: ticketDescription.trim(),
+        }),
+      });
+      setTicketMode(null);
+      setActiveEquipment(null);
+      Alert.alert('Solicitud enviada', 'Se registró el Ticket; no se creó ninguna hoja de campo mientras se resuelve.');
+    } catch (error) {
+      Alert.alert('No fue posible enviar la solicitud', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
   if (activeEquipment) {
+    if (ticketMode === 'field_sheet_template') return (
+      <View style={styles.panel}>
+        <Text style={styles.title}>No encuentro la hoja necesaria</Text>
+        <Text style={styles.meta}>{activeEquipment.instrument} · OT {workOrder.folio}</Text>
+        <Input label="Motivo" value={ticketReason} onChange={setTicketReason} />
+        <Input label="Descripción" value={ticketDescription} onChange={setTicketDescription} multiline />
+        <Pressable disabled={busy} style={styles.primary} onPress={requestFieldSheetTemplate}><Text style={styles.primaryText}>Enviar Ticket</Text></Pressable>
+        <Pressable style={styles.secondary} onPress={() => setTicketMode(null)}><Text style={styles.secondaryText}>Volver</Text></Pressable>
+      </View>
+    );
     if (ticketMode) return (
       <View style={styles.panel}>
         <Text style={styles.title}>{ticketMode === 'linked_folio' ? 'Solicitar folio Vinculado' : 'Folio MYC manual'}</Text>
@@ -272,10 +293,21 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
         <Pressable style={styles.secondary} onPress={() => setTicketMode(null)}><Text style={styles.secondaryText}>Volver</Text></Pressable>
       </View>
     );
+    // Fase 4: contexto administrativo de sólo lectura -- servicio, folio y
+    // cliente documental ya quedaron congelados en recepción (draft) y no se
+    // vuelven a pedir aquí; ver LabEquipmentForm/certificate-client.
+    const modalityLabel = activeEquipment.service_type ? serviceLabels[activeEquipment.service_type] : 'Sin asignar';
+    const folioLabel = activeEquipment.certificate_folio
+      ?? (activeEquipment.folio_status === 'pending' ? 'FOLIO PENDIENTE' : 'FOLIO SIN RESOLVER');
+    const documentaryClientLabel = resolveDocumentaryClientLabel(activeEquipment, workOrder);
     return (
       <View style={styles.panel}>
-        <Text style={styles.eyebrow}>EQUIPO {activeEquipment.position}</Text>
+        <Text style={styles.eyebrow}>OT {workOrder.folio} · EQUIPO {activeEquipment.position}</Text>
         <Text style={styles.title}>{activeEquipment.instrument}</Text>
+        <Text style={styles.meta}>{activeEquipment.brand} · {activeEquipment.serial_number}</Text>
+        <Text style={styles.meta}>{modalityLabel} · {folioLabel}</Text>
+        <Text style={styles.label}>Cliente documental</Text>
+        <Text style={styles.meta}>{documentaryClientLabel}</Text>
         {!sheet ? <>
           <Text style={styles.label}>Selecciona hoja de campo</Text>
           {templates.map((template) => (
@@ -290,6 +322,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
             <Pressable style={styles.secondary} onPress={() => setTicketMode('manual_myc_folio')}><Text style={styles.secondaryText}>Ticket · Folio MYC manual</Text></Pressable>
           )}
           <Pressable disabled={!selectedTemplate || busy || !canCapture} style={[styles.primary, (!selectedTemplate || !canCapture) && styles.disabled]} onPress={createSheet}><Text style={styles.primaryText}>Abrir captura</Text></Pressable>
+          <Pressable style={styles.secondary} onPress={() => setTicketMode('field_sheet_template')}><Text style={styles.secondaryText}>No encuentro la hoja necesaria</Text></Pressable>
         </> : <>
           <Text style={styles.status}>Estado: {sheet.status}</Text>
           {visibleFields.map((field) => field.readOnly
@@ -317,18 +350,18 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
     );
   }
 
+  // Fase 4: Mesa Técnica ya no vuelve a pedir modalidad/folio/cliente
+  // documental -- eso se definió en recepción (draft) y quedó congelado. Aquí
+  // sólo se presenta como contexto de sólo lectura; la primera y única acción
+  // es seleccionar/abrir la hoja de campo.
   return <View style={styles.list}>
     {workOrder.equipment.map((equipment) => <View key={equipment.id} style={styles.card}>
       <View><Text style={styles.cardTitle}>{equipment.position}. {equipment.instrument}</Text><Text style={styles.meta}>{equipment.brand} · {equipment.serial_number}</Text></View>
       <Text style={styles.status}>{equipment.field_sheet_status === 'completed' ? 'HOJA COMPLETA' : equipment.field_sheet_status ? 'HOJA EN CAPTURA' : 'SIN HOJA'}</Text>
-      <Text style={styles.meta}>Servicio: {equipment.service_type ? serviceLabels[equipment.service_type] : 'Sin asignar'}</Text>
-      <Text style={styles.meta}>Folio: {equipment.certificate_folio ?? (equipment.folio_status === 'pending' ? 'PENDIENTE' : 'Sin resolver')}</Text>
-      {canCapture && !equipment.field_sheet_id && <View style={styles.services}>
-        {(['accredited', 'traceable'] as const).map((type) => <Pressable key={type} style={styles.choice} onPress={() => assignService(equipment, type)}><Text>{serviceLabels[type]}</Text></Pressable>)}
-        <Text style={styles.label}>Vinculado · selecciona procedencia</Text>
-        {linkedCompanies.map((company) => <Pressable key={company.id} style={styles.choice} onPress={() => assignService(equipment, 'linked', company.id)}><Text>{company.name}</Text></Pressable>)}
-      </View>}
-      {(equipment.service_type || equipment.field_sheet_id) && <Pressable style={styles.primary} onPress={() => openSheet(equipment)}><Text style={styles.primaryText}>{equipment.field_sheet_id ? 'Abrir hoja' : 'Seleccionar hoja / resolver folio'}</Text></Pressable>}
+      <Text style={styles.meta}>{equipment.service_type ? serviceLabels[equipment.service_type] : 'Sin asignar'} · {equipment.certificate_folio ?? (equipment.folio_status === 'pending' ? 'PENDIENTE' : 'Sin resolver')}</Text>
+      <Text style={styles.label}>Cliente documental</Text>
+      <Text style={styles.meta}>{resolveDocumentaryClientLabel(equipment, workOrder)}</Text>
+      <Pressable style={styles.primary} onPress={() => openSheet(equipment)}><Text style={styles.primaryText}>{equipment.field_sheet_id ? 'Abrir hoja' : 'Seleccionar hoja'}</Text></Pressable>
     </View>)}
   </View>;
 }
@@ -340,7 +373,7 @@ function Input({ label, value, onChange, multiline }: { label: string; value: st
 const styles = StyleSheet.create({
   list: { gap: 12 }, panel: { gap: 10 }, card: { backgroundColor: '#fff', borderColor: '#dbe4ea', borderRadius: 14, borderWidth: 1, gap: 8, padding: 14 },
   cardTitle: { color: '#142b3a', fontSize: 17, fontWeight: '800' }, meta: { color: '#637280' }, status: { color: '#008f87', fontSize: 12, fontWeight: '800' },
-  services: { gap: 7, marginTop: 4 }, choice: { backgroundColor: '#f5f8fa', borderColor: '#cbd7df', borderRadius: 9, borderWidth: 1, padding: 10 }, choiceActive: { backgroundColor: '#dff3f1', borderColor: '#008f87' },
+  choice: { backgroundColor: '#f5f8fa', borderColor: '#cbd7df', borderRadius: 9, borderWidth: 1, padding: 10 }, choiceActive: { backgroundColor: '#dff3f1', borderColor: '#008f87' },
   primary: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 10, marginTop: 6, padding: 13 }, primaryText: { color: '#fff', fontWeight: '800' },
   secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, marginTop: 6, padding: 12 }, secondaryText: { color: '#0067a8', fontWeight: '800' }, disabled: { opacity: 0.42 }, back: { alignItems: 'center', padding: 12 },
   eyebrow: { color: '#008f87', fontSize: 12, fontWeight: '800', letterSpacing: 1 }, title: { color: '#142b3a', fontSize: 22, fontWeight: '800' }, label: { color: '#344553', fontSize: 12, fontWeight: '700' },
