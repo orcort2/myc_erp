@@ -44,6 +44,19 @@ class PartialCloseTicketCreate(BaseModel):
     description: str = Field(min_length=3, max_length=4000)
 
 
+class FieldSheetTemplateRequestCreate(BaseModel):
+    """Fase 1F: sólo el dominio (crear el ticket como 'pending'). La UI y la
+    resolución ('encontramos/creamos la plantilla X') quedan para una fase
+    posterior; aquí no se implementa ningún flujo de atención."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_order_id: int
+    equipment_id: int
+    reason: str = Field(min_length=3, max_length=180)
+    description: str = Field(min_length=3, max_length=4000)
+
+
 class CertificateFolioBlockCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

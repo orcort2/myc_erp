@@ -35,6 +35,7 @@ from app.models.notification import Notification
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.schemas.lab_work_order import (
+    LabEquipmentCertificateClientWrite,
     LabEquipmentWrite,
     LabEquipmentServiceWrite,
     LabSignatureGroupWrite,
@@ -1138,6 +1139,82 @@ def update_equipment(
         new_values={"work_order_id": work_order.id},
     )
     commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def resolve_equipment_certificate_client(
+    equipment: LabWorkOrderEquipment, work_order: LabWorkOrder
+) -> dict:
+    """Fase 1A: resuelve el cliente documental de un equipo. En modo 'order'
+    (default) refleja el snapshot vigente de la OT; en modo 'different' usa
+    el snapshot congelado en el propio equipo, que nunca se recalcula desde
+    LabClient. Punto único de lectura para que FieldSheet/certificado (fases
+    posteriores) no reinventen esta resolución."""
+    if equipment.certificate_client_mode == "different":
+        return {
+            "company": equipment.final_client_company_snapshot,
+            "address": equipment.final_client_address_snapshot,
+            "attention": equipment.final_client_attention_snapshot,
+        }
+    return {
+        "company": work_order.client_name,
+        "address": work_order.address,
+        "attention": work_order.contact_name,
+    }
+
+
+def set_equipment_certificate_client(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabEquipmentCertificateClientWrite,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> LabWorkOrderRead:
+    """Fase 1A: fija el cliente documental de un equipo LAB, independiente del
+    cliente de la OT. No crea Client productivo, no crea otro motor de
+    FieldSheets: sólo persiste columnas propias de LabWorkOrderEquipment. La
+    FK final_lab_client_id es procedencia; el snapshot es la autoridad
+    histórica y no se resincroniza si el LabClient de origen cambia después."""
+    work_order = _get(db, work_order_id, lock=True)
+    _ensure_members_editable([work_order])
+    equipment = db.scalar(
+        select(LabWorkOrderEquipment).where(
+            LabWorkOrderEquipment.id == equipment_id,
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+        )
+    )
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    if payload.final_lab_client_id is not None:
+        origin = db.scalar(
+            select(LabClient).where(
+                LabClient.id == payload.final_lab_client_id,
+                LabClient.operator_client_id.is_(None)
+                if operator_client_id is None
+                else LabClient.operator_client_id == operator_client_id,
+            )
+        )
+        if origin is None:
+            raise HTTPException(status_code=404, detail="Cliente LAB no encontrado")
+    equipment.certificate_client_mode = payload.certificate_client_mode
+    equipment.final_lab_client_id = payload.final_lab_client_id
+    equipment.final_client_company_snapshot = payload.final_client_company_snapshot
+    equipment.final_client_address_snapshot = payload.final_client_address_snapshot
+    equipment.final_client_attention_snapshot = payload.final_client_attention_snapshot
+    write_audit_log(
+        db,
+        action="lab_work_order.equipment_certificate_client_set",
+        entity="lab_work_order_equipment",
+        entity_id=equipment.id,
+        user_id=user.id,
+        new_values={
+            "certificate_client_mode": equipment.certificate_client_mode,
+            "final_lab_client_id": equipment.final_lab_client_id,
+        },
+    )
+    db.commit()
     return _read(db, _get(db, work_order.id))
 
 

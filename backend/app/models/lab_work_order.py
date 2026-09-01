@@ -28,8 +28,17 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("folio BETWEEN 6400 AND 6999", name="ck_lab_work_order_folio_range"),
         CheckConstraint("sequence_number >= 1", name="ck_lab_work_order_sequence"),
+        # Fase 1G: se amplía el set permitido para preparar la separación futura
+        # de recepción firmada / captura técnica / listo-para-cierre (Fase 2/3).
+        # 'received_signed', 'in_progress' y 'ready_to_close' quedan
+        # reservados: ningún servicio de esta fase los asigna todavía, así que
+        # el flujo actual (draft -> ready_for_signatures -> completed/
+        # partially_closed/cancelled) sigue siendo el único que realmente
+        # ocurre. Ver docs/architecture/LAB_WORK_ORDERS.md para el mapeo
+        # completo cuando se active la transición en una fase posterior.
         CheckConstraint(
-            "status IN ('draft', 'ready_for_signatures', 'completed', 'partially_closed', 'cancelled')",
+            "status IN ('draft', 'received_signed', 'in_progress', 'ready_for_signatures', "
+            "'ready_to_close', 'completed', 'partially_closed', 'cancelled')",
             name="ck_lab_work_order_status",
         ),
         UniqueConstraint(
@@ -193,6 +202,26 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("position BETWEEN 1 AND 10", name="ck_lab_equipment_position"),
         UniqueConstraint("work_order_id", "position", name="uq_lab_equipment_position"),
+        CheckConstraint(
+            "certificate_client_mode IN ('order', 'different')",
+            name="ck_lab_equipment_certificate_client_mode",
+        ),
+        # "order": el documento hereda cliente/dirección/atención de la OT — no
+        # se permite tener un snapshot congelado a la vez, para no dejar dos
+        # autoridades documentales simultáneas y ambiguas.
+        # "different": el snapshot de empresa es obligatorio y no vacío (es la
+        # autoridad documental); dirección/atención pueden ir vacías según el
+        # dato real. La FK de procedencia es opcional en ambos modos.
+        CheckConstraint(
+            "(certificate_client_mode = 'order' AND final_client_company_snapshot IS NULL) "
+            "OR (certificate_client_mode = 'different' AND final_client_company_snapshot IS NOT NULL "
+            "AND final_client_company_snapshot <> '')",
+            name="ck_lab_equipment_certificate_client_snapshot",
+        ),
+        CheckConstraint(
+            "certificate_client_mode = 'different' OR final_lab_client_id IS NULL",
+            name="ck_lab_equipment_certificate_client_provenance",
+        ),
     )
 
     work_order_id: Mapped[int] = mapped_column(
@@ -219,9 +248,25 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     folio_ticket_id: Mapped[int | None] = mapped_column(
         ForeignKey("operational_tickets.id", ondelete="RESTRICT", use_alter=True), index=True
     )
+    # Cliente documental del equipo (Fase 1A): el cliente que entrega/contrata
+    # la OT puede no ser el mismo cliente al que documentalmente pertenece un
+    # equipo puntual (p.ej. subcontratación). "order" (default) hereda de la
+    # OT; "different" congela su propio snapshot sin tocar el cliente de la
+    # OT. La FK es sólo procedencia; los snapshots son la autoridad histórica
+    # y nunca se recalculan desde LabClient tras su captura.
+    certificate_client_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="order", server_default="order"
+    )
+    final_lab_client_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lab_clients.id", ondelete="RESTRICT"), index=True
+    )
+    final_client_company_snapshot: Mapped[str | None] = mapped_column(String(255))
+    final_client_address_snapshot: Mapped[str | None] = mapped_column(Text)
+    final_client_attention_snapshot: Mapped[str | None] = mapped_column(String(180))
 
     work_order: Mapped[LabWorkOrder] = relationship(back_populates="equipment")
     linked_company: Mapped["LinkedCompany | None"] = relationship()
+    final_lab_client: Mapped["LabClient | None"] = relationship(foreign_keys=[final_lab_client_id])
     field_sheet: Mapped["FieldSheet | None"] = relationship(
         back_populates="lab_equipment", uselist=False
     )

@@ -264,6 +264,7 @@ ROLE_PERMISSIONS = {
         "lab_clients.read",
         "lab_clients.create",
         "lab_clients.import",
+        "lab_clients.deactivate",
         "lab_work_order_groups.create",
         "lab_work_order_groups.requests.read",
         "lab_work_order_groups.requests.claim",

@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class LabWorkOrderCreate(BaseModel):
@@ -122,8 +122,45 @@ class LabEquipmentRead(LabEquipmentBase):
     folio_ticket_id: int | None = None
     field_sheet_id: int | None = None
     field_sheet_status: str | None = None
+    certificate_client_mode: str = "order"
+    final_lab_client_id: int | None = None
+    final_client_company_snapshot: str | None = None
+    final_client_address_snapshot: str | None = None
+    final_client_attention_snapshot: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class LabEquipmentCertificateClientWrite(BaseModel):
+    """Fase 1A/1B: contrato del cliente documental por equipo. Todavía no está
+    conectado a ningún endpoint mobile-facing (eso es Fase 2); sirve para que
+    el servicio/las pruebas de dominio tengan una entrada validada única."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    certificate_client_mode: str = Field(pattern="^(order|different)$")
+    final_lab_client_id: int | None = Field(default=None, gt=0)
+    final_client_company_snapshot: str | None = Field(default=None, max_length=255)
+    final_client_address_snapshot: str | None = Field(default=None, max_length=2000)
+    final_client_attention_snapshot: str | None = Field(default=None, max_length=180)
+
+    @model_validator(mode="after")
+    def validate_mode_invariants(self) -> "LabEquipmentCertificateClientWrite":
+        if self.certificate_client_mode == "order":
+            if (
+                self.final_lab_client_id is not None
+                or self.final_client_company_snapshot is not None
+                or self.final_client_address_snapshot is not None
+                or self.final_client_attention_snapshot is not None
+            ):
+                raise ValueError(
+                    "El modo 'order' no admite cliente final ni snapshots: el documento "
+                    "hereda cliente/dirección/atención de la OT"
+                )
+        else:
+            if not (self.final_client_company_snapshot or "").strip():
+                raise ValueError("El modo 'different' requiere el snapshot de empresa")
+        return self
 
 
 class LabEquipmentServiceWrite(BaseModel):

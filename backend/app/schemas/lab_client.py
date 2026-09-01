@@ -16,6 +16,7 @@ class LabClientRead(LabClientCreate):
 
     id: int
     operator_client_id: int | None
+    is_active: bool = True
     created_at: datetime
     updated_at: datetime
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from datetime import datetime, timezone
 from io import BytesIO
 
 from fastapi import HTTPException, UploadFile
@@ -31,9 +32,15 @@ def _scope_clause(operator_client_id: int | None):
 
 
 def list_lab_clients(
-    db: Session, *, operator_client_id: int | None, search: str | None = None
+    db: Session,
+    *,
+    operator_client_id: int | None,
+    search: str | None = None,
+    include_inactive: bool = False,
 ) -> list[LabClient]:
     query = select(LabClient).where(_scope_clause(operator_client_id))
+    if not include_inactive:
+        query = query.where(LabClient.is_active.is_(True))
     if search and search.strip():
         value = f"%{search.strip()}%"
         query = query.where(
@@ -103,6 +110,56 @@ def create_lab_client(
         entity_id=client.id,
         user_id=user.id,
         new_values={**values, "operator_client_id": operator_client_id},
+    )
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+def deactivate_lab_client(
+    db: Session, client_id: int, *, operator_client_id: int | None, user: User
+) -> LabClient:
+    """Fase 1E: desactivación lógica, nunca DELETE físico. El catálogo interno
+    (operator_client_id IS NULL) y cada tenant externo sólo pueden desactivar
+    dentro de su propio scope. Las OTs/equipos/FieldSheets que ya referencian
+    este LabClient siguen intactos: la FK no se toca y no hay ON DELETE."""
+    client = get_lab_client(db, client_id, operator_client_id=operator_client_id)
+    if not client.is_active:
+        return client
+    client.is_active = False
+    client.deleted_at = datetime.now(timezone.utc)
+    client.deleted_by = user.id
+    write_audit_log(
+        db,
+        action="lab_client.deactivated",
+        entity="lab_clients",
+        entity_id=client.id,
+        user_id=user.id,
+        previous_values={"is_active": True},
+        new_values={"is_active": False},
+    )
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+def activate_lab_client(
+    db: Session, client_id: int, *, operator_client_id: int | None, user: User
+) -> LabClient:
+    client = get_lab_client(db, client_id, operator_client_id=operator_client_id)
+    if client.is_active:
+        return client
+    client.is_active = True
+    client.deleted_at = None
+    client.deleted_by = None
+    write_audit_log(
+        db,
+        action="lab_client.activated",
+        entity="lab_clients",
+        entity_id=client.id,
+        user_id=user.id,
+        previous_values={"is_active": False},
+        new_values={"is_active": True},
     )
     db.commit()
     db.refresh(client)

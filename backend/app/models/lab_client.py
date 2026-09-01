@@ -4,10 +4,10 @@ from sqlalchemy import ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
-from app.models.base import IntegerPkMixin, TimestampMixin
+from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 
 
-class LabClient(IntegerPkMixin, TimestampMixin, Base):
+class LabClient(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     """Cliente mínimo del vertical temporal LAB, aislado del catálogo fiscal."""
 
     __tablename__ = "lab_clients"

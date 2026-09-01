@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.operational_ticket import (
     LabRevisionRead,
     CertificateFolioBlockCreate,
+    FieldSheetTemplateRequestCreate,
     FolioTicketCreate,
     PartialCloseTicketCreate,
     ReopenTicketCreate,
@@ -218,6 +219,51 @@ def create_folio_ticket(
             "requested_folio": ticket.requested_folio,
             "linked_company_id": ticket.linked_company_id,
         },
+    )
+    db.commit()
+    return _read(_get_ticket(db, ticket.id))
+
+
+def create_field_sheet_template_request_ticket(
+    db: Session,
+    payload: FieldSheetTemplateRequestCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> TicketRead:
+    """Fase 1F: sólo deja el dominio listo (OperationalTicket como autoridad
+    única, sin tabla nueva). El técnico simplemente puede dejar constancia de
+    'no encuentro la hoja de campo necesaria'; la atención/resolución de este
+    tipo de ticket es una fase posterior y no se implementa aquí."""
+    work_order = _get(db, payload.work_order_id, lock=True)
+    equipment = db.scalar(
+        select(LabWorkOrderEquipment).where(
+            LabWorkOrderEquipment.id == payload.equipment_id,
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+        )
+    )
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    ticket = OperationalTicket(
+        type="field_sheet_template_request",
+        status="pending",
+        work_order_id=work_order.id,
+        equipment_id=equipment.id,
+        operator_client_id=operator_client_id,
+        requested_by_user_id=user.id,
+        reason=payload.reason.strip(),
+        description=payload.description.strip(),
+    )
+    db.add(ticket)
+    db.flush()
+    _attach_conversation(db, ticket, user)
+    write_audit_log(
+        db,
+        action="field_sheet_template_request.requested",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        new_values={"work_order_id": work_order.id, "equipment_id": equipment.id},
     )
     db.commit()
     return _read(_get_ticket(db, ticket.id))
