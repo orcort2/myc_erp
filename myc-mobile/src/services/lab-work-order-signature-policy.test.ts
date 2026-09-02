@@ -12,7 +12,7 @@ function base() {
   };
 }
 
-test('a preserve reopening with an unmodified structure skips straight to closing', () => {
+test('a preserved reopening with its valid historical session skips signature capture', () => {
   assert.equal(canSkipSignaturesAfterReopen(base()), true);
 });
 
@@ -20,8 +20,10 @@ test('a brand-new (non-reopened) work order always needs signatures', () => {
   assert.equal(canSkipSignaturesAfterReopen({ ...base(), reopen_ticket_id: null }), false);
 });
 
-test('signature_required alone governs even if signature_preserved was left stale', () => {
-  assert.equal(canSkipSignaturesAfterReopen({ ...base(), signature_required: true }), false);
+test('a later backend invalidation restores the normal signature flow automatically', () => {
+  const initiallyPreserved = base();
+  assert.equal(canSkipSignaturesAfterReopen(initiallyPreserved), true);
+  assert.equal(canSkipSignaturesAfterReopen({ ...initiallyPreserved, signature_required: true }), false);
 });
 
 test('signature_preserved false (e.g. a "discard" reopening) always needs new signatures', () => {

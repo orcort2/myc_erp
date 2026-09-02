@@ -162,8 +162,10 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 4. `signature_required=true` impide continuar sin una recepción nueva. La
    política `preserve` conserva la sesión histórica vigente mientras el cambio
    siga autorizado; `invalidate` deja la OT activa sin sesión y exige ambas
-   firmas otra vez. Ninguna política reescribe sesiones o FieldSheets
-   históricas.
+   firmas otra vez. Mobile no confunde esa sesión histórica preservada con una
+   captura activa aunque coincidan cohorte o `signature_session_id`; al recibir
+   su invalidación desde backend vuelve al flujo normal sin conservar un bypass.
+   Ninguna política reescribe sesiones o FieldSheets históricas.
 5. Los filtros `folio` y `client` son independientes, combinables y se ejecutan
    en base de datos; limpiar uno no altera el otro.
 

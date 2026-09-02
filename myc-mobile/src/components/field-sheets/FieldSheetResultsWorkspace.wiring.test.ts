@@ -23,13 +23,20 @@ test('el botón de guardar vive DENTRO de KeyboardAvoidingView, no como hermano 
   assert.match(kavBody, /Guardar resultados/);
 });
 
-test('cada celda enfocada se desplaza a la vista de forma genérica, sin offsets fijos por dispositivo', () => {
-  assert.match(source, /onFocus=\{\(\) => scrollCellIntoView\(cellKey\)\}/);
-  assert.match(source, /input\.measureLayout\(/);
-  // Nada de constantes de alto de teclado por plataforma/dispositivo.
-  assert.doesNotMatch(source, /keyboardVerticalOffset=\{\d/);
+test('el teclado y el scroll principal usan el comportamiento nativo vigente', () => {
+  assert.match(source, /<KeyboardAvoidingView/);
+  assert.match(source, /automaticallyAdjustKeyboardInsets=\{Platform\.OS === 'ios'\}/);
+  assert.match(source, /keyboardShouldPersistTaps="handled"/);
 });
 
-test('el ScrollView de contenido expone el ref que scrollCellIntoView necesita', () => {
-  assert.match(source, /ref=\{scrollViewRef\}/);
+test('Next enfoca el siguiente input mediante inputRefs y focusNext', () => {
+  assert.match(source, /const inputRefs = useRef\(new Map<string, TextInput \| null>\(\)\)/);
+  assert.match(source, /function focusNext\(key: string\) \{\s*inputRefs\.current\.get\(key\)\?\.focus\(\);\s*\}/);
+  assert.match(source, /onSubmitEditing=\{\(\) => \{\s*if \(nextKey\) \{\s*focusNext\(nextKey\);/);
+});
+
+test('no reintroduce desplazamiento manual incompatible con React Native/Fabric', () => {
+  assert.doesNotMatch(source, /\bscrollCellIntoView\b/);
+  assert.doesNotMatch(source, /\bmeasureLayout\s*\(/);
+  assert.doesNotMatch(source, /\bfindNodeHandle\s*\(/);
 });

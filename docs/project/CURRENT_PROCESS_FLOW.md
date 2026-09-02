@@ -563,6 +563,12 @@ revisión N+1 sólo para ella;
 cada edición valida `edit_version`; los cambios estructurales invalidan la
 firma activa; el cierre exige firma válida, genera PDF nuevo y resuelve el
 Ticket. El PDF y firma anteriores permanecen consultables.
+Cuando la reapertura conserva una sesión histórica válida
+(`canSkipSignaturesAfterReopen=true`), el CTA de equipos continúa directamente
+a captura técnica y `openExisting`/`selectRelated`/realtime no interpretan la
+coincidencia de cohorte como una captura de firmas activa. Si el backend
+invalida después esa condición, el mismo objeto actualizado recupera
+automáticamente el flujo normal de firmas, sin un bypass persistente en Mobile.
 - Certificados sin pago pueden liberarse sólo cuando el ETS no requiere pago; no se documentó una excepción financiera general independiente del modelo actual.
 
 ## Flujo de notificaciones operativas móviles V1

@@ -61,6 +61,10 @@ test('Fase 5: conserva "signatures" ante un evento del mismo cohorte mientras el
   assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'ready_to_close'), 'signatures');
 });
 
+test('una firma realmente activa conserva la protección de reconciliación existente', () => {
+  assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'in_progress'), 'signatures');
+});
+
 test('Fase 5: un status terminal del mismo cohorte SIEMPRE gana sobre "signatures" conservado', () => {
   assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'completed'), 'completed');
   assert.equal(resolveStepAfterStatusUpdate('signatures', true, 'partially_closed'), 'completed');
@@ -85,6 +89,25 @@ test('Fase 5: ambos puntos de reconciliación en work-orders.tsx usan resolveSte
   // ya es terminal) quedó reemplazado por completo -- si reaparece, alguien
   // reintrodujo el bug que Fase 5 corrigió.
   assert.equal(source.includes("current === 'signatures'\n"), false);
+});
+
+test('realtime, openExisting y selectRelated no confunden una firma histórica preservada con una captura activa', () => {
+  const source = screenSource();
+  const policyChecks = source.split('const skipPreservedSignatures = canSkipSignaturesAfterReopen(detail)').length - 1;
+  const historicalStateClears = source.split('skipPreservedSignatures || current == null ? null').length - 1;
+  const guardedCohorts = source.split('const sameSignatureCohort = !skipPreservedSignatures').length - 1;
+  assert.equal(policyChecks, 3);
+  assert.equal(historicalStateClears, 3);
+  assert.equal(guardedCohorts, 2);
+});
+
+test('el CTA de una reapertura preservada continúa a technical sin abrir ni crear un flujo de firmas', () => {
+  const source = screenSource();
+  const captureBlock = source.slice(source.indexOf("step === 'capture' &&"), source.indexOf("step === 'technical' &&"));
+  assert.match(captureBlock, /onPress=\{\(\) => setStep\(canSkipSignaturesAfterReopen\(workOrder\) \? 'technical' : 'signatures'\)\}/);
+  assert.match(captureBlock, /canSkipSignaturesAfterReopen\(workOrder\) \? 'Continuar proceso' : 'Continuar a recepción de equipos'/);
+  assert.equal(captureBlock.includes('openSignatureFlow('), false);
+  assert.equal(captureBlock.includes('setSignatureFlowState('), false);
 });
 
 test('10. received_signed se presenta como "RECEPCIÓN FIRMADA"', () => {

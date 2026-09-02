@@ -55,6 +55,11 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
   firma.
 - Cada FieldSheet conserva la sesión exacta vigente al crearla. Reapertura
   `preserve`/`invalidate` no reescribe firmas ni hojas históricas.
+- Una reapertura con firma preservada válida muestra `Continuar proceso` y pasa
+  de equipos a captura técnica; `openExisting`, `selectRelated` y realtime no
+  tratan su cohorte histórica como firma activa. Si backend vuelve a exigir
+  firma, el flujo normal se restablece desde el objeto actualizado, sin flags
+  locales nuevos.
 - Captura usa `lab_field_sheets.capture` para leer y operar FieldSheets, sin
   capacidades administrativas. El scope externo y su excepción histórica de
   cierre se conservan.
@@ -95,6 +100,20 @@ Resumen operativo:
   (`git diff 92e5ffb --name-only -- frontend/` vacío).
 
 ## Validaciones
+
+### Navegación de reapertura con firma preservada — 2026-09-02
+
+- `npx tsc --noEmit`: correcto, exit code 0.
+- `npx tsx --test`: `277 passed, 0 failed`; las 2 expectativas obsoletas de
+  `FieldSheetResultsWorkspace.wiring.test.ts` se alinearon con el contrato
+  vigente de teclado/insets nativos, `inputRefs`/`focusNext` y ausencia de
+  `scrollCellIntoView`, `measureLayout` y `findNodeHandle`. El componente
+  `FieldSheetResultsWorkspace.tsx` permaneció intacto.
+- `npx expo lint`: exit code 0, 0 errores y 8 warnings (6 imports sin uso en
+  `work-orders.tsx` y 2 de hooks en `FieldSheetResultsWorkspace.tsx`), todos
+  fuera del cambio funcional aplicado.
+- No se modificaron backend, contratos API, esquema ni base local; no
+  corresponde regenerar `backup_erp_myc_antes_prueba.sql`.
 
 ### Corrección LabClient 2026-09-02
 

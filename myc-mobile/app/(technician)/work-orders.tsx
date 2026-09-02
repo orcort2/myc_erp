@@ -299,8 +299,10 @@ export default function WorkOrdersScreen() {
       request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`)
         .then((detail) => {
           const contextId = labClosureContextId(detail, closureScope);
-          const sameSignatureCohort = signatureFlowState?.rootWorkOrderId === contextId;
-          setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
+          const skipPreservedSignatures = canSkipSignaturesAfterReopen(detail);
+          const sameSignatureCohort = !skipPreservedSignatures
+            && signatureFlowState?.rootWorkOrderId === contextId;
+          setSignatureFlowState((current) => skipPreservedSignatures || current == null ? null : reconcileSignatureFlowState(current, {
             clientName: detail.contact_name ?? '',
             rootWorkOrderId: contextId,
             technicianName: user?.full_name ?? '',
@@ -528,9 +530,11 @@ export default function WorkOrdersScreen() {
       const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`);
       const nextScope = inferClosureScope(detail);
       const contextId = labClosureContextId(detail, nextScope);
-      const sameSignatureCohort = signatureFlowState?.rootWorkOrderId === contextId;
+      const skipPreservedSignatures = canSkipSignaturesAfterReopen(detail);
+      const sameSignatureCohort = !skipPreservedSignatures
+        && signatureFlowState?.rootWorkOrderId === contextId;
       setClosureScope(nextScope);
-      setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
+      setSignatureFlowState((current) => skipPreservedSignatures || current == null ? null : reconcileSignatureFlowState(current, {
         clientName: detail.contact_name ?? '',
         rootWorkOrderId: contextId,
         technicianName: user?.full_name ?? '',
@@ -616,11 +620,12 @@ export default function WorkOrdersScreen() {
       const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${id}`);
       const nextScope = inferClosureScope(detail);
       const contextId = labClosureContextId(detail, nextScope);
-      if (signatureFlowState && contextId !== signatureFlowState.rootWorkOrderId) {
+      const skipPreservedSignatures = canSkipSignaturesAfterReopen(detail);
+      if (skipPreservedSignatures || (signatureFlowState && contextId !== signatureFlowState.rootWorkOrderId)) {
         setSignatureDrawing(false);
       }
       setClosureScope(nextScope);
-      setSignatureFlowState((current) => current == null ? null : reconcileSignatureFlowState(current, {
+      setSignatureFlowState((current) => skipPreservedSignatures || current == null ? null : reconcileSignatureFlowState(current, {
         clientName: detail.contact_name ?? '',
         rootWorkOrderId: contextId,
         technicianName: user?.full_name ?? '',
@@ -1169,7 +1174,7 @@ export default function WorkOrdersScreen() {
                     onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
                   >
                     <Text style={styles.primaryText}>
-                      {canSkipSignaturesAfterReopen(workOrder) ? 'Continuar a captura técnica' : 'Continuar a recepción de equipos'}
+                      {canSkipSignaturesAfterReopen(workOrder) ? 'Continuar proceso' : 'Continuar a recepción de equipos'}
                     </Text>
                   </Pressable>
                 </FadeIn>
