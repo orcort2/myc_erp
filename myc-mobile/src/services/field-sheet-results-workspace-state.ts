@@ -93,3 +93,14 @@ export function markSaved(state: WorkspaceState, savedRows: FieldSheetResultRow[
 export function markSaveError(state: WorkspaceState, message: string): WorkspaceState {
   return { ...state, saveState: 'error', errorMessage: message };
 }
+
+/** Cierra sólo si el guardado confirmó éxito. El resultado explícito evita
+ * que un catch interno convierta un fallo de red en pérdida silenciosa. */
+export async function exitAfterSuccessfulSave(
+  save: () => Promise<boolean>,
+  close: () => void,
+): Promise<boolean> {
+  const saved = await save();
+  if (saved) close();
+  return saved;
+}

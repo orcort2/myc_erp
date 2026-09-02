@@ -3,14 +3,18 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import and_, func, or_, select
+from sqlalchemy.orm import Session, aliased, contains_eager, selectinload
 
 from app.models.field_sheet import FieldSheet, FieldSheetResult
-from app.models.lab_work_order import LabWorkOrderEquipment
+from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.user import User
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
-from app.schemas.lab_work_order import LabFieldSheetCreate
+from app.schemas.lab_work_order import (
+    LabFieldSheetCreate,
+    LabFieldSheetTrayItem,
+    LabFieldSheetTrayPage,
+)
 from app.services.audit_logs import write_audit_log
 from app.services.field_sheet_templates import (
     CANONICAL_PDF_RENDERER_KEY,
@@ -33,6 +37,124 @@ from app.services.institutional_configurations import (
 from app.services.lab_work_orders import _missing_completed_sheets, resolve_equipment_certificate_client
 
 
+def _has_capture_value(value: object) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
+def _field_sheet_progress(sheet: FieldSheet | None) -> tuple[int, int]:
+    """Calcula progreso sólo contra el snapshot congelado de la hoja."""
+    if sheet is None or not sheet.template_definition_json:
+        return 0, 0
+    rows_by_section: dict[str, list[FieldSheetResult]] = {}
+    for row in sheet.results_rows:
+        rows_by_section.setdefault(row.section_key, []).append(row)
+    completed_total = 0
+    required_total = 0
+    for section in sheet.template_definition_json.get("result_sections") or []:
+        section_rows = rows_by_section.get(str(section.get("key") or ""), [])
+        required = (
+            max(int(section.get("min_rows") or 0), len(section_rows))
+            if section.get("allow_add_rows")
+            else int(section.get("rows") or len(section_rows))
+        )
+        required_total += required
+        columns = list(section.get("columns") or [])
+        required_columns = [column for column in columns if column.get("required")]
+        columns_to_check = required_columns or [
+            column for column in columns if column.get("editable") is not False
+        ]
+        for row in section_rows:
+            data = row.row_data or {}
+            values = [
+                data.get(column.get("source") or column.get("key"))
+                for column in columns_to_check
+            ]
+            captured = (
+                bool(values) and all(_has_capture_value(value) for value in values)
+                if required_columns
+                else any(_has_capture_value(value) for value in values)
+            )
+            completed_total += int(captured)
+    return min(completed_total, required_total), required_total
+
+
+def list_lab_field_sheet_tray(
+    db: Session,
+    *,
+    operator_client_id: int | None,
+    offset: int,
+    limit: int,
+) -> LabFieldSheetTrayPage:
+    """Bandeja LAB agregada sin fan-out ni revisiones históricas operativas."""
+    current_sheet = aliased(FieldSheet)
+    statement = (
+        select(LabWorkOrderEquipment, func.count().over().label("tray_total"))
+        .join(LabWorkOrderEquipment.work_order)
+        .outerjoin(
+            current_sheet,
+            and_(
+                current_sheet.lab_equipment_id == LabWorkOrderEquipment.id,
+                current_sheet.is_current.is_(True),
+                current_sheet.is_active.is_(True),
+            ),
+        )
+        .where(
+            or_(
+                LabWorkOrder.status.in_(("received_signed", "in_progress")),
+                current_sheet.id.is_not(None),
+            )
+        )
+        .options(
+            contains_eager(
+                LabWorkOrderEquipment.current_field_sheet,
+                alias=current_sheet,
+            ).joinedload(FieldSheet.results_rows),
+            contains_eager(LabWorkOrderEquipment.work_order),
+        )
+        .order_by(LabWorkOrder.folio.desc(), LabWorkOrderEquipment.position.asc())
+        .offset(offset)
+        .limit(limit)
+    )
+    if operator_client_id is not None:
+        statement = statement.where(LabWorkOrder.operator_client_id == operator_client_id)
+    rows = db.execute(statement).unique().all()
+    total = int(rows[0].tray_total) if rows else 0
+    items: list[LabFieldSheetTrayItem] = []
+    for equipment, _tray_total in rows:
+        order = equipment.work_order
+        sheet = equipment.current_field_sheet
+        bucket = "pending" if sheet is None else (
+            "completed" if sheet.status == "completed" else "in_progress"
+        )
+        progress_completed, progress_required = _field_sheet_progress(sheet)
+        documentary_client = resolve_equipment_certificate_client(equipment, order)
+        definition = sheet.template_definition_json if sheet is not None else None
+        items.append(
+            LabFieldSheetTrayItem(
+                work_order_id=order.id,
+                work_order_folio=order.folio,
+                work_order_status=order.status,
+                equipment_id=equipment.id,
+                instrument=equipment.instrument,
+                brand=equipment.brand,
+                model=equipment.model,
+                service_type=equipment.service_type,
+                certificate_folio=equipment.certificate_folio,
+                documentary_client_display=documentary_client["company"],
+                field_sheet_id=sheet.id if sheet else None,
+                field_sheet_status=sheet.status if sheet else None,
+                template_key=sheet.template_key if sheet else None,
+                template_name=(definition or {}).get("name"),
+                revision_number=sheet.revision_number if sheet else None,
+                is_current=sheet.is_current if sheet else None,
+                progress_completed=progress_completed,
+                progress_required=progress_required,
+                bucket=bucket,
+            )
+        )
+    return LabFieldSheetTrayPage(items=items, offset=offset, limit=limit, total=total)
+
+
 def get_lab_equipment(
     db: Session, work_order_id: int, equipment_id: int, *, lock: bool = False
 ) -> LabWorkOrderEquipment:
@@ -44,6 +166,12 @@ def get_lab_equipment(
         )
         .options(
             selectinload(LabWorkOrderEquipment.work_order),
+            selectinload(LabWorkOrderEquipment.current_field_sheet).selectinload(
+                FieldSheet.results_rows
+            ),
+            selectinload(LabWorkOrderEquipment.current_field_sheet).selectinload(
+                FieldSheet.signatures
+            ),
             selectinload(LabWorkOrderEquipment.field_sheets).selectinload(FieldSheet.results_rows),
             selectinload(LabWorkOrderEquipment.field_sheets).selectinload(FieldSheet.signatures),
         )

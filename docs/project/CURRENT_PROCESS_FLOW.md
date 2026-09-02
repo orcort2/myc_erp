@@ -517,6 +517,14 @@ Login interno técnico
 → app cierra detalle y vuelve a consultar el listado LAB
 ```
 
+La entrada “Hojas de Campo” consulta una sola página agregada LAB. Backend
+selecciona exclusivamente la revisión `is_current=true`, calcula progreso desde
+el snapshot y clasifica `pending / in_progress / completed`; Mobile sólo agrupa
+y presenta. Al editar Resultados, “Guardar y salir” cierra únicamente tras
+confirmación de guardado; ante error conserva valores locales y permite retry.
+Una invalidación técnica retira la revisión vigente completed sin modificarla;
+la siguiente captura crea N+1 y cada revisión conserva su PDF/hash propio.
+
 Dentro del canvas, Pointer Events y captura de puntero conservan el stroke y el
 scroll nativo se pausa sólo mientras el dedo dibuja; fuera del canvas vuelve a
 operar normalmente. Los puntos se guardan normalizados y se repintan con el DPR

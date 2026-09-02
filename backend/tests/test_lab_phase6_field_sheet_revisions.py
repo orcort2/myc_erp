@@ -70,10 +70,11 @@ def lab_context():
     with factory() as db:
         tech_role = Role(name="Tecnico", description="Técnico")
         admin_role = Role(name="Administrador", description="Administrador")
-        db.add_all([tech_role, admin_role])
+        no_access_role = Role(name="Sin acceso", description="Sin permisos")
+        db.add_all([tech_role, admin_role, no_access_role])
         db.flush()
         users = {}
-        for key, role in (("tech", tech_role), ("admin", admin_role)):
+        for key, role in (("tech", tech_role), ("admin", admin_role), ("none", no_access_role)):
             user = User(
                 username=f"lab-{key}",
                 email=f"lab-{key}@example.test",
@@ -439,3 +440,76 @@ def test_equipment_field_sheet_property_resolves_only_the_current_revision(lab_c
         assert len(equipment.field_sheets) == 2
         assert {item.id for item in equipment.field_sheets} == {first_sheet_id, second_sheet_id}
         assert equipment.field_sheet.id == second_sheet_id
+
+    tray = client.get(
+        "/api/mobile/v1/technician/lab-field-sheets?offset=0&limit=10",
+        headers=headers,
+    )
+    assert tray.status_code == 200, tray.text
+    current = next(item for item in tray.json()["items"] if item["equipment_id"] == equipment_id)
+    assert current["field_sheet_id"] == second_sheet_id
+    assert current["revision_number"] == 2
+    assert current["is_current"] is True
+    assert current["bucket"] == "completed"
+
+
+def test_lab_field_sheet_tray_is_aggregated_paginated_and_permission_guarded(lab_context):
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    first_order_id, first_equipment_id = create_and_sign_ready_order(client, headers)
+    second_order_id, second_equipment_id = create_and_sign_ready_order(client, headers)
+
+    first_page = client.get(
+        "/api/mobile/v1/technician/lab-field-sheets?offset=0&limit=1",
+        headers=headers,
+    )
+    assert first_page.status_code == 200, first_page.text
+    payload = first_page.json()
+    assert payload["total"] == 2
+    assert payload["offset"] == 0
+    assert payload["limit"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["bucket"] == "pending"
+    assert payload["items"][0]["field_sheet_id"] is None
+    assert payload["items"][0]["documentary_client_display"] == "Cliente LAB"
+
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{first_order_id}/equipment/{first_equipment_id}/field-sheet",
+        json={"template_key": "manometro"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    tray = client.get(
+        "/api/mobile/v1/technician/lab-field-sheets?offset=0&limit=10",
+        headers=headers,
+    )
+    assert tray.status_code == 200, tray.text
+    entries = {item["equipment_id"]: item for item in tray.json()["items"]}
+    assert entries[first_equipment_id]["bucket"] == "in_progress"
+    assert entries[first_equipment_id]["template_key"] == "manometro"
+    assert entries[first_equipment_id]["template_name"] == "Hoja de Campo Manómetro"
+    assert entries[first_equipment_id]["revision_number"] == 1
+    assert entries[second_equipment_id]["bucket"] == "pending"
+
+    denied = client.get(
+        "/api/mobile/v1/technician/lab-field-sheets",
+        headers=auth(tokens["none"]),
+    )
+    assert denied.status_code == 403
+
+
+def test_unsupported_prototype_template_is_explicit_and_never_falls_back_to_general(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "valvula_seguridad"},
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert "no soportada" in response.json()["detail"]
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet is None
+        assert equipment.field_sheets == []

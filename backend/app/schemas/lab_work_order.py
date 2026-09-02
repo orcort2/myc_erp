@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -342,3 +343,34 @@ class LabWorkOrderListItem(BaseModel):
     created_at: datetime
     revision_number: int
     signature_required: bool
+
+
+class LabFieldSheetTrayItem(BaseModel):
+    """Proyección mínima de una hoja operativa para la bandeja Mobile LAB."""
+
+    work_order_id: int
+    work_order_folio: int
+    work_order_status: str
+    equipment_id: int
+    instrument: str
+    brand: str
+    model: str | None
+    service_type: str | None
+    certificate_folio: str | None
+    documentary_client_display: str
+    field_sheet_id: int | None
+    field_sheet_status: str | None
+    template_key: str | None
+    template_name: str | None
+    revision_number: int | None
+    is_current: bool | None
+    progress_completed: int
+    progress_required: int
+    bucket: Literal["pending", "in_progress", "completed"]
+
+
+class LabFieldSheetTrayPage(BaseModel):
+    items: list[LabFieldSheetTrayItem]
+    offset: int
+    limit: int
+    total: int

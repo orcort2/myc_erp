@@ -384,6 +384,20 @@ rangos, LabClient, mappings de plantilla, NIIMBOT o entidades productivas. El QA
 Android/iPhone y las observaciones de FieldSheets auditadas por separado siguen
 fuera de este cierre técnico.
 
+## Alcance implementado 2026-09-01 — Motor de Hojas de Campo LAB Fase 6
+
+Backend resuelve y congela las 30 plantillas operativas, rechaza explícitamente
+las 11 claves sólo prototipo y conserva el snapshot como autoridad posterior a
+la creación. El modelo LAB admite historial 1:N con exactamente una revisión
+vigente; una recaptura invalidante crea N+1 sin mutar el PDF/hash de N.
+
+Mobile captura de forma declarativa, no contiene lógica por instrumento ni
+diseña PDFs. La bandeja dedicada consume un endpoint LAB paginado que entrega
+OT/equipo/cliente documental/revisión/progreso/bucket en una sola llamada y
+navega a Mesa Técnica. Se excluyen expresamente ETS, Calidad, Certificados y UI
+LAB operativa en el frontend web. Las definiciones metrológicas faltantes y la
+aceptación física móvil permanecen fuera de este cierre técnico.
+
 ## Alcance implementado 2026-08-18 — ETS Venta
 
 - Configuración estructurada de Venta en catálogo: identificación individual,

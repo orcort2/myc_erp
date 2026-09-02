@@ -7,15 +7,13 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { ApiError, apiUrl, readApiErrorDetail } from '@/src/api/client';
 import { Card, EmptyState, LoadingState, ReadOnlyField, StatusBadge } from '@/src/design/primitives';
 import { colors, spacing } from '@/src/design/tokens';
-import { computeOverallProgress } from '@/src/services/field-sheet-progress';
 import {
-  buildFieldSheetTrayEntries,
-  enrichTrayEntryWithFieldSheet,
   groupTrayEntriesByBucket,
+  trayEntryFromApi,
   type FieldSheetTrayBucket,
   type FieldSheetTrayEntry,
+  type LabFieldSheetTrayApiPage,
 } from '@/src/services/field-sheets-tray';
-import type { LabFieldSheet, LabListItem, LabWorkOrder } from '@/src/types/lab-work-order';
 
 const BUCKET_ORDER: { key: FieldSheetTrayBucket; title: string; tone: 'warning' | 'info' | 'success' }[] = [
   { key: 'pending', title: 'Pendientes', tone: 'warning' },
@@ -25,9 +23,8 @@ const BUCKET_ORDER: { key: FieldSheetTrayBucket; title: string; tone: 'warning' 
 
 /**
  * Fase 6: bandeja Mobile específica de Hojas de Campo -- reutiliza los
- * endpoints LAB ya existentes (lista de OT + detalle por OT + detalle de
- * FieldSheet para enriquecer plantilla/progreso), no un agregado
- * productivo nuevo. "Continuar/Abrir" navega a la pantalla de OT ya
+ * endpoint agregado LAB específico (una sola llamada paginable, sin fan-out
+ * por OT/equipo). "Continuar/Abrir" navega a la pantalla de OT ya
  * existente (Mesa Técnica), no duplica esa captura aquí.
  */
 export default function FieldSheetsTray() {
@@ -50,35 +47,10 @@ export default function FieldSheetsTray() {
     if (isRefresh) setRefreshing(true); else setLoading(true);
     setError(null);
     try {
-      const list = await request<LabListItem[]>('/mobile/v1/technician/lab-work-orders?status=open&limit=50');
-      const withEquipment = list.filter((item) => item.equipment_count > 0);
-      const details = await Promise.all(
-        withEquipment.map((item) => request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${item.id}`)),
+      const page = await request<LabFieldSheetTrayApiPage>(
+        '/mobile/v1/technician/lab-field-sheets?offset=0&limit=100',
       );
-      const built = buildFieldSheetTrayEntries(details);
-      // Enriquecer sólo las que ya tienen FieldSheet -- "pending" no trae
-      // plantilla ni progreso todavía (aún no existe la hoja).
-      const enriched = await Promise.all(built.map(async (entry) => {
-        if (!entry.fieldSheetId) return entry;
-        try {
-          const sheet = await request<LabFieldSheet>(
-            `/mobile/v1/technician/lab-work-orders/${entry.workOrderId}/equipment/${entry.equipmentId}/field-sheet`,
-          );
-          const definition = sheet.template_definition;
-          const progress = definition
-            ? computeOverallProgress(definition.result_sections, sheet.results_rows)
-            : { totalCompleted: 0, totalRequired: 0 };
-          return enrichTrayEntryWithFieldSheet(
-            entry,
-            sheet,
-            definition?.name ?? sheet.template_key,
-            { completed: progress.totalCompleted, total: progress.totalRequired },
-          );
-        } catch {
-          return entry;
-        }
-      }));
-      setEntries(enriched);
+      setEntries(page.items.map(trayEntryFromApi));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No fue posible cargar la bandeja de Hojas de Campo');
     } finally {

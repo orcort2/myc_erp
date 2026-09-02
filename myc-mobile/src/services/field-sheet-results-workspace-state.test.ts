@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   addRow,
   canCloseWithoutConfirmation,
+  exitAfterSuccessfulSave,
   initWorkspaceState,
   isDirty,
   markSaveError,
@@ -64,6 +65,43 @@ test('error de guardado conserva los cambios locales -- nunca se pierden', () =>
   assert.equal(state.rows[1].row_data.pattern_value, '2.00');
   assert.equal(isDirty(state), true);
   assert.equal(canCloseWithoutConfirmation(state), false);
+});
+
+test('save success + exit cierra exactamente una vez', async () => {
+  let closeCalls = 0;
+  const saved = await exitAfterSuccessfulSave(async () => true, () => { closeCalls += 1; });
+  assert.equal(saved, true);
+  assert.equal(closeCalls, 1);
+});
+
+test('save failure + exit NO cierra', async () => {
+  let closeCalls = 0;
+  const saved = await exitAfterSuccessfulSave(async () => false, () => { closeCalls += 1; });
+  assert.equal(saved, false);
+  assert.equal(closeCalls, 0);
+});
+
+test('save failure conserva dirty values y permite retry exitoso posterior', async () => {
+  let state = setCellValue(initWorkspaceState(rows()), 'measurements', 2, 'pattern_value', '2.00');
+  let attempts = 0;
+  let closeCalls = 0;
+  const save = async () => {
+    attempts += 1;
+    state = markSaving(state);
+    if (attempts === 1) {
+      state = markSaveError(state, 'Sin conexión');
+      return false;
+    }
+    state = markSaved(state, state.rows);
+    return true;
+  };
+  assert.equal(await exitAfterSuccessfulSave(save, () => { closeCalls += 1; }), false);
+  assert.equal(state.rows[1].row_data.pattern_value, '2.00');
+  assert.equal(isDirty(state), true);
+  assert.equal(closeCalls, 0);
+  assert.equal(await exitAfterSuccessfulSave(save, () => { closeCalls += 1; }), true);
+  assert.equal(isDirty(state), false);
+  assert.equal(closeCalls, 1);
 });
 
 test('addRow respeta allow_add_rows y max_rows', () => {

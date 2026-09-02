@@ -226,6 +226,16 @@ son las únicas transiciones técnicas; el cierre no solicita otra firma.
 Captura opera hojas mediante `lab_field_sheets.capture`, sin facultades de
 equipo, cliente, servicio, folio, firma o cierre.
 
+La Fase 6 de Hojas de Campo LAB está **CERRADA TÉCNICAMENTE**: la revisión
+vigente se resuelve mediante relación ORM filtrada y unicidad parcial; el
+historial completed y su PDF/SHA permanecen inmutables; Mobile renderiza el
+snapshot backend, conserva cambios ante error y consume la bandeja agregada
+`/mobile/v1/technician/lab-field-sheets` sin fan-out. El catálogo operativo son
+30 claves backend; 11 claves del prototipo quedan explícitamente unsupported y
+requieren definición metrológica humana. Este cierre acotado no cambia el
+estado global `EN DESARROLLO` de OT LAB/Hojas de Campo mientras falten QA físico
+y los pendientes transversales documentados.
+
 La captura de firmas móvil ya permite orientación nativa dinámica, usa pasos
 Cliente → Técnico, reconstruye strokes normalizados al redimensionar, entrega
 el gesto al canvas sólo durante el trazo y liga la captura al contexto de la

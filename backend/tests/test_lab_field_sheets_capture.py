@@ -20,6 +20,7 @@ from app.core.security import create_access_token
 from app.core.config import settings
 from app.main import app
 from app.models.field_sheet import FieldSheet, FieldSheetSignature
+from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
 from app.models.lab_client import LabClient
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderSignature, LabWorkOrderSignatureSession
 from app.models.operational_ticket import OperationalTicket
@@ -360,6 +361,37 @@ def test_final_field_sheet_pdf_is_frozen_with_sha_and_reused(lab_context, monkey
         assert sheet.final_pdf_sha256 == frozen_sha
         assert sheet.final_pdf_generated_at == frozen_at
         assert (tmp_path / frozen_path).stat().st_mtime_ns == first_mtime
+    assert first_bytes == second_bytes
+
+
+@pytest.mark.parametrize("template_key", ["general", "manometro"])
+def test_two_operational_families_complete_freeze_and_redownload_identically(
+    lab_context, monkeypatch, tmp_path, template_key
+):
+    """QA Fase 6: comparación directa y presión recorren el mismo contrato
+    create→prefill→capture→complete→freeze→download con hash estable."""
+    monkeypatch.setattr(settings, "storage_root", str(tmp_path / template_key))
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(
+        client,
+        headers,
+        count=1,
+        model="Modelo QA",
+        range_or_capacity="0 a 10",
+    )
+    sheet_id = _create_and_complete_field_sheet(
+        client, headers, order_id, equipment_ids[0], template_key=template_key
+    )
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.capture_values["model"] == "Modelo QA"
+        assert sheet.capture_values["scope"] == "0 a 10"
+        frozen_sha = sheet.final_pdf_sha256
+        first_bytes, _ = generate_field_sheet_pdf(db, sheet_id)
+    with factory() as db:
+        second_bytes, _ = generate_field_sheet_pdf(db, sheet_id)
+        assert db.get(FieldSheet, sheet_id).final_pdf_sha256 == frozen_sha
     assert first_bytes == second_bytes
 
 
@@ -1179,6 +1211,37 @@ def test_field_sheet_template_selection_freezes_snapshot_and_version(lab_context
         assert sheet.template_definition_json["pdf_template"] == body["template_definition"]["pdf_template"]
         assert sheet.template_definition_json["type"] == "general"
         assert sheet.template_definition_version == body["template_definition_version"]
+
+
+def test_persisted_snapshot_wins_after_catalog_definition_changes(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    original_definition = created.json()["template_definition"]
+    with factory() as db:
+        changed = dict(original_definition)
+        changed["name"] = "CATÁLOGO CAMBIADO DESPUÉS"
+        db.add(FieldSheetTemplateDefinition(
+            template_key="general",
+            name=changed["name"],
+            status="active",
+            version=99,
+            definition_json=changed,
+        ))
+        db.commit()
+    loaded = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        headers=headers,
+    )
+    assert loaded.status_code == 200, loaded.text
+    assert loaded.json()["template_definition"] == original_definition
+    assert loaded.json()["template_definition"]["name"] != "CATÁLOGO CAMBIADO DESPUÉS"
 
 
 def test_user_without_capture_permission_gets_403_creating_a_field_sheet(lab_context):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -8,6 +8,7 @@ from app.core.mobile.security import (
 )
 from app.schemas.equipment import EquipmentRead
 from app.schemas.field_sheet import FieldSheetRead
+from app.schemas.lab_work_order import LabFieldSheetTrayPage
 from app.schemas.service_order import ServiceOrderRead, ServiceWorkOrderRead
 from app.schemas.sale_execution import SaleBoardRead, SaleDeliveryAccept, SaleDeliveryConfirm, SaleDeliveryRead
 from app.services.mobile_technician import (
@@ -16,6 +17,7 @@ from app.services.mobile_technician import (
     list_assigned_service_orders,
     list_assigned_work_orders,
 )
+from app.services.lab_field_sheets import list_lab_field_sheet_tray
 from app.services.mobile_technician_scope import (
     get_assigned_equipment,
     get_assigned_field_sheet,
@@ -33,6 +35,24 @@ router = APIRouter(
     prefix="/mobile/v1/technician",
     tags=["mobile-technician"],
 )
+
+
+@router.get("/lab-field-sheets", response_model=LabFieldSheetTrayPage)
+def get_lab_field_sheet_tray(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_internal_mobile_permission("field_sheets.read")
+    ),
+) -> LabFieldSheetTrayPage:
+    """Agregado temporal LAB para la bandeja Mobile; no toca ETS productivo."""
+    return list_lab_field_sheet_tray(
+        db,
+        operator_client_id=context.client_id,
+        offset=offset,
+        limit=limit,
+    )
 
 
 @router.get("/sale-deliveries", response_model=list[SaleDeliveryRead])

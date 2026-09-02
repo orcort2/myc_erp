@@ -19,6 +19,7 @@ import { computeSectionProgress } from '@/src/services/field-sheet-progress';
 import {
   addRow,
   canCloseWithoutConfirmation,
+  exitAfterSuccessfulSave,
   initWorkspaceState,
   markSaveError,
   markSaved,
@@ -85,13 +86,15 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
     [sections, state.rows],
   );
 
-  async function handleSave() {
+  async function handleSave(): Promise<boolean> {
     setState((current) => markSaving(current));
     try {
       await onSave(state.rows);
       setState((current) => markSaved(current, current.rows));
+      return true;
     } catch (error) {
       setState((current) => markSaveError(current, error instanceof Error ? error.message : 'No fue posible guardar'));
+      return false;
     }
   }
 
@@ -106,7 +109,7 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
       [
         { text: 'Seguir editando', style: 'cancel' },
         { text: 'Descartar', style: 'destructive', onPress: onClose },
-        { text: 'Guardar y salir', onPress: async () => { await handleSave(); onClose(); } },
+        { text: 'Guardar y salir', onPress: () => exitAfterSuccessfulSave(handleSave, onClose) },
       ],
     );
   }

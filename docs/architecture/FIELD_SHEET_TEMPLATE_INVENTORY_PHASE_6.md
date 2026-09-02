@@ -1,4 +1,4 @@
-> Estado: VIGENTE — conflicto abierto, no resuelto
+> Estado: VIGENTE — autoridad operativa consolidada; deuda metrológica abierta
 >
 > Corte verificado: 2026-09-01
 >
@@ -10,11 +10,12 @@
 
 # Inventario de plantillas de Hojas de Campo — Fase 6
 
-Fase 6 pidió construir la matriz exacta del catálogo real (no asumir "23
-plantillas") y consolidar hacia una única autoridad backend. La matriz reveló
-un conflicto objetivo que esta fase **no resuelve** -- ver "Conflicto
-detectado" abajo. No se fuerza ninguna plantilla a una familia incorrecta ni
-se inventa contenido para cerrarlo artificialmente.
+Fase 6 construyó la matriz exacta del catálogo real (sin asumir "23
+plantillas") y consolidó una única autoridad operativa backend. Los conflictos
+de contenido del prototipo permanecen como deuda metrológica humana, pero ya no
+compiten con una FieldSheet persistida: su `template_definition_json` congelado
+gobierna Mobile, validación y PDF. No se fuerza ninguna plantilla a una familia
+incorrecta ni se inventa contenido para cerrar artificialmente esa deuda.
 
 ## Tres universos de claves, no dos
 
@@ -40,9 +41,10 @@ se inventa contenido para cerrarlo artificialmente.
    `SectionedTableBlock`, `PressureTableBlock`, `MassBalanceTableBlock`), no
    los nuevos del punto 2.
 
-`officialFieldSheetTemplates.js` **no es código muerto**: `frontend/src/utils/fieldSheets.js::buildFallbackTemplate()`
-lo consulta con prioridad sobre el archivo legacy
-(`officialFieldSheetTemplates[key] ?? fieldSheetTemplates[key] ?? ...`).
+`officialFieldSheetTemplates.js` **no es código muerto**, pero queda acotado al
+sandbox/prototipo web: no es autoridad para una FieldSheet persistida. El flujo
+LAB operativo recibe el snapshot backend completo y Mobile lo renderiza sin
+resolver una plantilla local.
 
 ## Origen del conjunto de 23
 
@@ -67,7 +69,7 @@ tienen además una formalización explícita en `field_sheet_template_engine.py`
 `build_fallback_template_definition`/`TEMPLATE_BLOCK_ASSIGNMENTS` sin pasar
 por el motor oficial, pero **sí son reales y reachable**, no vestigiales.
 
-## Conflicto detectado (reportado, no resuelto)
+## Deuda de contenido separada del catálogo operativo
 
 ### A. 11 claves canónicas nuevas sin ninguna implementación backend
 
@@ -86,14 +88,12 @@ autorizada, y que además tocaría probablemente varios de los tipos de bloque
 ### B. 6 claves con dos cuerpos incompatibles bajo la misma clave
 
 `temperatura`, `tacometro`, `dimensional`, `sonido`, `electrica`,
-`cronometro` existen simultáneamente en el archivo legacy (cuerpo real, en
-producción) **y** en `officialFieldSheetTemplates.js` (cuerpo distinto, con
-los tipos de bloque nuevos). Cuál cuerpo gana depende de qué código lo
-consuma: el API/PDF siempre usan el legacy; el fallback del frontend
-(`buildFallbackTemplate`) prioriza el nuevo si algún flujo cliente llega a
-depender de él sin snapshot backend completo. Fusionar ambos cuerpos exige
-decidir cuál es la verdad documental para cada instrumento -- tampoco se
-decide aquí.
+`cronometro` existen simultáneamente en el catálogo legacy operativo y en el
+prototipo web con cuerpos distintos. Para operación, el backend resuelve el
+legacy y congela el cuerpo exacto; Mobile y PDF consumen ese snapshot. El
+sandbox puede seguir mostrando el prototipo, pero no puede sustituir el
+snapshot de una hoja persistida. Fusionar o promover los cuerpos prototipo
+exige una decisión documental/metrológica humana y queda fuera del cierre.
 
 ### C. Alias/duplicados menores (ya corregidos, ver más abajo) y no resueltos
 
@@ -153,3 +153,32 @@ renderiza genéricamente a partir de `template_definition.blocks`/
 claves reales sin depender de qué lado del conflicto se resuelva --
 el conflicto es exclusivamente de contenido/autoría de plantilla, no de
 arquitectura de renderizado.
+
+## Cierre técnico de autoridad operativa
+
+- Catálogo operativo soportado: las 30 claves de
+  `TEMPLATE_BLOCK_ASSIGNMENTS`; el endpoint Mobile de selección sólo lista ese
+  conjunto resoluble por backend.
+- Unsupported explícitas: `angulimetro`, `detector_gases`, `maestro_altura`,
+  `par_torsional`, `pesas`, `reglas`, `tld_6_canales`, `tld`,
+  `valvula_seguridad`, `verificacion_equipos`, `copa`. Crear una hoja con
+  cualquiera devuelve 422; nunca cae a `general`.
+- Aliases legacy conservados por compatibilidad, sin declarar equivalencias
+  nuevas: `indicador→general`, `vacuometro→manometro`,
+  `indicador_presion→manometro`, `presostato→transductor_presion`,
+  `calibrador→dimensional`, `pinza_amperimetrica→multimetro`,
+  `fuente→electrica`, `flujo→volumen`.
+- Autoridad congelada: después de crear, `template_definition_json` prevalece
+  sobre cualquier cambio posterior al catálogo; el renderer PDF y Mobile no
+  vuelven a resolver el cuerpo por `template_key`.
+- Familias renderizadas operativas: `direct_comparison`, `multipoint`,
+  `pressure`, `dimensional`, `mass`, `electrical`, más los pilotos
+  `replicated_comparison`, `direction_cycle` y `mass_balance_composite`.
+- QA automatizado de cierre: `general` (comparación directa) y `manometro`
+  (presión) completan captura, congelan PDF y repiten descarga con bytes/hash
+  idénticos. Una recaptura invalidante conserva el PDF de revisión N y crea
+  N+1 con artefacto propio.
+
+La deuda restante es contenido metrológico: las 11 claves prototipo y los seis
+cuerpos incompatibles requieren una definición documental aprobada. No es un
+bug técnico ni autoriza a inferir columnas, tolerancias, pruebas o aliases.

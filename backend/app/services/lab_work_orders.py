@@ -92,6 +92,9 @@ CRITICAL_EQUIPMENT_FIELDS = {
 def _query_with_relations():
     return select(LabWorkOrder).options(
         selectinload(LabWorkOrder.equipment).selectinload(LabWorkOrderEquipment.field_sheets),
+        selectinload(LabWorkOrder.equipment).selectinload(
+            LabWorkOrderEquipment.current_field_sheet
+        ),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
         ),

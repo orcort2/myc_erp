@@ -276,13 +276,24 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     work_order: Mapped[LabWorkOrder] = relationship(back_populates="equipment")
     linked_company: Mapped["LinkedCompany | None"] = relationship()
     final_lab_client: Mapped["LabClient | None"] = relationship(foreign_keys=[final_lab_client_id])
-    # Fase 6: todas las revisiones (ver FieldSheet.revision_number/is_current)
-    # -- ya no 1:1. Callers que necesiten precargar la hoja vigente deben usar
-    # selectinload(LabWorkOrderEquipment.field_sheets), no .field_sheet (esa
-    # es la property de abajo, resuelta en Python sobre lo ya cargado).
+    # Fase 6: historial completo de revisiones -- ya no 1:1.
     field_sheets: Mapped[list["FieldSheet"]] = relationship(
         back_populates="lab_equipment",
         order_by="FieldSheet.revision_number.desc()",
+    )
+    # Autoridad ORM inequívoca de la revisión operativa. La condición vive en
+    # la relación (y está respaldada por el índice único parcial de la BD), de
+    # modo que leer ``field_sheet`` no depende de que algún caller haya
+    # precargado accidentalmente el historial completo.
+    current_field_sheet: Mapped["FieldSheet | None"] = relationship(
+        "FieldSheet",
+        primaryjoin=(
+            "and_(LabWorkOrderEquipment.id == foreign(FieldSheet.lab_equipment_id), "
+            "FieldSheet.is_current.is_(True))"
+        ),
+        uselist=False,
+        viewonly=True,
+        lazy="selectin",
     )
 
     @property
@@ -299,11 +310,8 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
 
     @property
     def field_sheet(self) -> "FieldSheet | None":
-        """Fase 6: la revisión vigente (is_current=True) -- todo el código LAB
-        preexistente sigue usando equipment.field_sheet sin cambios; éste es
-        el único punto que resuelve "cuál revisión es la vigente" entre las
-        que ya se cargaron en field_sheets. Nunca dispara una query nueva."""
-        return next((item for item in self.field_sheets if item.is_current), None)
+        """Compatibilidad LAB: alias read-only de la relación vigente."""
+        return self.current_field_sheet
 
 
 class LabWorkOrderSignatureSession(IntegerPkMixin, TimestampMixin, Base):

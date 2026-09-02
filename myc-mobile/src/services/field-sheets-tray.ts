@@ -1,14 +1,6 @@
-import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
-import type { LabFieldSheet, LabWorkOrder } from '@/src/types/lab-work-order';
-
 /**
- * Fase 6: bandeja Mobile de Hojas de Campo -- reutiliza el detalle de OT LAB
- * ya existente (equipment[] con field_sheet_id/field_sheet_status), no un
- * endpoint ni un agregado productivo nuevo. "pending" sólo aplica a equipos
- * cuya OT ya admite captura técnica (received_signed/in_progress); un
- * equipo sin hoja en una OT todavía en draft no es "pendiente de hoja", es
- * "todavía en configuración de recepción" -- eso pertenece a Mesa Técnica /
- * la revisión de recepción, no a esta bandeja.
+ * Fase 6: Mobile presenta la proyección ya clasificada por backend. No
+ * reconstruye ownership, revisión vigente, cliente documental ni progreso.
  */
 export type FieldSheetTrayBucket = 'pending' | 'in_progress' | 'completed';
 
@@ -30,37 +22,50 @@ export type FieldSheetTrayEntry = {
   progress: { completed: number; total: number } | null;
 };
 
-function classifyBucket(fieldSheetStatus: string | null, captureReady: boolean): FieldSheetTrayBucket | null {
-  if (fieldSheetStatus === 'completed') return 'completed';
-  if (fieldSheetStatus === 'draft' || fieldSheetStatus === 'in_progress') return 'in_progress';
-  if (fieldSheetStatus == null && captureReady) return 'pending';
-  return null;
-}
+export type LabFieldSheetTrayApiItem = {
+  work_order_id: number;
+  work_order_folio: number;
+  work_order_status: string;
+  equipment_id: number;
+  instrument: string;
+  brand: string;
+  model: string | null;
+  service_type: string | null;
+  certificate_folio: string | null;
+  documentary_client_display: string;
+  field_sheet_id: number | null;
+  field_sheet_status: string | null;
+  template_key: string | null;
+  template_name: string | null;
+  revision_number: number | null;
+  is_current: boolean | null;
+  progress_completed: number;
+  progress_required: number;
+  bucket: FieldSheetTrayBucket;
+};
 
-export function buildFieldSheetTrayEntries(workOrders: LabWorkOrder[]): FieldSheetTrayEntry[] {
-  const entries: FieldSheetTrayEntry[] = [];
-  for (const order of workOrders) {
-    const captureReady = order.status === 'received_signed' || order.status === 'in_progress';
-    for (const equipment of order.equipment) {
-      const bucket = classifyBucket(equipment.field_sheet_status, captureReady);
-      if (bucket === null) continue;
-      entries.push({
-        workOrderId: order.id,
-        workOrderFolio: order.folio,
-        equipmentId: equipment.id,
-        instrument: equipment.instrument,
-        certificateFolio: equipment.certificate_folio,
-        documentaryClient: resolveDocumentaryClientLabel(equipment, order),
-        fieldSheetId: equipment.field_sheet_id,
-        fieldSheetStatus: equipment.field_sheet_status,
-        bucket,
-        templateKey: null,
-        templateName: null,
-        progress: null,
-      });
-    }
-  }
-  return entries;
+export type LabFieldSheetTrayApiPage = {
+  items: LabFieldSheetTrayApiItem[];
+  offset: number;
+  limit: number;
+  total: number;
+};
+
+export function trayEntryFromApi(item: LabFieldSheetTrayApiItem): FieldSheetTrayEntry {
+  return {
+    workOrderId: item.work_order_id,
+    workOrderFolio: item.work_order_folio,
+    equipmentId: item.equipment_id,
+    instrument: item.instrument,
+    certificateFolio: item.certificate_folio,
+    documentaryClient: item.documentary_client_display,
+    fieldSheetId: item.field_sheet_id,
+    fieldSheetStatus: item.field_sheet_status,
+    bucket: item.bucket,
+    templateKey: item.template_key,
+    templateName: item.template_name,
+    progress: { completed: item.progress_completed, total: item.progress_required },
+  };
 }
 
 export type TrayBuckets = Record<FieldSheetTrayBucket, FieldSheetTrayEntry[]>;
@@ -70,22 +75,5 @@ export function groupTrayEntriesByBucket(entries: FieldSheetTrayEntry[]): TrayBu
     pending: entries.filter((entry) => entry.bucket === 'pending'),
     in_progress: entries.filter((entry) => entry.bucket === 'in_progress'),
     completed: entries.filter((entry) => entry.bucket === 'completed'),
-  };
-}
-
-/** Fusiona el detalle real de una FieldSheet (plantilla, progreso) en su
- * entrada de bandeja -- sólo se llama una vez que el detalle ya se pidió
- * (lazy, por entrada), nunca se calcula sin datos reales. */
-export function enrichTrayEntryWithFieldSheet(
-  entry: FieldSheetTrayEntry,
-  sheet: Pick<LabFieldSheet, 'template_key' | 'results_rows'>,
-  templateName: string | null,
-  progress: { completed: number; total: number },
-): FieldSheetTrayEntry {
-  return {
-    ...entry,
-    templateKey: sheet.template_key,
-    templateName,
-    progress,
   };
 }
