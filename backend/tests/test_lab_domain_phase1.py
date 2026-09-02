@@ -29,6 +29,7 @@ from app.models.client import Client
 from app.models.field_sheet import FieldSheet
 from app.models.folio_sequence import InstitutionalFolioSequence
 from app.models.lab_client import LabClient
+from app.models.notification import Notification
 from app.models.lab_work_order import (
     LabWorkOrder,
     LabWorkOrderEquipment,
@@ -50,7 +51,8 @@ from app.services.lab_work_orders import (
     resolve_equipment_certificate_client,
     set_equipment_certificate_client,
 )
-from app.services.operational_tickets import create_field_sheet_template_request_ticket
+from app.services.operational_tickets import create_field_sheet_template_request_ticket, reject_ticket
+from app.schemas.operational_ticket import TicketReject
 from app.schemas.operational_ticket import FieldSheetTemplateRequestCreate
 
 
@@ -869,6 +871,114 @@ def test_field_sheet_reopen_requires_a_completed_sheet(lab_context):
         headers=headers,
     )
     assert denied.status_code == 409
+
+
+def test_field_sheet_reopen_ticket_notifies_reviewer_on_create_and_requester_on_resolve(lab_context):
+    """Cierre UX 2026-09: crear y resolver un ticket field_sheet_reopen deja
+    Notification para el destinatario correcto en cada paso -- antes
+    create_field_sheet_reopen_ticket y resolve_operational_ticket sólo
+    hacían db.commit() plano, sin dispatch, y algunos tipos ni siquiera
+    llamaban a notify_ticket_created."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers)
+    service = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/service",
+        json={"service_type": "accredited", "linked_company_id": None},
+        headers=headers,
+    )
+    assert service.status_code == 200, service.text
+
+    _sign_and_complete_field_sheet(client, headers, order_id, equipment_ids[0])
+
+    created = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_ids[0],
+            "reason": "Error de captura",
+            "description": "Hay que recapturar un valor",
+        },
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    ticket_id = created.json()["id"]
+
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        created_notification = db.scalar(
+            select(Notification).where(
+                Notification.recipient_user_id == admin.id,
+                Notification.notification_type == "ticket.created",
+                Notification.entity_id == ticket_id,
+            )
+        )
+        assert created_notification is not None
+        assert created_notification.title == "Nueva solicitud de desbloqueo de hoja"
+
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket_id}/resolve",
+        json={"comment": "Procede"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+
+    with factory() as db:
+        tech = db.scalar(select(User).where(User.username == "lab-tech"))
+        resolved_notification = db.scalar(
+            select(Notification).where(
+                Notification.recipient_user_id == tech.id,
+                Notification.notification_type == "ticket.resolved",
+                Notification.entity_id == ticket_id,
+            )
+        )
+        assert resolved_notification is not None
+        assert "OT" in resolved_notification.body
+
+
+def test_reject_ticket_never_crashes_for_a_ticket_type_without_a_work_order(lab_context):
+    """certificate_folio_block no lleva work_order_id (es una reserva a
+    nivel cliente externo, ver create_certificate_block_ticket). reject_ticket
+    es genérico -- cualquier tipo, cualquier revisor con tickets.review --
+    y notify_ticket_rejected antes accedía a ticket.work_order.folio sin
+    guardar, lo que lanzaba AttributeError en cuanto alguien rechazara un
+    ticket de este tipo. Se prueba a nivel servicio porque crear este tipo
+    de ticket por API está reservado a actores externos (client_id
+    presente); el bug que se corrige está en reject/notify, no en la
+    creación."""
+    _client, factory, tokens = lab_context
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        tech = db.scalar(select(User).where(User.username == "lab-tech"))
+        ticket = OperationalTicket(
+            type="certificate_folio_block",
+            status="pending",
+            work_order_id=None,
+            operator_client_id=None,
+            requested_by_user_id=tech.id,
+            reason="Prueba",
+            description="Reserva de folios de prueba",
+            accredited_quantity=1,
+            traceable_quantity=0,
+        )
+        db.add(ticket)
+        db.commit()
+        ticket_id = ticket.id
+
+        result = reject_ticket(db, ticket_id, TicketReject(comment="No procede"), admin)
+        assert result.status == "rejected"
+
+        notification = db.scalar(
+            select(Notification).where(
+                Notification.recipient_user_id == tech.id,
+                Notification.notification_type == "ticket.rejected",
+                Notification.entity_id == ticket_id,
+            )
+        )
+        assert notification is not None
+        assert notification.title == "Solicitud de folios certificados rechazada"
+        assert notification.body == notification.title  # sin OT que citar
 
 
 # --------------------------------------------------------------------------

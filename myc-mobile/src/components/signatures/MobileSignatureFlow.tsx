@@ -21,29 +21,37 @@ import {
 
 type Props = {
   currentContextId: number | null;
+  onComplete(): void;
   onDrawingChange(active: boolean): void;
   onStateChange(state: SignatureFlowState): void;
   onSubmit(payload: SignaturePayload, capturedContextId: number): Promise<void>;
   state: SignatureFlowState;
 };
 
+const SUCCESS_CONFIRMATION_MS = 900;
+
 export function MobileSignatureFlow({
   currentContextId,
+  onComplete,
   onDrawingChange,
   onStateChange,
   onSubmit,
   state,
 }: Props) {
   const [transitioning, setTransitioning] = useState(false);
+  const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const transitionOpacity = useRef(new Animated.Value(0)).current;
+  const successOpacity = useRef(new Animated.Value(0)).current;
   const submissionLock = useRef(new SignatureSubmissionLock());
   const transitioningRef = useRef(false);
   const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => {
     if (transitionTimer.current) clearTimeout(transitionTimer.current);
+    if (successTimer.current) clearTimeout(successTimer.current);
     onDrawingChange(false);
   }, [onDrawingChange]);
 
@@ -87,6 +95,10 @@ export function MobileSignatureFlow({
     setError('');
     setSubmitting(true);
     try {
+      // El backend ya aplicó las firmas cuando onSubmit resuelve (respuesta
+      // autoritativa) -- la confirmación breve se muestra aquí antes de
+      // avisarle al padre (onComplete) para que desmonte este flujo, en vez
+      // de desaparecer de golpe apenas responde el servidor.
       await onSubmit(
         createSignaturePayload(
           state.clientName,
@@ -96,12 +108,32 @@ export function MobileSignatureFlow({
         ),
         state.rootWorkOrderId,
       );
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : 'No fue posible guardar las firmas. Intenta nuevamente.');
-    } finally {
       submissionLock.current.finish();
       setSubmitting(false);
+      setSuccess(true);
+      successOpacity.setValue(0);
+      Animated.timing(successOpacity, { duration: 220, toValue: 1, useNativeDriver: true }).start();
+      successTimer.current = setTimeout(() => {
+        onComplete();
+      }, SUCCESS_CONFIRMATION_MS);
+      return;
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'No fue posible guardar las firmas. Intenta nuevamente.');
     }
+    submissionLock.current.finish();
+    setSubmitting(false);
+  }
+
+  if (success) {
+    return (
+      <Animated.View style={[styles.transition, { opacity: successOpacity }]}>
+        <View style={[styles.transitionMark, styles.successMark]}>
+          <Text style={styles.successCheck}>✓</Text>
+        </View>
+        <Text style={styles.transitionTitle}>Firmas guardadas</Text>
+        <Text style={styles.transitionText}>El cierre del grupo se aplicó correctamente.</Text>
+      </Animated.View>
+    );
   }
 
   if (transitioning) {
@@ -179,7 +211,14 @@ export function MobileSignatureFlow({
             onPress={() => { void submit(); }}
             style={[styles.primary, styles.submit, (!canContinueSignature(state.technicianName, state.technicianCapture) || submitting) && styles.disabled]}
           >
-            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryText}>Guardar firmas</Text>}
+            {submitting ? (
+              <View style={styles.submitProgress}>
+                <ActivityIndicator color="#fff" />
+                <Text style={styles.primaryText}>Guardando firmas…</Text>
+              </View>
+            ) : (
+              <Text style={styles.primaryText}>Guardar firmas</Text>
+            )}
           </Pressable>
         </View>
       )}
@@ -205,6 +244,9 @@ const styles = StyleSheet.create({
   secondary: { alignItems: 'center', borderColor: '#08756f', borderRadius: 13, borderWidth: 1.5, flex: 1, justifyContent: 'center', marginTop: 16, minHeight: 52 },
   secondaryText: { color: '#08756f', fontSize: 16, fontWeight: '800' },
   submit: { flex: 2 },
+  submitProgress: { alignItems: 'center', flexDirection: 'row', gap: 10, justifyContent: 'center' },
+  successCheck: { color: '#fff', fontSize: 52, fontWeight: '900' },
+  successMark: { backgroundColor: '#08756f' },
   title: { color: '#142b3a', fontSize: 26, fontWeight: '900', marginBottom: 8 },
   transition: { alignItems: 'center', justifyContent: 'center', minHeight: 390, padding: 30 },
   transitionLine: { backgroundColor: '#08756f', borderRadius: 2, height: 3, marginTop: -10, width: 110 },

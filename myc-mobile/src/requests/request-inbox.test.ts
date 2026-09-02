@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { actionableRequestCount, visibleRequestKinds } from './request-inbox';
+import { actionableRequestCount, filterTicketsByKind, visibleRequestKinds } from './request-inbox';
 import type { LabWorkOrderGroupRequest } from '../types/lab-work-order';
 import type { OperationalTicket } from '../types/operational-ticket';
 
@@ -16,4 +16,25 @@ test('request filters preserve separate reopening and group projections', () => 
   assert.deepEqual(visibleRequestKinds('all'), { showTickets: true, showGroups: true });
   assert.deepEqual(visibleRequestKinds('reopenings'), { showTickets: true, showGroups: false });
   assert.deepEqual(visibleRequestKinds('groups'), { showTickets: false, showGroups: true });
+});
+
+test('cierre UX 2026-09: "Reaperturas" filtra por tipo, no sólo muestra/oculta toda la sección', () => {
+  const tickets = [
+    { id: 1, type: 'reopen_work_order' },
+    { id: 2, type: 'field_sheet_reopen' },
+    { id: 3, type: 'manual_myc_folio' },
+    { id: 4, type: 'linked_folio' },
+    { id: 5, type: 'partial_close' },
+    { id: 6, type: 'certificate_folio_block' },
+    { id: 7, type: 'field_sheet_template_request' },
+  ] as OperationalTicket[];
+
+  assert.deepEqual(
+    filterTicketsByKind(tickets, 'reopenings').map((item) => item.id),
+    [1, 2],
+  );
+  // 'all' y 'groups' no filtran por tipo -- la sección de tickets ya se
+  // oculta completa vía visibleRequestKinds cuando kind === 'groups'.
+  assert.deepEqual(filterTicketsByKind(tickets, 'all'), tickets);
+  assert.deepEqual(filterTicketsByKind(tickets, 'groups'), tickets);
 });

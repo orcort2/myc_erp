@@ -11,6 +11,7 @@ import type { LabClient } from '@/src/types/lab-work-order';
 import { colors, layout, spacing, typography } from '@/src/design/tokens';
 import {
   ActionRow,
+  AdministrativeButton,
   BackButton,
   Card,
   DangerButton,
@@ -322,7 +323,7 @@ export default function ClientsScreen() {
                             />
                           )}
                           {canDeactivateLabClients && !client.is_active && (
-                            <SecondaryButton
+                            <AdministrativeButton
                               label="Restaurar"
                               loading={busyClientId === client.id}
                               onPress={() => confirmRestore(client)}

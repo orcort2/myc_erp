@@ -6,6 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
+import { BackButton } from '@/src/design/primitives';
+import { colors, spacing } from '@/src/design/tokens';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { eventFromData, markReadThenNavigate, targetFor } from '@/src/notifications/refresh-policy';
 import type { MobileNotification, NotificationPage, NotificationSyncEvent } from '@/src/types/notification';
@@ -85,7 +87,7 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Volver</Text></Pressable>
+        <BackButton />
         <Text style={styles.title}>Notificaciones</Text>
         <Pressable onPress={readAll}><Text style={styles.readAll}>Marcar todas como leídas</Text></Pressable>
       </View>
@@ -111,5 +113,28 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: 'center', flex: 1, justifyContent: 'center' }, screen: { backgroundColor: '#f4f7fa', flex: 1 }, header: { padding: 20 }, back: { color: '#0067a8', fontSize: 17, marginBottom: 16 }, title: { color: '#142b3a', fontSize: 30, fontWeight: '800' }, readAll: { color: '#0067a8', fontWeight: '700', marginTop: 10 }, filters: { flexDirection: 'row', gap: 8, paddingHorizontal: 20 }, chip: { backgroundColor: '#e5ebef', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 }, chipActive: { backgroundColor: '#0067a8' }, chipText: { color: '#425563', fontWeight: '700' }, chipTextActive: { color: '#fff', fontWeight: '700' }, loader: { marginTop: 44 }, list: { gap: 10, padding: 20 }, card: { backgroundColor: '#fff', borderRadius: 13, borderWidth: 1, borderColor: 'transparent', padding: 16 }, unreadCard: { borderColor: '#0067a8' }, cardTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 10, justifyContent: 'space-between' }, cardTitle: { color: '#263b48', flex: 1, fontSize: 16 }, unreadTitle: { fontWeight: '800' }, state: { color: '#526775', fontSize: 12, fontWeight: '700' }, body: { color: '#51616c', lineHeight: 20, marginTop: 7 }, date: { color: '#7a8892', fontSize: 12, marginTop: 10 }, error: { backgroundColor: '#fff0f0', color: '#8d1f2d', padding: 14 }, empty: { color: '#70808d', padding: 24, textAlign: 'center' }, more: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: '#0067a8', fontWeight: '800' },
+  center: { alignItems: 'center', flex: 1, justifyContent: 'center' },
+  screen: { backgroundColor: colors.background, flex: 1 },
+  header: { padding: spacing.lg },
+  title: { color: '#142b3a', fontSize: 30, fontWeight: '800', marginTop: spacing.md },
+  readAll: { color: colors.primary, fontWeight: '700', marginTop: spacing.sm },
+  filters: { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg },
+  chip: { backgroundColor: '#e5ebef', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9 },
+  chipActive: { backgroundColor: colors.primary },
+  chipText: { color: '#425563', fontWeight: '700' },
+  chipTextActive: { color: '#fff', fontWeight: '700' },
+  loader: { marginTop: 44 },
+  list: { gap: spacing.sm, padding: spacing.lg },
+  card: { backgroundColor: '#fff', borderRadius: 13, borderWidth: 1, borderColor: 'transparent', padding: 16 },
+  unreadCard: { borderColor: colors.primary },
+  cardTop: { alignItems: 'flex-start', flexDirection: 'row', gap: spacing.sm, justifyContent: 'space-between' },
+  cardTitle: { color: '#263b48', flex: 1, fontSize: 16 },
+  unreadTitle: { fontWeight: '800' },
+  state: { color: '#526775', fontSize: 12, fontWeight: '700' },
+  body: { color: colors.textMuted, lineHeight: 20, marginTop: 7 },
+  date: { color: '#7a8892', fontSize: 12, marginTop: spacing.sm },
+  error: { backgroundColor: '#fff0f0', color: '#8d1f2d', padding: spacing.md },
+  empty: { color: '#70808d', padding: 24, textAlign: 'center' },
+  more: { alignItems: 'center', borderColor: colors.primary, borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' },
+  moreText: { color: colors.primary, fontWeight: '800' },
 });

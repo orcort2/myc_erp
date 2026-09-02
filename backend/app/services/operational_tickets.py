@@ -31,6 +31,7 @@ from app.services.lab_work_orders import (
     _get,
     _group,
     _lock_historical_group,
+    _notify_work_order_owner,
     _open_group_members,
     _signature_cohort,
     _allocate_lab_certificate_folio,
@@ -42,6 +43,7 @@ from app.services.notification_events import (
     notify_ticket_approved,
     notify_ticket_created,
     notify_ticket_rejected,
+    notify_ticket_resolved,
 )
 from app.services.push_notifications import commit_and_dispatch_notifications
 
@@ -234,7 +236,8 @@ def create_folio_ticket(
             "linked_company_id": ticket.linked_company_id,
         },
     )
-    db.commit()
+    notify_ticket_created(db, ticket, user)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 
@@ -279,7 +282,8 @@ def create_field_sheet_template_request_ticket(
         user_id=user.id,
         new_values={"work_order_id": work_order.id, "equipment_id": equipment.id},
     )
-    db.commit()
+    notify_ticket_created(db, ticket, user)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 
@@ -355,7 +359,7 @@ def create_field_sheet_reopen_ticket(
         },
     )
     notify_ticket_created(db, ticket, user)
-    db.commit()
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 
@@ -405,7 +409,8 @@ def create_partial_close_ticket(
         user_id=user.id,
         new_values={"work_order_id": work_order.id, "pending_items": missing},
     )
-    db.commit()
+    notify_ticket_created(db, ticket, user)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 
@@ -443,7 +448,8 @@ def create_certificate_block_ticket(
         user_id=user.id,
         new_values={"MYCA": payload.accredited_quantity, "MYCT": payload.traceable_quantity, "total": total},
     )
-    db.commit()
+    notify_ticket_created(db, ticket, user)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 
@@ -642,6 +648,12 @@ def reopen_work_order_directly(
             "signature_policy": signature_policy,
             "reason": reason.strip(),
         },
+    )
+    _notify_work_order_owner(
+        db, work_order, user,
+        event="work_order.reopened",
+        title="OT reabierta",
+        body=f"OT {work_order.folio} fue reabierta. Motivo: {reason.strip()}",
     )
     commit_and_dispatch_notifications(db)
     return _read_work_order(db, _get(db, work_order.id))
@@ -842,7 +854,13 @@ def resolve_operational_ticket(
             "resolution_snapshot": ticket.resolution_snapshot,
         },
     )
-    db.commit()
+    # Cierre UX 2026-09: faltaba notificar al solicitante y despachar
+    # push/realtime -- este endpoint sólo hacía db.commit() plano, que deja
+    # la fila Notification creada por _create() en la sesión sin nunca
+    # dispatch-earla (commit_and_dispatch_notifications es la única función
+    # que entrega push y publica el evento realtime, ver push_notifications.py).
+    notify_ticket_resolved(db, ticket, user)
+    commit_and_dispatch_notifications(db)
     return _read(_get_ticket(db, ticket.id))
 
 

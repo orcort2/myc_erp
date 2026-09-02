@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import { AlertBanner, Card, EmptyState, LoadingState } from '@/src/design/primitives';
+import { colors, radius, spacing } from '@/src/design/tokens';
 import type { LabClient } from '@/src/types/lab-work-order';
 import {
   applyCreatedClient,
@@ -27,6 +29,7 @@ type Props = {
 export function LabClientSelector({ onSelect, request }: Props) {
   const [state, setState] = useState(initialSelectorState());
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
   const [newCompany, setNewCompany] = useState('');
   const [newAddress, setNewAddress] = useState('');
   const [newAttention, setNewAttention] = useState('');
@@ -39,10 +42,15 @@ export function LabClientSelector({ onSelect, request }: Props) {
     let active = true;
     const timer = setTimeout(() => {
       setLoading(true);
+      setSearchError('');
       const query = buildLabClientSearchQuery(state.searchTerm);
       request<LabClient[]>(`/mobile/v1/technician/lab-clients${query ? `?${query}` : ''}`)
         .then((results) => { if (active) setState((current) => ({ ...current, results })); })
-        .catch(() => { /* búsqueda silenciosa: no debe tirar el formulario contenedor */ })
+        .catch((error) => {
+          // La búsqueda ya no falla en silencio -- se muestra un estado de
+          // error explícito sin tirar el formulario contenedor (OT/equipo).
+          if (active) setSearchError(error instanceof Error ? error.message : 'No fue posible buscar clientes.');
+        })
         .finally(() => { if (active) setLoading(false); });
     }, 300);
     return () => { active = false; clearTimeout(timer); };
@@ -84,7 +92,7 @@ export function LabClientSelector({ onSelect, request }: Props) {
 
   if (state.mode === 'create') {
     return (
-      <View style={styles.panel}>
+      <Card>
         <Text style={styles.title}>Crear cliente</Text>
         <SelectorField label="Empresa" required value={newCompany} onChange={setNewCompany} />
         <SelectorField label="Dirección" value={newAddress} onChange={setNewAddress} />
@@ -104,36 +112,49 @@ export function LabClientSelector({ onSelect, request }: Props) {
             <Text style={styles.saveText}>Guardar</Text>
           </Pressable>
         </View>
-      </View>
+      </Card>
     );
   }
 
   const visibleResults = limitVisibleResults(state.results);
   return (
-    <View style={styles.panel}>
+    <Card>
       <TextInput
         placeholder="Buscar cliente"
         style={styles.search}
         value={state.searchTerm}
         onChangeText={(value) => setState((current) => ({ ...current, searchTerm: value }))}
       />
-      <ScrollView style={styles.results} nestedScrollEnabled>
-        {visibleResults.map((item) => (
-          <Pressable
-            key={item.id}
-            style={[styles.resultRow, state.selectedClientId === item.id && styles.resultRowSelected]}
-            onPress={() => { setState((current) => ({ ...current, selectedClientId: item.id })); onSelect(item as LabClient); }}
-          >
-            <Text style={styles.resultCompany}>{item.company}</Text>
-            {!!item.attention && <Text style={styles.resultMeta}>{item.attention}</Text>}
-          </Pressable>
-        ))}
-        {!loading && !visibleResults.length && <Text style={styles.empty}>Sin resultados.</Text>}
-      </ScrollView>
+      <View style={styles.results}>
+        {loading ? (
+          <LoadingState label="Buscando clientes…" />
+        ) : searchError ? (
+          <AlertBanner tone="danger">{searchError}</AlertBanner>
+        ) : visibleResults.length ? (
+          <ScrollView nestedScrollEnabled>
+            {visibleResults.map((item) => (
+              <Pressable
+                key={item.id}
+                style={({ pressed }) => [
+                  styles.resultRow,
+                  state.selectedClientId === item.id && styles.resultRowSelected,
+                  pressed && styles.resultRowPressed,
+                ]}
+                onPress={() => { setState((current) => ({ ...current, selectedClientId: item.id })); onSelect(item as LabClient); }}
+              >
+                <Text style={styles.resultCompany}>{item.company}</Text>
+                {!!item.attention && <Text style={styles.resultMeta}>{item.attention}</Text>}
+              </Pressable>
+            ))}
+          </ScrollView>
+        ) : (
+          <EmptyState title="Sin resultados" description={state.searchTerm.trim() ? 'Prueba con otro nombre o crea el cliente.' : 'Escribe para buscar un cliente existente.'} />
+        )}
+      </View>
       <Pressable style={styles.secondary} onPress={() => setState(openInlineCreate(state))}>
         <Text style={styles.secondaryText}>+ Crear cliente</Text>
       </Pressable>
-    </View>
+    </Card>
   );
 }
 
@@ -149,16 +170,15 @@ function SelectorField({
 }
 
 const styles = StyleSheet.create({
-  panel: { gap: 8 },
-  title: { color: '#142b3a', fontSize: 16, fontWeight: '800' },
+  title: { color: '#142b3a', fontSize: 16, fontWeight: '800', marginBottom: spacing.sm },
   search: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 9, borderWidth: 1, minHeight: 44, paddingHorizontal: 11 },
-  results: { maxHeight: 220 },
-  resultRow: { borderBottomColor: '#e4ebf0', borderBottomWidth: 1, paddingVertical: 9 },
+  results: { marginTop: spacing.sm, maxHeight: 220 },
+  resultRow: { borderBottomColor: '#e4ebf0', borderBottomWidth: 1, borderRadius: radius.sm, paddingHorizontal: spacing.xs, paddingVertical: 9 },
   resultRowSelected: { backgroundColor: '#eef6f5' },
+  resultRowPressed: { backgroundColor: colors.background },
   resultCompany: { color: '#142b3a', fontWeight: '700' },
   resultMeta: { color: '#637280', fontSize: 12 },
-  empty: { color: '#8a97a1', paddingVertical: 8 },
-  secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, marginTop: 4, padding: 11 },
+  secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, marginTop: spacing.sm, padding: 11 },
   secondaryText: { color: '#0067a8', fontWeight: '800' },
   fieldGroup: { gap: 4 },
   fieldLabel: { color: '#344553', fontSize: 12, fontWeight: '700' },

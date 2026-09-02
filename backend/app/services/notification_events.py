@@ -93,7 +93,11 @@ def _create(
             "event_type": event_type,
             "ticket_id": ticket.id,
             "work_order_id": ticket.work_order_id,
-            "work_order_folio": ticket.work_order.folio,
+            # certificate_folio_block no lleva work_order_id (es una reserva
+            # a nivel cliente, no ligada a una OT específica) -- este ya no
+            # era un caso hipotético en cuanto notify_ticket_created empezó
+            # a llamarse también para ese tipo (cierre UX 2026-09).
+            "work_order_folio": ticket.work_order.folio if ticket.work_order else None,
         },
     )
     db.add(notification)
@@ -135,15 +139,31 @@ def notify_ticket_approved(
         notify_ticket_signature_required(db, ticket, actor)
 
 
+TICKET_TYPE_REJECTED_TITLES = {
+    "reopen_work_order": "Solicitud de reapertura rechazada",
+    "manual_myc_folio": "Solicitud de folio MYC rechazada",
+    "linked_folio": "Solicitud de folio Vinculado rechazada",
+    "partial_close": "Solicitud de cierre parcial rechazada",
+    "certificate_folio_block": "Solicitud de folios certificados rechazada",
+    "field_sheet_template_request": "Solicitud de hoja de campo rechazada",
+    "field_sheet_reopen": "Solicitud de desbloqueo de hoja rechazada",
+}
+
+
 def notify_ticket_rejected(db: Session, ticket: OperationalTicket, actor: User) -> None:
+    # Cierre UX 2026-09: reject_ticket es genérico (cualquier tipo), no
+    # exclusivo de reopen_work_order -- título fijo "...reapertura..." y
+    # ticket.work_order.folio sin guardar eran incorrectos/crasheaban para
+    # tipos sin OT (certificate_folio_block).
+    title = TICKET_TYPE_REJECTED_TITLES.get(ticket.type, "Solicitud rechazada")
     _create(
         db,
         recipient_user_id=ticket.requested_by_user_id,
         actor_user_id=actor.id,
         event_type=TICKET_REJECTED,
         event_key=f"ticket:{ticket.id}:rejected",
-        title="Solicitud de reapertura rechazada",
-        body=f"OT {ticket.work_order.folio}",
+        title=title,
+        body=f"OT {ticket.work_order.folio}" if ticket.work_order else title,
         ticket=ticket,
     )
 
@@ -164,7 +184,25 @@ def notify_ticket_signature_required(
     )
 
 
+# Cierre UX 2026-09: cuerpo por tipo -- antes decía "OT {folio} cerrada"
+# incondicionalmente, que era correcto sólo para el camino en el que cerrar
+# la OT resuelve su propio ticket de reapertura (_finish_complete_members).
+# resolve_operational_ticket resuelve otros tipos (folio, cierre parcial,
+# desbloqueo de hoja) donde esa frase sería falsa.
+TICKET_TYPE_RESOLVED_BODIES = {
+    "reopen_work_order": "OT {folio} cerrada.",
+    "manual_myc_folio": "Folio autorizado en OT {folio}.",
+    "linked_folio": "Folio Vinculado autorizado en OT {folio}.",
+    "partial_close": "Cierre parcial aprobado en OT {folio}.",
+    "certificate_folio_block": "Folios certificados reservados.",
+    "field_sheet_reopen": "Hoja de campo desbloqueada en OT {folio}.",
+}
+
+
 def notify_ticket_resolved(db: Session, ticket: OperationalTicket, actor: User) -> None:
+    folio = ticket.work_order.folio if ticket.work_order else None
+    template = TICKET_TYPE_RESOLVED_BODIES.get(ticket.type, "Solicitud resuelta en OT {folio}.")
+    body = template.format(folio=folio) if "{folio}" not in template or folio is not None else "Solicitud resuelta."
     _create(
         db,
         recipient_user_id=ticket.requested_by_user_id,
@@ -172,6 +210,6 @@ def notify_ticket_resolved(db: Session, ticket: OperationalTicket, actor: User) 
         event_type=TICKET_RESOLVED,
         event_key=f"ticket:{ticket.id}:resolved",
         title="Solicitud resuelta",
-        body=f"OT {ticket.work_order.folio} cerrada.",
+        body=body,
         ticket=ticket,
     )

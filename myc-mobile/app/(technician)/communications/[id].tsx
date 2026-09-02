@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -14,6 +14,7 @@ import {
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useCommunications } from '@/src/communications/CommunicationsProvider';
+import { BackButton } from '@/src/design/primitives';
 import { deliveryState } from '@/src/communications/message-state';
 import { fetchDirectory } from '@/src/services/communications';
 import type { CommunicationDirectory, MentionDraft } from '@/src/types/communication';
@@ -90,7 +91,7 @@ export default function ConversationScreen() {
     <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()}><Text style={styles.back}>‹</Text></Pressable>
+          <BackButton label="‹" />
           <View style={styles.heading}>
             <Text numberOfLines={1} style={styles.title}>{conversation?.title ?? 'Conversación'}</Text>
             {!!typing.length && <Text style={styles.typing}>{typing.map((item) => item.full_name).join(' y ')} está escribiendo…</Text>}
@@ -154,7 +155,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   safe: { backgroundColor: '#edf2f5', flex: 1 },
   header: { alignItems: 'center', backgroundColor: '#fff', flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12 },
-  back: { color: '#0067a8', fontSize: 34, lineHeight: 34, width: 38 },
   heading: { flex: 1 },
   title: { color: '#17212b', fontSize: 18, fontWeight: '800' },
   typing: { color: '#0067a8', fontSize: 12, marginTop: 2 },

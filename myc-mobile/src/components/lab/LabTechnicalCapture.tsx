@@ -26,7 +26,7 @@ import {
 } from '@/src/services/field-sheet-draft-view-state';
 import { apiUrl, ApiError } from '@/src/api/client';
 import {
-  ActionRow, Card, EmptyState, Field, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
+  ActionRow, AdministrativeButton, AlertBanner, Card, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
 } from '@/src/design/primitives';
 import { colors, spacing } from '@/src/design/tokens';
 import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldSheetResultsWorkspace';
@@ -106,6 +106,19 @@ function statusTone(status: string): 'warning' | 'info' | 'success' {
   return 'info';
 }
 
+// Cierre UX 2026-09 (item K): el status crudo de FieldSheet ("draft"/
+// "completed") no debe llegar tal cual a un StatusBadge -- mismo criterio ya
+// aplicado a LabWorkOrder vía statusPresentation.
+const FIELD_SHEET_STATUS_LABELS: Record<string, string> = {
+  draft: 'BORRADOR',
+  in_progress: 'EN CAPTURA',
+  completed: 'COMPLETADA',
+};
+
+function fieldSheetStatusLabel(status: string): string {
+  return FIELD_SHEET_STATUS_LABELS[status] ?? status.toUpperCase();
+}
+
 /**
  * Fase 6: flujo principal de captura -- contexto OT/equipo, datos readonly,
  * campos ordinarios, Resultados (fuera del formulario, vía
@@ -116,6 +129,8 @@ function statusTone(status: string): 'warning' | 'info' | 'success' {
  */
 export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(true);
+  const [templatesError, setTemplatesError] = useState('');
   const [templateSearch, setTemplateSearch] = useState('');
   const [activeEquipment, setActiveEquipment] = useState<LabEquipment | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState('');
@@ -139,9 +154,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
   }
 
   useEffect(() => {
+    setTemplatesLoading(true);
+    setTemplatesError('');
     request<FieldSheetTemplate[]>('/mobile/v1/technician/lab-work-orders/field-sheet-templates')
       .then(setTemplates)
-      .catch(() => setTemplates([]));
+      .catch((error) => setTemplatesError(error instanceof Error ? error.message : 'No fue posible cargar las hojas de campo.'))
+      .finally(() => setTemplatesLoading(false));
   }, [request]);
 
   const definition = sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
@@ -377,7 +395,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
     if (ticketMode === 'field_sheet_reopen') return (
       <ScrollView contentContainerStyle={styles.panel}>
         <Text style={styles.title}>Solicitar desbloqueo</Text>
-        <Text style={styles.meta}>{activeEquipment.instrument} · OT {workOrder.folio} · Hoja completed</Text>
+        <Text style={styles.meta}>{activeEquipment.instrument} · OT {workOrder.folio} · Hoja {sheet ? fieldSheetStatusLabel(sheet.status).toLowerCase() : ''}</Text>
         <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
         <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
         <ActionRow>
@@ -407,6 +425,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
     const documentaryClientLabel = resolveDocumentaryClientLabel(activeEquipment, workOrder);
     return (
       <ScrollView contentContainerStyle={styles.panel}>
+        <FadeIn transitionKey={activeEquipment.id}>
         <Text style={styles.eyebrow}>OT {workOrder.folio} · EQUIPO {activeEquipment.position}</Text>
         <Text style={styles.title}>{activeEquipment.instrument}</Text>
 
@@ -419,12 +438,30 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
         {!sheet ? <>
           <Section title="Selecciona hoja de campo">
             <Field label="Buscar hoja de campo" onChange={setTemplateSearch} placeholder="Ej. presión, termómetro…" value={templateSearch} />
-            {visibleTemplates.map((template) => (
-              <Pressable key={template.template_key} onPress={() => setSelectedTemplate(template.template_key)} style={[styles.choice, selectedTemplate === template.template_key && styles.choiceActive]}>
-                <Text>{template.name} · v{template.version}</Text>
-              </Pressable>
-            ))}
-            {visibleTemplates.length === 0 && (
+            {templatesLoading ? (
+              <LoadingState label="Cargando hojas de campo…" />
+            ) : templatesError ? (
+              <AlertBanner tone="danger">{templatesError}</AlertBanner>
+            ) : visibleTemplates.length > 0 ? (
+              <ScrollView nestedScrollEnabled style={styles.templateList}>
+                {visibleTemplates.map((template) => (
+                  <Pressable
+                    key={template.template_key}
+                    onPress={() => setSelectedTemplate(template.template_key)}
+                    style={({ pressed }) => [
+                      styles.choice,
+                      selectedTemplate === template.template_key && styles.choiceActive,
+                      pressed && styles.choicePressed,
+                    ]}
+                  >
+                    <Text>{template.name} · v{template.version}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : (
+              <EmptyState title="Sin resultados" description={templateSearch.trim() ? 'Prueba con otro término o solicita la hoja.' : 'No hay hojas de campo disponibles.'} />
+            )}
+            {!templatesLoading && !templatesError && visibleTemplates.length === 0 && (
               <SecondaryButton label="+ Solicitar hoja de campo" onPress={() => setTicketMode('field_sheet_template')} />
             )}
           </Section>
@@ -439,7 +476,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
           </ActionRow>
         </> : <>
           <View style={styles.statusRow}>
-            <StatusBadge label={sheet.status.toUpperCase()} tone={statusTone(sheet.status)} />
+            <StatusBadge label={fieldSheetStatusLabel(sheet.status)} tone={statusTone(sheet.status)} />
           </View>
 
           {ordinaryFields.length > 0 && (
@@ -494,12 +531,14 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
           )}
 
           {sheet.status === 'completed' && (
-            <ActionRow>
-              <SecondaryButton label="Ver / descargar PDF" loading={downloadingPdf} onPress={downloadFieldSheetPdf} />
+            <>
+              <ActionRow>
+                <SecondaryButton label="Ver / descargar PDF" loading={downloadingPdf} onPress={downloadFieldSheetPdf} />
+              </ActionRow>
               {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
-                <SecondaryButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+                <AdministrativeButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
               )}
-            </ActionRow>
+            </>
           )}
 
           <SecondaryButton
@@ -521,6 +560,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
           )}
         </>}
         <SecondaryButton label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
+        </FadeIn>
       </ScrollView>
     );
   }
@@ -558,8 +598,10 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardTitle: { color: colors.text, fontSize: 17, fontWeight: '800' }, meta: { color: colors.textSubtle },
-  choice: { backgroundColor: '#f5f8fa', borderColor: colors.border, borderRadius: 9, borderWidth: 1, padding: spacing.md, marginBottom: spacing.xs },
+  templateList: { borderColor: colors.border, borderRadius: 9, borderWidth: 1, maxHeight: 240, padding: spacing.xs },
+  choice: { backgroundColor: colors.background, borderColor: colors.border, borderRadius: 9, borderWidth: 1, padding: spacing.md, marginBottom: spacing.xs },
   choiceActive: { backgroundColor: colors.primarySoft, borderColor: colors.accent },
+  choicePressed: { backgroundColor: colors.background },
   eyebrow: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
   statusRow: { flexDirection: 'row', marginBottom: spacing.sm },

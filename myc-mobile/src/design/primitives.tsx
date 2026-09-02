@@ -31,25 +31,25 @@ export function Screen({ children }: { children: ReactNode }) {
  * flujo; Inicio va explícitamente a la raíz del módulo; Cerrar cierra un
  * modal/fullscreen. No usar Inicio como sustituto de Back.
  */
-export function BackButton({ onPress, label = '‹ Volver' }: { onPress?(): void; label?: string }) {
+export function BackButton({ onPress, label = '‹ Volver', disabled }: { onPress?(): void; label?: string; disabled?: boolean }) {
   return (
-    <Pressable hitSlop={8} onPress={onPress ?? (() => router.back())} style={styles.navAction}>
+    <Pressable disabled={disabled} hitSlop={8} onPress={onPress ?? (() => router.back())} style={[styles.navAction, disabled && styles.navActionDisabled]}>
       <Text style={styles.navActionText}>{label}</Text>
     </Pressable>
   );
 }
 
-export function HomeButton({ label = 'Inicio' }: { label?: string }) {
+export function HomeButton({ label = 'Inicio', disabled }: { label?: string; disabled?: boolean }) {
   return (
-    <Pressable hitSlop={8} onPress={() => router.replace('/(technician)')} style={styles.navAction}>
+    <Pressable disabled={disabled} hitSlop={8} onPress={() => router.replace('/(technician)')} style={[styles.navAction, disabled && styles.navActionDisabled]}>
       <Text style={styles.navActionText}>{label}</Text>
     </Pressable>
   );
 }
 
-export function CloseButton({ onPress, label = 'Cerrar' }: { onPress(): void; label?: string }) {
+export function CloseButton({ onPress, label = 'Cerrar', disabled }: { onPress(): void; label?: string; disabled?: boolean }) {
   return (
-    <Pressable hitSlop={8} onPress={onPress} style={styles.navAction}>
+    <Pressable disabled={disabled} hitSlop={8} onPress={onPress} style={[styles.navAction, disabled && styles.navActionDisabled]}>
       <Text style={styles.navActionText}>{label}</Text>
     </Pressable>
   );
@@ -291,6 +291,7 @@ const styles = StyleSheet.create({
   administrativeButtonText: { color: colors.warningStrong, fontWeight: '700', fontSize: 13 },
   buttonDisabled: { opacity: 0.42 },
   navAction: { minHeight: 44, justifyContent: 'center', paddingVertical: spacing.xs },
+  navActionDisabled: { opacity: 0.42 },
   navActionText: { color: colors.primary, fontWeight: '700' },
   badge: {
     alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1,

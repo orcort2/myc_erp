@@ -15,6 +15,7 @@ import {
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useCommunications } from '@/src/communications/CommunicationsProvider';
+import { BackButton } from '@/src/design/primitives';
 import { createConversation, fetchDirectory, fetchMentions } from '@/src/services/communications';
 import type { CommunicationDirectory, CommunicationMentionInbox } from '@/src/types/communication';
 
@@ -69,7 +70,7 @@ export default function CommunicationsScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Inicio</Text></Pressable>
+        <BackButton />
         <Text style={styles.title}>Comunicaciones</Text>
         <Pressable onPress={openCreate}><Text style={styles.new}>＋ Nueva</Text></Pressable>
       </View>
@@ -181,7 +182,6 @@ export default function CommunicationsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#f4f7fa' },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 14 },
-  back: { color: '#0067a8', fontSize: 16, fontWeight: '700' },
   title: { color: '#17212b', fontSize: 22, fontWeight: '800' },
   new: { color: '#0067a8', fontWeight: '800' },
   tabs: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: '#e7edf2', borderRadius: 12, padding: 3 },

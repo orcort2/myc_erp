@@ -36,6 +36,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import app.models  # noqa: F401
+from app.core.config import settings
 from app.core.db import Base, get_db
 from app.core.security import create_access_token, hash_password
 from app.main import app
@@ -51,6 +52,7 @@ from app.models.user import Role, User
 from app.schemas.lab_client import LabClientCreate
 from app.services.lab_clients import create_lab_client
 from app.services.portal.permission_service import ensure_portal_catalog
+from app.services.storage_service import resolve_storage_path
 
 
 PASSWORD = "MobilePass123"
@@ -429,6 +431,92 @@ def test_close_with_confirm_draft_completion_rejects_invalid_draft_without_parti
         sheet = db.get(FieldSheet, sheet_id)
         assert sheet.status == "draft"
         assert sheet.final_pdf_path is None
+
+
+def test_close_with_confirm_draft_completion_rolls_back_atomically_if_a_pdf_write_fails(
+    phase5_context, monkeypatch, tmp_path,
+):
+    """22b (cierre UX 2026-09): el cierre con auto-completado de borradores
+    cubre VARIAS hojas con un solo ExitStack (lab_work_orders.py). Si la
+    primera hoja congela su PDF con éxito y la segunda falla, el guard de la
+    primera también debe limpiar su artefacto huérfano y la transacción
+    completa debe revertir -- ninguna hoja queda completed a medias ni la OT
+    se cierra parcialmente. Esto es un camino distinto (y nuevo) del ya
+    cubierto por test_failure_after_pdf_write_leaves_no_orphaned_artifact en
+    test_lab_field_sheets_capture.py, que sólo ejercita completar UNA hoja
+    vía /field-sheet/complete."""
+    monkeypatch.setattr(settings, "storage_root", str(tmp_path))
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["tech"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id = create_order(client, headers, lab_client_id=lab_client_id)
+    equipment_ids = []
+    for index in (1, 2):
+        equipment_id = add_equipment(client, headers, order_id, index)
+        set_service(client, headers, order_id, equipment_id, "traceable")
+        equipment_ids.append(equipment_id)
+    signed = sign(client, headers, order_id)
+    assert signed.status_code == 200, signed.text
+
+    sheet_ids = []
+    for equipment_id in equipment_ids:
+        created = create_field_sheet(client, headers, order_id, equipment_id)
+        assert created.status_code == 201, created.text
+        sheet_json = created.json()
+        sheet_ids.append(sheet_json["id"])
+        rows = [
+            {
+                "id": row["id"], "section_key": row["section_key"], "row_number": row["row_number"],
+                "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+            }
+            for index, row in enumerate(sheet_json["results_rows"])
+        ]
+        patched = client.patch(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+            json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+            headers=headers,
+        )
+        assert patched.status_code == 200, patched.text
+
+    import app.services.field_sheet_pdfs as field_sheet_pdfs_module
+    real_freeze = field_sheet_pdfs_module.freeze_final_field_sheet_pdf
+    calls = {"count": 0}
+    written_paths: list[str] = []
+
+    def _freeze_second_call_explodes(db, field_sheet):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            result = real_freeze(db, field_sheet)
+            written_paths.append(field_sheet.final_pdf_path)
+            return result
+        raise RuntimeError("simulated failure while freezing the second field sheet's PDF")
+
+    monkeypatch.setattr(field_sheet_pdfs_module, "freeze_final_field_sheet_pdf", _freeze_second_call_explodes)
+
+    with pytest.raises(RuntimeError):
+        close_individual(client, headers, order_id, confirm_draft_completion=True)
+    assert calls["count"] == 2
+    assert len(written_paths) == 1
+
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.status == "in_progress"
+        assert order.final_pdf is None
+        for sheet_id in sheet_ids:
+            sheet = db.get(FieldSheet, sheet_id)
+            # El PATCH previo con results_rows ya movió la hoja de
+            # draft->in_progress (lab_field_sheets.py) -- ese es su estado
+            # real antes de intentar completar, así que es a donde el
+            # rollback debe devolverla, no a "draft".
+            assert sheet.status == "in_progress"
+            assert sheet.final_pdf_path is None
+            assert sheet.final_pdf_sha256 is None
+
+    # El PDF de la primera hoja SÍ se escribió a disco antes de que la
+    # segunda fallara -- guard_final_pdf_write debe haberlo borrado, no
+    # dejarlo huérfano apuntado por nadie tras el rollback.
+    orphan = resolve_storage_path(written_paths[0])
+    assert orphan is None or not orphan.is_file()
 
 
 def test_close_rejected_with_missing_field_sheet(phase5_context):
@@ -869,6 +957,41 @@ def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_cont
     assert audit.user_id is not None
 
 
+def test_admin_reopens_directly_with_invalidate_policy_requires_new_signature(phase5_context):
+    """19b (cierre UX 2026-09): la política 'invalidate' del reopen directo
+    -- no sólo 'preserve' -- limpia signature_session_id y exige firma
+    nueva, igual que ya se probaba para el camino mediado por ticket."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+    with factory() as db:
+        original_signature_session_id = db.get(LabWorkOrder, order_id).signature_session_id
+    assert original_signature_session_id is not None
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "invalidate", "reason": "Corrección estructural"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "draft"
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.signature_session_id is None
+        assert order.signature_required is True
+        assert order.signature_preserved is False
+        assert len(order.revisions) == 1
+        assert order.revisions[0].signature_preserved is False
+        # La firma histórica de la revisión congelada nunca se pierde -- sólo
+        # se retira de la OT vigente.
+        assert order.revisions[0].signature_session_id == original_signature_session_id
+
+
 def test_user_without_reopen_permission_cannot_reopen_directly(phase5_context):
     """20. Sin work_orders.reopen, el endpoint directo rechaza -- el único
     camino que le queda es solicitar (ticket), no ejecutar."""
@@ -896,5 +1019,105 @@ def _latest_audit(factory, action: str, entity_id: int):
             .where(AuditLog.action == action, AuditLog.entity_id == entity_id)
             .order_by(AuditLog.id.desc())
         )
+
+
+def _latest_notification(factory, notification_type: str, entity_id: int):
+    from app.models.notification import Notification
+    with factory() as db:
+        return db.scalar(
+            select(Notification)
+            .where(Notification.notification_type == notification_type, Notification.entity_id == entity_id)
+            .order_by(Notification.id.desc())
+        )
+
+
+# --------------------------------------------------------------------------
+# Cierre UX 2026-09 (item J): cancel/restore/reopen directo ya dejaban
+# AuditLog -- pero nunca avisaban a quien creó la OT, sólo a quien tuviera la
+# pantalla abierta en ese momento. entity_type="work_order" reutiliza el
+# mismo pipeline (Notification -> commit_and_dispatch_notifications) y el
+# mismo reconocimiento ya existente en Mobile (affectsWorkOrders/targetFor),
+# sin tocar el contrato de la API ni el modelo de permisos.
+# --------------------------------------------------------------------------
+
+def test_cancel_notifies_the_work_order_creator_but_not_the_actor_itself(phase5_context):
+    client, factory, tokens, _tenants = phase5_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    with factory() as db:
+        tech_id = db.scalar(select(User.id).where(User.username == "lab-tech"))
+        admin_id = db.scalar(select(User.id).where(User.username == "lab-admin"))
+    order_id, _equipment_id = create_and_sign_ready_order(client, tech_headers)
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/cancel",
+        json={"reason": "Cierre UX 2026-09: prueba de notificación"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    notification = _latest_notification(factory, "work_order.cancelled", order_id)
+    assert notification is not None
+    assert notification.recipient_user_id == tech_id
+    assert notification.actor_user_id == admin_id
+    assert notification.entity_type == "work_order"
+
+    # Admin cancela su propia OT: no debe autonotificarse.
+    order_id_2, _equipment_id_2 = create_and_sign_ready_order(client, admin_headers)
+    response_2 = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id_2}/cancel",
+        json={"reason": "Admin cancela su propia OT"},
+        headers=admin_headers,
+    )
+    assert response_2.status_code == 200, response_2.text
+    assert _latest_notification(factory, "work_order.cancelled", order_id_2) is None
+
+
+def test_restore_notifies_the_work_order_creator(phase5_context):
+    client, factory, tokens, _tenants = phase5_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    with factory() as db:
+        tech_id = db.scalar(select(User.id).where(User.username == "lab-tech"))
+    order_id, _equipment_id = create_and_sign_ready_order(client, tech_headers)
+    cancelled = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/cancel",
+        json={"reason": "Prueba de notificación de restauración"},
+        headers=admin_headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    restored = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/restore", headers=admin_headers,
+    )
+    assert restored.status_code == 200, restored.text
+
+    notification = _latest_notification(factory, "work_order.restored", order_id)
+    assert notification is not None
+    assert notification.recipient_user_id == tech_id
+
+
+def test_reopen_directly_notifies_the_work_order_creator(phase5_context):
+    client, factory, tokens, _tenants = phase5_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    with factory() as db:
+        tech_id = db.scalar(select(User.id).where(User.username == "lab-tech"))
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, tech_headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+    closed = close_individual(client, admin_headers, order_id)
+    assert closed.status_code == 200, closed.text
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Prueba de notificación de reapertura"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+
+    notification = _latest_notification(factory, "work_order.reopened", order_id)
+    assert notification is not None
+    assert notification.recipient_user_id == tech_id
 
 

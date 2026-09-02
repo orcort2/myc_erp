@@ -969,6 +969,42 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
         ) from exc
 
 
+# Cierre UX 2026-09 (item J): cancelar/restaurar/reabrir directamente ya
+# dejaban AuditLog, pero nunca avisaban al técnico que creó la OT -- sólo
+# quien tenía la pantalla abierta se enteraba, y sólo al refrescar. Mismo
+# patrón ya usado para work_order_group_request (_notify_request_user):
+# entity_type/event_type con prefijo "work_order." coinciden con lo que
+# Mobile ya reconoce (affectsWorkOrders/targetFor en refresh-policy.ts), así
+# que no requiere ningún cambio del lado de Mobile.
+def _notify_work_order_owner(
+    db: Session, work_order: LabWorkOrder, actor: User, *, event: str, title: str, body: str
+) -> None:
+    if work_order.created_by_user_id == actor.id:
+        return
+    # Timestamp propio (no edit_version/revision_number: cancelar/restaurar no
+    # los incrementa, así que un segundo ciclo cancelar->restaurar->cancelar
+    # de la misma OT reutilizaría la misma key -- event_key es UNIQUE).
+    now = datetime.now(timezone.utc).isoformat()
+    notification = Notification(
+        recipient_user_id=work_order.created_by_user_id,
+        actor_user_id=actor.id,
+        notification_type=event,
+        event_key=f"lab-work-order:{work_order.id}:{event}:{now}",
+        title=title,
+        body=body,
+        entity_type="work_order",
+        entity_id=work_order.id,
+        priority="normal",
+        metadata_json={
+            "work_order_id": work_order.id,
+            "work_order_folio": work_order.folio,
+            "mobile_path": "/(technician)/work-orders",
+        },
+    )
+    db.add(notification)
+    queue_notification_for_delivery(db, notification)
+
+
 def cancel_work_order(
     db: Session, work_order_id: int, user: User, reason: str
 ) -> LabWorkOrderRead:
@@ -1001,6 +1037,12 @@ def cancel_work_order(
             "cancellation_reason": work_order.cancellation_reason,
         },
     )
+    _notify_work_order_owner(
+        db, work_order, user,
+        event="work_order.cancelled",
+        title="OT cancelada",
+        body=f"OT {work_order.folio} fue cancelada." + (f" Motivo: {work_order.cancellation_reason}" if work_order.cancellation_reason else ""),
+    )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
 
@@ -1031,6 +1073,12 @@ def restore_work_order(db: Session, work_order_id: int, user: User) -> LabWorkOr
         user_id=user.id,
         previous_values={"status": "cancelled"},
         new_values={"status": restored_status},
+    )
+    _notify_work_order_owner(
+        db, work_order, user,
+        event="work_order.restored",
+        title="OT restaurada",
+        body=f"OT {work_order.folio} fue restaurada a su estado anterior a la cancelación.",
     )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
@@ -2146,19 +2194,22 @@ def _complete_members(
                     status_code=422,
                     detail={"code": "LAB_DRAFT_SHEETS_INVALID", "items": blockers},
                 )
-            from contextlib import ExitStack
-
-            from app.services.field_sheet_pdfs import guard_final_pdf_write
             from app.services.lab_field_sheets import _complete_lab_field_sheet_uncommitted
+            from app.services.storage_service import resolve_storage_path
 
-            with ExitStack() as stack:
-                # Cada guard limpia SÓLO su propio PDF si algo falla más
-                # adelante en este mismo bloque (validación posterior,
-                # generación del PDF de la OT, commit) -- por eso el stack
-                # sigue abierto hasta el _finish_complete_members final, no
-                # sólo durante el loop de completar hojas.
-                for _item, equipment in draft_targets:
-                    stack.enter_context(guard_final_pdf_write(db, equipment.field_sheet))
+            # Cierre UX 2026-09 (bug encontrado por test_close_with_confirm_draft_completion_rolls_back_atomically_if_a_pdf_write_fails,
+            # no pedido explícitamente): un guard_final_pdf_write POR hoja
+            # compuesto vía ExitStack rompe con >1 hoja -- cada guard llama a
+            # su propio db.rollback() al desenredarse, y ese rollback expira
+            # TODOS los objetos de la sesión (no sólo el suyo), así que para
+            # cuando el segundo guard corre, el final_pdf_path de la primera
+            # hoja ya volvió a su valor previo en memoria y su archivo recién
+            # escrito queda huérfano en disco sin que nada lo detecte. Aquí
+            # se limpia cada PDF ya escrito ANTES de un único rollback final,
+            # cubriendo el mismo span (loop de completar + reverificación +
+            # _finish_complete_members) que antes cubría el ExitStack.
+            pre_existing_paths = {equipment.id: equipment.field_sheet.final_pdf_path for _item, equipment in draft_targets}
+            try:
                 for _item, equipment in draft_targets:
                     _complete_lab_field_sheet_uncommitted(db, equipment, equipment.field_sheet, user)
                 # Re-verificar con la autoridad normal (ahora sin drafts
@@ -2170,6 +2221,15 @@ def _complete_members(
                 return _finish_complete_members(
                     db, work_order=work_order, members=members, user=user, scope=scope,
                 )
+            except BaseException:
+                for _item, equipment in draft_targets:
+                    written_path = equipment.field_sheet.final_pdf_path
+                    if written_path and written_path != pre_existing_paths.get(equipment.id):
+                        resolved = resolve_storage_path(written_path)
+                        if resolved is not None and resolved.is_file():
+                            resolved.unlink(missing_ok=True)
+                db.rollback()
+                raise
         # El detalle de hojas faltantes (por equipo) es más informativo que un
         # simple INVALID_STATE_TRANSITION, así que se revisa primero -- para
         # cualquier miembro no exento, si ya está ready_to_close no puede

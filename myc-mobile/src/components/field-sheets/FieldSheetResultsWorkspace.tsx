@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  findNodeHandle,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
+import { CloseButton, PrimaryButton } from '@/src/design/primitives';
 import { colors, radius, spacing, typography } from '@/src/design/tokens';
 import { computeSectionProgress } from '@/src/services/field-sheet-progress';
 import {
@@ -73,6 +75,7 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
   const { width } = useWindowDimensions();
   const [state, setState] = useState(() => initWorkspaceState(rows));
   const inputRefs = useRef(new Map<string, TextInput | null>());
+  const scrollViewRef = useRef<ScrollView>(null);
 
   // El caller (LabTechnicalCapture) puede reabrir el workspace con una
   // versión más nueva de rows (p.ej. tras un guardado del formulario
@@ -118,6 +121,22 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
     inputRefs.current.get(key)?.focus();
   }
 
+  // Genérico (no depende de qué familia de tabla ni de qué dispositivo es):
+  // al enfocar cualquier celda, la trae a la vista dentro del propio
+  // ScrollView, por encima del teclado -- measureLayout calcula su posición
+  // real respecto al contenedor scrollable, no un offset fijo por pantalla.
+  function scrollCellIntoView(cellKey: string) {
+    const input = inputRefs.current.get(cellKey);
+    const scrollNode = scrollViewRef.current;
+    const scrollHandle = scrollNode && findNodeHandle(scrollNode);
+    if (!input || !scrollNode || !scrollHandle) return;
+    input.measureLayout(
+      scrollHandle,
+      (_x, y) => scrollNode.scrollTo({ y: Math.max(0, y - spacing.lg), animated: true }),
+      () => undefined,
+    );
+  }
+
   return (
     <Modal animationType="slide" onRequestClose={requestClose} presentationStyle="fullScreen" visible={visible}>
       <SafeAreaProvider>
@@ -131,11 +150,11 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
                 <Text style={styles.errorText}>{state.errorMessage}</Text>
               )}
             </View>
-            <Pressable onPress={requestClose}><Text style={styles.close}>Cerrar</Text></Pressable>
+            <CloseButton onPress={requestClose} />
           </View>
 
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
-            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" ref={scrollViewRef}>
               {sections.map((section, sectionIndex) => {
                 const progress = progressBySection[sectionIndex];
                 const sectionRows = state.rows.filter((row) => row.section_key === section.key);
@@ -175,6 +194,7 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
                                   key={column.key}
                                   keyboardType={keyboardTypeForFieldType(column.data_type)}
                                   onChangeText={(value) => setState((current) => setCellValue(current, section.key, row.row_number, column.source ?? column.key, value))}
+                                  onFocus={() => scrollCellIntoView(cellKey)}
                                   onSubmitEditing={() => (nextKey ? focusNext(nextKey) : undefined)}
                                   placeholder={column.label}
                                   ref={(instance) => { inputRefs.current.set(cellKey, instance); }}
@@ -205,15 +225,13 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
                 );
               })}
             </ScrollView>
-          </KeyboardAvoidingView>
 
-          {!readOnly && (
-            <View style={styles.footer}>
-              <Pressable disabled={state.saveState === 'saving'} onPress={handleSave} style={styles.saveButton}>
-                <Text style={styles.saveButtonText}>Guardar resultados</Text>
-              </Pressable>
-            </View>
-          )}
+            {!readOnly && (
+              <View style={styles.footer}>
+                <PrimaryButton label="Guardar resultados" loading={state.saveState === 'saving'} onPress={() => { void handleSave(); }} />
+              </View>
+            )}
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </SafeAreaProvider>
     </Modal>
@@ -232,7 +250,6 @@ const styles = StyleSheet.create({
   title: { ...typography.title, color: colors.text },
   saveStateText: { fontSize: 13, fontWeight: '700' },
   errorText: { color: colors.danger, fontSize: 12 },
-  close: { color: colors.primary, fontWeight: '800', fontSize: 16, paddingTop: spacing.xs },
   content: { padding: spacing.lg, gap: spacing.lg },
   sectionBlock: { gap: spacing.sm, marginBottom: spacing.md },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -256,6 +273,4 @@ const styles = StyleSheet.create({
   },
   addRowText: { color: colors.accent, fontWeight: '800' },
   footer: { padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
-  saveButton: { alignItems: 'center', backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md },
-  saveButtonText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

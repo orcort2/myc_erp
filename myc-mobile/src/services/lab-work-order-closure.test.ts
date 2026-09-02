@@ -119,7 +119,7 @@ test('the screen exposes explicit group and individual actions', () => {
     'utf8',
   );
   assert.match(source, /Firmar recepción del grupo/);
-  assert.match(source, /Firmar sólo OT \{workOrder\.folio\}/);
+  assert.match(source, /Firmar sólo OT \$\{workOrder\.folio\}/);
   assert.match(source, /Cerrar OT \$\{workOrder\.folio\}/);
   assert.match(source, /groupMissingEquipmentCount/);
   assert.match(serviceSource, /signatures\/individual/);
