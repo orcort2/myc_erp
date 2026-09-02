@@ -59,6 +59,40 @@ progreso y bucket. La consulta usa únicamente `is_current=true`; Mobile hace
 una sola llamada y navega a Mesa Técnica con `workOrderId`, sin duplicar la
 captura ni hacer fan-out por OT/equipo.
 
+### Scope de acceso del tray (validado)
+
+`get_lab_field_sheet_tray` está gateado por
+`require_internal_mobile_permission("field_sheets.read")`
+([mobile_technician.py](../../backend/app/routers/mobile_technician.py)), el
+mismo guard interno-only que el resto de `mobile_technician.py`. Ese guard ya
+exige `actor_type == "internal"` antes de resolver el permiso, así que un
+actor `client`/portal externo nunca alcanza el servicio: recibe 403
+(`"Esta capacidad es exclusiva de staff MYC"`), no una lista vacía o
+filtrada. Por eso `context.client_id` es siempre `None` para quien entra a
+este endpoint.
+
+El servicio pasa ese `None` como `operator_client_id` a
+`list_lab_field_sheet_tray`
+([lab_field_sheets.py](../../backend/app/services/lab_field_sheets.py)), que
+es exactamente el mismo resolver que usan `create_lab_work_order` y
+`list_lab_work_orders` en `lab_work_orders.py` (`operator_client_id=context.client_id`).
+No se inventó una segunda política de seguridad para el tray. `None` es
+**scope interno global deliberado**: LAB no modela un concepto de "hoja de
+campo asignada a un técnico" — cualquier staff interno con
+`field_sheets.read` ve toda la bandeja, sin filtrar por creador ni por
+asignación individual. Un `operator_client_id` no nulo sólo ocurre para
+actores externos con organización cliente propia, que en este endpoint
+específico nunca llegan a evaluarse porque el guard los rechaza antes.
+
+Cobertura de test:
+- `test_lab_field_sheet_tray_is_aggregated_paginated_and_permission_guarded`
+  ([test_lab_phase6_field_sheet_revisions.py](../../backend/tests/test_lab_phase6_field_sheet_revisions.py))
+  prueba que un actor interno sin el permiso `field_sheets.read` recibe 403.
+- `test_external_actor_cannot_reach_lab_field_sheet_tray`
+  ([test_mobile_security_context.py](../../backend/tests/test_mobile_security_context.py))
+  prueba que un actor `client`/portal externo autenticado recibe 403 antes de
+  llegar al resolver de scope.
+
 ## Revisiones, reapertura y PDF
 
 Una reapertura `preserve` mantiene la revisión vigente. Una reapertura
@@ -70,20 +104,36 @@ bytes y SHA-256.
 
 ## Validaciones reproducibles
 
-- Backend focal: 93 passed, 8 skipped.
-- Mobile focal Fase 6: 73 passed.
-- TypeScript: correcto.
-- Expo lint: correcto.
-- PostgreSQL desechable: `b71d4a9f2c18 → d7c297902425 → b71d4a9f2c18 →
-  d7c297902425 → head`, correcto; head `d7c297902425`.
+- Backend focal (FieldSheet/LAB + seguridad Mobile, 10 archivos): `256 passed,
+  8 skipped`.
+- Backend suite completa: `852 passed, 8 skipped, 2 failed`. Las 2 fallas son
+  `test_api_access_conformity.py` (deuda preexistente de inventario de
+  endpoints, ya registrada como pendiente separado antes de esta fase;
+  confirmada como preexistente vía `git stash` contra `92e5ffb` — falla
+  idéntica sin los cambios de este cierre). No está relacionada con
+  FieldSheets/LAB ni con el tray.
+- Mobile suite completa (`npx tsx --test` sobre los 23 archivos `*.test.ts`
+  bajo `src/`): `207 passed, 0 failed`.
+- TypeScript (`npx tsc --noEmit`): correcto, sin errores.
+- Expo lint (`npm run lint`): correcto, sin errores.
+- Expo export iOS (`npx expo export --platform ios`): correcto.
+- Expo export Android (`npx expo export --platform android`): correcto.
+- Expo export web (`npx expo export --platform web`): correcto, 36 rutas
+  estáticas.
+- `git diff --check`: sin errores de espacio en blanco.
+- PostgreSQL desechable: `upgrade head` correcto desde cero, `current =
+  d7c297902425 (head)`, `alembic check` → "No new upgrade operations
+  detected."; ciclo `downgrade b71d4a9f2c18 → upgrade head` correcto. Base
+  desechable eliminada al terminar; la base `erp_myc` real no fue tocada.
 - PostgreSQL aceptó revisión 1 histórica + revisión 2 vigente y rechazó una
-  segunda vigente mediante `uq_field_sheets_current_lab_equipment`.
+  segunda vigente mediante `uq_field_sheets_current_lab_equipment` (Fase 6
+  original, no repetido en este cierre).
 - QA familias: `general` (`direct_comparison`) y `manometro` (`pressure`)
   completaron prefill, captura, guardado, finalización, congelamiento y doble
-  descarga idéntica.
+  descarga idéntica (Fase 6 original, no repetido en este cierre).
 
-Las cifras de suite completa, export Expo y gates finales se registran en
-`docs/BACKUP_ESTADO_ACTUAL.md` al finalizar el trabajo.
+Las cifras de suite completa, export Expo y gates finales se sincronizan en
+`docs/BACKUP_ESTADO_ACTUAL.md`.
 
 ## Limitaciones deliberadas
 
@@ -93,3 +143,9 @@ Las cifras de suite completa, export Expo y gates finales se registran en
 - El cierre de esta fase técnica no convierte el módulo global de Hojas de
   Campo ni el vertical LAB completo en `SELLADO`: continúan la aceptación
   física iOS/Android y la deuda metrológica transversal registrada.
+- La deuda de conformidad del inventario de endpoints
+  (`test_api_access_conformity.py`, csv committed vs. runtime) permanece sin
+  resolver deliberadamente: es preexistente a este cierre, no la introdujo ni
+  la agranda el tray de FieldSheets, y su alcance (regenerar/auditar ~500
+  endpoints del ERP completo) excede Fase 6 LAB. Queda como pendiente
+  separado, no como bug de este cierre.

@@ -46,7 +46,18 @@ def get_lab_field_sheet_tray(
         require_internal_mobile_permission("field_sheets.read")
     ),
 ) -> LabFieldSheetTrayPage:
-    """Agregado temporal LAB para la bandeja Mobile; no toca ETS productivo."""
+    """Agregado temporal LAB para la bandeja Mobile; no toca ETS productivo.
+
+    `require_internal_mobile_permission` ya garantiza `actor_type == "internal"`
+    antes de llegar aquí, así que `context.client_id` siempre es `None` para
+    quien entra a este endpoint (los actores `client`/portal externo jamás lo
+    alcanzan). `operator_client_id=None` es el mismo resolver que usan el
+    resto de endpoints LAB (`lab_work_orders.py`): filtra por organización
+    cliente cuando el actor es externo, y no filtra -- scope interno global
+    deliberado -- cuando es staff interno autorizado. LAB no modela un scope
+    de "hoja de campo por técnico"; cualquier staff con `field_sheets.read`
+    ve toda la bandeja.
+    """
     return list_lab_field_sheet_tray(
         db,
         operator_client_id=context.client_id,

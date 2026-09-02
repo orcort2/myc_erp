@@ -757,6 +757,19 @@ def test_external_actor_is_denied_from_unreviewed_product_mobile_routes(
     assert api.get("/api/mobile/v1/technician/field-sheets/1", headers=headers).status_code == 403
 
 
+def test_external_actor_cannot_reach_lab_field_sheet_tray(mobile_security_api):
+    """La bandeja LAB (`operator_client_id=context.client_id`) sólo resuelve
+    None -- scope interno global -- porque `require_internal_mobile_permission`
+    ya bloquea cualquier actor externo/client-portal antes del resolver."""
+    api, _, data = mobile_security_api
+    jr = _login(api, data["jr"].email)
+    response = api.get(
+        "/api/mobile/v1/technician/lab-field-sheets", headers=_headers(jr)
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Esta capacidad es exclusiva de staff MYC"
+
+
 def test_external_push_device_registration_keeps_user_ownership(mobile_security_api):
     api, db, data = mobile_security_api
     viewer = _login(api, data["viewer"].email)

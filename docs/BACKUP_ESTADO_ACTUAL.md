@@ -30,10 +30,12 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único del código verificado: `b71d4a9f2c18`.
-- La revisión `b71d4a9f2c18` declara `down_revision = a3983f9a6ca9` y agrega a
-  `field_sheets` renderer/versión, referencia y SHA-256 del PDF final, versión
-  de definición congelada y fecha de generación.
+- Head único del código verificado: `d7c297902425` (declara
+  `down_revision = b71d4a9f2c18`; añade el modelo de revisión/scope de
+  equipo LAB de Fase 6 -- ver sección de Fase 6 más abajo).
+- La revisión previa `b71d4a9f2c18` declara `down_revision = a3983f9a6ca9` y
+  agrega a `field_sheets` renderer/versión, referencia y SHA-256 del PDF
+  final, versión de definición congelada y fecha de generación.
 - La migración clasifica renderers históricos por su `pdf_template` sin
   reescribir `template_definition_json` ni `template_key`.
 - No se aplicó Alembic ni se ejecutaron cambios sobre la base real del usuario;
@@ -66,16 +68,52 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
   publica una vez el PDF en storage institucional y persiste SHA-256 y
   procedencia; descargas posteriores verifican y reutilizan el mismo archivo.
 
+## Estado verificable Fase 6 LAB (Hojas de Campo — cierre de validación)
+
+Detalle completo en
+[`docs/closures/LAB_FIELD_SHEETS_PHASE_6_2026-09-01.md`](closures/LAB_FIELD_SHEETS_PHASE_6_2026-09-01.md).
+Resumen operativo:
+
+- `GET /api/mobile/v1/technician/lab-field-sheets` (bandeja LAB) está
+  gateado por `require_internal_mobile_permission("field_sheets.read")`:
+  ningún actor `client`/portal externo lo alcanza (403 antes de resolver
+  scope). Para staff interno autorizado, `operator_client_id=None` es scope
+  interno global deliberado — el mismo resolver que ya usan
+  `create_lab_work_order`/`list_lab_work_orders`; no existe (ni se agregó) un
+  concepto de "hoja de campo asignada a un técnico" en el modelo LAB.
+- El catálogo metrológico no se tocó: 30 claves operativas backend
+  (`TEMPLATE_BLOCK_ASSIGNMENTS`), 11 claves prototipo permanecen explícitamente
+  `unsupported` (422, sin fallback a `general`). Esa exclusión es una decisión
+  deliberada pendiente de trabajo metrológico humano, no un bug resuelto ni
+  pendiente de este cierre.
+- El modelo de revisión (current/histórico, duplicado `is_current` rechazado
+  por DB, `reopen preserve`/`reopen invalidate → N+1`, PDF histórico intacto)
+  y "Guardar y salir" (éxito cierra, fallo permanece abierto con valores
+  dirty, reintento exitoso) no cambiaron de arquitectura en este cierre; sólo
+  se revalidaron con la suite existente.
+- `frontend/**` permanece sin tocar desde `92e5ffb`
+  (`git diff 92e5ffb --name-only -- frontend/` vacío).
+
 ## Validaciones
 
-- Backend LAB/FieldSheet/PDF/esquema focal: `204 passed, 8 skipped, 7 subtests passed`.
-- Regresión concentrada de renderer/Fase 3: `75 passed`.
-- Mobile completo: `159 passed`.
+- Backend focal FieldSheet/LAB + seguridad Mobile (10 archivos): `256 passed,
+  8 skipped`.
+- Backend suite completa: `852 passed, 8 skipped, 2 failed`. Las 2 fallas
+  (`test_api_access_conformity.py`) son deuda preexistente de inventario de
+  endpoints (~500 rutas del ERP completo vs. csv committed), confirmada
+  idéntica en el baseline `92e5ffb` vía `git stash` — no la introdujo ni la
+  agranda este cierre; queda como pendiente separado (ver más abajo).
+- Mobile suite completa (23 archivos `*.test.ts` bajo `myc-mobile/src`):
+  `207 passed, 0 failed`.
 - TypeScript `npx tsc --noEmit`: correcto.
 - Lint `npm run lint`: correcto.
-- Build/export Mobile `npx expo export --platform web`: correcto, 36 rutas.
+- Expo export iOS `npx expo export --platform ios`: correcto.
+- Expo export Android `npx expo export --platform android`: correcto.
+- Expo export web `npx expo export --platform web`: correcto, 36 rutas.
+- `git diff --check`: sin errores de espacio en blanco.
 - Alembic sobre base desechable desde cero: `upgrade head` correcto,
-  `current = b71d4a9f2c18 (head)` y `check = No new upgrade operations detected`.
+  `current = d7c297902425 (head)` y `check = No new upgrade operations
+  detected`; ciclo `downgrade b71d4a9f2c18 → upgrade head` correcto.
 - La base desechable fue eliminada; la base ERP local real no fue modificada.
 
 ## Pendientes operativos
@@ -83,7 +121,14 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - QA físico Android/iPhone/TestFlight del recorrido completo de recepción,
   doble firma, orientación/teclado/scroll, FieldSheets, cierre, PDF,
   refresh/realtime y errores.
-- Resolver por un trabajo separado la deuda del inventario API 477/499.
+- Resolver por un trabajo separado la deuda del inventario API: el csv
+  committed (`docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`,
+  477 operaciones) quedó desactualizado contra el runtime actual (500
+  operaciones al corte de este documento); produce 2 fallas en
+  `tests/test_api_access_conformity.py` no relacionadas con FieldSheets/LAB
+  (confirmado preexistente en `92e5ffb` antes del cierre de validación de
+  Fase 6, ver
+  [`docs/closures/LAB_FIELD_SHEETS_PHASE_6_2026-09-01.md`](closures/LAB_FIELD_SHEETS_PHASE_6_2026-09-01.md)).
 - Mantener fuera de esta fase los hallazgos separados de FieldSheets
   (contenido, tabla Valve, overflow, columnas, imprimibles y plantillas),
   NIIMBOT, cambios MYCA/MYCT/rangos, LabClient y Fase 2 sin regresión.

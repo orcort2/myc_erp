@@ -85,7 +85,14 @@ def list_lab_field_sheet_tray(
     offset: int,
     limit: int,
 ) -> LabFieldSheetTrayPage:
-    """Bandeja LAB agregada sin fan-out ni revisiones históricas operativas."""
+    """Bandeja LAB agregada sin fan-out ni revisiones históricas operativas.
+
+    `operator_client_id=None` es scope interno global deliberado: no existe
+    concepto de "hoja de campo asignada a un técnico" en el modelo LAB, así
+    que cualquier caller interno autorizado (permiso `field_sheets.read`) ve
+    toda la bandeja sin filtrar. Un `operator_client_id` no nulo sólo aplica
+    a actores externos con organización cliente propia.
+    """
     current_sheet = aliased(FieldSheet)
     statement = (
         select(LabWorkOrderEquipment, func.count().over().label("tray_total"))
