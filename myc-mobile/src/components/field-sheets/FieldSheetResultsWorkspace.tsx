@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { CloseButton, PrimaryButton } from '@/src/design/primitives';
 import { colors, radius, spacing, typography } from '@/src/design/tokens';
 import { computeSectionProgress } from '@/src/services/field-sheet-progress';
 import {
@@ -150,7 +149,7 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
                 <Text style={styles.errorText}>{state.errorMessage}</Text>
               )}
             </View>
-            <CloseButton onPress={requestClose} />
+            <Pressable onPress={requestClose}><Text style={styles.close}>Cerrar</Text></Pressable>
           </View>
 
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
@@ -228,7 +227,9 @@ export function FieldSheetResultsWorkspace({ visible, title, sections, rows, rea
 
             {!readOnly && (
               <View style={styles.footer}>
-                <PrimaryButton label="Guardar resultados" loading={state.saveState === 'saving'} onPress={() => { void handleSave(); }} />
+                <Pressable disabled={state.saveState === 'saving'} onPress={handleSave} style={styles.saveButton}>
+                  <Text style={styles.saveButtonText}>Guardar resultados</Text>
+                </Pressable>
               </View>
             )}
           </KeyboardAvoidingView>
@@ -250,6 +251,7 @@ const styles = StyleSheet.create({
   title: { ...typography.title, color: colors.text },
   saveStateText: { fontSize: 13, fontWeight: '700' },
   errorText: { color: colors.danger, fontSize: 12 },
+  close: { color: colors.primary, fontWeight: '800', fontSize: 16, paddingTop: spacing.xs },
   content: { padding: spacing.lg, gap: spacing.lg },
   sectionBlock: { gap: spacing.sm, marginBottom: spacing.md },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -273,4 +275,6 @@ const styles = StyleSheet.create({
   },
   addRowText: { color: colors.accent, fontWeight: '800' },
   footer: { padding: spacing.lg, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface },
+  saveButton: { alignItems: 'center', backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.md },
+  saveButtonText: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

@@ -114,7 +114,7 @@ test('la revisión de recepción no usa lenguaje de cierre', () => {
 
 test('11. received_signed oculta agregar equipo (editable gatea "+ Añadir equipo")', () => {
   const source = screenSource();
-  assert.match(source, /editable && canManageEquipment[\s\S]{0,200}Añadir equipo/);
+  assert.match(source, /editable && canManageEquipment.*Añadir equipo/);
 });
 
 test('12. received_signed oculta editar equipo (editable gatea abrir el editor de equipo)', () => {

@@ -17,8 +17,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
-import { BackButton, CloseButton, DangerButton, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
-import { colors, spacing } from '@/src/design/tokens';
+import { BackButton } from '@/src/design/primitives';
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import { hasPermission } from '@/src/permissions/permissions';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
@@ -308,7 +307,7 @@ export default function TicketsScreen() {
         <Text style={styles.subtitle}>{capabilities.canReadWorkOrderGroupRequests ? 'Reaperturas y grupos anticipados por revisar' : 'Tus solicitudes operativas'}</Text>
       </View>
       <View style={styles.filters}>
-        {capabilities.canCreateTickets && <PrimaryButton label="+ Nueva solicitud" onPress={() => setNewRequestOpen(true)} />}
+        {capabilities.canCreateTickets && <Pressable style={styles.primary} onPress={() => setNewRequestOpen(true)}><Text style={styles.primaryText}>+ Nueva solicitud</Text></Pressable>}
         <TextInput onChangeText={setSearch} placeholder="Buscar cliente o motivo" style={styles.input} value={search} />
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {([
@@ -366,7 +365,7 @@ export default function TicketsScreen() {
           <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Ticket #{selected?.id}</Text>
-              <CloseButton onPress={() => setSelected(null)} />
+              <Pressable onPress={() => setSelected(null)}><Text style={styles.close}>Cerrar</Text></Pressable>
             </View>
             {selected && <ScrollView contentContainerStyle={styles.modalContent}>
               <Text style={styles.folio}>{TICKET_TYPE_LABELS[selected.type]}{selected.work_order_folio ? ` · OT ${selected.work_order_folio}` : ''}</Text>
@@ -388,25 +387,17 @@ export default function TicketsScreen() {
               {canReview && selected.type === 'reopen_work_order' && selected.status === 'pending' && <>
                 <Text style={styles.warning}>Si durante la edición se realiza un cambio estructural, el backend invalidará automáticamente las firmas existentes.</Text>
                 <TextInput multiline onChangeText={setComment} placeholder="Comentario de decisión" style={[styles.input, styles.comment]} value={comment} />
-                <View style={styles.actionGroup}>
-                  <PrimaryButton disabled={busy} label="Aprobar conservando firma" onPress={() => review('approve', 'preserve')} />
-                  <SecondaryButton disabled={busy} label="Aprobar y requerir nuevas firmas" onPress={() => review('approve', 'invalidate')} />
-                  <DangerButton disabled={busy} label="Rechazar" onPress={() => review('reject')} />
-                </View>
+                <Pressable disabled={busy} onPress={() => review('approve', 'preserve')} style={styles.primary}><Text style={styles.primaryText}>Aprobar conservando firma</Text></Pressable>
+                <Pressable disabled={busy} onPress={() => review('approve', 'invalidate')} style={styles.secondary}><Text style={styles.secondaryText}>Aprobar y requerir nuevas firmas</Text></Pressable>
+                <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
               </>}
               {canResolve && selected.type !== 'reopen_work_order' && selected.status === 'pending' && <>
                 {(selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && <TextInput autoCapitalize="characters" onChangeText={setAuthorizedFolio} placeholder="Folio completo autorizado" style={styles.input} value={authorizedFolio} />}
                 <TextInput multiline onChangeText={setComment} placeholder="Comentario de resolución" style={[styles.input, styles.comment]} value={comment} />
-                <View style={styles.actionGroup}>
-                  <PrimaryButton disabled={busy || ((selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && !authorizedFolio.trim())} label="Resolver solicitud" onPress={resolveSelected} />
-                  <DangerButton disabled={busy || !comment.trim()} label="Rechazar" onPress={() => review('reject')} />
-                </View>
+                <Pressable disabled={busy || ((selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && !authorizedFolio.trim())} onPress={resolveSelected} style={styles.primary}><Text style={styles.primaryText}>Resolver solicitud</Text></Pressable>
+                <Pressable disabled={busy || !comment.trim()} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
               </>}
-              {!!selected.conversation_id && (
-                <View style={styles.actionGroup}>
-                  <SecondaryButton label="Abrir conversación" onPress={() => { const id = selected.conversation_id; setSelected(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }} />
-                </View>
-              )}
+              {!!selected.conversation_id && <Pressable style={styles.secondary} onPress={() => { const id = selected.conversation_id; setSelected(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }}><Text style={styles.secondaryText}>Abrir conversación</Text></Pressable>}
             </ScrollView>}
           </SafeAreaView>
         </SafeAreaProvider>
@@ -414,19 +405,14 @@ export default function TicketsScreen() {
       <Modal animationType="slide" onRequestClose={() => setNewRequestOpen(false)} visible={newRequestOpen}>
         <SafeAreaProvider>
           <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modal}>
-            <View style={styles.modalHeader}><Text style={styles.modalTitle}>Nueva solicitud</Text><CloseButton onPress={() => setNewRequestOpen(false)} /></View>
+            <View style={styles.modalHeader}><Text style={styles.modalTitle}>Nueva solicitud</Text><Pressable onPress={() => setNewRequestOpen(false)}><Text style={styles.close}>Cerrar</Text></Pressable></View>
             <ScrollView contentContainerStyle={styles.modalContent}>
-              <Text style={styles.detailLabel}>Folios OT</Text>
-              <View style={styles.actionGroup}>
-                <SecondaryButton label="Ir a solicitud de grupo OT" onPress={() => { setNewRequestOpen(false); router.push('/(technician)/work-orders'); }} />
-              </View>
+              <Text style={styles.detailLabel}>Folios OT</Text><Pressable style={styles.secondary} onPress={() => { setNewRequestOpen(false); router.push('/(technician)/work-orders'); }}><Text style={styles.secondaryText}>Ir a solicitud de grupo OT</Text></Pressable>
               <Text style={styles.detailLabel}>Folios certificados</Text>
               <Text style={styles.detail}>Máximo 100 combinados entre MYCA y MYCT.</Text>
               <TextInput keyboardType="number-pad" onChangeText={setAccreditedQuantity} placeholder="Cantidad MYCA" style={styles.input} value={accreditedQuantity} />
-              <TextInput keyboardType="number-pad" onChangeText={setTraceableQuantity} placeholder="Cantidad MYCT" style={[styles.input, styles.fieldGap]} value={traceableQuantity} />
-              <View style={styles.actionGroup}>
-                <PrimaryButton disabled={busy} label="Solicitar bloque" onPress={createCertificateBlockRequest} />
-              </View>
+              <TextInput keyboardType="number-pad" onChangeText={setTraceableQuantity} placeholder="Cantidad MYCT" style={[styles.input, { marginTop: 10 }]} value={traceableQuantity} />
+              <Pressable disabled={busy} style={styles.primary} onPress={createCertificateBlockRequest}><Text style={styles.primaryText}>Solicitar bloque</Text></Pressable>
               <Text style={styles.detailLabel}>Folio MYC manual / Vinculado</Text><Text style={styles.detail}>Se solicita desde el equipo correspondiente para conservar OT, servicio, folio automático y procedencia.</Text>
             </ScrollView>
           </SafeAreaView>
@@ -437,7 +423,7 @@ export default function TicketsScreen() {
           <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Solicitud de grupo #{selectedGroup?.id}</Text>
-              <CloseButton onPress={() => setSelectedGroup(null)} />
+              <Pressable onPress={() => setSelectedGroup(null)}><Text style={styles.close}>Cerrar</Text></Pressable>
             </View>
             {selectedGroup && <ScrollView contentContainerStyle={styles.modalContent}>
               <Text style={styles.folio}>{selectedGroup.quantity} órdenes de trabajo</Text>
@@ -449,23 +435,13 @@ export default function TicketsScreen() {
               <Text style={styles.detailLabel}>Handler</Text><Text style={styles.detail}>{selectedGroup.handled_by_name ?? 'Sin asignar'}</Text>
               {!!selectedGroup.folios.length && <><Text style={styles.detailLabel}>Folios asignados</Text><Text style={styles.detail}>{selectedGroup.folios.join(', ')}</Text></>}
               {!!selectedGroup.decision_reason && <><Text style={styles.detailLabel}>Motivo</Text><Text style={styles.detail}>{selectedGroup.decision_reason}</Text></>}
-              {selectedGroup.status === 'pending' && capabilities.canClaimWorkOrderGroupRequests && (
-                <View style={styles.actionGroup}>
-                  <PrimaryButton disabled={busy} label="Tomar solicitud" onPress={claimGroupRequest} />
-                </View>
-              )}
+              {selectedGroup.status === 'pending' && capabilities.canClaimWorkOrderGroupRequests && <Pressable disabled={busy} onPress={claimGroupRequest} style={styles.primary}><Text style={styles.primaryText}>Tomar solicitud</Text></Pressable>}
               {selectedGroup.status === 'in_review' && selectedGroup.handled_by_user_id === user.id && capabilities.canDecideWorkOrderGroupRequests && <>
                 <TextInput multiline onChangeText={setComment} placeholder="Motivo requerido para rechazo" style={[styles.input, styles.comment]} value={comment} />
-                <View style={styles.actionGroup}>
-                  <PrimaryButton disabled={busy} label="Aprobar y materializar grupo" onPress={() => decideGroupRequest('approve')} />
-                  <DangerButton disabled={busy || !comment.trim()} label="Rechazar solicitud" onPress={() => decideGroupRequest('reject')} />
-                </View>
+                <Pressable disabled={busy} onPress={() => decideGroupRequest('approve')} style={styles.primary}><Text style={styles.primaryText}>Aprobar y materializar grupo</Text></Pressable>
+                <Pressable disabled={busy || !comment.trim()} onPress={() => decideGroupRequest('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar solicitud</Text></Pressable>
               </>}
-              {!!selectedGroup.conversation_id && (
-                <View style={styles.actionGroup}>
-                  <SecondaryButton label="Abrir conversación" onPress={() => { const id = selectedGroup.conversation_id; setSelectedGroup(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }} />
-                </View>
-              )}
+              {!!selectedGroup.conversation_id && <Pressable style={styles.secondary} onPress={() => { const id = selectedGroup.conversation_id; setSelectedGroup(null); router.push({ pathname: '/(technician)/communications/[id]', params: { id: String(id) } }); }}><Text style={styles.secondaryText}>Abrir conversación</Text></Pressable>}
             </ScrollView>}
           </SafeAreaView>
         </SafeAreaProvider>
@@ -475,42 +451,8 @@ export default function TicketsScreen() {
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: 'center', flex: 1, justifyContent: 'center' },
-  screen: { backgroundColor: colors.background, flex: 1 },
-  header: { padding: spacing.lg },
-  title: { color: '#142b3a', fontSize: 30, fontWeight: '800', marginTop: spacing.md },
-  subtitle: { color: '#667582', marginTop: spacing.xs },
-  filters: { gap: spacing.md, paddingHorizontal: spacing.lg },
-  input: { backgroundColor: '#fff', borderColor: colors.borderStrong, borderRadius: 11, borderWidth: 1, fontSize: 16, minHeight: 48, paddingHorizontal: 13 },
-  fieldGap: { marginTop: spacing.sm },
-  chip: { backgroundColor: '#e5ebef', borderRadius: 18, marginRight: spacing.sm, paddingHorizontal: 14, paddingVertical: 9 },
-  chipActive: { backgroundColor: colors.primary },
-  chipText: { color: '#425563', fontWeight: '700' },
-  chipTextActive: { color: '#fff' },
-  loader: { marginTop: 44 },
-  list: { gap: spacing.sm, padding: spacing.lg },
-  card: { backgroundColor: '#fff', borderRadius: 13, padding: 16 },
-  cardTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  folio: { color: colors.primary, fontSize: 19, fontWeight: '800' },
-  status: { backgroundColor: '#e7f0f5', borderRadius: 12, color: '#24516d', fontSize: 12, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5 },
-  client: { color: '#263b48', fontSize: 16, fontWeight: '700', marginTop: spacing.sm },
-  reason: { color: '#51616c', marginTop: 5 },
-  meta: { color: '#7a8892', fontSize: 12, marginTop: spacing.sm },
-  empty: { color: '#70808d', padding: 24, textAlign: 'center' },
-  error: { backgroundColor: '#fff0f0', borderRadius: 10, color: '#8d1f2d', padding: spacing.md, textAlign: 'center' },
-  more: { alignItems: 'center', borderColor: colors.primary, borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' },
-  moreText: { color: colors.primary, fontWeight: '800' },
-  modal: { backgroundColor: colors.background, flex: 1 },
-  modalHeader: { alignItems: 'center', backgroundColor: '#fff', borderBottomColor: '#dce3e9', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', padding: spacing.lg },
-  modalTitle: { fontSize: 22, fontWeight: '800' },
-  modalContent: { padding: spacing.lg, paddingBottom: spacing.xl },
-  detailStatus: { color: '#24516d', fontWeight: '800', marginBottom: 18, marginTop: spacing.sm },
-  detailLabel: { color: '#344553', fontSize: 13, fontWeight: '800', marginTop: 13, textTransform: 'uppercase' },
-  detail: { color: '#233944', fontSize: 16, lineHeight: 22, marginTop: 5 },
-  warning: { backgroundColor: '#fff5cf', borderRadius: 10, color: '#5f4d00', lineHeight: 21, marginTop: spacing.lg, padding: spacing.md },
-  comment: { marginTop: 16, minHeight: 90, paddingTop: spacing.sm, textAlignVertical: 'top' },
-  // Grupo de botones de acción (aprobar/rechazar/abrir conversación, etc.):
-  // separación uniforme respecto al contenido anterior y entre sí, en vez de
-  // un marginTop distinto por botón.
-  actionGroup: { gap: spacing.sm, marginTop: spacing.md },
+  center: { alignItems: 'center', flex: 1, justifyContent: 'center' }, screen: { backgroundColor: '#f4f7fa', flex: 1 }, header: { padding: 20 }, title: { color: '#142b3a', fontSize: 30, fontWeight: '800', marginTop: 12 }, subtitle: { color: '#667582', marginTop: 6 },
+  filters: { gap: 12, paddingHorizontal: 20 }, input: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 11, borderWidth: 1, fontSize: 16, minHeight: 48, paddingHorizontal: 13 }, chip: { backgroundColor: '#e5ebef', borderRadius: 18, marginRight: 8, paddingHorizontal: 14, paddingVertical: 9 }, chipActive: { backgroundColor: '#0067a8' }, chipText: { color: '#425563', fontWeight: '700' }, chipTextActive: { color: '#fff' }, loader: { marginTop: 44 }, list: { gap: 10, padding: 20 },
+  card: { backgroundColor: '#fff', borderRadius: 13, padding: 16 }, cardTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, folio: { color: '#0067a8', fontSize: 19, fontWeight: '800' }, status: { backgroundColor: '#e7f0f5', borderRadius: 12, color: '#24516d', fontSize: 12, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5 }, client: { color: '#263b48', fontSize: 16, fontWeight: '700', marginTop: 8 }, reason: { color: '#51616c', marginTop: 5 }, meta: { color: '#7a8892', fontSize: 12, marginTop: 10 }, empty: { color: '#70808d', padding: 24, textAlign: 'center' }, error: { backgroundColor: '#fff0f0', borderRadius: 10, color: '#8d1f2d', padding: 14, textAlign: 'center' }, more: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: '#0067a8', fontWeight: '800' },
+  modal: { backgroundColor: '#f4f7fa', flex: 1 }, modalHeader: { alignItems: 'center', backgroundColor: '#fff', borderBottomColor: '#dce3e9', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', padding: 20 }, modalTitle: { fontSize: 22, fontWeight: '800' }, close: { color: '#0067a8', fontSize: 16, fontWeight: '700' }, modalContent: { padding: 20 }, detailStatus: { color: '#24516d', fontWeight: '800', marginBottom: 18, marginTop: 8 }, detailLabel: { color: '#344553', fontSize: 13, fontWeight: '800', marginTop: 13, textTransform: 'uppercase' }, detail: { color: '#233944', fontSize: 16, lineHeight: 22, marginTop: 5 }, warning: { backgroundColor: '#fff5cf', borderRadius: 10, color: '#5f4d00', lineHeight: 21, marginTop: 24, padding: 14 }, comment: { marginTop: 16, minHeight: 90, paddingTop: 12, textAlignVertical: 'top' }, primary: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 11, justifyContent: 'center', marginTop: 14, minHeight: 52 }, primaryText: { color: '#fff', fontSize: 15, fontWeight: '800' }, secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 11, borderWidth: 1.5, justifyContent: 'center', marginTop: 10, minHeight: 52 }, secondaryText: { color: '#0067a8', fontSize: 15, fontWeight: '800' }, reject: { alignItems: 'center', marginTop: 18, padding: 12 }, rejectText: { color: '#a51c30', fontSize: 16, fontWeight: '800' },
 });

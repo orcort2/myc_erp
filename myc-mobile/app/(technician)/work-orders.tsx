@@ -27,8 +27,7 @@ import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignature
 import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
 import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
 import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
-import { ActionRow, AdministrativeButton, BackButton, CloseButton, DangerButton, FadeIn, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
-import { spacing } from '@/src/design/tokens';
+import { ActionRow, ActionTile, AdministrativeButton, BackButton, CloseButton, DangerButton, FadeIn, PrimaryButton, SecondaryButton} from '@/src/design/primitives';
 import {
   buildConfiguredEquipmentPayload,
   buildEquipmentEditRequestBody,
@@ -948,11 +947,11 @@ export default function WorkOrdersScreen() {
   return (
     <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.screen}>
       <View style={styles.header}>
-              <BackButton />
-              <Text style={styles.title}>Órdenes de Trabajo</Text>
-              <Text style={styles.subtitle}>LAB temporal · folios 6400–6999</Text>
-            </View>
-          <View style={styles.filters}>
+        <BackButton />
+        <Text style={styles.title}>Órdenes de Trabajo</Text>
+      </View>
+
+      <View style={styles.filters}>
         <View style={styles.filterRow}>
           <View style={styles.filterField}>
             <Text style={styles.filterLabel}>Folio</Text>
@@ -1009,10 +1008,34 @@ export default function WorkOrdersScreen() {
           </Pressable>
         </View>
       </View>
+
       <View style={styles.screenActions}>
-        {canCreateWorkOrders && <PrimaryButton label="+ Generar orden" onPress={startNew} />}
-        {canCreateWorkOrderGroupsDirect && <SecondaryButton label="+ Crear grupo anticipado" onPress={startDirectGroup} />}
-        {canRequestWorkOrderGroups && <SecondaryButton label="Solicitar grupo anticipado" onPress={startGroupRequest} />}
+        {canCreateWorkOrders && (
+          <ActionTile
+            icon="file-document-plus-outline"
+            label="Generar orden"
+            onPress={startNew}
+            tone="primary"
+          />
+        )}
+
+        {canCreateWorkOrderGroupsDirect && (
+          <ActionTile
+            icon="folder-multiple-plus-outline"
+            label="Generar grupo"
+            onPress={startDirectGroup}
+            tone="secondary"
+          />
+        )}
+
+        {canRequestWorkOrderGroups && (
+          <ActionTile
+            icon="send-outline"
+            label="Solicitar grupo"
+            onPress={startGroupRequest}
+            tone="administrative"
+          />
+        )}
       </View>
       {canRequestWorkOrderGroups && groupRequests.length > 0 && <View style={styles.filters}><Text style={styles.filterLabel}>Mis solicitudes de grupo</Text>{groupRequests.map((item) => <Pressable key={item.id} onPress={() => setSelectedGroupRequest(item)}><Text style={styles.status}>#{item.id} · {item.quantity} OT · {item.status}{item.folios.length ? ` · folios ${item.folios.join(', ')}` : ' · sin folios'}</Text></Pressable>)}</View>}
       {loading ? <ActivityIndicator style={styles.loader} /> : (
@@ -1045,7 +1068,7 @@ export default function WorkOrdersScreen() {
         <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modalScreen}>
           <View style={styles.modalHeader}>
             <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>{flowContextLabel(step, workOrder?.status)}</Text></View>
-            <CloseButton disabled={deleting || signatureSubmitRef.current} onPress={closeFlow} />
+            <Pressable disabled={deleting || signatureSubmitRef.current} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
           <KeyboardAvoidingView
@@ -1093,14 +1116,7 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  <View style={styles.actionSpacing}>
-                    <PrimaryButton
-                      disabled={!general.lab_client_id || busy || (groupMode !== 'none' && (Number(groupQuantity) < 1 || Number(groupQuantity) > 50))}
-                      label={groupMode === 'request' ? 'Enviar solicitud sin reservar folios' : groupMode === 'direct' ? 'Crear grupo y asignar folios' : workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}
-                      loading={busy}
-                      onPress={createWorkOrder}
-                    />
-                  </View>
+                  <Pressable disabled={!general.lab_client_id || busy || (groupMode !== 'none' && (Number(groupQuantity) < 1 || Number(groupQuantity) > 50))} style={[styles.primary, (!general.lab_client_id || busy) && styles.disabled]} onPress={createWorkOrder}><Text style={styles.primaryText}>{groupMode === 'request' ? 'Enviar solicitud sin reservar folios' : groupMode === 'direct' ? 'Crear grupo y asignar folios' : workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
                 </FadeIn>
               )}
 
@@ -1122,9 +1138,9 @@ export default function WorkOrdersScreen() {
               {workOrder && step === 'capture' && (
                 <FadeIn transitionKey={step}>
                   {!!workOrder.reopen_ticket_id && editable && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="Editar datos generales" onPress={() => setStep('general')} />
-                    </View>
+                    <Pressable style={styles.secondary} onPress={() => setStep('general')}>
+                      <Text style={styles.secondaryText}>Editar datos generales</Text>
+                    </Pressable>
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
@@ -1141,27 +1157,21 @@ export default function WorkOrdersScreen() {
                     );
                   })}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
-                  {editable && canManageEquipment && workOrder.equipment.length < 10 && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />
-                    </View>
-                  )}
-                  {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="Asignar OT extra" onPress={addAdditional} />
-                    </View>
-                  )}
+                  {editable && canManageEquipment && workOrder.equipment.length < 10 && <Pressable style={styles.secondary} onPress={() => showEquipmentEditor('new')}><Text style={styles.secondaryText}>+ Añadir equipo</Text></Pressable>}
+                  {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <Pressable style={styles.secondary} onPress={addAdditional}><Text style={styles.secondaryText}>Asignar OT extra</Text></Pressable>}
                   {/* Fase 3: la recepción se firma ANTES de la captura técnica.
                       Una OT reabierta con "preserve" ya conserva una firma de
                       recepción válida (canSkipSignaturesAfterReopen) -- no debe
                       pedirse otra, así que salta directo a captura técnica. */}
-                  <View style={styles.actionSpacing}>
-                    <PrimaryButton
-                      disabled={!workOrder.equipment.length}
-                      label={canSkipSignaturesAfterReopen(workOrder) ? 'Continuar a captura técnica' : 'Continuar a recepción de equipos'}
-                      onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
-                    />
-                  </View>
+                  <Pressable
+                    disabled={!workOrder.equipment.length}
+                    style={[styles.primary, !workOrder.equipment.length && styles.disabled]}
+                    onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
+                  >
+                    <Text style={styles.primaryText}>
+                      {canSkipSignaturesAfterReopen(workOrder) ? 'Continuar a captura técnica' : 'Continuar a recepción de equipos'}
+                    </Text>
+                  </Pressable>
                 </FadeIn>
               )}
 
@@ -1179,21 +1189,9 @@ export default function WorkOrdersScreen() {
                     request={request}
                     workOrder={workOrder}
                   />
-                  {editable && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="Volver a equipos" onPress={() => setStep('capture')} />
-                    </View>
-                  )}
-                  {canExecuteWorkOrders && (
-                    <View style={styles.actionSpacing}>
-                      <PrimaryButton label="Continuar a cierre" onPress={() => setStep('review')} />
-                    </View>
-                  )}
-                  {canDownloadLabPackages && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />
-                    </View>
-                  )}
+                  {editable && <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Volver a equipos</Text></Pressable>}
+                  {canExecuteWorkOrders && <Pressable style={styles.primary} onPress={() => setStep('review')}><Text style={styles.primaryText}>Continuar a cierre</Text></Pressable>}
+                  {canDownloadLabPackages && <Pressable style={styles.secondary} onPress={() => downloadPackage('share')}><Text style={styles.secondaryText}>Descargar paquete disponible</Text></Pressable>}
                 </FadeIn>
               )}
 
@@ -1205,27 +1203,18 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.sectionTitle}>Confirmar cierre</Text>
                   {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s) · {item.status === 'completed' ? 'cerrada' : item.status === 'ready_to_close' ? 'lista para cerrar' : item.status === 'ready_for_signatures' ? 'firmada' : 'en captura'}</Text>)}
                   <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. El cierre aplica únicamente a la OT o cohorte elegida al firmar la recepción.</Text>
-                  <View style={styles.actionSpacing}>
-                    <SecondaryButton label="Revisar captura técnica" onPress={() => setStep('technical')} />
-                  </View>
-                  {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && (
-                    <View style={styles.actionSpacing}>
-                      <AdministrativeButton label="Solicitar excepción de cierre parcial" onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }} />
-                    </View>
-                  )}
+                  <Pressable style={styles.secondary} onPress={() => setStep('technical')}><Text style={styles.secondaryText}>Revisar captura técnica</Text></Pressable>
+                  {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar excepción de cierre parcial</Text></Pressable>}
                   {canCloseWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
-                    <View style={styles.actionSpacing}>
-                      <PrimaryButton label="Cerrar OT individual reabierta" onPress={() => completeClosure(closureScope)} />
-                    </View>
+                    <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar OT individual reabierta</Text></Pressable>
                   ) : canCloseWorkOrders ? (
-                    <View style={styles.actionSpacing}>
-                      <PrimaryButton
-                        label={closureScope === 'group' && closureOptions?.hasHistoricalSiblings
+                    <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}>
+                      <Text style={styles.primaryText}>
+                        {closureScope === 'group' && closureOptions?.hasHistoricalSiblings
                           ? `Cerrar grupo activo (${closureOptions.activeCohortSize} OT)`
                           : `Cerrar OT ${workOrder.folio}`}
-                        onPress={() => completeClosure(closureScope)}
-                      />
-                    </View>
+                      </Text>
+                    </Pressable>
                   ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no cerrarla.</Text>}
                 </>
               )}
@@ -1258,36 +1247,32 @@ export default function WorkOrdersScreen() {
                         {!receptionOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
                       </View>
                     ))}
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="Volver a equipos" onPress={() => setStep('capture')} />
-                    </View>
+                    <Pressable style={styles.secondary} onPress={() => setStep('capture')}><Text style={styles.secondaryText}>Volver a equipos</Text></Pressable>
                     {canCaptureSignatures ? (
                       <>
                         {closureOptions?.hasHistoricalSiblings && (
                           <>
-                            <View style={styles.actionSpacing}>
-                              <PrimaryButton
-                                disabled={!closureOptions.canFinalizeGroup}
-                                label={`Firmar recepción del grupo (${closureOptions.groupParticipantCount} OT)`}
-                                onPress={() => openSignatureFlow('group')}
-                              />
-                            </View>
+                            <Pressable
+                              disabled={!closureOptions.canFinalizeGroup}
+                              onPress={() => openSignatureFlow('group')}
+                              style={[styles.primary, !closureOptions.canFinalizeGroup && styles.disabled]}
+                            >
+                              <Text style={styles.primaryText}>Firmar recepción del grupo ({closureOptions.groupParticipantCount} OT)</Text>
+                            </Pressable>
                             {!!closureOptions.groupMissingEquipmentCount && (
                               <Text style={styles.notice}>{closureOptions.groupMissingEquipmentCount} OT todavía no tienen equipos; la firma grupal no está disponible.</Text>
                             )}
-                            <View style={styles.actionSpacing}>
-                              <SecondaryButton
-                                disabled={!closureOptions.canFinalizeIndividual}
-                                label={`Firmar sólo OT ${workOrder.folio}`}
-                                onPress={() => openSignatureFlow('individual')}
-                              />
-                            </View>
+                            <Pressable
+                              disabled={!closureOptions.canFinalizeIndividual}
+                              onPress={() => openSignatureFlow('individual')}
+                              style={[styles.secondary, !closureOptions.canFinalizeIndividual && styles.disabled]}
+                            >
+                              <Text style={styles.secondaryText}>Firmar sólo OT {workOrder.folio}</Text>
+                            </Pressable>
                           </>
                         )}
                         {!closureOptions?.hasHistoricalSiblings && (
-                          <View style={styles.actionSpacing}>
-                            <PrimaryButton label="Continuar a firmas" onPress={() => openSignatureFlow('group')} />
-                          </View>
+                          <Pressable style={styles.primary} onPress={() => openSignatureFlow('group')}><Text style={styles.primaryText}>Continuar a firmas</Text></Pressable>
                         )}
                       </>
                     ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no capturar firmas.</Text>}
@@ -1320,21 +1305,13 @@ export default function WorkOrdersScreen() {
                 {closureOptions?.isSingleOtSignatureSession !== false ? (
                   <>
                     <Text style={styles.sectionTitle}>Firma completada</Text>
-                    {canCloseWorkOrders && (
-                      <View style={styles.actionSpacing}>
-                        <PrimaryButton label="Cerrar y generar PDFs" onPress={() => completeClosure(closureScope)} />
-                      </View>
-                    )}
+                    {canCloseWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cerrar y generar PDFs</Text></Pressable>}
                   </>
                 ) : (
                   <>
                     <Text style={styles.sectionTitle}>OT individual firmada</Text>
                     <Text style={styles.notice}>Esta sesión quedó vinculada a {closureOptions.activeCohortSize} OT. Las demás OT del grupo histórico conservan su estado y podrán cerrarse después.</Text>
-                    {canCloseWorkOrders && (
-                      <View style={styles.actionSpacing}>
-                        <PrimaryButton label="Cierre individual y generar PDF" onPress={() => completeClosure(closureScope)} />
-                      </View>
-                    )}
+                    {canCloseWorkOrders && <Pressable style={styles.primary} onPress={() => completeClosure(closureScope)}><Text style={styles.primaryText}>Cierre individual y generar PDF</Text></Pressable>}
                   </>
                 )}
                 </FadeIn>
@@ -1348,9 +1325,7 @@ export default function WorkOrdersScreen() {
                 <FadeIn transitionKey={step}>
                   <Text style={styles.sectionTitle}>Recepción firmada</Text>
                   <Text style={styles.notice}>Técnico y cliente confirmaron los equipos y condiciones recibidos. La recepción queda de sólo lectura; continúa a la captura técnica.</Text>
-                  <View style={styles.actionSpacing}>
-                    <PrimaryButton label="Continuar a captura técnica" onPress={() => setStep('technical')} />
-                  </View>
+                  <Pressable style={styles.primary} onPress={() => setStep('technical')}><Text style={styles.primaryText}>Continuar a captura técnica</Text></Pressable>
                 </FadeIn>
               )}
 
@@ -1358,41 +1333,21 @@ export default function WorkOrdersScreen() {
                 <>
                   <Text style={styles.sectionTitle}>OT {workOrder.folio} · {statusPresentation(workOrder.status).label}</Text>
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
-                  {workOrder.status !== 'cancelled' && (
-                    <View style={styles.actionSpacing}>
-                      <PrimaryButton label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />
-                    </View>
-                  )}
-                  {workOrder.status !== 'cancelled' && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />
-                    </View>
-                  )}
-                  {canDownloadLabPackages && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />
-                    </View>
-                  )}
-                  {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && (
-                    <View style={styles.actionSpacing}>
-                      <SecondaryButton label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />
-                    </View>
-                  )}
+                  {workOrder.status !== 'cancelled' && <Pressable style={styles.primary} onPress={() => downloadPdf('print')}><Text style={styles.primaryText}>Ver / imprimir OT {workOrder.folio}</Text></Pressable>}
+                  {workOrder.status !== 'cancelled' && <Pressable style={styles.secondary} onPress={() => downloadPdf('share')}><Text style={styles.secondaryText}>Compartir OT {workOrder.folio}</Text></Pressable>}
+                  {canDownloadLabPackages && <Pressable style={styles.secondary} onPress={() => downloadPackage('share', false)}><Text style={styles.secondaryText}>Descargar paquete de esta OT</Text></Pressable>}
+                  {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <Pressable style={styles.secondary} onPress={() => downloadPackage('share', true)}><Text style={styles.secondaryText}>Descargar paquete del grupo</Text></Pressable>}
                   {workOrder.status !== 'cancelled' && (
                     canReopenDirectly ? (
-                      <View style={styles.actionSpacing}>
-                        <AdministrativeButton label="Reabrir orden" onPress={() => { setTicketDialogMode('reopen_direct'); setReopenSignaturePolicy('preserve'); setTicketOpen(true); }} />
-                      </View>
+                      <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('reopen_direct'); setReopenSignaturePolicy('preserve'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Reabrir orden</Text></Pressable>
                     ) : canCreateTickets ? (
-                      <View style={styles.actionSpacing}>
-                        <AdministrativeButton label="Solicitar reapertura" onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }} />
-                      </View>
+                      <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>
                     ) : null
                   )}
                   {workOrder.status === 'cancelled' && canCancel && !!workOrder.previous_status && (
-                    <View style={styles.actionSpacing}>
-                      <AdministrativeButton label="Restaurar OT" loading={restoring} onPress={() => confirmRestoreWorkOrder(workOrder)} />
-                    </View>
+                    <Pressable disabled={restoring} style={styles.secondary} onPress={() => confirmRestoreWorkOrder(workOrder)}>
+                      {restoring ? <ActivityIndicator /> : <Text style={styles.secondaryText}>Restaurar OT</Text>}
+                    </Pressable>
                   )}
                 </>
               )}
@@ -1403,17 +1358,15 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.dangerTitle}>Acciones administrativas {adminActionsOpen ? '▾' : '▸'}</Text>
                   </Pressable>
                   {adminActionsOpen && <>
-                    {canCancel && workOrder.status !== 'cancelled' && (
-                      <View style={styles.actionSpacingBottom}>
-                        <AdministrativeButton label="Cancelar y conservar OT" onPress={() => { setTicketDialogMode('cancel'); setTicketOpen(true); }} />
-                      </View>
-                    )}
+                    {canCancel && workOrder.status !== 'cancelled' && <Pressable style={styles.cancelWorkOrder} onPress={() => { setTicketDialogMode('cancel'); setTicketOpen(true); }}><Text style={styles.cancelWorkOrderText}>Cancelar y conservar OT</Text></Pressable>}
                     <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
-                    <DangerButton
+                    <Pressable
                       disabled={busy || deleting}
-                      label="Eliminar orden de trabajo"
                       onPress={() => confirmWorkOrderDeletion(workOrder)}
-                    />
+                      style={[styles.deleteWorkOrder, (busy || deleting) && styles.disabled]}
+                    >
+                      <Text style={styles.deleteWorkOrderText}>Eliminar orden de trabajo</Text>
+                    </Pressable>
                   </>}
                 </View>
               )}
@@ -1461,9 +1414,7 @@ export default function WorkOrdersScreen() {
                         request={request}
                         workOrderClientName={workOrder?.client_name ?? ''}
                       />
-                      <View style={styles.actionSpacing}>
-                        <DangerButton label="Eliminar equipo" onPress={removeEquipment} />
-                      </View>
+                      <Pressable onPress={removeEquipment}><Text style={styles.delete}>Eliminar equipo</Text></Pressable>
                     </>
                   ) : null}
                   </FadeIn>
@@ -1494,15 +1445,10 @@ export default function WorkOrdersScreen() {
                   )}
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
                   <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />
-                  <ActionRow>
-                    <SecondaryButton label="Cancelar" onPress={() => setTicketOpen(false)} />
-                    <PrimaryButton
-                      disabled={!ticketReason.trim() || !ticketDescription.trim()}
-                      label={ticketDialogMode === 'cancel' ? 'Cancelar OT' : ticketDialogMode === 'reopen_direct' ? 'Reabrir orden' : 'Enviar solicitud'}
-                      loading={busy}
-                      onPress={submitOperationalAction}
-                    />
-                  </ActionRow>
+                  <View style={styles.actionRow}>
+                    <Pressable style={styles.cancel} onPress={() => setTicketOpen(false)}><Text>Cancelar</Text></Pressable>
+                    <Pressable disabled={!ticketReason.trim() || !ticketDescription.trim()} style={styles.save} onPress={submitOperationalAction}><Text style={styles.primaryText}>{ticketDialogMode === 'cancel' ? 'Cancelar OT' : ticketDialogMode === 'reopen_direct' ? 'Reabrir orden' : 'Enviar solicitud'}</Text></Pressable>
+                  </View>
                 </ScrollView>
               </KeyboardAvoidingView>
             </View>
@@ -1657,7 +1603,7 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    paddingBottom: 8,
+    paddingBottom: 18,
     paddingHorizontal: 20,
     paddingTop: 18,
   },
@@ -1666,32 +1612,28 @@ const styles = StyleSheet.create({
     color: '#142b3a',
     fontSize: 29,
     fontWeight: '800',
-    marginTop: 12,
-  },
-
-  subtitle: {
-    color: '#667582',
-    marginTop: 7,
+    marginTop: 8,
   },
 
   filters: {
     backgroundColor: '#fff',
     borderColor: '#dbe4ea',
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    gap: 8,
+    gap: 10,
+    marginBottom: 20,
     marginHorizontal: 20,
-    padding: 10,
+    padding: 12,
   },
 
   filterRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
   },
 
   filterField: {
     flex: 1,
-    gap: 4,
+    gap: 5,
     minWidth: 0,
   },
 
@@ -1704,23 +1646,24 @@ const styles = StyleSheet.create({
   filterInput: {
     backgroundColor: '#f8fafb',
     borderColor: '#b9c8d2',
-    borderRadius: 8,
+    borderRadius: 9,
     borderWidth: 1,
     fontSize: 14,
-    height: 38,
+    height: 40,
     paddingHorizontal: 10,
   },
 
   filterFooter: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
+    marginTop: 2,
   },
 
   statusFilters: {
     flex: 1,
     flexDirection: 'row',
-    gap: 5,
+    gap: 6,
   },
 
   statusChip: {
@@ -1728,7 +1671,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e9eef2',
     borderRadius: 14,
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 7,
   },
 
   statusChipActive: {
@@ -1747,7 +1690,7 @@ const styles = StyleSheet.create({
 
   clearFilters: {
     paddingHorizontal: 6,
-    paddingVertical: 5,
+    paddingVertical: 7,
   },
 
   clearFiltersText: {
@@ -1757,20 +1700,38 @@ const styles = StyleSheet.create({
   },
 
   screenActions: {
-    gap: spacing.sm,
-    marginHorizontal: spacing.lg,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 14,
+    marginBottom: 22,
+    marginHorizontal: 20,
   },
 
-  // Espaciado uniforme para botones convertidos a los primitives
-  // compartidos (PrimaryButton/SecondaryButton/etc. no traen su propio
-  // margen) -- reemplaza los distintos marginTop sueltos (14/18) que traían
-  // los Pressable ad hoc que sustituyen.
-  actionSpacing: {
-    marginTop: spacing.md,
+  primary: {
+    alignItems: 'center',
+    backgroundColor: '#0067a8',
+    borderRadius: 12,
+    justifyContent: 'center',
+    marginTop: 18,
+    minHeight: 52,
+    paddingHorizontal: 18,
   },
 
-  actionSpacingBottom: {
-    marginBottom: spacing.md,
+  primaryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  secondary: {
+    alignItems: 'center',
+    borderColor: '#0067a8',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    marginTop: 14,
+    minHeight: 50,
   },
 
   secondaryText: {
@@ -1779,13 +1740,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  disabled: {
+    opacity: 0.4,
+  },
+
   loader: {
     marginTop: 40,
   },
 
   list: {
-    gap: 10,
-    padding: 20,
+    gap: 14,
+    paddingBottom: 28,
+    paddingHorizontal: 20,
     paddingTop: 0,
   },
 
@@ -1895,6 +1861,13 @@ const styles = StyleSheet.create({
     color: '#637280',
     fontSize: 12,
     marginTop: 5,
+  },
+
+  close: {
+    color: '#0067a8',
+    fontSize: 16,
+    fontWeight: '700',
+    paddingVertical: 8,
   },
 
   modalContent: {
@@ -2189,6 +2162,11 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
   row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2207,6 +2185,32 @@ const styles = StyleSheet.create({
   choiceActive: {
     backgroundColor: '#dff3f1',
     borderColor: '#008f87',
+  },
+
+  cancel: {
+    alignItems: 'center',
+    backgroundColor: '#e3e8ec',
+    borderRadius: 11,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+
+  save: {
+    alignItems: 'center',
+    backgroundColor: '#0067a8',
+    borderRadius: 11,
+    flex: 2,
+    justifyContent: 'center',
+    minHeight: 50,
+  },
+
+  delete: {
+    color: '#a51c30',
+    fontSize: 16,
+    fontWeight: '700',
+    padding: 18,
+    textAlign: 'center',
   },
 
   busy: {
@@ -2243,6 +2247,36 @@ const styles = StyleSheet.create({
     color: '#6f363d',
     lineHeight: 20,
     marginBottom: 16,
+  },
+
+  cancelWorkOrder: {
+    alignItems: 'center',
+    borderColor: '#c36b18',
+    borderRadius: 11,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    marginBottom: 14,
+    minHeight: 50,
+  },
+
+  cancelWorkOrderText: {
+    color: '#a5530b',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  deleteWorkOrder: {
+    alignItems: 'center',
+    backgroundColor: '#a51c30',
+    borderRadius: 11,
+    justifyContent: 'center',
+    minHeight: 52,
+  },
+
+  deleteWorkOrderText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
   },
 
   requestHeader: {

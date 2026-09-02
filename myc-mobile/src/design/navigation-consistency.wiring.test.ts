@@ -7,10 +7,15 @@ import { fileURLToPath } from 'node:url';
 /**
  * Cierre UX 2026-09 (item F): toda navegación "volver" pasa por el
  * BackButton compartido -- antes tickets.tsx, deliveries.tsx,
- * notifications.tsx, communications/index.tsx, communications/[id].tsx y
- * work-orders.tsx repetían su propio Pressable + router.back(), y
- * communications/index.tsx incluso etiquetaba ese comportamiento "‹ Inicio"
- * (semántica equivocada: Inicio navega a la raíz, Volver retrocede un paso).
+ * notifications.tsx, communications/index.tsx y communications/[id].tsx
+ * repetían su propio Pressable + router.back(), y communications/index.tsx
+ * incluso etiquetaba ese comportamiento "‹ Inicio" (semántica equivocada:
+ * Inicio navega a la raíz, Volver retrocede un paso).
+ *
+ * work-orders.tsx quedó fuera de este barrido a propósito: su retrofit de
+ * botones (BackButton/CloseButton/Primary/Secondary/Administrative/Danger)
+ * se revirtió por completo a pedido explícito -- se detectaron leyendas
+ * ausentes y espaciado roto entre grids/cards/encabezados en ese archivo.
  */
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -20,7 +25,6 @@ const screensThatMustUseBackButton = [
   'app/(technician)/notifications.tsx',
   'app/(technician)/communications/index.tsx',
   'app/(technician)/communications/[id].tsx',
-  'app/(technician)/work-orders.tsx',
   'app/(technician)/clients.tsx',
 ];
 
@@ -35,9 +39,4 @@ for (const relativePath of screensThatMustUseBackButton) {
 test('ningún "Volver" queda etiquetado como "Inicio" (semántica de navegación)', () => {
   const source = readFileSync(resolve(root, 'app/(technician)/communications/index.tsx'), 'utf8');
   assert.doesNotMatch(source, /‹ Inicio/);
-});
-
-test('el cierre del modal de OT usa CloseButton, distinto del BackButton de la lista', () => {
-  const source = readFileSync(resolve(root, 'app/(technician)/work-orders.tsx'), 'utf8');
-  assert.match(source, /<CloseButton disabled=\{deleting \|\| signatureSubmitRef\.current\} onPress=\{closeFlow\} \/>/);
 });

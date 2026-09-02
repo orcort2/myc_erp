@@ -26,7 +26,7 @@ import {
 } from '@/src/services/field-sheet-draft-view-state';
 import { apiUrl, ApiError } from '@/src/api/client';
 import {
-  ActionRow, AdministrativeButton, AlertBanner, Card, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
+  ActionRow, AlertBanner, Card, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
 } from '@/src/design/primitives';
 import { colors, spacing } from '@/src/design/tokens';
 import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldSheetResultsWorkspace';
@@ -531,14 +531,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
           )}
 
           {sheet.status === 'completed' && (
-            <>
-              <ActionRow>
-                <SecondaryButton label="Ver / descargar PDF" loading={downloadingPdf} onPress={downloadFieldSheetPdf} />
-              </ActionRow>
+            <ActionRow>
+              <SecondaryButton label="Ver / descargar PDF" loading={downloadingPdf} onPress={downloadFieldSheetPdf} />
               {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
-                <AdministrativeButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+                <SecondaryButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
               )}
-            </>
+            </ActionRow>
           )}
 
           <SecondaryButton
