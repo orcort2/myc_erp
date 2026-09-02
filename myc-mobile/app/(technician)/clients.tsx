@@ -1,12 +1,16 @@
 import * as DocumentPicker from 'expo-document-picker';
 import { Redirect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, Text, View } from 'react-native';
 
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
-import { buildLabClientSearchQuery } from '@/src/services/lab-client-selector';
+import {
+  buildLabClientListQuery,
+  LAB_CLIENTS_PAGE_SIZE,
+  mergeLabClientPage,
+} from '@/src/services/lab-client-selector';
 import type { LabClient } from '@/src/types/lab-work-order';
 import { colors, layout, spacing, typography } from '@/src/design/tokens';
 import {
@@ -72,6 +76,8 @@ export default function ClientsScreen() {
   const [results, setResults] = useState<LabClient[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'list' | 'create' | 'edit'>('list');
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -79,24 +85,39 @@ export default function ClientsScreen() {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [busyClientId, setBusyClientId] = useState<number | null>(null);
+  const requestSequence = useRef(0);
 
-  const load = useCallback(async (term: string, includeInactive: boolean) => {
-    setLoading(true);
+  const load = useCallback(async (
+    term: string,
+    includeInactive: boolean,
+    offset = 0,
+    append = false,
+  ) => {
+    const requestId = ++requestSequence.current;
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+      setLoadingMore(false);
+    }
     setError('');
     try {
-      const query = buildLabClientSearchQuery(term);
-      const params = new URLSearchParams(query);
-      if (includeInactive) params.set('include_inactive', 'true');
-      const queryString = params.toString();
+      const queryString = buildLabClientListQuery(term, offset, includeInactive);
       const response = await authorizedFetch(
-        apiUrl(`/mobile/v1/technician/lab-clients${queryString ? `?${queryString}` : ''}`),
+        apiUrl(`/mobile/v1/technician/lab-clients?${queryString}`),
       );
       if (!response.ok) throw new Error(await readApiError(response));
-      setResults(await response.json() as LabClient[]);
+      const page = await response.json() as LabClient[];
+      if (requestId !== requestSequence.current) return;
+      setResults((current) => mergeLabClientPage(current, page, append) as LabClient[]);
+      setHasMore(page.length === LAB_CLIENTS_PAGE_SIZE);
     } catch (requestError) {
+      if (requestId !== requestSequence.current) return;
       setError(requestError instanceof Error ? requestError.message : 'No fue posible cargar los clientes');
     } finally {
-      setLoading(false);
+      if (requestId === requestSequence.current) {
+        if (append) setLoadingMore(false); else setLoading(false);
+      }
     }
   }, [authorizedFetch]);
 
@@ -147,7 +168,7 @@ export default function ClientsScreen() {
       });
       if (!response.ok) throw new Error(await readApiError(response));
       cancelForm();
-      await load(searchTerm, showInactive);
+      await load(searchTerm, showInactive, 0, false);
     } catch (requestError) {
       Alert.alert(
         editingId ? 'No fue posible guardar los cambios' : 'No fue posible crear el cliente',
@@ -166,7 +187,7 @@ export default function ClientsScreen() {
         { method: 'POST' },
       );
       if (!response.ok) throw new Error(await readApiError(response));
-      await load(searchTerm, showInactive);
+      await load(searchTerm, showInactive, 0, false);
     } catch (requestError) {
       Alert.alert(
         active ? 'No fue posible restaurar el cliente' : 'No fue posible eliminar el cliente',
@@ -221,7 +242,7 @@ export default function ClientsScreen() {
       });
       if (!response.ok) throw new Error(await readApiError(response));
       const summary = await response.json() as { new: number; skipped: number; invalid: number };
-      await load(searchTerm, showInactive);
+      await load(searchTerm, showInactive, 0, false);
       Alert.alert('Importación terminada', `${summary.new} nuevos · ${summary.skipped} omitidos · ${summary.invalid} inválidos`);
     } catch (requestError) {
       Alert.alert('No fue posible importar', requestError instanceof Error ? requestError.message : 'Revisa el XLSX');
@@ -332,6 +353,13 @@ export default function ClientsScreen() {
                         </ActionRow>
                       </Card>
                     ))}
+                    {hasMore && (
+                      <SecondaryButton
+                        label="Cargar más"
+                        loading={loadingMore}
+                        onPress={() => void load(searchTerm, showInactive, results.length, true)}
+                      />
+                    )}
                   </View>
                 </FadeIn>
               ) : (

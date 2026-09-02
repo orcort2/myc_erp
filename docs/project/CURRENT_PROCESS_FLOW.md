@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-08-26
+> Corte verificado: 2026-09-02
 
 # Flujo operativo actual
 
@@ -584,6 +584,25 @@ refetch acotado; una mutación local invalida inmediatamente. El toque de un
 push conserva el destino durante la restauración de sesión, pero nunca usa el
 payload como detalle permanente. Pull-to-refresh sigue disponible y no existe
 polling global.
+
+## Flujo LabClient Mobile — 2026-09-02
+
+```text
+Admin importa XLSX LAB
+→ normalizar encabezados y resolver aliases
+→ validar CLIENTE/CONTACTO/DIRECCIÓN
+→ conservar postal_code/city/state opcionales como strings recortados
+→ ignorar DIRECCIÓN ORIGINAL/REVISAR
+→ deduplicar por empresa+dirección+atención
+→ persistir y auditar en una transacción
+
+selector OT vacío o con 1 carácter → no request
+selector OT con 2+ caracteres → debounce 300 ms → search + limit=5 en SQL
+módulo Clientes → search + limit=25 + offset → reemplazar o Cargar más
+```
+
+Ambas superficies consumen `GET /api/mobile/v1/technician/lab-clients` y
+mantienen permisos, scope de `operator_client_id` y filtro de inactivos.
 
 ## Flujo de Comunicaciones — Etapas A–I
 

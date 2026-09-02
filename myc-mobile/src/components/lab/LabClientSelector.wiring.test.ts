@@ -30,6 +30,15 @@ test('la búsqueda muestra un estado de carga explícito, no una lista vacía am
   assert.match(source, /<LoadingState label="Buscando clientes…" \/>/);
 });
 
+test('cero o un carácter no programan request y dos o más conservan debounce de 300 ms', () => {
+  const minimumGuard = source.indexOf('if (!shouldSearchLabClients(state.searchTerm))');
+  const debounce = source.indexOf('const timer = setTimeout');
+  const request = source.indexOf('request<LabClient[]>');
+  assert.ok(minimumGuard >= 0 && minimumGuard < debounce && debounce < request);
+  assert.match(source, /}, 300\);/);
+  assert.match(source, /\/lab-clients\?\$\{query\}/);
+});
+
 test('cada fila de resultado da feedback de presión, no sólo seleccionado', () => {
   assert.match(source, /pressed && styles\.resultRowPressed/);
 });

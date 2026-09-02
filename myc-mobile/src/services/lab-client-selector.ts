@@ -13,6 +13,7 @@ export type LabClientOption = {
  * backend ya filtra por término de búsqueda; esto es sólo el tope visual
  * del propio selector. */
 export const MAX_VISIBLE_RESULTS = 5;
+export const LAB_CLIENTS_PAGE_SIZE = 25;
 
 export function limitVisibleResults(results: LabClientOption[]): LabClientOption[] {
   return results.slice(0, MAX_VISIBLE_RESULTS);
@@ -23,9 +24,39 @@ export function limitVisibleResults(results: LabClientOption[]): LabClientOption
  * se listan desde una pantalla administrativa dedicada (fuera de esta fase). */
 export function buildLabClientSearchQuery(term: string): string {
   const trimmed = term.trim();
+  if (trimmed.length < 2) return '';
   const params = new URLSearchParams();
-  if (trimmed) params.set('search', trimmed);
+  params.set('search', trimmed);
+  params.set('limit', String(MAX_VISIBLE_RESULTS));
   return params.toString();
+}
+
+export function shouldSearchLabClients(term: string): boolean {
+  return term.trim().length >= 2;
+}
+
+export function buildLabClientListQuery(
+  term: string,
+  offset: number,
+  includeInactive: boolean,
+): string {
+  const params = new URLSearchParams();
+  const trimmed = term.trim();
+  if (trimmed) params.set('search', trimmed);
+  params.set('limit', String(LAB_CLIENTS_PAGE_SIZE));
+  params.set('offset', String(offset));
+  if (includeInactive) params.set('include_inactive', 'true');
+  return params.toString();
+}
+
+export function mergeLabClientPage(
+  current: LabClientOption[],
+  page: LabClientOption[],
+  append: boolean,
+): LabClientOption[] {
+  if (!append) return page;
+  const seen = new Set(current.map((item) => item.id));
+  return [...current, ...page.filter((item) => !seen.has(item.id))];
 }
 
 export type LabClientSelectorState = {

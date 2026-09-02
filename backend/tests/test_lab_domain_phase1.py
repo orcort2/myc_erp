@@ -497,6 +497,81 @@ def test_lab_client_patch_denied_without_permission(lab_context):
         headers=auth(blocked_token),
     )
     assert denied.status_code == 403
+    denied_listing = client.get(
+        "/api/mobile/v1/technician/lab-clients?limit=5",
+        headers=auth(blocked_token),
+    )
+    assert denied_listing.status_code == 403
+
+
+def test_lab_client_listing_applies_server_search_limit_offset_and_inactive_filter(lab_context):
+    client, factory, tokens = lab_context
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        created = [
+            create_lab_client(
+                db,
+                LabClientCreate(
+                    company=f"Cliente Paginado {index:02d}",
+                    address=f"Calle {index}",
+                    attention="Compras",
+                ),
+                admin,
+                operator_client_id=None,
+            )
+            for index in range(31)
+        ]
+        inactive_id = created[0].id
+        deactivate_lab_client(
+            db,
+            inactive_id,
+            operator_client_id=None,
+            user=admin,
+        )
+
+    headers = auth(tokens["tech"])
+    first = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Paginado&limit=5&offset=0",
+        headers=headers,
+    )
+    second = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Paginado&limit=5&offset=5",
+        headers=headers,
+    )
+    assert first.status_code == second.status_code == 200
+    assert len(first.json()) == len(second.json()) == 5
+    assert {item["id"] for item in first.json()}.isdisjoint(
+        {item["id"] for item in second.json()}
+    )
+    assert all("Paginado" in item["company"] for item in first.json() + second.json())
+    assert inactive_id not in {item["id"] for item in first.json() + second.json()}
+
+    default_page = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Paginado",
+        headers=headers,
+    )
+    assert default_page.status_code == 200
+    assert len(default_page.json()) == 25
+    assert client.get(
+        "/api/mobile/v1/technician/lab-clients?limit=0",
+        headers=headers,
+    ).status_code == 422
+    assert client.get(
+        "/api/mobile/v1/technician/lab-clients?limit=101",
+        headers=headers,
+    ).status_code == 422
+
+    hidden = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Cliente%20Paginado%2000&limit=25",
+        headers=headers,
+    )
+    included = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Cliente%20Paginado%2000&limit=25&include_inactive=true",
+        headers=headers,
+    )
+    assert hidden.status_code == included.status_code == 200
+    assert hidden.json() == []
+    assert [item["id"] for item in included.json()] == [inactive_id]
 
 
 def test_inactive_clients_are_excluded_from_default_listing(lab_context):

@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-08-26
+> Corte verificado: 2026-09-02
 
 # Registro de decisiones vigentes
 
@@ -98,6 +98,7 @@ Se adopta `MaintenanceExecution` como proyección uno-a-uno de `ServiceUnit` y `
 | ADR-078 | 2026-08-25 | Verificación distingue Master genérico inicial y Master específico final dentro del snapshot JSON de Equipment. La resolución institucional por fingerprint sólo opera en la transición inicial→final. Una vez congelados documento y versión final, la carga valida exclusivamente contra ese snapshot histórico y no consulta estado vigente; A→A es idempotente sin nueva historia/auditoría y A→B se rechaza aunque aún no exista evidencia identificada. | `equipment.py`, `capture_packages.py`, Control Documental y pruebas XLSX/ZIP | Evita selección manual obligatoria y reinterpretación histórica por revisiones, perfiles, interpretaciones o Masters activos posteriores, sin tabla ni motor paralelo. |
 | ADR-079 | 2026-08-24 | Las firmas de MYC Mobile siguen siendo LAB autónomo. La decisión original ligaba la captura sólo a `root_work_order_id`; ADR-086 amplía ese contexto a raíz para grupo e ID de OT para individual. Siguen vigentes strokes normalizados, descarte completo al cambiar contexto, ausencia de caché, validación de trazo real y admisión backend independiente de `signature_required`. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), componentes móviles y pruebas de estado/handler | Impide reutilizar firmas entre contextos, evita bloquear firmas iniciales válidas y no cambia esquema ni reglas productivas. |
 | ADR-086 | 2026-08-27 | En LAB, el grupo es parentesco histórico y la sesión puede abarcar recepción grupal o individual; las cohortes de cierre permanecen independientes. Cada sesión conserva doble firma y versión por raíz. Las completadas son inmutables frente a hermanas y la reapertura sigue la sesión aplicable. Mobile liga el borrador a raíz en modalidad grupal y a OT en individual. Desde Fase 3 la sesión acredita recepción, no cierre. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicios LAB/Tickets y suites backend/móvil | Sustituye únicamente el acoplamiento “una sesión por todo el grupo” de ADR-071/ADR-079; no cambia cadena, folios, esquema ni dominios productivos. Continúa **EN DESARROLLO** hasta QA físico y concurrencia PostgreSQL opt-in. |
+| ADR-087 | 2026-09-02 | LabClient conserva una sola API y respuesta `LabClient[]`; selector y administración expresan sus tamaños mediante `limit/offset`, aplicados en SQL. El importador resuelve aliases normalizados y amplía únicamente los campos estructurados ya existentes. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), implementación y pruebas LabClient | Evita endpoints/wrappers paralelos, transferencia masiva y ruptura de consumidores históricos. No requiere migración: ya existen índices de tenant y empresa y, con ~1,000 filas, el costo dominante corregido era serialización/transporte; `ILIKE '%…%'` no justifica todavía un índice adicional. |
 
 ## Decisiones expresamente no confirmadas
 

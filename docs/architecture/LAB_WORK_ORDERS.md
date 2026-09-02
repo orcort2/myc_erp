@@ -1,10 +1,29 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-09-01
+> Corte verificado: 2026-09-02
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
 # Órdenes de Trabajo LAB
+
+## Catálogo LabClient e importación
+
+`LabClient` es la autoridad temporal de clientes para la operación LAB móvil y
+permanece aislado del `Client` productivo. El importador XLSX exige
+`CLIENTE`, `CONTACTO` (también `ATENCION`/`ATENCIÓN`) y `DIRECCIÓN`; acepta
+opcionalmente `CÓDIGO POSTAL` (`CODIGO POSTAL`, `CP` o `C.P.`), `CIUDAD` y
+`ESTADO`. Los encabezados se resuelven sin depender de mayúsculas, acentos,
+puntuación o espacios redundantes. `DIRECCIÓN ORIGINAL` y `REVISAR` son
+auxiliares y nunca se persisten. La identidad deduplicada sigue siendo
+empresa+dirección+atención; código postal, ciudad y estado son metadata
+estructurada y no provocan una identidad paralela.
+
+El listado conserva una respuesta directa `LabClient[]` y una sola ruta:
+`GET /api/mobile/v1/technician/lab-clients`. Búsqueda, scope organizacional,
+activos/inactivos, `limit` (1..100, default 25) y `offset` se aplican en SQL.
+El selector de OT no consulta con menos de dos caracteres, usa debounce de
+300 ms y solicita cinco filas; el módulo Clientes solicita páginas de 25 y
+añade páginas mediante “Cargar más”.
 
 ## Grupos anticipados (Bloque 2, 2026-08-26)
 

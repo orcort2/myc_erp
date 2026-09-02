@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: listas de módulos y fases de las especificaciones V2/V3, `archive/process/flujo-general.md` y propuestas futuras
 >
-> Corte verificado: 2026-08-26
+> Corte verificado: 2026-09-02
 
 # Alcance actual del ERP MYC
 
@@ -397,6 +397,18 @@ OT/equipo/cliente documental/revisión/progreso/bucket en una sola llamada y
 navega a Mesa Técnica. Se excluyen expresamente ETS, Calidad, Certificados y UI
 LAB operativa en el frontend web. Las definiciones metrológicas faltantes y la
 aceptación física móvil permanecen fuera de este cierre técnico.
+
+## Alcance implementado 2026-09-02 — Importación y consulta LabClient
+
+El importador LAB conserva los tres encabezados históricos obligatorios y
+acepta domicilio estructurado opcional (`postal_code`, `city`, `state`) con
+aliases normalizados; las columnas auxiliares del archivo preparado se
+ignoran. El endpoint único de clientes conserva `LabClient[]`, tenant scope,
+permisos e inactivos, y agrega búsqueda/paginación SQL con límites acotados.
+El selector de OT no consulta con cero o un carácter y pide como máximo cinco
+resultados; el módulo Clientes usa búsqueda remota y páginas de 25. No se
+modificaron `Client` productivo, esquema, migraciones ni UI ajena a los estados
+de carga/paginación existentes.
 
 ## Alcance implementado 2026-08-18 — ETS Venta
 

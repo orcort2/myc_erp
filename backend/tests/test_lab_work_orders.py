@@ -471,6 +471,80 @@ def test_lab_client_xlsx_import_keeps_rows_with_blank_address_or_attention(lab_c
     assert listed.json()[0]["attention"] == ""
 
 
+@pytest.mark.parametrize(
+    ("attention_header", "postal_header"),
+    [
+        ("ATENCIÓN", "CÓDIGO POSTAL"),
+        ("ATENCION", "CODIGO POSTAL"),
+        ("CONTACTO", "CP"),
+        (" contacto ", "C.P."),
+    ],
+)
+def test_lab_client_xlsx_import_accepts_structured_header_aliases_and_ignores_auxiliary_columns(
+    lab_context,
+    attention_header,
+    postal_header,
+):
+    client, _factory, tokens = lab_context
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append([
+        "  cliente  ",
+        attention_header,
+        " DIRECCION ",
+        postal_header,
+        " ciudad ",
+        "ESTADO",
+        "DIRECCIÓN ORIGINAL",
+        "REVISAR",
+    ])
+    sheet.append([
+        "  Empresa Estructurada SA  ",
+        "  Ing. Contacto  ",
+        "  Calle Institucional 123  ",
+        "01234",
+        "  Guadalajara  ",
+        "  Jalisco  ",
+        "Dirección histórica que no debe importarse",
+        "Sí",
+    ])
+    content = io.BytesIO()
+    workbook.save(content)
+
+    response = client.post(
+        "/api/mobile/v1/technician/lab-clients/import",
+        files={
+            "upload": (
+                "clientes-estructurados.xlsx",
+                content.getvalue(),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"new": 1, "skipped": 0, "invalid": 0, "errors": []}
+
+    listed = client.get(
+        "/api/mobile/v1/technician/lab-clients?search=Estructurada&limit=5",
+        headers=auth(tokens["tech"]),
+    )
+    assert listed.status_code == 200, listed.text
+    assert len(listed.json()) == 1
+    imported = listed.json()[0]
+    assert {
+        field: imported[field]
+        for field in ("company", "attention", "address", "postal_code", "city", "state")
+    } == {
+        "company": "Empresa Estructurada SA",
+        "attention": "Ing. Contacto",
+        "address": "Calle Institucional 123",
+        "postal_code": "01234",
+        "city": "Guadalajara",
+        "state": "Jalisco",
+    }
+
+
 def test_work_order_snapshot_completes_blank_catalog_fields_without_overwriting_payload(lab_context):
     """A LabClient with blank address/attention (allowed since only company is
     required) must not force an OT snapshot back to blank when the OT payload

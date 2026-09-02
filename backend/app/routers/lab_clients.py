@@ -27,6 +27,8 @@ router = APIRouter(prefix="/mobile/v1/technician/lab-clients", tags=["mobile-lab
 def get_clients(
     search: str | None = Query(default=None, max_length=255),
     include_inactive: bool = Query(default=False),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("lab_clients.read", "work_orders.read_organization")
@@ -37,6 +39,8 @@ def get_clients(
         operator_client_id=context.client_id,
         search=search,
         include_inactive=include_inactive,
+        offset=offset,
+        limit=limit,
     )
 
 

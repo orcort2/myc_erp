@@ -1,15 +1,21 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   applyCreatedClient,
+  buildLabClientListQuery,
   buildLabClientSearchQuery,
   cancelInlineCreate,
   initialSelectorState,
   limitVisibleResults,
+  mergeLabClientPage,
   MAX_VISIBLE_RESULTS,
   openInlineCreate,
   selectClient,
+  shouldSearchLabClients,
   shouldResetFormAfterSubmit,
 } from './lab-client-selector';
 import type { LabClientOption } from './lab-client-selector';
@@ -22,14 +28,44 @@ function client(id: number): LabClientOption {
 }
 
 test('1. la búsqueda arma el query contra el backend por término (empresa/atención/dirección ya cubiertos ahí)', () => {
-  assert.equal(buildLabClientSearchQuery('Saverglass'), 'search=Saverglass');
+  assert.equal(buildLabClientSearchQuery('Saverglass'), 'search=Saverglass&limit=5');
   assert.equal(buildLabClientSearchQuery('  '), '');
   assert.equal(buildLabClientSearchQuery(''), '');
+  assert.equal(buildLabClientSearchQuery('a'), '');
+  assert.equal(shouldSearchLabClients(' a '), false);
+  assert.equal(shouldSearchLabClients(' au '), true);
 });
 
 test('14. la búsqueda normal nunca solicita clientes inactivos', () => {
   const query = buildLabClientSearchQuery('Cliente');
   assert.equal(query.includes('include_inactive'), false);
+});
+
+test('el módulo administrativo pagina 25 en backend y conserva búsqueda/include_inactive', () => {
+  assert.equal(
+    buildLabClientListQuery(' audi ', 25, true),
+    'search=audi&limit=25&offset=25&include_inactive=true',
+  );
+  assert.equal(buildLabClientListQuery('', 0, false), 'limit=25&offset=0');
+});
+
+test('reset de búsqueda reemplaza la página y cargar más agrega sin duplicar', () => {
+  assert.deepEqual(mergeLabClientPage([client(1)], [client(2)], false), [client(2)]);
+  assert.deepEqual(
+    mergeLabClientPage([client(1), client(2)], [client(2), client(3)], true).map((item) => item.id),
+    [1, 2, 3],
+  );
+});
+
+test('el módulo Clientes conecta búsqueda remota, páginas de 25 y Cargar más por offset', () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/clients.tsx'),
+    'utf8',
+  );
+  assert.match(source, /buildLabClientListQuery\(term, offset, includeInactive\)/);
+  assert.match(source, /page\.length === LAB_CLIENTS_PAGE_SIZE/);
+  assert.match(source, /label="Cargar más"/);
+  assert.match(source, /results\.length, true/);
 });
 
 test('el selector nunca renderiza más de MAX_VISIBLE_RESULTS de golpe', () => {

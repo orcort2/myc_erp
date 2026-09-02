@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-09-01
+> Corte actualizado: 2026-09-02
 
 # Estado operativo actual del ERP MYC
 
@@ -95,6 +95,24 @@ Resumen operativo:
   (`git diff 92e5ffb --name-only -- frontend/` vacío).
 
 ## Validaciones
+
+### Corrección LabClient 2026-09-02
+
+- Importador XLSX compatible con contrato histórico y estructurado, aliases de
+  encabezados, auxiliares ignorados y código postal como string.
+- `GET /api/mobile/v1/technician/lab-clients` aplica búsqueda, scope,
+  activos/inactivos, `limit` y `offset` en SQL; conserva respuesta array.
+- Backend focal: `6 passed` (importador), `10 passed` (dominio/listado,
+  incluidos búsqueda, paginación, inactivos y permisos) y `1 passed` (scope
+  multi-tenant).
+- Mobile focal: `17 passed`; suite completa bajo `myc-mobile/src`: `273 passed`.
+- TypeScript `npx tsc --noEmit`: correcto. Lint: 0 errores y 6 warnings
+  preexistentes en `work-orders.tsx`, fuera del alcance LabClient.
+- `git diff --check`: correcto; el generador del registro se ejecutó y las
+  filas LabClient afectadas apuntan a rutas existentes.
+- No se modificó la base local ni el esquema; no corresponde regenerar el
+  respaldo SQL. Los índices existentes cubren `operator_client_id` y
+  `company`; no se añadió una migración para el catálogo actual (~1,000 filas).
 
 - Backend focal FieldSheet/LAB + seguridad Mobile (10 archivos): `256 passed,
   8 skipped`.

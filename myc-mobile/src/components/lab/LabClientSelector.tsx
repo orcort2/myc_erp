@@ -11,6 +11,7 @@ import {
   initialSelectorState,
   limitVisibleResults,
   openInlineCreate,
+  shouldSearchLabClients,
   shouldResetFormAfterSubmit,
 } from '@/src/services/lab-client-selector';
 
@@ -40,11 +41,17 @@ export function LabClientSelector({ onSelect, request }: Props) {
 
   useEffect(() => {
     let active = true;
+    if (!shouldSearchLabClients(state.searchTerm)) {
+      setLoading(false);
+      setSearchError('');
+      setState((current) => current.results.length ? { ...current, results: [] } : current);
+      return () => { active = false; };
+    }
     const timer = setTimeout(() => {
       setLoading(true);
       setSearchError('');
       const query = buildLabClientSearchQuery(state.searchTerm);
-      request<LabClient[]>(`/mobile/v1/technician/lab-clients${query ? `?${query}` : ''}`)
+      request<LabClient[]>(`/mobile/v1/technician/lab-clients?${query}`)
         .then((results) => { if (active) setState((current) => ({ ...current, results })); })
         .catch((error) => {
           // La búsqueda ya no falla en silencio -- se muestra un estado de

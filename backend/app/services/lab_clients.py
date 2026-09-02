@@ -37,6 +37,8 @@ def list_lab_clients(
     operator_client_id: int | None,
     search: str | None = None,
     include_inactive: bool = False,
+    offset: int = 0,
+    limit: int = 25,
 ) -> list[LabClient]:
     query = select(LabClient).where(_scope_clause(operator_client_id))
     if not include_inactive:
@@ -50,7 +52,13 @@ def list_lab_clients(
                 LabClient.attention.ilike(value),
             )
         )
-    return list(db.scalars(query.order_by(LabClient.company, LabClient.attention)).all())
+    return list(
+        db.scalars(
+            query.order_by(LabClient.company, LabClient.attention, LabClient.id)
+            .offset(offset)
+            .limit(limit)
+        ).all()
+    )
 
 
 def get_lab_client(db: Session, client_id: int, *, operator_client_id: int | None) -> LabClient:
@@ -264,8 +272,24 @@ async def import_lab_clients_xlsx(
     headers = next(rows, None)
     if headers is None:
         raise HTTPException(status_code=422, detail="El XLSX está vacío")
-    positions = {str(value or "").strip().upper(): index for index, value in enumerate(headers)}
-    required = {"CLIENTE", "CONTACTO", "DIRECCIÓN"}
+    header_aliases = {
+        "cliente": "company",
+        "contacto": "attention",
+        "atencion": "attention",
+        "direccion": "address",
+        "codigo postal": "postal_code",
+        "cp": "postal_code",
+        "c p": "postal_code",
+        "ciudad": "city",
+        "estado": "state",
+    }
+    positions: dict[str, int] = {}
+    for index, value in enumerate(headers):
+        normalized_header = normalize_lab_client_identity(str(value or ""))
+        canonical = header_aliases.get(normalized_header)
+        if canonical is not None and canonical not in positions:
+            positions[canonical] = index
+    required = {"company", "attention", "address"}
     if not required.issubset(positions):
         raise HTTPException(status_code=422, detail="Se requieren CLIENTE, CONTACTO y DIRECCIÓN")
 
@@ -281,16 +305,28 @@ async def import_lab_clients_xlsx(
     new_count = skipped = invalid = 0
     errors: list[dict] = []
     for row_number, row in enumerate(rows, start=2):
+        def cell_text(field: str) -> str:
+            position = positions.get(field)
+            if position is None or position >= len(row) or row[position] is None:
+                return ""
+            return str(row[position]).strip()
+
         values = {
-            "company": str(row[positions["CLIENTE"]] or "").strip(),
-            "address": str(row[positions["DIRECCIÓN"]] or "").strip(),
-            "attention": str(row[positions["CONTACTO"]] or "").strip(),
+            "company": cell_text("company"),
+            "address": cell_text("address"),
+            "attention": cell_text("attention"),
+            "postal_code": cell_text("postal_code") or None,
+            "city": cell_text("city") or None,
+            "state": cell_text("state") or None,
         }
         if not values["company"]:
             invalid += 1
             errors.append({"row": row_number, "reason": "Falta Empresa"})
             continue
-        key = tuple(normalize_lab_client_identity(values[name]) for name in ("company", "address", "attention"))
+        key = tuple(
+            normalize_lab_client_identity(str(values[name] or ""))
+            for name in ("company", "address", "attention")
+        )
         if key in existing_keys:
             skipped += 1
             continue

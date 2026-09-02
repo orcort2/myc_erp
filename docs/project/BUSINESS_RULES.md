@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y bitácoras cronológicas retiradas conservadas por Git
 >
-> Corte verificado: 2026-08-26
+> Corte verificado: 2026-09-02
 
 # Reglas de negocio vigentes
 
@@ -98,6 +98,7 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-066 | Cotizaciones / ETS | La transición a `accepted` y la materialización del ETS son una sola operación backend transaccional e idempotente. El lock de Cotización y la búsqueda por `quotation_id` garantizan un solo ETS activo; el frontend no ejecuta una creación adicional. | `quotations.py`, `service_orders.py`, schema de Cotización y suite Venta/Cotizaciones | 2026-08-25 |
 | BR-067 | Catálogo / Verificación | Crear o actualizar Verificación exige Master genérico `certificate_master` activo, versión activa no caducada y XLSX disponible. El legacy nulo es legible, pero no actualizable ni materializable en un ETS nuevo; reparar requiere sustitución explícita para no reinterpretar snapshots. | `catalog_items.py`, `service_orders.py`, Catálogo y suite de identidad operacional | 2026-08-25 |
 | BR-068 | MYC Mobile | `mobile.access` sólo autoriza entrada. Staff conserva RBAC interno y scope vigente; cliente usa una membership activa única, RBAC externo y `client_id` derivado en backend. Claims o payloads no conceden organización. Viewer sólo lee; Jr/Sr operan LAB sin folios. Las rutas productivas no revisadas permanecen deny para cliente. | [`../architecture/MOBILE_SECURITY_CONTEXT.md`](../architecture/MOBILE_SECURITY_CONTEXT.md), contexto/guards Mobile y suites de scope | 2026-08-26 |
+| BR-069 | LabClient Mobile | El XLSX LAB exige empresa/contacto/dirección con encabezados normalizados y puede aportar código postal/ciudad/estado; auxiliares no se importan y la deduplicación continúa por empresa+dirección+atención. Toda consulta respeta permisos/scope y limita en SQL: selector sólo con 2+ caracteres y máximo 5; administración en páginas de 25. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicios/routers LabClient y suites backend/móvil | 2026-09-02 |
 
 ## Reglas históricas no vigentes como obligación actual
 
