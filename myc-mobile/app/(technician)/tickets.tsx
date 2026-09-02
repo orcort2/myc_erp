@@ -41,11 +41,13 @@ const GROUP_STATUS_LABELS: Record<LabWorkOrderGroupRequest['status'], string> = 
   rejected: 'Rechazada',
 };
 const TICKET_TYPE_LABELS: Record<OperationalTicket['type'], string> = {
-  reopen_work_order: 'Reapertura',
+  reopen_work_order: 'Reapertura de OT',
   manual_myc_folio: 'Folio MYC manual',
   linked_folio: 'Folio Vinculado',
   partial_close: 'Cierre parcial',
   certificate_folio_block: 'Folios certificados',
+  field_sheet_template_request: 'Hoja de campo no encontrada',
+  field_sheet_reopen: 'Desbloqueo de hoja de campo',
 };
 
 export default function TicketsScreen() {
@@ -298,7 +300,7 @@ export default function TicketsScreen() {
   return (
     <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Inicio</Text></Pressable>
+        <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Volver</Text></Pressable>
         <Text style={styles.title}>Solicitudes</Text>
         <Text style={styles.subtitle}>{capabilities.canReadWorkOrderGroupRequests ? 'Reaperturas y grupos anticipados por revisar' : 'Tus solicitudes operativas'}</Text>
       </View>
@@ -373,6 +375,12 @@ export default function TicketsScreen() {
               {!!selected.requested_folio && <><Text style={styles.detailLabel}>Folio solicitado</Text><Text style={styles.detail}>{selected.requested_folio}</Text></>}
               {!!selected.authorized_folio && <><Text style={styles.detailLabel}>Folio autorizado</Text><Text style={styles.detail}>{selected.authorized_folio}</Text></>}
               {selected.type === 'certificate_folio_block' && <Text style={styles.detail}>{selected.accredited_quantity ?? 0} MYCA + {selected.traceable_quantity ?? 0} MYCT</Text>}
+              {(selected.type === 'field_sheet_reopen' || selected.type === 'field_sheet_template_request') && !!selected.equipment_id && (
+                <><Text style={styles.detailLabel}>Equipo</Text><Text style={styles.detail}>Equipo #{selected.equipment_id} de la OT{selected.work_order_folio ? ` ${selected.work_order_folio}` : ''}</Text></>
+              )}
+              {selected.type === 'field_sheet_reopen' && !!selected.resolution_snapshot?.revision_number && (
+                <><Text style={styles.detailLabel}>Revisión de la hoja</Text><Text style={styles.detail}>Revisión {String(selected.resolution_snapshot.revision_number)}</Text></>
+              )}
               {!!selected.decision_comment && <><Text style={styles.detailLabel}>Decisión</Text><Text style={styles.detail}>{selected.decision_comment}</Text></>}
               {canReview && selected.type === 'reopen_work_order' && selected.status === 'pending' && <>
                 <Text style={styles.warning}>Si durante la edición se realiza un cambio estructural, el backend invalidará automáticamente las firmas existentes.</Text>

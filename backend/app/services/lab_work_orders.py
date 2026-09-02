@@ -49,6 +49,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderUpdate,
 )
 from app.services.audit_logs import write_audit_log
+from app.services.field_sheets import EDITABLE_STATUSES, _validate_ready_to_complete
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
 from app.services.notification_events import (
     notify_ticket_resolved,
@@ -971,13 +972,17 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
 def cancel_work_order(
     db: Session, work_order_id: int, user: User, reason: str
 ) -> LabWorkOrderRead:
+    """Cierre UX 2026-09: cancelar ya no exige reapertura previa -- Admin
+    puede cancelar una OT abierta, en proceso o ya completed/partially_closed.
+    Cancelar nunca reabre (no toca equipo/hojas/firmas/PDFs); previous_status
+    conserva el estado exacto para que restore_work_order lo recupere, en
+    vez de reinterpretar la cancelación como una reapertura técnica."""
     work_order = _get(db, work_order_id, lock=True)
     if work_order.status == "cancelled":
         return _read(db, work_order)
-    if work_order.status in {"completed", "partially_closed"}:
-        raise HTTPException(status_code=409, detail="Una OT cerrada requiere reapertura antes de cancelar")
     now = datetime.now(timezone.utc)
     previous = work_order.status
+    work_order.previous_status = previous
     work_order.status = "cancelled"
     work_order.cancelled_at = now
     work_order.cancelled_by_user_id = user.id
@@ -991,9 +996,41 @@ def cancel_work_order(
         previous_values={"status": previous},
         new_values={
             "status": "cancelled",
+            "previous_status": previous,
             "cancelled_at": now.isoformat(),
             "cancellation_reason": work_order.cancellation_reason,
         },
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def restore_work_order(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
+    """Restaura una OT cancelada a su previous_status exacto (nunca a
+    draft/in_progress como si fuera una reapertura técnica). No toca
+    equipo/hojas/firmas/PDFs -- sólo revierte la cancelación en sí."""
+    work_order = _get(db, work_order_id, lock=True)
+    if work_order.status != "cancelled":
+        raise HTTPException(status_code=409, detail="La OT no está cancelada")
+    if not work_order.previous_status:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta OT fue cancelada antes de existir el historial de estado; no puede restaurarse automáticamente",
+        )
+    restored_status = work_order.previous_status
+    work_order.status = restored_status
+    work_order.previous_status = None
+    work_order.cancelled_at = None
+    work_order.cancelled_by_user_id = None
+    work_order.cancellation_reason = None
+    write_audit_log(
+        db,
+        action="lab_work_order.restored",
+        entity="lab_work_orders",
+        entity_id=work_order.id,
+        user_id=user.id,
+        previous_values={"status": "cancelled"},
+        new_values={"status": restored_status},
     )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
@@ -1936,6 +1973,51 @@ def _unresolved_folio_equipment(members: list[LabWorkOrder]) -> list[dict]:
     ]
 
 
+def _draft_field_sheet_targets(
+    members: list[LabWorkOrder],
+) -> list[tuple[LabWorkOrder, LabWorkOrderEquipment]]:
+    """Cierre UX 2026-09: equipos con una FieldSheet vigente todavía en un
+    estado editable (draft/in_progress/...) -- mismas excepciones que
+    _missing_completed_sheets/_ensure_staff_sheet_prerequisites (OT sin
+    lab_client_id, OT ya exenta por partial_close_ticket_id) para no forzar
+    completar hojas donde el cierre nunca las exigió."""
+    exempt_ids = {item.id for item in members if item.partial_close_ticket_id is not None}
+    return [
+        (item, equipment)
+        for item in members
+        if item.id not in exempt_ids and item.lab_client_id is not None
+        for equipment in item.equipment
+        if equipment.field_sheet is not None and equipment.field_sheet.status in EDITABLE_STATUSES
+    ]
+
+
+def _draft_target_item(item: LabWorkOrder, equipment: LabWorkOrderEquipment, **extra) -> dict:
+    return {
+        "work_order_id": item.id,
+        "work_order_folio": item.folio,
+        "equipment_id": equipment.id,
+        "equipment_position": equipment.position,
+        "equipment": equipment.instrument,
+        "field_sheet_status": equipment.field_sheet.status,
+        **extra,
+    }
+
+
+def _validate_draft_targets(
+    draft_targets: list[tuple[LabWorkOrder, LabWorkOrderEquipment]],
+) -> list[dict]:
+    """Sólo valida (nunca muta) -- se corre ANTES de tocar nada, para poder
+    devolver todos los blockers de una vez sin haber escrito ni un PDF."""
+    blockers = []
+    for item, equipment in draft_targets:
+        try:
+            _validate_ready_to_complete(equipment.field_sheet)
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {"message": exc.detail}
+            blockers.append(_draft_target_item(item, equipment, **detail))
+    return blockers
+
+
 def _ensure_staff_sheet_prerequisites(members: list[LabWorkOrder]) -> None:
     missing = _missing_completed_sheets(members)
     exempt_ids = {item.id for item in members if item.partial_close_ticket_id is not None}
@@ -2032,6 +2114,7 @@ def _complete_members(
     user: User,
     scope: str,
     require_completed_sheets: bool = True,
+    confirm_draft_completion: bool = False,
 ) -> LabWorkOrderRead:
     if not members or any(
         item.signature_session_id is None or item.signature_required for item in members
@@ -2040,6 +2123,53 @@ def _complete_members(
             status_code=409, detail="La cohorte requiere las firmas de técnico y cliente"
         )
     if require_completed_sheets:
+        # Cierre UX 2026-09: una OT con FieldSheets todavía en borrador ya no
+        # bloquea el cierre de entrada -- si el usuario confirma, se
+        # autocompletan todas de una vez, en la MISMA transacción que el
+        # cierre (nunca varias requests independientes -- ver
+        # _validate_draft_targets/guard_final_pdf_write: si cualquiera falla
+        # la validación o la escritura del PDF, nada se completa ni se
+        # cierra).
+        draft_targets = _draft_field_sheet_targets(members)
+        if draft_targets:
+            if not confirm_draft_completion:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "LAB_DRAFT_SHEETS_REQUIRE_CONFIRMATION",
+                        "items": [_draft_target_item(item, equipment) for item, equipment in draft_targets],
+                    },
+                )
+            blockers = _validate_draft_targets(draft_targets)
+            if blockers:
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "LAB_DRAFT_SHEETS_INVALID", "items": blockers},
+                )
+            from contextlib import ExitStack
+
+            from app.services.field_sheet_pdfs import guard_final_pdf_write
+            from app.services.lab_field_sheets import _complete_lab_field_sheet_uncommitted
+
+            with ExitStack() as stack:
+                # Cada guard limpia SÓLO su propio PDF si algo falla más
+                # adelante en este mismo bloque (validación posterior,
+                # generación del PDF de la OT, commit) -- por eso el stack
+                # sigue abierto hasta el _finish_complete_members final, no
+                # sólo durante el loop de completar hojas.
+                for _item, equipment in draft_targets:
+                    stack.enter_context(guard_final_pdf_write(db, equipment.field_sheet))
+                for _item, equipment in draft_targets:
+                    _complete_lab_field_sheet_uncommitted(db, equipment, equipment.field_sheet, user)
+                # Re-verificar con la autoridad normal (ahora sin drafts
+                # pendientes) en vez de asumir que completar alcanzó -- misma
+                # regla, no una segunda política.
+                _ensure_staff_sheet_prerequisites(members)
+                if any(not _closable_status(item) for item in members):
+                    raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
+                return _finish_complete_members(
+                    db, work_order=work_order, members=members, user=user, scope=scope,
+                )
         # El detalle de hojas faltantes (por equipo) es más informativo que un
         # simple INVALID_STATE_TRANSITION, así que se revisa primero -- para
         # cualquier miembro no exento, si ya está ready_to_close no puede
@@ -2060,6 +2190,17 @@ def _complete_members(
             for item in members
         ):
             raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
+    return _finish_complete_members(db, work_order=work_order, members=members, user=user, scope=scope)
+
+
+def _finish_complete_members(
+    db: Session,
+    *,
+    work_order: LabWorkOrder,
+    members: list[LabWorkOrder],
+    user: User,
+    scope: str,
+) -> LabWorkOrderRead:
     session_ids = {item.signature_session_id for item in members}
     if len(session_ids) != 1:
         raise HTTPException(
@@ -2116,7 +2257,8 @@ def _complete_members(
 
 
 def complete_group(
-    db: Session, work_order_id: int, user: User, *, require_completed_sheets: bool = True
+    db: Session, work_order_id: int, user: User, *,
+    require_completed_sheets: bool = True, confirm_draft_completion: bool = False,
 ) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
     if work_order.status in {"completed", "partially_closed"}:
@@ -2134,11 +2276,13 @@ def complete_group(
         user=user,
         scope="group",
         require_completed_sheets=require_completed_sheets,
+        confirm_draft_completion=confirm_draft_completion,
     )
 
 
 def complete_individual(
-    db: Session, work_order_id: int, user: User, *, require_completed_sheets: bool = True
+    db: Session, work_order_id: int, user: User, *,
+    require_completed_sheets: bool = True, confirm_draft_completion: bool = False,
 ) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
     if work_order.status in {"completed", "partially_closed"}:
@@ -2161,6 +2305,7 @@ def complete_individual(
         user=user,
         scope="individual",
         require_completed_sheets=require_completed_sheets,
+        confirm_draft_completion=confirm_draft_completion,
     )
 
 

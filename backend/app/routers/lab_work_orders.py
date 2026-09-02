@@ -13,6 +13,7 @@ from app.schemas.lab_work_order import (
     LabEquipmentWrite,
     LabEquipmentServiceWrite,
     LabCancellationWrite,
+    LabDirectReopenWrite,
     LabFieldSheetCreate,
     LabSignatureGroupWrite,
     LabWorkOrderCreate,
@@ -30,6 +31,7 @@ from app.services.lab_work_orders import (
     add_equipment,
     assign_equipment_service,
     cancel_work_order,
+    restore_work_order,
     complete_group,
     complete_individual,
     create_additional_work_order,
@@ -65,7 +67,7 @@ from app.services.lab_field_sheets import (
 from app.services.lab_packages import generate_lab_package
 from app.models.linked_company import LinkedCompany
 from sqlalchemy import select
-from app.services.operational_tickets import get_revision_pdf, list_revisions
+from app.services.operational_tickets import get_revision_pdf, list_revisions, reopen_work_order_directly
 
 
 router = APIRouter(
@@ -645,6 +647,7 @@ def create_lab_individual_signatures(
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)
 def complete_lab_group(
     work_order_id: int,
+    confirm_draft_completion: bool = Query(default=False),
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         # Fase 5 (corregido post-auditoría): cierre técnico es autoridad
@@ -661,12 +664,14 @@ def complete_lab_group(
     return complete_group(
         db, work_order_id, context.user,
         require_completed_sheets=context.actor_type == "internal",
+        confirm_draft_completion=confirm_draft_completion,
     )
 
 
 @router.post("/{work_order_id}/complete/individual", response_model=LabWorkOrderRead)
 def complete_lab_individual(
     work_order_id: int,
+    confirm_draft_completion: bool = Query(default=False),
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("work_orders.close", "lab_work_orders.use")
@@ -676,6 +681,7 @@ def complete_lab_individual(
     return complete_individual(
         db, work_order_id, context.user,
         require_completed_sheets=context.actor_type == "internal",
+        confirm_draft_completion=confirm_draft_completion,
     )
 
 
@@ -728,6 +734,40 @@ def post_cancel_lab_work_order(
     if context.actor_type != "internal":
         raise HTTPException(status_code=403, detail="La cancelación está reservada a Admin")
     return cancel_work_order(db, work_order_id, context.user, payload.reason)
+
+
+@router.post("/{work_order_id}/restore", response_model=LabWorkOrderRead)
+def post_restore_lab_work_order(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_orders.cancel")
+    ),
+) -> LabWorkOrderRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La restauración está reservada a Admin")
+    return restore_work_order(db, work_order_id, context.user)
+
+
+@router.post("/{work_order_id}/reopen", response_model=LabWorkOrderRead)
+def post_reopen_lab_work_order_directly(
+    work_order_id: int,
+    payload: LabDirectReopenWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.reopen")
+    ),
+) -> LabWorkOrderRead:
+    """Reapertura administrativa directa -- exclusiva de quien YA tiene
+    work_orders.reopen + la política correspondiente (verificado de nuevo
+    dentro del servicio). No pasa por tickets; ver reopen_work_order_directly."""
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La reapertura directa está reservada a Admin")
+    return reopen_work_order_directly(
+        db, work_order_id, context.user,
+        signature_policy=payload.requested_signature_policy,
+        reason=payload.reason,
+    )
 
 
 @router.get("/{work_order_id}/revisions", response_model=list[LabRevisionRead])

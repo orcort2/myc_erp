@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -44,6 +44,7 @@ from app.models.client import Client
 from app.models.client_portal_membership import ClientPortalMembership
 from app.models.client_portal_membership_role import ClientPortalMembershipRole
 from app.models.client_portal_role import ClientPortalRole
+from app.models.field_sheet import FieldSheet
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.linked_company import LinkedCompany
 from app.models.user import Role, User
@@ -311,9 +312,10 @@ def db_status(factory, order_id: int) -> str:
         return db.get(LabWorkOrder, order_id).status
 
 
-def close_individual(client, headers, order_id):
+def close_individual(client, headers, order_id, *, confirm_draft_completion: bool = False):
+    query = "?confirm_draft_completion=true" if confirm_draft_completion else ""
     return client.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=headers,
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual{query}", headers=headers,
     )
 
 
@@ -349,8 +351,9 @@ def test_ready_to_close_with_everything_valid_reaches_completed(phase5_context):
 
 
 def test_close_rejected_with_pending_field_sheet(phase5_context):
-    """2. Una FieldSheet creada pero no completed bloquea el cierre con un
-    error de dominio estructurado, sin mutar el estado."""
+    """2. Cierre UX 2026-09: una FieldSheet en borrador ya NO bloquea el
+    cierre con un error terminal -- pide confirmación (el usuario decide si
+    completar y cerrar), sin mutar el estado hasta que confirme."""
     client, factory, tokens, _tenants = phase5_context
     headers = auth(tokens["tech"])
     lab_client_id = make_lab_client_id(factory)
@@ -359,8 +362,73 @@ def test_close_rejected_with_pending_field_sheet(phase5_context):
     assert created.status_code == 201, created.text
     response = close_individual(client, headers, order_id)
     assert response.status_code == 409, response.text
-    assert response.json()["detail"]["code"] == "LAB_FIELD_SHEETS_INCOMPLETE"
+    detail = response.json()["detail"]
+    assert detail["code"] == "LAB_DRAFT_SHEETS_REQUIRE_CONFIRMATION"
+    assert detail["items"][0]["equipment_id"] == equipment_id
     assert db_status(factory, order_id) == "in_progress"
+
+
+def test_close_with_confirm_draft_completion_autocompletes_and_closes_atomically(phase5_context):
+    """22. Cerrar con drafts válidos + confirmación: confirm_draft_completion
+    completa la hoja borrador y cierra la OT en la MISMA llamada (no dos
+    requests independientes) -- el resultado es completed con PDF final."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["tech"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    created = create_field_sheet(client, headers, order_id, equipment_id)
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+    rows = [
+        {
+            "id": row["id"], "section_key": row["section_key"], "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+
+    response = close_individual(client, headers, order_id, confirm_draft_completion=True)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "completed"
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.status == "completed"
+        assert order.final_pdf
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.status == "completed"
+        assert sheet.final_pdf_path is not None
+
+
+def test_close_with_confirm_draft_completion_rejects_invalid_draft_without_partial_close(phase5_context):
+    """22. Cerrar con draft inválido -> no cierre parcial: si la hoja
+    borrador no pasa validación (faltan datos técnicos requeridos), ni la
+    hoja se completa ni la OT cierra -- se devuelven los blockers exactos."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["tech"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    created = create_field_sheet(client, headers, order_id, equipment_id)
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+
+    response = close_individual(client, headers, order_id, confirm_draft_completion=True)
+    assert response.status_code == 422, response.text
+    detail = response.json()["detail"]
+    assert detail["code"] == "LAB_DRAFT_SHEETS_INVALID"
+    assert detail["items"][0]["equipment_id"] == equipment_id
+    assert "missing_fields" in detail["items"][0]
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.status == "in_progress"
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.status == "draft"
+        assert sheet.final_pdf_path is None
 
 
 def test_close_rejected_with_missing_field_sheet(phase5_context):
@@ -640,3 +708,193 @@ def test_external_operator_sr_does_not_gain_internal_admin_capabilities(phase5_c
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/additional", headers=sr_headers,
     )
     assert response.status_code == 403, response.text
+
+
+# --------------------------------------------------------------------------
+# Cierre UX 2026-09: cancelar/restaurar incluso desde completed, y
+# reapertura administrativa directa sin ticket artificial (16-22)
+# --------------------------------------------------------------------------
+
+
+def test_admin_cancels_an_open_work_order(phase5_context):
+    """16. Admin cancela una OT abierta (in_progress)."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    order_id, _equipment_id = create_and_sign_ready_order(client, headers)
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/cancel",
+        json={"reason": "Ya no se requiere el servicio"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "cancelled"
+    assert body["previous_status"] == "received_signed"
+
+
+def test_admin_cancels_a_completed_work_order_preserving_everything(phase5_context):
+    """16. Admin cancela una OT completed/cerrada -- ya no exige reapertura
+    previa. Firmas, PDF final y FieldSheet completed quedan intactos."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        original_pdf_sha = order.final_pdf_sha256
+        original_signature_session_id = order.signature_session_id
+    with factory() as db:
+        original_sheet_pdf_sha = db.get(FieldSheet, sheet_id).final_pdf_sha256
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/cancel",
+        json={"reason": "Corrección administrativa post-cierre"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "cancelled"
+    assert body["previous_status"] == "completed"
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.final_pdf_sha256 == original_pdf_sha
+        assert order.signature_session_id == original_signature_session_id
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.status == "completed"
+        assert sheet.final_pdf_sha256 == original_sheet_pdf_sha
+    audit = _latest_audit(factory, "lab_work_order.cancelled", order_id)
+    assert audit.new_values["previous_status"] == "completed"
+
+
+def test_restore_returns_a_cancelled_work_order_to_its_exact_previous_status(phase5_context):
+    """17. restore vuelve exactamente al estado anterior -- completed ->
+    cancelled -> restore -> completed, NUNCA a draft/in_progress como si
+    fuera una reapertura técnica."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+    cancelled = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/cancel",
+        json={"reason": "Prueba de restauración"},
+        headers=headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+
+    restored = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/restore", headers=headers,
+    )
+    assert restored.status_code == 200, restored.text
+    body = restored.json()
+    assert body["status"] == "completed"
+    assert body["previous_status"] is None
+    assert body["cancelled_at"] is None
+    assert body["cancellation_reason"] is None
+
+
+def test_restore_rejects_a_work_order_that_is_not_cancelled(phase5_context):
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    order_id, _equipment_id = create_and_sign_ready_order(client, headers)
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/restore", headers=headers,
+    )
+    assert response.status_code == 409, response.text
+
+
+def test_user_without_permission_cannot_cancel_or_restore(phase5_context):
+    """18. Usuario sin lab_work_orders.cancel no cancela ni restaura --
+    backend sigue siendo la autoridad, no sólo la UI."""
+    client, factory, tokens, _tenants = phase5_context
+    admin_headers = auth(tokens["admin"])
+    tech_headers = auth(tokens["tech"])
+    order_id, _equipment_id = create_and_sign_ready_order(client, admin_headers)
+    denied_cancel = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/cancel",
+        json={"reason": "Intento sin permiso"},
+        headers=tech_headers,
+    )
+    assert denied_cancel.status_code == 403, denied_cancel.text
+
+    cancelled = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/cancel",
+        json={"reason": "Cancelación válida por admin"},
+        headers=admin_headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    denied_restore = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/restore", headers=tech_headers,
+    )
+    assert denied_restore.status_code == 403, denied_restore.text
+
+
+def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_context):
+    """19. Admin con work_orders.reopen ejecuta la reapertura directamente
+    -- una sola llamada, sin crear ni pasar por un ticket."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+
+    from app.models.operational_ticket import OperationalTicket
+    with factory() as db:
+        tickets_before = db.scalar(select(func.count()).select_from(OperationalTicket))
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección de datos técnicos"},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "draft"
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.reopen_ticket_id is None
+        assert order.reopened_by_user_id is not None
+        assert len(order.revisions) == 1
+        assert order.revisions[0].reopen_ticket_id is None
+        tickets_after = db.scalar(select(func.count()).select_from(OperationalTicket))
+    assert tickets_after == tickets_before
+    audit = _latest_audit(factory, "lab_work_order.reopened_directly", order_id)
+    assert audit.user_id is not None
+
+
+def test_user_without_reopen_permission_cannot_reopen_directly(phase5_context):
+    """20. Sin work_orders.reopen, el endpoint directo rechaza -- el único
+    camino que le queda es solicitar (ticket), no ejecutar."""
+    client, factory, tokens, _tenants = phase5_context
+    admin_headers = auth(tokens["admin"])
+    tech_headers = auth(tokens["tech"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, admin_headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+    closed = close_individual(client, admin_headers, order_id)
+    assert closed.status_code == 200, closed.text
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Intento sin permiso"},
+        headers=tech_headers,
+    )
+    assert response.status_code == 403, response.text
+
+
+def _latest_audit(factory, action: str, entity_id: int):
+    with factory() as db:
+        return db.scalar(
+            select(AuditLog)
+            .where(AuditLog.action == action, AuditLog.entity_id == entity_id)
+            .order_by(AuditLog.id.desc())
+        )
+
+

@@ -35,7 +35,7 @@ export default function SaleDeliveriesScreen() {
   if (isLoading) return <View style={styles.center}><ActivityIndicator /></View>;
   if (!user) return <Redirect href="/(auth)/login" />;
   return <SafeAreaView style={styles.container}><ScrollView contentContainerStyle={styles.content}>
-    <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Inicio</Text></Pressable>
+    <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Volver</Text></Pressable>
     <Text style={styles.eyebrow}>MYC Mobile · Venta</Text><Text style={styles.title}>Entregas asignadas</Text>
     {error ? <Text style={styles.error}>{error}</Text> : null}
     {items.map((item) => <View style={styles.card} key={item.id}>

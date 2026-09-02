@@ -24,6 +24,7 @@ export type MobileCapabilities = {
   canImportLabClients: boolean;
   canReadLabClients: boolean;
   canEditLabClients: boolean;
+  canDeactivateLabClients: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -95,5 +96,11 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       || hasLegacyLabAccess,
     canEditLabClients: hasPermission(permissions, 'lab_clients.update')
       || hasLegacyLabAccess,
+    // Cierre UX 2026-09: backend exige actor_type === 'internal' además de
+    // este permiso explícito (lab_clients.py:79-101) -- deliberadamente sin
+    // hasLegacyLabAccess aquí, mismo criterio restringido que el backend
+    // (hoy sólo Administrador/Desarrollador lo tienen).
+    canDeactivateLabClients: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_clients.deactivate'),
   };
 }

@@ -1,5 +1,15 @@
-import type { ReactNode } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  AccessibilityInfo,
+  ActivityIndicator,
+  Animated,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { colors, radius, spacing, typography } from '@/src/design/tokens';
 
@@ -12,6 +22,37 @@ import { colors, radius, spacing, typography } from '@/src/design/tokens';
 
 export function Screen({ children }: { children: ReactNode }) {
   return <View style={styles.screen}>{children}</View>;
+}
+
+/**
+ * Cierre UX 2026-09: semántica de navegación consistente -- antes varias
+ * pantallas etiquetaban "‹ Inicio" un botón que en realidad ejecutaba
+ * router.back() (Volver, no Inicio). Back vuelve al paso anterior del
+ * flujo; Inicio va explícitamente a la raíz del módulo; Cerrar cierra un
+ * modal/fullscreen. No usar Inicio como sustituto de Back.
+ */
+export function BackButton({ onPress, label = '‹ Volver' }: { onPress?(): void; label?: string }) {
+  return (
+    <Pressable hitSlop={8} onPress={onPress ?? (() => router.back())} style={styles.navAction}>
+      <Text style={styles.navActionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export function HomeButton({ label = 'Inicio' }: { label?: string }) {
+  return (
+    <Pressable hitSlop={8} onPress={() => router.replace('/(technician)')} style={styles.navAction}>
+      <Text style={styles.navActionText}>{label}</Text>
+    </Pressable>
+  );
+}
+
+export function CloseButton({ onPress, label = 'Cerrar' }: { onPress(): void; label?: string }) {
+  return (
+    <Pressable hitSlop={8} onPress={onPress} style={styles.navAction}>
+      <Text style={styles.navActionText}>{label}</Text>
+    </Pressable>
+  );
 }
 
 export function Section({ title, description, children }: { title?: string; description?: string; children: ReactNode }) {
@@ -94,6 +135,18 @@ export function DangerButton({ label, onPress, disabled, loading }: ButtonProps)
   );
 }
 
+/** Jerarquía de botones (cierre UX 2026-09): acciones administrativas
+ * (reabrir, cancelar OT, restaurar) son un bucket propio -- ni la acción
+ * principal del paso (Primary) ni una alternativa común (Secondary) ni
+ * destructiva (Danger). Peso visual reducido a propósito. */
+export function AdministrativeButton({ label, onPress, disabled, loading }: ButtonProps) {
+  return (
+    <Pressable disabled={disabled || loading} onPress={onPress} style={[styles.administrativeButton, disabled && styles.buttonDisabled]}>
+      {loading ? <ActivityIndicator color={colors.warningStrong} /> : <Text style={styles.administrativeButtonText}>{label}</Text>}
+    </Pressable>
+  );
+}
+
 export type StatusTone = 'info' | 'warning' | 'success' | 'danger' | 'purple' | 'neutral';
 
 const TONE_COLOR: Record<StatusTone, string> = {
@@ -141,6 +194,52 @@ export function LoadingState({ label }: { label?: string }) {
   );
 }
 
+/**
+ * Cierre UX 2026-09: transición suave para cambios de etapa (crear OT ->
+ * equipos, equipo -> firma, firma -> captura, selector -> captura,
+ * resultados -> siguiente sección, etc.) -- opacity + translateY corto,
+ * ~180ms, sobre la API Animated ya usada en MobileSignatureFlow (no hay
+ * Reanimated configurado en el proyecto, ver AGENTS.md de myc-mobile).
+ * Respeta reduce motion; nunca bloquea la lógica de negocio -- sólo envuelve
+ * la presentación, ya montada con sus datos reales. Remonta la animación
+ * cuando cambia `transitionKey` (útil para re-disparar la entrada al pasar
+ * de un paso a otro dentro de la misma pantalla).
+ */
+export function FadeIn({ children, transitionKey }: { children: ReactNode; transitionKey?: string | number }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(6)).current;
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    AccessibilityInfo.isReduceMotionEnabled?.()
+      .then((value) => { if (active) setReduceMotion(value); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      opacity.setValue(1);
+      translateY.setValue(0);
+      return;
+    }
+    opacity.setValue(0);
+    translateY.setValue(6);
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.timing(translateY, { toValue: 0, duration: 180, useNativeDriver: true }),
+    ]).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transitionKey, reduceMotion]);
+
+  return (
+    <Animated.View style={{ opacity, transform: [{ translateY }] }}>
+      {children}
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   section: { gap: spacing.sm, marginBottom: spacing.lg },
@@ -184,7 +283,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md, paddingHorizontal: spacing.lg, flex: 1,
   },
   dangerButtonText: { color: colors.dangerStrong, fontWeight: '800' },
+  administrativeButton: {
+    alignItems: 'center', backgroundColor: 'transparent', borderColor: colors.warningStrong,
+    borderRadius: radius.md, borderWidth: 1, borderStyle: 'dashed',
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
+  },
+  administrativeButtonText: { color: colors.warningStrong, fontWeight: '700', fontSize: 13 },
   buttonDisabled: { opacity: 0.42 },
+  navAction: { minHeight: 44, justifyContent: 'center', paddingVertical: spacing.xs },
+  navActionText: { color: colors.primary, fontWeight: '700' },
   badge: {
     alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1,
     paddingHorizontal: spacing.sm, paddingVertical: 2,

@@ -37,6 +37,7 @@ from app.services.lab_work_orders import (
     _missing_completed_sheets,
     _retire_current_field_sheet_revision,
 )
+from app.services.lab_work_orders import _read as _read_work_order
 from app.services.notification_events import (
     notify_ticket_approved,
     notify_ticket_created,
@@ -353,6 +354,7 @@ def create_field_sheet_reopen_ticket(
             "revision_number": current.revision_number,
         },
     )
+    notify_ticket_created(db, ticket, user)
     db.commit()
     return _read(_get_ticket(db, ticket.id))
 
@@ -524,25 +526,24 @@ def _snapshot(item: LabWorkOrder) -> dict:
     }
 
 
-def approve_reopen_ticket(
-    db: Session, ticket_id: int, payload: TicketReview, user: User
-) -> TicketRead:
-    ticket = _get_ticket(db, ticket_id, lock=True)
-    if ticket.status != "pending":
-        raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
-    if ticket.requested_by_user_id == user.id:
-        raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
-    required_permission = (
-        "work_orders.reopen_preserve_signatures"
-        if payload.signature_policy == "preserve"
-        else "work_orders.reopen_invalidate_signatures"
-    )
-    if not user_has_permission(user, "work_orders.reopen") or not user_has_permission(
-        user, required_permission
-    ):
-        raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
-
-    work_order, historical_group = _lock_historical_group(db, ticket.work_order_id)
+def _reopen_closed_cohort(
+    db: Session,
+    work_order_id: int,
+    user: User,
+    *,
+    signature_policy: str,
+    equipment_id: int | None,
+    reopen_ticket_id: int | None,
+) -> tuple[LabWorkOrder, list[LabWorkOrder], dict | None]:
+    """Núcleo compartido de reapertura: valida que la cohorte de cierre esté
+    realmente cerrada, congela un LabWorkOrderRevision por miembro (snapshot
+    inmutable -- histórico nunca se pierde) y regresa cada uno a draft con la
+    política preserve/invalidate. Retira la revisión vigente de la
+    FieldSheet del equipo si se indica. No hace commit ni toca el ticket --
+    approve_reopen_ticket (mediado por ticket) y reopen_work_order_directly
+    (Admin con autoridad directa, sin ticket artificial) terminan cada uno
+    con su propia bitácora."""
+    work_order, historical_group = _lock_historical_group(db, work_order_id)
     if work_order.status not in {"completed", "partially_closed"}:
         raise HTTPException(status_code=409, detail="OT_NOT_CLOSED")
     cohort = _signature_cohort(
@@ -551,13 +552,13 @@ def approve_reopen_ticket(
     if not cohort or any(item.status not in {"completed", "partially_closed"} for item in cohort):
         raise HTTPException(status_code=409, detail="CLOSURE_COHORT_NOT_CLOSED")
     now = datetime.now(timezone.utc)
-    preserve = payload.signature_policy == "preserve"
+    preserve = signature_policy == "preserve"
     for item in cohort:
         db.add(
             LabWorkOrderRevision(
                 work_order_id=item.id,
                 revision_number=item.revision_number,
-                reopen_ticket_id=ticket.id,
+                reopen_ticket_id=reopen_ticket_id,
                 snapshot=_snapshot(item),
                 signature_session_id=item.signature_session_id,
                 signature_preserved=preserve,
@@ -570,7 +571,7 @@ def approve_reopen_ticket(
         item.edit_version += 1
         item.reopened_at = now
         item.reopened_by_user_id = user.id
-        item.reopen_ticket_id = ticket.id
+        item.reopen_ticket_id = reopen_ticket_id
         item.signature_preserved = preserve
         item.signature_required = not preserve
         if not preserve:
@@ -590,24 +591,93 @@ def approve_reopen_ticket(
         item.final_pdf_sha256 = None
         item.final_pdf_generated_at = None
 
-    if ticket.equipment_id is not None:
+    retired_snapshot = None
+    if equipment_id is not None:
         equipment = db.scalar(
             select(LabWorkOrderEquipment)
-            .where(LabWorkOrderEquipment.id == ticket.equipment_id)
+            .where(LabWorkOrderEquipment.id == equipment_id)
             .with_for_update()
         )
         if equipment is not None:
             retired = equipment.field_sheet
             _retire_current_field_sheet_revision(equipment)
             if retired is not None and retired.status == "completed":
-                ticket.resolution_snapshot = {
+                retired_snapshot = {
                     "retired_field_sheet_id": retired.id,
                     "retired_revision_number": retired.revision_number,
                 }
+    return work_order, cohort, retired_snapshot
+
+
+def reopen_work_order_directly(
+    db: Session, work_order_id: int, user: User, *, signature_policy: str, reason: str,
+) -> LabWorkOrderRead:
+    """Reapertura administrativa directa: el actor YA posee
+    work_orders.reopen + la política correspondiente, así que ejecuta la
+    reapertura en una sola llamada -- no crea ni pasa por un ticket
+    artificial (misma autoridad, mismo núcleo _reopen_closed_cohort que ya
+    usa el ticket mediado, sólo sin ticket ni segunda aprobación)."""
+    required_permission = (
+        "work_orders.reopen_preserve_signatures"
+        if signature_policy == "preserve"
+        else "work_orders.reopen_invalidate_signatures"
+    )
+    if not user_has_permission(user, "work_orders.reopen") or not user_has_permission(
+        user, required_permission
+    ):
+        raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
+    work_order, _cohort, _retired = _reopen_closed_cohort(
+        db, work_order_id, user,
+        signature_policy=signature_policy, equipment_id=None, reopen_ticket_id=None,
+    )
+    write_audit_log(
+        db,
+        action="lab_work_order.reopened_directly",
+        entity="lab_work_orders",
+        entity_id=work_order.id,
+        user_id=user.id,
+        previous_values={"status": "completed_or_partially_closed"},
+        new_values={
+            "status": "draft",
+            "signature_policy": signature_policy,
+            "reason": reason.strip(),
+        },
+    )
+    commit_and_dispatch_notifications(db)
+    return _read_work_order(db, _get(db, work_order.id))
+
+
+def approve_reopen_ticket(
+    db: Session, ticket_id: int, payload: TicketReview, user: User
+) -> TicketRead:
+    ticket = _get_ticket(db, ticket_id, lock=True)
+    if ticket.status != "pending":
+        raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
+    if ticket.requested_by_user_id == user.id:
+        raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
+    required_permission = (
+        "work_orders.reopen_preserve_signatures"
+        if payload.signature_policy == "preserve"
+        else "work_orders.reopen_invalidate_signatures"
+    )
+    if not user_has_permission(user, "work_orders.reopen") or not user_has_permission(
+        user, required_permission
+    ):
+        raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
+
+    work_order, cohort, retired_snapshot = _reopen_closed_cohort(
+        db, ticket.work_order_id, user,
+        signature_policy=payload.signature_policy,
+        equipment_id=ticket.equipment_id,
+        reopen_ticket_id=ticket.id,
+    )
+    if retired_snapshot is not None:
+        ticket.resolution_snapshot = retired_snapshot
+    preserve = payload.signature_policy == "preserve"
 
     ticket.status = "in_progress"
     ticket.reviewed_by_user_id = user.id
-    ticket.reviewed_at = now
+    ticket.reviewed_at = datetime.now(timezone.utc)
     ticket.final_signature_policy = payload.signature_policy
     ticket.decision_comment = payload.comment
     write_audit_log(

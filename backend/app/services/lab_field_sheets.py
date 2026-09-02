@@ -373,6 +373,49 @@ def update_lab_field_sheet(
     return read_lab_field_sheet(db, work_order_id, equipment_id)
 
 
+def _complete_lab_field_sheet_uncommitted(
+    db: Session, equipment: LabWorkOrderEquipment, sheet: FieldSheet, user: User
+) -> None:
+    """Núcleo de completar UNA hoja: marca completed, congela el PDF y
+    sincroniza in_progress->ready_to_close si era la última pendiente. No
+    valida, no hace commit -- el caller ya validó (_validate_ready_to_complete)
+    y controla su propia transacción/guard_final_pdf_write. Compartido por
+    complete_lab_field_sheet (una hoja, un commit) y el cierre de OT con
+    autocompletar borradores (varias hojas, un solo commit atómico -- ver
+    close_work_order_with_draft_completion en lab_work_orders.py)."""
+    from app.services.field_sheet_pdfs import freeze_final_field_sheet_pdf
+
+    previous = sheet.status
+    sheet.status = "completed"
+    freeze_final_field_sheet_pdf(db, sheet)
+    write_audit_log(
+        db,
+        action="lab_field_sheet.completed",
+        entity="field_sheets",
+        entity_id=sheet.id,
+        user_id=user.id,
+        previous_values={"status": previous},
+        new_values={"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()},
+    )
+    # Fase 3: cuando esta era la última hoja pendiente de la OT, el trabajo
+    # técnico normal queda completo -- in_progress -> ready_to_close,
+    # backend-authoritative (reutiliza _missing_completed_sheets, la misma
+    # autoridad que ya exigía hojas completas para cerrar; sólo cambia el
+    # momento en que se evalúa).
+    order = equipment.work_order
+    if order.status == "in_progress" and not _missing_completed_sheets([order]):
+        order.status = "ready_to_close"
+        write_audit_log(
+            db,
+            action="lab_work_order.ready_to_close",
+            entity="lab_work_orders",
+            entity_id=order.id,
+            user_id=user.id,
+            previous_values={"status": "in_progress"},
+            new_values={"status": "ready_to_close"},
+        )
+
+
 def complete_lab_field_sheet(
     db: Session, work_order_id: int, equipment_id: int, user: User
 ) -> FieldSheetRead:
@@ -383,41 +426,13 @@ def complete_lab_field_sheet(
     if sheet.status not in EDITABLE_STATUSES:
         raise HTTPException(status_code=409, detail="La hoja no puede completarse desde este estado")
     _validate_ready_to_complete(sheet)
-    previous = sheet.status
-    sheet.status = "completed"
-    from app.services.field_sheet_pdfs import freeze_final_field_sheet_pdf, guard_final_pdf_write
+    from app.services.field_sheet_pdfs import guard_final_pdf_write
 
     # guard_final_pdf_write spans the write through this function's own
     # commit so a failure anywhere in that span (audit log, OT status sync,
     # commit itself) deletes the orphaned artifact and rolls back instead of
     # leaving a frozen PDF that no committed row points to.
     with guard_final_pdf_write(db, sheet):
-        freeze_final_field_sheet_pdf(db, sheet)
-        write_audit_log(
-            db,
-            action="lab_field_sheet.completed",
-            entity="field_sheets",
-            entity_id=sheet.id,
-            user_id=user.id,
-            previous_values={"status": previous},
-            new_values={"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()},
-        )
-        # Fase 3: cuando esta era la última hoja pendiente de la OT, el trabajo
-        # técnico normal queda completo -- in_progress -> ready_to_close,
-        # backend-authoritative (reutiliza _missing_completed_sheets, la misma
-        # autoridad que ya exigía hojas completas para cerrar; sólo cambia el
-        # momento en que se evalúa).
-        order = equipment.work_order
-        if order.status == "in_progress" and not _missing_completed_sheets([order]):
-            order.status = "ready_to_close"
-            write_audit_log(
-                db,
-                action="lab_work_order.ready_to_close",
-                entity="lab_work_orders",
-                entity_id=order.id,
-                user_id=user.id,
-                previous_values={"status": "in_progress"},
-                new_values={"status": "ready_to_close"},
-            )
+        _complete_lab_field_sheet_uncommitted(db, equipment, sheet, user)
         db.commit()
     return read_lab_field_sheet(db, work_order_id, equipment_id)

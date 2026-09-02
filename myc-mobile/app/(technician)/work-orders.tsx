@@ -95,7 +95,7 @@ const emptyGeneral = (): GeneralData => ({
   purchase_order: '',
   notes: '',
 });
-type TicketDialogMode = 'reopen' | 'partial' | 'cancel';
+type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct';
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
   if (workOrder.signature_scope) return workOrder.signature_scope;
@@ -185,6 +185,8 @@ export default function WorkOrdersScreen() {
   const [ticketDialogMode, setTicketDialogMode] = useState<TicketDialogMode>('reopen');
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
+  const [reopenSignaturePolicy, setReopenSignaturePolicy] = useState<'preserve' | 'invalidate'>('preserve');
+  const [restoring, setRestoring] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
@@ -200,7 +202,7 @@ export default function WorkOrdersScreen() {
     const response = await authorizedFetch(apiUrl(path), { ...init, headers });
     if (!response.ok) {
       const detail = await readApiErrorDetail(response);
-      throw new ApiError(detail.message, response.status, detail.missingFields);
+      throw new ApiError(detail.message, response.status, detail.missingFields, detail.code, detail.items);
     }
     return response.json() as Promise<T>;
   }, [authorizedFetch]);
@@ -341,6 +343,14 @@ export default function WorkOrdersScreen() {
   const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
   const canCancel = !!user && hasPermission(user.permissions, 'lab_work_orders.cancel');
+  // Cierre UX 2026-09: quien YA tiene autoridad de reapertura directa
+  // (work_orders.reopen + al menos una política) ve "Reabrir orden" y la
+  // ejecuta en una sola llamada -- no se le ofrece "Solicitar reapertura"
+  // (eso generaría un ticket artificial para algo que puede hacer él mismo).
+  const canReopenDirectly = !!user
+    && hasPermission(user.permissions, 'work_orders.reopen')
+    && (hasPermission(user.permissions, 'work_orders.reopen_preserve_signatures')
+      || hasPermission(user.permissions, 'work_orders.reopen_invalidate_signatures'));
   const closureOptions = useMemo(
     () => workOrder ? deriveLabClosureOptions(workOrder) : null,
     [workOrder],
@@ -417,9 +427,70 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  // Cierre UX 2026-09: Admin con autoridad directa (canReopenDirectly) ya no
+  // pasa por "Solicitar reapertura" -- ejecuta la reapertura en una sola
+  // llamada (POST .../reopen), sin crear ni aprobar un ticket artificial.
+  // Misma confirmación/auditoría que el flujo mediado por ticket, sólo sin
+  // el paso intermedio que el usuario no necesita.
+  async function reopenDirectly() {
+    if (!workOrder || !ticketReason.trim() || !ticketDescription.trim()) return;
+    setBusy(true);
+    try {
+      const detail = await request<LabWorkOrder>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/reopen`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            requested_signature_policy: reopenSignaturePolicy,
+            reason: `${ticketReason.trim()}: ${ticketDescription.trim()}`,
+          }),
+        },
+      );
+      setTicketOpen(false);
+      setTicketReason('');
+      setTicketDescription('');
+      setWorkOrder(detail);
+      publishLocalChange({ event_type: 'work_order.reopened', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+      Alert.alert('OT reabierta', `La OT ${detail.folio} volvió a draft y puede editarse.`);
+      await refresh(true);
+    } catch (error) {
+      Alert.alert('No fue posible reabrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restoreWorkOrder(target: LabWorkOrder) {
+    setRestoring(true);
+    try {
+      const detail = await request<LabWorkOrder>(
+        `/mobile/v1/technician/lab-work-orders/${target.id}/restore`, { method: 'POST' },
+      );
+      setWorkOrder(detail);
+      publishLocalChange({ event_type: 'work_order.restored', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+      Alert.alert('OT restaurada', `La OT ${detail.folio} volvió a su estado anterior a la cancelación.`);
+    } catch (error) {
+      Alert.alert('No fue posible restaurar la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setRestoring(false);
+    }
+  }
+
+  function confirmRestoreWorkOrder(target: LabWorkOrder) {
+    Alert.alert(
+      'Restaurar OT',
+      `La OT ${target.folio} volverá exactamente al estado que tenía antes de cancelarse (${target.previous_status ?? 'estado anterior'}). ¿Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Restaurar', onPress: () => void restoreWorkOrder(target) },
+      ],
+    );
+  }
+
   async function submitOperationalAction() {
     if (!workOrder || !ticketReason.trim() || !ticketDescription.trim()) return;
     if (ticketDialogMode === 'reopen') return requestReopening();
+    if (ticketDialogMode === 'reopen_direct') return reopenDirectly();
     setBusy(true);
     try {
       if (ticketDialogMode === 'cancel') {
@@ -707,16 +778,45 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  async function completeClosure(scope: LabClosureScope = closureScope) {
+  // Cierre UX 2026-09: cerrar con hojas en borrador ya no exige que el
+  // técnico las complete manualmente antes -- el backend detecta los
+  // borradores, pide confirmación (LAB_DRAFT_SHEETS_REQUIRE_CONFIRMATION) y,
+  // si el usuario confirma, valida y completa TODAS en la misma llamada
+  // atómica (confirm_draft_completion=true). Si alguna no pasa validación
+  // (LAB_DRAFT_SHEETS_INVALID), no se completa ni se cierra nada -- se
+  // muestran los blockers exactos y la OT sigue abierta.
+  async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false) {
     if (!workOrder) return;
     setBusy(true);
     try {
-      const detail = await postLabCompletion({ request, scope, workOrder });
+      const detail = await postLabCompletion({ confirmDraftCompletion, request, scope, workOrder });
       setWorkOrder(detail);
       setStep('completed');
       await refresh();
       publishLocalChange({ event_type: 'work_order.completed', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'LAB_DRAFT_SHEETS_REQUIRE_CONFIRMATION') {
+        const count = error.items?.length ?? 0;
+        Alert.alert(
+          'Hojas en borrador',
+          `Esta OT contiene ${count} hoja${count === 1 ? '' : 's'} guardada${count === 1 ? '' : 's'} como borrador.\nSi continúas, el sistema validará y completará las hojas pendientes antes de cerrar la orden.\n¿Deseas continuar?`,
+          [
+            { text: 'No', style: 'cancel' },
+            { text: 'Completar y cerrar', onPress: () => { void completeClosure(scope, true); } },
+          ],
+        );
+        return;
+      }
+      if (error instanceof ApiError && error.code === 'LAB_DRAFT_SHEETS_INVALID') {
+        const items = error.items ?? [];
+        const bullets = items.map((item) => {
+          const equipmentLabel = typeof item.equipment === 'string' ? item.equipment : `equipo #${item.equipment_id}`;
+          const missing = Array.isArray(item.missing_fields) ? item.missing_fields.join(', ') : 'datos requeridos';
+          return `• ${equipmentLabel}: falta ${missing}`;
+        }).join('\n');
+        Alert.alert('No se puede cerrar todavía', `Completa estas hojas antes de cerrar:\n${bullets}`);
+        return;
+      }
       Alert.alert('No fue posible finalizar el grupo', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
       setBusy(false);
@@ -844,7 +944,7 @@ export default function WorkOrdersScreen() {
   return (
     <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.screen}>
       <View style={styles.header}>
-              <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Inicio</Text></Pressable>
+              <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Volver</Text></Pressable>
               <Text style={styles.title}>Órdenes de Trabajo</Text>
               <Text style={styles.subtitle}>LAB temporal · folios 6400–6999</Text>
             </View>
@@ -1203,7 +1303,18 @@ export default function WorkOrdersScreen() {
                   {workOrder.status !== 'cancelled' && <Pressable style={styles.secondary} onPress={() => downloadPdf('share')}><Text style={styles.secondaryText}>Compartir OT {workOrder.folio}</Text></Pressable>}
                   {canDownloadLabPackages && <Pressable style={styles.secondary} onPress={() => downloadPackage('share', false)}><Text style={styles.secondaryText}>Descargar paquete de esta OT</Text></Pressable>}
                   {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <Pressable style={styles.secondary} onPress={() => downloadPackage('share', true)}><Text style={styles.secondaryText}>Descargar paquete del grupo</Text></Pressable>}
-                  {canCreateTickets && workOrder.status !== 'cancelled' && <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>}
+                  {workOrder.status !== 'cancelled' && (
+                    canReopenDirectly ? (
+                      <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('reopen_direct'); setReopenSignaturePolicy('preserve'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Reabrir orden</Text></Pressable>
+                    ) : canCreateTickets ? (
+                      <Pressable style={styles.secondary} onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }}><Text style={styles.secondaryText}>Solicitar reapertura</Text></Pressable>
+                    ) : null
+                  )}
+                  {workOrder.status === 'cancelled' && canCancel && !!workOrder.previous_status && (
+                    <Pressable disabled={restoring} style={styles.secondary} onPress={() => confirmRestoreWorkOrder(workOrder)}>
+                      {restoring ? <ActivityIndicator /> : <Text style={styles.secondaryText}>Restaurar OT</Text>}
+                    </Pressable>
+                  )}
                 </>
               )}
 
@@ -1275,7 +1386,7 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
-          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel)) && (
+          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly)) && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1287,14 +1398,20 @@ export default function WorkOrdersScreen() {
                   keyboardShouldPersistTaps="handled"
                 >
                   <View style={styles.overlayHandle} />
-                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : 'TICKET DE REAPERTURA'}</Text>
-                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : '¿Por qué necesitas modificar esta orden?'}</Text>
-                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : 'La solicitud requiere resolución de Admin.'}</Text>
+                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : 'TICKET DE REAPERTURA'}</Text>
+                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : '¿Por qué necesitas modificar esta orden?'}</Text>
+                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : 'La solicitud requiere resolución de Admin.'}</Text>
+                  {ticketDialogMode === 'reopen_direct' && (
+                    <View style={styles.row}>
+                      <Pressable onPress={() => setReopenSignaturePolicy('preserve')} style={[styles.choice, reopenSignaturePolicy === 'preserve' && styles.choiceActive]}><Text>Conservar firma</Text></Pressable>
+                      <Pressable onPress={() => setReopenSignaturePolicy('invalidate')} style={[styles.choice, reopenSignaturePolicy === 'invalidate' && styles.choiceActive]}><Text>Requerir nueva firma</Text></Pressable>
+                    </View>
+                  )}
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
                   <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />
                   <View style={styles.actionRow}>
                     <Pressable style={styles.cancel} onPress={() => setTicketOpen(false)}><Text>Cancelar</Text></Pressable>
-                    <Pressable disabled={!ticketReason.trim() || !ticketDescription.trim()} style={styles.save} onPress={submitOperationalAction}><Text style={styles.primaryText}>{ticketDialogMode === 'cancel' ? 'Cancelar OT' : 'Enviar solicitud'}</Text></Pressable>
+                    <Pressable disabled={!ticketReason.trim() || !ticketDescription.trim()} style={styles.save} onPress={submitOperationalAction}><Text style={styles.primaryText}>{ticketDialogMode === 'cancel' ? 'Cancelar OT' : ticketDialogMode === 'reopen_direct' ? 'Reabrir orden' : 'Enviar solicitud'}</Text></Pressable>
                   </View>
                 </ScrollView>
               </KeyboardAvoidingView>
@@ -2014,6 +2131,26 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     gap: 10,
+  },
+
+  row: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+
+  choice: {
+    backgroundColor: '#f5f8fa',
+    borderColor: '#cbd7df',
+    borderRadius: 9,
+    borderWidth: 1,
+    padding: 10,
+  },
+
+  choiceActive: {
+    backgroundColor: '#dff3f1',
+    borderColor: '#008f87',
   },
 
   cancel: {

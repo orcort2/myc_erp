@@ -10,7 +10,14 @@ export type SignaturePolicy = 'preserve' | 'invalidate';
 
 export type OperationalTicket = {
   id: number;
-  type: 'reopen_work_order' | 'manual_myc_folio' | 'linked_folio' | 'partial_close' | 'certificate_folio_block';
+  type:
+    | 'reopen_work_order'
+    | 'manual_myc_folio'
+    | 'linked_folio'
+    | 'partial_close'
+    | 'certificate_folio_block'
+    | 'field_sheet_template_request'
+    | 'field_sheet_reopen';
   status: TicketStatus;
   work_order_id: number | null;
   equipment_id: number | null;

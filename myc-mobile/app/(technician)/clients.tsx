@@ -1,5 +1,5 @@
 import * as DocumentPicker from 'expo-document-picker';
-import { Redirect, router } from 'expo-router';
+import { Redirect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, SafeAreaView, ScrollView, Text, View } from 'react-native';
 
@@ -8,18 +8,22 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import { buildLabClientSearchQuery } from '@/src/services/lab-client-selector';
 import type { LabClient } from '@/src/types/lab-work-order';
-import { layout, spacing } from '@/src/design/tokens';
+import { colors, layout, spacing, typography } from '@/src/design/tokens';
 import {
   ActionRow,
+  BackButton,
   Card,
+  DangerButton,
   EmptyState,
   Field,
+  FadeIn,
   LoadingState,
   PrimaryButton,
   ReadOnlyField,
   Screen,
   SecondaryButton,
   Section,
+  StatusBadge,
 } from '@/src/design/primitives';
 
 type ClientDraft = {
@@ -48,20 +52,24 @@ function draftFromClient(client: LabClient): ClientDraft {
 
 /**
  * Cierre UX 2026-09: módulo Clientes real (no placeholder) -- buscar,
- * consultar, crear, editar e importar XLSX sobre LabClient, la única
- * autoridad de cliente legítima para Mobile (aislamiento arquitectónico,
- * ver myc-mobile/AGENTS.md: Mobile no reutiliza el Cliente canónico del
- * ERP productivo). Reutiliza exactamente los mismos endpoints
- * /mobile/v1/technician/lab-clients que ya usaba el selector embebido en
- * OT -- ningún modelo ni importador paralelo.
+ * consultar, crear, editar, eliminar/restaurar (soft delete, Admin) e
+ * importar XLSX sobre LabClient, la única autoridad de cliente legítima
+ * para Mobile (aislamiento arquitectónico, ver myc-mobile/AGENTS.md: Mobile
+ * no reutiliza el Cliente canónico del ERP productivo). Reutiliza
+ * exactamente los mismos endpoints /mobile/v1/technician/lab-clients que ya
+ * usaba el selector embebido en OT -- ningún modelo ni importador paralelo.
  */
 export default function ClientsScreen() {
   const { authorizedFetch, isLoading, user } = useAuth();
   const capabilities = deriveMobileCapabilities(user);
-  const { canReadLabClients, canManageLabClients, canEditLabClients, canImportLabClients } = capabilities;
+  const {
+    canReadLabClients, canManageLabClients, canEditLabClients,
+    canImportLabClients, canDeactivateLabClients,
+  } = capabilities;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<LabClient[]>([]);
+  const [showInactive, setShowInactive] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'list' | 'create' | 'edit'>('list');
@@ -69,14 +77,18 @@ export default function ClientsScreen() {
   const [draft, setDraft] = useState<ClientDraft>(BLANK_DRAFT);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [busyClientId, setBusyClientId] = useState<number | null>(null);
 
-  const load = useCallback(async (term: string) => {
+  const load = useCallback(async (term: string, includeInactive: boolean) => {
     setLoading(true);
     setError('');
     try {
       const query = buildLabClientSearchQuery(term);
+      const params = new URLSearchParams(query);
+      if (includeInactive) params.set('include_inactive', 'true');
+      const queryString = params.toString();
       const response = await authorizedFetch(
-        apiUrl(`/mobile/v1/technician/lab-clients${query ? `?${query}` : ''}`),
+        apiUrl(`/mobile/v1/technician/lab-clients${queryString ? `?${queryString}` : ''}`),
       );
       if (!response.ok) throw new Error(await readApiError(response));
       setResults(await response.json() as LabClient[]);
@@ -89,10 +101,10 @@ export default function ClientsScreen() {
 
   useEffect(() => {
     if (!user) return;
-    const timer = setTimeout(() => { void load(searchTerm); }, 300);
+    const timer = setTimeout(() => { void load(searchTerm, showInactive); }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, user]);
+  }, [searchTerm, showInactive, user]);
 
   function startCreate() {
     setDraft(BLANK_DRAFT);
@@ -134,7 +146,7 @@ export default function ClientsScreen() {
       });
       if (!response.ok) throw new Error(await readApiError(response));
       cancelForm();
-      await load(searchTerm);
+      await load(searchTerm, showInactive);
     } catch (requestError) {
       Alert.alert(
         editingId ? 'No fue posible guardar los cambios' : 'No fue posible crear el cliente',
@@ -143,6 +155,47 @@ export default function ClientsScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function setClientActive(client: LabClient, active: boolean) {
+    setBusyClientId(client.id);
+    try {
+      const response = await authorizedFetch(
+        apiUrl(`/mobile/v1/technician/lab-clients/${client.id}/${active ? 'activate' : 'deactivate'}`),
+        { method: 'POST' },
+      );
+      if (!response.ok) throw new Error(await readApiError(response));
+      await load(searchTerm, showInactive);
+    } catch (requestError) {
+      Alert.alert(
+        active ? 'No fue posible restaurar el cliente' : 'No fue posible eliminar el cliente',
+        requestError instanceof Error ? requestError.message : 'Intenta nuevamente',
+      );
+    } finally {
+      setBusyClientId(null);
+    }
+  }
+
+  function confirmDeactivate(client: LabClient) {
+    Alert.alert(
+      'Eliminar cliente',
+      `"${client.company}" dejará de aparecer para nuevas OT. El histórico que ya lo usa sigue mostrando su nombre y dirección sin cambios. ¿Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Eliminar', style: 'destructive', onPress: () => void setClientActive(client, false) },
+      ],
+    );
+  }
+
+  function confirmRestore(client: LabClient) {
+    Alert.alert(
+      'Restaurar cliente',
+      `"${client.company}" volverá a estar disponible para nuevas OT. ¿Continuar?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Restaurar', onPress: () => void setClientActive(client, true) },
+      ],
+    );
   }
 
   async function importXlsx() {
@@ -167,7 +220,7 @@ export default function ClientsScreen() {
       });
       if (!response.ok) throw new Error(await readApiError(response));
       const summary = await response.json() as { new: number; skipped: number; invalid: number };
-      await load(searchTerm);
+      await load(searchTerm, showInactive);
       Alert.alert('Importación terminada', `${summary.new} nuevos · ${summary.skipped} omitidos · ${summary.invalid} inválidos`);
     } catch (requestError) {
       Alert.alert('No fue posible importar', requestError instanceof Error ? requestError.message : 'Revisa el XLSX');
@@ -180,10 +233,10 @@ export default function ClientsScreen() {
   if (!user) return <Redirect href="/(auth)/login" />;
   if (!canReadLabClients) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#f4f7fa' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
         <Screen>
           <View style={{ padding: layout.screenPadding }}>
-            <SecondaryButton label="‹ Inicio" onPress={() => router.back()} />
+            <BackButton />
             <EmptyState title="Sin acceso" description="Tu cuenta no tiene permiso para consultar Clientes." />
           </View>
         </Screen>
@@ -192,13 +245,13 @@ export default function ClientsScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f4f7fa' }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView contentContainerStyle={{ padding: layout.screenPadding }}>
         <Screen>
           <View style={{ marginBottom: layout.sectionGap, gap: layout.fieldGap }}>
-            <SecondaryButton label="‹ Inicio" onPress={() => router.back()} />
-            <Text style={{ fontSize: 22, fontWeight: '800', color: '#142b3a' }}>Clientes</Text>
-            <Text style={{ color: '#51606f' }}>Catálogo LAB: buscar, crear y editar clientes.</Text>
+            <BackButton />
+            <Text style={{ ...typography.title, color: colors.text }}>Clientes</Text>
+            <Text style={{ color: colors.textMuted }}>Catálogo LAB: buscar, crear y editar clientes.</Text>
           </View>
 
           {mode === 'list' && (
@@ -210,46 +263,77 @@ export default function ClientsScreen() {
                   <SecondaryButton label="Importar XLSX" onPress={importXlsx} loading={importing} />
                 )}
               </ActionRow>
+              {canDeactivateLabClients && (
+                <SecondaryButton
+                  label={showInactive ? 'Ocultar inactivos' : 'Ver clientes inactivos'}
+                  onPress={() => setShowInactive((value) => !value)}
+                />
+              )}
             </Section>
           )}
 
           {mode !== 'list' && (
-            <Section title={mode === 'edit' ? 'Editar cliente' : 'Crear cliente'}>
-              <Field label="Empresa" value={draft.company} onChange={(value) => setDraft({ ...draft, company: value })} />
-              <Field label="Dirección" value={draft.address} onChange={(value) => setDraft({ ...draft, address: value })} multiline />
-              <Field label="Código postal" value={draft.postal_code} onChange={(value) => setDraft({ ...draft, postal_code: value })} keyboardType="numeric" />
-              <Field label="Ciudad" value={draft.city} onChange={(value) => setDraft({ ...draft, city: value })} />
-              <Field label="Estado" value={draft.state} onChange={(value) => setDraft({ ...draft, state: value })} />
-              <Field label="Atención a" value={draft.attention} onChange={(value) => setDraft({ ...draft, attention: value })} />
-              <ActionRow>
-                <SecondaryButton label="Cancelar" onPress={cancelForm} />
-                <PrimaryButton label="Guardar" onPress={saveDraft} disabled={!draft.company.trim()} loading={saving} />
-              </ActionRow>
-            </Section>
+            <FadeIn transitionKey={mode}>
+              <Section title={mode === 'edit' ? 'Editar cliente' : 'Crear cliente'}>
+                <Field label="Empresa" value={draft.company} onChange={(value) => setDraft({ ...draft, company: value })} />
+                <Field label="Dirección" value={draft.address} onChange={(value) => setDraft({ ...draft, address: value })} multiline />
+                <Field label="Código postal" value={draft.postal_code} onChange={(value) => setDraft({ ...draft, postal_code: value })} keyboardType="numeric" />
+                <Field label="Ciudad" value={draft.city} onChange={(value) => setDraft({ ...draft, city: value })} />
+                <Field label="Estado" value={draft.state} onChange={(value) => setDraft({ ...draft, state: value })} />
+                <Field label="Atención a" value={draft.attention} onChange={(value) => setDraft({ ...draft, attention: value })} />
+                <ActionRow>
+                  <SecondaryButton label="Cancelar" onPress={cancelForm} />
+                  <PrimaryButton label="Guardar" onPress={saveDraft} disabled={!draft.company.trim()} loading={saving} />
+                </ActionRow>
+              </Section>
+            </FadeIn>
           )}
 
-          {!!error && <Text style={{ color: '#c73636', marginBottom: spacing.md }}>{error}</Text>}
+          {!!error && <Text style={{ color: colors.danger, marginBottom: spacing.md }}>{error}</Text>}
 
           {mode === 'list' && (
             loading ? <LoadingState label="Buscando clientes…" /> : (
-              results.length ? results.map((client) => (
-                <Card key={client.id}>
-                  <Text style={{ fontWeight: '800', color: '#142b3a', fontSize: 16 }}>{client.company}</Text>
-                  {!!client.address && <ReadOnlyField label="Dirección" value={client.address} />}
-                  {(client.city || client.state || client.postal_code) && (
-                    <ReadOnlyField
-                      label="Ubicación"
-                      value={[client.city, client.state, client.postal_code].filter(Boolean).join(' · ')}
-                    />
-                  )}
-                  {!!client.attention && <ReadOnlyField label="Atención" value={client.attention} />}
-                  {canEditLabClients && (
-                    <ActionRow>
-                      <SecondaryButton label="Editar" onPress={() => startEdit(client)} />
-                    </ActionRow>
-                  )}
-                </Card>
-              )) : (
+              results.length ? (
+                <FadeIn transitionKey={`${searchTerm}:${showInactive}`}>
+                  <View style={{ gap: layout.cardGap }}>
+                    {results.map((client) => (
+                      <Card key={client.id}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Text style={{ fontWeight: '800', color: colors.text, fontSize: 16, flex: 1 }}>{client.company}</Text>
+                          {!client.is_active && <StatusBadge label="INACTIVO" tone="neutral" />}
+                        </View>
+                        {!!client.address && <ReadOnlyField label="Dirección" value={client.address} />}
+                        {(client.city || client.state || client.postal_code) && (
+                          <ReadOnlyField
+                            label="Ubicación"
+                            value={[client.city, client.state, client.postal_code].filter(Boolean).join(' · ')}
+                          />
+                        )}
+                        {!!client.attention && <ReadOnlyField label="Atención" value={client.attention} />}
+                        <ActionRow>
+                          {canEditLabClients && client.is_active && (
+                            <SecondaryButton label="Editar" onPress={() => startEdit(client)} />
+                          )}
+                          {canDeactivateLabClients && client.is_active && (
+                            <DangerButton
+                              label="Eliminar"
+                              loading={busyClientId === client.id}
+                              onPress={() => confirmDeactivate(client)}
+                            />
+                          )}
+                          {canDeactivateLabClients && !client.is_active && (
+                            <SecondaryButton
+                              label="Restaurar"
+                              loading={busyClientId === client.id}
+                              onPress={() => confirmRestore(client)}
+                            />
+                          )}
+                        </ActionRow>
+                      </Card>
+                    ))}
+                  </View>
+                </FadeIn>
+              ) : (
                 <EmptyState
                   title="Sin resultados"
                   description={searchTerm.trim() ? 'Ningún cliente coincide con la búsqueda.' : 'Todavía no hay clientes registrados.'}

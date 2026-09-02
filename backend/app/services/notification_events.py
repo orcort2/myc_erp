@@ -17,8 +17,39 @@ TICKET_RESOLVED = "ticket.resolved"
 TICKET_SIGNATURE_REQUIRED = "ticket.signature_required"
 
 
-def resolve_notification_recipients(db: Session, event_type: str) -> list[User]:
+# Cierre UX 2026-09: qué permiso resuelve cada tipo de ticket -- ya no todos
+# pasan por tickets.review/approve. Los tipos que el router despacha por el
+# endpoint genérico /resolve (ver operational_tickets.py:resolve_operational_ticket)
+# se resuelven con lab_folios.resolve; sólo reopen_work_order usa
+# tickets.review/approve. field_sheet_template_request todavía no tiene
+# flujo de resolución (Fase 1F), así que no genera destinatarios de revisión.
+TICKET_TYPE_REVIEW_PERMISSION = {
+    "reopen_work_order": "tickets.review",
+    "manual_myc_folio": "lab_folios.resolve",
+    "linked_folio": "lab_folios.resolve",
+    "partial_close": "lab_folios.resolve",
+    "certificate_folio_block": "lab_folios.resolve",
+    "field_sheet_reopen": "lab_folios.resolve",
+}
+
+TICKET_TYPE_TITLES = {
+    "reopen_work_order": "Nueva solicitud de reapertura",
+    "manual_myc_folio": "Nueva solicitud de folio MYC",
+    "linked_folio": "Nueva solicitud de folio Vinculado",
+    "partial_close": "Nueva solicitud de cierre parcial",
+    "certificate_folio_block": "Nueva solicitud de folios certificados",
+    "field_sheet_template_request": "Nueva solicitud de hoja de campo",
+    "field_sheet_reopen": "Nueva solicitud de desbloqueo de hoja",
+}
+
+
+def resolve_notification_recipients(
+    db: Session, event_type: str, *, ticket_type: str | None = None
+) -> list[User]:
     if event_type != TICKET_CREATED:
+        return []
+    required_permission = TICKET_TYPE_REVIEW_PERMISSION.get(ticket_type or "")
+    if required_permission is None:
         return []
     users = list(
         db.scalars(
@@ -31,7 +62,7 @@ def resolve_notification_recipients(db: Session, event_type: str) -> list[User]:
             .options(selectinload(User.roles))
         ).all()
     )
-    return [user for user in users if user_has_permission(user, "tickets.review")]
+    return [user for user in users if user_has_permission(user, required_permission)]
 
 
 def _create(
@@ -71,7 +102,8 @@ def _create(
 
 
 def notify_ticket_created(db: Session, ticket: OperationalTicket, actor: User) -> None:
-    for recipient in resolve_notification_recipients(db, TICKET_CREATED):
+    title = TICKET_TYPE_TITLES.get(ticket.type, "Nueva solicitud operativa")
+    for recipient in resolve_notification_recipients(db, TICKET_CREATED, ticket_type=ticket.type):
         if recipient.id == actor.id:
             continue
         _create(
@@ -80,8 +112,8 @@ def notify_ticket_created(db: Session, ticket: OperationalTicket, actor: User) -
             actor_user_id=actor.id,
             event_type=TICKET_CREATED,
             event_key=f"ticket:{ticket.id}:created:user:{recipient.id}",
-            title="Nueva solicitud de reapertura",
-            body=f"OT {ticket.work_order.folio}",
+            title=title,
+            body=f"OT {ticket.work_order.folio}" if ticket.work_order else title,
             ticket=ticket,
         )
 

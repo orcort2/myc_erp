@@ -23,8 +23,12 @@ class LabWorkOrderRevision(IntegerPkMixin, TimestampMixin, Base):
         ForeignKey("lab_work_orders.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    reopen_ticket_id: Mapped[int] = mapped_column(
-        ForeignKey("operational_tickets.id", ondelete="RESTRICT"), nullable=False, index=True
+    # Cierre UX 2026-09: nullable -- un Admin con autoridad directa
+    # (work_orders.reopen + política) reabre sin crear un ticket artificial
+    # (ver reopen_work_order_directly). El snapshot histórico sigue
+    # generándose igual; sólo deja de exigir un ticket que no existió.
+    reopen_ticket_id: Mapped[int | None] = mapped_column(
+        ForeignKey("operational_tickets.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
     signature_session_id: Mapped[int | None] = mapped_column(

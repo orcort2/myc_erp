@@ -37,17 +37,20 @@ export function postLabGroupSignatures(
 }
 
 export function postLabCompletion({
+  confirmDraftCompletion,
   request,
   scope,
   workOrder,
 }: {
+  confirmDraftCompletion?: boolean;
   request: SignatureRequest;
   scope: LabClosureScope;
   workOrder: LabWorkOrder;
 }): Promise<LabWorkOrder> {
   const suffix = scope === 'individual' ? '/complete/individual' : '/complete';
+  const query = confirmDraftCompletion ? '?confirm_draft_completion=true' : '';
   return request<LabWorkOrder>(
-    `/mobile/v1/technician/lab-work-orders/${workOrder.id}${suffix}`,
+    `/mobile/v1/technician/lab-work-orders/${workOrder.id}${suffix}${query}`,
     { method: 'POST' },
   );
 }

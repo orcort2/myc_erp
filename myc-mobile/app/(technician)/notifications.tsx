@@ -85,7 +85,7 @@ export default function NotificationsScreen() {
   return (
     <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Inicio</Text></Pressable>
+        <Pressable onPress={() => router.back()}><Text style={styles.back}>‹ Volver</Text></Pressable>
         <Text style={styles.title}>Notificaciones</Text>
         <Pressable onPress={readAll}><Text style={styles.readAll}>Marcar todas como leídas</Text></Pressable>
       </View>

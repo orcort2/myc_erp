@@ -108,6 +108,12 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
     )
     cancellation_reason: Mapped[str | None] = mapped_column(Text)
+    # Cierre UX 2026-09: cancel_work_order ahora puede cancelar una OT
+    # completed/partially_closed (antes exigía reapertura primero). Sin un
+    # historial de estados genérico, previous_status es el mecanismo mínimo
+    # para que restore_lab_work_order recupere exactamente el estado previo
+    # -- nunca "reabre" a draft/in_progress, sólo revierte la cancelación.
+    previous_status: Mapped[str | None] = mapped_column(String(30))
     final_pdf: Mapped[bytes | None] = mapped_column(LargeBinary)
     final_pdf_sha256: Mapped[str | None] = mapped_column(String(64))
     final_pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

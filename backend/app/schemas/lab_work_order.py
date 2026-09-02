@@ -217,6 +217,13 @@ class LabCancellationWrite(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)
 
 
+class LabDirectReopenWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requested_signature_policy: str = Field(pattern="^(preserve|invalidate)$")
+    reason: str = Field(min_length=3, max_length=2000)
+
+
 class LabPartialCloseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -315,6 +322,7 @@ class LabWorkOrderRead(BaseModel):
     cancelled_at: datetime | None = None
     cancelled_by_user_id: int | None = None
     cancellation_reason: str | None = None
+    previous_status: str | None = None
     final_pdf_sha256: str | None
     final_pdf_generated_at: datetime | None
     revision_number: int

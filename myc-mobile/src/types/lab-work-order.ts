@@ -78,6 +78,10 @@ export type LabWorkOrder = {
   signature_preserved: boolean;
   partial_close_ticket_id: number | null;
   cancellation_reason: string | null;
+  // Cierre UX 2026-09: cancelar ya no bloquea desde completed/partially_closed
+  // -- previous_status es lo que restore usa para volver exactamente a ese
+  // estado (nunca a draft/in_progress como si fuera una reapertura técnica).
+  previous_status: LabWorkOrderStatus | null;
   equipment: LabEquipment[];
   related_work_orders: LabRelatedWorkOrder[];
   // Cierre UX 2026-09: autoridad real de "Calibró" en el PDF/captura -- el

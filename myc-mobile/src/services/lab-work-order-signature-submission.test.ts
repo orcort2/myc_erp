@@ -107,6 +107,24 @@ test('individual signatures and completion use their explicit backend routes', a
   ]);
 });
 
+test('cierre UX 2026-09: confirmDraftCompletion agrega el query param sólo cuando se pide explícitamente', async () => {
+  const calls: string[] = [];
+  const workOrder = { id: 900 } as LabWorkOrder;
+  const request = async <T>(path: string) => { calls.push(path); return workOrder as T; };
+
+  await postLabCompletion({ request, scope: 'individual', workOrder });
+  await postLabCompletion({ confirmDraftCompletion: false, request, scope: 'individual', workOrder });
+  await postLabCompletion({ confirmDraftCompletion: true, request, scope: 'individual', workOrder });
+  await postLabCompletion({ confirmDraftCompletion: true, request, scope: 'group', workOrder });
+
+  assert.deepEqual(calls, [
+    '/mobile/v1/technician/lab-work-orders/900/complete/individual',
+    '/mobile/v1/technician/lab-work-orders/900/complete/individual',
+    '/mobile/v1/technician/lab-work-orders/900/complete/individual?confirm_draft_completion=true',
+    '/mobile/v1/technician/lab-work-orders/900/complete?confirm_draft_completion=true',
+  ]);
+});
+
 test('applySignatures delegates to the POST without a signature_required guard', () => {
   const screenSource = readFileSync(
     resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
@@ -120,4 +138,34 @@ test('applySignatures delegates to the POST without a signature_required guard',
   assert.match(handlerSource, /labClosureContextId\(workOrder, closureScope\) !== capturedContextId/);
   assert.match(handlerSource, /postLabSignatures\(\{/);
   assert.doesNotMatch(handlerSource, /signature_required/);
+});
+
+test('cierre UX 2026-09: cerrar con drafts intercepta LAB_DRAFT_SHEETS_REQUIRE_CONFIRMATION y LAB_DRAFT_SHEETS_INVALID', () => {
+  const screenSource = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
+    'utf8',
+  );
+  assert.match(screenSource, /LAB_DRAFT_SHEETS_REQUIRE_CONFIRMATION/);
+  assert.match(screenSource, /LAB_DRAFT_SHEETS_INVALID/);
+  assert.match(screenSource, /completeClosure\(scope, true\)/);
+});
+
+test('cierre UX 2026-09: Admin con autoridad directa reabre sin ticket; sin ella, sigue solicitando', () => {
+  const screenSource = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
+    'utf8',
+  );
+  assert.match(screenSource, /canReopenDirectly/);
+  assert.match(screenSource, /lab-work-orders\/\$\{workOrder\.id\}\/reopen/);
+  assert.match(screenSource, /Reabrir orden/);
+  assert.match(screenSource, /Solicitar reapertura/);
+});
+
+test('cierre UX 2026-09: restaurar OT usa el endpoint /restore, no reabre a draft', () => {
+  const screenSource = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'),
+    'utf8',
+  );
+  assert.match(screenSource, /lab-work-orders\/\$\{target\.id\}\/restore/);
+  assert.match(screenSource, /Restaurar OT/);
 });
