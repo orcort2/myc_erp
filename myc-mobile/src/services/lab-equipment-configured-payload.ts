@@ -62,11 +62,8 @@ export function selectFinalClient(client: {
   };
 }
 
-/** Vinculado requires an explicit LinkedCompany selection; Acreditado/Trazable never take one. */
-export function validateServiceSelection(service: ServiceSelection): string | null {
-  if (service.serviceType === 'linked' && service.linkedCompanyId == null) {
-    return 'Selecciona la empresa vinculada';
-  }
+/** El flujo Vinculado actual no exige empresa; se conserva el shape para compatibilidad futura. */
+export function validateServiceSelection(_service: ServiceSelection): string | null {
   return null;
 }
 
@@ -131,7 +128,7 @@ export function buildConfiguredEquipmentPayload(
     equipment,
     service: {
       service_type: service.serviceType,
-      linked_company_id: service.serviceType === 'linked' ? service.linkedCompanyId : null,
+      linked_company_id: null,
     },
   };
   if (documentaryClient.mode === 'different') {

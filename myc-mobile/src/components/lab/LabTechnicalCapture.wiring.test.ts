@@ -46,3 +46,12 @@ test('la hoja completed ofrece PDF y, sólo con la OT abierta, desbloqueo', () =
   assert.match(source, /field-sheet-reopen/);
   assert.match(source, /!\['completed', 'partially_closed'\]\.includes\(workOrder\.status\)/);
 });
+
+test('los accesos usan tiles y las acciones transaccionales conservan botones', () => {
+  assert.match(source, /<ActionTile icon="table-edit" label="Abrir resultados"/);
+  assert.match(source, /<ActionTile[^>]*icon="file-pdf-box"[^>]*label="Ver \/ descargar PDF"/);
+  assert.match(source, /<SecondaryButton label="Guardar borrador"/);
+  assert.match(source, /<PrimaryButton label="Completar hoja"/);
+  assert.match(source, /<AdministrativeButton label="Solicitar desbloqueo"/);
+  assert.doesNotMatch(source, /<ActionTile[^>]*label="(?:Guardar borrador|Completar hoja)"/);
+});

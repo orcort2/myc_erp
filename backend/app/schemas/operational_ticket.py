@@ -102,6 +102,14 @@ class TicketRead(BaseModel):
     status: str
     work_order_id: int | None
     equipment_id: int | None = None
+    equipment_position: int | None = None
+    equipment_instrument: str | None = None
+    equipment_brand: str | None = None
+    equipment_model: str | None = None
+    equipment_identification: str | None = None
+    equipment_serial_number: str | None = None
+    equipment_service_type: str | None = None
+    equipment_folio_status: str | None = None
     operator_client_id: int | None = None
     work_order_folio: int | None
     client_name: str | None

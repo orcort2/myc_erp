@@ -21,6 +21,14 @@ export type OperationalTicket = {
   status: TicketStatus;
   work_order_id: number | null;
   equipment_id: number | null;
+  equipment_position: number | null;
+  equipment_instrument: string | null;
+  equipment_brand: string | null;
+  equipment_model: string | null;
+  equipment_identification: string | null;
+  equipment_serial_number: string | null;
+  equipment_service_type: string | null;
+  equipment_folio_status: string | null;
   operator_client_id: number | null;
   work_order_folio: number | null;
   client_name: string | null;

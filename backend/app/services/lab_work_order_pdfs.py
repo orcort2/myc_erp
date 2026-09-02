@@ -56,6 +56,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
                     key: upper(getattr(item, key))
                     for key in ("instrument", "brand", "identification", "serial_number", "report_number")
                 },
+                certificate_folio=upper(item.certificate_folio),
                 is_good_condition=item.is_good_condition,
                 name=upper(item.name),
                 internal_id=upper(item.internal_id),

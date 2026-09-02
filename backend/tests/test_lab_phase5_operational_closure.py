@@ -575,6 +575,69 @@ def test_close_rejected_with_unresolved_linked_folio(phase5_context):
     assert db_status(factory, order_id) == "ready_to_close"
 
 
+def test_linked_pending_capture_completes_then_blocks_close_until_authorized(phase5_context):
+    """Cierre UX 2026-09 (correccion del bloqueo funcional reportado): un
+    tecnico INTERNO con equipo Vinculado/pending (folio_status='pending',
+    certificate_folio=None, linked_company_id=None) SI puede crear, guardar
+    borrador, capturar resultados y completar la FieldSheet -- antes de esta
+    correccion, _ensure_capture_allowed devolvia 409 para el actor interno
+    (sólo el actor externo podia avanzar). El cierre de la OT sigue
+    bloqueado mientras el folio no este autorizado (guard de
+    _missing_completed_sheets, sin tocar); en cuanto el flujo administrativo
+    existente (resolve_operational_ticket) lo autoriza, el bloqueo de cierre
+    desaparece segun las reglas ya vigentes -- sin folio temporal, sin
+    resolver el ticket desde aqui con otra via, sin cambiar su lifecycle."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    # La frontera de cierre (LAB_FOLIOS_UNRESOLVED) sólo aplica a OT del
+    # flujo evolucionado -- lab_client_id real, no la exención histórica.
+    lab_client_id = make_lab_client_id(factory)
+    order_id = create_order(client, headers, lab_client_id=lab_client_id)
+    equipment_id = add_equipment(client, headers, order_id, 1)
+    set_service(client, headers, order_id, equipment_id, "linked")
+    signed = sign(client, headers, order_id)
+    assert signed.status_code == 200, signed.text
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.service_type == "linked"
+        assert equipment.folio_status == "pending"
+        assert equipment.certificate_folio is None
+        assert equipment.linked_company_id is None
+        ticket_id = equipment.folio_ticket_id
+        assert ticket_id is not None
+
+    # A) folio pendiente -> crear/guardar borrador/capturar resultados/completar.
+    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    assert sheet_id
+    with factory() as db:
+        assert db.get(LabWorkOrderEquipment, equipment_id).folio_status == "pending"
+
+    # B) folio pendiente -> cierre bloqueado.
+    blocked = close_individual(client, headers, order_id)
+    assert blocked.status_code == 409, blocked.text
+    detail = blocked.json()["detail"]
+    assert detail["code"] == "LAB_FOLIOS_UNRESOLVED"
+    assert detail["items"][0]["equipment_id"] == equipment_id
+    assert detail["items"][0]["folio_status"] == "pending"
+    assert db_status(factory, order_id) == "ready_to_close"
+
+    # C) folio autorizado (flujo administrativo YA existente) -> cierre permitido.
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket_id}/resolve",
+        json={"authorized_folio": "VIN-2026-777", "comment": "Autorizado por Admin"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.folio_status == "authorized"
+        assert equipment.certificate_folio == "VIN-2026-777"
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["status"] == "completed"
+
+
 # --------------------------------------------------------------------------
 # Idempotencia e inmutabilidad post-cierre (5-9)
 # --------------------------------------------------------------------------

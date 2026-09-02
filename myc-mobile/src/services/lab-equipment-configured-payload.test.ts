@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import {
   buildCertificateClientPayload,
@@ -105,18 +108,25 @@ test('8. Trazable produce service_type=traceable sin empresa vinculada', () => {
   assert.deepEqual(payload.service, { service_type: 'traceable', linked_company_id: null });
 });
 
-test('9. Vinculado con empresa seleccionada produce service_type=linked + linked_company_id', () => {
+test('9. Vinculado retira la empresa del payload aunque exista una selección histórica', () => {
   const payload = buildConfiguredEquipmentPayload(
     equipment, defaultDocumentaryClient(), { serviceType: 'linked', linkedCompanyId: 12 },
   );
-  assert.deepEqual(payload.service, { service_type: 'linked', linked_company_id: 12 });
+  assert.deepEqual(payload.service, { service_type: 'linked', linked_company_id: null });
 });
 
-test('10. Vinculado sin empresa seleccionada es inválido', () => {
-  const error = validateServiceSelection({ serviceType: 'linked', linkedCompanyId: null });
-  assert.equal(typeof error, 'string');
+test('10. Vinculado sin empresa seleccionada es válido', () => {
+  assert.equal(validateServiceSelection({ serviceType: 'linked', linkedCompanyId: null }), null);
   assert.equal(validateServiceSelection({ serviceType: 'linked', linkedCompanyId: 5 }), null);
   assert.equal(validateServiceSelection({ serviceType: 'accredited', linkedCompanyId: null }), null);
+});
+
+test('el formulario ya no consulta ni muestra BESS/CAPYMET para Vinculado', () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../components/lab/LabEquipmentForm.tsx'),
+    'utf8',
+  );
+  assert.doesNotMatch(source, /linked-companies|linkedCompanies|Selecciona la empresa vinculada/);
 });
 
 test('11. el resumen del equipo guardado muestra cliente/servicio/folio sin IDs', () => {

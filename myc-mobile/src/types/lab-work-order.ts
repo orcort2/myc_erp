@@ -272,6 +272,7 @@ export type LabFieldSheet = {
   environment_temperature_start: string | null;
   environment_temperature_end: string | null;
   equipment_general_condition: boolean | null;
+  consider_equipment_deviations: boolean;
   calibrated_by: string | null;
   reviewed_by: string | null;
   report_made_by: string | null;

@@ -12,7 +12,15 @@ import type {
 import { labelPrintService } from '@/src/services/label-print-service';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
-import { resolveBlockFields, keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
+import { keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
+import {
+  CANONICAL_GROUP_ORDER,
+  CANONICAL_GROUP_TITLES,
+  canonicalFieldsByGroup,
+  canonicalFieldValue,
+  specializedCaptureFields,
+  type CanonicalFieldDescriptor,
+} from '@/src/services/field-sheet-canonical-contract';
 import { computeOverallProgress } from '@/src/services/field-sheet-progress';
 import { filterFieldSheetTemplates } from '@/src/services/field-sheet-template-selector';
 import { PENDING_SIGNATURE_LABEL, resolveCalibradoPor } from '@/src/services/lab-signature-authority';
@@ -26,7 +34,7 @@ import {
 } from '@/src/services/field-sheet-draft-view-state';
 import { apiUrl, ApiError } from '@/src/api/client';
 import {
-  ActionRow, AlertBanner, Card, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
+  ActionRow, ActionTile, AdministrativeButton, AlertBanner, Card, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
 } from '@/src/design/primitives';
 import { colors, spacing } from '@/src/design/tokens';
 import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldSheetResultsWorkspace';
@@ -127,7 +135,7 @@ function fieldSheetStatusLabel(status: string): string {
  * genéricamente, igual que antes de esta fase, ahora con el contrato de
  * campo completo del snapshot y sin tablas inline.
  */
-export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdated, request, workOrder }: Props) {
+export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templatesError, setTemplatesError] = useState('');
@@ -138,7 +146,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [viewMode, setViewMode] = useState<FieldSheetViewMode>(initialViewMode());
   const [resultsOpen, setResultsOpen] = useState(false);
-  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'linked_folio' | 'field_sheet_template' | 'field_sheet_reopen' | null>(null);
+  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'field_sheet_template' | 'field_sheet_reopen' | null>(null);
   const [requestedFolio, setRequestedFolio] = useState('');
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
@@ -163,9 +171,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
   }, [request]);
 
   const definition = sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
-  const ordinaryFields = (definition?.blocks ?? [])
-    .filter((block) => block.capture_visible !== false && !block.block_type.includes('Table'))
-    .flatMap((block) => resolveBlockFields(block, { fallbackLabels: FIELD_LABELS, readOnlyKeys: readOnlyFields }))
+  // Cierre de contrato canónico LAB: los campos comunes (identidad/cliente/
+  // equipo/calibración/ambientales/condición) ya NO se derivan de la
+  // plantilla -- son fijos, ver field-sheet-canonical-contract.ts. La
+  // plantilla sólo sigue teniendo autoridad sobre lo que de verdad es
+  // especializado (specializedFields, abajo).
+  const specializedFields = specializedCaptureFields(definition?.blocks, { fallbackLabels: FIELD_LABELS, readOnlyKeys: readOnlyFields })
     .filter((field) => !SIGNATURE_AUTHORITY_KEYS.has(field.key));
   const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
   const editable = !!sheet && isFieldSheetEditable(sheet.status, viewMode);
@@ -214,8 +225,59 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
     } finally { setBusy(false); }
   }
 
-  function setField(key: string, value: string) {
+  function setField(key: string, value: string | boolean) {
     setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  // Cierre de contrato canónico LAB: un campo canónico readonly SIEMPRE se
+  // lee del snapshot real (sheet/activeEquipment vía canonicalFieldValue),
+  // nunca de `values` -- así que ni siquiera en modo `!editable` puede
+  // mostrar un valor editado localmente que no llegó a guardarse.
+  function renderCanonicalField(field: CanonicalFieldDescriptor) {
+    if (!sheet || !activeEquipment) return null;
+    if (field.readOnly) {
+      return (
+        <ReadOnlyField
+          key={field.key}
+          label={field.label}
+          value={canonicalFieldValue(field, { sheet, equipment: activeEquipment, values })}
+        />
+      );
+    }
+    if (!editable) {
+      return (
+        <ReadOnlyField
+          key={field.key}
+          label={field.label}
+          value={canonicalFieldValue(field, { sheet, equipment: activeEquipment, values })}
+        />
+      );
+    }
+    if (field.kind === 'boolean') {
+      const current = values[field.key];
+      return (
+        <View key={field.key} style={styles.booleanField}>
+          <Text style={styles.fieldLabel}>{field.label}</Text>
+          <View style={styles.booleanRow}>
+            <Pressable onPress={() => setField(field.key, true)} style={[styles.booleanChoice, current === true && styles.booleanChoiceActive]}>
+              <Text style={[styles.booleanChoiceText, current === true && styles.booleanChoiceTextActive]}>Sí</Text>
+            </Pressable>
+            <Pressable onPress={() => setField(field.key, false)} style={[styles.booleanChoice, current === false && styles.booleanChoiceActive]}>
+              <Text style={[styles.booleanChoiceText, current === false && styles.booleanChoiceTextActive]}>No</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+    return (
+      <Field
+        key={field.key}
+        keyboardType={field.kind === 'date' ? 'default' : 'default'}
+        label={field.label}
+        onChange={(value) => setField(field.key, value)}
+        value={String(values[field.key] ?? '')}
+      />
+    );
   }
 
   // Fase 6: Resultados se guarda de forma independiente y explícita dentro
@@ -279,7 +341,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
   }
 
   async function requestFolio() {
-    if (!activeEquipment || (ticketMode !== 'manual_myc_folio' && ticketMode !== 'linked_folio')) return;
+    if (!activeEquipment || ticketMode !== 'manual_myc_folio') return;
     if (!ticketReason.trim() || !ticketDescription.trim()) return;
     setBusy(true);
     try {
@@ -289,7 +351,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
           work_order_id: workOrder.id,
           equipment_id: activeEquipment.id,
           type: ticketMode,
-          requested_folio: ticketMode === 'manual_myc_folio' ? requestedFolio.trim() : null,
+          requested_folio: requestedFolio.trim(),
           reason: ticketReason.trim(),
           description: ticketDescription.trim(),
         }),
@@ -406,8 +468,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
     );
     if (ticketMode) return (
       <ScrollView contentContainerStyle={styles.panel}>
-        <Text style={styles.title}>{ticketMode === 'linked_folio' ? 'Solicitar folio Vinculado' : 'Folio MYC manual'}</Text>
-        {ticketMode === 'manual_myc_folio' && <Field label="Folio solicitado" onChange={setRequestedFolio} value={requestedFolio} />}
+        <Text style={styles.title}>Folio MYC manual</Text>
+        <Field label="Folio solicitado" onChange={setRequestedFolio} value={requestedFolio} />
         <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
         <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
         <ActionRow>
@@ -425,7 +487,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
     const documentaryClientLabel = resolveDocumentaryClientLabel(activeEquipment, workOrder);
     return (
       <ScrollView contentContainerStyle={styles.panel}>
-        <FadeIn transitionKey={activeEquipment.id}>
+        <FadeIn transitionKey={`${activeEquipment.id}:${sheet?.id ?? 'selector'}`}>
         <Text style={styles.eyebrow}>OT {workOrder.folio} · EQUIPO {activeEquipment.position}</Text>
         <Text style={styles.title}>{activeEquipment.instrument}</Text>
 
@@ -434,6 +496,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
           <ReadOnlyField label="Modalidad · Folio" value={`${modalityLabel} · ${folioLabel}`} />
           <ReadOnlyField label="Cliente documental" value={documentaryClientLabel} />
         </Card>
+
+        {activeEquipment.service_type === 'linked' && activeEquipment.folio_status === 'pending' && (
+          <AlertBanner tone="info">
+            {'Folio pendiente de asignación\nUn administrador asignará el folio MYC. Puedes continuar con la captura de la hoja de campo.'}
+          </AlertBanner>
+        )}
 
         {!sheet ? <>
           <Section title="Selecciona hoja de campo">
@@ -444,17 +512,24 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
               <AlertBanner tone="danger">{templatesError}</AlertBanner>
             ) : visibleTemplates.length > 0 ? (
               <ScrollView nestedScrollEnabled style={styles.templateList}>
-                {visibleTemplates.map((template) => (
+                {visibleTemplates.map((template, index) => (
                   <Pressable
                     key={template.template_key}
                     onPress={() => setSelectedTemplate(template.template_key)}
                     style={({ pressed }) => [
-                      styles.choice,
-                      selectedTemplate === template.template_key && styles.choiceActive,
-                      pressed && styles.choicePressed,
+                      styles.templateRow,
+                      index < visibleTemplates.length - 1 && styles.templateRowDivider,
+                      selectedTemplate === template.template_key && styles.templateRowSelected,
+                      pressed && styles.templateRowPressed,
                     ]}
                   >
-                    <Text>{template.name} · v{template.version}</Text>
+                    <View style={styles.templateText}>
+                      <Text style={styles.templateName}>{template.name}</Text>
+                      <Text style={styles.templateVersion}>Versión {template.version}</Text>
+                    </View>
+                    <View style={[styles.templateIndicator, selectedTemplate === template.template_key && styles.templateIndicatorSelected]}>
+                      {selectedTemplate === template.template_key && <Text style={styles.templateCheck}>✓</Text>}
+                    </View>
                   </Pressable>
                 ))}
               </ScrollView>
@@ -465,23 +540,26 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
               <SecondaryButton label="+ Solicitar hoja de campo" onPress={() => setTicketMode('field_sheet_template')} />
             )}
           </Section>
-          {activeEquipment.service_type === 'linked' && activeEquipment.folio_status === 'pending' && !external && (
-            <SecondaryButton label="Ticket · Resolver folio Vinculado" onPress={() => setTicketMode('linked_folio')} />
-          )}
           {activeEquipment.service_type !== 'linked' && activeEquipment.automatic_certificate_folio && (
             <SecondaryButton label="Ticket · Folio MYC manual" onPress={() => setTicketMode('manual_myc_folio')} />
           )}
-          <ActionRow>
+          <View style={styles.selectorAction}>
             <PrimaryButton disabled={!selectedTemplate || !canCapture} label="Abrir captura" loading={busy} onPress={createSheet} />
-          </ActionRow>
+          </View>
         </> : <>
           <View style={styles.statusRow}>
             <StatusBadge label={fieldSheetStatusLabel(sheet.status)} tone={statusTone(sheet.status)} />
           </View>
 
-          {ordinaryFields.length > 0 && (
-            <Section title="Datos de la hoja">
-              {ordinaryFields.map((field) => field.readOnly
+          {CANONICAL_GROUP_ORDER.map((group) => (
+            <Section key={group} title={CANONICAL_GROUP_TITLES[group]}>
+              {canonicalFieldsByGroup(group).map((field) => renderCanonicalField(field))}
+            </Section>
+          ))}
+
+          {specializedFields.length > 0 && (
+            <Section title="Datos técnicos especializados">
+              {specializedFields.map((field) => field.readOnly
                 ? <ReadOnlyField key={field.key} label={field.label} value={String((sheet as unknown as Record<string, unknown>)[field.key] ?? '-')} />
                 : !editable
                 ? <ReadOnlyField key={field.key} label={field.label} value={String(values[field.key] ?? '-')} />
@@ -514,29 +592,35 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
                     {section.missing > 0 && <Text style={styles.progressMissing}>{section.missing} pendiente{section.missing === 1 ? '' : 's'}</Text>}
                   </View>
                 ))}
-                <SecondaryButton label="Abrir resultados" onPress={() => setResultsOpen(true)} />
+                <ActionRow>
+                  <ActionTile icon="table-edit" label="Abrir resultados" onPress={() => setResultsOpen(true)} />
+                </ActionRow>
               </Card>
             </Section>
           )}
 
           {canCapture && !captureIsAlwaysReadOnly(sheet.status) && (
             editable ? (
-              <ActionRow>
-                <SecondaryButton label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
-                <PrimaryButton label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
-              </ActionRow>
+              <View style={styles.transactionActions}>
+                <ActionRow>
+                  <SecondaryButton label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
+                  <PrimaryButton label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
+                </ActionRow>
+              </View>
             ) : (
               <SecondaryButton label="Editar" onPress={() => setViewMode(viewModeAfterEditRequested())} />
             )
           )}
 
           {sheet.status === 'completed' && (
-            <ActionRow>
-              <SecondaryButton label="Ver / descargar PDF" loading={downloadingPdf} onPress={downloadFieldSheetPdf} />
+            <View style={styles.documentActions}>
+              <ActionRow>
+                <ActionTile disabled={downloadingPdf} icon="file-pdf-box" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} tone="secondary" />
+              </ActionRow>
               {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
-                <SecondaryButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+                <AdministrativeButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
               )}
-            </ActionRow>
+            </View>
           )}
 
           <SecondaryButton
@@ -557,7 +641,9 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
             />
           )}
         </>}
-        <SecondaryButton label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
+        <View style={styles.navigationActions}>
+          <SecondaryButton label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
+        </View>
         </FadeIn>
       </ScrollView>
     );
@@ -592,14 +678,25 @@ export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdat
 }
 
 const styles = StyleSheet.create({
-  list: { gap: spacing.md }, panel: { gap: spacing.sm, paddingBottom: spacing.xl },
+  list: { gap: spacing.md }, panel: { gap: spacing.md, paddingBottom: spacing.xl },
   flex: { flex: 1 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardTitle: { color: colors.text, fontSize: 17, fontWeight: '800' }, meta: { color: colors.textSubtle },
-  templateList: { borderColor: colors.border, borderRadius: 9, borderWidth: 1, maxHeight: 240, padding: spacing.xs },
-  choice: { backgroundColor: colors.background, borderColor: colors.border, borderRadius: 9, borderWidth: 1, padding: spacing.md, marginBottom: spacing.xs },
-  choiceActive: { backgroundColor: colors.primarySoft, borderColor: colors.accent },
-  choicePressed: { backgroundColor: colors.background },
+  templateList: { borderColor: colors.border, borderRadius: 9, borderWidth: 1, marginBottom: spacing.md, maxHeight: 240 },
+  templateRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
+  templateRowDivider: { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth },
+  templateRowSelected: { backgroundColor: colors.primarySoft },
+  templateRowPressed: { opacity: 0.78 },
+  templateText: { flex: 1, gap: spacing.xs },
+  templateName: { color: colors.text, fontWeight: '700' },
+  templateVersion: { color: colors.textMuted, fontSize: 12 },
+  templateIndicator: { alignItems: 'center', borderColor: colors.border, borderRadius: 11, borderWidth: 1, height: 22, justifyContent: 'center', width: 22 },
+  templateIndicatorSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  templateCheck: { color: '#fff', fontWeight: '800' },
+  selectorAction: { gap: spacing.md, marginTop: spacing.md },
+  transactionActions: { gap: spacing.md, marginTop: spacing.lg },
+  documentActions: { gap: spacing.md, marginTop: spacing.lg },
+  navigationActions: { marginTop: spacing.lg },
   eyebrow: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
   statusRow: { flexDirection: 'row', marginBottom: spacing.sm },
@@ -607,4 +704,11 @@ const styles = StyleSheet.create({
   progressTitle: { color: colors.text, fontWeight: '700' },
   progressCount: { color: colors.textMuted, fontSize: 13 },
   progressMissing: { color: colors.warningStrong, fontSize: 12, fontWeight: '700' },
+  fieldLabel: { color: colors.textMuted, fontSize: 12, fontWeight: '700', marginBottom: spacing.xs },
+  booleanField: { marginBottom: spacing.sm },
+  booleanRow: { flexDirection: 'row', gap: spacing.sm },
+  booleanChoice: { alignItems: 'center', borderColor: colors.border, borderRadius: 9, borderWidth: 1, flex: 1, paddingVertical: spacing.sm },
+  booleanChoiceActive: { backgroundColor: colors.primarySoft, borderColor: colors.accent },
+  booleanChoiceText: { color: colors.textMuted, fontWeight: '700' },
+  booleanChoiceTextActive: { color: colors.accent },
 });

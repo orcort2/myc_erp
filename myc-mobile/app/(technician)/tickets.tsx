@@ -377,6 +377,20 @@ export default function TicketsScreen() {
               {!!selected.requested_folio && <><Text style={styles.detailLabel}>Folio solicitado</Text><Text style={styles.detail}>{selected.requested_folio}</Text></>}
               {!!selected.authorized_folio && <><Text style={styles.detailLabel}>Folio autorizado</Text><Text style={styles.detail}>{selected.authorized_folio}</Text></>}
               {selected.type === 'certificate_folio_block' && <Text style={styles.detail}>{selected.accredited_quantity ?? 0} MYCA + {selected.traceable_quantity ?? 0} MYCT</Text>}
+              {selected.type === 'linked_folio' && (
+                <>
+                  <Text style={styles.detailLabel}>OT</Text><Text style={styles.detail}>{selected.work_order_folio ?? '—'}</Text>
+                  <Text style={styles.detailLabel}>Cliente</Text><Text style={styles.detail}>{selected.client_name ?? '—'}</Text>
+                  <Text style={styles.detailLabel}>Equipo</Text><Text style={styles.detail}>{selected.equipment_position ?? '—'}</Text>
+                  <Text style={styles.detailLabel}>Instrumento</Text><Text style={styles.detail}>{selected.equipment_instrument ?? '—'}</Text>
+                  <Text style={styles.detailLabel}>Marca</Text><Text style={styles.detail}>{selected.equipment_brand ?? '—'}</Text>
+                  {!!selected.equipment_model && <><Text style={styles.detailLabel}>Modelo</Text><Text style={styles.detail}>{selected.equipment_model}</Text></>}
+                  <Text style={styles.detailLabel}>Identificación</Text><Text style={styles.detail}>{selected.equipment_identification ?? '—'}</Text>
+                  <Text style={styles.detailLabel}>Serie</Text><Text style={styles.detail}>{selected.equipment_serial_number ?? '—'}</Text>
+                  <Text style={styles.detailLabel}>Servicio</Text><Text style={styles.detail}>Vinculado</Text>
+                  <Text style={styles.detailLabel}>Estado del folio</Text><Text style={styles.detail}>{selected.equipment_folio_status ?? '—'}</Text>
+                </>
+              )}
               {(selected.type === 'field_sheet_reopen' || selected.type === 'field_sheet_template_request') && !!selected.equipment_id && (
                 <><Text style={styles.detailLabel}>Equipo</Text><Text style={styles.detail}>Equipo #{selected.equipment_id} de la OT{selected.work_order_folio ? ` ${selected.work_order_folio}` : ''}</Text></>
               )}

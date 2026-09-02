@@ -13,7 +13,7 @@ export const directFields = new Set([
   'environment_temperature_start', 'environment_temperature_end', 'units', 'method',
   'environmental_conditions', 'technician_notes', 'results', 'pattern_used',
   'calibrated_by', 'reviewed_by', 'report_made_by', 'purchase_order_or_quotation',
-  'equipment_general_condition',
+  'equipment_general_condition', 'consider_equipment_deviations',
 ]);
 
 type FieldSheetFieldKind = 'date' | 'boolean';
@@ -30,6 +30,7 @@ const FIELD_SHEET_FIELD_KINDS: Record<string, FieldSheetFieldKind> = {
   calibration_date: 'date',
   next_calibration_date: 'date',
   equipment_general_condition: 'boolean',
+  consider_equipment_deviations: 'boolean',
 };
 
 export type FieldSheetPayload = {

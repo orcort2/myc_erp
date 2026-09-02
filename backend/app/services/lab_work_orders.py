@@ -51,6 +51,7 @@ from app.schemas.lab_work_order import (
 from app.services.audit_logs import write_audit_log
 from app.services.field_sheets import EDITABLE_STATUSES, _validate_ready_to_complete
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
+from app.services.lab_folio_requests import cancel_linked_folio_request, ensure_linked_folio_request
 from app.services.notification_events import (
     notify_ticket_resolved,
     notify_ticket_signature_required,
@@ -1483,8 +1484,6 @@ def _assign_equipment_service_core(
             )
             if linked is None:
                 raise HTTPException(status_code=404, detail="Empresa vinculada no encontrada")
-        elif not external:
-            raise HTTPException(status_code=422, detail="Selecciona la empresa vinculada")
     elif payload.linked_company_id is not None:
         raise HTTPException(status_code=422, detail="LinkedCompany sólo aplica a Vinculado")
 
@@ -1493,6 +1492,18 @@ def _assign_equipment_service_core(
         "certificate_folio": equipment.certificate_folio,
         "folio_status": equipment.folio_status,
     }
+    if previous["service_type"] == "linked" and payload.service_type != "linked":
+        # Cierre UX 2026-09 (item C): el equipo abandona Vinculado antes de
+        # tener folio linked authorized/reserved (el guard folio_already_secured
+        # de arriba ya lo garantiza) -- la solicitud linked_folio pendiente que
+        # había quedado huérfana debe cancelarse en la MISMA transacción, no
+        # sobrevivir apuntando a un equipo que ya no es Vinculado.
+        cancel_linked_folio_request(
+            db,
+            equipment=equipment,
+            user=user,
+            reason=f"El equipo cambió de servicio: linked → {payload.service_type}",
+        )
     equipment.service_type = payload.service_type
     equipment.linked_company_id = linked.id if linked else None
     equipment.linked_company_name_snapshot = linked.name if linked else None
@@ -1577,6 +1588,22 @@ def assign_equipment_service(
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
     _assign_equipment_service_core(db, work_order, equipment, payload, user, external=external)
+    # Cierre UX 2026-09 (item D): esta es la ÚNICA entrada backend de
+    # asignación de servicio que faltaba materializar la solicitud Vinculado
+    # automática -- create_configured_equipment/update_configured_equipment ya
+    # lo hacían. Mismo helper idempotente, mismo criterio (folio_status no
+    # authorized/reserved), mismo operator_client_id que ya usa el resto de
+    # esta función (el de la propia OT, no un parámetro nuevo).
+    if equipment.service_type == "linked" and equipment.folio_status not in {
+        "authorized", "reserved"
+    }:
+        ensure_linked_folio_request(
+            db,
+            work_order=work_order,
+            equipment=equipment,
+            user=user,
+            operator_client_id=work_order.operator_client_id,
+        )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
 
@@ -1622,6 +1649,16 @@ def create_configured_equipment(
         _assign_equipment_service_core(
             db, work_order, equipment, payload.service, user, external=external
         )
+        if equipment.service_type == "linked" and equipment.folio_status not in {
+            "authorized", "reserved"
+        }:
+            ensure_linked_folio_request(
+                db,
+                work_order=work_order,
+                equipment=equipment,
+                user=user,
+                operator_client_id=operator_client_id,
+            )
     except Exception:
         db.rollback()
         raise
@@ -1691,6 +1728,16 @@ def update_configured_equipment(
         _assign_equipment_service_core(
             db, work_order, equipment, payload.service, user, external=external
         )
+        if equipment.service_type == "linked" and equipment.folio_status not in {
+            "authorized", "reserved"
+        }:
+            ensure_linked_folio_request(
+                db,
+                work_order=work_order,
+                equipment=equipment,
+                user=user,
+                operator_client_id=operator_client_id,
+            )
     except Exception:
         db.rollback()
         raise
@@ -1885,8 +1932,6 @@ def _equipment_reception_gap(equipment: LabWorkOrderEquipment) -> str | None:
         "reserved", "authorized"
     }:
         return "El equipo requiere folio MYCA/MYCT asignado"
-    if equipment.service_type == "linked" and equipment.linked_company_id is None:
-        return "Selecciona la empresa vinculada"
     return None
 
 

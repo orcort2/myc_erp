@@ -17,6 +17,9 @@ const source = readFileSync(
 test('el selector de plantillas tiene un contenedor delimitado con scroll interno', () => {
   assert.match(source, /style=\{styles\.templateList\}/);
   assert.match(source, /templateList: \{[^}]*maxHeight/);
+  assert.match(source, /styles\.templateRow/);
+  assert.match(source, /styles\.templateIndicatorSelected/);
+  assert.doesNotMatch(source, /styles\.choice/);
 });
 
 test('el selector de plantillas cubre carga/error/vacío, no sólo la lista feliz', () => {
@@ -35,5 +38,11 @@ test('el status de la hoja tampoco se cuela crudo en el texto de "Solicitar desb
 });
 
 test('cierre UX 2026-09 (item G): entrar a la hoja de un equipo (captura→hoja) usa FadeIn', () => {
-  assert.match(source, /<FadeIn transitionKey=\{activeEquipment\.id\}>/);
+  assert.match(source, /<FadeIn transitionKey=\{`\$\{activeEquipment\.id\}:\$\{sheet\?\.id \?\? 'selector'\}`\}>/);
+});
+
+test('Vinculado pendiente informa que la captura puede continuar y no ofrece ticket manual', () => {
+  assert.match(source, /Folio pendiente de asignación/);
+  assert.match(source, /Puedes continuar con la captura de la hoja de campo/);
+  assert.doesNotMatch(source, /Ticket · Resolver folio Vinculado/);
 });

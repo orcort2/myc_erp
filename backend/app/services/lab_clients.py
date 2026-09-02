@@ -7,7 +7,7 @@ from io import BytesIO
 
 from fastapi import HTTPException, UploadFile
 from openpyxl import load_workbook
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -58,6 +58,22 @@ def list_lab_clients(
             .offset(offset)
             .limit(limit)
         ).all()
+    )
+
+
+def count_inactive_lab_clients(
+    db: Session,
+    *,
+    operator_client_id: int | None,
+) -> int:
+    return int(
+        db.scalar(
+            select(func.count(LabClient.id)).where(
+                _scope_clause(operator_client_id),
+                LabClient.is_active.is_(False),
+            )
+        )
+        or 0
     )
 
 

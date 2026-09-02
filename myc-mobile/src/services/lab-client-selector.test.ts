@@ -68,6 +68,18 @@ test('el módulo Clientes conecta búsqueda remota, páginas de 25 y Cargar más
   assert.match(source, /results\.length, true/);
 });
 
+test('el toggle de inactivos sólo aparece para Admin cuando el conteo scoped es mayor que cero', () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/clients.tsx'),
+    'utf8',
+  );
+  assert.match(source, /if \(!canDeactivateLabClients\) return 0/);
+  assert.match(source, /lab-clients\/inactive-count/);
+  assert.match(source, /canDeactivateLabClients && inactiveCount > 0/);
+  assert.match(source, /active && nextInactiveCount === 0 \? false : showInactive/);
+  assert.match(source, /loadInactiveCount\(\)/);
+});
+
 test('el selector nunca renderiza más de MAX_VISIBLE_RESULTS de golpe', () => {
   const many = Array.from({ length: 200 }, (_, index) => client(index));
   const visible = limitVisibleResults(many);

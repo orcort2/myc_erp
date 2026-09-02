@@ -40,6 +40,7 @@ from app.models.user import Role, User
 from app.schemas.lab_work_order import LabEquipmentCertificateClientWrite
 from app.services.lab_clients import (
     activate_lab_client,
+    count_inactive_lab_clients,
     create_lab_client,
     deactivate_lab_client,
     list_lab_clients,
@@ -590,6 +591,40 @@ def test_inactive_clients_are_excluded_from_default_listing(lab_context):
 
         full_listing = list_lab_clients(db, operator_client_id=None, include_inactive=True)
         assert created.id in {item.id for item in full_listing}
+
+
+def test_inactive_count_is_admin_only_and_respects_operator_scope(lab_context):
+    client, factory, tokens = lab_context
+    endpoint = "/api/mobile/v1/technician/lab-clients/inactive-count"
+    assert client.get(endpoint, headers=auth(tokens["tech"])).status_code == 403
+    assert client.get(endpoint, headers=auth(tokens["admin"])).json() == {"count": 0}
+
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        tenant_a = Client(legal_name="Scope A", commercial_name="Scope A")
+        tenant_b = Client(legal_name="Scope B", commercial_name="Scope B")
+        db.add_all([tenant_a, tenant_b])
+        db.flush()
+        global_client = create_lab_client(
+            db, LabClientCreate(company="Global inactivo", address="", attention=""),
+            admin, operator_client_id=None,
+        )
+        scoped_a = create_lab_client(
+            db, LabClientCreate(company="Scope A inactivo", address="", attention=""),
+            admin, operator_client_id=tenant_a.id,
+        )
+        scoped_b = create_lab_client(
+            db, LabClientCreate(company="Scope B inactivo", address="", attention=""),
+            admin, operator_client_id=tenant_b.id,
+        )
+        deactivate_lab_client(db, global_client.id, operator_client_id=None, user=admin)
+        deactivate_lab_client(db, scoped_a.id, operator_client_id=tenant_a.id, user=admin)
+        deactivate_lab_client(db, scoped_b.id, operator_client_id=tenant_b.id, user=admin)
+        assert count_inactive_lab_clients(db, operator_client_id=None) == 1
+        assert count_inactive_lab_clients(db, operator_client_id=tenant_a.id) == 1
+        assert count_inactive_lab_clients(db, operator_client_id=tenant_b.id) == 1
+
+    assert client.get(endpoint, headers=auth(tokens["admin"])).json() == {"count": 1}
 
 
 def test_deactivated_client_historical_references_remain_valid(lab_context):

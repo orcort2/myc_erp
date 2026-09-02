@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import type { LabClient, LinkedCompany } from '@/src/types/lab-work-order';
+import type { LabClient } from '@/src/types/lab-work-order';
 import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
 import {
   defaultDocumentaryClient,
@@ -59,17 +59,7 @@ export function LabEquipmentForm({
   const [service, setService] = useState<LabServiceType>(
     initialValues?.service.serviceType ?? 'accredited',
   );
-  const [linkedCompanyId, setLinkedCompanyId] = useState<number | null>(
-    initialValues?.service.linkedCompanyId ?? null,
-  );
-  const [linkedCompanies, setLinkedCompanies] = useState<LinkedCompany[]>([]);
   const [validationError, setValidationError] = useState('');
-
-  useEffect(() => {
-    request<LinkedCompany[]>('/mobile/v1/technician/lab-work-orders/linked-companies')
-      .then(setLinkedCompanies)
-      .catch(() => setLinkedCompanies([]));
-  }, [request]);
 
   const canSubmit = Boolean(
     equipment.instrument.trim() && equipment.brand.trim()
@@ -78,13 +68,13 @@ export function LabEquipmentForm({
   const folioIsSecured = mode === 'edit' && !!folioDisplay && folioDisplay !== 'Pendiente' && folioDisplay !== 'Sin asignar';
 
   function submit() {
-    const error = validateServiceSelection({ serviceType: service, linkedCompanyId });
+    const error = validateServiceSelection({ serviceType: service, linkedCompanyId: null });
     if (error) {
       setValidationError(error);
       return;
     }
     setValidationError('');
-    onSubmit({ equipment, documentaryClient, service: { serviceType: service, linkedCompanyId } });
+    onSubmit({ equipment, documentaryClient, service: { serviceType: service, linkedCompanyId: null } });
   }
 
   return (
@@ -159,19 +149,6 @@ export function LabEquipmentForm({
           </Pressable>
         ))}
       </View>
-      {service === 'linked' && (
-        <ScrollView style={styles.linkedList} nestedScrollEnabled>
-          {linkedCompanies.map((company) => (
-            <Pressable
-              key={company.id}
-              onPress={() => setLinkedCompanyId(company.id)}
-              style={[styles.choice, linkedCompanyId === company.id && styles.choiceActive]}
-            >
-              <Text>{company.name}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      )}
       {mode === 'edit' && folioIsSecured && (
         <Text style={styles.warning}>
           Este equipo ya tiene folio reservado; cambiar el servicio a otro distinto será rechazado
@@ -228,7 +205,6 @@ const styles = StyleSheet.create({
   selectedClient: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', padding: 4 },
   selectedClientText: { color: '#142b3a', fontWeight: '700' },
   change: { color: '#0067a8', fontWeight: '700' },
-  linkedList: { maxHeight: 160 },
   error: { color: '#c73636', fontWeight: '700' },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   cancel: { alignItems: 'center', flex: 1, padding: 12 },

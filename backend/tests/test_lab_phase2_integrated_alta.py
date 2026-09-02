@@ -811,6 +811,75 @@ def test_linked_does_not_create_myca_or_myct(phase2_context):
         assert sequences == []
 
 
+def test_linked_without_company_creates_one_atomic_folio_request_and_reuses_it(phase2_context):
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id = _create_order(client, headers)
+    created = client.post(
+        CONFIGURED_URL.format(order_id=order_id),
+        json=configured_payload(1, "linked", linked_company_id=None),
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    equipment = created.json()["equipment"][-1]
+    assert equipment["linked_company_id"] is None
+    assert equipment["certificate_folio"] is None
+    assert equipment["automatic_certificate_folio"] is None
+    assert equipment["folio_status"] == "pending"
+    assert equipment["folio_ticket_id"] is not None
+
+    with factory() as db:
+        tickets = list(
+            db.scalars(
+                select(OperationalTicket).where(
+                    OperationalTicket.equipment_id == equipment["id"],
+                    OperationalTicket.type == "linked_folio",
+                )
+            )
+        )
+        assert len(tickets) == 1
+        ticket_id = tickets[0].id
+        assert tickets[0].linked_company_id is None
+        assert tickets[0].conversation_id is not None
+
+    edited_payload = configured_payload(1, "linked", linked_company_id=None)
+    edited_payload["equipment"]["brand"] = "MYC Test editado"
+    edited = client.patch(
+        CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment["id"]),
+        json=edited_payload,
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    with factory() as db:
+        assert len(
+            list(
+                db.scalars(
+                    select(OperationalTicket).where(
+                        OperationalTicket.equipment_id == equipment["id"],
+                        OperationalTicket.type == "linked_folio",
+                    )
+                )
+            )
+        ) == 1
+        assert db.get(LabWorkOrderEquipment, equipment["id"]).folio_ticket_id == ticket_id
+
+    ticket_read = client.get(
+        f"/api/mobile/v1/technician/tickets/{ticket_id}",
+        headers=auth(tokens["admin"]),
+    )
+    assert ticket_read.status_code == 200, ticket_read.text
+    assert {
+        "equipment_position": 1,
+        "equipment_instrument": "Instrumento 1",
+        "equipment_brand": "MYC Test editado",
+        "equipment_model": None,
+        "equipment_identification": "ID-1",
+        "equipment_serial_number": "SER-1",
+        "equipment_service_type": "linked",
+        "equipment_folio_status": "pending",
+    }.items() <= ticket_read.json().items()
+
+
 def test_allocation_failure_rolls_back_the_entire_operation(phase2_context):
     """19 & 20. Un fallo (folio agotado) hace rollback completo: no queda
     equipo huérfano parcialmente configurado."""
@@ -1158,8 +1227,8 @@ def test_myca_myct_authority_unchanged(phase2_context):
         assert sequence.next_value == 4701
 
 
-def test_manual_and_linked_folio_tickets_still_function(phase2_context):
-    """33. Tickets manual/linked siguen funcionando."""
+def test_manual_linked_folio_endpoint_does_not_duplicate_automatic_request(phase2_context):
+    """33. El endpoint compatible no duplica la solicitud automática linked."""
     client, factory, tokens, _tenants = phase2_context
     headers = auth(tokens["tech"])
     with factory() as db:
@@ -1186,8 +1255,172 @@ def test_manual_and_linked_folio_tickets_still_function(phase2_context):
         },
         headers=headers,
     )
-    assert ticket.status_code == 201, ticket.text
-    assert ticket.json()["type"] == "linked_folio"
+    assert ticket.status_code == 409, ticket.text
+    with factory() as db:
+        assert len(list(db.scalars(select(OperationalTicket).where(
+            OperationalTicket.equipment_id == equipment_id,
+            OperationalTicket.type == "linked_folio",
+        )))) == 1
+
+
+# --------------------------------------------------------------------------
+# Cierre UX 2026-09 (items C, D, E): ciclo de vida al abandonar Vinculado,
+# TODAS las entradas backend de asignacion linked crean solicitud, e
+# idempotencia de ensure_linked_folio_request.
+# --------------------------------------------------------------------------
+
+SERVICE_URL = "/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service"
+
+
+def test_leaving_linked_cancels_the_pending_ticket_and_new_folio_follows_current_logic(phase2_context):
+    """Item C: linked -> ticket pending automatico -> editar a accredited ->
+    ticket anterior cancelled -> equipo ya no lo referencia -> el nuevo folio
+    MYCA sigue la logica actual (reservado normalmente)."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id = _create_order(client, headers)
+    created = client.post(
+        CONFIGURED_URL.format(order_id=order_id),
+        json=configured_payload(1, "linked", linked_company_id=None),
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    equipment_id = created.json()["equipment"][-1]["id"]
+    original_ticket_id = created.json()["equipment"][-1]["folio_ticket_id"]
+    assert original_ticket_id is not None
+
+    edited_payload = configured_payload(1, "accredited")
+    edited = client.patch(
+        CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment_id),
+        json=edited_payload,
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    updated_equipment = edited.json()["equipment"][-1]
+    assert updated_equipment["service_type"] == "accredited"
+    assert updated_equipment["folio_status"] == "reserved"
+    assert updated_equipment["certificate_folio"] is not None
+    # El equipo ya no referencia el ticket linked_folio anterior.
+    assert updated_equipment["folio_ticket_id"] is None
+
+    with factory() as db:
+        old_ticket = db.get(OperationalTicket, original_ticket_id)
+        assert old_ticket.status == "cancelled"
+        assert old_ticket.reviewed_at is not None
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.folio_ticket_id is None
+        assert equipment.service_type == "accredited"
+
+
+def test_linked_to_linked_does_not_cancel_nor_duplicate_the_ticket(phase2_context):
+    """Item C (regresion inversa): linked -> linked (reconfirmando el mismo
+    servicio) no cancela el ticket pending ni crea uno nuevo."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id = _create_order(client, headers)
+    created = client.post(
+        CONFIGURED_URL.format(order_id=order_id),
+        json=configured_payload(1, "linked", linked_company_id=None),
+        headers=headers,
+    )
+    equipment_id = created.json()["equipment"][-1]["id"]
+    original_ticket_id = created.json()["equipment"][-1]["folio_ticket_id"]
+
+    edited_payload = configured_payload(1, "linked", linked_company_id=None)
+    edited_payload["equipment"]["brand"] = "MYC Test (linked->linked)"
+    edited = client.patch(
+        CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment_id),
+        json=edited_payload,
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    updated_equipment = edited.json()["equipment"][-1]
+    assert updated_equipment["service_type"] == "linked"
+    assert updated_equipment["folio_ticket_id"] == original_ticket_id
+
+    with factory() as db:
+        ticket = db.get(OperationalTicket, original_ticket_id)
+        assert ticket.status == "pending"
+        assert len(list(db.scalars(select(OperationalTicket).where(
+            OperationalTicket.equipment_id == equipment_id,
+            OperationalTicket.type == "linked_folio",
+        )))) == 1
+
+
+def test_standalone_service_endpoint_assigning_linked_also_creates_the_automatic_request(phase2_context):
+    """Item D: assign_equipment_service() (el endpoint PUT .../service
+    individual, fuera del alta integrada) tambien debe materializar la
+    solicitud linked_folio automatica -- antes era la unica entrada que no
+    lo hacia."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id = _create_order(client, headers)
+    added = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+        json=equipment_body(1),
+        headers=headers,
+    )
+    assert added.status_code == 201, added.text
+    equipment_id = added.json()["equipment"][-1]["id"]
+    assert added.json()["equipment"][-1]["service_type"] is None
+
+    response = client.put(
+        SERVICE_URL.format(order_id=order_id, equipment_id=equipment_id),
+        json={"service_type": "linked", "linked_company_id": None},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    updated_equipment = response.json()["equipment"][-1]
+    assert updated_equipment["service_type"] == "linked"
+    assert updated_equipment["folio_status"] == "pending"
+    assert updated_equipment["folio_ticket_id"] is not None
+
+    with factory() as db:
+        tickets = list(db.scalars(select(OperationalTicket).where(
+            OperationalTicket.equipment_id == equipment_id,
+            OperationalTicket.type == "linked_folio",
+        )))
+        assert len(tickets) == 1
+        assert tickets[0].status == "pending"
+
+
+def test_standalone_service_endpoint_reconfirming_linked_is_idempotent(phase2_context):
+    """Item E: ensure_linked_folio_request() sigue siendo idempotente cuando
+    se llama repetidamente a traves del endpoint individual -- no duplica el
+    ticket, folio_ticket_id sigue apuntando al mismo, folio_status permanece
+    pending."""
+    client, factory, tokens, _tenants = phase2_context
+    headers = auth(tokens["tech"])
+    order_id = _create_order(client, headers)
+    added = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+        json=equipment_body(1),
+        headers=headers,
+    )
+    equipment_id = added.json()["equipment"][-1]["id"]
+
+    first = client.put(
+        SERVICE_URL.format(order_id=order_id, equipment_id=equipment_id),
+        json={"service_type": "linked", "linked_company_id": None},
+        headers=headers,
+    )
+    assert first.status_code == 200, first.text
+    first_ticket_id = first.json()["equipment"][-1]["folio_ticket_id"]
+
+    second = client.put(
+        SERVICE_URL.format(order_id=order_id, equipment_id=equipment_id),
+        json={"service_type": "linked", "linked_company_id": None},
+        headers=headers,
+    )
+    assert second.status_code == 200, second.text
+    assert second.json()["equipment"][-1]["folio_ticket_id"] == first_ticket_id
+    assert second.json()["equipment"][-1]["folio_status"] == "pending"
+
+    with factory() as db:
+        assert len(list(db.scalars(select(OperationalTicket).where(
+            OperationalTicket.equipment_id == equipment_id,
+            OperationalTicket.type == "linked_folio",
+        )))) == 1
 
 
 def test_field_sheet_ownership_unchanged(phase2_context):

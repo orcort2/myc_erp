@@ -12,6 +12,7 @@ from app.schemas.lab_client import (
 from app.services.auth import user_has_permission
 from app.services.lab_clients import (
     activate_lab_client,
+    count_inactive_lab_clients,
     create_lab_client,
     deactivate_lab_client,
     import_lab_clients_xlsx,
@@ -21,6 +22,22 @@ from app.services.lab_clients import (
 
 
 router = APIRouter(prefix="/mobile/v1/technician/lab-clients", tags=["mobile-lab-clients"])
+
+
+@router.get("/inactive-count", response_model=dict[str, int])
+def get_inactive_client_count(
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission("lab_clients.deactivate")),
+) -> dict[str, int]:
+    if context.actor_type != "internal" or not user_has_permission(
+        context.user, "lab_clients.deactivate"
+    ):
+        raise HTTPException(status_code=403, detail="Sólo Admin puede consultar clientes LAB inactivos")
+    return {
+        "count": count_inactive_lab_clients(
+            db, operator_client_id=context.client_id
+        )
+    }
 
 
 @router.get("", response_model=list[LabClientRead])

@@ -75,6 +75,7 @@ export default function ClientsScreen() {
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<LabClient[]>([]);
   const [showInactive, setShowInactive] = useState(false);
+  const [inactiveCount, setInactiveCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -121,12 +122,32 @@ export default function ClientsScreen() {
     }
   }, [authorizedFetch]);
 
+  const loadInactiveCount = useCallback(async (): Promise<number> => {
+    if (!canDeactivateLabClients) return 0;
+    try {
+      const response = await authorizedFetch(
+        apiUrl('/mobile/v1/technician/lab-clients/inactive-count'),
+      );
+      if (!response.ok) throw new Error(await readApiError(response));
+      const payload = await response.json() as { count: number };
+      setInactiveCount(payload.count);
+      return payload.count;
+    } catch {
+      setInactiveCount(0);
+      return 0;
+    }
+  }, [authorizedFetch, canDeactivateLabClients]);
+
   useEffect(() => {
     if (!user) return;
     const timer = setTimeout(() => { void load(searchTerm, showInactive); }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchTerm, showInactive, user]);
+
+  useEffect(() => {
+    if (user && canDeactivateLabClients) void loadInactiveCount();
+  }, [canDeactivateLabClients, loadInactiveCount, user]);
 
   function startCreate() {
     setDraft(BLANK_DRAFT);
@@ -187,7 +208,10 @@ export default function ClientsScreen() {
         { method: 'POST' },
       );
       if (!response.ok) throw new Error(await readApiError(response));
-      await load(searchTerm, showInactive, 0, false);
+      const nextInactiveCount = await loadInactiveCount();
+      const nextShowInactive = active && nextInactiveCount === 0 ? false : showInactive;
+      if (showInactive && !nextShowInactive) setShowInactive(false);
+      await load(searchTerm, nextShowInactive, 0, false);
     } catch (requestError) {
       Alert.alert(
         active ? 'No fue posible restaurar el cliente' : 'No fue posible eliminar el cliente',
@@ -242,7 +266,10 @@ export default function ClientsScreen() {
       });
       if (!response.ok) throw new Error(await readApiError(response));
       const summary = await response.json() as { new: number; skipped: number; invalid: number };
-      await load(searchTerm, showInactive, 0, false);
+      await Promise.all([
+        load(searchTerm, showInactive, 0, false),
+        loadInactiveCount(),
+      ]);
       Alert.alert('Importación terminada', `${summary.new} nuevos · ${summary.skipped} omitidos · ${summary.invalid} inválidos`);
     } catch (requestError) {
       Alert.alert('No fue posible importar', requestError instanceof Error ? requestError.message : 'Revisa el XLSX');
@@ -285,7 +312,7 @@ export default function ClientsScreen() {
                   <SecondaryButton label="Importar XLSX" onPress={importXlsx} loading={importing} />
                 )}
               </ActionRow>
-              {canDeactivateLabClients && (
+              {canDeactivateLabClients && inactiveCount > 0 && (
                 <SecondaryButton
                   label={showInactive ? 'Ocultar inactivos' : 'Ver clientes inactivos'}
                   onPress={() => setShowInactive((value) => !value)}

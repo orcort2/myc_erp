@@ -370,12 +370,8 @@ def test_signing_allows_linked_with_pending_folio(phase3_context):
     assert response.json()["status"] == "received_signed"
 
 
-def test_signing_blocks_linked_without_company_selected(phase3_context):
-    """Complemento de 5: vinculado SIN LinkedCompany congelada sí bloquea
-    recepción (distinto de folio pendiente, que sí se permite). Un actor
-    externo puede dejar 'linked' sin empresa vía _assign_equipment_service_core
-    (ver Fase 2); se reproduce ese estado directamente para aislar el
-    prerrequisito de recepción del guard de asignación."""
+def test_signing_and_field_sheet_allow_linked_without_company(phase3_context):
+    """Vinculado sin empresa y con folio pendiente puede firmar y capturar."""
     client, factory, tokens, _tenants = phase3_context
     headers = auth(tokens["tech"])
     order_id = create_order(client, headers)
@@ -386,9 +382,13 @@ def test_signing_blocks_linked_without_company_selected(phase3_context):
         equipment.folio_status = "pending"
         db.commit()
     response = sign(client, headers, order_id)
-    assert response.status_code == 409
-    assert response.json()["detail"]["code"] == "LAB_RECEPTION_INCOMPLETE"
-    assert response.json()["detail"]["items"][0]["reason"] == "Selecciona la empresa vinculada"
+    assert response.status_code == 200, response.text
+    sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert sheet.status_code == 201, sheet.text
 
 
 # --------------------------------------------------------------------------
@@ -1222,18 +1222,16 @@ def test_linked_folio_ticket_flow_unchanged(phase3_context):
         linked_id = linked.id
     order_id = create_order(client, headers)
     equipment_id = add_equipment(client, headers, order_id, 1)
-    set_service(client, headers, order_id, equipment_id, "linked", linked_id)
-    ticket = client.post(
-        "/api/mobile/v1/technician/tickets/folio",
-        json={
-            "work_order_id": order_id, "equipment_id": equipment_id, "type": "linked_folio",
-            "requested_folio": None, "reason": "Autorización", "description": "Solicitar folio autorizado",
-        },
-        headers=headers,
-    )
-    assert ticket.status_code == 201, ticket.text
+    # Cierre UX 2026-09 (item D): PUT .../service ya materializa la solicitud
+    # linked_folio automatica -- el POST manual redundante ahora responde 409
+    # (ver test_manual_linked_folio_endpoint_does_not_duplicate_automatic_request
+    # en test_lab_phase2_integrated_alta.py), asi que se resuelve directamente
+    # el ticket automatico ya creado por set_service.
+    assigned = set_service(client, headers, order_id, equipment_id, "linked", linked_id)
+    ticket_id = assigned["equipment"][-1]["folio_ticket_id"]
+    assert ticket_id is not None
     resolved = client.post(
-        f"/api/mobile/v1/technician/tickets/{ticket.json()['id']}/resolve",
+        f"/api/mobile/v1/technician/tickets/{ticket_id}/resolve",
         json={"authorized_folio": "VT-001", "comment": "Autorizado"},
         headers=admin_headers,
     )

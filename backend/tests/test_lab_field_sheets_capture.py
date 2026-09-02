@@ -35,7 +35,7 @@ from app.services.field_sheet_pdfs import (
     resolve_field_sheet_pdf_renderer,
 )
 from app.services.field_sheet_templates import get_template_snapshot
-from app.services.field_sheets import EDITABLE_STATUSES
+from app.services.field_sheets import EDITABLE_STATUSES, _validate_canonical_common_fields
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket, resolve_operational_ticket
 
 PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(
@@ -525,7 +525,18 @@ def test_mobile_equivalent_payload_round_trips_into_the_pdf(lab_context, templat
     reads must show up in the rendered document. Guards against the
     mobile/PDF split regressing (company/address/attention/dates/units/
     method/observations must land where field_sheet_pdfs.py actually reads
-    them, not silently swallowed into an unused capture_values blob)."""
+    them, not silently swallowed into an unused capture_values blob).
+
+    Cierre de contrato canonico LAB (2026-09): company/address/attention son
+    ahora snapshot readonly (ver CANONICAL_FIELD_SHEET_KEYS) -- un PATCH ya
+    no puede cambiarlas, asi que este test ya no las incluye en el payload
+    de actualizacion ni las verifica como "actualizadas" en el PDF (siguen
+    apareciendo, pero con su valor original de creacion). instrument/brand/
+    model/serial_number/internal_id son la misma historia (identidad del
+    equipo dentro de capture_values) -- el payload los sigue enviando (asi
+    lo hace Mobile hoy, reenvia el bloque completo) pero deben quedar
+    intactos, no con el valor "actualizado" que el payload intento fijar.
+    """
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
@@ -537,15 +548,14 @@ def test_mobile_equivalent_payload_round_trips_into_the_pdf(lab_context, templat
     )
     assert created_sheet.status_code == 201, created_sheet.text
     sheet_id = created_sheet.json()["id"]
+    original_capture_values = created_sheet.json()["capture_values"]
 
-    # This mirrors exactly what the corrected LabTechnicalCapture.saveSheet()
-    # now sends: direct FieldSheet columns at top level, equipment identity
-    # fields nested under capture_values.
+    # This mirrors what LabTechnicalCapture.saveSheet() sends: direct
+    # FieldSheet columns at top level (only the captura-tecnica ones, since
+    # company/address/attention/reception_date are readonly and Mobile no
+    # longer renders them as editable Fields), plus the full capture_values
+    # blob (identity keys included, exactly as read from the sheet).
     mobile_payload = {
-        "company": f"Cliente {template_key} actualizado",
-        "address": f"Calle actualizada {template_key} 99",
-        "attention": f"Ing. Responsable {template_key}",
-        "reception_date": "2026-08-13",
         "calibration_date": "2026-08-14",
         "next_calibration_date": "2027-08-14",
         "units": f"unidad-{template_key}",
@@ -556,6 +566,9 @@ def test_mobile_equivalent_payload_round_trips_into_the_pdf(lab_context, templat
         # equipment card with no literal whitespace at the break, which would
         # make a naive substring match fail on a purely cosmetic line wrap.
         "capture_values": {
+            **original_capture_values,
+            # Un intento de "actualizar" identidad vía capture_values -- debe
+            # ser ignorado por completo, restaurado a lo que ya existia.
             "instrument": f"Instr{template_key}9",
             "brand": f"Marca{template_key}9",
             "model": f"Modelo{template_key}9",
@@ -571,7 +584,16 @@ def test_mobile_equivalent_payload_round_trips_into_the_pdf(lab_context, templat
     )
     assert updated_sheet.status_code == 200, updated_sheet.text
     body = updated_sheet.json()
-    assert body["capture_values"] == mobile_payload["capture_values"]
+    # Identidad readonly: nunca cambia sin importar lo que el payload pida.
+    for key in ("instrument", "brand", "model", "serial_number", "internal_id"):
+        assert body["capture_values"][key] == original_capture_values[key], key
+    # scope SI es captura tecnica -- ese si debe aceptar el nuevo valor.
+    assert body["capture_values"]["scope"] == mobile_payload["capture_values"]["scope"]
+    # company/address/attention nunca viajaron en este payload (ya no son
+    # editables) -- siguen siendo el snapshot original de creacion.
+    assert body["company"] == created_sheet.json()["company"]
+    assert body["address"] == created_sheet.json()["address"]
+    assert body["attention"] == created_sheet.json()["attention"]
 
     with factory() as db:
         pdf_bytes, _filename = generate_field_sheet_pdf(db, sheet_id)
@@ -583,18 +605,260 @@ def test_mobile_equivalent_payload_round_trips_into_the_pdf(lab_context, templat
     rendered_text = re.sub(r"\s+", " ", raw_text).upper()
 
     for expected in (
-        mobile_payload["company"],
-        mobile_payload["address"],
-        mobile_payload["attention"],
+        body["company"],
+        body["address"],
+        body["attention"],
         mobile_payload["units"],
         mobile_payload["method"],
         mobile_payload["observations"],
-        mobile_payload["capture_values"]["instrument"],
-        mobile_payload["capture_values"]["brand"],
-        mobile_payload["capture_values"]["model"],
-        mobile_payload["capture_values"]["serial_number"],
+        original_capture_values["instrument"],
+        original_capture_values["brand"],
+        original_capture_values["serial_number"],
     ):
         assert expected.upper() in rendered_text, f"{expected!r} missing from {template_key} PDF"
+
+    # Los valores que el payload intento colar por capture_values NUNCA
+    # deben aparecer -- confirma que el PDF tampoco los recibio.
+    for rejected in (
+        mobile_payload["capture_values"]["instrument"],
+        mobile_payload["capture_values"]["brand"],
+        mobile_payload["capture_values"]["serial_number"],
+    ):
+        assert rejected.upper() not in rendered_text, f"{rejected!r} should have been ignored in {template_key} PDF"
+
+
+# --------------------------------------------------------------------------
+# Cierre de contrato canonico LAB (2026-09): ninguna plantilla (block.fields[])
+# puede cambiar la obligatoriedad de un campo canonico; los campos
+# especializados (fuera del contrato) siguen bajo autoridad de plantilla.
+# --------------------------------------------------------------------------
+
+def _inject_block_field_requirement(factory, sheet_id: int, *, key: str, required: bool) -> None:
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        definition = dict(sheet.template_definition_json or {})
+        blocks = [dict(block) for block in definition.get("blocks") or []]
+        blocks.append(
+            {
+                "key": "test_injected_block",
+                "block_key": "test_injected_block",
+                "block_type": "CustomFieldsBlock",
+                "title": "Bloque de prueba",
+                "capture_visible": True,
+                "visible_fields": [key],
+                "fields": [{"key": key, "label": f"{key} (override de prueba)", "required": required, "order": 0}],
+            }
+        )
+        definition["blocks"] = blocks
+        sheet.template_definition_json = definition
+        db.add(sheet)
+        db.commit()
+
+
+def test_template_cannot_make_a_canonical_field_required(lab_context):
+    """Hallazgo 4: template_definition_json.blocks[].fields[].required ya no
+    puede alterar la obligatoriedad de un campo canonico -- 'scope' es
+    canonico (captura tecnica) y nunca se prellena al crear la hoja, asi que
+    si la plantilla pudiera exigirlo, completar fallaria con 'scope' en
+    missing_fields. Debe completarse igual, ignorando el override."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+    assert not (created.json().get("capture_values") or {}).get("scope")
+
+    _inject_block_field_requirement(factory, sheet_id, key="scope", required=True)
+
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+
+def test_specialized_template_field_required_is_still_enforced(lab_context):
+    """Un campo FUERA del contrato canonico (aqui 'pattern_used', legado de
+    Patrones/StandardsBlock) sigue bajo autoridad real de la plantilla -- si
+    la declara required=True y queda vacio, completar debe seguir
+    rechazando con esa clave en missing_fields, exactamente como antes de
+    separar canonico/especializado."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+
+    _inject_block_field_requirement(factory, sheet_id, key="pattern_used", required=True)
+
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 422, completed.text
+    assert "pattern_used" in completed.json()["detail"]["missing_fields"]
+
+
+def test_canonical_common_fields_validator_introduces_no_additional_requirements(lab_context):
+    """Item B del cierre 2026-09: _validate_canonical_common_fields sigue
+    siendo la unica autoridad de obligatoriedad del contrato canonico, pero
+    hoy no agrega NINGUN requisito nuevo -- deliberado, para preservar el
+    comportamiento existente. Prueba directa sobre una hoja recien creada
+    con TODOS los campos canonicos de captura tecnica vacios (scope,
+    calibration_place, environment_*, etc.): si la funcion agregara algun
+    requisito, esta hoja los reportaria como faltantes."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert _validate_canonical_common_fields(sheet) == []
+
+
+def test_update_lab_field_sheet_keeps_identity_and_client_snapshot_readonly(lab_context):
+    """Hallazgos 3 y 5: attention/company/address/reception_date (columnas
+    directas) e instrument/brand/model/serial_number/internal_id (dentro de
+    capture_values) son snapshot -- update_lab_field_sheet debe ignorar por
+    completo cualquier intento de cambiarlos, y LabWorkOrderEquipment nunca
+    se toca desde este flujo."""
+    from app.models.lab_work_order import LabWorkOrderEquipment
+
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    original = created.json()
+    with factory() as db:
+        equipment_before = db.get(LabWorkOrderEquipment, equipment_ids[0])
+        equipment_snapshot_before = {
+            "instrument": equipment_before.instrument,
+            "brand": equipment_before.brand,
+            "model": equipment_before.model,
+            "serial_number": equipment_before.serial_number,
+            "identification": equipment_before.identification,
+        }
+
+    attempted = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={
+            "attention": "Suplantacion de atencion",
+            "company": "Suplantacion de empresa",
+            "address": "Suplantacion de domicilio",
+            "reception_date": "2020-01-01",
+            "capture_values": {
+                **original["capture_values"],
+                "instrument": "Suplantacion instrumento",
+                "brand": "Suplantacion marca",
+                "model": "Suplantacion modelo",
+                "serial_number": "Suplantacion serie",
+                "internal_id": "Suplantacion id",
+            },
+        },
+        headers=headers,
+    )
+    assert attempted.status_code == 200, attempted.text
+    body = attempted.json()
+
+    assert body["attention"] == original["attention"]
+    assert body["company"] == original["company"]
+    assert body["address"] == original["address"]
+    assert body["reception_date"] == original["reception_date"]
+    for key in ("instrument", "brand", "model", "serial_number", "internal_id"):
+        assert body["capture_values"][key] == original["capture_values"][key], key
+
+    with factory() as db:
+        equipment_after = db.get(LabWorkOrderEquipment, equipment_ids[0])
+        assert equipment_after.instrument == equipment_snapshot_before["instrument"]
+        assert equipment_after.brand == equipment_snapshot_before["brand"]
+        assert equipment_after.model == equipment_snapshot_before["model"]
+        assert equipment_after.serial_number == equipment_snapshot_before["serial_number"]
+        assert equipment_after.identification == equipment_snapshot_before["identification"]
+
+
+def test_four_official_templates_share_the_identical_canonical_block_structure(lab_context):
+    """Tests 1/2 del encargo: anemometro/calibradores/presion/bascula deben
+    producir exactamente el mismo contrato de captura comun -- mismos
+    block_type en el mismo orden, con el mismo visible_fields, para los
+    bloques que hoy alimentan el contrato canonico (Header/Client/Equipment/
+    CalibrationData/Environmental/Observations). Sólo la tabla de resultados
+    (7mo bloque) y las firmas cambian entre plantillas."""
+    from app.services.field_sheet_templates import get_template_snapshot
+
+    client, factory, tokens = lab_context
+    with factory() as db:
+        snapshots = {
+            key: get_template_snapshot(db, key)[0]
+            for key in ("anemometro", "calibradores", "presion", "bascula")
+        }
+
+    common_block_types = [
+        "HeaderBlock", "ClientBlock", "EquipmentBlock",
+        "CalibrationDataBlock", "EnvironmentalBlock", "ObservationsBlock",
+    ]
+    reference = snapshots["anemometro"]
+    reference_blocks = {block["block_type"]: block for block in reference["blocks"] if block["block_type"] in common_block_types}
+    assert set(reference_blocks) == set(common_block_types)
+
+    for template_key, snapshot in snapshots.items():
+        blocks_by_type = {block["block_type"]: block for block in snapshot["blocks"] if block["block_type"] in common_block_types}
+        assert set(blocks_by_type) == set(common_block_types), template_key
+        for block_type in common_block_types:
+            assert blocks_by_type[block_type]["visible_fields"] == reference_blocks[block_type]["visible_fields"], (
+                template_key,
+                block_type,
+            )
 
 
 def test_patch_field_sheet_rejects_empty_string_for_typed_date_and_boolean_fields(lab_context):

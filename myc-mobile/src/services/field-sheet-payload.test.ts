@@ -32,6 +32,7 @@ function sheet(overrides: Partial<LabFieldSheet> = {}): LabFieldSheet {
     environment_temperature_start: null,
     environment_temperature_end: null,
     equipment_general_condition: true,
+    consider_equipment_deviations: false,
     calibrated_by: null,
     reviewed_by: null,
     report_made_by: null,

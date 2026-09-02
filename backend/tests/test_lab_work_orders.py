@@ -7,6 +7,7 @@ import os
 import time
 import uuid
 import zipfile
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone
 
@@ -41,6 +42,7 @@ from app.models.user import Role, User
 from app.schemas.operational_ticket import TicketReject, TicketReview
 from app.schemas.lab_work_order import LabSignatureGroupWrite, LabWorkOrderGroupCreate
 from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
+from app.services.work_order_pdfs import _build_equipment_lines
 from app.services.lab_work_orders import (
     _allocate_folio,
     create_additional_work_order,
@@ -640,23 +642,22 @@ def test_modern_lab_flow_uses_independent_sequences_and_linked_manual_folio(lab_
     assert linked_equipment["folio_status"] == "pending"
     assert linked_equipment["linked_company_name_snapshot"] == "Laboratorio vinculado"
     assert linked_equipment["linked_company_prefix_snapshot"] == "LVT"
-    linked_ticket = client.post(
-        "/api/mobile/v1/technician/tickets/folio",
-        json={
-            "work_order_id": order_id,
-            "equipment_id": equipment_ids[2],
-            "type": "linked_folio",
-            "requested_folio": None,
-            "reason": "Autoridad vinculada",
-            "description": "Solicitar el identificador autorizado por Calidad",
-        },
-        headers=headers,
-    )
-    assert linked_ticket.status_code == 201, linked_ticket.text
-    assert linked_ticket.json()["conversation_id"] is not None
+    # Cierre UX 2026-09 (item D): PUT .../service ya materializa la solicitud
+    # linked_folio automatica -- igual que create/update_configured_equipment.
+    # El POST manual a /tickets/folio para esta misma solicitud ahora es
+    # redundante y responde 409 (ver test_manual_linked_folio_endpoint_does_not_
+    # duplicate_automatic_request en test_lab_phase2_integrated_alta.py), asi
+    # que esta prueba resuelve directamente el ticket automatico ya creado.
+    linked_ticket_id = linked_equipment["folio_ticket_id"]
+    assert linked_ticket_id is not None
+    with factory() as db:
+        auto_ticket = db.get(OperationalTicket, linked_ticket_id)
+        assert auto_ticket.type == "linked_folio"
+        assert auto_ticket.status == "pending"
+        assert auto_ticket.conversation_id is not None
     authorized_literal = "cap-y/26 001-a"
     resolved = client.post(
-        f"/api/mobile/v1/technician/tickets/{linked_ticket.json()['id']}/resolve",
+        f"/api/mobile/v1/technician/tickets/{linked_ticket_id}/resolve",
         json={"authorized_folio": authorized_literal, "comment": "Autorizado por Admin"},
         headers=auth(tokens["admin"]),
     )
@@ -1925,6 +1926,57 @@ def test_lab_pdf_leaves_missing_purchase_order_empty():
 
     assert "ORDEN DE COMPRA /COTIZACIÓN" in rendered_text
     assert "ORDEN DE COMPRA /COTIZACIÓN 0" not in rendered_text
+
+
+def test_lab_pdf_uses_certificate_folio_and_preserves_legacy_precedence():
+    payload = create_payload("CLIENTE CON FOLIO")
+    payload["reception_date"] = date.fromisoformat(payload["reception_date"])
+    payload["departure_date"] = date.fromisoformat(payload["departure_date"])
+    work_order = LabWorkOrder(
+        folio=6401,
+        sequence_number=1,
+        created_by_user_id=1,
+        status="draft",
+        **payload,
+    )
+    equipment = LabWorkOrderEquipment(position=1, **equipment_payload(1))
+    equipment.certificate_folio = "VIN-2026-001"
+    equipment.report_number = "REPORTE-LEGACY"
+    work_order.equipment = [equipment]
+    pdf, _filename = generate_lab_work_order_pdf(work_order)
+    rendered_text = "\n".join(
+        page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages
+    )
+    assert "VIN-2026-001" in rendered_text
+
+    base = {
+        "name": "Equipo",
+        "brand": "Marca",
+        "internal_id": "ID",
+        "serial_number": "Serie",
+        "is_good_condition": True,
+    }
+    preferred = _build_equipment_lines([
+        SimpleNamespace(
+            **base,
+            certificate_folio="CERT-PRIORITARIO",
+            report_number="REPORTE",
+            certificates=[SimpleNamespace(is_active=True, expected_folio="CERTIFICADO", folio=None)],
+        )
+    ])[0]
+    report_legacy = _build_equipment_lines([
+        SimpleNamespace(**base, report_number="REPORTE", certificates=[])
+    ])[0]
+    certificate_legacy = _build_equipment_lines([
+        SimpleNamespace(
+            **base,
+            report_number=None,
+            certificates=[SimpleNamespace(is_active=True, expected_folio=None, folio="CERTIFICADO")],
+        )
+    ])[0]
+    assert preferred.certificate_folio == "CERT-PRIORITARIO"
+    assert report_legacy.certificate_folio == "REPORTE"
+    assert certificate_legacy.certificate_folio == "CERTIFICADO"
 
 
 @pytest.mark.skipif(

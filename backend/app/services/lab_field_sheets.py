@@ -37,6 +37,36 @@ from app.services.institutional_configurations import (
 from app.services.lab_work_orders import _missing_completed_sheets, resolve_equipment_certificate_client
 
 
+# Cierre de contrato canonico LAB (2026-09): identidad readonly del
+# contrato comun (ver CANONICAL_FIELD_SHEET_KEYS en field_sheets.py) --
+# create_lab_field_sheet ya las congela como snapshot de la OT/cliente
+# documental/equipo al crear la hoja; update_lab_field_sheet NUNCA debe
+# dejarlas cambiar despues, sin importar lo que Mobile envie. Corregir
+# alguno de estos datos se hace editando el equipo por su flujo existente
+# (LabEquipmentForm/LabWorkOrderEquipment), nunca reescribiendo la hoja.
+_READONLY_DIRECT_IDENTITY_FIELDS = frozenset({"attention", "company", "address", "reception_date"})
+# Estas claves de identidad del equipo no son columnas propias de FieldSheet
+# -- create_lab_field_sheet las precarga dentro de capture_values (ver ahi
+# mismo). capture_values viaja como reemplazo completo en cada PATCH, asi
+# que aqui se restauran a su valor ya persistido antes de aplicar el update.
+_READONLY_CAPTURE_IDENTITY_KEYS = frozenset({"instrument", "brand", "model", "serial_number", "internal_id"})
+
+
+def _strip_readonly_identity_fields(sheet: FieldSheet, updates: dict) -> dict:
+    for key in _READONLY_DIRECT_IDENTITY_FIELDS:
+        updates.pop(key, None)
+    if "capture_values" in updates:
+        incoming = dict(updates["capture_values"] or {})
+        existing = sheet.capture_values or {}
+        for key in _READONLY_CAPTURE_IDENTITY_KEYS:
+            if key in existing:
+                incoming[key] = existing[key]
+            else:
+                incoming.pop(key, None)
+        updates["capture_values"] = incoming
+    return updates
+
+
 def _has_capture_value(value: object) -> bool:
     return value is not None and str(value).strip() != ""
 
@@ -206,7 +236,16 @@ def _ensure_capture_allowed(equipment: LabWorkOrderEquipment, *, external: bool)
         "reserved", "authorized"
     }:
         raise HTTPException(status_code=409, detail="El equipo requiere folio MYCA/MYCT asignado")
-    if equipment.service_type == "linked" and not external and equipment.folio_status != "authorized":
+    # Cierre UX 2026-09: Vinculado con folio_status="pending" (el estado
+    # normal mientras el ticket linked_folio automático sigue abierto) YA NO
+    # bloquea la captura técnica -- sólo el cierre de la OT sigue exigiendo
+    # folio autorizado (ver _missing_completed_sheets / el guard de cierre en
+    # field_sheets.py, sin tocar). "authorized" sigue permitiendo captura
+    # como antes; cualquier otro folio_status (inconsistencia real, no
+    # alcanzable hoy por el flujo normal) sigue bloqueada.
+    if equipment.service_type == "linked" and not external and equipment.folio_status not in {
+        "pending", "authorized"
+    }:
         raise HTTPException(status_code=409, detail="Vinculado requiere folio autorizado antes de capturar")
 
 
@@ -344,6 +383,7 @@ def update_lab_field_sheet(
         exclude_unset=True,
         exclude={"results_rows", "reference_standards", "signatures", "work_order_id", "template_key"},
     )
+    updates = _strip_readonly_identity_fields(sheet, updates)
     for key, value in updates.items():
         setattr(sheet, key, value)
     if payload.results_rows is not None:

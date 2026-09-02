@@ -93,7 +93,8 @@ def _build_equipment_lines(equipment_list: list[Equipment]) -> list[WorkOrderEqu
                 internal_id=equipment.internal_id or "",
                 serial_number=equipment.serial_number or "",
                 certificate_folio=(
-                    getattr(equipment, "report_number", None)
+                    getattr(equipment, "certificate_folio", None)
+                    or getattr(equipment, "report_number", None)
                     or (
                         (certificate.expected_folio or certificate.folio)
                         if certificate

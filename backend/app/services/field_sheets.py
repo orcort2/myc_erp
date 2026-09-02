@@ -45,6 +45,53 @@ FIELD_SHEET_REFERENCE_USAGE_ROLES = {
 EDITABLE_STATUSES = {"draft", "in_progress", "rejected", "returned_to_technician"}
 TERMINAL_STATUSES = {"approved", "cancelled"}
 
+# Cierre de contrato canonico LAB (2026-09): estas claves son la experiencia
+# de captura comun a TODAS las hojas de campo LAB Mobile -- ninguna
+# plantilla (ni una FieldSheetTemplateDefinition editada por Admin) puede
+# redefinir su label/orden/tipo/obligatoriedad. Ver
+# myc-mobile/src/services/field-sheet-canonical-contract.ts para el mismo
+# contrato del lado Mobile (duplicado deliberado: no hay codegen compartido
+# en este repo, mismo patron ya usado para otros contratos LAB/Mobile).
+# Los bloques de plantilla (HeaderBlock/ClientBlock/EquipmentBlock/...)
+# siguen existiendo para layout/PDF; sencillamente esta clave ya no
+# participa en la resolucion de campos de captura comun ni en su
+# obligatoriedad -- ver _validate_specialized_template_fields.
+CANONICAL_FIELD_SHEET_KEYS = frozenset(
+    {
+        # Identidad documental (readonly, snapshot de la OT)
+        "work_order_number",
+        "reserved_certificate_folio",
+        # Cliente (readonly, snapshot del cliente documental por equipo)
+        "attention",
+        "company",
+        "address",
+        # Equipo (readonly, snapshot de LabWorkOrderEquipment)
+        "instrument",
+        "brand",
+        "model",
+        "serial_number",
+        "internal_id",
+        # Equipo (captura tecnica)
+        "scope",
+        "minimum_division",
+        "location",
+        # Calibracion (reception_date es readonly; el resto es captura tecnica)
+        "reception_date",
+        "calibration_place",
+        "calibration_date",
+        "next_calibration_date",
+        # Ambientales (captura tecnica)
+        "environment_humidity_start",
+        "environment_humidity_end",
+        "environment_temperature_start",
+        "environment_temperature_end",
+        # Condicion / observaciones (captura tecnica)
+        "equipment_general_condition",
+        "consider_equipment_deviations",
+        "observations",
+    }
+)
+
 
 def _json_safe(value):
     if isinstance(value, datetime):
@@ -332,6 +379,52 @@ def _validate_results_rows(field_sheet: FieldSheet) -> None:
         )
 
 
+_FIELD_SHEET_KEY_ALIASES = {
+    "humidity_start": "environment_humidity_start",
+    "humidity_end": "environment_humidity_end",
+    "temperature_start": "environment_temperature_start",
+    "temperature_end": "environment_temperature_end",
+}
+
+
+def _validate_canonical_common_fields(field_sheet: FieldSheet) -> list[str]:
+    """Autoridad FIJA de obligatoriedad para el contrato canonico comun
+    (ver CANONICAL_FIELD_SHEET_KEYS) -- ninguna plantilla participa aqui.
+
+    Hoy no agrega requisitos propios mas alla de los ya fijos que existian
+    antes de esta separacion (initial_condition/final_condition/
+    observations_or_evidence_notes, ver _validate_ready_to_complete): esos
+    quedan como estaban porque no son parte del contrato canonico nuevo.
+    Este es el punto unico donde una futura obligatoriedad canonica fija
+    (independiente de plantilla) se agregaria."""
+    return []
+
+
+def _validate_specialized_template_fields(field_sheet: FieldSheet) -> list[str]:
+    """Autoridad de plantilla: SOLO para claves fuera del contrato canonico
+    comun. Una plantilla (o una FieldSheetTemplateDefinition editada desde
+    Admin) puede declarar un campo especializado required=True y este lazo
+    lo exige -- pero si esa clave (o su alias) pertenece al contrato
+    canonico, se ignora por completo: la plantilla no tiene autoridad sobre
+    la obligatoriedad de un campo canonico."""
+    missing_fields: list[str] = []
+    capture_values = field_sheet.capture_values or {}
+    for block in (field_sheet.template_definition_json or {}).get("blocks") or []:
+        for field in block.get("fields") or []:
+            key = field.get("key")
+            model_key = _FIELD_SHEET_KEY_ALIASES.get(key, key)
+            if model_key in CANONICAL_FIELD_SHEET_KEYS or key in CANONICAL_FIELD_SHEET_KEYS:
+                continue
+            if not field.get("required"):
+                continue
+            value = getattr(field_sheet, model_key, None)
+            if value in (None, ""):
+                value = capture_values.get(key)
+            if value in (None, "") and key not in missing_fields:
+                missing_fields.append(key)
+    return missing_fields
+
+
 def _validate_ready_to_complete(field_sheet: FieldSheet) -> None:
     missing_fields = []
     required_fields = {
@@ -342,24 +435,10 @@ def _validate_ready_to_complete(field_sheet: FieldSheet) -> None:
         if not value or not value.strip():
             missing_fields.append(field_name)
 
-    field_aliases = {
-        "humidity_start": "environment_humidity_start",
-        "humidity_end": "environment_humidity_end",
-        "temperature_start": "environment_temperature_start",
-        "temperature_end": "environment_temperature_end",
-    }
-    capture_values = field_sheet.capture_values or {}
-    for block in (field_sheet.template_definition_json or {}).get("blocks") or []:
-        for field in block.get("fields") or []:
-            if not field.get("required"):
-                continue
-            key = field.get("key")
-            model_key = field_aliases.get(key, key)
-            value = getattr(field_sheet, model_key, None)
-            if value in (None, ""):
-                value = capture_values.get(key)
-            if value in (None, "") and key not in missing_fields:
-                missing_fields.append(key)
+    missing_fields.extend(_validate_canonical_common_fields(field_sheet))
+    for key in _validate_specialized_template_fields(field_sheet):
+        if key not in missing_fields:
+            missing_fields.append(key)
 
     has_observations = bool(field_sheet.observations and field_sheet.observations.strip())
     has_evidence = bool(field_sheet.evidence_notes and field_sheet.evidence_notes.strip())

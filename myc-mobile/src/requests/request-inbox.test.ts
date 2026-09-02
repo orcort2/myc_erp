@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { actionableRequestCount, filterTicketsByKind, visibleRequestKinds } from './request-inbox';
 import type { LabWorkOrderGroupRequest } from '../types/lab-work-order';
@@ -37,4 +40,19 @@ test('cierre UX 2026-09: "Reaperturas" filtra por tipo, no sólo muestra/oculta 
   // oculta completa vía visibleRequestKinds cuando kind === 'groups'.
   assert.deepEqual(filterTicketsByKind(tickets, 'all'), tickets);
   assert.deepEqual(filterTicketsByKind(tickets, 'groups'), tickets);
+});
+
+test('la solicitud linked_folio presenta identidad real del equipo al Admin', () => {
+  const source = readFileSync(
+    resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/tickets.tsx'),
+    'utf8',
+  );
+  for (const field of [
+    'equipment_position', 'equipment_instrument', 'equipment_brand',
+    'equipment_model', 'equipment_identification', 'equipment_serial_number',
+    'equipment_folio_status',
+  ]) {
+    assert.match(source, new RegExp(`selected\\.${field}`));
+  }
+  assert.doesNotMatch(source, /selected\.type === 'linked_folio'[\s\S]*?Equipo #\{selected\.equipment_id\}/);
 });
