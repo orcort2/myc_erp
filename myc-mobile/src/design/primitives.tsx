@@ -1,0 +1,203 @@
+import type { ReactNode } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+
+import { colors, radius, spacing, typography } from '@/src/design/tokens';
+
+/**
+ * Fase 6: primitives compartidos del flujo LAB/FieldSheets -- reemplazan el
+ * patrón de StyleSheet ad hoc repetido por pantalla. No son obligatorios
+ * fuera de esta área; sí evitan seguir duplicando el mismo botón/card/badge
+ * con estilos ligeramente distintos cada vez.
+ */
+
+export function Screen({ children }: { children: ReactNode }) {
+  return <View style={styles.screen}>{children}</View>;
+}
+
+export function Section({ title, description, children }: { title?: string; description?: string; children: ReactNode }) {
+  return (
+    <View style={styles.section}>
+      {title && <Text style={styles.sectionTitle}>{title}</Text>}
+      {description && <Text style={styles.sectionDescription}>{description}</Text>}
+      {children}
+    </View>
+  );
+}
+
+export function Card({ children }: { children: ReactNode }) {
+  return <View style={styles.card}>{children}</View>;
+}
+
+export function Field({ label, value, onChange, placeholder, multiline, keyboardType }: {
+  label: string;
+  value: string;
+  onChange(value: string): void;
+  placeholder?: string;
+  multiline?: boolean;
+  keyboardType?: 'default' | 'numeric' | 'decimal-pad' | 'email-address' | 'phone-pad';
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <TextInput
+        keyboardType={keyboardType ?? 'default'}
+        multiline={multiline}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textSubtle}
+        style={[styles.input, multiline && styles.inputMultiline]}
+        value={value}
+      />
+    </View>
+  );
+}
+
+/** Datos congelados/de sólo lectura (modalidad, folio, cliente documental,
+ * OT, equipo) -- se presentan como información, nunca como un input
+ * deshabilitado ambiguo. */
+export function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.readOnlyValue}>{value || '—'}</Text>
+    </View>
+  );
+}
+
+export function ActionRow({ children }: { children: ReactNode }) {
+  return <View style={styles.actionRow}>{children}</View>;
+}
+
+type ButtonProps = { label: string; onPress(): void; disabled?: boolean; loading?: boolean };
+
+export function PrimaryButton({ label, onPress, disabled, loading }: ButtonProps) {
+  return (
+    <Pressable disabled={disabled || loading} onPress={onPress} style={[styles.primaryButton, disabled && styles.buttonDisabled]}>
+      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>{label}</Text>}
+    </Pressable>
+  );
+}
+
+export function SecondaryButton({ label, onPress, disabled, loading }: ButtonProps) {
+  return (
+    <Pressable disabled={disabled || loading} onPress={onPress} style={[styles.secondaryButton, disabled && styles.buttonDisabled]}>
+      {loading ? <ActivityIndicator color={colors.primary} /> : <Text style={styles.secondaryButtonText}>{label}</Text>}
+    </Pressable>
+  );
+}
+
+export function DangerButton({ label, onPress, disabled, loading }: ButtonProps) {
+  return (
+    <Pressable disabled={disabled || loading} onPress={onPress} style={[styles.dangerButton, disabled && styles.buttonDisabled]}>
+      {loading ? <ActivityIndicator color={colors.dangerStrong} /> : <Text style={styles.dangerButtonText}>{label}</Text>}
+    </Pressable>
+  );
+}
+
+export type StatusTone = 'info' | 'warning' | 'success' | 'danger' | 'purple' | 'neutral';
+
+const TONE_COLOR: Record<StatusTone, string> = {
+  info: colors.info,
+  warning: colors.warning,
+  success: colors.success,
+  danger: colors.danger,
+  purple: colors.purple,
+  neutral: colors.textSubtle,
+};
+
+export function StatusBadge({ label, tone = 'neutral' }: { label: string; tone?: StatusTone }) {
+  const tint = TONE_COLOR[tone];
+  return (
+    <View style={[styles.badge, { borderColor: tint }]}>
+      <Text style={[styles.badgeText, { color: tint }]}>{label}</Text>
+    </View>
+  );
+}
+
+export function AlertBanner({ tone = 'info', children }: { tone?: 'info' | 'warning' | 'danger' | 'success'; children: ReactNode }) {
+  const tint = tone === 'danger' ? colors.danger : tone === 'warning' ? colors.warningStrong : tone === 'success' ? colors.success : colors.info;
+  return (
+    <View style={[styles.alert, { borderColor: tint }]}>
+      <Text style={[styles.alertText, { color: tint }]}>{children}</Text>
+    </View>
+  );
+}
+
+export function EmptyState({ title, description }: { title: string; description?: string }) {
+  return (
+    <View style={styles.emptyState}>
+      <Text style={styles.emptyTitle}>{title}</Text>
+      {description && <Text style={styles.emptyDescription}>{description}</Text>}
+    </View>
+  );
+}
+
+export function LoadingState({ label }: { label?: string }) {
+  return (
+    <View style={styles.loadingState}>
+      <ActivityIndicator color={colors.primary} />
+      {label && <Text style={styles.loadingLabel}>{label}</Text>}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: colors.background },
+  section: { gap: spacing.sm, marginBottom: spacing.lg },
+  sectionTitle: { ...typography.sectionTitle, color: colors.text },
+  sectionDescription: { ...typography.meta, color: colors.textMuted },
+  card: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+  },
+  field: { gap: spacing.xs, marginBottom: spacing.sm },
+  label: { ...typography.label, color: colors.textMuted },
+  input: {
+    backgroundColor: colors.surface,
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
+  },
+  inputMultiline: { minHeight: 90, paddingTop: spacing.sm, textAlignVertical: 'top' },
+  readOnlyValue: { ...typography.body, color: colors.text, paddingVertical: spacing.xs },
+  actionRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  primaryButton: {
+    alignItems: 'center', backgroundColor: colors.primary, borderRadius: radius.md,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg, flex: 1,
+  },
+  primaryButtonText: { color: '#fff', fontWeight: '800' },
+  secondaryButton: {
+    alignItems: 'center', borderColor: colors.primary, borderRadius: radius.md, borderWidth: 1,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg, flex: 1,
+  },
+  secondaryButtonText: { color: colors.primary, fontWeight: '800' },
+  dangerButton: {
+    alignItems: 'center', borderColor: colors.danger, borderRadius: radius.md, borderWidth: 1,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg, flex: 1,
+  },
+  dangerButtonText: { color: colors.dangerStrong, fontWeight: '800' },
+  buttonDisabled: { opacity: 0.42 },
+  badge: {
+    alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1,
+    paddingHorizontal: spacing.sm, paddingVertical: 2,
+  },
+  badgeText: { fontSize: 12, fontWeight: '800' },
+  alert: {
+    borderRadius: radius.md, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md,
+    backgroundColor: colors.surface,
+  },
+  alertText: { fontSize: 14, fontWeight: '600' },
+  emptyState: { alignItems: 'center', padding: spacing.xl, gap: spacing.xs },
+  emptyTitle: { ...typography.sectionTitle, color: colors.text },
+  emptyDescription: { ...typography.meta, color: colors.textMuted, textAlign: 'center' },
+  loadingState: { alignItems: 'center', padding: spacing.xl, gap: spacing.sm },
+  loadingLabel: { ...typography.meta, color: colors.textMuted },
+});

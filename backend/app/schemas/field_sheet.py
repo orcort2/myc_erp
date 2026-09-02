@@ -219,6 +219,13 @@ class FieldSheetRead(FieldSheetBase):
     final_pdf_sha256: str | None = None
     final_pdf_template_definition_version: int | None = None
     final_pdf_generated_at: datetime | None = None
+    # Fase 6: modelo de revisión LAB -- current es siempre la única
+    # is_current=True por lab_equipment_id; supersedes_field_sheet_id
+    # encadena hacia la revisión anterior sin borrarla. Sin efecto para
+    # FieldSheets productivas (siempre su propia revisión 1 vigente).
+    revision_number: int = 1
+    is_current: bool = True
+    supersedes_field_sheet_id: int | None = None
     institutional_snapshot: dict | None = None
     results_rows: list[FieldSheetResultRead] = Field(default_factory=list)
     calibration_procedure: CalibrationProcedureRead | None = None

@@ -19,6 +19,9 @@ export type LabEquipment = {
   brand: string;
   identification: string;
   serial_number: string;
+  // Fase 6: identidad del equipo (mismo criterio que Equipment productivo).
+  model: string | null;
+  range_or_capacity: string | null;
   report_number: string | null;
   is_good_condition: boolean;
   service_type: 'accredited' | 'traceable' | 'linked' | null;
@@ -109,7 +112,8 @@ export type GeneralData = {
 };
 
 export type EquipmentData = Pick<LabEquipment,
-  'instrument' | 'brand' | 'identification' | 'serial_number' | 'report_number' | 'is_good_condition'
+  'instrument' | 'brand' | 'model' | 'range_or_capacity' | 'identification' | 'serial_number'
+  | 'report_number' | 'is_good_condition'
 >;
 
 export type LabClient = {
@@ -126,26 +130,74 @@ export type LinkedCompany = {
   default_certificate_prefix: string;
 };
 
+// Fase 6: contrato de campo declarativo completo (mismo shape que
+// backend/app/schemas/field_sheet_template.py::FieldSheetFieldRead) -- la
+// autoridad principal para label/placeholder/orden/tipo/requerido debe venir
+// de aquí cuando el backend lo puebla; FIELD_LABELS en Mobile queda sólo
+// como fallback legacy para cuando un bloque no trae field_type/label
+// propios (ver src/services/field-sheet-contract.ts).
+export type FieldSheetFieldContract = {
+  key: string;
+  label: string;
+  field_type?: string;
+  required?: boolean;
+  visible?: boolean;
+  order?: number;
+  placeholder?: string | null;
+  help_text?: string | null;
+  options?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type FieldSheetResultColumn = {
+  key: string;
+  label: string;
+  source?: string | null;
+  width?: string | null;
+  unit?: string | null;
+  editable?: boolean;
+  required?: boolean;
+  data_type?: string;
+  suggested_unit?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type FieldSheetResultSection = {
+  key: string;
+  title: string;
+  rows: number;
+  columns: FieldSheetResultColumn[];
+  allow_add_rows?: boolean;
+  allow_remove_rows?: boolean;
+  min_rows?: number | null;
+  max_rows?: number | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type FieldSheetTemplateBlock = {
+  key: string;
+  block_key?: string | null;
+  title: string;
+  block_type: string;
+  order?: number | null;
+  visible?: boolean;
+  capture_visible?: boolean;
+  print_visible?: boolean;
+  pdf_visible?: boolean;
+  visible_fields?: string[];
+  fields?: FieldSheetFieldContract[];
+  sections?: { key: string }[];
+  required?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
 export type FieldSheetTemplate = {
   template_key: string;
   name: string;
   version: number;
-  blocks: {
-    key: string;
-    title: string;
-    block_type: string;
-    capture_visible?: boolean;
-    visible_fields?: string[];
-    fields?: { key: string; label: string; required?: boolean; visible?: boolean; field_type?: string }[];
-  }[];
-  result_sections: {
-    key: string;
-    title: string;
-    rows: number;
-    allow_add_rows?: boolean;
-    max_rows?: number | null;
-    columns: { key: string; label: string; source?: string; required?: boolean; editable?: boolean }[];
-  }[];
+  table_family?: string;
+  blocks: FieldSheetTemplateBlock[];
+  result_sections: FieldSheetResultSection[];
 };
 
 export type FieldSheetResultRow = {
@@ -164,6 +216,12 @@ export type FieldSheetResultRow = {
 export type LabFieldSheet = {
   id: number;
   status: string;
+  // Fase 6: modelo de revisión -- current es siempre la única is_current=true
+  // por equipo; supersedes_field_sheet_id encadena hacia la anterior sin
+  // borrarla. Mobile nunca decide esto, sólo lo muestra si aplica.
+  revision_number: number;
+  is_current: boolean;
+  supersedes_field_sheet_id: number | null;
   template_key: string;
   template_definition: FieldSheetTemplate;
   capture_values: Record<string, unknown>;

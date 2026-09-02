@@ -64,6 +64,12 @@ class FieldSheetOperationalContractTests(unittest.TestCase):
             certificate_client_mode="billing",
             apply_certificate_client_to_order=False,
             capture_values=None,
+            # Fase 6: revision_number/is_current son NOT NULL con default a
+            # nivel Python (aplican al INSERT real, no a un objeto en memoria
+            # nunca persistido) -- mismo motivo por el que is_active ya se
+            # pasaba explícito arriba.
+            revision_number=1,
+            is_current=True,
         )
         sheet.created_at = datetime.now()
         sheet.updated_at = datetime.now()

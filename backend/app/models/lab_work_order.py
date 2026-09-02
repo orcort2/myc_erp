@@ -232,6 +232,15 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     brand: Mapped[str] = mapped_column(String(160), nullable=False)
     identification: Mapped[str] = mapped_column(String(160), nullable=False)
     serial_number: Mapped[str] = mapped_column(String(160), nullable=False)
+    # Fase 6: model y range_or_capacity ("scope" en capture_values/PDF) son
+    # identidad del EQUIPO -- mismo criterio que Equipment (productivo,
+    # app/models/equipment.py), que ya los tiene como columnas propias del
+    # equipo, no del documento de captura. location/minimum_division en
+    # cambio ya viven en FieldSheet (app/models/field_sheet.py) porque son
+    # datos de la captura/servicio, no del equipo -- se quedan ahí sin
+    # cambios; no se duplican aquí sólo para prellenar.
+    model: Mapped[str | None] = mapped_column(String(160))
+    range_or_capacity: Mapped[str | None] = mapped_column(String(180))
     report_number: Mapped[str | None] = mapped_column(String(160))
     is_good_condition: Mapped[bool] = mapped_column(Boolean, nullable=False)
     service_type: Mapped[str | None] = mapped_column(String(20), index=True)
@@ -267,8 +276,13 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     work_order: Mapped[LabWorkOrder] = relationship(back_populates="equipment")
     linked_company: Mapped["LinkedCompany | None"] = relationship()
     final_lab_client: Mapped["LabClient | None"] = relationship(foreign_keys=[final_lab_client_id])
-    field_sheet: Mapped["FieldSheet | None"] = relationship(
-        back_populates="lab_equipment", uselist=False
+    # Fase 6: todas las revisiones (ver FieldSheet.revision_number/is_current)
+    # -- ya no 1:1. Callers que necesiten precargar la hoja vigente deben usar
+    # selectinload(LabWorkOrderEquipment.field_sheets), no .field_sheet (esa
+    # es la property de abajo, resuelta en Python sobre lo ya cargado).
+    field_sheets: Mapped[list["FieldSheet"]] = relationship(
+        back_populates="lab_equipment",
+        order_by="FieldSheet.revision_number.desc()",
     )
 
     @property
@@ -282,6 +296,14 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     @property
     def certificates(self) -> list[object]:
         return []
+
+    @property
+    def field_sheet(self) -> "FieldSheet | None":
+        """Fase 6: la revisión vigente (is_current=True) -- todo el código LAB
+        preexistente sigue usando equipment.field_sheet sin cambios; éste es
+        el único punto que resuelve "cuál revisión es la vigente" entre las
+        que ya se cargaron en field_sheets. Nunca dispara una query nueva."""
+        return next((item for item in self.field_sheets if item.is_current), None)
 
 
 class LabWorkOrderSignatureSession(IntegerPkMixin, TimestampMixin, Base):

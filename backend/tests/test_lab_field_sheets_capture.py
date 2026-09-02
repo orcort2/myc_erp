@@ -149,7 +149,7 @@ def equipment_payload(index: int, **extra) -> dict:
     }
 
 
-def _setup_order_with_equipment(client, headers, *, count: int = 2) -> tuple[int, list[int]]:
+def _setup_order_with_equipment(client, headers, *, count: int = 2, **equipment_extra) -> tuple[int, list[int]]:
     order = client.post(
         "/api/mobile/v1/technician/lab-work-orders", json=create_payload(), headers=headers
     )
@@ -159,7 +159,7 @@ def _setup_order_with_equipment(client, headers, *, count: int = 2) -> tuple[int
     for index in range(1, count + 1):
         added = client.post(
             f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
-            json=equipment_payload(index),
+            json=equipment_payload(index, **equipment_extra),
             headers=headers,
         )
         assert added.status_code == 201, added.text
@@ -1112,9 +1112,13 @@ def test_documentary_client_is_resolved_per_equipment_not_from_the_receiving_ord
 
 
 def test_field_sheet_capture_values_prefill_from_available_equipment_fields(lab_context):
-    """Prefill con todos los datos hoy disponibles en LabWorkOrderEquipment --
-    ni menos (no se ignora ningún campo existente) ni más (no se inventan
-    model/scope/location/minimum_division, que ese modelo aún no tiene)."""
+    """Fase 6: prefill con todos los datos hoy disponibles en
+    LabWorkOrderEquipment -- model/scope (range_or_capacity) ya son columnas
+    propias del equipo (mismo criterio que Equipment productivo) y se
+    prellenan; location/minimum_division siguen siendo datos de la
+    captura/servicio (ya viven en FieldSheet) y no se prellenan desde el
+    equipo. Sin model/scope capturados en el equipo, quedan explícitamente
+    None (no se omite la clave, para que el contrato sea estable)."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
@@ -1130,7 +1134,28 @@ def test_field_sheet_capture_values_prefill_from_available_equipment_fields(lab_
         "brand": "MYC Test",
         "serial_number": "SER-1",
         "internal_id": "ID-1",
+        "model": None,
+        "scope": None,
     }
+
+
+def test_field_sheet_capture_values_prefill_includes_model_and_scope_when_captured(lab_context):
+    """Fase 6: cuando el equipo LAB sí trae model/range_or_capacity, la
+    FieldSheet los prefillea igual que instrument/brand/serial_number."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(
+        client, headers, count=1, model="Modelo X-100", range_or_capacity="0-100 kg",
+    )
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    capture_values = created.json()["capture_values"]
+    assert capture_values["model"] == "Modelo X-100"
+    assert capture_values["scope"] == "0-100 kg"
 
 
 def test_field_sheet_template_selection_freezes_snapshot_and_version(lab_context):

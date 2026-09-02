@@ -8,6 +8,9 @@ function sheet(overrides: Partial<LabFieldSheet> = {}): LabFieldSheet {
   return {
     id: 1,
     status: 'draft',
+    revision_number: 1,
+    is_current: true,
+    supersedes_field_sheet_id: null,
     template_key: 'vernier',
     template_definition: { template_key: 'vernier', name: 'Vernier', version: 1, blocks: [], result_sections: [] },
     capture_values: { instrument: 'Vernier 1' },

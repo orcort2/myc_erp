@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type {
-  FieldSheetResultRow,
   FieldSheetTemplate,
   LabEquipment,
   LabFieldSheet,
@@ -11,7 +10,14 @@ import type {
 import { labelPrintService } from '@/src/services/label-print-service';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
+import { resolveBlockFields, keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
+import { computeOverallProgress } from '@/src/services/field-sheet-progress';
 import { ApiError } from '@/src/api/client';
+import {
+  ActionRow, Card, EmptyState, Field, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
+} from '@/src/design/primitives';
+import { colors, spacing } from '@/src/design/tokens';
+import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldSheetResultsWorkspace';
 
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -30,8 +36,10 @@ const serviceLabels = { accredited: 'Acreditado', traceable: 'Trazable', linked:
 // Se muestran de solo lectura y nunca se envían de vuelta.
 const readOnlyFields = new Set(['work_order_number', 'reserved_certificate_folio']);
 
-// Etiquetas en español para las claves declaradas en visible_fields de los bloques
-// canónicos (backend/app/services/field_sheet_templates.py: BLOCK_FAMILY_DEFAULTS).
+// Fase 6: fallback LEGACY -- la autoridad principal es block.fields[] del
+// snapshot (ver resolveBlockFields/field-sheet-contract.ts). Este mapa sólo
+// cubre las claves que el catálogo legacy declara en visible_fields sin
+// traer todavía una entrada rica en fields[].
 const FIELD_LABELS: Record<string, string> = {
   work_order_number: 'No. de orden de trabajo',
   reserved_certificate_folio: 'Folio de certificado',
@@ -74,13 +82,27 @@ function buildValues(entity: LabFieldSheet): Record<string, unknown> {
   return { ...entity.capture_values, ...picked };
 }
 
+function statusTone(status: string): 'warning' | 'info' | 'success' {
+  if (status === 'completed') return 'success';
+  if (status === 'draft') return 'warning';
+  return 'info';
+}
+
+/**
+ * Fase 6: flujo principal de captura -- contexto OT/equipo, datos readonly,
+ * campos ordinarios, Resultados (fuera del formulario, vía
+ * FieldSheetResultsWorkspace), acciones guardar/completar. No crea una
+ * pantalla distinta por instrumento: renderiza según block/section
+ * genéricamente, igual que antes de esta fase, ahora con el contrato de
+ * campo completo del snapshot y sin tablas inline.
+ */
 export function LabTechnicalCapture({ canCapture, external, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
   const [activeEquipment, setActiveEquipment] = useState<LabEquipment | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [sheet, setSheet] = useState<LabFieldSheet | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({});
-  const [rows, setRows] = useState<FieldSheetResultRow[]>([]);
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'linked_folio' | 'field_sheet_template' | null>(null);
   const [requestedFolio, setRequestedFolio] = useState('');
   const [ticketReason, setTicketReason] = useState('');
@@ -102,14 +124,10 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
   }, [request]);
 
   const definition = sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
-  const visibleFields = useMemo(() => (definition?.blocks ?? [])
+  const ordinaryFields = (definition?.blocks ?? [])
     .filter((block) => block.capture_visible !== false && !block.block_type.includes('Table'))
-    .flatMap((block) => (block.visible_fields ?? []).map((key) => ({
-      key,
-      label: FIELD_LABELS[key] ?? key,
-      readOnly: readOnlyFields.has(key),
-      blockTitle: block.title,
-    }))), [definition]);
+    .flatMap((block) => resolveBlockFields(block, { fallbackLabels: FIELD_LABELS, readOnlyKeys: readOnlyFields }));
+  const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
 
   async function openSheet(equipment: LabEquipment) {
     setActiveEquipment(equipment);
@@ -117,7 +135,6 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
     if (!equipment.field_sheet_id) {
       setSheet(null);
       setValues({});
-      setRows([]);
       return;
     }
     setBusy(true);
@@ -128,7 +145,6 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       setSheet(loaded);
       setSelectedTemplate(loaded.template_key);
       setValues(buildValues(loaded));
-      setRows(loaded.results_rows.map((row) => ({ ...row, row_data: { ...(row.row_data ?? {}) } })));
     } catch (error) {
       Alert.alert('No fue posible abrir la hoja', error instanceof Error ? error.message : 'Intenta nuevamente');
       setActiveEquipment(null);
@@ -145,7 +161,6 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       );
       setSheet(created);
       setValues(buildValues(created));
-      setRows(created.results_rows.map((row) => ({ ...row, row_data: { ...(row.row_data ?? {}) } })));
       await refreshWorkOrder();
     } catch (error) {
       Alert.alert('No fue posible crear la hoja', error instanceof Error ? error.message : 'Revisa el folio y la plantilla');
@@ -156,22 +171,17 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
     setValues((current) => ({ ...current, [key]: value }));
   }
 
-  function setRowValue(index: number, key: string, value: string) {
-    setRows((current) => current.map((row, rowIndex) => rowIndex === index
-      ? { ...row, row_data: { ...row.row_data, [key]: value } }
-      : row));
-  }
-
-  function addRow(sectionKey: string) {
-    const section = definition?.result_sections.find((item) => item.key === sectionKey);
-    if (!section?.allow_add_rows) return;
-    const sectionRows = rows.filter((row) => row.section_key === sectionKey);
-    if (section.max_rows && sectionRows.length >= section.max_rows) return;
-    setRows((current) => [...current, {
-      section_key: sectionKey,
-      row_number: sectionRows.length + 1,
-      row_data: {},
-    }]);
+  // Fase 6: Resultados se guarda de forma independiente y explícita dentro
+  // del workspace (nunca un PATCH por tecla desde el formulario principal).
+  // saveSheet más abajo reenvía sheet.results_rows tal cual -- ya persistidos
+  // aquí -- para no perderlos cuando el técnico use "Guardar borrador".
+  async function saveResultsRows(rows: LabFieldSheet['results_rows']) {
+    if (!activeEquipment) return;
+    const saved = await request<LabFieldSheet>(
+      `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
+      { method: 'PATCH', body: JSON.stringify({ results_rows: rows }) },
+    );
+    setSheet(saved);
   }
 
   async function saveSheet(complete = false) {
@@ -182,7 +192,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       const { direct, captureValues } = normalizeFieldSheetPayload(values, sheet);
       saved = await request<LabFieldSheet>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
-        { method: 'PATCH', body: JSON.stringify({ ...direct, capture_values: captureValues, results_rows: rows }) },
+        { method: 'PATCH', body: JSON.stringify({ ...direct, capture_values: captureValues, results_rows: sheet.results_rows }) },
       );
     } catch (error) {
       // A) payload inválido técnicamente en el PATCH (tipos, formato): no es
@@ -274,24 +284,28 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
 
   if (activeEquipment) {
     if (ticketMode === 'field_sheet_template') return (
-      <View style={styles.panel}>
+      <ScrollView contentContainerStyle={styles.panel}>
         <Text style={styles.title}>No encuentro la hoja necesaria</Text>
         <Text style={styles.meta}>{activeEquipment.instrument} · OT {workOrder.folio}</Text>
-        <Input label="Motivo" value={ticketReason} onChange={setTicketReason} />
-        <Input label="Descripción" value={ticketDescription} onChange={setTicketDescription} multiline />
-        <Pressable disabled={busy} style={styles.primary} onPress={requestFieldSheetTemplate}><Text style={styles.primaryText}>Enviar Ticket</Text></Pressable>
-        <Pressable style={styles.secondary} onPress={() => setTicketMode(null)}><Text style={styles.secondaryText}>Volver</Text></Pressable>
-      </View>
+        <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
+        <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
+        <ActionRow>
+          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
+          <PrimaryButton label="Enviar Ticket" loading={busy} onPress={requestFieldSheetTemplate} />
+        </ActionRow>
+      </ScrollView>
     );
     if (ticketMode) return (
-      <View style={styles.panel}>
+      <ScrollView contentContainerStyle={styles.panel}>
         <Text style={styles.title}>{ticketMode === 'linked_folio' ? 'Solicitar folio Vinculado' : 'Folio MYC manual'}</Text>
-        {ticketMode === 'manual_myc_folio' && <Input label="Folio solicitado" value={requestedFolio} onChange={setRequestedFolio} />}
-        <Input label="Motivo" value={ticketReason} onChange={setTicketReason} />
-        <Input label="Descripción" value={ticketDescription} onChange={setTicketDescription} multiline />
-        <Pressable disabled={busy} style={styles.primary} onPress={requestFolio}><Text style={styles.primaryText}>Enviar Ticket</Text></Pressable>
-        <Pressable style={styles.secondary} onPress={() => setTicketMode(null)}><Text style={styles.secondaryText}>Volver</Text></Pressable>
-      </View>
+        {ticketMode === 'manual_myc_folio' && <Field label="Folio solicitado" onChange={setRequestedFolio} value={requestedFolio} />}
+        <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
+        <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
+        <ActionRow>
+          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
+          <PrimaryButton label="Enviar Ticket" loading={busy} onPress={requestFolio} />
+        </ActionRow>
+      </ScrollView>
     );
     // Fase 4: contexto administrativo de sólo lectura -- servicio, folio y
     // cliente documental ya quedaron congelados en recepción (draft) y no se
@@ -301,52 +315,97 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       ?? (activeEquipment.folio_status === 'pending' ? 'FOLIO PENDIENTE' : 'FOLIO SIN RESOLVER');
     const documentaryClientLabel = resolveDocumentaryClientLabel(activeEquipment, workOrder);
     return (
-      <View style={styles.panel}>
+      <ScrollView contentContainerStyle={styles.panel}>
         <Text style={styles.eyebrow}>OT {workOrder.folio} · EQUIPO {activeEquipment.position}</Text>
         <Text style={styles.title}>{activeEquipment.instrument}</Text>
-        <Text style={styles.meta}>{activeEquipment.brand} · {activeEquipment.serial_number}</Text>
-        <Text style={styles.meta}>{modalityLabel} · {folioLabel}</Text>
-        <Text style={styles.label}>Cliente documental</Text>
-        <Text style={styles.meta}>{documentaryClientLabel}</Text>
+
+        <Card>
+          <ReadOnlyField label="Equipo" value={`${activeEquipment.brand} · ${activeEquipment.serial_number}`} />
+          <ReadOnlyField label="Modalidad · Folio" value={`${modalityLabel} · ${folioLabel}`} />
+          <ReadOnlyField label="Cliente documental" value={documentaryClientLabel} />
+        </Card>
+
         {!sheet ? <>
-          <Text style={styles.label}>Selecciona hoja de campo</Text>
-          {templates.map((template) => (
-            <Pressable key={template.template_key} onPress={() => setSelectedTemplate(template.template_key)} style={[styles.choice, selectedTemplate === template.template_key && styles.choiceActive]}>
-              <Text>{template.name} · v{template.version}</Text>
-            </Pressable>
-          ))}
+          <Section title="Selecciona hoja de campo">
+            {templates.map((template) => (
+              <Pressable key={template.template_key} onPress={() => setSelectedTemplate(template.template_key)} style={[styles.choice, selectedTemplate === template.template_key && styles.choiceActive]}>
+                <Text>{template.name} · v{template.version}</Text>
+              </Pressable>
+            ))}
+          </Section>
           {activeEquipment.service_type === 'linked' && activeEquipment.folio_status === 'pending' && !external && (
-            <Pressable style={styles.secondary} onPress={() => setTicketMode('linked_folio')}><Text style={styles.secondaryText}>Ticket · Resolver folio Vinculado</Text></Pressable>
+            <SecondaryButton label="Ticket · Resolver folio Vinculado" onPress={() => setTicketMode('linked_folio')} />
           )}
           {activeEquipment.service_type !== 'linked' && activeEquipment.automatic_certificate_folio && (
-            <Pressable style={styles.secondary} onPress={() => setTicketMode('manual_myc_folio')}><Text style={styles.secondaryText}>Ticket · Folio MYC manual</Text></Pressable>
+            <SecondaryButton label="Ticket · Folio MYC manual" onPress={() => setTicketMode('manual_myc_folio')} />
           )}
-          <Pressable disabled={!selectedTemplate || busy || !canCapture} style={[styles.primary, (!selectedTemplate || !canCapture) && styles.disabled]} onPress={createSheet}><Text style={styles.primaryText}>Abrir captura</Text></Pressable>
-          <Pressable style={styles.secondary} onPress={() => setTicketMode('field_sheet_template')}><Text style={styles.secondaryText}>No encuentro la hoja necesaria</Text></Pressable>
+          <ActionRow>
+            <PrimaryButton disabled={!selectedTemplate || !canCapture} label="Abrir captura" loading={busy} onPress={createSheet} />
+          </ActionRow>
+          <SecondaryButton label="No encuentro la hoja necesaria" onPress={() => setTicketMode('field_sheet_template')} />
         </> : <>
-          <Text style={styles.status}>Estado: {sheet.status}</Text>
-          {visibleFields.map((field) => field.readOnly
-            ? <View key={field.key} style={styles.inputGroup}>
-                <Text style={styles.label}>{field.label}</Text>
-                <Text style={styles.status}>{String((sheet as unknown as Record<string, unknown>)[field.key] ?? '-')}</Text>
-              </View>
-            : <Input key={field.key} label={field.label} value={String(values[field.key] ?? '')} onChange={(value) => setField(field.key, value)} />)}
-          {(definition?.result_sections ?? []).map((section) => <View key={section.key} style={styles.table}>
-            <Text style={styles.tableTitle}>{section.title}</Text>
-            {rows.map((row, rowIndex) => row.section_key === section.key ? <View key={`${section.key}-${row.row_number}`} style={styles.tableRow}>
-              <Text style={styles.rowNumber}>{row.row_number}</Text>
-              {section.columns.filter((column) => column.editable !== false).map((column) => <TextInput key={column.key} placeholder={column.label} style={styles.tableInput} value={String(row.row_data[column.source ?? column.key] ?? '')} onChangeText={(value) => setRowValue(rowIndex, column.source ?? column.key, value)} />)}
-            </View> : null)}
-            {section.allow_add_rows && <Pressable style={styles.addRow} onPress={() => addRow(section.key)}><Text style={styles.addRowText}>＋</Text></Pressable>}
-          </View>)}
-          {canCapture && sheet.status !== 'completed' && <>
-            <Pressable disabled={busy} style={styles.secondary} onPress={() => saveSheet(false)}><Text style={styles.secondaryText}>Guardar borrador</Text></Pressable>
-            <Pressable disabled={busy} style={styles.primary} onPress={() => saveSheet(true)}><Text style={styles.primaryText}>Completar hoja</Text></Pressable>
-          </>}
-          <Pressable disabled={!labelPrintService.available} style={[styles.secondary, !labelPrintService.available && styles.disabled]}><Text style={styles.secondaryText}>Imprimir etiqueta 50×30 · Próxima fase</Text></Pressable>
+          <View style={styles.statusRow}>
+            <StatusBadge label={sheet.status.toUpperCase()} tone={statusTone(sheet.status)} />
+          </View>
+
+          {ordinaryFields.length > 0 && (
+            <Section title="Datos de la hoja">
+              {ordinaryFields.map((field) => field.readOnly
+                ? <ReadOnlyField key={field.key} label={field.label} value={String((sheet as unknown as Record<string, unknown>)[field.key] ?? '-')} />
+                : (
+                  <Field
+                    key={field.key}
+                    keyboardType={keyboardTypeForFieldType(field.fieldType)}
+                    label={field.label}
+                    onChange={(value) => setField(field.key, value)}
+                    placeholder={field.placeholder ?? undefined}
+                    value={String(values[field.key] ?? '')}
+                  />
+                ))}
+            </Section>
+          )}
+
+          {definition && definition.result_sections.length > 0 && overallProgress && (
+            <Section title="Resultados">
+              <Card>
+                {overallProgress.sections.map((section) => (
+                  <View key={section.key} style={styles.progressRow}>
+                    <Text style={styles.progressTitle}>{section.title}</Text>
+                    <Text style={styles.progressCount}>{section.completed} / {section.totalRequired} completos</Text>
+                    {section.missing > 0 && <Text style={styles.progressMissing}>{section.missing} pendiente{section.missing === 1 ? '' : 's'}</Text>}
+                  </View>
+                ))}
+                <SecondaryButton label="Abrir resultados" onPress={() => setResultsOpen(true)} />
+              </Card>
+            </Section>
+          )}
+
+          {canCapture && sheet.status !== 'completed' && (
+            <ActionRow>
+              <SecondaryButton label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
+              <PrimaryButton label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
+            </ActionRow>
+          )}
+          <SecondaryButton
+            disabled={!labelPrintService.available}
+            label="Imprimir etiqueta 50×30 · Próxima fase"
+            onPress={() => undefined}
+          />
+
+          {definition && (
+            <FieldSheetResultsWorkspace
+              onClose={() => setResultsOpen(false)}
+              onSave={saveResultsRows}
+              readOnly={!canCapture || sheet.status === 'completed'}
+              rows={sheet.results_rows}
+              sections={definition.result_sections}
+              title={`${activeEquipment.instrument} · ${definition.name}`}
+              visible={resultsOpen}
+            />
+          )}
         </>}
-        <Pressable style={styles.back} onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); }}><Text style={styles.secondaryText}>Volver a equipos</Text></Pressable>
-      </View>
+        <SecondaryButton label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); }} />
+      </ScrollView>
     );
   }
 
@@ -354,29 +413,42 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
   // documental -- eso se definió en recepción (draft) y quedó congelado. Aquí
   // sólo se presenta como contexto de sólo lectura; la primera y única acción
   // es seleccionar/abrir la hoja de campo.
+  if (workOrder.equipment.length === 0) {
+    return <EmptyState description="Añade equipos en el paso anterior para comenzar la captura técnica." title="Sin equipos todavía" />;
+  }
   return <View style={styles.list}>
-    {workOrder.equipment.map((equipment) => <View key={equipment.id} style={styles.card}>
-      <View><Text style={styles.cardTitle}>{equipment.position}. {equipment.instrument}</Text><Text style={styles.meta}>{equipment.brand} · {equipment.serial_number}</Text></View>
-      <Text style={styles.status}>{equipment.field_sheet_status === 'completed' ? 'HOJA COMPLETA' : equipment.field_sheet_status ? 'HOJA EN CAPTURA' : 'SIN HOJA'}</Text>
-      <Text style={styles.meta}>{equipment.service_type ? serviceLabels[equipment.service_type] : 'Sin asignar'} · {equipment.certificate_folio ?? (equipment.folio_status === 'pending' ? 'PENDIENTE' : 'Sin resolver')}</Text>
-      <Text style={styles.label}>Cliente documental</Text>
-      <Text style={styles.meta}>{resolveDocumentaryClientLabel(equipment, workOrder)}</Text>
-      <Pressable style={styles.primary} onPress={() => openSheet(equipment)}><Text style={styles.primaryText}>{equipment.field_sheet_id ? 'Abrir hoja' : 'Seleccionar hoja'}</Text></Pressable>
-    </View>)}
+    {workOrder.equipment.map((equipment) => (
+      <Card key={equipment.id}>
+        <View style={styles.cardHeader}>
+          <View style={styles.flex}>
+            <Text style={styles.cardTitle}>{equipment.position}. {equipment.instrument}</Text>
+            <Text style={styles.meta}>{equipment.brand} · {equipment.serial_number}</Text>
+          </View>
+          <StatusBadge
+            label={equipment.field_sheet_status === 'completed' ? 'COMPLETA' : equipment.field_sheet_status ? 'EN CAPTURA' : 'SIN HOJA'}
+            tone={equipment.field_sheet_status === 'completed' ? 'success' : equipment.field_sheet_status ? 'info' : 'neutral'}
+          />
+        </View>
+        <Text style={styles.meta}>{equipment.service_type ? serviceLabels[equipment.service_type] : 'Sin asignar'} · {equipment.certificate_folio ?? (equipment.folio_status === 'pending' ? 'PENDIENTE' : 'Sin resolver')}</Text>
+        <ReadOnlyField label="Cliente documental" value={resolveDocumentaryClientLabel(equipment, workOrder)} />
+        <PrimaryButton label={equipment.field_sheet_id ? 'Abrir hoja' : 'Seleccionar hoja'} onPress={() => openSheet(equipment)} />
+      </Card>
+    ))}
   </View>;
 }
 
-function Input({ label, value, onChange, multiline }: { label: string; value: string; onChange(value: string): void; multiline?: boolean }) {
-  return <View style={styles.inputGroup}><Text style={styles.label}>{label}</Text><TextInput multiline={multiline} onChangeText={onChange} style={[styles.input, multiline && styles.multiline]} value={value} /></View>;
-}
-
 const styles = StyleSheet.create({
-  list: { gap: 12 }, panel: { gap: 10 }, card: { backgroundColor: '#fff', borderColor: '#dbe4ea', borderRadius: 14, borderWidth: 1, gap: 8, padding: 14 },
-  cardTitle: { color: '#142b3a', fontSize: 17, fontWeight: '800' }, meta: { color: '#637280' }, status: { color: '#008f87', fontSize: 12, fontWeight: '800' },
-  choice: { backgroundColor: '#f5f8fa', borderColor: '#cbd7df', borderRadius: 9, borderWidth: 1, padding: 10 }, choiceActive: { backgroundColor: '#dff3f1', borderColor: '#008f87' },
-  primary: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 10, marginTop: 6, padding: 13 }, primaryText: { color: '#fff', fontWeight: '800' },
-  secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, marginTop: 6, padding: 12 }, secondaryText: { color: '#0067a8', fontWeight: '800' }, disabled: { opacity: 0.42 }, back: { alignItems: 'center', padding: 12 },
-  eyebrow: { color: '#008f87', fontSize: 12, fontWeight: '800', letterSpacing: 1 }, title: { color: '#142b3a', fontSize: 22, fontWeight: '800' }, label: { color: '#344553', fontSize: 12, fontWeight: '700' },
-  inputGroup: { gap: 4 }, input: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 9, borderWidth: 1, minHeight: 44, paddingHorizontal: 11 }, multiline: { minHeight: 90, paddingTop: 10, textAlignVertical: 'top' },
-  table: { borderColor: '#dbe4ea', borderRadius: 10, borderWidth: 1, gap: 7, padding: 9 }, tableTitle: { color: '#142b3a', fontWeight: '800' }, tableRow: { alignItems: 'center', flexDirection: 'row', gap: 5 }, rowNumber: { width: 22 }, tableInput: { borderColor: '#cbd7df', borderRadius: 6, borderWidth: 1, flex: 1, minWidth: 70, padding: 7 }, addRow: { alignItems: 'center', borderColor: '#008f87', borderRadius: 8, borderStyle: 'dashed', borderWidth: 1, padding: 7 }, addRowText: { color: '#008f87', fontSize: 20, fontWeight: '800' },
+  list: { gap: spacing.md }, panel: { gap: spacing.sm, paddingBottom: spacing.xl },
+  flex: { flex: 1 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardTitle: { color: colors.text, fontSize: 17, fontWeight: '800' }, meta: { color: colors.textSubtle },
+  choice: { backgroundColor: '#f5f8fa', borderColor: colors.border, borderRadius: 9, borderWidth: 1, padding: spacing.md, marginBottom: spacing.xs },
+  choiceActive: { backgroundColor: colors.primarySoft, borderColor: colors.accent },
+  eyebrow: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
+  title: { color: colors.text, fontSize: 22, fontWeight: '800' },
+  statusRow: { flexDirection: 'row', marginBottom: spacing.sm },
+  progressRow: { marginBottom: spacing.sm },
+  progressTitle: { color: colors.text, fontWeight: '700' },
+  progressCount: { color: colors.textMuted, fontSize: 13 },
+  progressMissing: { color: colors.warningStrong, fontSize: 12, fontWeight: '700' },
 });

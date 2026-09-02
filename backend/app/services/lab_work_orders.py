@@ -84,13 +84,14 @@ GENERAL_FIELDS = (
 )
 CRITICAL_GENERAL_FIELDS = {"reception_date", "departure_date", "client_name", "address"}
 CRITICAL_EQUIPMENT_FIELDS = {
-    "instrument", "brand", "identification", "serial_number", "is_good_condition"
+    "instrument", "brand", "identification", "serial_number", "is_good_condition",
+    "model", "range_or_capacity",
 }
 
 
 def _query_with_relations():
     return select(LabWorkOrder).options(
-        selectinload(LabWorkOrder.equipment).selectinload(LabWorkOrderEquipment.field_sheet),
+        selectinload(LabWorkOrder.equipment).selectinload(LabWorkOrderEquipment.field_sheets),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
         ),
@@ -1117,6 +1118,26 @@ def add_equipment(
     return _read(db, _get(db, work_order.id))
 
 
+def _retire_current_field_sheet_revision(equipment: LabWorkOrderEquipment) -> None:
+    """Fase 6: modelo de revisión de FieldSheet. Un cambio a un campo crítico
+    del equipo (CRITICAL_EQUIPMENT_FIELDS) que de verdad invalida la firma
+    (no un reopen "preserve" -- ver el guard que llama a esta función) vuelve
+    obsoleto lo que la revisión vigente, si ya estaba completed, capturó y
+    congeló. Se retira (is_current=False) sin tocar su status/final_pdf_path/
+    final_pdf_sha256 -- el documento histórico permanece intacto para
+    siempre. Esto sólo abre el hueco (uq_field_sheets_current_lab_equipment
+    exige exactamente una revisión vigente por equipo); create_lab_field_sheet
+    crea la revisión siguiente con normalidad en cuanto la OT vuelva a estar
+    received_signed/in_progress, sin cambios a su propia lógica.
+
+    Si la revisión vigente no está completed (draft/in_progress -- trabajo
+    técnico nunca llegó a congelarse) no hay nada que preservar: se deja tal
+    cual, editable como ya lo era."""
+    current = equipment.field_sheet
+    if current is not None and current.status == "completed":
+        current.is_current = False
+
+
 def _update_equipment_core(
     db: Session,
     work_order: LabWorkOrder,
@@ -1140,6 +1161,7 @@ def _update_equipment_core(
         invalidate_member_signatures(
             db, affected_signature_members, user, fields=changed_fields
         )
+        _retire_current_field_sheet_revision(equipment)
     for key, value in values.items():
         setattr(equipment, key, value)
     if changed_fields:

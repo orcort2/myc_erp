@@ -3,6 +3,11 @@ import type { LabEquipment } from '@/src/types/lab-work-order';
 export type EquipmentBasicData = {
   instrument: string;
   brand: string;
+  // Fase 6: identidad del equipo (mismo criterio que Equipment productivo) --
+  // opcionales, igual que en el backend (no todo instrumento trae modelo o
+  // alcance documentado).
+  model: string | null;
+  range_or_capacity: string | null;
   identification: string;
   serial_number: string;
   report_number: string | null;
@@ -149,6 +154,8 @@ export function hydrateEquipmentFormValues(equipment: LabEquipment): EquipmentFo
     equipment: {
       instrument: equipment.instrument,
       brand: equipment.brand,
+      model: equipment.model,
+      range_or_capacity: equipment.range_or_capacity,
       identification: equipment.identification,
       serial_number: equipment.serial_number,
       report_number: equipment.report_number,

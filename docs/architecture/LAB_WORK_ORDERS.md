@@ -210,6 +210,22 @@ El PDF y la firma anteriores permanecen en la revisión histórica. La política
 automáticamente la firma activa y exige una nueva sesión. El contrato detallado
 está en `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
 
+Fase 6 agrega un modelo de revisión propio para `FieldSheet` (distinto de
+`LabWorkOrderRevision`, que versiona la OT). `field_sheets.lab_equipment_id`
+dejó de tener una `UniqueConstraint` plana: un índice único parcial
+(`uq_field_sheets_current_lab_equipment`) exige exactamente una revisión
+`is_current=True` por equipo. Si una reapertura invalida la firma y el
+técnico corrige un campo crítico del equipo
+(`instrument`/`brand`/`model`/`range_or_capacity`/`identification`/
+`serial_number`/`is_good_condition`) sobre una FieldSheet ya `completed`,
+esa revisión se retira (`is_current=False`) sin tocar su
+`status`/`final_pdf_path`/`final_pdf_sha256`; `create_lab_field_sheet` abre
+la siguiente (`revision_number` incremental, `supersedes_field_sheet_id`
+apuntando a la anterior) con normalidad en cuanto la OT vuelve a estar
+firmada. Una reapertura `preserve` nunca retira ni versiona nada -- el
+trabajo técnico se conserva tal cual. Ningún documento histórico se
+sobrescribe ni se reinterpreta.
+
 ## PDF y app móvil
 
 El render reutiliza el formato institucional `work_order_pdf.html` y su

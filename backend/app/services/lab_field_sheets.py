@@ -44,8 +44,8 @@ def get_lab_equipment(
         )
         .options(
             selectinload(LabWorkOrderEquipment.work_order),
-            selectinload(LabWorkOrderEquipment.field_sheet).selectinload(FieldSheet.results_rows),
-            selectinload(LabWorkOrderEquipment.field_sheet).selectinload(FieldSheet.signatures),
+            selectinload(LabWorkOrderEquipment.field_sheets).selectinload(FieldSheet.results_rows),
+            selectinload(LabWorkOrderEquipment.field_sheets).selectinload(FieldSheet.signatures),
         )
         .execution_options(populate_existing=True)
     )
@@ -88,6 +88,13 @@ def create_lab_field_sheet(
     _ensure_capture_allowed(equipment, external=external)
     if equipment.field_sheet is not None:
         raise HTTPException(status_code=409, detail="El equipo ya tiene una hoja de campo")
+    # Fase 6: modelo de revisión. equipment.field_sheets ya trae todas las
+    # revisiones (incluida cualquiera retirada por
+    # _retire_current_field_sheet_revision), ordenadas revision_number desc
+    # -- la [0] es siempre la última conocida, sin importar si es la primera
+    # vez o una reapertura con recaptura.
+    previous_revision = equipment.field_sheets[0] if equipment.field_sheets else None
+    revision_number = (previous_revision.revision_number + 1) if previous_revision else 1
     definition, version = get_template_snapshot(db, payload.template_key)
     definition = canonicalize_new_field_sheet_snapshot(definition)
     order = equipment.work_order
@@ -97,22 +104,28 @@ def create_lab_field_sheet(
     # único punto de lectura, ver lab_work_orders.py) -- nunca se asume
     # order.client_name/address/contact_name directamente aquí.
     documentary_client = resolve_equipment_certificate_client(equipment, order)
-    # Fase 4: prefill de captura con TODOS los datos disponibles hoy en
-    # LabWorkOrderEquipment. model/scope (range_or_capacity)/location/
-    # minimum_division no existen todavía en ese modelo -- no se agregan
-    # columnas sólo para satisfacer este prefill; quedan pendientes de Fase 6
-    # cuando el modelo LAB los incorpore.
+    # Fase 6: prefill de captura con TODOS los datos disponibles hoy en
+    # LabWorkOrderEquipment -- model y scope (range_or_capacity) ya son
+    # columnas propias del equipo (mismo criterio que Equipment productivo),
+    # se agregan aquí. location/minimum_division siguen siendo datos de la
+    # captura/servicio (ya viven en FieldSheet, no en el equipo) -- el
+    # técnico los llena en la hoja, no se prellenan desde el equipo.
     capture_values = {
         "instrument": equipment.instrument,
         "brand": equipment.brand,
         "serial_number": equipment.serial_number,
         "internal_id": equipment.identification,
+        "model": equipment.model,
+        "scope": equipment.range_or_capacity,
     }
     sheet = FieldSheet(
         equipment_id=None,
         lab_equipment_id=equipment.id,
         work_order_id=None,
         work_order_number=order.folio,
+        revision_number=revision_number,
+        is_current=True,
+        supersedes_field_sheet_id=previous_revision.id if previous_revision else None,
         template_key=payload.template_key,
         template_definition_json=definition,
         template_definition_version=version,

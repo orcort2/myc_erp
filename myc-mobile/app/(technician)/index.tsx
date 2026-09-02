@@ -26,6 +26,7 @@ export default function TechnicianHome() {
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
   const capabilities = deriveMobileCapabilities(user);
   const {
+    canCaptureFieldSheets,
     canClaimWorkOrderGroupRequests,
     canCreateWorkOrders,
     canReadTickets,
@@ -96,6 +97,14 @@ export default function TechnicianHome() {
               ? 'Crear y gestionar órdenes de trabajo LAB'
               : 'Consultar órdenes de trabajo de tu organización'}
           </Text>
+        </Pressable>}
+
+        {canCaptureFieldSheets && <Pressable
+          style={styles.module}
+          onPress={() => router.push('/(technician)/field-sheets')}
+        >
+          <Text style={styles.moduleTitle}>Hojas de Campo</Text>
+          <Text style={styles.moduleText}>Pendientes, en captura y completadas</Text>
         </Pressable>}
 
         {canUseCommunications && <Pressable

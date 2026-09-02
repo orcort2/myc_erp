@@ -119,7 +119,6 @@ FIELD_SHEET_TEMPLATE_KEYS = (
     "dinamometro",
     "durometro",
     "volumen",
-    "general",
 )
 
 BLOCK_FAMILY_DEFAULTS = {
@@ -631,7 +630,6 @@ TEMPLATE_BLOCK_ASSIGNMENTS = {
 
 TEMPLATE_ALIASES = {
     "indicador": "general",
-    "luxometro": "luxometro",
     "vacuometro": "manometro",
     "indicador_presion": "manometro",
     "presostato": "transductor_presion",

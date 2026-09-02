@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -15,7 +15,21 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
             "(equipment_id IS NULL AND lab_equipment_id IS NOT NULL)",
             name="ck_field_sheets_exactly_one_equipment_owner",
         ),
-        UniqueConstraint("lab_equipment_id", name="uq_field_sheets_lab_equipment_id"),
+        # Fase 6: reemplaza la UniqueConstraint plana original
+        # (uq_field_sheets_lab_equipment_id) -- una reapertura que exige
+        # recaptura técnica debe poder crear la revisión N+1 para el mismo
+        # equipo LAB sin perder la N congelada (final_pdf_path/sha256
+        # intactos). Sólo una revisión puede ser is_current=True a la vez por
+        # equipo; las demás son historial de sólo lectura. Mismo patrón ya
+        # usado por uq_field_sheets_active_equipment (índice parcial, sólo en
+        # la migración) para el lado productivo.
+        Index(
+            "uq_field_sheets_current_lab_equipment",
+            "lab_equipment_id",
+            unique=True,
+            postgresql_where=text("lab_equipment_id IS NOT NULL AND is_current IS TRUE"),
+            sqlite_where=text("lab_equipment_id IS NOT NULL AND is_current"),
+        ),
     )
 
     equipment_id: Mapped[int | None] = mapped_column(ForeignKey("equipment.id"), index=True)
@@ -96,9 +110,22 @@ class FieldSheet(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     # de cliente/equipo (incluye overrides y campos declarativos por plantilla).
     capture_values: Mapped[dict | None] = mapped_column(JSON)
 
+    # Fase 6: modelo de revisión/versionado LAB. revision_number empieza en 1
+    # y nunca se reutiliza; is_current marca cuál es la vigente (exactamente
+    # una por lab_equipment_id, ver Index arriba); supersedes_field_sheet_id
+    # encadena hacia la revisión anterior sin borrarla ni reinterpretarla --
+    # su status/final_pdf_path/final_pdf_sha256 quedan intactos para siempre.
+    # Sin efecto para FieldSheets productivas (equipment_id): todas nacen y
+    # quedan como su propia revisión 1 vigente.
+    revision_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    supersedes_field_sheet_id: Mapped[int | None] = mapped_column(
+        ForeignKey("field_sheets.id"), index=True
+    )
+
     equipment: Mapped["Equipment | None"] = relationship(back_populates="field_sheets")
     lab_equipment: Mapped["LabWorkOrderEquipment | None"] = relationship(
-        back_populates="field_sheet"
+        back_populates="field_sheets"
     )
 
     work_order: Mapped["ServiceWorkOrder | None"] = relationship()

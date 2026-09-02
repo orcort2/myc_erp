@@ -30,4 +30,17 @@ si falta o difiere se rechaza y nunca se regenera silenciosamente. Borradores y
 hojas `in_progress` conservan preview dinámico.
 
 La migración `b71d4a9f2c18` agrega el contrato persistente y clasifica los
-registros existentes por su `pdf_template` sin alterar sus snapshots.
+registros existentes por su `pdf_template` sin alterar sus snapshots. Sólo
+asigna `field_sheet_engine`/`legacy:<archivo>` versión 1 cuando el snapshot
+histórico lo indica sin ambigüedad; el resto queda `NULL`/`NULL` en vez de
+reinterpretarse por descarte. `resolve_field_sheet_pdf_renderer()` refleja lo
+mismo: una FieldSheet histórica sin renderer inferible devuelve conflicto
+(`409`) en vez de asumir el motor canónico.
+
+Fase 6 agrega revisión/versionado a `FieldSheet` LAB (ver
+`LAB_WORK_ORDERS.md`) sin tocar este contrato: cada revisión es su propia
+fila con su propio `pdf_renderer_key`/`pdf_renderer_version`/
+`final_pdf_path`/`final_pdf_sha256`, congelados independientemente al
+completarse. Una revisión retirada (`is_current=False`) conserva su PDF
+final exactamente como quedó -- nunca se regenera ni se reasigna a la
+revisión vigente.
