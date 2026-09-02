@@ -239,19 +239,19 @@ def create_lab_field_sheet(
     # único punto de lectura, ver lab_work_orders.py) -- nunca se asume
     # order.client_name/address/contact_name directamente aquí.
     documentary_client = resolve_equipment_certificate_client(equipment, order)
-    # Fase 6: prefill de captura con TODOS los datos disponibles hoy en
-    # LabWorkOrderEquipment -- model y scope (range_or_capacity) ya son
-    # columnas propias del equipo (mismo criterio que Equipment productivo),
-    # se agregan aquí. location/minimum_division siguen siendo datos de la
-    # captura/servicio (ya viven en FieldSheet, no en el equipo) -- el
-    # técnico los llena en la hoja, no se prellenan desde el equipo.
+    # Fase 6: prefill de captura con los datos de identidad disponibles en
+    # LabWorkOrderEquipment -- model ya es columna propia del equipo (mismo
+    # criterio que Equipment productivo). location/minimum_division/scope
+    # siguen siendo datos de la captura/servicio (no del equipo) -- el
+    # técnico los llena en la hoja cuando la plantilla los pide, sin
+    # prellenar desde el equipo (cierre UX 2026-09: range_or_capacity ya no
+    # es dato de alta de equipo, ver migración 5e58473f1be6).
     capture_values = {
         "instrument": equipment.instrument,
         "brand": equipment.brand,
         "serial_number": equipment.serial_number,
         "internal_id": equipment.identification,
         "model": equipment.model,
-        "scope": equipment.range_or_capacity,
     }
     sheet = FieldSheet(
         equipment_id=None,

@@ -26,9 +26,9 @@ export default function TechnicianHome() {
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
   const capabilities = deriveMobileCapabilities(user);
   const {
-    canCaptureFieldSheets,
     canClaimWorkOrderGroupRequests,
     canCreateWorkOrders,
+    canReadLabClients,
     canReadTickets,
     canReadWorkOrderGroupRequests,
     canReadWorkOrders,
@@ -99,12 +99,12 @@ export default function TechnicianHome() {
           </Text>
         </Pressable>}
 
-        {canCaptureFieldSheets && <Pressable
+        {canReadLabClients && <Pressable
           style={styles.module}
-          onPress={() => router.push('/(technician)/field-sheets')}
+          onPress={() => router.push('/(technician)/clients')}
         >
-          <Text style={styles.moduleTitle}>Hojas de Campo</Text>
-          <Text style={styles.moduleText}>Pendientes, en captura y completadas</Text>
+          <Text style={styles.moduleTitle}>Clientes</Text>
+          <Text style={styles.moduleText}>Buscar, consultar, crear y editar clientes LAB</Text>
         </Pressable>}
 
         {canUseCommunications && <Pressable

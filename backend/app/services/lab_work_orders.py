@@ -85,7 +85,7 @@ GENERAL_FIELDS = (
 CRITICAL_GENERAL_FIELDS = {"reception_date", "departure_date", "client_name", "address"}
 CRITICAL_EQUIPMENT_FIELDS = {
     "instrument", "brand", "identification", "serial_number", "is_good_condition",
-    "model", "range_or_capacity",
+    "model",
 }
 
 

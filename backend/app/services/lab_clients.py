@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.models.lab_client import LabClient
 from app.models.user import User
-from app.schemas.lab_client import LabClientCreate, LabClientImportSummary
+from app.schemas.lab_client import LabClientCreate, LabClientImportSummary, LabClientUpdate
 from app.services.audit_logs import write_audit_log
 
 
@@ -72,14 +72,23 @@ def create_lab_client(
     *,
     operator_client_id: int | None,
 ) -> LabClient:
-    values = {
+    identity_values = {
         "company": payload.company.strip(),
         "address": payload.address.strip(),
         "attention": payload.attention.strip(),
     }
+    # postal_code/city/state son metadata estructurada, no identidad: no
+    # participan del índice único normalizado (dedup sigue siendo
+    # company+address+attention, igual que antes de este cambio).
+    values = {
+        **identity_values,
+        "postal_code": (payload.postal_code or "").strip() or None,
+        "city": (payload.city or "").strip() or None,
+        "state": (payload.state or "").strip() or None,
+    }
     normalized = {
         f"normalized_{key}": normalize_lab_client_identity(value)
-        for key, value in values.items()
+        for key, value in identity_values.items()
     }
     existing = db.scalar(
         select(LabClient).where(
@@ -110,6 +119,78 @@ def create_lab_client(
         entity_id=client.id,
         user_id=user.id,
         new_values={**values, "operator_client_id": operator_client_id},
+    )
+    db.commit()
+    db.refresh(client)
+    return client
+
+
+def update_lab_client(
+    db: Session,
+    client_id: int,
+    payload: LabClientUpdate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> LabClient:
+    client = get_lab_client(db, client_id, operator_client_id=operator_client_id)
+    identity_values = {
+        "company": payload.company.strip(),
+        "address": payload.address.strip(),
+        "attention": payload.attention.strip(),
+    }
+    normalized = {
+        f"normalized_{key}": normalize_lab_client_identity(value)
+        for key, value in identity_values.items()
+    }
+    duplicate = db.scalar(
+        select(LabClient.id).where(
+            _scope_clause(operator_client_id),
+            LabClient.id != client.id,
+            LabClient.normalized_company == normalized["normalized_company"],
+            LabClient.normalized_address == normalized["normalized_address"],
+            LabClient.normalized_attention == normalized["normalized_attention"],
+        )
+    )
+    if duplicate is not None:
+        raise HTTPException(status_code=409, detail="Ya existe otro cliente LAB con esos mismos datos")
+    previous_values = {
+        "company": client.company,
+        "address": client.address,
+        "attention": client.attention,
+        "postal_code": client.postal_code,
+        "city": client.city,
+        "state": client.state,
+    }
+    client.company = identity_values["company"]
+    client.address = identity_values["address"]
+    client.attention = identity_values["attention"]
+    client.postal_code = (payload.postal_code or "").strip() or None
+    client.city = (payload.city or "").strip() or None
+    client.state = (payload.state or "").strip() or None
+    client.normalized_company = normalized["normalized_company"]
+    client.normalized_address = normalized["normalized_address"]
+    client.normalized_attention = normalized["normalized_attention"]
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Ya existe otro cliente LAB con esos mismos datos") from exc
+    write_audit_log(
+        db,
+        action="lab_client.updated",
+        entity="lab_clients",
+        entity_id=client.id,
+        user_id=user.id,
+        previous_values=previous_values,
+        new_values={
+            "company": client.company,
+            "address": client.address,
+            "attention": client.attention,
+            "postal_code": client.postal_code,
+            "city": client.city,
+            "state": client.state,
+        },
     )
     db.commit()
     db.refresh(client)

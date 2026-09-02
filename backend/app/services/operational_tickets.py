@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.operational_ticket import (
     LabRevisionRead,
     CertificateFolioBlockCreate,
+    FieldSheetReopenTicketCreate,
     FieldSheetTemplateRequestCreate,
     FolioTicketCreate,
     PartialCloseTicketCreate,
@@ -34,6 +35,7 @@ from app.services.lab_work_orders import (
     _signature_cohort,
     _allocate_lab_certificate_folio,
     _missing_completed_sheets,
+    _retire_current_field_sheet_revision,
 )
 from app.services.notification_events import (
     notify_ticket_approved,
@@ -119,10 +121,21 @@ def create_reopen_ticket(
     )
     if existing is not None:
         raise HTTPException(status_code=409, detail="Ya existe una solicitud activa para esta OT")
+    equipment_id = payload.equipment_id
+    if equipment_id is not None:
+        equipment = db.scalar(
+            select(LabWorkOrderEquipment).where(
+                LabWorkOrderEquipment.id == equipment_id,
+                LabWorkOrderEquipment.work_order_id == work_order.id,
+            )
+        )
+        if equipment is None:
+            raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
     ticket = OperationalTicket(
         type="reopen_work_order",
         status="pending",
         work_order_id=work_order.id,
+        equipment_id=equipment_id,
         requested_by_user_id=user.id,
         reason=payload.reason.strip(),
         description=payload.description.strip(),
@@ -264,6 +277,81 @@ def create_field_sheet_template_request_ticket(
         entity_id=ticket.id,
         user_id=user.id,
         new_values={"work_order_id": work_order.id, "equipment_id": equipment.id},
+    )
+    db.commit()
+    return _read(_get_ticket(db, ticket.id))
+
+
+def create_field_sheet_reopen_ticket(
+    db: Session,
+    payload: FieldSheetReopenTicketCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> TicketRead:
+    """Desbloqueo/reapertura de UNA FieldSheet/equipo completed mientras la
+    OT sigue abierta. Distinto de create_reopen_ticket: no requiere que la
+    OT ya esté cerrada -- por diseño puede pedirse con otras hojas de la
+    misma OT todavía en captura. Cuando la OT SÍ ya está cerrada, ese caso
+    usa el ticket reopen_work_order existente (equipment_id opcional ahí),
+    que reabre la OT completa con su propia ceremonia de firmas/versión."""
+    work_order = _get(db, payload.work_order_id, lock=True)
+    if work_order.status not in {"received_signed", "in_progress", "ready_to_close"}:
+        raise HTTPException(
+            status_code=409,
+            detail="La OT ya está cerrada; solicita la reapertura de la OT completa",
+        )
+    equipment = db.scalar(
+        select(LabWorkOrderEquipment)
+        .where(
+            LabWorkOrderEquipment.id == payload.equipment_id,
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+        )
+        .with_for_update()
+    )
+    if equipment is None:
+        raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    current = equipment.field_sheet
+    if current is None or current.status != "completed":
+        raise HTTPException(status_code=409, detail="El equipo no tiene una hoja completed para desbloquear")
+    existing = db.scalar(
+        select(OperationalTicket.id).where(
+            OperationalTicket.equipment_id == equipment.id,
+            OperationalTicket.type == "field_sheet_reopen",
+            OperationalTicket.status.in_(("pending", "approved", "in_progress")),
+        )
+    )
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Ya existe una solicitud activa para esta hoja")
+    ticket = OperationalTicket(
+        type="field_sheet_reopen",
+        status="pending",
+        work_order_id=work_order.id,
+        equipment_id=equipment.id,
+        operator_client_id=operator_client_id,
+        requested_by_user_id=user.id,
+        reason=payload.reason.strip(),
+        description=payload.description.strip(),
+        resolution_snapshot={
+            "field_sheet_id": current.id,
+            "revision_number": current.revision_number,
+        },
+    )
+    db.add(ticket)
+    db.flush()
+    _attach_conversation(db, ticket, user)
+    write_audit_log(
+        db,
+        action="field_sheet_reopen.requested",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        new_values={
+            "work_order_id": work_order.id,
+            "equipment_id": equipment.id,
+            "field_sheet_id": current.id,
+            "revision_number": current.revision_number,
+        },
     )
     db.commit()
     return _read(_get_ticket(db, ticket.id))
@@ -502,6 +590,21 @@ def approve_reopen_ticket(
         item.final_pdf_sha256 = None
         item.final_pdf_generated_at = None
 
+    if ticket.equipment_id is not None:
+        equipment = db.scalar(
+            select(LabWorkOrderEquipment)
+            .where(LabWorkOrderEquipment.id == ticket.equipment_id)
+            .with_for_update()
+        )
+        if equipment is not None:
+            retired = equipment.field_sheet
+            _retire_current_field_sheet_revision(equipment)
+            if retired is not None and retired.status == "completed":
+                ticket.resolution_snapshot = {
+                    "retired_field_sheet_id": retired.id,
+                    "retired_revision_number": retired.revision_number,
+                }
+
     ticket.status = "in_progress"
     ticket.reviewed_by_user_id = user.id
     ticket.reviewed_at = now
@@ -623,6 +726,29 @@ def resolve_operational_ticket(
         work_order.partial_close_pending_snapshot = {"items": missing, "approved_at": now.isoformat()}
         ticket.resolution_snapshot = work_order.partial_close_pending_snapshot
         action = "lab_partial_close.approved"
+    elif ticket.type == "field_sheet_reopen":
+        equipment = db.scalar(
+            select(LabWorkOrderEquipment)
+            .where(LabWorkOrderEquipment.id == ticket.equipment_id)
+            .with_for_update()
+        )
+        if equipment is None:
+            raise HTTPException(status_code=409, detail="El equipo solicitado ya no está disponible")
+        current = equipment.field_sheet
+        if current is None or current.status != "completed":
+            raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
+        _retire_current_field_sheet_revision(equipment)
+        # ready_to_close exige que TODO el equipo tenga hoja completed
+        # (_missing_completed_sheets); al retirar una revisión ese invariante
+        # deja de cumplirse, así que se re-deriva la misma regla que ya
+        # produce ready_to_close hacia adelante -- no es un estado nuevo.
+        if equipment.work_order.status == "ready_to_close":
+            equipment.work_order.status = "in_progress"
+        ticket.resolution_snapshot = {
+            "retired_field_sheet_id": current.id,
+            "retired_revision_number": current.revision_number,
+        }
+        action = "lab_field_sheet.reopen_approved"
     else:
         raise HTTPException(status_code=409, detail="La solicitud requiere el flujo específico de reapertura")
     ticket.status = "resolved"

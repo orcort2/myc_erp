@@ -7,6 +7,12 @@ class ReopenTicketCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     work_order_id: int
+    # Trazabilidad opcional: qué equipo/hoja motivó la solicitud cuando el
+    # ticket se origina desde el contexto de una FieldSheet específica (la
+    # OT ya cerrada sigue reabriéndose completa -- ver approve_reopen_ticket
+    # -- esto sólo identifica la hoja para auditoría y para retirar su
+    # revisión vigente en cuanto se aprueba).
+    equipment_id: int | None = Field(default=None, gt=0)
     reason: str = Field(min_length=3, max_length=180)
     description: str = Field(min_length=3, max_length=4000)
     requested_signature_policy: str = Field(pattern="^(preserve|invalidate)$")
@@ -48,6 +54,21 @@ class FieldSheetTemplateRequestCreate(BaseModel):
     """Fase 1F: sólo el dominio (crear el ticket como 'pending'). La UI y la
     resolución ('encontramos/creamos la plantilla X') quedan para una fase
     posterior; aquí no se implementa ningún flujo de atención."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_order_id: int
+    equipment_id: int
+    reason: str = Field(min_length=3, max_length=180)
+    description: str = Field(min_length=3, max_length=4000)
+
+
+class FieldSheetReopenTicketCreate(BaseModel):
+    """Desbloqueo/reapertura de UNA FieldSheet/equipo completed mientras la
+    OT sigue abierta (in_progress/ready_to_close) -- distinto de
+    ReopenTicketCreate, que reabre la OT completa y sólo aplica cuando ya
+    está completed/partially_closed. Misma tabla OperationalTicket, mismo
+    patrón que FieldSheetTemplateRequestCreate."""
 
     model_config = ConfigDict(extra="forbid")
 

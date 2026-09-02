@@ -17,7 +17,7 @@ import { shouldResetFormAfterSubmit } from './lab-client-selector';
 import type { LabEquipment } from '@/src/types/lab-work-order';
 
 const equipment = {
-  instrument: 'Manómetro', brand: 'MYC', model: null, range_or_capacity: null,
+  instrument: 'Manómetro', brand: 'MYC', model: null,
   identification: 'ID-1', serial_number: 'SER-1',
   report_number: null, is_good_condition: true,
 };
@@ -147,7 +147,7 @@ test('11. el resumen del equipo guardado muestra cliente/servicio/folio sin IDs'
 
 function savedEquipment(overrides: Partial<LabEquipment> = {}): LabEquipment {
   return {
-    id: 1, position: 1, instrument: 'Manómetro', brand: 'MYC', model: null, range_or_capacity: null,
+    id: 1, position: 1, instrument: 'Manómetro', brand: 'MYC', model: null,
     identification: 'ID-1', serial_number: 'SER-1',
     report_number: null, is_good_condition: true, service_type: 'accredited', linked_company_id: null,
     linked_company_name_snapshot: null, linked_company_prefix_snapshot: null, certificate_folio: 'MYCA-09-26-4700',

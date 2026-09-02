@@ -30,6 +30,9 @@ export function LabClientSelector({ onSelect, request }: Props) {
   const [newCompany, setNewCompany] = useState('');
   const [newAddress, setNewAddress] = useState('');
   const [newAttention, setNewAttention] = useState('');
+  const [newPostalCode, setNewPostalCode] = useState('');
+  const [newCity, setNewCity] = useState('');
+  const [newState, setNewState] = useState('');
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -55,12 +58,18 @@ export function LabClientSelector({ onSelect, request }: Props) {
           company: newCompany.trim(),
           address: newAddress.trim(),
           attention: newAttention.trim(),
+          postal_code: newPostalCode.trim() || null,
+          city: newCity.trim() || null,
+          state: newState.trim() || null,
         }),
       });
       if (shouldResetFormAfterSubmit('success')) {
         setNewCompany('');
         setNewAddress('');
         setNewAttention('');
+        setNewPostalCode('');
+        setNewCity('');
+        setNewState('');
       }
       setState((current) => applyCreatedClient(current, created));
       onSelect(created);
@@ -79,6 +88,9 @@ export function LabClientSelector({ onSelect, request }: Props) {
         <Text style={styles.title}>Crear cliente</Text>
         <SelectorField label="Empresa" required value={newCompany} onChange={setNewCompany} />
         <SelectorField label="Dirección" value={newAddress} onChange={setNewAddress} />
+        <SelectorField label="Código postal" value={newPostalCode} onChange={setNewPostalCode} />
+        <SelectorField label="Ciudad" value={newCity} onChange={setNewCity} />
+        <SelectorField label="Estado" value={newState} onChange={setNewState} />
         <SelectorField label="Atención a" value={newAttention} onChange={setNewAttention} />
         <View style={styles.actionRow}>
           <Pressable style={styles.cancel} onPress={() => setState(cancelInlineCreate(state))}>

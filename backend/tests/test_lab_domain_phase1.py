@@ -43,8 +43,9 @@ from app.services.lab_clients import (
     deactivate_lab_client,
     list_lab_clients,
     normalize_lab_client_identity,
+    update_lab_client,
 )
-from app.schemas.lab_client import LabClientCreate
+from app.schemas.lab_client import LabClientCreate, LabClientUpdate
 from app.services.lab_work_orders import (
     resolve_equipment_certificate_client,
     set_equipment_certificate_client,
@@ -366,6 +367,136 @@ def test_lab_client_can_be_deactivated_without_deletion(lab_context):
         assert reactivated.deleted_at is None
 
 
+def test_lab_client_structured_address_propagates_to_new_work_order(lab_context):
+    """Cierre UX 2026-09: LabClient con postal_code/city/state estructurados
+    (no participan del índice normalizado -- sólo company/address/attention
+    lo hacen) permite propagarlos a los campos ya existentes de LabWorkOrder
+    (postal_code/city/state_name) al seleccionarlo, sin inventar calle/
+    número/colonia que el dominio actual no modela."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        created = create_lab_client(
+            db,
+            LabClientCreate(
+                company="Cliente Estructurado SA",
+                address="Av. X 123",
+                attention="Ing. X",
+                postal_code="45601",
+                city="Tlaquepaque",
+                state="Jalisco",
+            ),
+            admin,
+            operator_client_id=None,
+        )
+        client_id = created.id
+    listed = client.get("/api/mobile/v1/technician/lab-clients?search=Estructurado", headers=headers)
+    assert listed.status_code == 200, listed.text
+    match = next(item for item in listed.json() if item["id"] == client_id)
+    assert match["postal_code"] == "45601"
+    assert match["city"] == "Tlaquepaque"
+    assert match["state"] == "Jalisco"
+
+
+def test_lab_client_can_be_edited_via_patch(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        created = create_lab_client(
+            db,
+            LabClientCreate(company="Editable SA", address="Calle Vieja", attention="Ing. Y"),
+            admin,
+            operator_client_id=None,
+        )
+        client_id = created.id
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-clients/{client_id}",
+        json={
+            "company": "Editable SA",
+            "address": "Calle Nueva 45",
+            "attention": "Ing. Z",
+            "postal_code": "44100",
+            "city": "Guadalajara",
+            "state": "Jalisco",
+        },
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    body = edited.json()
+    assert body["address"] == "Calle Nueva 45"
+    assert body["postal_code"] == "44100"
+    assert body["city"] == "Guadalajara"
+    assert body["state"] == "Jalisco"
+    with factory() as db:
+        persisted = db.get(LabClient, client_id)
+        assert persisted.address == "Calle Nueva 45"
+        assert persisted.postal_code == "44100"
+
+
+def test_lab_client_patch_rejects_duplicate_identity(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        first = create_lab_client(
+            db, LabClientCreate(company="Primero SA", address="Calle 1", attention="Ing. A"),
+            admin, operator_client_id=None,
+        )
+        second = create_lab_client(
+            db, LabClientCreate(company="Segundo SA", address="Calle 2", attention="Ing. B"),
+            admin, operator_client_id=None,
+        )
+        second_id = second.id
+        first_company, first_address, first_attention = first.company, first.address, first.attention
+    collide = client.patch(
+        f"/api/mobile/v1/technician/lab-clients/{second_id}",
+        json={"company": first_company, "address": first_address, "attention": first_attention},
+        headers=headers,
+    )
+    assert collide.status_code == 409, collide.text
+
+
+def test_lab_client_patch_denied_without_permission(lab_context):
+    """Sin lab_clients.update explícito ni lab_work_orders.use, PATCH se
+    rechaza -- backend sigue siendo la autoridad, no sólo la UI."""
+    client, factory, _tokens = lab_context
+    with factory() as db:
+        no_access_role = Role(name="Sin acceso", description="Sin permisos")
+        db.add(no_access_role)
+        db.flush()
+        blocked_user = User(
+            username="lab-blocked",
+            email="lab-blocked@example.test",
+            full_name="LAB Blocked",
+            hashed_password="unused",
+            account_type="internal",
+            status="active",
+            is_active=True,
+            role_id=no_access_role.id,
+            roles=[no_access_role],
+        )
+        db.add(blocked_user)
+        db.commit()
+        blocked_token = create_access_token(
+            str(blocked_user.id),
+            extra_claims={"roles": [no_access_role.name], "auth_context": "internal"},
+        )
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        created = create_lab_client(
+            db, LabClientCreate(company="Bloqueado SA", address="", attention=""),
+            admin, operator_client_id=None,
+        )
+        client_id = created.id
+    denied = client.patch(
+        f"/api/mobile/v1/technician/lab-clients/{client_id}",
+        json={"company": "Bloqueado SA"},
+        headers=auth(blocked_token),
+    )
+    assert denied.status_code == 403
+
+
 def test_inactive_clients_are_excluded_from_default_listing(lab_context):
     """11. Clientes inactivos no aparecen en el listado por default."""
     _client, factory, _tokens = lab_context
@@ -650,6 +781,94 @@ def test_previous_ticket_types_still_function(lab_context):
     )
     assert ticket.status_code == 201, ticket.text
     assert ticket.json()["type"] == "manual_myc_folio"
+
+
+def _sign_and_complete_field_sheet(client, headers, order_id, equipment_id) -> int:
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
+        json=_signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_json = created.json()
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(sheet_json["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    return completed.json()["id"]
+
+
+def test_field_sheet_reopen_is_a_valid_ticket_type(lab_context):
+    """Cierre UX 2026-09: field_sheet_reopen es tipo válido a nivel BD --
+    desbloqueo de UNA hoja/equipo, distinto de reopen_work_order (que reabre
+    la OT completa y sólo aplica cuando ya está cerrada)."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers)
+    service = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/service",
+        json={"service_type": "accredited", "linked_company_id": None},
+        headers=headers,
+    )
+    assert service.status_code == 200, service.text
+    sheet_id = _sign_and_complete_field_sheet(client, headers, order_id, equipment_ids[0])
+    with factory() as db:
+        from app.schemas.operational_ticket import FieldSheetReopenTicketCreate
+        from app.services.operational_tickets import create_field_sheet_reopen_ticket
+        tech = db.scalar(select(User).where(User.username == "lab-tech"))
+        ticket = create_field_sheet_reopen_ticket(
+            db,
+            FieldSheetReopenTicketCreate(
+                work_order_id=order_id,
+                equipment_id=equipment_ids[0],
+                reason="Error de captura",
+                description="El resultado de la fila 2 está mal transcrito",
+            ),
+            tech,
+            operator_client_id=None,
+        )
+        assert ticket.type == "field_sheet_reopen"
+        assert ticket.status == "pending"
+        assert ticket.resolution_snapshot["field_sheet_id"] == sheet_id
+
+
+def test_field_sheet_reopen_requires_a_completed_sheet(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers)
+    denied = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_ids[0],
+            "reason": "Prueba",
+            "description": "El equipo todavía no tiene hoja completed",
+        },
+        headers=headers,
+    )
+    assert denied.status_code == 409
 
 
 # --------------------------------------------------------------------------

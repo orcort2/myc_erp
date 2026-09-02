@@ -498,6 +498,104 @@ def test_lab_field_sheet_tray_is_aggregated_paginated_and_permission_guarded(lab
     assert denied.status_code == 403
 
 
+def test_field_sheet_reopen_ticket_retires_and_enables_recapture_without_closing_the_ot(lab_context):
+    """Cierre UX 2026-09: una FieldSheet completed puede desbloquearse por
+    ticket aunque sea la única/última del equipo -- la OT llega a
+    ready_to_close al completarla, el approve del ticket retira la revisión
+    vigente (mismo _retire_current_field_sheet_revision que ya usa el
+    reopen invalidate + edición crítica) y regresa la OT a in_progress
+    -- no a draft, no se toca ninguna firma -- para que create_lab_field_sheet
+    abra normalmente la revisión 2, conservando la 1 intacta con su PDF."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+
+    detail = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
+    assert detail.json()["status"] == "ready_to_close"
+
+    requested = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "Error de captura",
+            "description": "El resultado quedó mal transcrito, hay que recapturar",
+        },
+        headers=headers,
+    )
+    assert requested.status_code == 201, requested.text
+    ticket_id = requested.json()["id"]
+    assert requested.json()["resolution_snapshot"]["field_sheet_id"] == first_sheet_id
+
+    self_resolve = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket_id}/resolve",
+        json={"comment": "Autoaprobación"},
+        headers=headers,
+    )
+    assert self_resolve.status_code == 403
+
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket_id}/resolve",
+        json={"comment": "Procede recaptura"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["resolution_snapshot"]["retired_field_sheet_id"] == first_sheet_id
+
+    reverted = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
+    assert reverted.json()["status"] == "in_progress"
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet is None
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.is_current is False
+        assert first.status == "completed"
+        first_pdf_sha = first.final_pdf_sha256
+        assert first_pdf_sha is not None
+
+    second_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    assert second_sheet_id != first_sheet_id
+    with factory() as db:
+        first = db.get(FieldSheet, first_sheet_id)
+        second = db.get(FieldSheet, second_sheet_id)
+        # El histórico permanece exactamente intacto -- ni PDF ni SHA se
+        # regeneran por la recaptura de la revisión siguiente.
+        assert first.final_pdf_sha256 == first_pdf_sha
+        assert first.is_current is False
+        assert second.is_current is True
+        assert second.revision_number == 2
+        assert second.supersedes_field_sheet_id == first_sheet_id
+
+    final_status = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
+    assert final_status.json()["status"] == "ready_to_close"
+
+
+def test_field_sheet_reopen_ticket_does_not_apply_once_the_whole_ot_is_closed(lab_context):
+    """El ticket field_sheet_reopen es exclusivamente para la OT todavía
+    abierta -- una vez completed/partially_closed, la corrección usa
+    reopen_work_order (que sí reabre la OT completa con su propia
+    ceremonia de firmas), no un segundo camino paralelo."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    close_order(client, headers, order_id)
+    denied = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "Error de captura",
+            "description": "La OT ya cerró",
+        },
+        headers=headers,
+    )
+    assert denied.status_code == 409
+
+
 def test_unsupported_prototype_template_is_explicit_and_never_falls_back_to_general(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])

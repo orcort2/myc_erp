@@ -201,3 +201,25 @@ test('staff conserva compatibilidad LAB y Comunicaciones', () => {
   assert.equal(capabilities.canCloseWorkOrders, true);
   assert.equal(capabilities.canUseCommunications, true);
 });
+
+test('cierre UX 2026-09: canReadLabClients gatea la tarjeta Clientes en Inicio', () => {
+  const withRead = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_clients.read']));
+  assert.equal(withRead.canReadLabClients, true);
+
+  const withOrgRead = deriveMobileCapabilities(user('internal', ['mobile.access', 'work_orders.read_organization']));
+  assert.equal(withOrgRead.canReadLabClients, true);
+
+  const withoutEither = deriveMobileCapabilities(user('internal', ['mobile.access']));
+  assert.equal(withoutEither.canReadLabClients, false);
+});
+
+test('cierre UX 2026-09: canEditLabClients requiere lab_clients.update explícito (o legado lab_work_orders.use)', () => {
+  const withUpdate = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_clients.update']));
+  assert.equal(withUpdate.canEditLabClients, true);
+
+  const withOnlyCreate = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_clients.create']));
+  assert.equal(withOnlyCreate.canEditLabClients, false);
+
+  const legacy = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_work_orders.use']));
+  assert.equal(legacy.canEditLabClients, true);
+});

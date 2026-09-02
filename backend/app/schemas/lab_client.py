@@ -9,6 +9,14 @@ class LabClientCreate(BaseModel):
     company: str = Field(min_length=1, max_length=255)
     address: str = Field(default="", max_length=2000)
     attention: str = Field(default="", max_length=180)
+    postal_code: str | None = Field(default=None, max_length=20)
+    city: str | None = Field(default=None, max_length=120)
+    state: str | None = Field(default=None, max_length=120)
+
+
+class LabClientUpdate(LabClientCreate):
+    """Mismo contrato que la creación -- reemplazo completo, no merge parcial
+    (igual convención que LabEquipmentWrite para create/update)."""
 
 
 class LabClientRead(LabClientCreate):

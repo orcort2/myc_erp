@@ -4,10 +4,11 @@ export type EquipmentBasicData = {
   instrument: string;
   brand: string;
   // Fase 6: identidad del equipo (mismo criterio que Equipment productivo) --
-  // opcionales, igual que en el backend (no todo instrumento trae modelo o
-  // alcance documentado).
+  // opcional, igual que en el backend (no todo instrumento trae modelo
+  // documentado). Cierre UX 2026-09: "Alcance / capacidad" ya no vive aquí
+  // -- es dato operativo/metrológico, se captura en la FieldSheet cuando la
+  // plantilla lo pide.
   model: string | null;
-  range_or_capacity: string | null;
   identification: string;
   serial_number: string;
   report_number: string | null;
@@ -155,7 +156,6 @@ export function hydrateEquipmentFormValues(equipment: LabEquipment): EquipmentFo
       instrument: equipment.instrument,
       brand: equipment.brand,
       model: equipment.model,
-      range_or_capacity: equipment.range_or_capacity,
       identification: equipment.identification,
       serial_number: equipment.serial_number,
       report_number: equipment.report_number,

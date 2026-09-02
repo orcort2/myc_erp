@@ -1,3 +1,5 @@
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -12,7 +14,17 @@ import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-s
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
 import { resolveBlockFields, keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
 import { computeOverallProgress } from '@/src/services/field-sheet-progress';
-import { ApiError } from '@/src/api/client';
+import { filterFieldSheetTemplates } from '@/src/services/field-sheet-template-selector';
+import { PENDING_SIGNATURE_LABEL, resolveCalibradoPor } from '@/src/services/lab-signature-authority';
+import {
+  captureIsAlwaysReadOnly,
+  initialViewMode,
+  isFieldSheetEditable,
+  viewModeAfterDraftSaved,
+  viewModeAfterEditRequested,
+  type FieldSheetViewMode,
+} from '@/src/services/field-sheet-draft-view-state';
+import { apiUrl, ApiError } from '@/src/api/client';
 import {
   ActionRow, Card, EmptyState, Field, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
 } from '@/src/design/primitives';
@@ -22,12 +34,18 @@ import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldS
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
 type Props = {
+  accessToken: string;
   canCapture: boolean;
   external: boolean;
   onUpdated(order: LabWorkOrder): void;
   request: Request;
   workOrder: LabWorkOrder;
 };
+
+// Firmas/autoridad documental: nunca capturados como texto libre (ver
+// lab-signature-authority.ts). Se excluyen de los "campos ordinarios" y se
+// muestran aparte, de sólo lectura, derivados del actor/evento real.
+const SIGNATURE_AUTHORITY_KEYS = new Set(['calibrated_by', 'reviewed_by', 'report_made_by']);
 
 const serviceLabels = { accredited: 'Acreditado', traceable: 'Trazable', linked: 'Vinculado' } as const;
 
@@ -96,18 +114,21 @@ function statusTone(status: string): 'warning' | 'info' | 'success' {
  * genéricamente, igual que antes de esta fase, ahora con el contrato de
  * campo completo del snapshot y sin tablas inline.
  */
-export function LabTechnicalCapture({ canCapture, external, onUpdated, request, workOrder }: Props) {
+export function LabTechnicalCapture({ accessToken, canCapture, external, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
+  const [templateSearch, setTemplateSearch] = useState('');
   const [activeEquipment, setActiveEquipment] = useState<LabEquipment | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [sheet, setSheet] = useState<LabFieldSheet | null>(null);
   const [values, setValues] = useState<Record<string, unknown>>({});
+  const [viewMode, setViewMode] = useState<FieldSheetViewMode>(initialViewMode());
   const [resultsOpen, setResultsOpen] = useState(false);
-  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'linked_folio' | 'field_sheet_template' | null>(null);
+  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'linked_folio' | 'field_sheet_template' | 'field_sheet_reopen' | null>(null);
   const [requestedFolio, setRequestedFolio] = useState('');
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
   const [busy, setBusy] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   async function refreshWorkOrder() {
     const updated = await request<LabWorkOrder>(
@@ -126,12 +147,16 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
   const definition = sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
   const ordinaryFields = (definition?.blocks ?? [])
     .filter((block) => block.capture_visible !== false && !block.block_type.includes('Table'))
-    .flatMap((block) => resolveBlockFields(block, { fallbackLabels: FIELD_LABELS, readOnlyKeys: readOnlyFields }));
+    .flatMap((block) => resolveBlockFields(block, { fallbackLabels: FIELD_LABELS, readOnlyKeys: readOnlyFields }))
+    .filter((field) => !SIGNATURE_AUTHORITY_KEYS.has(field.key));
   const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
+  const editable = !!sheet && isFieldSheetEditable(sheet.status, viewMode);
+  const visibleTemplates = filterFieldSheetTemplates(templates, templateSearch);
 
   async function openSheet(equipment: LabEquipment) {
     setActiveEquipment(equipment);
     setSelectedTemplate('');
+    setTemplateSearch('');
     if (!equipment.field_sheet_id) {
       setSheet(null);
       setValues({});
@@ -145,6 +170,9 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       setSheet(loaded);
       setSelectedTemplate(loaded.template_key);
       setValues(buildValues(loaded));
+      // Reabrir una hoja ya existente entra en modo consulta -- "Editar"
+      // vuelve a habilitar los inputs explícitamente (cierre UX 2026-09).
+      setViewMode('view');
     } catch (error) {
       Alert.alert('No fue posible abrir la hoja', error instanceof Error ? error.message : 'Intenta nuevamente');
       setActiveEquipment(null);
@@ -161,6 +189,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
       );
       setSheet(created);
       setValues(buildValues(created));
+      setViewMode(initialViewMode());
       await refreshWorkOrder();
     } catch (error) {
       Alert.alert('No fue posible crear la hoja', error instanceof Error ? error.message : 'Revisa el folio y la plantilla');
@@ -203,6 +232,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
     }
     if (!complete) {
       setSheet(saved);
+      setViewMode(viewModeAfterDraftSaved());
       Alert.alert('Hoja guardada', 'Los cambios quedaron en esta instancia; la plantilla no fue modificada.');
       setBusy(false);
       return;
@@ -282,6 +312,55 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
     } finally { setBusy(false); }
   }
 
+  // Cierre UX 2026-09: desbloqueo auditable de UNA hoja completed mientras la
+  // OT sigue abierta (in_progress/ready_to_close) -- reutiliza el ticket
+  // field_sheet_reopen ya existente (mismo OperationalTicket, sin segundo
+  // sistema). Si la OT ya cerró, este componente ya no se muestra: esa
+  // corrección usa la reapertura de OT completa en la pantalla de OT.
+  async function requestFieldSheetReopen() {
+    if (!activeEquipment || ticketMode !== 'field_sheet_reopen') return;
+    if (!ticketReason.trim() || !ticketDescription.trim()) return;
+    setBusy(true);
+    try {
+      await request('/mobile/v1/technician/tickets/field-sheet-reopen', {
+        method: 'POST',
+        body: JSON.stringify({
+          work_order_id: workOrder.id,
+          equipment_id: activeEquipment.id,
+          reason: ticketReason.trim(),
+          description: ticketDescription.trim(),
+        }),
+      });
+      setTicketMode(null);
+      setActiveEquipment(null);
+      Alert.alert('Solicitud enviada', 'Un administrador debe autorizar el desbloqueo antes de recapturar.');
+    } catch (error) {
+      Alert.alert('No fue posible solicitar el desbloqueo', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
+  // Mismo PDF institucional que ya congela el backend (final_pdf) -- ningún
+  // renderer nuevo, sólo exponerlo vía auth Mobile (mismo patrón que
+  // downloadPdf en work-orders.tsx).
+  async function downloadFieldSheetPdf() {
+    if (!activeEquipment || !sheet) return;
+    setDownloadingPdf(true);
+    try {
+      const uri = `${FileSystem.cacheDirectory}HOJA-${workOrder.folio}-${activeEquipment.position}.pdf`;
+      const result = await FileSystem.downloadAsync(
+        apiUrl(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/pdf`),
+        uri,
+        { headers: { Authorization: `Bearer ${accessToken}` } },
+      );
+      if (result.status !== 200) throw new Error(`No fue posible descargar el PDF (${result.status})`);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(result.uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf' });
+      }
+    } catch (error) {
+      Alert.alert('No fue posible abrir el PDF', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setDownloadingPdf(false); }
+  }
+
   if (activeEquipment) {
     if (ticketMode === 'field_sheet_template') return (
       <ScrollView contentContainerStyle={styles.panel}>
@@ -292,6 +371,18 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
         <ActionRow>
           <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
           <PrimaryButton label="Enviar Ticket" loading={busy} onPress={requestFieldSheetTemplate} />
+        </ActionRow>
+      </ScrollView>
+    );
+    if (ticketMode === 'field_sheet_reopen') return (
+      <ScrollView contentContainerStyle={styles.panel}>
+        <Text style={styles.title}>Solicitar desbloqueo</Text>
+        <Text style={styles.meta}>{activeEquipment.instrument} · OT {workOrder.folio} · Hoja completed</Text>
+        <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
+        <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
+        <ActionRow>
+          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
+          <PrimaryButton label="Enviar Ticket" loading={busy} onPress={requestFieldSheetReopen} />
         </ActionRow>
       </ScrollView>
     );
@@ -327,11 +418,15 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
 
         {!sheet ? <>
           <Section title="Selecciona hoja de campo">
-            {templates.map((template) => (
+            <Field label="Buscar hoja de campo" onChange={setTemplateSearch} placeholder="Ej. presión, termómetro…" value={templateSearch} />
+            {visibleTemplates.map((template) => (
               <Pressable key={template.template_key} onPress={() => setSelectedTemplate(template.template_key)} style={[styles.choice, selectedTemplate === template.template_key && styles.choiceActive]}>
                 <Text>{template.name} · v{template.version}</Text>
               </Pressable>
             ))}
+            {visibleTemplates.length === 0 && (
+              <SecondaryButton label="+ Solicitar hoja de campo" onPress={() => setTicketMode('field_sheet_template')} />
+            )}
           </Section>
           {activeEquipment.service_type === 'linked' && activeEquipment.folio_status === 'pending' && !external && (
             <SecondaryButton label="Ticket · Resolver folio Vinculado" onPress={() => setTicketMode('linked_folio')} />
@@ -342,7 +437,6 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
           <ActionRow>
             <PrimaryButton disabled={!selectedTemplate || !canCapture} label="Abrir captura" loading={busy} onPress={createSheet} />
           </ActionRow>
-          <SecondaryButton label="No encuentro la hoja necesaria" onPress={() => setTicketMode('field_sheet_template')} />
         </> : <>
           <View style={styles.statusRow}>
             <StatusBadge label={sheet.status.toUpperCase()} tone={statusTone(sheet.status)} />
@@ -352,6 +446,8 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
             <Section title="Datos de la hoja">
               {ordinaryFields.map((field) => field.readOnly
                 ? <ReadOnlyField key={field.key} label={field.label} value={String((sheet as unknown as Record<string, unknown>)[field.key] ?? '-')} />
+                : !editable
+                ? <ReadOnlyField key={field.key} label={field.label} value={String(values[field.key] ?? '-')} />
                 : (
                   <Field
                     key={field.key}
@@ -364,6 +460,12 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
                 ))}
             </Section>
           )}
+
+          <Section title="Firmas">
+            <ReadOnlyField label="Calibró" value={resolveCalibradoPor(workOrder)} />
+            <ReadOnlyField label="Revisó" value={PENDING_SIGNATURE_LABEL} />
+            <ReadOnlyField label="Elaboró informe" value={PENDING_SIGNATURE_LABEL} />
+          </Section>
 
           {definition && definition.result_sections.length > 0 && overallProgress && (
             <Section title="Resultados">
@@ -380,12 +482,26 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
             </Section>
           )}
 
-          {canCapture && sheet.status !== 'completed' && (
+          {canCapture && !captureIsAlwaysReadOnly(sheet.status) && (
+            editable ? (
+              <ActionRow>
+                <SecondaryButton label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
+                <PrimaryButton label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
+              </ActionRow>
+            ) : (
+              <SecondaryButton label="Editar" onPress={() => setViewMode(viewModeAfterEditRequested())} />
+            )
+          )}
+
+          {sheet.status === 'completed' && (
             <ActionRow>
-              <SecondaryButton label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
-              <PrimaryButton label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
+              <SecondaryButton label="Ver / descargar PDF" loading={downloadingPdf} onPress={downloadFieldSheetPdf} />
+              {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
+                <SecondaryButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+              )}
             </ActionRow>
           )}
+
           <SecondaryButton
             disabled={!labelPrintService.available}
             label="Imprimir etiqueta 50×30 · Próxima fase"
@@ -396,7 +512,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
             <FieldSheetResultsWorkspace
               onClose={() => setResultsOpen(false)}
               onSave={saveResultsRows}
-              readOnly={!canCapture || sheet.status === 'completed'}
+              readOnly={!canCapture || !editable}
               rows={sheet.results_rows}
               sections={definition.result_sections}
               title={`${activeEquipment.instrument} · ${definition.name}`}
@@ -404,7 +520,7 @@ export function LabTechnicalCapture({ canCapture, external, onUpdated, request, 
             />
           )}
         </>}
-        <SecondaryButton label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); }} />
+        <SecondaryButton label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
       </ScrollView>
     );
   }

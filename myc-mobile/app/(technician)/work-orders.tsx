@@ -1,5 +1,4 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import * as DocumentPicker from 'expo-document-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { useFocusEffect } from '@react-navigation/native';
@@ -22,11 +21,12 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
-import { apiUrl, ApiError, readApiError, readApiErrorDetail } from '@/src/api/client';
+import { apiUrl, ApiError, readApiErrorDetail } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignatureFlow';
 import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
 import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
+import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
 import {
   buildConfiguredEquipmentPayload,
   buildEquipmentEditRequestBody,
@@ -187,10 +187,7 @@ export default function WorkOrdersScreen() {
   const [ticketDescription, setTicketDescription] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [labClients, setLabClients] = useState<LabClient[]>([]);
-  const [clientSearch, setClientSearch] = useState('');
-  const [creatingClient, setCreatingClient] = useState(false);
-  const [newClient, setNewClient] = useState({ company: '', address: '', attention: '' });
+  const [adminActionsOpen, setAdminActionsOpen] = useState(false);
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
@@ -340,8 +337,6 @@ export default function WorkOrdersScreen() {
     canCaptureSignatures,
     canCaptureFieldSheets,
     canDownloadLabPackages,
-    canManageLabClients,
-    canImportLabClients,
   } = capabilities;
   const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
@@ -360,16 +355,12 @@ export default function WorkOrdersScreen() {
     setSignatureDrawing(false);
     setClosureScope('group');
     setOpen(true);
-    void loadLabClients();
   }
 
-  async function loadLabClients(search = '') {
-    try {
-      const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
-      setLabClients(await request<LabClient[]>(`/mobile/v1/technician/lab-clients${query}`));
-    } catch { setLabClients([]); }
-  }
-
+  // Cierre UX 2026-09: el picker de cliente receptor de la OT reutiliza el
+  // mismo LabClientSelector que ya usaba el cliente documental del equipo
+  // (LabEquipmentForm) -- ya no un segundo buscador/alta duplicado aquí. La
+  // importación XLSX se movió al módulo Clientes (app/(technician)/clients.tsx).
   function selectLabClient(client: LabClient) {
     setGeneral((current) => ({
       ...current,
@@ -377,46 +368,10 @@ export default function WorkOrdersScreen() {
       client_name: client.company,
       address: client.address,
       contact_name: client.attention,
+      postal_code: client.postal_code ?? current.postal_code,
+      city: client.city ?? current.city,
+      state_name: client.state ?? current.state_name,
     }));
-    setClientSearch(client.company);
-  }
-
-  async function createInlineLabClient() {
-    if (!newClient.company.trim() || !newClient.address.trim() || !newClient.attention.trim()) return;
-    setBusy(true);
-    try {
-      const client = await request<LabClient>('/mobile/v1/technician/lab-clients', {
-        method: 'POST', body: JSON.stringify(newClient),
-      });
-      setLabClients((current) => [client, ...current.filter((item) => item.id !== client.id)]);
-      selectLabClient(client);
-      setCreatingClient(false);
-      setNewClient({ company: '', address: '', attention: '' });
-    } catch (error) {
-      Alert.alert('No fue posible crear el cliente', error instanceof Error ? error.message : 'Revisa los datos');
-    } finally { setBusy(false); }
-  }
-
-  async function importLabClients() {
-    const picked = await DocumentPicker.getDocumentAsync({
-      copyToCacheDirectory: true,
-      multiple: false,
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    if (picked.canceled) return;
-    setBusy(true);
-    try {
-      const asset = picked.assets[0];
-      const form = new FormData();
-      form.append('upload', { uri: asset.uri, name: asset.name, type: asset.mimeType ?? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' } as unknown as Blob);
-      const response = await authorizedFetch(apiUrl('/mobile/v1/technician/lab-clients/import'), { method: 'POST', body: form });
-      if (!response.ok) throw new Error(await readApiError(response));
-      const summary = await response.json() as { new: number; skipped: number; invalid: number };
-      await loadLabClients(clientSearch);
-      Alert.alert('Importación terminada', `${summary.new} nuevos · ${summary.skipped} omitidos · ${summary.invalid} inválidos`);
-    } catch (error) {
-      Alert.alert('No fue posible importar', error instanceof Error ? error.message : 'Revisa el XLSX');
-    } finally { setBusy(false); }
   }
 
   function startGroupRequest() {
@@ -510,7 +465,6 @@ export default function WorkOrdersScreen() {
       }));
       if (!sameSignatureCohort) setSignatureDrawing(false);
       setWorkOrder(detail);
-      setClientSearch(detail.client_name);
       setGeneral({
         lab_client_id: detail.lab_client_id,
         reception_date: detail.reception_date,
@@ -954,7 +908,6 @@ export default function WorkOrdersScreen() {
       {canCreateWorkOrders && <Pressable style={[styles.primary, styles.screenPrimary]} onPress={startNew}><Text style={styles.primaryText}>+ Generar orden</Text></Pressable>}
       {canCreateWorkOrderGroupsDirect && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={startDirectGroup}><Text style={styles.secondaryText}>+ Crear grupo anticipado</Text></Pressable>}
       {canRequestWorkOrderGroups && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={startGroupRequest}><Text style={styles.secondaryText}>Solicitar grupo anticipado</Text></Pressable>}
-      {canImportLabClients && <Pressable style={[styles.secondary, styles.screenPrimary]} onPress={importLabClients}><Text style={styles.secondaryText}>Importar Clientes LAB · XLSX</Text></Pressable>}
       {canRequestWorkOrderGroups && groupRequests.length > 0 && <View style={styles.filters}><Text style={styles.filterLabel}>Mis solicitudes de grupo</Text>{groupRequests.map((item) => <Pressable key={item.id} onPress={() => setSelectedGroupRequest(item)}><Text style={styles.status}>#{item.id} · {item.quantity} OT · {item.status}{item.folios.length ? ` · folios ${item.folios.join(', ')}` : ' · sin folios'}</Text></Pressable>)}</View>}
       {loading ? <ActivityIndicator style={styles.loader} /> : (
         <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
@@ -1012,21 +965,18 @@ export default function WorkOrdersScreen() {
                     {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <Field label="Fecha de recepción (AAAA-MM-DD)" required value={general.reception_date} onChangeText={(value) => setGeneral({ ...general, reception_date: value })} />
                     <Field label="Fecha de salida (AAAA-MM-DD)" required value={general.departure_date} onChangeText={(value) => setGeneral({ ...general, departure_date: value })} />
-                    <Field label="Buscar cliente" required value={clientSearch} onChangeText={(value) => { setClientSearch(value); setGeneral({ ...general, lab_client_id: null }); void loadLabClients(value); }} />
-                    {!!clientSearch.trim() && !general.lab_client_id && labClients.slice(0, 8).map((client) => (
-                      <Pressable key={client.id} style={styles.clientChoice} onPress={() => selectLabClient(client)}>
-                        <Text style={styles.clientChoiceTitle}>{client.company}</Text>
-                        <Text style={styles.clientChoiceMeta}>{client.address} · Atención: {client.attention}</Text>
-                      </Pressable>
-                    ))}
-                    {canManageLabClients && <Pressable style={styles.secondary} onPress={() => setCreatingClient((value) => !value)}><Text style={styles.secondaryText}>+ Crear cliente</Text></Pressable>}
-                    {creatingClient && <View style={styles.inlineClient}>
-                      <Field label="Empresa" required value={newClient.company} onChangeText={(value) => setNewClient({ ...newClient, company: value })} />
-                      <Field label="Dirección completa" required multiline value={newClient.address} onChangeText={(value) => setNewClient({ ...newClient, address: value })} />
-                      <Field label="Atención a" required value={newClient.attention} onChangeText={(value) => setNewClient({ ...newClient, attention: value })} />
-                      <Pressable disabled={busy || !newClient.company.trim() || !newClient.address.trim() || !newClient.attention.trim()} style={styles.primary} onPress={createInlineLabClient}><Text style={styles.primaryText}>Guardar y seleccionar</Text></Pressable>
-                    </View>}
-                    {!!general.lab_client_id && <View style={styles.selectedClient}><Text style={styles.clientChoiceTitle}>{general.client_name}</Text><Text style={styles.clientChoiceMeta}>{general.address}</Text></View>}
+                    <Text style={styles.fieldLabel}>Cliente *</Text>
+                    {general.lab_client_id ? (
+                      <View style={styles.selectedClient}>
+                        <Text style={styles.clientChoiceTitle}>{general.client_name}</Text>
+                        <Text style={styles.clientChoiceMeta}>{general.address}</Text>
+                        <Pressable onPress={() => setGeneral({ ...general, lab_client_id: null, client_name: '' })}>
+                          <Text style={styles.change}>Cambiar</Text>
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <LabClientSelector request={request} onSelect={selectLabClient} />
+                    )}
                     <Field label="Atención / contacto" value={general.contact_name} onChangeText={(value) => setGeneral({ ...general, contact_name: value })} />
                   </FormSection>
                   <FormSection title="Ubicación y referencia">
@@ -1101,9 +1051,9 @@ export default function WorkOrdersScreen() {
                   <View style={styles.sectionIntro}>
                     <Text style={styles.sectionEyebrow}>CAPTURA TÉCNICA</Text>
                     <Text style={styles.sectionTitle}>Servicio, folio y hoja por equipo</Text>
-                    <Text style={styles.sectionDescription}>Las plantillas y sus validaciones provienen del motor canónico del ERP.</Text>
                   </View>
                   <LabTechnicalCapture
+                    accessToken={session?.access_token ?? ''}
                     canCapture={canCaptureFieldSheets}
                     external={user.actor_type === 'client'}
                     onUpdated={setWorkOrder}
@@ -1259,16 +1209,20 @@ export default function WorkOrdersScreen() {
 
               {workOrder && canDelete && (
                 <View style={styles.dangerZone}>
-                  <Text style={styles.dangerTitle}>Acciones administrativas</Text>
-                  {canCancel && workOrder.status !== 'cancelled' && <Pressable style={styles.cancelWorkOrder} onPress={() => { setTicketDialogMode('cancel'); setTicketOpen(true); }}><Text style={styles.cancelWorkOrderText}>Cancelar y conservar OT</Text></Pressable>}
-                  <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
-                  <Pressable
-                    disabled={busy || deleting}
-                    onPress={() => confirmWorkOrderDeletion(workOrder)}
-                    style={[styles.deleteWorkOrder, (busy || deleting) && styles.disabled]}
-                  >
-                    <Text style={styles.deleteWorkOrderText}>Eliminar orden de trabajo</Text>
+                  <Pressable onPress={() => setAdminActionsOpen((value) => !value)}>
+                    <Text style={styles.dangerTitle}>Acciones administrativas {adminActionsOpen ? '▾' : '▸'}</Text>
                   </Pressable>
+                  {adminActionsOpen && <>
+                    {canCancel && workOrder.status !== 'cancelled' && <Pressable style={styles.cancelWorkOrder} onPress={() => { setTicketDialogMode('cancel'); setTicketOpen(true); }}><Text style={styles.cancelWorkOrderText}>Cancelar y conservar OT</Text></Pressable>}
+                    <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
+                    <Pressable
+                      disabled={busy || deleting}
+                      onPress={() => confirmWorkOrderDeletion(workOrder)}
+                      style={[styles.deleteWorkOrder, (busy || deleting) && styles.disabled]}
+                    >
+                      <Text style={styles.deleteWorkOrderText}>Eliminar orden de trabajo</Text>
+                    </Pressable>
+                  </>}
                 </View>
               )}
             </ScrollView>
@@ -1821,14 +1775,6 @@ const styles = StyleSheet.create({
     paddingTop: 18,
   },
 
-  clientChoice: {
-    backgroundColor: '#f5f8fa',
-    borderColor: '#cbd7df',
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 11,
-  },
-
   clientChoiceTitle: {
     color: '#142b3a',
     fontWeight: '800',
@@ -1840,19 +1786,18 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
-  inlineClient: {
-    backgroundColor: '#eef4f7',
-    borderRadius: 12,
-    gap: 8,
-    padding: 12,
-  },
-
   selectedClient: {
     backgroundColor: '#e4f4ef',
     borderColor: '#75b9a7',
     borderRadius: 10,
     borderWidth: 1,
+    gap: 4,
     padding: 11,
+  },
+
+  change: {
+    color: '#0067a8',
+    fontWeight: '700',
   },
 
   formSectionTitle: {

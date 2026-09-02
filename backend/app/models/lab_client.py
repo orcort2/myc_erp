@@ -35,6 +35,15 @@ class LabClient(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
     company: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     address: Mapped[str] = mapped_column(Text, nullable=False)
     attention: Mapped[str] = mapped_column(String(180), nullable=False)
+    # Domicilio estructurado (cierre UX 2026-09): LabWorkOrder ya modela
+    # postal_code/city/state_name para el receptor de la OT; LabClient sólo
+    # tenía `address` libre, así que nunca podía autorrellenarlos. No se
+    # desglosa calle/número/colonia porque el dominio actual tampoco los
+    # modela en LabWorkOrder -- estos 3 campos son exactamente los que la OT
+    # ya reconoce como propios.
+    postal_code: Mapped[str | None] = mapped_column(String(20))
+    city: Mapped[str | None] = mapped_column(String(120))
+    state: Mapped[str | None] = mapped_column(String(120))
     normalized_company: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_address: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_attention: Mapped[str] = mapped_column(String(180), nullable=False)

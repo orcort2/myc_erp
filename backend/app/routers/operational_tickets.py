@@ -12,6 +12,7 @@ from app.core.mobile.security import (
 )
 from app.schemas.operational_ticket import (
     CertificateFolioBlockCreate,
+    FieldSheetReopenTicketCreate,
     FieldSheetTemplateRequestCreate,
     FolioTicketCreate,
     PartialCloseTicketCreate,
@@ -24,6 +25,7 @@ from app.schemas.operational_ticket import (
 from app.services.operational_tickets import (
     approve_reopen_ticket,
     create_certificate_block_ticket,
+    create_field_sheet_reopen_ticket,
     create_field_sheet_template_request_ticket,
     create_folio_ticket,
     create_partial_close_ticket,
@@ -91,6 +93,20 @@ def create_field_sheet_template_request(
 ) -> TicketRead:
     ensure_lab_work_order_scope(db, payload.work_order_id, context)
     return create_field_sheet_template_request_ticket(
+        db, payload, context.user, operator_client_id=context.client_id
+    )
+
+
+@router.post("/field-sheet-reopen", response_model=TicketRead, status_code=201)
+def create_field_sheet_reopen_request(
+    payload: FieldSheetReopenTicketCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.create", "tickets.create")
+    ),
+) -> TicketRead:
+    ensure_lab_work_order_scope(db, payload.work_order_id, context)
+    return create_field_sheet_reopen_ticket(
         db, payload, context.user, operator_client_id=context.client_id
     )
 

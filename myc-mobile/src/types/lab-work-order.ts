@@ -21,7 +21,6 @@ export type LabEquipment = {
   serial_number: string;
   // Fase 6: identidad del equipo (mismo criterio que Equipment productivo).
   model: string | null;
-  range_or_capacity: string | null;
   report_number: string | null;
   is_good_condition: boolean;
   service_type: 'accredited' | 'traceable' | 'linked' | null;
@@ -81,6 +80,25 @@ export type LabWorkOrder = {
   cancellation_reason: string | null;
   equipment: LabEquipment[];
   related_work_orders: LabRelatedWorkOrder[];
+  // Cierre UX 2026-09: autoridad real de "Calibró" en el PDF/captura -- el
+  // firmante técnico ya persistido en la sesión de firma de la OT, nunca un
+  // input libre (ver LabTechnicalCapture, resolveSignerName). Opcional para
+  // no romper los fixtures existentes que no modelan firmas.
+  signature_session?: LabSignatureSession | null;
+};
+
+export type LabSignature = {
+  id: number;
+  signature_type: 'technician' | 'client';
+  signer_name: string;
+  signed_at: string;
+};
+
+export type LabSignatureSession = {
+  id: number;
+  root_work_order_id: number;
+  signed_at: string;
+  signatures: LabSignature[];
 };
 
 export type LabListItem = {
@@ -112,7 +130,7 @@ export type GeneralData = {
 };
 
 export type EquipmentData = Pick<LabEquipment,
-  'instrument' | 'brand' | 'model' | 'range_or_capacity' | 'identification' | 'serial_number'
+  'instrument' | 'brand' | 'model' | 'identification' | 'serial_number'
   | 'report_number' | 'is_good_condition'
 >;
 
@@ -122,6 +140,13 @@ export type LabClient = {
   company: string;
   address: string;
   attention: string;
+  // Cierre UX 2026-09: domicilio estructurado -- LabWorkOrder ya modelaba
+  // postal_code/city/state_name por separado; el cliente ahora también, sin
+  // desglosar calle/número/colonia (el dominio tampoco los modela ahí).
+  postal_code: string | null;
+  city: string | null;
+  state: string | null;
+  is_active: boolean;
 };
 
 export type LinkedCompany = {

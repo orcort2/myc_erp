@@ -101,7 +101,6 @@ class LabEquipmentBase(BaseModel):
     identification: str = Field(min_length=1, max_length=160)
     serial_number: str = Field(min_length=1, max_length=160)
     model: str | None = Field(default=None, max_length=160)
-    range_or_capacity: str | None = Field(default=None, max_length=180)
     report_number: str | None = Field(default=None, max_length=160)
     is_good_condition: bool
 

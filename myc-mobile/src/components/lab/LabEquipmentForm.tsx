@@ -35,7 +35,7 @@ const SERVICE_OPTIONS: { value: LabServiceType; label: string }[] = [
 ];
 
 const BLANK_EQUIPMENT: EquipmentBasicData = {
-  instrument: '', brand: '', model: null, range_or_capacity: null,
+  instrument: '', brand: '', model: null,
   identification: '', serial_number: '',
   report_number: null, is_good_condition: true,
 };
@@ -93,7 +93,6 @@ export function LabEquipmentForm({
       <Field label="Instrumento" required value={equipment.instrument} onChange={(value) => setEquipment({ ...equipment, instrument: value })} />
       <Field label="Marca" required value={equipment.brand} onChange={(value) => setEquipment({ ...equipment, brand: value })} />
       <Field label="Modelo" value={equipment.model ?? ''} onChange={(value) => setEquipment({ ...equipment, model: value || null })} />
-      <Field label="Alcance / capacidad" value={equipment.range_or_capacity ?? ''} onChange={(value) => setEquipment({ ...equipment, range_or_capacity: value || null })} />
       <Field label="Identificación" required value={equipment.identification} onChange={(value) => setEquipment({ ...equipment, identification: value })} />
       <Field label="Serie" required value={equipment.serial_number} onChange={(value) => setEquipment({ ...equipment, serial_number: value })} />
       {service === 'linked' ? (

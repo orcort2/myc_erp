@@ -3,7 +3,12 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.mobile.security import MobileSecurityContext, require_mobile_permission
-from app.schemas.lab_client import LabClientCreate, LabClientImportSummary, LabClientRead
+from app.schemas.lab_client import (
+    LabClientCreate,
+    LabClientImportSummary,
+    LabClientRead,
+    LabClientUpdate,
+)
 from app.services.auth import user_has_permission
 from app.services.lab_clients import (
     activate_lab_client,
@@ -11,6 +16,7 @@ from app.services.lab_clients import (
     deactivate_lab_client,
     import_lab_clients_xlsx,
     list_lab_clients,
+    update_lab_client,
 )
 
 
@@ -44,6 +50,18 @@ def post_client(
 ) -> LabClientRead:
     return create_lab_client(
         db, payload, context.user, operator_client_id=context.client_id
+    )
+
+
+@router.patch("/{client_id}", response_model=LabClientRead)
+def patch_client(
+    client_id: int,
+    payload: LabClientUpdate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission("lab_clients.update")),
+) -> LabClientRead:
+    return update_lab_client(
+        db, client_id, payload, context.user, operator_client_id=context.client_id
     )
 
 

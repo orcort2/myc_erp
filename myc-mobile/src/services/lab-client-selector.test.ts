@@ -15,7 +15,10 @@ import {
 import type { LabClientOption } from './lab-client-selector';
 
 function client(id: number): LabClientOption {
-  return { id, company: `Cliente ${id}`, address: '', attention: '' };
+  return {
+    id, company: `Cliente ${id}`, address: '', attention: '',
+    postal_code: null, city: null, state: null,
+  };
 }
 
 test('1. la búsqueda arma el query contra el backend por término (empresa/atención/dirección ya cubiertos ahí)', () => {
@@ -34,6 +37,10 @@ test('el selector nunca renderiza más de MAX_VISIBLE_RESULTS de golpe', () => {
   const visible = limitVisibleResults(many);
   assert.equal(visible.length, MAX_VISIBLE_RESULTS);
   assert.equal(visible[0].id, 0);
+});
+
+test('cierre UX 2026-09: el máximo visible es exactamente 5, no una lista gigante', () => {
+  assert.equal(MAX_VISIBLE_RESULTS, 5);
 });
 
 test('2. seleccionar un cliente de la lista fija selectedClientId', () => {

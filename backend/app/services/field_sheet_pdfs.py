@@ -134,6 +134,25 @@ def _row_value(row: FieldSheetResult, column) -> str:
     return "" if value is None else str(value)
 
 
+def _row_has_meaningful_capture(row: FieldSheetResult, columns: list) -> bool:
+    from app.services.lab_field_sheets import _has_capture_value
+
+    return any(_has_capture_value(_row_value(row, column)) for column in columns)
+
+
+def _trim_trailing_empty_rows(rows: list[FieldSheetResult], columns: list) -> list[FieldSheetResult]:
+    """El PDF sólo imprime hasta la última fila con al menos un valor
+    capturado (rows ya vienen ordenadas por row_number, ver
+    FieldSheet.results_rows). Huecos intermedios se conservan -- sólo se
+    recorta la cola vacía final; si ninguna fila tiene datos, no se imprime
+    ninguna (no se inventan resultados)."""
+    last_meaningful = -1
+    for index, row in enumerate(rows):
+        if _row_has_meaningful_capture(row, columns):
+            last_meaningful = index
+    return rows[: last_meaningful + 1]
+
+
 def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[ResultTableSection]:
     sections: list[ResultTableSection] = []
     rows_by_section = {
@@ -143,12 +162,15 @@ def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[
     capture_values = field_sheet.capture_values or {}
     for section in template_definition["result_sections"]:
         unit_field = (section.get("metadata") or {}).get("unit_field")
+        section_rows = _trim_trailing_empty_rows(
+            rows_by_section.get(section["key"], []), section["columns"]
+        )
         sections.append(
             ResultTableSection(
                 key=section["key"],
                 title=section["title"],
                 columns=section["columns"],
-                rows=rows_by_section.get(section["key"], []),
+                rows=section_rows,
                 unit_value=str(capture_values.get(unit_field) or "") if unit_field else None,
             )
         )

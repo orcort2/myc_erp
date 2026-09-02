@@ -232,15 +232,15 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     brand: Mapped[str] = mapped_column(String(160), nullable=False)
     identification: Mapped[str] = mapped_column(String(160), nullable=False)
     serial_number: Mapped[str] = mapped_column(String(160), nullable=False)
-    # Fase 6: model y range_or_capacity ("scope" en capture_values/PDF) son
-    # identidad del EQUIPO -- mismo criterio que Equipment (productivo,
-    # app/models/equipment.py), que ya los tiene como columnas propias del
-    # equipo, no del documento de captura. location/minimum_division en
-    # cambio ya viven en FieldSheet (app/models/field_sheet.py) porque son
-    # datos de la captura/servicio, no del equipo -- se quedan ahí sin
-    # cambios; no se duplican aquí sólo para prellenar.
+    # Fase 6: model es identidad del EQUIPO -- mismo criterio que Equipment
+    # (productivo, app/models/equipment.py), que ya lo tiene como columna
+    # propia del equipo, no del documento de captura.
+    # Cierre UX 2026-09: range_or_capacity se revirtió (migración
+    # 5e58473f1be6) -- "Alcance / capacidad" no es control documental de alta
+    # de equipo, es dato operativo/metrológico. El técnico lo captura en la
+    # FieldSheet cuando la plantilla lo pide (ya existe ahí como "scope" de
+    # EquipmentDataBlock); no se prellena desde el equipo.
     model: Mapped[str | None] = mapped_column(String(160))
-    range_or_capacity: Mapped[str | None] = mapped_column(String(180))
     report_number: Mapped[str | None] = mapped_column(String(160))
     is_good_condition: Mapped[bool] = mapped_column(Boolean, nullable=False)
     service_type: Mapped[str | None] = mapped_column(String(20), index=True)

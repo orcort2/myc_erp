@@ -54,6 +54,7 @@ from app.services.lab_work_orders import (
     update_equipment,
     update_work_order,
 )
+from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.field_sheet_templates import list_field_sheet_templates
 from app.services.lab_field_sheets import (
     complete_lab_field_sheet,
@@ -503,6 +504,30 @@ def get_lab_field_sheet(
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return read_lab_field_sheet(db, work_order_id, equipment_id)
+
+
+@router.get("/{work_order_id}/equipment/{equipment_id}/field-sheet/pdf")
+def get_lab_field_sheet_pdf(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "work_orders.read_organization", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
+    ),
+) -> Response:
+    """Expone vía auth Mobile el PDF institucional que ya genera
+    generate_field_sheet_pdf (mismo backend/documento que usa el router
+    productivo field_sheets.py) -- sin renderer ni PDF paralelo."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    sheet = read_lab_field_sheet(db, work_order_id, equipment_id)
+    content, filename = generate_field_sheet_pdf(db, sheet.id)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.patch("/{work_order_id}/equipment/{equipment_id}/field-sheet", response_model=FieldSheetRead)

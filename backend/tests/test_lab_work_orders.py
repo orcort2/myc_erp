@@ -687,10 +687,12 @@ def test_modern_lab_flow_uses_independent_sequences_and_linked_manual_folio(lab_
     assert package.content.startswith(b"%PDF")
 
 
-def test_equipment_crud_limit_and_model_scope_accepted(lab_context):
-    """Fase 6: model/range_or_capacity son identidad propia del equipo LAB
-    (mismo criterio que Equipment productivo) -- ya no rechazados por el
-    schema (extra='forbid'), a diferencia de antes de esta fase."""
+def test_equipment_crud_limit_and_model_accepted_but_not_range_or_capacity(lab_context):
+    """Cierre UX 2026-09: model sigue siendo identidad propia del equipo LAB
+    (mismo criterio que Equipment productivo), pero range_or_capacity
+    ("Alcance / capacidad") ya NO es un dato de alta de equipo -- el schema
+    (extra='forbid') lo rechaza. Ese dato se captura en la FieldSheet, no en
+    la recepción/alta."""
     client, _factory, tokens = lab_context
     headers = auth(tokens["tech"])
     created = client.post(
@@ -699,15 +701,21 @@ def test_equipment_crud_limit_and_model_scope_accepted(lab_context):
         headers=headers,
     ).json()
     base = f"/api/mobile/v1/technician/lab-work-orders/{created['id']}"
-    with_model = client.post(
+    rejected = client.post(
         f"{base}/equipment",
         json=equipment_payload(1, model="Modelo X-100", range_or_capacity="0-100 kg"),
+        headers=headers,
+    )
+    assert rejected.status_code == 422, rejected.text
+    with_model = client.post(
+        f"{base}/equipment",
+        json=equipment_payload(1, model="Modelo X-100"),
         headers=headers,
     )
     assert with_model.status_code == 201, with_model.text
     created_equipment = with_model.json()["equipment"][-1]
     assert created_equipment["model"] == "Modelo X-100"
-    assert created_equipment["range_or_capacity"] == "0-100 kg"
+    assert "range_or_capacity" not in created_equipment
     for index in range(2, 11):
         response = client.post(f"{base}/equipment", json=equipment_payload(index), headers=headers)
         assert response.status_code == 201, response.text

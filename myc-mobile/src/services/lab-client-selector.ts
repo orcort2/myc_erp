@@ -3,12 +3,16 @@ export type LabClientOption = {
   company: string;
   address: string;
   attention: string;
+  postal_code: string | null;
+  city: string | null;
+  state: string | null;
 };
 
-/** Máximo de resultados que el selector renderiza a la vez (Fase 2A: "no
- * mostrar cientos de registros simultáneamente"). El backend ya filtra por
- * término de búsqueda; esto es sólo el tope visual del propio selector. */
-export const MAX_VISIBLE_RESULTS = 20;
+/** Máximo de resultados que el selector renderiza a la vez (cierre UX
+ * 2026-09: "máximo 5 resultados visibles", navegación táctil cómoda). El
+ * backend ya filtra por término de búsqueda; esto es sólo el tope visual
+ * del propio selector. */
+export const MAX_VISIBLE_RESULTS = 5;
 
 export function limitVisibleResults(results: LabClientOption[]): LabClientOption[] {
   return results.slice(0, MAX_VISIBLE_RESULTS);

@@ -14,6 +14,18 @@ export const spacing = {
   xl: 32,
 } as const;
 
+/** Cierre UX 2026-09: primitivas de "respiración" para normalizar spacing en
+ * las vistas LAB tocadas por este pase (Clientes, selectores, captura) sin
+ * números sueltos por componente. Se apoyan en `spacing` de arriba en vez de
+ * definir una escala paralela. */
+export const layout = {
+  screenPadding: spacing.lg,
+  sectionGap: spacing.lg,
+  cardGap: spacing.md,
+  fieldGap: spacing.sm,
+  actionGap: spacing.sm,
+} as const;
+
 export const radius = {
   sm: 8,
   md: 10,

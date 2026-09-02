@@ -22,6 +22,8 @@ export type MobileCapabilities = {
   canDownloadLabPackages: boolean;
   canManageLabClients: boolean;
   canImportLabClients: boolean;
+  canReadLabClients: boolean;
+  canEditLabClients: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -86,5 +88,12 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       || hasLegacyLabAccess,
     canImportLabClients: user?.actor_type === 'internal'
       && hasPermission(permissions, 'lab_clients.import'),
+    // Mismo permiso que exige el GET backend (lab_clients.py:20-34): read u
+    // work_orders.read_organization -- gatea si "Clientes" aparece en Inicio.
+    canReadLabClients: hasPermission(permissions, 'lab_clients.read')
+      || hasPermission(permissions, 'work_orders.read_organization')
+      || hasLegacyLabAccess,
+    canEditLabClients: hasPermission(permissions, 'lab_clients.update')
+      || hasLegacyLabAccess,
   };
 }

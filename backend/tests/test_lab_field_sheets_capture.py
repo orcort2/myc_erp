@@ -26,11 +26,15 @@ from app.models.lab_work_order import LabWorkOrder, LabWorkOrderSignature, LabWo
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
 from app.schemas.operational_ticket import TicketReject, TicketResolve, TicketReview
+from app.models.field_sheet import FieldSheetResult
 from app.services.field_sheet_pdfs import (
+    _group_sections,
     _resolve_field_sheet_signatures,
+    _trim_trailing_empty_rows,
     generate_field_sheet_pdf,
     resolve_field_sheet_pdf_renderer,
 )
+from app.services.field_sheet_templates import get_template_snapshot
 from app.services.field_sheets import EDITABLE_STATUSES
 from app.services.operational_tickets import approve_reopen_ticket, reject_ticket, resolve_operational_ticket
 
@@ -378,7 +382,6 @@ def test_two_operational_families_complete_freeze_and_redownload_identically(
         headers,
         count=1,
         model="Modelo QA",
-        range_or_capacity="0 a 10",
     )
     sheet_id = _create_and_complete_field_sheet(
         client, headers, order_id, equipment_ids[0], template_key=template_key
@@ -386,7 +389,10 @@ def test_two_operational_families_complete_freeze_and_redownload_identically(
     with factory() as db:
         sheet = db.get(FieldSheet, sheet_id)
         assert sheet.capture_values["model"] == "Modelo QA"
-        assert sheet.capture_values["scope"] == "0 a 10"
+        # Cierre UX 2026-09: "scope" ya no se prellena desde el equipo
+        # (range_or_capacity se revirtió del alta) -- el técnico lo captura
+        # directamente en la hoja cuando la plantilla lo pide.
+        assert "scope" not in sheet.capture_values
         frozen_sha = sheet.final_pdf_sha256
         first_bytes, _ = generate_field_sheet_pdf(db, sheet_id)
     with factory() as db:
@@ -890,6 +896,126 @@ def test_pdf_footer_delimits_document_code_and_revision_with_a_pipe(lab_context,
     assert "FCA-30 · R1" not in rendered_text
 
 
+def _result_row(row_number: int, **row_data) -> FieldSheetResult:
+    return FieldSheetResult(section_key="s", row_number=row_number, row_data=row_data)
+
+
+def test_trim_trailing_empty_rows_keeps_only_up_to_the_last_meaningful_row():
+    columns = [{"source": "pattern_value"}, {"source": "notes"}]
+    rows = [
+        _result_row(1, pattern_value="1.00"),
+        _result_row(2, pattern_value="2.00"),
+        _result_row(3),
+        _result_row(4),
+    ]
+    trimmed = _trim_trailing_empty_rows(rows, columns)
+    assert [row.row_number for row in trimmed] == [1, 2]
+
+
+def test_trim_trailing_empty_rows_preserves_interior_gaps():
+    columns = [{"source": "pattern_value"}]
+    rows = [
+        _result_row(1, pattern_value="1.00"),
+        _result_row(2),
+        _result_row(3, pattern_value="3.00"),
+        _result_row(4),
+        _result_row(5),
+    ]
+    trimmed = _trim_trailing_empty_rows(rows, columns)
+    assert [row.row_number for row in trimmed] == [1, 2, 3]
+
+
+def test_trim_trailing_empty_rows_prints_nothing_without_any_captured_data():
+    columns = [{"source": "pattern_value"}]
+    rows = [_result_row(1), _result_row(2), _result_row(3)]
+    assert _trim_trailing_empty_rows(rows, columns) == []
+
+
+def test_trim_trailing_empty_rows_ignores_whitespace_only_values():
+    columns = [{"source": "notes"}]
+    rows = [_result_row(1, notes="   "), _result_row(2, notes="real")]
+    trimmed = _trim_trailing_empty_rows(rows, columns)
+    assert [row.row_number for row in trimmed] == [1, 2]
+
+
+@pytest.mark.parametrize("template_key", ["general", "manometro"])
+def test_field_sheet_pdf_omits_trailing_empty_rows_across_families(lab_context, template_key):
+    """Autoridad backend/documental (no sólo Mobile): la sección de resultados
+    de la hoja congelada sólo trae hasta la última fila con captura real,
+    para cualquier familia declarativa -- sin recortar huecos intermedios."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": template_key},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_json = created.json()
+    result_section = sheet_json["template_definition"]["result_sections"][0]
+    first_column_source = result_section["columns"][0]["source"]
+    section_key = result_section["key"]
+    section_rows = [row for row in sheet_json["results_rows"] if row["section_key"] == section_key]
+    assert len(section_rows) >= 3, "family fixture must have at least 3 rows to prove the trim"
+    rows_payload = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": (
+                {first_column_source: "1.00"}
+                if row["row_number"] in (1, 3)
+                else row["row_data"]
+            ),
+        }
+        for row in sheet_json["results_rows"]
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows_payload},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    sheet_id = completed.json()["id"]
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        sections = _group_sections(sheet, sheet.template_definition_json)
+        target = next(section for section in sections if section.key == section_key)
+        # Fila 1 y 3 tienen datos (huecos intermedio en la 2 se conserva);
+        # de la 4 en adelante -- vacías -- no se imprimen.
+        assert [row.row_number for row in target.rows] == [1, 2, 3]
+
+        pdf_bytes, _filename = generate_field_sheet_pdf(db, sheet_id)
+    raw_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf_bytes)).pages)
+    rendered_text = re.sub(r"\s+", " ", raw_text)
+    assert "1.00" in rendered_text
+
+
+def test_mobile_can_download_the_completed_field_sheet_pdf(lab_context):
+    """Cierre UX 2026-09: Mobile antes no tenía ninguna forma de descargar el
+    PDF de una FieldSheet -- expone generate_field_sheet_pdf (mismo backend
+    ya congelado) vía auth Mobile, sin renderer nuevo."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    _create_and_complete_field_sheet(client, headers, order_id, equipment_ids[0])
+
+    downloaded = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/pdf",
+        headers=headers,
+    )
+    assert downloaded.status_code == 200, downloaded.text
+    assert downloaded.headers["content-type"] == "application/pdf"
+    assert downloaded.content.startswith(b"%PDF")
+
+
 def test_partial_close_ticket_rejects_a_lone_ot_with_no_real_cohort(lab_context):
     """Backend guard mirroring the mobile visibility rule: 'excepción de cierre
     parcial' only makes sense when the OT belongs to a group with more than one
@@ -1144,13 +1270,15 @@ def test_documentary_client_is_resolved_per_equipment_not_from_the_receiving_ord
 
 
 def test_field_sheet_capture_values_prefill_from_available_equipment_fields(lab_context):
-    """Fase 6: prefill con todos los datos hoy disponibles en
-    LabWorkOrderEquipment -- model/scope (range_or_capacity) ya son columnas
-    propias del equipo (mismo criterio que Equipment productivo) y se
-    prellenan; location/minimum_division siguen siendo datos de la
-    captura/servicio (ya viven en FieldSheet) y no se prellenan desde el
-    equipo. Sin model/scope capturados en el equipo, quedan explícitamente
-    None (no se omite la clave, para que el contrato sea estable)."""
+    """Cierre UX 2026-09: prefill con la identidad disponible en
+    LabWorkOrderEquipment -- model ya es columna propia del equipo (mismo
+    criterio que Equipment productivo) y se prellena; location/
+    minimum_division/scope siguen siendo datos de la captura/servicio (ya
+    viven en FieldSheet, scope ya no en el equipo desde que
+    range_or_capacity se revirtió del alta) y no se prellenan desde el
+    equipo. Sin model capturado en el equipo, queda explícitamente None (no
+    se omite la clave, para que el contrato sea estable); "scope" no
+    aparece en absoluto -- el técnico lo captura directamente en la hoja."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
@@ -1167,17 +1295,18 @@ def test_field_sheet_capture_values_prefill_from_available_equipment_fields(lab_
         "serial_number": "SER-1",
         "internal_id": "ID-1",
         "model": None,
-        "scope": None,
     }
 
 
-def test_field_sheet_capture_values_prefill_includes_model_and_scope_when_captured(lab_context):
-    """Fase 6: cuando el equipo LAB sí trae model/range_or_capacity, la
-    FieldSheet los prefillea igual que instrument/brand/serial_number."""
+def test_field_sheet_capture_values_prefill_includes_model_but_never_scope(lab_context):
+    """Cierre UX 2026-09: cuando el equipo LAB trae model, la FieldSheet lo
+    prefillea igual que instrument/brand/serial_number, pero "scope" nunca
+    se prefillea desde el equipo -- range_or_capacity ya no es un dato de
+    alta (ver migración 5e58473f1be6); el técnico lo captura en la hoja."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(
-        client, headers, count=1, model="Modelo X-100", range_or_capacity="0-100 kg",
+        client, headers, count=1, model="Modelo X-100",
     )
     created = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
@@ -1187,7 +1316,7 @@ def test_field_sheet_capture_values_prefill_includes_model_and_scope_when_captur
     assert created.status_code == 201, created.text
     capture_values = created.json()["capture_values"]
     assert capture_values["model"] == "Modelo X-100"
-    assert capture_values["scope"] == "0-100 kg"
+    assert "scope" not in capture_values
 
 
 def test_field_sheet_template_selection_freezes_snapshot_and_version(lab_context):
