@@ -1042,10 +1042,10 @@ def test_official_templates_expose_organization_and_magnitude_metadata(lab_conte
     by_key = {item["template_key"]: item for item in response.json()}
 
     expectations = {
-        "anemometro": {"magnitude_key": "air_velocity", "magnitude_label": "Velocidad de aire", "equipment": "anemómetro"},
-        "calibradores": {"magnitude_key": "dimensional", "magnitude_label": "Dimensional", "equipment": "calibrador vernier"},
-        "presion": {"magnitude_key": "pressure", "magnitude_label": "Presión", "equipment": "manómetro"},
-        "bascula": {"magnitude_key": "mass", "magnitude_label": "Masa", "equipment": "báscula"},
+        "anemometro": {"magnitude_key": "air_velocity", "magnitude_label": "Velocidad de aire", "equipment": "anemómetro", "variant_key": None, "variant_label": None},
+        "calibradores": {"magnitude_key": "dimensional", "magnitude_label": "Dimensional", "equipment": "calibrador vernier", "variant_key": "calibradores", "variant_label": "Calibradores"},
+        "presion": {"magnitude_key": "pressure", "magnitude_label": "Presión", "equipment": "manómetro", "variant_key": None, "variant_label": None},
+        "bascula": {"magnitude_key": "mass", "magnitude_label": "Masa", "equipment": "báscula", "variant_key": None, "variant_label": None},
     }
     for template_key, expected in expectations.items():
         metadata = by_key[template_key]["metadata"]
@@ -1055,12 +1055,19 @@ def test_official_templates_expose_organization_and_magnitude_metadata(lab_conte
         assert metadata["magnitude_label"] == expected["magnitude_label"], template_key
         assert expected["equipment"] in metadata["supported_equipment"], template_key
         assert isinstance(metadata["search_aliases"], list) and metadata["search_aliases"], template_key
+        # Micro-cierre Fases 1/2 (hallazgo 2): document_variant distingue
+        # variante documental dentro de la magnitud -- sólo 'calibradores'
+        # tiene una hoy; el resto queda null (no es obligatorio inventar
+        # una variante cuando sólo existe una hoja oficial por magnitud).
+        assert metadata.get("document_variant_key") == expected["variant_key"], template_key
+        assert metadata.get("document_variant_label") == expected["variant_label"], template_key
 
     # Plantilla fallback sin metadata de organizacion/magnitud (item 2.5):
     # no rompe, sólo no trae esas claves -- Mobile debe caer a `name`.
     general_metadata = by_key["general"]["metadata"]
     assert general_metadata.get("organization_key") is None
     assert general_metadata.get("magnitude_label") is None
+    assert general_metadata.get("document_variant_label") is None
 
 
 def test_patch_field_sheet_rejects_empty_string_for_typed_date_and_boolean_fields(lab_context):
@@ -1168,15 +1175,138 @@ def test_complete_lab_field_sheet_returns_structured_missing_fields(lab_context)
     assert isinstance(detail, dict)
     assert detail["message"]
     assert isinstance(detail["missing_fields"], list)
-    # Fase 1 del contrato canonico LAB (2026-09, item 1.3): initial_condition/
-    # final_condition ya NO son requisito universal -- una hoja "general" sin
-    # plantilla que los declare especializado required puede quedar sin
-    # llenarlos y aun asi bloquear completitud sólo por
-    # observations_or_evidence_notes (el unico requisito legado que sigue
-    # universal, sin tocar en esta actividad).
+    # Micro-cierre Fases 1/2 (hallazgo 1): initial_condition/final_condition/
+    # observations_or_evidence_notes ya NO son requisito universal para LAB --
+    # una hoja "general" recien creada, sin ninguno de esos textos, sigue sin
+    # poder completarse, pero ÚNICAMENTE porque le faltan resultados
+    # estructurados (results_rows), la última validación real de la cadena.
     assert "final_condition" not in detail["missing_fields"]
     assert "initial_condition" not in detail["missing_fields"]
-    assert "observations_or_evidence_notes" in detail["missing_fields"]
+    assert "observations_or_evidence_notes" not in detail["missing_fields"]
+    assert detail["missing_fields"] == ["results_rows"]
+
+
+def test_lab_field_sheet_completes_with_observations_and_evidence_notes_both_empty(lab_context):
+    """Micro-cierre Fases 1/2 (hallazgo 1, test A): una FieldSheet LAB
+    completa con observations/evidence_notes/final_condition vacios (nunca
+    llenados por el usuario), siempre que resultados y demas requisitos
+    reales (aqui: results_rows) esten satisfechos -- ninguno de esos campos
+    es requisito universal para LAB. (initial_condition ya llega prellenado
+    por defecto al crear la hoja -- comportamiento previo sin relacion con
+    este hallazgo, no se toca.)"""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert not created.json().get("observations")
+    assert not created.json().get("evidence_notes")
+    assert not created.json().get("final_condition")
+
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    assert not patched.json().get("observations")
+    assert not patched.json().get("evidence_notes")
+
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+
+
+def test_specialized_evidence_notes_required_still_blocks_completion(lab_context):
+    """Micro-cierre Fases 1/2 (hallazgo 1, test B): evidence_notes ya no
+    pertenece al contrato canonico comun, pero sigue disponible como campo
+    especializado -- si una plantilla lo declara required=True, debe seguir
+    bloqueando completitud exactamente igual que cualquier otro campo
+    especializado required."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+
+    _inject_block_field_requirement(factory, sheet_id, key="evidence_notes", required=True)
+
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+
+    blocked = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert blocked.status_code == 422, blocked.text
+    assert "evidence_notes" in blocked.json()["detail"]["missing_fields"]
+
+    filled = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"evidence_notes": "Evidencia adjunta"},
+        headers=headers,
+    )
+    assert filled.status_code == 200, filled.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+
+def test_productive_field_sheet_still_requires_observations_or_evidence_notes(lab_context):
+    """Micro-cierre Fases 1/2 (hallazgo 1, test C): el FieldSheet productivo
+    central (equipment_id, no lab_equipment_id) conserva exactamente su
+    comportamiento actual -- observations_or_evidence_notes sigue siendo
+    requisito universal fuera del dominio LAB."""
+    from app.services.field_sheets import _validate_ready_to_complete
+
+    sheet = FieldSheet(
+        lab_equipment_id=None,
+        template_key="general",
+        initial_condition="BUENA",
+        final_condition="BUENA",
+        observations=None,
+        evidence_notes=None,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_ready_to_complete(sheet)
+    assert exc_info.value.status_code == 422
+    assert "observations_or_evidence_notes" in exc_info.value.detail["missing_fields"]
 
 
 def test_resolve_field_sheet_signatures_returns_unchanged_rows_for_productive_sheets(lab_context):

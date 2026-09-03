@@ -449,10 +449,21 @@ def _validate_ready_to_complete(field_sheet: FieldSheet) -> None:
         if key not in missing_fields:
             missing_fields.append(key)
 
-    has_observations = bool(field_sheet.observations and field_sheet.observations.strip())
-    has_evidence = bool(field_sheet.evidence_notes and field_sheet.evidence_notes.strip())
-    if not has_observations and not has_evidence:
-        missing_fields.append("observations_or_evidence_notes")
+    # Micro-cierre Fases 1/2 (hallazgo 1): observations_or_evidence_notes era
+    # el ultimo requisito legado UNIVERSAL para LAB, contradiciendo el
+    # contrato canonico (observations pertenece al contrato comun pero
+    # required=false; evidence_notes ni siquiera pertenece a el). Igual que
+    # initial_condition/final_condition arriba, este chequeo queda
+    # exclusivamente para el FieldSheet productivo (equipment_id, no
+    # lab_equipment_id), que conserva su comportamiento actual sin cambios.
+    # Para LAB, evidence_notes sigue disponible como campo especializado: si
+    # una plantilla futura lo declara required=True,
+    # _validate_specialized_template_fields ya lo exige (sin cambios aqui).
+    if field_sheet.lab_equipment_id is None:
+        has_observations = bool(field_sheet.observations and field_sheet.observations.strip())
+        has_evidence = bool(field_sheet.evidence_notes and field_sheet.evidence_notes.strip())
+        if not has_observations and not has_evidence:
+            missing_fields.append("observations_or_evidence_notes")
 
     if missing_fields:
         raise HTTPException(

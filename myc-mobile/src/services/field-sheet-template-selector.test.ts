@@ -24,6 +24,24 @@ const capymet = (magnitude_key: string, magnitude_label: string): FieldSheetTemp
   magnitude_label,
 });
 
+const mycVariant = (
+  magnitude_key: string,
+  magnitude_label: string,
+  document_variant_key: string,
+  document_variant_label: string,
+  supported_equipment: string[],
+  search_aliases: string[],
+): FieldSheetTemplateMetadata => ({
+  organization_key: 'myc',
+  organization_label: 'MYC',
+  magnitude_key,
+  magnitude_label,
+  document_variant_key,
+  document_variant_label,
+  supported_equipment,
+  search_aliases,
+});
+
 test('sin término de búsqueda, muestra hasta MAX_VISIBLE_TEMPLATES', () => {
   const many = Array.from({ length: 30 }, (_, index) => template(`Hoja ${index}`));
   const visible = filterFieldSheetTemplates(many, '');
@@ -114,4 +132,60 @@ test('templateDisplayLabel usa "[ORG] Magnitud" cuando hay metadata, y cae a nam
   assert.equal(templateDisplayLabel(mycPresion), '[MYC] Presión');
   assert.equal(templateDisplayLabel(capymetPresion), '[CAPYMET] Presión');
   assert.equal(templateDisplayLabel(legacyNoMetadata), 'Hoja de Campo General');
+});
+
+// --------------------------------------------------------------------------
+// Micro-cierre Fases 1/2 (hallazgo 2): variante documental dentro de la
+// magnitud -- "[ORG] Magnitud · Variante", y búsqueda por variante.
+// --------------------------------------------------------------------------
+
+const mycCalibradores = template(
+  'Hoja de Campo Calibradores',
+  'calibradores',
+  mycVariant(
+    'dimensional', 'Dimensional', 'calibradores', 'Calibradores',
+    ['calibrador vernier', 'calibrador de altura', 'calibrador de profundidad'],
+    ['vernier', 'calibrador', 'dimensional'],
+  ),
+);
+
+test('templateDisplayLabel incluye la variante documental cuando existe: "[MYC] Dimensional · Calibradores"', () => {
+  assert.equal(templateDisplayLabel(mycCalibradores), '[MYC] Dimensional · Calibradores');
+});
+
+test('templateDisplayLabel omite el separador de variante cuando document_variant_label es null (una magnitud, una plantilla)', () => {
+  assert.equal(templateDisplayLabel(mycPresion), '[MYC] Presión');
+  assert.ok(!templateDisplayLabel(mycPresion).includes('·'));
+});
+
+test('buscar "dimensional" (la magnitud) encuentra la variante Calibradores', () => {
+  const templates = [mycCalibradores, mycPresion, legacyNoMetadata];
+  assert.deepEqual(
+    filterFieldSheetTemplates(templates, 'dimensional').map((item) => item.template_key),
+    ['calibradores'],
+  );
+});
+
+test('buscar "calibradores" (la variante) encuentra la plantilla correspondiente', () => {
+  const templates = [mycCalibradores, mycPresion, legacyNoMetadata];
+  assert.deepEqual(
+    filterFieldSheetTemplates(templates, 'calibradores').map((item) => item.template_key),
+    ['calibradores'],
+  );
+});
+
+test('buscar "vernier" (equipo soportado) encuentra la plantilla por supported_equipment/search_aliases', () => {
+  const templates = [mycCalibradores, mycPresion, legacyNoMetadata];
+  assert.deepEqual(
+    filterFieldSheetTemplates(templates, 'vernier').map((item) => item.template_key),
+    ['calibradores'],
+  );
+});
+
+test('buscar "myc" encuentra todas las plantillas MYC, con o sin variante documental', () => {
+  const templates = [mycCalibradores, mycPresion, capymetPresion, legacyNoMetadata];
+  const matches = filterFieldSheetTemplates(templates, 'myc').map((item) => item.template_key);
+  assert.ok(matches.includes('calibradores'));
+  assert.ok(matches.includes('myc_presion'));
+  assert.ok(!matches.includes('capymet_presion'));
 });

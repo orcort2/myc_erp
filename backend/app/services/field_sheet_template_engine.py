@@ -245,6 +245,14 @@ def _template(
     organization_label: str = "MYC",
     magnitude_key: str | None = None,
     magnitude_label: str | None = None,
+    # Micro-cierre Fases 1/2 (hallazgo 2): una magnitud puede tener varias
+    # hojas oficiales con geometria/resultados distintos -- document_variant_*
+    # identifica esa variante documental REAL dentro de la magnitud, sin
+    # convertir cada equipo en su propia magnitud. None cuando la magnitud
+    # sólo tiene una variante oficial implementada hoy (no es obligatorio
+    # inventar un nombre).
+    document_variant_key: str | None = None,
+    document_variant_label: str | None = None,
     supported_equipment: list[str] | None = None,
     search_aliases: list[str] | None = None,
     source_document: str = "FCA-30 R1",
@@ -276,6 +284,8 @@ def _template(
             "organization_label": organization_label,
             "magnitude_key": magnitude_key,
             "magnitude_label": magnitude_label,
+            "document_variant_key": document_variant_key,
+            "document_variant_label": document_variant_label,
             "supported_equipment": list(supported_equipment or []),
             "search_aliases": list(search_aliases or []),
             "source_document": source_document,
@@ -325,6 +335,8 @@ OFFICIAL_PILOT_TEMPLATES = {
         ),
         magnitude_key="dimensional",
         magnitude_label="Dimensional",
+        document_variant_key="calibradores",
+        document_variant_label="Calibradores",
         supported_equipment=["calibrador vernier", "calibrador de altura", "calibrador de profundidad"],
         search_aliases=["vernier", "calibrador", "dimensional"],
     ),

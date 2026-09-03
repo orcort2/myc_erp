@@ -235,6 +235,12 @@ export type FieldSheetTemplateMetadata = {
   organization_label?: string;
   magnitude_key?: string;
   magnitude_label?: string;
+  // Micro-cierre Fases 1/2 (hallazgo 2): variante documental REAL dentro de
+  // la magnitud (p.ej. "Calibradores" dentro de "Dimensional") -- nunca
+  // representa un equipo. null/undefined cuando la magnitud sólo tiene una
+  // variante oficial hoy.
+  document_variant_key?: string | null;
+  document_variant_label?: string | null;
   supported_equipment?: string[];
   search_aliases?: string[];
   source_document?: string;
