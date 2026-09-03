@@ -22,7 +22,7 @@ import {
   type CanonicalFieldDescriptor,
 } from '@/src/services/field-sheet-canonical-contract';
 import { computeOverallProgress } from '@/src/services/field-sheet-progress';
-import { filterFieldSheetTemplates } from '@/src/services/field-sheet-template-selector';
+import { filterFieldSheetTemplates, templateDisplayLabel } from '@/src/services/field-sheet-template-selector';
 import { PENDING_SIGNATURE_LABEL, resolveCalibradoPor } from '@/src/services/lab-signature-authority';
 import {
   captureIsAlwaysReadOnly,
@@ -524,7 +524,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
                     ]}
                   >
                     <View style={styles.templateText}>
-                      <Text style={styles.templateName}>{template.name}</Text>
+                      <Text style={styles.templateName}>{templateDisplayLabel(template)}</Text>
                       <Text style={styles.templateVersion}>Versión {template.version}</Text>
                     </View>
                     <View style={[styles.templateIndicator, selectedTemplate === template.template_key && styles.templateIndicatorSelected]}>

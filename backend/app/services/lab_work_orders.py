@@ -1227,6 +1227,39 @@ def _retire_current_field_sheet_revision(equipment: LabWorkOrderEquipment) -> No
         current.is_current = False
 
 
+_EQUIPMENT_TO_FIELD_SHEET_IDENTITY_KEYS = {
+    "instrument": "instrument",
+    "brand": "brand",
+    "model": "model",
+    "serial_number": "serial_number",
+    "identification": "internal_id",
+}
+
+
+def _sync_field_sheet_identity_snapshot(equipment: LabWorkOrderEquipment) -> None:
+    """Fase 1 del contrato canonico LAB (2026-09, item 1.2): Mobile muestra
+    instrument/brand/model/serial_number/internal_id como readonly snapshot
+    de LabWorkOrderEquipment (ver field-sheet-canonical-contract.ts), pero
+    el PDF y la validacion de completitud siguen leyendo el snapshot
+    congelado en FieldSheet.capture_values -- si el equipo cambia mientras
+    la hoja vigente sigue editable, ambos snapshots divergirian (Mobile
+    mostraria el valor nuevo, capture_values/PDF el viejo). Direccion
+    EXCLUSIVA: Equipment -> FieldSheet editable, nunca al reves. Una hoja
+    completed nunca se toca aqui: si el cambio es critico,
+    _retire_current_field_sheet_revision ya la retiro (is_current=False,
+    status sigue 'completed') antes de que este helper corra, asi que el
+    guard de EDITABLE_STATUSES la excluye automaticamente y su snapshot
+    historico/PDF quedan intactos; la revision siguiente nace con la
+    identidad nueva via el prefill normal de create_lab_field_sheet."""
+    sheet = equipment.field_sheet
+    if sheet is None or sheet.status not in EDITABLE_STATUSES:
+        return
+    capture_values = dict(sheet.capture_values or {})
+    for equipment_key, capture_key in _EQUIPMENT_TO_FIELD_SHEET_IDENTITY_KEYS.items():
+        capture_values[capture_key] = getattr(equipment, equipment_key)
+    sheet.capture_values = capture_values
+
+
 def _update_equipment_core(
     db: Session,
     work_order: LabWorkOrder,
@@ -1253,6 +1286,7 @@ def _update_equipment_core(
         _retire_current_field_sheet_revision(equipment)
     for key, value in values.items():
         setattr(equipment, key, value)
+    _sync_field_sheet_identity_snapshot(equipment)
     if changed_fields:
         _bump_edit_version(editable_members)
     write_audit_log(

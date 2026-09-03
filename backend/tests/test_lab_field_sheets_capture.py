@@ -739,6 +739,62 @@ def test_specialized_template_field_required_is_still_enforced(lab_context):
     assert "pattern_used" in completed.json()["detail"]["missing_fields"]
 
 
+def test_final_condition_only_blocks_completion_when_a_template_declares_it_specialized_required(lab_context):
+    """Fase 1 del contrato canonico LAB (2026-09, items 6 y 7):
+    initial_condition/final_condition ya no son requisito universal (6) --
+    completar sin llenarlos no bloquea por default -- pero si una plantilla
+    especifica los declara required=True como campo especializado, si deben
+    bloquear completitud (7), exactamente como cualquier otro campo
+    especializado required."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+    assert not created.json().get("final_condition")
+
+    _inject_block_field_requirement(factory, sheet_id, key="final_condition", required=True)
+
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    blocked = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert blocked.status_code == 422, blocked.text
+    assert "final_condition" in blocked.json()["detail"]["missing_fields"]
+
+    filled = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"final_condition": "BUENA"},
+        headers=headers,
+    )
+    assert filled.status_code == 200, filled.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+
 def test_canonical_common_fields_validator_introduces_no_additional_requirements(lab_context):
     """Item B del cierre 2026-09: _validate_canonical_common_fields sigue
     siendo la unica autoridad de obligatoriedad del contrato canonico, pero
@@ -760,6 +816,112 @@ def test_canonical_common_fields_validator_introduces_no_additional_requirements
     with factory() as db:
         sheet = db.get(FieldSheet, sheet_id)
         assert _validate_canonical_common_fields(sheet) == []
+
+
+def test_equipment_update_syncs_identity_snapshot_of_the_editable_current_field_sheet(lab_context):
+    """Fase 1 del contrato canonico LAB (2026-09, item 1.2/3): mientras la
+    FieldSheet vigente sigue editable (draft/in_progress/rejected/
+    returned_to_technician), cambiar instrument/brand/model/serial_number/
+    identification via el flujo real de actualizacion de equipo
+    (update_equipment/_update_equipment_core) debe sincronizar el snapshot
+    congelado en capture_values -- direccion EXCLUSIVA Equipment -> FieldSheet
+    editable, nunca al reves.
+
+    Nota de alcance: hoy la unica forma de volver a dejar la OT en 'draft'
+    (requisito de _ensure_members_editable para poder tocar el equipo) es
+    reabrir una OT ya completed/partially_closed -- y para llegar a ese
+    estado, TODAS sus FieldSheets ya deben estar 'completed' (nunca
+    editable). Por eso esta prueba fuerza directamente la precondicion
+    (OT en draft con una FieldSheet vigente todavia editable) para probar el
+    mecanismo real en aislamiento, en vez de una secuencia de API que hoy no
+    puede producir esa combinacion de estados -- reutiliza el endpoint/
+    servicio real (PATCH .../equipment/{id} -> update_equipment ->
+    _update_equipment_core -> _sync_field_sheet_identity_snapshot), no un
+    mecanismo nuevo."""
+    from app.models.lab_work_order import LabWorkOrderEquipment
+
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    equipment_id = equipment_ids[0]
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+    assert created.json()["capture_values"]["brand"] == "MYC Test"
+    assert created.json()["capture_values"]["serial_number"] == "SER-1"
+
+    with factory() as db:
+        work_order = db.get(LabWorkOrder, order_id)
+        work_order.status = "draft"
+        # Misma limpieza que _reopen_closed_cohort hace para politica
+        # 'invalidate' -- sin ella, _ensure_members_editable rechaza con "la
+        # cohorte ya fue firmada" antes de llegar a la sincronizacion.
+        work_order.signature_session_id = None
+        db.commit()
+
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}",
+        json={
+            "instrument": "Instrumento 1 corregido",
+            "brand": "Marca corregida",
+            "identification": "ID-1-CORREGIDO",
+            "serial_number": "SER-1-CORREGIDO",
+            "model": "Modelo corregido",
+            "report_number": None,
+            "is_good_condition": True,
+        },
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.status == "draft"
+        assert sheet.capture_values["instrument"] == "Instrumento 1 corregido"
+        assert sheet.capture_values["brand"] == "Marca corregida"
+        assert sheet.capture_values["model"] == "Modelo corregido"
+        assert sheet.capture_values["serial_number"] == "SER-1-CORREGIDO"
+        assert sheet.capture_values["internal_id"] == "ID-1-CORREGIDO"
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.instrument == "Instrumento 1 corregido"
+
+
+def test_field_sheet_edit_never_writes_back_into_equipment(lab_context):
+    """Fase 1 (item 1.2/5): la sincronizacion es de UNA sola direccion --
+    editar capture_values desde el lado FieldSheet (PATCH de captura) nunca
+    debe escribir de vuelta en LabWorkOrderEquipment."""
+    from app.models.lab_work_order import LabWorkOrderEquipment
+
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    equipment_id = equipment_ids[0]
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    with factory() as db:
+        equipment_before = db.get(LabWorkOrderEquipment, equipment_id)
+        brand_before = equipment_before.brand
+        serial_before = equipment_before.serial_number
+
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"capture_values": {"instrument": "Hackeado", "brand": "Hackeado", "serial_number": "Hackeado"}},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+
+    with factory() as db:
+        equipment_after = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment_after.brand == brand_before
+        assert equipment_after.serial_number == serial_before
 
 
 def test_update_lab_field_sheet_keeps_identity_and_client_snapshot_readonly(lab_context):
@@ -859,6 +1021,46 @@ def test_four_official_templates_share_the_identical_canonical_block_structure(l
                 template_key,
                 block_type,
             )
+
+
+def test_official_templates_expose_organization_and_magnitude_metadata(lab_context):
+    """Fase 2 del catalogo LAB (2026-09, items 2.1/2.4/2.5): las 4 plantillas
+    oficiales llevan metadata.organization_key/organization_label/
+    magnitude_key/magnitude_label/supported_equipment/search_aliases, y esa
+    metadata viaja intacta a traves del endpoint que consume Mobile
+    (GET .../field-sheet-templates) -- sin endpoint nuevo, sin catalogo
+    estatico duplicado. Una plantilla sin esta metadata (aqui 'general',
+    fallback sin organization_key) no debe fallar: metadata queda como dict
+    vacio, fallback seguro sólo de presentacion."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    response = client.get(
+        "/api/mobile/v1/technician/lab-work-orders/field-sheet-templates",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    by_key = {item["template_key"]: item for item in response.json()}
+
+    expectations = {
+        "anemometro": {"magnitude_key": "air_velocity", "magnitude_label": "Velocidad de aire", "equipment": "anemómetro"},
+        "calibradores": {"magnitude_key": "dimensional", "magnitude_label": "Dimensional", "equipment": "calibrador vernier"},
+        "presion": {"magnitude_key": "pressure", "magnitude_label": "Presión", "equipment": "manómetro"},
+        "bascula": {"magnitude_key": "mass", "magnitude_label": "Masa", "equipment": "báscula"},
+    }
+    for template_key, expected in expectations.items():
+        metadata = by_key[template_key]["metadata"]
+        assert metadata["organization_key"] == "myc", template_key
+        assert metadata["organization_label"] == "MYC", template_key
+        assert metadata["magnitude_key"] == expected["magnitude_key"], template_key
+        assert metadata["magnitude_label"] == expected["magnitude_label"], template_key
+        assert expected["equipment"] in metadata["supported_equipment"], template_key
+        assert isinstance(metadata["search_aliases"], list) and metadata["search_aliases"], template_key
+
+    # Plantilla fallback sin metadata de organizacion/magnitud (item 2.5):
+    # no rompe, sólo no trae esas claves -- Mobile debe caer a `name`.
+    general_metadata = by_key["general"]["metadata"]
+    assert general_metadata.get("organization_key") is None
+    assert general_metadata.get("magnitude_label") is None
 
 
 def test_patch_field_sheet_rejects_empty_string_for_typed_date_and_boolean_fields(lab_context):
@@ -966,7 +1168,14 @@ def test_complete_lab_field_sheet_returns_structured_missing_fields(lab_context)
     assert isinstance(detail, dict)
     assert detail["message"]
     assert isinstance(detail["missing_fields"], list)
-    assert "final_condition" in detail["missing_fields"]
+    # Fase 1 del contrato canonico LAB (2026-09, item 1.3): initial_condition/
+    # final_condition ya NO son requisito universal -- una hoja "general" sin
+    # plantilla que los declare especializado required puede quedar sin
+    # llenarlos y aun asi bloquear completitud sólo por
+    # observations_or_evidence_notes (el unico requisito legado que sigue
+    # universal, sin tocar en esta actividad).
+    assert "final_condition" not in detail["missing_fields"]
+    assert "initial_condition" not in detail["missing_fields"]
     assert "observations_or_evidence_notes" in detail["missing_fields"]
 
 

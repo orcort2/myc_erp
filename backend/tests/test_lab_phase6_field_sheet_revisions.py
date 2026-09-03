@@ -281,6 +281,11 @@ def test_reopen_invalidate_with_critical_change_retires_old_revision_and_opens_a
         assert first.status == "completed"
         assert first.final_pdf_path == frozen_path
         assert first.final_pdf_sha256 == frozen_sha
+        # Fase 1 del contrato canonico LAB (2026-09, item 1.2/4): la revision
+        # retirada es historica -- su snapshot de identidad NUNCA sincroniza
+        # con el cambio de equipo que la retiro (la sincronizacion sólo
+        # aplica a hojas vigentes editables, no a esta).
+        assert first.capture_values.get("serial_number") == "SER-1"
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
         assert equipment.field_sheet is None
 
@@ -338,6 +343,11 @@ def test_reopen_preserve_never_retires_or_versions_the_field_sheet(lab_context):
         assert sheet.revision_number == 1
         assert sheet.supersedes_field_sheet_id is None
         assert sheet.status == "completed"
+        # Fase 1 del contrato canonico LAB (2026-09, item 1.2/4): completed +
+        # preserve deja la hoja vigente y "completed" a la vez -- el guard de
+        # sincronizacion es por status (EDITABLE_STATUSES), no por is_current,
+        # asi que el snapshot congelado tampoco cambia aqui.
+        assert sheet.capture_values.get("serial_number") == "SER-1"
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
         assert equipment.field_sheet.id == sheet_id
 

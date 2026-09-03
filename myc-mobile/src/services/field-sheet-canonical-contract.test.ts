@@ -56,31 +56,38 @@ test('2. presion y bascula producen exactamente el mismo contrato común', () =>
   assert.deepEqual(presion.map((f) => f.key), bascula.map((f) => f.key));
 });
 
-test('3. una plantilla que intenta cambiar label/required/order de un campo canónico no lo logra', () => {
+test('3. una plantilla que intenta cambiar label/required/order/field_type de un campo canónico no lo logra', () => {
+  // Fase 1 del cierre 2026-09 (item 1.5.2): la plantilla intenta exactamente
+  // los 4 tipos de override -- label de brand, order de company, required de
+  // location, field_type de calibration_date -- sobre 4 claves canónicas
+  // distintas, ninguna debe alterar la captura común.
   const hostileBlocks: FieldSheetTemplateBlock[] = [
     {
       key: 'hostile',
       block_type: 'CustomFieldsBlock',
       title: 'Intento hostil',
       capture_visible: true,
-      visible_fields: ['brand', 'location', 'company'],
+      visible_fields: ['brand', 'location', 'company', 'calibration_date'],
       fields: [
         { key: 'brand', label: 'MARCA HACKEADA', field_type: 'number', required: true, order: 999 },
         { key: 'location', label: 'UBICACION HACKEADA', required: true, order: 0 },
         { key: 'company', label: 'EMPRESA HACKEADA', required: false, order: -5 },
+        { key: 'calibration_date', label: 'FECHA HACKEADA', field_type: 'number', required: true, order: 1 },
       ],
     },
   ];
   const specialized = specializedCaptureFields(hostileBlocks, { fallbackLabels, readOnlyKeys: new Set() });
-  // Ninguna de las 3 claves canónicas debe aparecer como campo especializado
+  // Ninguna de las 4 claves canónicas debe aparecer como campo especializado
   // -- el override de la plantilla queda completamente descartado.
   assert.equal(specialized.some((f) => f.key === 'brand'), false);
   assert.equal(specialized.some((f) => f.key === 'location'), false);
   assert.equal(specialized.some((f) => f.key === 'company'), false);
-  // El contrato canónico real conserva su label/orden fijo, sin importar el intento.
+  assert.equal(specialized.some((f) => f.key === 'calibration_date'), false);
+  // El contrato canónico real conserva su label/orden/kind fijo, sin importar el intento.
   const brand = CANONICAL_FIELDS.find((f) => f.key === 'brand');
   const location = CANONICAL_FIELDS.find((f) => f.key === 'location');
   const company = CANONICAL_FIELDS.find((f) => f.key === 'company');
+  const calibrationDate = CANONICAL_FIELDS.find((f) => f.key === 'calibration_date');
   assert.equal(brand?.label, 'Marca');
   assert.equal(brand?.readOnly, true);
   // `location` es el campo que la plantilla hostil intenta volver required=true.
@@ -88,6 +95,19 @@ test('3. una plantilla que intenta cambiar label/required/order de un campo can�
   assert.equal(location?.label, 'Ubicación');
   assert.equal(location?.readOnly, false);
   assert.equal(location?.required, false);
+  // `company` es el campo cuyo `order` la plantilla hostil intenta cambiar --
+  // el orden real sigue siendo la posición fija entre 'attention' y
+  // 'address' en CANONICAL_FIELDS, sin importar el order:-5 del intento.
+  const keysInOrder = CANONICAL_FIELDS.map((f) => f.key);
+  assert.deepEqual(
+    keysInOrder.slice(keysInOrder.indexOf('attention'), keysInOrder.indexOf('address') + 1),
+    ['attention', 'company', 'address'],
+  );
+  assert.equal(company?.label, 'Empresa');
+  // `calibration_date` es el campo cuyo `field_type`/kind la plantilla
+  // hostil intenta cambiar a 'number' -- sigue siendo 'date'.
+  assert.equal(calibrationDate?.kind, 'date');
+  assert.equal(calibrationDate?.label, 'Fecha de calibración');
   assert.equal(company?.label, 'Empresa');
   assert.equal(company?.readOnly, true);
 });

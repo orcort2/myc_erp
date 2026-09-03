@@ -427,13 +427,22 @@ def _validate_specialized_template_fields(field_sheet: FieldSheet) -> list[str]:
 
 def _validate_ready_to_complete(field_sheet: FieldSheet) -> None:
     missing_fields = []
-    required_fields = {
-        "initial_condition": field_sheet.initial_condition,
-        "final_condition": field_sheet.final_condition,
-    }
-    for field_name, value in required_fields.items():
-        if not value or not value.strip():
-            missing_fields.append(field_name)
+    # Fase 1 del contrato canonico LAB (2026-09, item 1.3): initial_condition/
+    # final_condition dejan de ser requisito UNIVERSAL para hojas LAB -- no
+    # pertenecen al contrato comun (ver CANONICAL_FIELD_SHEET_KEYS) y sólo
+    # deben bloquear completitud si una plantilla especifica los declara
+    # explicitamente como campo especializado required (ya cubierto por
+    # _validate_specialized_template_fields, sin cambios). El FieldSheet
+    # productivo (equipment_id, no lab_equipment_id) no participa de este
+    # contrato canonico LAB y conserva exactamente su comportamiento actual.
+    if field_sheet.lab_equipment_id is None:
+        required_fields = {
+            "initial_condition": field_sheet.initial_condition,
+            "final_condition": field_sheet.final_condition,
+        }
+        for field_name, value in required_fields.items():
+            if not value or not value.strip():
+                missing_fields.append(field_name)
 
     missing_fields.extend(_validate_canonical_common_fields(field_sheet))
     for key in _validate_specialized_template_fields(field_sheet):

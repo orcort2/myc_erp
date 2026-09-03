@@ -228,7 +228,27 @@ def _table_block(block_type: str, key: str, title: str, sections: list[dict], fa
     )
 
 
-def _template(key: str, name: str, family: str, table: dict, *, ambiguous: bool = False, version: int = 1) -> dict:
+def _template(
+    key: str,
+    name: str,
+    family: str,
+    table: dict,
+    *,
+    ambiguous: bool = False,
+    version: int = 1,
+    # Fase 2 del catalogo LAB (2026-09): metadata de organizacion/magnitud
+    # -- puramente de presentacion/busqueda (nombre visible, selector Mobile).
+    # No es autoridad de layout/PDF/tabla ni participa del contrato canonico
+    # de captura (ver field-sheet-canonical-contract.ts); organization_key
+    # es la autoridad, nunca se debe derivar por parseo de `name`.
+    organization_key: str = "myc",
+    organization_label: str = "MYC",
+    magnitude_key: str | None = None,
+    magnitude_label: str | None = None,
+    supported_equipment: list[str] | None = None,
+    search_aliases: list[str] | None = None,
+    source_document: str = "FCA-30 R1",
+) -> dict:
     return {
         "template_key": key,
         "key": key,
@@ -252,6 +272,13 @@ def _template(key: str, name: str, family: str, table: dict, *, ambiguous: bool 
             "official_reference": "FCA-30 R1",
             "functional_validation_pending": ambiguous,
             "visual_designer_compatible": True,
+            "organization_key": organization_key,
+            "organization_label": organization_label,
+            "magnitude_key": magnitude_key,
+            "magnitude_label": magnitude_label,
+            "supported_equipment": list(supported_equipment or []),
+            "search_aliases": list(search_aliases or []),
+            "source_document": source_document,
         },
     }
 
@@ -276,6 +303,10 @@ OFFICIAL_PILOT_TEMPLATES = {
             [_section("measurements", "Resultados de la calibración", 10, COMPARISON_COLUMNS)],
             "replicated_comparison",
         ),
+        magnitude_key="air_velocity",
+        magnitude_label="Velocidad de aire",
+        supported_equipment=["anemómetro"],
+        search_aliases=["anemometro", "velocidad de aire", "viento"],
     ),
     "calibradores": _template(
         "calibradores",
@@ -292,6 +323,10 @@ OFFICIAL_PILOT_TEMPLATES = {
             ],
             "replicated_comparison",
         ),
+        magnitude_key="dimensional",
+        magnitude_label="Dimensional",
+        supported_equipment=["calibrador vernier", "calibrador de altura", "calibrador de profundidad"],
+        search_aliases=["vernier", "calibrador", "dimensional"],
     ),
     "presion": _template(
         "presion",
@@ -319,6 +354,10 @@ OFFICIAL_PILOT_TEMPLATES = {
             ambiguous=True,
         ),
         ambiguous=True,
+        magnitude_key="pressure",
+        magnitude_label="Presión",
+        supported_equipment=["manómetro", "vacuómetro", "manovacuómetro"],
+        search_aliases=["manometro", "vacuometro", "manovacuometro", "presion", "presion diferencial"],
     ),
     "bascula": _template(
         "bascula",
@@ -361,6 +400,10 @@ OFFICIAL_PILOT_TEMPLATES = {
         ),
         ambiguous=True,
         version=3,
+        magnitude_key="mass",
+        magnitude_label="Masa",
+        supported_equipment=["báscula", "balanza"],
+        search_aliases=["bascula", "balanza", "masa", "peso"],
     ),
 }
 

@@ -220,6 +220,26 @@ export type FieldSheetTemplateBlock = {
   metadata?: Record<string, unknown>;
 };
 
+/**
+ * Fase 2 del catalogo LAB (2026-09): metadata de organizacion/magnitud del
+ * template -- puramente de presentacion y búsqueda en el selector Mobile
+ * (ver field-sheet-template-selector.ts). No es autoridad de captura (eso
+ * sigue siendo field-sheet-canonical-contract.ts) ni de layout/PDF. Todas
+ * las claves son opcionales porque las plantillas historicas/fallback
+ * (termometro/cronometro/temperatura, o cualquier definicion sin esta
+ * metadata) no la tienen -- el selector debe usar un fallback seguro a
+ * `name` cuando falta, nunca asumir su presencia.
+ */
+export type FieldSheetTemplateMetadata = {
+  organization_key?: string;
+  organization_label?: string;
+  magnitude_key?: string;
+  magnitude_label?: string;
+  supported_equipment?: string[];
+  search_aliases?: string[];
+  source_document?: string;
+};
+
 export type FieldSheetTemplate = {
   template_key: string;
   name: string;
@@ -227,6 +247,7 @@ export type FieldSheetTemplate = {
   table_family?: string;
   blocks: FieldSheetTemplateBlock[];
   result_sections: FieldSheetResultSection[];
+  metadata?: FieldSheetTemplateMetadata;
 };
 
 export type FieldSheetResultRow = {
