@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: Letter; margin: 15mm; }
+    body { color: #173746; font-family: Arial, sans-serif; font-size: 10pt; }
+    h1 { color: #08756f; font-size: 18pt; margin: 4mm 0 1mm; }
+    h2 { font-size: 11pt; margin: 0 0 6mm; }
+    .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 8mm; margin-bottom: 6mm; }
+    .label { color: #637280; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+    .value { margin-top: 1mm; }
+    table { border-collapse: collapse; margin: 4mm 0 6mm; width: 100%; }
+    th, td { border: 1px solid #aebfc8; padding: 2.2mm; }
+    th { background: #eaf4f3; color: #08756f; font-size: 8pt; }
+    .notes { border: 1px solid #d6e1e6; min-height: 15mm; padding: 3mm; }
+    .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 8mm; }
+    .signature { border-top: 1px solid #173746; padding-top: 2mm; text-align: center; }
+    .signature img { display: block; height: 28mm; margin: 0 auto 2mm; max-width: 70mm; object-fit: contain; }
+    .legend { color: #52636f; font-size: 9pt; margin-top: 8mm; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="label">METROLOGÍA Y SERVICIOS MYC</div>
+  <h1>ACUSE DE ENTREGA DE EQUIPOS</h1>
+  <h2>OT {{ work_order.folio }}</h2>
+  <div class="meta">
+    <div><div class="label">Cliente</div><div class="value">{{ work_order.client_name }}</div></div>
+    <div><div class="label">Atención / contacto de OT</div><div class="value">{{ work_order.contact_name or '—' }}</div></div>
+    <div><div class="label">Fecha de recepción</div><div class="value">{{ work_order.reception_date.strftime('%d/%m/%Y') }}</div></div>
+    <div><div class="label">Fecha y hora de entrega</div><div class="value">{{ delivered_at_display }}</div></div>
+  </div>
+  <table>
+    <thead><tr><th>No.</th><th>Instrumento</th><th>Marca</th><th>Identificación</th><th>Serie</th><th>Folio informe/certificado</th></tr></thead>
+    <tbody>
+    {% for equipment in work_order.equipment %}
+      <tr><td>{{ loop.index }}</td><td>{{ equipment.instrument }}</td><td>{{ equipment.brand }}</td><td>{{ equipment.identification }}</td><td>{{ equipment.serial_number }}</td><td>{{ equipment.certificate_folio or equipment.report_number or '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="label">Observaciones de entrega</div>
+  <div class="notes">{{ delivery.notes or 'Sin observaciones.' }}</div>
+  <div class="signatures">
+    <div class="signature"><strong>Entregó</strong><br>{{ delivered_by_name }}</div>
+    <div class="signature"><img src="{{ delivery.recipient_signature_data_url }}"><strong>Recibió</strong><br>{{ delivery.recipient_name }}</div>
+  </div>
+  <div class="legend">Recibí de conformidad los equipos relacionados en este acuse.</div>
+</body>
+</html>

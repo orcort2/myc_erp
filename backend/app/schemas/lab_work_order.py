@@ -8,7 +8,6 @@ class LabWorkOrderCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reception_date: date
-    departure_date: date
     client_name: str = Field(min_length=1, max_length=255)
     address: str = Field(default="", max_length=2000)
     contact_name: str | None = Field(default=None, max_length=180)
@@ -20,15 +19,6 @@ class LabWorkOrderCreate(BaseModel):
     purchase_order: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=4000)
     lab_client_id: int | None = Field(default=None, gt=0)
-
-    @field_validator("departure_date")
-    @classmethod
-    def departure_not_before_reception(cls, value: date, info):
-        reception = info.data.get("reception_date")
-        if reception and value < reception:
-            raise ValueError("La fecha de salida no puede ser anterior a la recepción")
-        return value
-
 
 class LabWorkOrderGroupCreate(LabWorkOrderCreate):
     quantity: int = Field(ge=1, le=50)
@@ -54,7 +44,7 @@ class LabWorkOrderGroupRequestRead(BaseModel):
     conversation_id: int | None
     folios: list[int] = Field(default_factory=list)
     reception_date: date
-    departure_date: date
+    departure_date: date | None
     client_name: str
     address: str
     contact_name: str | None
@@ -78,7 +68,6 @@ class LabWorkOrderUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reception_date: date | None = None
-    departure_date: date | None = None
     client_name: str | None = Field(default=None, min_length=1, max_length=255)
     address: str | None = Field(default=None, max_length=2000)
     contact_name: str | None = Field(default=None, max_length=180)
@@ -295,6 +284,35 @@ class LabRelatedWorkOrderRead(BaseModel):
     equipment_count: int
 
 
+class LabWorkOrderDeliveryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recipient_name: str = Field(min_length=1, max_length=180)
+    recipient_signature_data_url: str = Field(min_length=32, max_length=1_500_000)
+    notes: str | None = Field(default=None, max_length=4000)
+
+
+class LabWorkOrderDeliveryVoid(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class LabWorkOrderDeliveryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    status: Literal["completed", "voided"]
+    delivered_at: datetime
+    delivered_by_user_id: int
+    delivered_by_name: str
+    recipient_name: str
+    notes: str | None
+    voucher_available: bool
+    voided_at: datetime | None
+    void_reason: str | None
+
+
 class LabWorkOrderRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -309,7 +327,7 @@ class LabWorkOrderRead(BaseModel):
     operator_client_id: int | None
     lab_client_id: int | None
     reception_date: date
-    departure_date: date
+    departure_date: date | None
     client_name: str
     address: str
     contact_name: str | None
@@ -340,6 +358,7 @@ class LabWorkOrderRead(BaseModel):
     updated_at: datetime
     equipment: list[LabEquipmentRead]
     signature_session: LabSignatureSessionRead | None
+    delivery: LabWorkOrderDeliveryRead | None = None
     related_work_orders: list[LabRelatedWorkOrderRead] = Field(default_factory=list)
 
 

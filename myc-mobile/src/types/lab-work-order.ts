@@ -58,7 +58,7 @@ export type LabWorkOrder = {
   signature_session_id: number | null;
   signature_scope: 'group' | 'individual' | null;
   reception_date: string;
-  departure_date: string;
+  departure_date: string | null;
   client_name: string;
   address: string;
   contact_name: string | null;
@@ -89,6 +89,20 @@ export type LabWorkOrder = {
   // input libre (ver LabTechnicalCapture, resolveSignerName). Opcional para
   // no romper los fixtures existentes que no modelan firmas.
   signature_session?: LabSignatureSession | null;
+  delivery: LabWorkOrderDelivery | null;
+};
+
+export type LabWorkOrderDelivery = {
+  id: number;
+  status: 'completed' | 'voided';
+  delivered_at: string;
+  delivered_by_user_id: number;
+  delivered_by_name: string;
+  recipient_name: string;
+  notes: string | null;
+  voucher_available: boolean;
+  voided_at: string | null;
+  void_reason: string | null;
 };
 
 export type LabSignature = {
@@ -120,7 +134,6 @@ export type LabListItem = {
 export type GeneralData = {
   lab_client_id: number | null;
   reception_date: string;
-  departure_date: string;
   client_name: string;
   address: string;
   contact_name: string;

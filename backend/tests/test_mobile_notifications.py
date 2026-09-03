@@ -230,7 +230,7 @@ def _completed_work_order(client: TestClient, access_token: str, name: str) -> d
     created = client.post(
         "/api/mobile/v1/technician/lab-work-orders",
         json={
-            "reception_date": "2026-08-14", "departure_date": "2026-08-15",
+            "reception_date": "2026-08-14",
             "client_name": name, "address": "Domicilio de prueba",
             "contact_name": "Cliente", "contact_phone": None, "contact_email": None,
             "postal_code": None, "city": None, "state_name": None,

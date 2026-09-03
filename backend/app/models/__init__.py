@@ -82,6 +82,7 @@ from app.models.lab_work_order import (
     LabWorkOrderSignatureSession,
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
+from app.models.lab_work_order_delivery import LabWorkOrderDelivery
 from app.models.maintenance_execution import (
     MaintenanceChangeRequest,
     MaintenanceExecution,
@@ -247,6 +248,7 @@ __all__ = [
     "LabWorkOrderSignature",
     "LabWorkOrderSignatureSession",
     "LabWorkOrderRevision",
+    "LabWorkOrderDelivery",
     "OperationalTicket",
     "Notification",
     "PortalInvitation",

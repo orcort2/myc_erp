@@ -31,6 +31,7 @@ from app.models.lab_work_order import (
     LabWorkOrderSignatureSession,
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
+from app.models.lab_work_order_delivery import LabWorkOrderDelivery
 from app.models.notification import Notification
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
@@ -43,6 +44,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
     LabWorkOrderGroupRequestRead,
+    LabWorkOrderDeliveryRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
     LabReceptionDateUpdate,
@@ -72,7 +74,6 @@ LAB_CERTIFICATE_LIMIT = 7999
 LAB_CERTIFICATE_STARTS = {"MYCA": 4700, "MYCT": 1640}
 GENERAL_FIELDS = (
     "reception_date",
-    "departure_date",
     "client_name",
     "address",
     "contact_name",
@@ -85,7 +86,7 @@ GENERAL_FIELDS = (
     "notes",
     "lab_client_id",
 )
-CRITICAL_GENERAL_FIELDS = {"reception_date", "departure_date", "client_name", "address"}
+CRITICAL_GENERAL_FIELDS = {"reception_date", "client_name", "address"}
 CRITICAL_EQUIPMENT_FIELDS = {
     "instrument", "brand", "identification", "serial_number", "is_good_condition",
     "model",
@@ -100,6 +101,9 @@ def _query_with_relations():
         ),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
+        ),
+        selectinload(LabWorkOrder.deliveries).selectinload(
+            LabWorkOrderDelivery.delivered_by
         ),
     )
 
@@ -324,6 +328,20 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
     result.signature_scope = _recorded_signature_scope(
         db, work_order.signature_session_id
     )
+    delivery = next((item for item in reversed(work_order.deliveries) if item.status == "completed"), None)
+    if delivery is not None:
+        result.delivery = LabWorkOrderDeliveryRead(
+            id=delivery.id,
+            status=delivery.status,
+            delivered_at=delivery.delivered_at,
+            delivered_by_user_id=delivery.delivered_by_user_id,
+            delivered_by_name=delivery.delivered_by.full_name,
+            recipient_name=delivery.recipient_name,
+            notes=delivery.notes,
+            voucher_available=bool(delivery.voucher_pdf),
+            voided_at=delivery.voided_at,
+            void_reason=delivery.void_reason,
+        )
     result.related_work_orders = [
         LabRelatedWorkOrderRead(**{
             "id": item.id,
@@ -1038,6 +1056,11 @@ def cancel_work_order(
     conserva el estado exacto para que restore_work_order lo recupere, en
     vez de reinterpretar la cancelación como una reapertura técnica."""
     work_order = _get(db, work_order_id, lock=True)
+    if any(item.status == "completed" for item in work_order.deliveries):
+        raise HTTPException(
+            status_code=409,
+            detail="La OT ya registra la entrega física de los equipos. Anula primero el acuse de entrega.",
+        )
     if work_order.status == "cancelled":
         return _read(db, work_order)
     now = datetime.now(timezone.utc)
@@ -1142,10 +1165,6 @@ def update_work_order(
         updates["address"] = client.address or updates.get("address", work_order.address)
         updates["contact_name"] = client.attention or updates.get("contact_name", work_order.contact_name)
     _check_edit_version(editable_members, expected_edit_version)
-    reception = updates.get("reception_date", work_order.reception_date)
-    departure = updates.get("departure_date", work_order.departure_date)
-    if departure < reception:
-        raise HTTPException(status_code=422, detail="La salida no puede ser anterior a la recepción")
     changed_fields = sorted(
         key for key, value in updates.items() if getattr(work_order, key) != value
     )
@@ -1188,8 +1207,6 @@ def update_reception_date(
     work_order = _get(db, work_order_id, lock=True)
     if work_order.status in {"completed", "partially_closed", "cancelled"}:
         raise HTTPException(status_code=409, detail="La fecha de una OT cerrada no puede modificarse")
-    if work_order.departure_date < payload.reception_date:
-        raise HTTPException(status_code=422, detail="La salida no puede ser anterior a la recepción")
     previous_date = work_order.reception_date
     if previous_date == payload.reception_date:
         return _read(db, work_order)

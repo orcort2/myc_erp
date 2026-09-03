@@ -151,7 +151,6 @@ def external_headers(client: TestClient, email: str) -> dict[str, str]:
 def create_payload(client_name: str = "Cliente LAB", **extra) -> dict:
     return {
         "reception_date": "2026-08-13",
-        "departure_date": "2026-08-15",
         "client_name": client_name,
         "address": "Av. Prueba 123",
         "contact_name": "Persona Cliente",

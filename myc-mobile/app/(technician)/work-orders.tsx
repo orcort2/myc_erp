@@ -26,6 +26,7 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignatureFlow';
 import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
 import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
+import { LabDeliveryFlow } from '@/src/components/lab/LabDeliveryFlow';
 import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
 import { ActionTile, AdministrativeButton, AlertBanner, BackButton, FadeIn, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
 import { MycDatePickerField } from '@/src/design/MycDatePickerField';
@@ -77,6 +78,7 @@ import type {
   LabClient,
   LabListItem,
   LabWorkOrder,
+  LabWorkOrderDelivery,
   LabWorkOrderGroupRequest,
 } from '@/src/types/lab-work-order';
 
@@ -85,7 +87,6 @@ const PAGE_SIZE = 25;
 const emptyGeneral = (): GeneralData => ({
   lab_client_id: null,
   reception_date: today(),
-  departure_date: today(),
   client_name: '',
   address: '',
   contact_name: '',
@@ -97,7 +98,7 @@ const emptyGeneral = (): GeneralData => ({
   purchase_order: '',
   notes: '',
 });
-type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct';
+type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery';
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
   if (workOrder.signature_scope) return workOrder.signature_scope;
@@ -200,6 +201,7 @@ export default function WorkOrdersScreen() {
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
   const [generalErrors, setGeneralErrors] = useState<Record<string, string>>({});
   const [equipmentErrors, setEquipmentErrors] = useState<Record<string, string>>({});
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
@@ -354,6 +356,8 @@ export default function WorkOrdersScreen() {
     canDownloadLabPackages,
     canResolveLabFolios,
     canOverrideReceptionDate,
+    canRegisterLabDelivery,
+    canVoidLabDelivery,
   } = capabilities;
   const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
@@ -503,12 +507,19 @@ export default function WorkOrdersScreen() {
   }
 
   async function submitOperationalAction() {
-    if (!workOrder || !ticketReason.trim() || !ticketDescription.trim()) return;
+    if (!workOrder || !ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery')) return;
     if (ticketDialogMode === 'reopen') return requestReopening();
     if (ticketDialogMode === 'reopen_direct') return reopenDirectly();
     setBusy(true);
     try {
-      if (ticketDialogMode === 'cancel') {
+      if (ticketDialogMode === 'void_delivery') {
+        await request(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/void`, {
+          method: 'POST', body: JSON.stringify({ reason: ticketReason.trim() }),
+        });
+        const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
+        setWorkOrder(detail);
+        Alert.alert('Acuse anulado', 'La entrega permanece en el historial y puede registrarse una nueva entrega.');
+      } else if (ticketDialogMode === 'cancel') {
         const detail = await request<LabWorkOrder>(
           `/mobile/v1/technician/lab-work-orders/${workOrder.id}/cancel`,
           { method: 'POST', body: JSON.stringify({ reason: `${ticketReason.trim()}: ${ticketDescription.trim()}` }) },
@@ -556,7 +567,6 @@ export default function WorkOrdersScreen() {
       setGeneral({
         lab_client_id: detail.lab_client_id,
         reception_date: detail.reception_date,
-        departure_date: detail.departure_date,
         client_name: detail.client_name,
         address: detail.address,
         contact_name: detail.contact_name ?? '',
@@ -628,6 +638,42 @@ export default function WorkOrdersScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function completeDelivery(payload: { recipient_name: string; recipient_signature_data_url: string; notes: string | null }) {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      await request<LabWorkOrderDelivery>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery`, {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
+      setWorkOrder(detail);
+      setDeliveryOpen(false);
+      setSignatureDrawing(false);
+      publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+      await refresh(true);
+      Alert.alert('Entrega completada', 'Se registró la salida y se generó el acuse de entrega.');
+    } catch (error) {
+      Alert.alert('No fue posible registrar la entrega', error instanceof Error ? error.message : 'Intenta nuevamente');
+      throw error;
+    } finally { setBusy(false); }
+  }
+
+  async function downloadDeliveryPdf(action: 'print' | 'share') {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      const result = await FileSystem.downloadAsync(
+        apiUrl(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/pdf`),
+        `${FileSystem.cacheDirectory}acuse-entrega-OT-${workOrder.folio}.pdf`,
+        { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } },
+      );
+      if (action === 'print') await Print.printAsync({ uri: result.uri });
+      else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      Alert.alert('No fue posible abrir el acuse', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
   }
 
   async function selectRelated(id: number) {
@@ -1133,7 +1179,6 @@ export default function WorkOrdersScreen() {
                   <FormSection title="Servicio y cliente">
                     {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <MycDatePickerField error={generalErrors.reception_date} label="Fecha de recepción *" value={general.reception_date} onChange={(value) => { setGeneral({ ...general, reception_date: value }); setGeneralErrors((current) => ({ ...current, reception_date: '' })); }} />
-                    <MycDatePickerField error={generalErrors.departure_date} label="Fecha de salida *" value={general.departure_date} onChange={(value) => { setGeneral({ ...general, departure_date: value }); setGeneralErrors((current) => ({ ...current, departure_date: '' })); }} />
                     <Text style={styles.fieldLabel}>Cliente *</Text>
                     {general.lab_client_id ? (
                       <View style={styles.selectedClient}>
@@ -1171,7 +1216,7 @@ export default function WorkOrdersScreen() {
                       </Pressable>
                     ))}
                   </ScrollView>
-                  <View style={styles.summary}><Text style={styles.summaryClient}>{workOrder.client_name}</Text><Text style={styles.summaryLine}>{workOrder.reception_date} → {workOrder.departure_date}</Text><Text style={styles.summaryLine}>{workOrder.address}</Text></View>
+                  <View style={styles.summary}><Text style={styles.summaryClient}>{workOrder.client_name}</Text><Text style={styles.summaryLine}>Recepción: {workOrder.reception_date}</Text><Text style={styles.summaryLine}>{workOrder.delivery ? `Entrega: ${workOrder.departure_date}` : workOrder.departure_date ? `Fecha de salida histórica: ${workOrder.departure_date} · Sin acuse digital` : 'Pendiente de entrega'}</Text><Text style={styles.summaryLine}>{workOrder.address}</Text></View>
                 </>
               )}
 
@@ -1364,7 +1409,17 @@ export default function WorkOrdersScreen() {
                 <>
                   <Text style={styles.sectionTitle}>OT {workOrder.folio} · {statusPresentation(workOrder.status).label}</Text>
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
-                  {workOrder.status !== 'cancelled' && <PrimaryButton label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
+                  {workOrder.status === 'completed' && deliveryOpen && (
+                    <LabDeliveryFlow busy={busy} onCancel={() => { setDeliveryOpen(false); setSignatureDrawing(false); }} onDrawingChange={setSignatureDrawing} onSubmit={completeDelivery} workOrder={workOrder} />
+                  )}
+                  {workOrder.status === 'completed' && !deliveryOpen && !workOrder.delivery && !workOrder.departure_date && (
+                    <View><Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text><Text style={styles.notice}>Pendiente de entrega</Text>{canRegisterLabDelivery && <PrimaryButton label="Registrar entrega" onPress={() => setDeliveryOpen(true)} />}</View>
+                  )}
+                  {workOrder.status === 'completed' && !deliveryOpen && workOrder.delivery && (
+                    <View><Text style={styles.sectionEyebrow}>ENTREGA COMPLETADA</Text><Text style={styles.notice}>{new Date(workOrder.delivery.delivered_at).toLocaleString('es-MX')} · Recibió: {workOrder.delivery.recipient_name}</Text><SecondaryButton label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf('print')} /><SecondaryButton label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf('share')} />{canVoidLabDelivery && <AdministrativeButton label="Anular acuse de entrega" onPress={() => { setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />}</View>
+                  )}
+                  {workOrder.status === 'completed' && !deliveryOpen && !workOrder.delivery && !!workOrder.departure_date && <AlertBanner tone="info">Fecha de salida histórica: {workOrder.departure_date}. Sin acuse digital.</AlertBanner>}
+                  {workOrder.status !== 'cancelled' && !deliveryOpen && <SecondaryButton label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
                   {workOrder.status !== 'cancelled' && <SecondaryButton label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
                   {canDownloadLabPackages && <SecondaryButton label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
                   {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
@@ -1460,7 +1515,7 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
-          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly)) && (
+          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly) || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery)) && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1472,9 +1527,9 @@ export default function WorkOrdersScreen() {
                   keyboardShouldPersistTaps="handled"
                 >
                   <View style={styles.overlayHandle} />
-                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : 'TICKET DE REAPERTURA'}</Text>
-                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : '¿Por qué necesitas modificar esta orden?'}</Text>
-                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : 'La solicitud requiere resolución de Admin.'}</Text>
+                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'void_delivery' ? 'ANULACIÓN DE ACUSE' : ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : 'TICKET DE REAPERTURA'}</Text>
+                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'void_delivery' ? 'Anular entrega registrada' : ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : '¿Por qué necesitas modificar esta orden?'}</Text>
+                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'void_delivery' ? 'La firma y el PDF se conservarán en el historial.' : ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : 'La solicitud requiere resolución de Admin.'}</Text>
                   {ticketDialogMode === 'reopen_direct' && (
                     <View style={styles.row}>
                       <Pressable onPress={() => setReopenSignaturePolicy('preserve')} style={[styles.choice, reopenSignaturePolicy === 'preserve' && styles.choiceActive]}><Text>Conservar firma</Text></Pressable>
@@ -1482,10 +1537,10 @@ export default function WorkOrdersScreen() {
                     </View>
                   )}
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
-                  <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />
+                  {ticketDialogMode !== 'void_delivery' && <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />}
                   <View style={styles.actionRow}>
                     <Pressable style={styles.cancel} onPress={() => setTicketOpen(false)}><Text>Cancelar</Text></Pressable>
-                    <Pressable disabled={!ticketReason.trim() || !ticketDescription.trim()} style={styles.save} onPress={submitOperationalAction}><Text style={styles.primaryText}>{ticketDialogMode === 'cancel' ? 'Cancelar OT' : ticketDialogMode === 'reopen_direct' ? 'Reabrir orden' : 'Enviar solicitud'}</Text></Pressable>
+                    <Pressable disabled={!ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery')} style={styles.save} onPress={submitOperationalAction}><Text style={styles.primaryText}>{ticketDialogMode === 'void_delivery' ? 'Anular acuse' : ticketDialogMode === 'cancel' ? 'Cancelar OT' : ticketDialogMode === 'reopen_direct' ? 'Reabrir orden' : 'Enviar solicitud'}</Text></Pressable>
                   </View>
                 </ScrollView>
               </KeyboardAvoidingView>

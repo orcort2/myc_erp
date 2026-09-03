@@ -8,6 +8,11 @@ from app.models.lab_work_order import LabWorkOrder
 from app.services.work_order_pdfs import APP_DIR, _filename, _render_html
 
 
+class _PendingDeliveryDate:
+    def strftime(self, _format: str) -> str:
+        return "PENDIENTE"
+
+
 def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
     """Renderiza el formato institucional sin conectar el LAB al agregado productivo."""
 
@@ -48,7 +53,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
         notes = f"{notes}\n{reopening_note}".strip()
     document = SimpleNamespace(
         created_at=work_order.reception_date,
-        service_date=work_order.departure_date,
+        service_date=work_order.departure_date or _PendingDeliveryDate(),
         work_order_number=work_order.folio,
         equipment=[
             SimpleNamespace(

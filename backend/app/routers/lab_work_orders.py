@@ -23,6 +23,9 @@ from app.schemas.lab_work_order import (
     LabWorkOrderListItem,
     LabWorkOrderRead,
     LabReceptionDateUpdate,
+    LabWorkOrderDeliveryCreate,
+    LabWorkOrderDeliveryRead,
+    LabWorkOrderDeliveryVoid,
     LabWorkOrderUpdate,
 )
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
@@ -71,6 +74,12 @@ from app.services.lab_packages import generate_lab_package
 from app.models.linked_company import LinkedCompany
 from sqlalchemy import select
 from app.services.operational_tickets import get_revision_pdf, list_revisions, reopen_work_order_directly
+from app.services.lab_work_order_deliveries import (
+    complete_lab_work_order_delivery,
+    get_lab_delivery_pdf,
+    get_lab_work_order_delivery,
+    void_lab_work_order_delivery,
+)
 
 
 router = APIRouter(
@@ -326,6 +335,57 @@ def get_lab_work_order(
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return get_work_order(db, work_order_id)
+
+
+@router.get("/{work_order_id}/delivery", response_model=LabWorkOrderDeliveryRead | None)
+def get_lab_delivery(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderDeliveryRead | None:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return get_lab_work_order_delivery(db, work_order_id)
+
+
+@router.post("/{work_order_id}/delivery", response_model=LabWorkOrderDeliveryRead, status_code=201)
+def post_lab_delivery(
+    work_order_id: int,
+    payload: LabWorkOrderDeliveryCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission("lab_work_orders.use")),
+) -> LabWorkOrderDeliveryRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La entrega está reservada a personal MYC")
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return complete_lab_work_order_delivery(db, work_order_id, payload, context.user)
+
+
+@router.get("/{work_order_id}/delivery/pdf")
+def get_lab_delivery_voucher(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
+    ),
+) -> Response:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    content, filename = get_lab_delivery_pdf(db, work_order_id)
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@router.post("/{work_order_id}/delivery/void", response_model=LabWorkOrderDeliveryRead)
+def post_void_lab_delivery(
+    work_order_id: int,
+    payload: LabWorkOrderDeliveryVoid,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission("lab_work_orders.cancel")),
+) -> LabWorkOrderDeliveryRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La anulación está reservada a personal MYC")
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return void_lab_work_order_delivery(db, work_order_id, payload.reason, context.user)
 
 
 @router.delete("/{work_order_id}", status_code=204)

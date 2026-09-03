@@ -573,7 +573,7 @@ def _snapshot(item: LabWorkOrder) -> dict:
         "revision_number": item.revision_number,
         "client_name": item.client_name,
         "reception_date": item.reception_date.isoformat(),
-        "departure_date": item.departure_date.isoformat(),
+        "departure_date": item.departure_date.isoformat() if item.departure_date else None,
         "address": item.address,
         "contact_name": item.contact_name,
         "contact_phone": item.contact_phone,
@@ -616,6 +616,17 @@ def _reopen_closed_cohort(
     (Admin con autoridad directa, sin ticket artificial) terminan cada uno
     con su propia bitácora."""
     work_order, historical_group = _lock_historical_group(db, work_order_id)
+    from app.models.lab_work_order_delivery import LabWorkOrderDelivery
+    if db.scalar(
+        select(LabWorkOrderDelivery.id).where(
+            LabWorkOrderDelivery.work_order_id.in_([item.id for item in historical_group]),
+            LabWorkOrderDelivery.status == "completed",
+        ).limit(1)
+    ) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="La OT ya registra la entrega física de los equipos. Anula primero el acuse de entrega o genera una nueva OT si los equipos regresaron a MYC.",
+        )
     if work_order.status not in {"completed", "partially_closed"}:
         raise HTTPException(status_code=409, detail="OT_NOT_CLOSED")
     cohort = _signature_cohort(

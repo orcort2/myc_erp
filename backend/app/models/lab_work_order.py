@@ -79,7 +79,7 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
         ForeignKey("lab_clients.id", ondelete="RESTRICT"), index=True, nullable=True
     )
     reception_date: Mapped[date] = mapped_column(Date, nullable=False)
-    departure_date: Mapped[date] = mapped_column(Date, nullable=False)
+    departure_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)
     address: Mapped[str] = mapped_column(Text, nullable=False, default="")
     contact_name: Mapped[str | None] = mapped_column(String(180))
@@ -152,6 +152,9 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     )
     operator_client: Mapped["Client | None"] = relationship()
     lab_client: Mapped["LabClient | None"] = relationship()
+    deliveries: Mapped[list["LabWorkOrderDelivery"]] = relationship(
+        back_populates="work_order", order_by="LabWorkOrderDelivery.created_at"
+    )
 
 
 class LabWorkOrderGroupRequest(IntegerPkMixin, TimestampMixin, Base):
@@ -190,7 +193,7 @@ class LabWorkOrderGroupRequest(IntegerPkMixin, TimestampMixin, Base):
         ForeignKey("communication_conversations.id", ondelete="SET NULL"), nullable=True, unique=True
     )
     reception_date: Mapped[date] = mapped_column(Date, nullable=False)
-    departure_date: Mapped[date] = mapped_column(Date, nullable=False)
+    departure_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     client_name: Mapped[str] = mapped_column(String(255), nullable=False)
     address: Mapped[str] = mapped_column(Text, nullable=False, default="")
     contact_name: Mapped[str | None] = mapped_column(String(180))

@@ -132,7 +132,6 @@ def _work_order_payload(client_name: str) -> dict:
     today = date.today()
     return {
         "reception_date": today.isoformat(),
-        "departure_date": (today + timedelta(days=1)).isoformat(),
         "client_name": client_name,
         "address": "Domicilio de prueba",
     }

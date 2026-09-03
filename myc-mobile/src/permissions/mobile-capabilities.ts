@@ -27,6 +27,8 @@ export type MobileCapabilities = {
   canDeactivateLabClients: boolean;
   canResolveLabFolios: boolean;
   canOverrideReceptionDate: boolean;
+  canRegisterLabDelivery: boolean;
+  canVoidLabDelivery: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -110,5 +112,8 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       hasPermission(permissions, 'work_orders.create')
       || hasPermission(permissions, 'lab_work_orders.use')
     ),
+    canRegisterLabDelivery: user?.actor_type === 'internal' && hasLegacyLabAccess,
+    canVoidLabDelivery: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_work_orders.cancel'),
   };
 }
