@@ -358,12 +358,14 @@ export function LabEquipmentForm({
       <ActionRow>
         <SecondaryButton
           disabled={busy}
+          icon="close"
           label="Cancelar"
           onPress={onCancel}
         />
 
         <PrimaryButton
           disabled={!canSubmit}
+          icon="content-save"
           label={
             mode === 'edit'
               ? 'Guardar cambios'

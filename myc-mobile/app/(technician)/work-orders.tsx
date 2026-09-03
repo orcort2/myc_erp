@@ -690,6 +690,11 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  // Nunca cierra el panel ni la OT principal aquí -- eso lo decide
+  // LabDeliveryFlow SÓLO después de mostrar su propia confirmación visual,
+  // vía el callback onComplete (ver closeDeliveryPanel más abajo). Este
+  // handler únicamente ejecuta la llamada autoritativa y refresca el
+  // estado de Delivery/listado mientras el wizard sigue visible.
   async function completeDelivery(payload: LabDeliveryCreatePayload) {
     if (!workOrder) return;
     setBusy(true);
@@ -698,11 +703,8 @@ export default function WorkOrdersScreen() {
         method: 'POST', body: JSON.stringify(payload),
       });
       await loadDeliveryStatus(workOrder.id);
-      setDeliveryPanel('closed');
-      setSignatureDrawing(false);
       publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: workOrder.id, work_order_id: workOrder.id });
       await refresh(true);
-      Alert.alert('Entrega registrada', 'Se registró la exhibición y se generó el acuse de entrega.');
     } catch (error) {
       Alert.alert('No fue posible registrar la entrega', error instanceof Error ? error.message : 'Intenta nuevamente');
       throw error;
@@ -717,15 +719,17 @@ export default function WorkOrdersScreen() {
         method: 'POST', body: JSON.stringify(payload),
       });
       await loadDeliveryStatus(workOrder.id);
-      setDeliveryPanel('closed');
-      setSignatureDrawing(false);
       publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: workOrder.id, work_order_id: workOrder.id });
       await refresh(true);
-      Alert.alert('Entrega parcial registrada', 'Se registró la exhibición autorizada y se generó el acuse.');
     } catch (error) {
       Alert.alert('No fue posible registrar la entrega parcial', error instanceof Error ? error.message : 'Intenta nuevamente');
       throw error;
     } finally { setBusy(false); }
+  }
+
+  function closeDeliveryPanel() {
+    setDeliveryPanel('closed');
+    setSignatureDrawing(false);
   }
 
   async function requestPartialDeliveryTicket(payload: { requested_equipment_ids: number[]; reason: string; description: string }) {
@@ -1327,6 +1331,7 @@ export default function WorkOrdersScreen() {
                         || Number(groupQuantity) < 1
                         || Number(groupQuantity) > 50
                       }
+                      icon="send"
                       label="Enviar solicitud sin reservar folios"
                       loading={busy}
                       onPress={() => {
@@ -1345,6 +1350,7 @@ export default function WorkOrdersScreen() {
                           )
                         )
                       }
+                      icon={groupMode === 'direct' ? 'account-group-outline' : workOrder ? 'content-save' : 'arrow-right-circle'}
                       label={
                         groupMode === 'direct'
                           ? 'Crear grupo y asignar folios'
@@ -1379,7 +1385,7 @@ export default function WorkOrdersScreen() {
               {workOrder && step === 'capture' && (
                 <FadeIn transitionKey={step}>
                   {!!workOrder.reopen_ticket_id && editable && (
-                    <SecondaryButton label="Editar datos generales" onPress={() => setStep('general')} />
+                    <SecondaryButton icon="pencil-outline" label="Editar datos generales" onPress={() => setStep('general')} />
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
@@ -1396,14 +1402,15 @@ export default function WorkOrdersScreen() {
                     );
                   })}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
-                  {editable && canManageEquipment && workOrder.equipment.length < 10 && <SecondaryButton label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />}
-                  {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton label="Asignar OT extra" onPress={addAdditional} />}
+                  {editable && canManageEquipment && workOrder.equipment.length < 10 && <SecondaryButton icon="plus" label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />}
+                  {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton icon="file-plus-outline" label="Asignar OT extra" onPress={addAdditional} />}
                   {/* Fase 3: la recepción se firma ANTES de la captura técnica.
                       Una OT reabierta con "preserve" ya conserva una firma de
                       recepción válida (canSkipSignaturesAfterReopen) -- no debe
                       pedirse otra, así que salta directo a captura técnica. */}
                   <PrimaryButton
                     disabled={!workOrder.equipment.length}
+                    icon="arrow-right-circle"
                     label={canSkipSignaturesAfterReopen(workOrder) ? 'Continuar proceso' : 'Continuar a recepción de equipos'}
                     onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
                   />
@@ -1426,9 +1433,9 @@ export default function WorkOrdersScreen() {
                     request={request}
                     workOrder={workOrder}
                   />
-                  {editable && <SecondaryButton label="Volver a equipos" onPress={() => setStep('capture')} />}
-                  {canExecuteWorkOrders && <PrimaryButton label="Continuar a cierre" onPress={() => setStep('review')} />}
-                  {canDownloadLabPackages && <SecondaryButton label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}
+                  {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
+                  {canExecuteWorkOrders && <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />}
+                  {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}
                 </FadeIn>
               )}
 
@@ -1440,12 +1447,13 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.sectionTitle}>Confirmar cierre</Text>
                   {workOrder.related_work_orders.map((item) => <Text key={item.id} style={styles.reviewLine}>OT {item.folio}: {item.equipment_count} equipo(s) · {item.status === 'completed' ? 'cerrada' : item.status === 'ready_to_close' ? 'lista para cerrar' : item.status === 'ready_for_signatures' ? 'firmada' : 'en captura'}</Text>)}
                   <Text style={styles.notice}>El grupo conserva siempre sus folios y parentesco. El cierre aplica únicamente a la OT o cohorte elegida al firmar la recepción.</Text>
-                  <SecondaryButton label="Revisar captura técnica" onPress={() => setStep('technical')} />
-                  {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <AdministrativeButton label="Solicitar excepción de cierre parcial" onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }} />}
+                  <SecondaryButton icon="clipboard-edit-outline" label="Revisar captura técnica" onPress={() => setStep('technical')} />
+                  {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <AdministrativeButton icon="send" label="Solicitar excepción de cierre parcial" onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }} />}
                   {canCloseWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
-                    <PrimaryButton label="Cerrar OT individual reabierta" onPress={() => completeClosure(closureScope)} />
+                    <PrimaryButton icon="check-circle" label="Cerrar OT individual reabierta" onPress={() => completeClosure(closureScope)} />
                   ) : canCloseWorkOrders ? (
                     <PrimaryButton
+                      icon="check-circle"
                       label={closureScope === 'group' && closureOptions?.hasHistoricalSiblings
                         ? `Cerrar grupo activo (${closureOptions.activeCohortSize} OT)`
                         : `Cerrar OT ${workOrder.folio}`}
@@ -1483,13 +1491,14 @@ export default function WorkOrdersScreen() {
                         {!receptionOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
                       </View>
                     ))}
-                    <SecondaryButton label="Volver a equipos" onPress={() => setStep('capture')} />
+                    <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />
                     {canCaptureSignatures ? (
                       <>
                         {closureOptions?.hasHistoricalSiblings && (
                           <>
                             <PrimaryButton
                               disabled={!closureOptions.canFinalizeGroup}
+                              icon="signature-freehand"
                               label={`Firmar recepción del grupo (${closureOptions.groupParticipantCount} OT)`}
                               onPress={() => openSignatureFlow('group')}
                             />
@@ -1498,13 +1507,14 @@ export default function WorkOrdersScreen() {
                             )}
                             <SecondaryButton
                               disabled={!closureOptions.canFinalizeIndividual}
+                              icon="signature-freehand"
                               label={`Firmar sólo OT ${workOrder.folio}`}
                               onPress={() => openSignatureFlow('individual')}
                             />
                           </>
                         )}
                         {!closureOptions?.hasHistoricalSiblings && (
-                          <PrimaryButton label="Continuar a firmas" onPress={() => openSignatureFlow('group')} />
+                          <PrimaryButton icon="signature-freehand" label="Continuar a firmas" onPress={() => openSignatureFlow('group')} />
                         )}
                       </>
                     ) : <Text style={styles.notice}>Tu perfil permite consultar esta OT, pero no capturar firmas.</Text>}
@@ -1522,7 +1532,7 @@ export default function WorkOrdersScreen() {
                 ) : (
                   <View style={styles.errorState}>
                     <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto de recepción.</Text>
-                    <SecondaryButton label="Volver a equipos" onPress={() => setStep('capture')} />
+                    <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />
                   </View>
                 )}
                 </FadeIn>
@@ -1537,13 +1547,13 @@ export default function WorkOrdersScreen() {
                 {closureOptions?.isSingleOtSignatureSession !== false ? (
                   <>
                     <Text style={styles.sectionTitle}>Firma completada</Text>
-                    {canCloseWorkOrders && <PrimaryButton label="Cerrar y generar PDFs" onPress={() => completeClosure(closureScope)} />}
+                    {canCloseWorkOrders && <PrimaryButton icon="check-circle" label="Cerrar y generar PDFs" onPress={() => completeClosure(closureScope)} />}
                   </>
                 ) : (
                   <>
                     <Text style={styles.sectionTitle}>OT individual firmada</Text>
                     <Text style={styles.notice}>Esta sesión quedó vinculada a {closureOptions.activeCohortSize} OT. Las demás OT del grupo histórico conservan su estado y podrán cerrarse después.</Text>
-                    {canCloseWorkOrders && <PrimaryButton label="Cierre individual y generar PDF" onPress={() => completeClosure(closureScope)} />}
+                    {canCloseWorkOrders && <PrimaryButton icon="check-circle" label="Cierre individual y generar PDF" onPress={() => completeClosure(closureScope)} />}
                   </>
                 )}
                 </FadeIn>
@@ -1557,7 +1567,7 @@ export default function WorkOrdersScreen() {
                 <FadeIn transitionKey={step}>
                   <Text style={styles.sectionTitle}>Recepción firmada</Text>
                   <Text style={styles.notice}>Técnico y cliente confirmaron los equipos y condiciones recibidos. La recepción queda de sólo lectura; continúa a la captura técnica.</Text>
-                  <PrimaryButton label="Continuar a captura técnica" onPress={() => setStep('technical')} />
+                  <PrimaryButton icon="clipboard-edit-outline" label="Continuar a captura técnica" onPress={() => setStep('technical')} />
                 </FadeIn>
               )}
 
@@ -1567,26 +1577,30 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
                   {deliveryPanel === 'full' && deliveryStatus && (
                     <LabDeliveryFlow
-                      busy={busy}
                       clientName={workOrder.client_name}
                       defaultRecipientName={workOrder.contact_name ?? ''}
+                      deliveredByName={user.full_name}
                       equipment={deliveryStatus.pending_equipment}
                       isPartial={false}
-                      onCancel={() => { setDeliveryPanel('closed'); setSignatureDrawing(false); }}
+                      nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
+                      onCancel={closeDeliveryPanel}
+                      onComplete={closeDeliveryPanel}
                       onDrawingChange={setSignatureDrawing}
                       onSubmit={completeDelivery}
                     />
                   )}
                   {deliveryPanel === 'partial_execute' && deliveryStatus && partialTicket && (
                     <LabDeliveryFlow
-                      busy={busy}
                       clientName={workOrder.client_name}
                       defaultRecipientName={workOrder.contact_name ?? ''}
+                      deliveredByName={user.full_name}
                       equipment={deliveryStatus.pending_equipment.filter((item) => (
                         (partialTicket.resolution_snapshot?.requested_equipment_ids as number[] | undefined)?.includes(item.equipment_id)
                       ))}
                       isPartial
-                      onCancel={() => { setDeliveryPanel('closed'); setSignatureDrawing(false); }}
+                      nextExhibitionNumber={Math.max(0, ...deliveryStatus.exhibitions.map((item) => item.exhibition_number)) + 1}
+                      onCancel={closeDeliveryPanel}
+                      onComplete={closeDeliveryPanel}
                       onDrawingChange={setSignatureDrawing}
                       onSubmit={(payload) => executePartialDelivery(partialTicket.id, payload)}
                     />
@@ -1605,34 +1619,34 @@ export default function WorkOrdersScreen() {
                       {deliveryStatus.group_complete ? (
                         <>
                           <Text style={styles.notice}>Entrega completada · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
-                          <SecondaryButton label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
-                          <SecondaryButton label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
+                          <SecondaryButton icon="printer" label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
+                          <SecondaryButton icon="share-variant" label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
                         </>
                       ) : deliveryStatus.exhibitions.length === 0 ? (
                         <>
                           <Text style={styles.notice}>Pendiente de entrega</Text>
                           {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
                           {partialTicket?.status === 'approved' ? (
-                            <PrimaryButton label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                            <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
                           ) : (
-                            canRegisterLabDelivery && <PrimaryButton label="Registrar entrega" onPress={() => setDeliveryPanel('full')} />
+                            canRegisterLabDelivery && <PrimaryButton icon="package-check" label="Registrar entrega" onPress={() => setDeliveryPanel('full')} />
                           )}
-                          {!partialTicket && canRequestPartialDelivery && <AdministrativeButton label="Solicitar entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                          {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
                         </>
                       ) : (
                         <>
                           <Text style={styles.notice}>{deliveryStatus.delivered_equipment} de {deliveryStatus.total_equipment} equipos entregados · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
                           {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
                           {partialTicket?.status === 'approved' ? (
-                            <PrimaryButton label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                            <PrimaryButton icon="package-check" label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
                           ) : (
-                            canRegisterLabDelivery && <PrimaryButton label="Completar entrega" onPress={() => setDeliveryPanel('full')} />
+                            canRegisterLabDelivery && <PrimaryButton icon="package-check" label="Completar entrega" onPress={() => setDeliveryPanel('full')} />
                           )}
-                          {!partialTicket && canRequestPartialDelivery && <AdministrativeButton label="Solicitar otra entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                          {!partialTicket && canRequestPartialDelivery && <AdministrativeButton icon="send" label="Solicitar otra entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
                         </>
                       )}
                       {!!deliveryStatus.exhibitions.length && (
-                        <SecondaryButton label={deliveryHistoryOpen ? 'Ocultar historial de entregas' : 'Ver historial de entregas'} onPress={() => setDeliveryHistoryOpen((current) => !current)} />
+                        <SecondaryButton icon="history" label={deliveryHistoryOpen ? 'Ocultar historial de entregas' : 'Ver historial de entregas'} onPress={() => setDeliveryHistoryOpen((current) => !current)} />
                       )}
                       {deliveryHistoryOpen && deliveryStatus.exhibitions.map((exhibition) => (
                         <View key={exhibition.id} style={styles.deliveryHistoryRow}>
@@ -1640,10 +1654,10 @@ export default function WorkOrdersScreen() {
                             Exhibición {exhibition.exhibition_number}{exhibition.delivery_type === 'partial' ? ' (parcial)' : ''} · {exhibition.status === 'voided' ? 'Anulada' : 'Completada'}
                           </Text>
                           <Text style={styles.detail}>{new Date(exhibition.delivered_at).toLocaleString('es-MX')} · Recibió: {exhibition.recipient_name}</Text>
-                          <SecondaryButton label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
-                          <SecondaryButton label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
+                          <SecondaryButton icon="printer" label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
+                          <SecondaryButton icon="share-variant" label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
                           {exhibition.status === 'completed' && canVoidLabDelivery && (
-                            <AdministrativeButton label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
+                            <AdministrativeButton icon="undo" label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
                           )}
                         </View>
                       ))}
@@ -1652,19 +1666,19 @@ export default function WorkOrdersScreen() {
                   {deliveryPanel === 'closed' && !deliveryStatus && !!workOrder.departure_date && (
                     <AlertBanner tone="info">Fecha de salida histórica: {workOrder.departure_date}. Sin acuse digital.</AlertBanner>
                   )}
-                  {workOrder.status !== 'cancelled' && deliveryPanel === 'closed' && <SecondaryButton label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
-                  {workOrder.status !== 'cancelled' && <SecondaryButton label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
-                  {canDownloadLabPackages && <SecondaryButton label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
-                  {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
+                  {workOrder.status !== 'cancelled' && deliveryPanel === 'closed' && <SecondaryButton icon="printer" label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
+                  {workOrder.status !== 'cancelled' && <SecondaryButton icon="share-variant" label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
+                  {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
+                  {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton icon="download" label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
                   {workOrder.status !== 'cancelled' && (
                     canReopenDirectly ? (
-                      <AdministrativeButton label="Reabrir orden" onPress={() => { setTicketDialogMode('reopen_direct'); setReopenSignaturePolicy('preserve'); setTicketOpen(true); }} />
+                      <AdministrativeButton icon="lock-open-outline" label="Reabrir orden" onPress={() => { setTicketDialogMode('reopen_direct'); setReopenSignaturePolicy('preserve'); setTicketOpen(true); }} />
                     ) : canCreateTickets ? (
-                      <AdministrativeButton label="Solicitar reapertura" onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }} />
+                      <AdministrativeButton icon="send" label="Solicitar reapertura" onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }} />
                     ) : null
                   )}
                   {workOrder.status === 'cancelled' && canCancel && !!workOrder.previous_status && (
-                    <AdministrativeButton label="Restaurar OT" loading={restoring} onPress={() => confirmRestoreWorkOrder(workOrder)} />
+                    <AdministrativeButton icon="restore" label="Restaurar OT" loading={restoring} onPress={() => confirmRestoreWorkOrder(workOrder)} />
                   )}
                 </>
               )}
@@ -1678,6 +1692,7 @@ export default function WorkOrdersScreen() {
                     {canCancel && workOrder.status !== 'cancelled' && (
                       <AdministrativeButton
                         disabled={busy || deleting}
+                        icon="cancel"
                         label="Cancelar y conservar OT"
                         onPress={() => {
                           setTicketDialogMode('cancel');
@@ -1688,6 +1703,7 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
                     <DangerButton
                       disabled={busy || deleting}
+                      icon="trash-can-outline"
                       label="Eliminar orden de trabajo"
                       loading={deleting}
                       onPress={() => confirmWorkOrderDeletion(workOrder)}
@@ -1750,6 +1766,7 @@ export default function WorkOrdersScreen() {
                       />
                       <DangerButton
                         disabled={busy}
+                        icon="trash-can-outline"
                         label="Eliminar equipo"
                         loading={busy}
                         onPress={() => {
@@ -1789,6 +1806,7 @@ export default function WorkOrdersScreen() {
                   <ActionRow>
                     <SecondaryButton
                       disabled={busy}
+                      icon="close"
                       label="Cancelar"
                       onPress={() => { setTicketOpen(false); setVoidingDelivery(null); }}
                     />
@@ -1799,6 +1817,7 @@ export default function WorkOrdersScreen() {
                           !ticketReason.trim()
                           || !ticketDescription.trim()
                         }
+                        icon="cancel"
                         label="Cancelar OT"
                         loading={busy}
                         onPress={() => {
@@ -1813,6 +1832,13 @@ export default function WorkOrdersScreen() {
                             !ticketDescription.trim()
                             && ticketDialogMode !== 'void_delivery'
                           )
+                        }
+                        icon={
+                          ticketDialogMode === 'void_delivery'
+                            ? 'undo'
+                            : ticketDialogMode === 'reopen_direct'
+                              ? 'lock-open-outline'
+                              : 'send'
                         }
                         label={
                           ticketDialogMode === 'void_delivery'
@@ -1934,6 +1960,7 @@ export default function WorkOrdersScreen() {
 
             {!!selectedGroupRequest?.conversation_id && (
               <SecondaryButton
+                icon="message-text-outline"
                 label="Abrir conversación"
                 onPress={() => {
                   const id = selectedGroupRequest.conversation_id;

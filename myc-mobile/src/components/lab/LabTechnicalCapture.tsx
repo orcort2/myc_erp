@@ -287,6 +287,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
             )}
             {!canOverrideReceptionDate && canCreateTickets && (
               <AdministrativeButton
+                icon="calendar-edit"
                 label="Solicitar cambio de fecha"
                 onPress={() => {
                   setRequestedReceptionDate(workOrder.reception_date);
@@ -584,8 +585,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
         <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
         <ActionRow>
-          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
-          <PrimaryButton label="Enviar Ticket" loading={busy} onPress={requestFieldSheetTemplate} />
+          <SecondaryButton icon="arrow-left" label="Volver" onPress={() => setTicketMode(null)} />
+          <PrimaryButton icon="send" label="Enviar Ticket" loading={busy} onPress={requestFieldSheetTemplate} />
         </ActionRow>
       </ScrollView>
     );
@@ -596,8 +597,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
         <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
         <ActionRow>
-          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
-          <PrimaryButton label="Enviar Ticket" loading={busy} onPress={requestFieldSheetReopen} />
+          <SecondaryButton icon="arrow-left" label="Volver" onPress={() => setTicketMode(null)} />
+          <PrimaryButton icon="send" label="Enviar Ticket" loading={busy} onPress={requestFieldSheetReopen} />
         </ActionRow>
       </ScrollView>
     );
@@ -609,8 +610,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
         <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
         <ActionRow>
-          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
-          <AdministrativeButton label="Enviar solicitud" loading={busy} onPress={requestReceptionDateChange} />
+          <SecondaryButton icon="arrow-left" label="Volver" onPress={() => setTicketMode(null)} />
+          <AdministrativeButton icon="send" label="Enviar solicitud" loading={busy} onPress={requestReceptionDateChange} />
         </ActionRow>
       </ScrollView>
     );
@@ -621,8 +622,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
         <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
         <ActionRow>
-          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
-          <PrimaryButton label="Enviar Ticket" loading={busy} onPress={requestFolio} />
+          <SecondaryButton icon="arrow-left" label="Volver" onPress={() => setTicketMode(null)} />
+          <PrimaryButton icon="send" label="Enviar Ticket" loading={busy} onPress={requestFolio} />
         </ActionRow>
       </ScrollView>
     );
@@ -687,14 +688,14 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
               <EmptyState title="Sin resultados" description={templateSearch.trim() ? 'Prueba con otro término o solicita la hoja.' : 'No hay hojas de campo disponibles.'} />
             )}
             {!templatesLoading && !templatesError && visibleTemplates.length === 0 && (
-              <SecondaryButton label="+ Solicitar hoja de campo" onPress={() => setTicketMode('field_sheet_template')} />
+              <SecondaryButton icon="plus" label="+ Solicitar hoja de campo" onPress={() => setTicketMode('field_sheet_template')} />
             )}
           </Section>
           {activeEquipment.service_type !== 'linked' && activeEquipment.automatic_certificate_folio && (
-            <SecondaryButton label="Ticket · Folio MYC manual" onPress={() => setTicketMode('manual_myc_folio')} />
+            <SecondaryButton icon="send" label="Ticket · Folio MYC manual" onPress={() => setTicketMode('manual_myc_folio')} />
           )}
           <View style={styles.selectorAction}>
-            <PrimaryButton disabled={!selectedTemplate || !canCapture} label="Abrir captura" loading={busy} onPress={createSheet} />
+            <PrimaryButton disabled={!selectedTemplate || !canCapture} icon="clipboard-edit-outline" label="Abrir captura" loading={busy} onPress={createSheet} />
           </View>
         </> : <>
           <View style={styles.statusRow}>
@@ -762,27 +763,28 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
             editable ? (
               <View style={styles.transactionActions}>
                 <ActionRow>
-                  <SecondaryButton label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
-                  <PrimaryButton label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
+                  <SecondaryButton icon="content-save" label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
+                  <PrimaryButton icon="check-circle" label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
                 </ActionRow>
-                <DangerButton label="Eliminar borrador" disabled={busy} onPress={confirmDiscardSheet} />
+                <DangerButton icon="trash-can-outline" label="Eliminar borrador" disabled={busy} onPress={confirmDiscardSheet} />
               </View>
             ) : (
-              <SecondaryButton label="Editar" onPress={() => setViewMode(viewModeAfterEditRequested())} />
+              <SecondaryButton icon="pencil-outline" label="Editar" onPress={() => setViewMode(viewModeAfterEditRequested())} />
             )
           )}
 
           {sheet.status === 'completed' && (
             <View style={styles.documentActions}>
-              <SecondaryButton disabled={downloadingPdf} label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
+              <SecondaryButton disabled={downloadingPdf} icon="download" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
               {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
-                <AdministrativeButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+                <AdministrativeButton icon="lock-open-outline" label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
               )}
             </View>
           )}
 
           <SecondaryButton
             disabled={!labelPrintService.available}
+            icon="printer"
             label="Imprimir etiqueta 50×30 · Próxima fase"
             onPress={() => undefined}
           />
@@ -800,7 +802,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           )}
         </>}
         <View style={styles.navigationActions}>
-          <SecondaryButton label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
+          <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
         </View>
         </FadeIn>
       </ScrollView>
@@ -829,7 +831,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         </View>
         <Text style={styles.meta}>{equipment.service_type ? serviceLabels[equipment.service_type] : 'Sin asignar'} · {equipment.certificate_folio ?? (equipment.folio_status === 'pending' ? 'PENDIENTE' : 'Sin resolver')}</Text>
         <ReadOnlyField label="Cliente documental" value={resolveDocumentaryClientLabel(equipment, workOrder)} />
-        <PrimaryButton label={equipment.field_sheet_id ? 'Abrir hoja' : 'Seleccionar hoja'} onPress={() => openSheet(equipment)} />
+        <PrimaryButton icon="clipboard-edit-outline" label={equipment.field_sheet_id ? 'Abrir hoja' : 'Seleccionar hoja'} onPress={() => openSheet(equipment)} />
       </Card>
     ))}
   </View>;

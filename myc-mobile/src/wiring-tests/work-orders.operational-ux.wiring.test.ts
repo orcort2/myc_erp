@@ -10,9 +10,11 @@ const source = readFileSync(
 );
 
 test('el flujo técnico usa el canon de botones acordado', () => {
-  assert.match(source, /<SecondaryButton label="Volver a equipos" onPress=\{\(\) => setStep\('capture'\)\}/);
-  assert.match(source, /<PrimaryButton label="Continuar a cierre" onPress=\{\(\) => setStep\('review'\)\}/);
-  assert.match(source, /<SecondaryButton label="Descargar paquete disponible"/);
+  // Normalización visual (actividad B): estos wrappers ahora también
+  // llevan un icon= semántico -- el atributo se agregó antes de label=.
+  assert.match(source, /<SecondaryButton icon="arrow-left" label="Volver a equipos" onPress=\{\(\) => setStep\('capture'\)\}/);
+  assert.match(source, /<PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress=\{\(\) => setStep\('review'\)\}/);
+  assert.match(source, /<SecondaryButton icon="download" label="Descargar paquete disponible"/);
 });
 
 test('datos generales y equipo presentan fieldErrors estructurados junto al control', () => {

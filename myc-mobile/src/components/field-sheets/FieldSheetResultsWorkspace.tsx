@@ -15,7 +15,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typography } from '@/src/design/tokens';
-import { PrimaryButton } from '@/src/design/primitives';
+import { CloseButton, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
 import { computeSectionProgress } from '@/src/services/field-sheet-progress';
 import {
   addRow,
@@ -258,11 +258,7 @@ export function FieldSheetResultsWorkspace({
                 )}
             </View>
 
-            <Pressable onPress={requestClose}>
-              <Text style={styles.close}>
-                Cerrar
-              </Text>
-            </Pressable>
+            <CloseButton onPress={requestClose} />
           </View>
 
           <KeyboardAvoidingView
@@ -573,7 +569,9 @@ export function FieldSheetResultsWorkspace({
 
                     {section.allow_add_rows &&
                       !readOnly && (
-                        <Pressable
+                        <SecondaryButton
+                          icon="plus"
+                          label="Agregar fila"
                           onPress={() =>
                             setState((current) =>
                               addRow(
@@ -582,12 +580,7 @@ export function FieldSheetResultsWorkspace({
                               ),
                             )
                           }
-                          style={styles.addRow}
-                        >
-                          <Text style={styles.addRowText}>
-                            ＋ Agregar fila
-                          </Text>
-                        </Pressable>
+                        />
                       )}
                   </View>
                 );
@@ -598,6 +591,7 @@ export function FieldSheetResultsWorkspace({
               <View style={styles.footer}>
                 <PrimaryButton
                   disabled={state.saveState === 'saving'}
+                  icon="content-save"
                   label="Guardar resultados"
                   loading={state.saveState === 'saving'}
                   onPress={() => {
@@ -656,13 +650,6 @@ const styles = StyleSheet.create({
   errorText: {
     color: colors.danger,
     fontSize: 12,
-  },
-
-  close: {
-    color: colors.primary,
-    fontWeight: '800',
-    fontSize: 16,
-    paddingTop: spacing.xs,
   },
 
   content: {
@@ -775,26 +762,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
-  addRow: {
-    alignItems: 'center',
-    borderColor: colors.accent,
-    borderRadius: radius.md,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    padding: spacing.sm,
-    marginTop: spacing.xs,
-  },
-
-  addRowText: {
-    color: colors.accent,
-    fontWeight: '800',
-  },
-
   footer: {
     padding: spacing.lg,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
   },
-
 });

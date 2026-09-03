@@ -886,29 +886,70 @@ def list_field_sheet_templates(db: Session, *, include_all: bool = False) -> lis
 
     active_rows = _query_active_templates(db)
     rows_by_key = {row.template_key: row for row in active_rows}
+
     templates: list[dict] = []
+
     for template_key in TEMPLATE_BLOCK_ASSIGNMENTS:
-        row = rows_by_key.get(template_key)
-        if row is not None:
-            definition = _serialize_row(row)
+        official_template = get_official_pilot_template(template_key)
+
+        if official_template is not None:
+            # Las plantillas oficiales controladas por código son la autoridad
+            # para nuevas capturas. Una definición histórica/administrativa en
+            # BD con la misma key no puede eclipsarlas.
+            definition = normalize_template_definition(
+                official_template
+            )
         else:
-            definition = build_fallback_template_definition(template_key)
+            row = rows_by_key.get(template_key)
+
+            if row is not None:
+                definition = _serialize_row(row)
+            else:
+                definition = build_fallback_template_definition(
+                    template_key
+                )
+
         templates.append(definition)
+
     return templates
 
 
-def get_field_sheet_template(db: Session, template_key: str) -> dict:
-    template_key = _resolve_template_key(template_key)
+def get_field_sheet_template(
+    db: Session,
+    template_key: str,
+) -> dict:
+    template_key = _resolve_template_key(
+        template_key
+    )
+
+    official_template = get_official_pilot_template(
+        template_key
+    )
+
+    if official_template is not None:
+        # Autoridad documental para nuevas FieldSheets.
+        # Los snapshots históricos persistidos no pasan por aquí:
+        # continúan utilizando su template_definition_json congelado.
+        return normalize_template_definition(
+            official_template
+        )
+
     row = db.scalar(
         select(FieldSheetTemplateDefinition).where(
-            FieldSheetTemplateDefinition.template_key == template_key,
+            FieldSheetTemplateDefinition.template_key
+            == template_key,
             FieldSheetTemplateDefinition.is_active.is_(True),
-            FieldSheetTemplateDefinition.status == "active",
+            FieldSheetTemplateDefinition.status
+            == "active",
         )
     )
+
     if row is not None:
         return _serialize_row(row)
-    return build_fallback_template_definition(template_key)
+
+    return build_fallback_template_definition(
+        template_key
+    )
 
 
 def create_field_sheet_template(

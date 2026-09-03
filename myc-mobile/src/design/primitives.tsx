@@ -253,107 +253,102 @@ export function ActionTile({
   );
 }
 
+/**
+ * Anatomía compartida de las acciones OPERATIVAS (no launchers -- ver
+ * ActionTile arriba). Es la variante horizontal/full-width del mismo
+ * lenguaje visual: [círculo con icono] [etiqueta (+ descripción opcional)],
+ * con superficie institucional en vez de un rectángulo de texto plano.
+ *
+ * PrimaryButton/SecondaryButton/AdministrativeButton/DangerButton son
+ * wrappers semánticos sobre esta base -- el tono (color, relleno vs
+ * contorno) es lo único que cambia entre ellos, nunca la estructura. Los
+ * consumidores nunca deciden colores a mano.
+ */
+type OperationalActionIcon = ActionTileIcon;
+type OperationalActionTone = 'primary' | 'secondary' | 'administrative' | 'danger';
+
 type ButtonProps = {
   label: string;
   onPress(): void;
   disabled?: boolean;
   loading?: boolean;
+  icon?: OperationalActionIcon;
+  description?: string;
 };
 
-export function PrimaryButton({
+const TONE_DEFAULT_ICON: Record<OperationalActionTone, OperationalActionIcon> = {
+  primary: 'arrow-right-circle',
+  secondary: 'chevron-left',
+  administrative: 'shield-outline',
+  danger: 'trash-can-outline',
+};
+
+function OperationalActionButton({
   label,
   onPress,
   disabled,
   loading,
-}: ButtonProps) {
+  icon,
+  description,
+  tone,
+}: ButtonProps & { tone: OperationalActionTone }) {
+  const resolvedIcon = icon ?? TONE_DEFAULT_ICON[tone];
   return (
     <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
       disabled={disabled || loading}
       onPress={onPress}
-      style={[
-        styles.primaryButton,
+      style={({ pressed }) => [
+        styles.operationalAction,
+        styles[`operationalAction_${tone}`],
+        pressed && styles.operationalActionPressed,
         (disabled || loading) && styles.buttonDisabled,
       ]}
     >
-      {loading ? (
-        <ActivityIndicator color="#fff" />
-      ) : (
-        <Text style={styles.primaryButtonText}>{label}</Text>
-      )}
+      <View style={[styles.operationalActionIcon, styles[`operationalActionIcon_${tone}`]]}>
+        {loading ? (
+          <ActivityIndicator color={styles[`operationalActionIconColor_${tone}`].color} size="small" />
+        ) : (
+          <MaterialCommunityIcons
+            color={styles[`operationalActionIconColor_${tone}`].color}
+            name={resolvedIcon}
+            size={20}
+          />
+        )}
+      </View>
+      <View style={styles.operationalActionTextGroup}>
+        <Text numberOfLines={2} style={[styles.operationalActionLabel, styles[`operationalActionLabel_${tone}`]]}>
+          {label}
+        </Text>
+        {!!description && (
+          <Text numberOfLines={2} style={[styles.operationalActionDescription, styles[`operationalActionDescription_${tone}`]]}>
+            {description}
+          </Text>
+        )}
+      </View>
     </Pressable>
   );
 }
 
-export function SecondaryButton({
-  label,
-  onPress,
-  disabled,
-  loading,
-}: ButtonProps) {
-  return (
-    <Pressable
-      disabled={disabled || loading}
-      onPress={onPress}
-      style={[
-        styles.secondaryButton,
-        (disabled || loading) && styles.buttonDisabled,
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator color={colors.primary} />
-      ) : (
-        <Text style={styles.secondaryButtonText}>{label}</Text>
-      )}
-    </Pressable>
-  );
+/** Acción principal del estado actual -- máximo una por sección. */
+export function PrimaryButton(props: ButtonProps) {
+  return <OperationalActionButton {...props} tone="primary" />;
 }
 
-export function DangerButton({
-  label,
-  onPress,
-  disabled,
-  loading,
-}: ButtonProps) {
-  return (
-    <Pressable
-      disabled={disabled || loading}
-      onPress={onPress}
-      style={[
-        styles.dangerButton,
-        (disabled || loading) && styles.buttonDisabled,
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator color={colors.dangerStrong} />
-      ) : (
-        <Text style={styles.dangerButtonText}>{label}</Text>
-      )}
-    </Pressable>
-  );
+/** Acción auxiliar/no destructiva. */
+export function SecondaryButton(props: ButtonProps) {
+  return <OperationalActionButton {...props} tone="secondary" />;
 }
 
-export function AdministrativeButton({
-  label,
-  onPress,
-  disabled,
-  loading,
-}: ButtonProps) {
-  return (
-    <Pressable
-      disabled={disabled || loading}
-      onPress={onPress}
-      style={[
-        styles.administrativeButton,
-        (disabled || loading) && styles.buttonDisabled,
-      ]}
-    >
-      {loading ? (
-        <ActivityIndicator color={colors.warningStrong} />
-      ) : (
-        <Text style={styles.administrativeButtonText}>{label}</Text>
-      )}
-    </Pressable>
-  );
+/** Operación destructiva real (eliminar, cancelar de forma irreversible). */
+export function DangerButton(props: ButtonProps) {
+  return <OperationalActionButton {...props} tone="danger" />;
+}
+
+/** Operación excepcional o administrativa (solicitar excepción, anular, reabrir). */
+export function AdministrativeButton(props: ButtonProps) {
+  return <OperationalActionButton {...props} tone="administrative" />;
 }
 
 export type StatusTone =
@@ -642,68 +637,123 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
-  primaryButton: {
+  /*
+   * Anatomía compartida de las 4 acciones operativas: variante horizontal
+   * del lenguaje visual de ActionTile -- [círculo con icono] [etiqueta].
+   * minHeight fijo para que acciones vecinas (p.ej. dentro de un
+   * ActionRow) compartan alto/radio/padding sin importar el tono, y para
+   * que loading nunca cambie las dimensiones del control.
+   */
+  operationalAction: {
     alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-
-  primaryButtonText: {
-    color: '#fff',
-    fontWeight: '800',
-  },
-
-  secondaryButton: {
-    alignItems: 'center',
-    borderColor: colors.primary,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    flexDirection: 'row',
+    gap: spacing.sm,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
 
-  secondaryButtonText: {
-    color: colors.primary,
-    fontWeight: '800',
+  operationalActionPressed: {
+    opacity: 0.75,
   },
 
-  dangerButton: {
+  operationalActionIcon: {
     alignItems: 'center',
-    borderColor: colors.danger,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flex: 1,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-
-  dangerButtonText: {
-    color: colors.dangerStrong,
-    fontWeight: '800',
-  },
-
-  administrativeButton: {
-    alignItems: 'center',
-    backgroundColor: 'transparent',
-    borderColor: colors.warningStrong,
-    borderRadius: radius.md,
-    borderStyle: 'dashed',
-    borderWidth: 1,
-    flex: 1,
+    borderRadius: 999,
+    height: 36,
     justifyContent: 'center',
-    minHeight: 48,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    width: 36,
   },
 
-  administrativeButtonText: {
-    color: colors.warningStrong,
+  operationalActionTextGroup: {
+    flexShrink: 1,
+    gap: 1,
+  },
+
+  operationalActionLabel: {
+    fontSize: 15,
     fontWeight: '800',
-    textAlign: 'center',
+  },
+
+  operationalActionDescription: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+
+  // Primary: relleno sólido -- la única acción principal de la sección.
+  operationalAction_primary: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  operationalActionIcon_primary: {
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  operationalActionIconColor_primary: {
+    color: '#fff',
+  },
+  operationalActionLabel_primary: {
+    color: '#fff',
+  },
+  operationalActionDescription_primary: {
+    color: 'rgba(255,255,255,0.85)',
+  },
+
+  // Secondary: contorno + acento primario, superficie institucional.
+  operationalAction_secondary: {
+    backgroundColor: colors.surface,
+    borderColor: colors.primary,
+  },
+  operationalActionIcon_secondary: {
+    backgroundColor: colors.primary,
+  },
+  operationalActionIconColor_secondary: {
+    color: '#fff',
+  },
+  operationalActionLabel_secondary: {
+    color: colors.primary,
+  },
+  operationalActionDescription_secondary: {
+    color: colors.textMuted,
+  },
+
+  // Administrative: excepcional -- contorno punteado en tono de aviso.
+  operationalAction_administrative: {
+    backgroundColor: colors.surface,
+    borderColor: colors.warningStrong,
+    borderStyle: 'dashed',
+  },
+  operationalActionIcon_administrative: {
+    backgroundColor: colors.warningStrong,
+  },
+  operationalActionIconColor_administrative: {
+    color: '#fff',
+  },
+  operationalActionLabel_administrative: {
+    color: colors.warningStrong,
+  },
+  operationalActionDescription_administrative: {
+    color: colors.textMuted,
+  },
+
+  // Danger: destructiva real -- contorno en tono de peligro.
+  operationalAction_danger: {
+    backgroundColor: colors.surface,
+    borderColor: colors.danger,
+  },
+  operationalActionIcon_danger: {
+    backgroundColor: colors.danger,
+  },
+  operationalActionIconColor_danger: {
+    color: '#fff',
+  },
+  operationalActionLabel_danger: {
+    color: colors.dangerStrong,
+  },
+  operationalActionDescription_danger: {
+    color: colors.textMuted,
   },
 
   buttonDisabled: {

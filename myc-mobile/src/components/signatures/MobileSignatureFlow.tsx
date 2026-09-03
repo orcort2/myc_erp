@@ -13,6 +13,7 @@ import {
   SecondaryButton,
 } from '@/src/design/primitives';
 import { MobileSignaturePad } from './MobileSignaturePad';
+import { SuccessTransition } from './StepTransition';
 import {
   canContinueSignature,
   createSignaturePayload,
@@ -50,10 +51,6 @@ export function MobileSignatureFlow({
   const [submitting, setSubmitting] = useState(false);
 
   const transitionOpacity = useRef(
-    new Animated.Value(0),
-  ).current;
-
-  const successOpacity = useRef(
     new Animated.Value(0),
   ).current;
 
@@ -194,13 +191,6 @@ export function MobileSignatureFlow({
       setSubmitting(false);
 
       setSuccess(true);
-      successOpacity.setValue(0);
-
-      Animated.timing(successOpacity, {
-        duration: 220,
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
 
       successTimer.current = setTimeout(() => {
         onComplete();
@@ -221,31 +211,10 @@ export function MobileSignatureFlow({
 
   if (success) {
     return (
-      <Animated.View
-        style={[
-          styles.transition,
-          { opacity: successOpacity },
-        ]}
-      >
-        <View
-          style={[
-            styles.transitionMark,
-            styles.successMark,
-          ]}
-        >
-          <Text style={styles.successCheck}>
-            ✓
-          </Text>
-        </View>
-
-        <Text style={styles.transitionTitle}>
-          Firmas guardadas
-        </Text>
-
-        <Text style={styles.transitionText}>
-          El cierre del grupo se aplicó correctamente.
-        </Text>
-      </Animated.View>
+      <SuccessTransition
+        subtitle="El cierre del grupo se aplicó correctamente."
+        title="Firmas guardadas"
+      />
     );
   }
 
@@ -397,6 +366,7 @@ export function MobileSignatureFlow({
         <ActionRow>
           <PrimaryButton
             disabled={submitting || !clientReady}
+            icon="arrow-right-circle"
             label="Continuar con técnico"
             onPress={continueToTechnician}
           />
@@ -405,12 +375,14 @@ export function MobileSignatureFlow({
         <ActionRow>
           <SecondaryButton
             disabled={submitting}
+            icon="arrow-left"
             label="Volver"
             onPress={returnToClient}
           />
 
           <PrimaryButton
             disabled={!technicianReady}
+            icon="signature-freehand"
             label="Guardar firmas"
             loading={submitting}
             onPress={() => {
@@ -492,16 +464,6 @@ const styles = StyleSheet.create({
     color: '#46d8c4',
     fontSize: 58,
     fontWeight: '300',
-  },
-
-  successCheck: {
-    color: '#fff',
-    fontSize: 52,
-    fontWeight: '900',
-  },
-
-  successMark: {
-    backgroundColor: '#08756f',
   },
 
   title: {

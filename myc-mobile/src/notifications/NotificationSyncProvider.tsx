@@ -99,7 +99,17 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
     if (!emit(event)) return;
     const target = targetFor(event);
     if (!target) return;
-    if (userRef.current) router.push(target);
+    // router.push ALWAYS pushes a brand-new screen instance, even onto the
+    // route already focused (per expo-router: "you can push the current
+    // route multiple times"). Tapping a LAB notification while already
+    // inside `/(technician)/work-orders` -- with an OT modal open -- used
+    // to mount a second, fresh WorkOrdersScreen (open=false) on top of the
+    // existing one, which visually looked exactly like "the OT closed and
+    // went back to the list". router.navigate reuses the already-mounted
+    // screen instance (jumping back to it if buried and merging params)
+    // instead of stacking a duplicate, so the open modal's local state
+    // survives.
+    if (userRef.current) router.navigate(target);
     else pendingTarget.current = target;
   }, [emit]);
 
@@ -111,7 +121,7 @@ export function NotificationSyncProvider({ children }: PropsWithChildren) {
     registerDevice('login');
     refreshUnread().catch(() => undefined);
     if (pendingTarget.current) {
-      router.push(pendingTarget.current);
+      router.navigate(pendingTarget.current);
       pendingTarget.current = null;
     }
   }, [authorizedFetch, refreshUnread, registerDevice, user]);
