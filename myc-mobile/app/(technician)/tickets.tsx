@@ -49,6 +49,7 @@ const TICKET_TYPE_LABELS: Record<OperationalTicket['type'], string> = {
   certificate_folio_block: 'Folios certificados',
   field_sheet_template_request: 'Hoja de campo no encontrada',
   field_sheet_reopen: 'Desbloqueo de hoja de campo',
+  reception_date_change: 'Cambio de fecha de recepción',
 };
 
 export default function TicketsScreen() {
@@ -295,6 +296,9 @@ export default function TicketsScreen() {
   if (!user) return <Redirect href="/(auth)/login" />;
   const canReview = capabilities.canReviewTickets;
   const canResolve = !!user && hasPermission(user.permissions, 'lab_folios.resolve');
+  const canResolveSelected = selected?.type === 'reception_date_change'
+    ? capabilities.canOverrideReceptionDate
+    : canResolve;
   const requestVisibility = visibleRequestKinds(kind);
   const visibleTickets = filterTicketsByKind(items, kind);
   const visibleGroups = filterGroupRequests(groupRequests, status, debouncedSearch);
@@ -391,6 +395,13 @@ export default function TicketsScreen() {
                   <Text style={styles.detailLabel}>Estado del folio</Text><Text style={styles.detail}>{selected.equipment_folio_status ?? '—'}</Text>
                 </>
               )}
+              {selected.type === 'reception_date_change' && (
+                <>
+                  <Text style={styles.detailLabel}>Fecha actual</Text><Text style={styles.detail}>{String(selected.resolution_snapshot?.current_date ?? '—')}</Text>
+                  <Text style={styles.detailLabel}>Fecha solicitada</Text><Text style={styles.detail}>{String(selected.resolution_snapshot?.requested_date ?? '—')}</Text>
+                  <Text style={styles.detail}>Atender esta solicitud no modifica la fecha automáticamente.</Text>
+                </>
+              )}
               {(selected.type === 'field_sheet_reopen' || selected.type === 'field_sheet_template_request') && !!selected.equipment_id && (
                 <><Text style={styles.detailLabel}>Equipo</Text><Text style={styles.detail}>Equipo #{selected.equipment_id} de la OT{selected.work_order_folio ? ` ${selected.work_order_folio}` : ''}</Text></>
               )}
@@ -405,7 +416,7 @@ export default function TicketsScreen() {
                 <Pressable disabled={busy} onPress={() => review('approve', 'invalidate')} style={styles.secondary}><Text style={styles.secondaryText}>Aprobar y requerir nuevas firmas</Text></Pressable>
                 <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
               </>}
-              {canResolve && selected.type !== 'reopen_work_order' && selected.status === 'pending' && <>
+              {canResolveSelected && selected.type !== 'reopen_work_order' && selected.status === 'pending' && <>
                 {(selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && <TextInput autoCapitalize="characters" onChangeText={setAuthorizedFolio} placeholder="Folio completo autorizado" style={styles.input} value={authorizedFolio} />}
                 <TextInput multiline onChangeText={setComment} placeholder="Comentario de resolución" style={[styles.input, styles.comment]} value={comment} />
                 <Pressable disabled={busy || ((selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && !authorizedFolio.trim())} onPress={resolveSelected} style={styles.primary}><Text style={styles.primaryText}>Resolver solicitud</Text></Pressable>

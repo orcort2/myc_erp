@@ -29,6 +29,8 @@ test('mobile.access no concede capacidades operativas implícitas', () => {
   assert.equal(capabilities.canCaptureSignatures, false);
   assert.equal(capabilities.canUseCommunications, false);
   assert.equal(capabilities.canRequestWorkOrderGroups, false);
+  assert.equal(capabilities.canResolveLabFolios, false);
+  assert.equal(capabilities.canOverrideReceptionDate, false);
 });
 
 test('Viewer externo sólo habilita lectura organizacional', () => {
@@ -200,6 +202,20 @@ test('staff conserva compatibilidad LAB y Comunicaciones', () => {
   assert.equal(capabilities.canExecuteWorkOrders, true);
   assert.equal(capabilities.canCloseWorkOrders, true);
   assert.equal(capabilities.canUseCommunications, true);
+  assert.equal(capabilities.canOverrideReceptionDate, true);
+});
+
+test('resolver folios vinculados exige actor interno y lab_folios.resolve', () => {
+  assert.equal(deriveMobileCapabilities(user('internal', ['lab_folios.resolve'])).canResolveLabFolios, true);
+  assert.equal(deriveMobileCapabilities(user('internal', ['work_orders.create'])).canResolveLabFolios, false);
+  assert.equal(deriveMobileCapabilities(user('client', ['lab_folios.resolve'])).canResolveLabFolios, false);
+});
+
+test('editar fecha de recepción exige actor interno y autoridad de datos generales', () => {
+  assert.equal(deriveMobileCapabilities(user('internal', ['work_orders.create'])).canOverrideReceptionDate, true);
+  assert.equal(deriveMobileCapabilities(user('internal', ['lab_work_orders.use'])).canOverrideReceptionDate, true);
+  assert.equal(deriveMobileCapabilities(user('internal', ['work_orders.execute'])).canOverrideReceptionDate, false);
+  assert.equal(deriveMobileCapabilities(user('client', ['work_orders.create'])).canOverrideReceptionDate, false);
 });
 
 test('cierre UX 2026-09: canReadLabClients gatea la tarjeta Clientes en Inicio', () => {

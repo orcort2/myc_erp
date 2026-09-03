@@ -30,17 +30,39 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único del código verificado: `d7c297902425` (declara
-  `down_revision = b71d4a9f2c18`; añade el modelo de revisión/scope de
-  equipo LAB de Fase 6 -- ver sección de Fase 6 más abajo).
-- La revisión previa `b71d4a9f2c18` declara `down_revision = a3983f9a6ca9` y
-  agrega a `field_sheets` renderer/versión, referencia y SHA-256 del PDF
-  final, versión de definición congelada y fecha de generación.
-- La migración clasifica renderers históricos por su `pdf_template` sin
-  reescribir `template_definition_json` ni `template_key`.
-- No se aplicó Alembic ni se ejecutaron cambios sobre la base real del usuario;
-  por ello no corresponde regenerar `backup_erp_myc_antes_prueba.sql` en este
-  trabajo.
+- Head único del código y base local verificado: `9f3a2c7d1e84`, con
+  `down_revision = b0b560e714db`.
+- La revisión sólo reemplaza `ck_operational_ticket_type` para conservar sus
+  siete valores anteriores y admitir `reception_date_change`; no crea columna,
+  tabla ni reescribe datos.
+- El downgrade se niega explícitamente si existen tickets del tipo nuevo;
+  únicamente sin esas filas restaura el constraint anterior.
+- El upgrade local `b0b560e714db → 9f3a2c7d1e84` fue aplicado. La consulta de
+  PostgreSQL confirmó los ocho tipos y `alembic_version=9f3a2c7d1e84`.
+- `backup_erp_myc_antes_prueba.sql` fue regenerado después del upgrade y
+  validado no vacío (80 MB); el respaldo permanece excluido del inventario.
+
+## Cierre operativo y UX OT LAB — 2026-09-03
+
+- Vinculado con folio se autoriza directamente sólo mediante
+  `lab_folios.resolve`; sin esa autoridad conserva Ticket pending y
+  `requested_folio`. No se consumen secuencias MYCA/MYCT y una edición
+  autorizada resuelve, sin borrar, el Ticket previo.
+- La entrega Push sigue usando sonido `default` y canal `operational`; no hay
+  notificación self de creación y el requester sí recibe la resolución.
+- FieldSheet current `draft`/`in_progress` admite descarte. La primera captura
+  puede restaurar `received_signed`; una recaptura restaura la revisión
+  completed predecesora. Completed/histórica bloquea descarte y hard delete de
+  OT; una OT con sólo borradores reutiliza el descarte y puede eliminarse.
+- `LabWorkOrder.reception_date` es autoridad. Sólo staff con
+  `work_orders.create` o `lab_work_orders.use` la modifica; se sincronizan sólo
+  hojas current editables. `reception_date_change` es informativo y resolverlo
+  no aplica la fecha.
+- Mobile presenta errores 422 por campo, calendario civil reutilizable,
+  shortcuts `+6 meses`/`+1 año` con clamp, selector de todas las hojas en un
+  viewport de cinco y botones transaccionales con primitives canónicos.
+- Fase 6A.1 permanece **EN REVISIÓN**; no se agregaron plantillas ni se tocó el
+  renderer PDF.
 
 ## Estado verificable Fase 3 LAB
 
@@ -162,6 +184,21 @@ Resumen operativo:
   plantillas, snapshots, lifecycle y Mobile permanecen intactos.
 
 ## Validaciones
+
+### Cierre operativo y UX OT LAB — 2026-09-03
+
+- Backend focal: `151 passed, 6 warnings`, 0 fallas; backend ampliado
+  LAB/Tickets/Notifications: `327 passed, 8 skipped, 6 warnings`, 0 fallas.
+- Mobile completo: `330 passed`, 0 fallas, duración final `534.482625 ms`.
+- `npx tsc --noEmit`: correcto, exit code 0.
+- `npx expo lint`: exit code 0, 0 errores y 2 warnings del hook vigente en
+  `FieldSheetResultsWorkspace.tsx`.
+- `npx expo export --platform ios`: correcto, exit code 0; bundle de 1265
+  módulos exportado a `dist`.
+- Alembic local: upgrade aplicado desde `b0b560e714db`; `current`, `heads`,
+  constraint de ocho tipos y respaldo regenerado confirman
+  `9f3a2c7d1e84`.
+- Pendiente verificable: QA físico Android/iPhone previo al build.
 
 ### DSL de Hojas de Campo — Fases 4 y 5 (2026-09-02)
 

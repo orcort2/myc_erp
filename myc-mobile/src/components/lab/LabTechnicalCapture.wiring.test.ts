@@ -16,9 +16,10 @@ const source = readFileSync(
   'utf8',
 );
 
-test('el selector de hoja usa el filtro con tope, no la lista completa de templates', () => {
+test('el selector de hoja filtra todas las plantillas cargadas sin recortar la fuente', () => {
   assert.match(source, /filterFieldSheetTemplates\(templates, templateSearch\)/);
   assert.doesNotMatch(source, /\{templates\.map\(\(template\)/);
+  assert.doesNotMatch(source, /\.slice\(0,\s*5\)/);
 });
 
 test('sin resultados de búsqueda, la solicitud vive dentro del selector, no en un botón aparte', () => {
@@ -47,11 +48,27 @@ test('la hoja completed ofrece PDF y, sólo con la OT abierta, desbloqueo', () =
   assert.match(source, /!\['completed', 'partially_closed'\]\.includes\(workOrder\.status\)/);
 });
 
-test('los accesos usan tiles y las acciones transaccionales conservan botones', () => {
-  assert.match(source, /<ActionTile icon="table-edit" label="Abrir resultados"/);
-  assert.match(source, /<ActionTile[^>]*icon="file-pdf-box"[^>]*label="Ver \/ descargar PDF"/);
+test('los accesos y acciones usan el canon visual vigente', () => {
+  assert.match(source, /<ActionTile icon="table-edit" label="Valores"/);
+  assert.match(source, /<SecondaryButton[^>]*label="Ver \/ descargar PDF"/);
   assert.match(source, /<SecondaryButton label="Guardar borrador"/);
   assert.match(source, /<PrimaryButton label="Completar hoja"/);
   assert.match(source, /<AdministrativeButton label="Solicitar desbloqueo"/);
+  assert.match(source, /<DangerButton[^>]*label="Eliminar borrador"/);
   assert.doesNotMatch(source, /<ActionTile[^>]*label="(?:Guardar borrador|Completar hoja)"/);
+});
+
+test('fecha de recepción respeta autoridad OT y la solicitud técnica es informativa', () => {
+  assert.match(source, /canOverrideReceptionDate \? \(/);
+  assert.match(source, /<MycDatePickerField[\s\S]*updateReceptionDate/);
+  assert.match(source, /<ReadOnlyField label=\{field\.label\} value=\{workOrder\.reception_date\}/);
+  assert.match(source, /<AdministrativeButton[\s\S]*label="Solicitar cambio de fecha"/);
+  assert.match(source, /tickets\/reception-date-change/);
+  assert.match(source, /La fecha no cambiará automáticamente/);
+});
+
+test('el borrador editable se descarta por DELETE explícito y no aparece para completed', () => {
+  assert.match(source, /method: 'DELETE'/);
+  assert.match(source, /!captureIsAlwaysReadOnly\(sheet\.status\)/);
+  assert.match(source, /<DangerButton label="Eliminar borrador"/);
 });

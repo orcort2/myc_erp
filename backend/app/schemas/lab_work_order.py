@@ -93,6 +93,12 @@ class LabWorkOrderUpdate(BaseModel):
     expected_edit_version: int | None = Field(default=None, ge=1)
 
 
+class LabReceptionDateUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reception_date: date
+
+
 class LabEquipmentBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

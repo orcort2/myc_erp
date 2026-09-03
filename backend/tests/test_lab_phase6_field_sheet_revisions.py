@@ -358,6 +358,117 @@ def test_reopen_preserve_never_retires_or_versions_the_field_sheet(lab_context):
     assert reclosed.status_code == 200, reclosed.text
 
 
+def test_discard_first_draft_restores_received_signed(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"}, headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    deleted = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    )
+    assert deleted.status_code == 204, deleted.text
+    with factory() as db:
+        assert db.get(FieldSheet, created.json()["id"]) is None
+        assert db.get(LabWorkOrder, order_id).status == "received_signed"
+
+
+def test_discard_in_progress_editable_sheet(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"}, headers=headers,
+    ).json()
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"observations": "captura parcial"}, headers=headers,
+    )
+    assert patched.status_code == 200 and patched.json()["status"] == "in_progress"
+    assert client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).status_code == 204
+    with factory() as db:
+        assert db.get(FieldSheet, created["id"]) is None
+
+
+def test_completed_sheet_cannot_be_discarded(lab_context):
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    response = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    )
+    assert response.status_code == 409
+    assert "completada o histórica" in response.json()["detail"]
+
+
+def test_discard_recapture_restores_completed_predecessor(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    close_order(client, headers, order_id)
+    reopen_order(client, headers, admin_headers, order_id, policy="invalidate")
+    reopened = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers).json()
+    client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}",
+        json=equipment_payload(1, serial_number="REC-2", expected_edit_version=reopened["edit_version"]),
+        headers=headers,
+    )
+    client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
+        json=signatures_payload(), headers=headers,
+    )
+    second = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"}, headers=headers,
+    ).json()
+    assert second["supersedes_field_sheet_id"] == first_id
+    assert client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).status_code == 204
+    with factory() as db:
+        first = db.get(FieldSheet, first_id)
+        assert db.get(FieldSheet, second["id"]) is None
+        assert first.is_current is True and first.status == "completed"
+        assert db.get(LabWorkOrder, order_id).status == "ready_to_close"
+
+
+def test_work_order_with_only_drafts_can_delete_but_history_cannot(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    draft_order_id, draft_equipment_id = create_and_sign_ready_order(client, headers)
+    client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{draft_order_id}/equipment/{draft_equipment_id}/field-sheet",
+        json={"template_key": "general"}, headers=headers,
+    )
+    assert client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{draft_order_id}", headers=admin_headers,
+    ).status_code == 204
+    with factory() as db:
+        assert db.get(LabWorkOrder, draft_order_id) is None
+
+    completed_order_id, completed_equipment_id = create_and_sign_ready_order(client, headers)
+    complete_field_sheet_fully(client, headers, completed_order_id, completed_equipment_id)
+    blocked = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{completed_order_id}", headers=admin_headers,
+    )
+    assert blocked.status_code == 409
+    assert "completada o histórica" in blocked.json()["detail"]
+
+
 def test_field_sheet_new_revision_freezes_a_fresh_snapshot_not_the_old_one(lab_context):
     """3. La revisión nueva congela snapshot/renderer propios (no reutiliza
     los de la revisión vieja) -- misma disciplina de congelado ya cerrada en

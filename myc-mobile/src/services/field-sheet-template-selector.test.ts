@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { filterFieldSheetTemplates, MAX_VISIBLE_TEMPLATES, templateDisplayLabel } from './field-sheet-template-selector';
+import { filterFieldSheetTemplates, templateDisplayLabel } from './field-sheet-template-selector';
 import type { FieldSheetTemplate, FieldSheetTemplateMetadata } from '@/src/types/lab-work-order';
 
 function template(name: string, key = name, metadata?: FieldSheetTemplateMetadata): FieldSheetTemplate {
@@ -42,10 +42,10 @@ const mycVariant = (
   search_aliases,
 });
 
-test('sin término de búsqueda, muestra hasta MAX_VISIBLE_TEMPLATES', () => {
+test('sin término de búsqueda, conserva todas las plantillas cargadas', () => {
   const many = Array.from({ length: 30 }, (_, index) => template(`Hoja ${index}`));
   const visible = filterFieldSheetTemplates(many, '');
-  assert.equal(visible.length, MAX_VISIBLE_TEMPLATES);
+  assert.equal(visible.length, 30);
 });
 
 test('filtra por nombre, insensible a mayúsculas/acentos', () => {
@@ -74,9 +74,9 @@ test('sin coincidencias, resultado vacío (habilita "+ Solicitar hoja de campo")
   assert.deepEqual(filterFieldSheetTemplates(templates, 'valvula'), []);
 });
 
-test('el filtrado nunca excede MAX_VISIBLE_TEMPLATES aunque haya más coincidencias', () => {
+test('el filtrado busca sobre todas las plantillas sin recortar coincidencias', () => {
   const templates = Array.from({ length: 10 }, (_, index) => template(`Presión ${index}`));
-  assert.equal(filterFieldSheetTemplates(templates, 'presión').length, MAX_VISIBLE_TEMPLATES);
+  assert.equal(filterFieldSheetTemplates(templates, 'presión').length, 10);
 });
 
 // --------------------------------------------------------------------------

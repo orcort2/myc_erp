@@ -54,5 +54,9 @@ test('la solicitud linked_folio presenta identidad real del equipo al Admin', ()
   ]) {
     assert.match(source, new RegExp(`selected\\.${field}`));
   }
-  assert.doesNotMatch(source, /selected\.type === 'linked_folio'[\s\S]*?Equipo #\{selected\.equipment_id\}/);
+  const linkedBlock = source.slice(
+    source.indexOf("selected.type === 'linked_folio' && ("),
+    source.indexOf("(selected.type === 'field_sheet_reopen'", source.indexOf("selected.type === 'linked_folio' && (")),
+  );
+  assert.doesNotMatch(linkedBlock, /Equipo #\{selected\.equipment_id\}/);
 });

@@ -38,3 +38,28 @@ test('readApiErrorDetail conserva code/items estructurados y humaniza el mensaje
   // UI lo consume vía `.code`/`.items`, nunca muestra `.message` para este caso.
   assert.equal(detail.message, 'LAB_DRAFT_SHEETS_INVALID');
 });
+
+test('readApiErrorDetail convierte el 422 estándar de FastAPI en fieldErrors útiles', async () => {
+  const detail = await readApiErrorDetail(jsonResponse({
+    detail: [
+      { type: 'date_from_datetime_parsing', loc: ['body', 'reception_date'], msg: 'Input should be a valid date' },
+      { type: 'missing', loc: ['body', 'equipment', 'serial_number'], msg: 'Field required' },
+    ],
+  }, 422));
+  assert.equal(detail.message, 'Revisa los campos marcados.');
+  assert.equal(detail.code, 'validation_error');
+  assert.deepEqual(detail.fieldErrors, [
+    {
+      field: 'reception_date',
+      code: 'date_from_datetime_parsing',
+      message: 'Fecha de recepción: formato incorrecto. Usa AAAA-MM-DD.',
+      expected: null,
+    },
+    {
+      field: 'equipment.serial_number',
+      code: 'missing',
+      message: 'Revisa el campo equipment.serial number.',
+      expected: null,
+    },
+  ]);
+});

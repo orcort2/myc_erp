@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-09-02
+> Corte verificado: 2026-09-03
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -174,6 +174,17 @@ es temporal por diseño (ver `myc-mobile/AGENTS.md`, "Naturaleza temporal del
 LAB") y se espera que sea retirado antes de que ese solape se vuelva relevante
 en la práctica.
 
+### Folio documental Vinculado
+
+`LabWorkOrderEquipment.report_number` es el único input del folio documental
+Vinculado. Si el actor tiene `lab_folios.resolve`, el backend valida unicidad,
+normaliza el texto y fija `certificate_folio`/`folio_status=authorized` sin
+crear Ticket ni tocar `institutional_folio_sequences`. Si no tiene el permiso,
+el equipo queda `pending` y `linked_folio.requested_folio` conserva lo escrito.
+Una edición posterior autorizada resuelve el Ticket pendiente, registra actor,
+fecha, snapshot y notifica al solicitante cuando es otra persona; el Ticket no
+se elimina. La omisión del folio conserva el pending normal.
+
 ## Estados, Hojas de Campo y reapertura
 
 ```text
@@ -207,6 +218,23 @@ no cambia estado. La hoja guarda exactamente
 `work_order.signature_session_id` al crearla y nunca se reancla buscando la
 última versión de la raíz. Completar la última hoja requerida mueve, en la
 misma transacción, `in_progress → ready_to_close`.
+
+Una revisión vigente `draft` o `in_progress` se puede descartar por el endpoint
+DELETE de la hoja. En primera captura se eliminan sólo sus dependencias
+exclusivas y, cuando ya no queda otra captura técnica, la OT vuelve a
+`received_signed`. En recaptura se elimina N+1 y se restaura N como
+`is_current=true`; la revisión completed, su PDF y SHA permanecen inmutables.
+Una hoja completed nunca muestra ni acepta descarte. El hard delete de OT
+reutiliza esta operación sólo cuando todas sus hojas son borradores vigentes;
+una completed o cualquier revisión histórica produce conflicto legible.
+
+`LabWorkOrder.reception_date` sigue siendo la autoridad. La edición directa
+exige actor interno con `work_orders.create` o el fallback legacy
+`lab_work_orders.use`; actualiza la OT y únicamente las FieldSheets current
+`draft`/`in_progress` en una transacción auditada. Completed e históricas no se
+tocan. Sin autoridad, Mobile presenta la fecha readonly y permite crear el
+Ticket informativo `reception_date_change`, cuya creación/resolución nunca
+modifica la fecha.
 
 Después del POST de creación, Mobile vuelve a leer la OT y reemplaza su
 proyección con la respuesta backend; no infiere `in_progress`. La misma lectura
@@ -273,6 +301,10 @@ altera el armado de domicilio de las OT productivas.
 - `react-native-safe-area-context` para respetar notch, status bar y home
   indicator sin offsets por modelo;
 - una sola `Modal` nativa; el editor de equipo es un overlay interno.
+- `MycDatePickerField` para fechas civiles `YYYY-MM-DD`, con día seleccionado,
+  hoy diferenciado y shortcuts opcionales `+6 meses`/`+1 año` calculados desde
+  la fecha de calibración y clampeados al último día válido. Son UX
+  experimental, no defaults ni política metrológica.
 
 La captura principal no muestra teléfono ni correo; esos atributos permanecen
 opcionales únicamente por compatibilidad del contrato backend. Datos generales
@@ -368,9 +400,11 @@ LAB tras `204` o `404`. `403`, `409` y errores de red conservan el detalle.
 | --- | --- | --- |
 | POST / GET | `/lab-work-orders` | crear raíz / listar con `folio`, `client`, `status`, `offset`, `limit` |
 | GET / PATCH | `/lab-work-orders/{id}` | detalle de grupo / propagar generales |
+| PATCH | `/lab-work-orders/{id}/reception-date` | actualizar fecha canónica y sincronizar hojas vigentes editables |
 | DELETE | `/lab-work-orders/{id}` | eliminar una OT individual y reparar/conservar el grupo |
 | POST | `/{id}/equipment` | agregar hasta 10 |
 | PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / eliminar antes de firma |
+| DELETE | `/{id}/equipment/{equipment_id}/field-sheet` | descartar únicamente la revisión vigente editable |
 | POST | `/{id}/additional` | crear la siguiente OT del grupo |
 | POST | `/{id}/signatures` | firmar la recepción de la cohorte abierta del grupo histórico |
 | POST | `/{id}/signatures/individual` | firmar la recepción únicamente de la OT seleccionada |

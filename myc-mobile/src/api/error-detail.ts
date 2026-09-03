@@ -31,7 +31,42 @@ export type ApiErrorDetail = {
   // golpear el endpoint ni adivinar la forma del error.
   code: string | null;
   items: Record<string, unknown>[] | null;
+  fieldErrors: FieldError[];
 };
+
+export type FieldError = {
+  field: string;
+  code: string;
+  message: string;
+  expected?: string | null;
+};
+
+const DATE_FIELD_MESSAGES: Record<string, string> = {
+  reception_date: 'Fecha de recepción: formato incorrecto. Usa AAAA-MM-DD.',
+  calibration_date: 'Fecha de calibración: formato incorrecto. Usa AAAA-MM-DD.',
+  next_calibration_date: 'Próxima calibración: formato incorrecto. Usa AAAA-MM-DD.',
+};
+
+function parseValidationErrors(detail: unknown[]): FieldError[] {
+  return detail.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const raw = item as { loc?: unknown; msg?: unknown; type?: unknown; ctx?: { expected?: unknown } };
+    const location = Array.isArray(raw.loc)
+      ? raw.loc.map(String).filter((part) => !['body', 'query', 'path'].includes(part))
+      : [];
+    if (location.length === 0) return [];
+    const field = location.join('.');
+    const leaf = location.at(-1) ?? field;
+    const message = DATE_FIELD_MESSAGES[leaf]
+      ?? `Revisa el campo ${field.replaceAll('_', ' ')}.`;
+    return [{
+      field,
+      code: typeof raw.type === 'string' ? raw.type : 'validation_error',
+      message,
+      expected: raw.ctx?.expected == null ? null : String(raw.ctx.expected),
+    }];
+  });
+}
 
 /**
  * Lee el detalle de un error HTTP conservando `missing_fields`/`code`/`items`
@@ -42,24 +77,34 @@ export type ApiErrorDetail = {
 export async function readApiErrorDetail(response: Response): Promise<ApiErrorDetail> {
   try {
     const body = await response.json();
+    if (Array.isArray(body.detail)) {
+      const fieldErrors = parseValidationErrors(body.detail);
+      return {
+        message: fieldErrors.length === 1 ? fieldErrors[0].message : 'Revisa los campos marcados.',
+        missingFields: null,
+        code: 'validation_error',
+        items: null,
+        fieldErrors,
+      };
+    }
     if (typeof body.detail === 'string') {
-      return { message: humanizeErrorMessage(body.detail), missingFields: null, code: null, items: null };
+      return { message: humanizeErrorMessage(body.detail), missingFields: null, code: null, items: null, fieldErrors: [] };
     }
     if (body.detail?.message) {
       const missingFields = Array.isArray(body.detail.missing_fields)
         ? body.detail.missing_fields.map((item: unknown) => String(item))
         : null;
-      return { message: humanizeErrorMessage(body.detail.message), missingFields, code: null, items: null };
+      return { message: humanizeErrorMessage(body.detail.message), missingFields, code: null, items: null, fieldErrors: [] };
     }
     if (body.detail?.code) {
       const items = Array.isArray(body.detail.items) ? body.detail.items : null;
       const code = String(body.detail.code);
-      return { message: humanizeErrorMessage(code), missingFields: null, code, items };
+      return { message: humanizeErrorMessage(code), missingFields: null, code, items, fieldErrors: [] };
     }
   } catch {
     // El backend puede responder PDF/ZIP o un error sin JSON.
   }
-  return { message: `Error del servidor (${response.status})`, missingFields: null, code: null, items: null };
+  return { message: `Error del servidor (${response.status})`, missingFields: null, code: null, items: null, fieldErrors: [] };
 }
 
 export async function readApiError(response: Response): Promise<string> {
@@ -75,6 +120,7 @@ export class ApiError extends Error {
   readonly missingFields: string[] | null;
   readonly code: string | null;
   readonly items: Record<string, unknown>[] | null;
+  readonly fieldErrors: FieldError[];
 
   constructor(
     message: string,
@@ -82,6 +128,7 @@ export class ApiError extends Error {
     missingFields: string[] | null = null,
     code: string | null = null,
     items: Record<string, unknown>[] | null = null,
+    fieldErrors: FieldError[] = [],
   ) {
     super(message);
     this.name = 'ApiError';
@@ -89,5 +136,6 @@ export class ApiError extends Error {
     this.missingFields = missingFields;
     this.code = code;
     this.items = items;
+    this.fieldErrors = fieldErrors;
   }
 }

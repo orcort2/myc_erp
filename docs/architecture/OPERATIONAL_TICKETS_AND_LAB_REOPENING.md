@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-09-01
+> Corte verificado: 2026-09-03
 >
 > Alcance: Tickets operativos y reapertura documental controlada de OT LAB
 
@@ -22,11 +22,23 @@ OT completed
   → cierre genera PDF nuevo y resuelve el ticket
 ```
 
-`OperationalTicket` es la entidad extensible. En este corte sólo acepta
-`reopen_work_order`; sus estados canónicos son `pending`, `approved`,
+`OperationalTicket` es la entidad extensible. El constraint vigente acepta
+`reopen_work_order`, `manual_myc_folio`, `linked_folio`, `partial_close`,
+`certificate_folio_block`, `field_sheet_template_request`,
+`field_sheet_reopen` y `reception_date_change`; sus estados canónicos son `pending`, `approved`,
 `rejected`, `in_progress`, `resolved` y `cancelled`. La aprobación ejecuta la
 reapertura en la misma transacción y deja el ticket directamente
 `in_progress`; `approved` queda reservado para una futura aprobación diferida.
+
+## Solicitud informativa de fecha de recepción
+
+`reception_date_change` guarda OT, equipo/hoja opcionales, solicitante, motivo,
+descripción y `requested_date`/`current_date`/`field_sheet_id` dentro de
+`resolution_snapshot`. Crear o resolver el Ticket no modifica
+`LabWorkOrder.reception_date` ni una FieldSheet. Los destinatarios de creación
+son usuarios internos con `work_orders.create` o `lab_work_orders.use`, excepto
+el solicitante; resolver exige la misma autoridad y notifica al solicitante que
+la solicitud fue atendida, sin afirmar que la fecha cambió.
 
 ## Inmutabilidad y revisiones
 
@@ -83,6 +95,8 @@ Base: `/api/mobile/v1/technician`.
 - `GET /tickets/{id}`
 - `POST /tickets/{id}/approve`
 - `POST /tickets/{id}/reject`
+- `POST /tickets/reception-date-change`
+- `POST /tickets/{id}/resolve`
 - `GET /lab-work-orders/{id}/revisions`
 - `GET /lab-work-orders/{id}/revisions/{revision}/pdf`
 

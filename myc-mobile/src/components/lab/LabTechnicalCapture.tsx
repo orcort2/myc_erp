@@ -34,16 +34,19 @@ import {
 } from '@/src/services/field-sheet-draft-view-state';
 import { apiUrl, ApiError } from '@/src/api/client';
 import {
-  ActionRow, ActionTile, AdministrativeButton, AlertBanner, Card, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
+  ActionRow, ActionTile, AdministrativeButton, AlertBanner, Card, DangerButton, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
 } from '@/src/design/primitives';
 import { colors, spacing } from '@/src/design/tokens';
 import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldSheetResultsWorkspace';
+import { MycDatePickerField } from '@/src/design/MycDatePickerField';
 
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
 type Props = {
   accessToken: string;
   canCapture: boolean;
+  canCreateTickets: boolean;
+  canOverrideReceptionDate: boolean;
   external: boolean;
   onUpdated(order: LabWorkOrder): void;
   request: Request;
@@ -56,6 +59,7 @@ type Props = {
 const SIGNATURE_AUTHORITY_KEYS = new Set(['calibrated_by', 'reviewed_by', 'report_made_by']);
 
 const serviceLabels = { accredited: 'Acreditado', traceable: 'Trazable', linked: 'Vinculado' } as const;
+const TEMPLATE_ROW_HEIGHT = 56;
 
 // Campos calculados/congelados que el backend expone pero que FieldSheetUpdate no acepta
 // (reserved_certificate_folio es un @property; work_order_number se fija al crear la hoja).
@@ -135,7 +139,7 @@ function fieldSheetStatusLabel(status: string): string {
  * genéricamente, igual que antes de esta fase, ahora con el contrato de
  * campo completo del snapshot y sin tablas inline.
  */
-export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, request, workOrder }: Props) {
+export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets, canOverrideReceptionDate, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templatesError, setTemplatesError] = useState('');
@@ -146,10 +150,13 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [viewMode, setViewMode] = useState<FieldSheetViewMode>(initialViewMode());
   const [resultsOpen, setResultsOpen] = useState(false);
-  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'field_sheet_template' | 'field_sheet_reopen' | null>(null);
+  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'field_sheet_template' | 'field_sheet_reopen' | 'reception_date_change' | null>(null);
   const [requestedFolio, setRequestedFolio] = useState('');
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
+  const [requestedReceptionDate, setRequestedReceptionDate] = useState(workOrder.reception_date);
+  const [formError, setFormError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
 
@@ -227,6 +234,35 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
 
   function setField(key: string, value: string | boolean) {
     setValues((current) => ({ ...current, [key]: value }));
+    setFieldErrors((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  async function updateReceptionDate(value: string) {
+    if (!activeEquipment || !sheet || !canOverrideReceptionDate) return;
+    setBusy(true);
+    setFormError('');
+    try {
+      const updated = await request<LabWorkOrder>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/reception-date`,
+        { method: 'PATCH', body: JSON.stringify({ reception_date: value }) },
+      );
+      const refreshedSheet = await request<LabFieldSheet>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
+      );
+      setSheet(refreshedSheet);
+      setValues(buildValues(refreshedSheet));
+      onUpdated(updated);
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'No fue posible actualizar la fecha de recepción.');
+      if (error instanceof ApiError) {
+        setFieldErrors(Object.fromEntries(error.fieldErrors.map((item) => [item.field.split('.').at(-1) ?? item.field, item.message])));
+      }
+    } finally { setBusy(false); }
   }
 
   // Cierre de contrato canónico LAB: un campo canónico readonly SIEMPRE se
@@ -236,6 +272,31 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
   function renderCanonicalField(field: CanonicalFieldDescriptor) {
     if (!sheet || !activeEquipment) return null;
     if (field.readOnly) {
+      if (field.key === 'reception_date') {
+        return (
+          <View key={field.key}>
+            {canOverrideReceptionDate ? (
+              <MycDatePickerField
+                error={fieldErrors.reception_date}
+                label={field.label}
+                onChange={(value) => void updateReceptionDate(value)}
+                value={workOrder.reception_date}
+              />
+            ) : (
+              <ReadOnlyField label={field.label} value={workOrder.reception_date} />
+            )}
+            {!canOverrideReceptionDate && canCreateTickets && (
+              <AdministrativeButton
+                label="Solicitar cambio de fecha"
+                onPress={() => {
+                  setRequestedReceptionDate(workOrder.reception_date);
+                  setTicketMode('reception_date_change');
+                }}
+              />
+            )}
+          </View>
+        );
+      }
       return (
         <ReadOnlyField
           key={field.key}
@@ -269,10 +330,23 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
         </View>
       );
     }
+    if (field.kind === 'date') {
+      return (
+        <MycDatePickerField
+          error={fieldErrors[field.key]}
+          key={field.key}
+          label={field.label}
+          onChange={(value) => setField(field.key, value)}
+          shortcutBaseValue={field.key === 'next_calibration_date' ? String(values.calibration_date ?? '') : undefined}
+          value={String(values[field.key] ?? '')}
+        />
+      );
+    }
     return (
       <Field
+        error={fieldErrors[field.key]}
         key={field.key}
-        keyboardType={field.kind === 'date' ? 'default' : 'default'}
+        keyboardType="default"
         label={field.label}
         onChange={(value) => setField(field.key, value)}
         value={String(values[field.key] ?? '')}
@@ -296,6 +370,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
   async function saveSheet(complete = false) {
     if (!activeEquipment || !sheet) return;
     setBusy(true);
+    setFormError('');
     let saved: LabFieldSheet;
     try {
       const { direct, captureValues } = normalizeFieldSheetPayload(values, sheet);
@@ -306,7 +381,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
     } catch (error) {
       // A) payload inválido técnicamente en el PATCH (tipos, formato): no es
       // que la hoja esté incompleta, es que el dato en sí no es aceptable.
-      Alert.alert('No fue posible guardar', error instanceof Error ? error.message : 'Revisa los campos requeridos');
+      const message = error instanceof Error ? error.message : 'Revisa los campos requeridos';
+      setFormError(message);
+      if (error instanceof ApiError) {
+        setFieldErrors(Object.fromEntries(error.fieldErrors.map((item) => [item.field.split('.').at(-1) ?? item.field, item.message])));
+      }
+      Alert.alert('No fue posible guardar', message);
       setBusy(false);
       return;
     }
@@ -419,6 +499,61 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
     } finally { setBusy(false); }
   }
 
+  async function requestReceptionDateChange() {
+    if (!activeEquipment || !sheet || ticketMode !== 'reception_date_change') return;
+    if (!ticketReason.trim() || !ticketDescription.trim()) return;
+    setBusy(true);
+    try {
+      await request('/mobile/v1/technician/tickets/reception-date-change', {
+        method: 'POST',
+        body: JSON.stringify({
+          work_order_id: workOrder.id,
+          equipment_id: activeEquipment.id,
+          field_sheet_id: sheet.id,
+          requested_date: requestedReceptionDate,
+          reason: ticketReason.trim(),
+          description: ticketDescription.trim(),
+        }),
+      });
+      setTicketMode(null);
+      Alert.alert('Solicitud enviada', 'La fecha no cambiará automáticamente; un usuario autorizado revisará la solicitud.');
+    } catch (error) {
+      Alert.alert('No fue posible solicitar el cambio', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
+  function confirmDiscardSheet() {
+    if (!activeEquipment || !sheet) return;
+    Alert.alert(
+      'Eliminar borrador',
+      'Se eliminará únicamente la hoja vigente editable. El historial completado permanecerá intacto.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar borrador',
+          style: 'destructive',
+          onPress: async () => {
+            setBusy(true);
+            try {
+              await request(
+                `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet`,
+                { method: 'DELETE' },
+              );
+              const updated = await refreshWorkOrder();
+              const refreshedEquipment = updated.equipment.find((item) => item.id === activeEquipment.id);
+              setActiveEquipment(refreshedEquipment ?? null);
+              setSheet(null);
+              setSelectedTemplate('');
+              setValues({});
+            } catch (error) {
+              Alert.alert('No fue posible eliminar el borrador', error instanceof Error ? error.message : 'Intenta nuevamente');
+            } finally { setBusy(false); }
+          },
+        },
+      ],
+    );
+  }
+
   // Mismo PDF institucional que ya congela el backend (final_pdf) -- ningún
   // renderer nuevo, sólo exponerlo vía auth Mobile (mismo patrón que
   // downloadPdf en work-orders.tsx).
@@ -466,6 +601,19 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
         </ActionRow>
       </ScrollView>
     );
+    if (ticketMode === 'reception_date_change') return (
+      <ScrollView contentContainerStyle={styles.panel}>
+        <Text style={styles.title}>Solicitar cambio de fecha</Text>
+        <Text style={styles.meta}>La solicitud es informativa y no modifica automáticamente la OT.</Text>
+        <MycDatePickerField label="Fecha solicitada" onChange={setRequestedReceptionDate} value={requestedReceptionDate} />
+        <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
+        <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
+        <ActionRow>
+          <SecondaryButton label="Volver" onPress={() => setTicketMode(null)} />
+          <AdministrativeButton label="Enviar solicitud" loading={busy} onPress={requestReceptionDateChange} />
+        </ActionRow>
+      </ScrollView>
+    );
     if (ticketMode) return (
       <ScrollView contentContainerStyle={styles.panel}>
         <Text style={styles.title}>Folio MYC manual</Text>
@@ -496,6 +644,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
           <ReadOnlyField label="Modalidad · Folio" value={`${modalityLabel} · ${folioLabel}`} />
           <ReadOnlyField label="Cliente documental" value={documentaryClientLabel} />
         </Card>
+
+        {!!formError && <AlertBanner tone="danger">{formError}</AlertBanner>}
 
         {activeEquipment.service_type === 'linked' && activeEquipment.folio_status === 'pending' && (
           <AlertBanner tone="info">
@@ -564,7 +714,16 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
                 : !editable
                 ? <ReadOnlyField key={field.key} label={field.label} value={String(values[field.key] ?? '-')} />
                 : (
-                  <Field
+                  field.fieldType === 'date' ? (
+                  <MycDatePickerField
+                    error={fieldErrors[field.key]}
+                    key={field.key}
+                    label={field.label}
+                    onChange={(value) => setField(field.key, value)}
+                    value={String(values[field.key] ?? '')}
+                  />
+                  ) : <Field
+                    error={fieldErrors[field.key]}
                     key={field.key}
                     keyboardType={keyboardTypeForFieldType(field.fieldType)}
                     label={field.label}
@@ -593,7 +752,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
                   </View>
                 ))}
                 <ActionRow>
-                  <ActionTile icon="table-edit" label="Abrir resultados" onPress={() => setResultsOpen(true)} />
+                  <ActionTile icon="table-edit" label="Valores" onPress={() => setResultsOpen(true)} />
                 </ActionRow>
               </Card>
             </Section>
@@ -606,6 +765,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
                   <SecondaryButton label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
                   <PrimaryButton label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
                 </ActionRow>
+                <DangerButton label="Eliminar borrador" disabled={busy} onPress={confirmDiscardSheet} />
               </View>
             ) : (
               <SecondaryButton label="Editar" onPress={() => setViewMode(viewModeAfterEditRequested())} />
@@ -614,9 +774,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, onUpdated, reques
 
           {sheet.status === 'completed' && (
             <View style={styles.documentActions}>
-              <ActionRow>
-                <ActionTile disabled={downloadingPdf} icon="file-pdf-box" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} tone="secondary" />
-              </ActionRow>
+              <SecondaryButton disabled={downloadingPdf} label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
               {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
                 <AdministrativeButton label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
               )}
@@ -682,8 +840,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardTitle: { color: colors.text, fontSize: 17, fontWeight: '800' }, meta: { color: colors.textSubtle },
-  templateList: { borderColor: colors.border, borderRadius: 9, borderWidth: 1, marginBottom: spacing.md, maxHeight: 240 },
-  templateRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: spacing.md },
+  templateList: { borderColor: colors.border, borderRadius: 9, borderWidth: 1, marginBottom: spacing.md, maxHeight: TEMPLATE_ROW_HEIGHT * 5 },
+  templateRow: { alignItems: 'center', flexDirection: 'row', gap: spacing.md, height: TEMPLATE_ROW_HEIGHT, paddingHorizontal: spacing.md },
   templateRowDivider: { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth },
   templateRowSelected: { backgroundColor: colors.primarySoft },
   templateRowPressed: { opacity: 0.78 },

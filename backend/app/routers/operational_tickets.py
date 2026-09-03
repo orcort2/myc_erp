@@ -1,6 +1,6 @@
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -16,6 +16,7 @@ from app.schemas.operational_ticket import (
     FieldSheetTemplateRequestCreate,
     FolioTicketCreate,
     PartialCloseTicketCreate,
+    ReceptionDateChangeTicketCreate,
     ReopenTicketCreate,
     TicketRead,
     TicketReject,
@@ -29,6 +30,7 @@ from app.services.operational_tickets import (
     create_field_sheet_template_request_ticket,
     create_folio_ticket,
     create_partial_close_ticket,
+    create_reception_date_change_ticket,
     create_reopen_ticket,
     get_ticket,
     list_tickets,
@@ -111,6 +113,20 @@ def create_field_sheet_reopen_request(
     )
 
 
+@router.post("/reception-date-change", response_model=TicketRead, status_code=201)
+def create_reception_date_change_request(
+    payload: ReceptionDateChangeTicketCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.create", "tickets.create")
+    ),
+) -> TicketRead:
+    ensure_lab_work_order_scope(db, payload.work_order_id, context)
+    return create_reception_date_change_ticket(
+        db, payload, context.user, operator_client_id=context.client_id
+    )
+
+
 @router.post("/certificate-block", response_model=TicketRead, status_code=201)
 def create_certificate_block_request(
     payload: CertificateFolioBlockCreate,
@@ -176,9 +192,13 @@ def resolve_ticket(
     payload: TicketResolve,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
-        require_internal_mobile_permission("lab_folios.resolve")
+        require_mobile_permission(
+            "lab_folios.resolve", "work_orders.create", "lab_work_orders.use"
+        )
     ),
 ) -> TicketRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="Esta capacidad es exclusiva de staff MYC")
     return resolve_operational_ticket(db, ticket_id, payload, context.user)
 
 

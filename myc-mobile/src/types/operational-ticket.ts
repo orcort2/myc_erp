@@ -17,7 +17,8 @@ export type OperationalTicket = {
     | 'partial_close'
     | 'certificate_folio_block'
     | 'field_sheet_template_request'
-    | 'field_sheet_reopen';
+    | 'field_sheet_reopen'
+    | 'reception_date_change';
   status: TicketStatus;
   work_order_id: number | null;
   equipment_id: number | null;

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -74,6 +74,19 @@ class FieldSheetReopenTicketCreate(BaseModel):
 
     work_order_id: int
     equipment_id: int
+    reason: str = Field(min_length=3, max_length=180)
+    description: str = Field(min_length=3, max_length=4000)
+
+
+class ReceptionDateChangeTicketCreate(BaseModel):
+    """Solicitud informativa: registra la fecha propuesta sin aplicarla."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_order_id: int
+    equipment_id: int | None = Field(default=None, gt=0)
+    field_sheet_id: int | None = Field(default=None, gt=0)
+    requested_date: date
     reason: str = Field(min_length=3, max_length=180)
     description: str = Field(min_length=3, max_length=4000)
 

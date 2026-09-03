@@ -39,7 +39,7 @@ test('crear y completar una FieldSheet refresca la OT desde backend con el helpe
 
 test('acreditado y trazable muestran folio generado por sistema; vinculado conserva informe editable', () => {
   const source = readFileSync(resolve(root, 'components/lab/LabEquipmentForm.tsx'), 'utf8');
-  assert.match(source, /service === 'linked'[\s\S]*Informe \(opcional\)/);
+  assert.match(source, /service === 'linked'[\s\S]*Folio de informe vinculado/);
   assert.match(source, /Folio de informe/);
   assert.match(source, /Generado por el sistema/);
 });

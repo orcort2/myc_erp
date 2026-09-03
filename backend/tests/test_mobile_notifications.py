@@ -191,6 +191,40 @@ def test_expo_delivery_handles_success_invalid_device_and_provider_failure(
         assert db.get(Notification, failed_id).delivery_status == "failed"
 
 
+def test_push_payload_uses_default_sound_and_operational_channel(notification_context, monkeypatch):
+    _client, factory, users, _tokens = notification_context
+    captured = []
+    with factory() as db:
+        db.add(PushDevice(
+            user_id=users["admin"].id,
+            expo_push_token=token(8),
+            platform="android",
+            is_active=True,
+            last_seen_at=datetime.now(timezone.utc),
+        ))
+        notification = Notification(
+            recipient_user_id=users["admin"].id,
+            notification_type="ticket.created",
+            event_key="delivery:sound",
+            title="Solicitud operativa",
+            body="Revisar solicitud",
+            delivery_status="pending",
+        )
+        db.add(notification)
+        db.commit()
+        notification_id = notification.id
+    monkeypatch.setattr(
+        expo_push_service,
+        "send",
+        lambda messages: captured.extend(messages) or [{"status": "ok"}] * len(messages),
+    )
+    with factory() as db:
+        deliver_notification_ids(db, [notification_id])
+    assert captured
+    assert captured[0]["sound"] == "default"
+    assert captured[0]["channelId"] == "operational"
+
+
 def _completed_work_order(client: TestClient, access_token: str, name: str) -> dict:
     headers = auth(access_token)
     created = client.post(

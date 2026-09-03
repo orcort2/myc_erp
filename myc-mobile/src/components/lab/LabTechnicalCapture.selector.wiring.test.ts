@@ -16,7 +16,9 @@ const source = readFileSync(
 
 test('el selector de plantillas tiene un contenedor delimitado con scroll interno', () => {
   assert.match(source, /style=\{styles\.templateList\}/);
-  assert.match(source, /templateList: \{[^}]*maxHeight/);
+  assert.match(source, /const TEMPLATE_ROW_HEIGHT = 56/);
+  assert.match(source, /templateList: \{[^}]*maxHeight: TEMPLATE_ROW_HEIGHT \* 5/);
+  assert.doesNotMatch(source, /\.slice\(0,\s*5\)/);
   assert.match(source, /styles\.templateRow/);
   assert.match(source, /styles\.templateIndicatorSelected/);
   assert.doesNotMatch(source, /styles\.choice/);

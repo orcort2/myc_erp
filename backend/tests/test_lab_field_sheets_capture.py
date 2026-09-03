@@ -24,6 +24,7 @@ from app.models.field_sheet_template_definition import FieldSheetTemplateDefinit
 from app.models.lab_client import LabClient
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderSignature, LabWorkOrderSignatureSession
 from app.models.operational_ticket import OperationalTicket
+from app.models.notification import Notification
 from app.models.user import Role, User
 from app.schemas.operational_ticket import TicketReject, TicketResolve, TicketReview
 from app.models.field_sheet import FieldSheetResult
@@ -282,6 +283,97 @@ def test_new_lab_field_sheet_uses_canonical_versioned_renderer_and_refresh_state
         persisted = db.get(FieldSheet, first_body["id"])
         assert persisted.pdf_renderer_key == "field_sheet_engine"
         assert persisted.pdf_renderer_version == 1
+
+
+def test_admin_reception_date_update_syncs_only_current_editable_sheets(lab_context):
+    client, factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, tech_headers, count=2)
+    first = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"}, headers=tech_headers,
+    ).json()
+    client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"observations": "editable"}, headers=tech_headers,
+    )
+    completed_id = _create_and_complete_field_sheet(
+        client, tech_headers, order_id, equipment_ids[1]
+    )
+    updated = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reception-date",
+        json={"reception_date": "2026-08-14"}, headers=auth(tokens["admin"]),
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["reception_date"] == "2026-08-14"
+    with factory() as db:
+        assert db.get(FieldSheet, first["id"]).reception_date.isoformat() == "2026-08-14"
+        assert db.get(FieldSheet, completed_id).reception_date.isoformat() == "2026-08-13"
+
+
+def test_capture_actor_cannot_override_reception_date(lab_context):
+    client, _factory, tokens = lab_context
+    order_id, _equipment_ids = _setup_order_with_equipment(
+        client, auth(tokens["tech"]), count=1
+    )
+    response = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reception-date",
+        json={"reception_date": "2026-08-14"}, headers=auth(tokens["capture"]),
+    )
+    assert response.status_code == 403
+
+
+def test_reception_date_change_ticket_never_mutates_date_when_created_or_resolved(lab_context):
+    client, factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, tech_headers, count=1)
+    sheet = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"}, headers=tech_headers,
+    ).json()
+    created = client.post(
+        "/api/mobile/v1/technician/tickets/reception-date-change",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_ids[0],
+            "field_sheet_id": sheet["id"],
+            "requested_date": "2026-08-14",
+            "reason": "Fecha incorrecta",
+            "description": "Solicito revisión administrativa de la fecha.",
+        },
+        headers=tech_headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["resolution_snapshot"]["requested_date"] == "2026-08-14"
+    with factory() as db:
+        created_notification = db.scalar(
+            select(Notification).where(
+                Notification.entity_id == created.json()["id"],
+                Notification.notification_type == "ticket.created",
+            )
+        )
+        assert created_notification is not None
+        assert created_notification.recipient_user_id != created.json()["requested_by_user_id"]
+    assert client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=tech_headers
+    ).json()["reception_date"] == "2026-08-13"
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{created.json()['id']}/resolve",
+        json={"comment": "Solicitud atendida"}, headers=auth(tokens["admin"]),
+    )
+    assert resolved.status_code == 200, resolved.text
+    assert resolved.json()["status"] == "resolved"
+    with factory() as db:
+        assert db.get(LabWorkOrder, order_id).reception_date.isoformat() == "2026-08-13"
+        assert db.get(FieldSheet, sheet["id"]).reception_date.isoformat() == "2026-08-13"
+        resolved_notification = db.scalar(
+            select(Notification).where(
+                Notification.entity_id == created.json()["id"],
+                Notification.notification_type == "ticket.resolved",
+            )
+        )
+        assert resolved_notification is not None
+        assert "atendida" in resolved_notification.body
 
 
 def test_legacy_snapshot_resolves_only_its_allowlisted_legacy_renderer():

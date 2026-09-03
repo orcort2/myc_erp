@@ -413,6 +413,82 @@ def update_lab_field_sheet(
     return read_lab_field_sheet(db, work_order_id, equipment_id)
 
 
+def _discard_lab_field_sheet_uncommitted(
+    db: Session,
+    equipment: LabWorkOrderEquipment,
+    user: User,
+) -> None:
+    """Elimina sólo la revisión vigente editable y restaura su predecesora."""
+    sheet = equipment.field_sheet
+    if sheet is None or not sheet.is_active:
+        raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
+    if sheet.status not in {"draft", "in_progress"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Sólo puede eliminarse el borrador vigente; una hoja completada o histórica se conserva",
+        )
+    if sheet.final_pdf_path or sheet.final_pdf_sha256 or sheet.certificates:
+        raise HTTPException(
+            status_code=409,
+            detail="La hoja ya tiene historial documental y no puede eliminarse",
+        )
+
+    sheet_id = sheet.id
+    predecessor_id = sheet.supersedes_field_sheet_id
+    previous_status = sheet.status
+    # Libera primero el índice único de revisión vigente. Los resultados,
+    # firmas y referencias exclusivamente dependientes usan delete-orphan.
+    sheet.is_current = False
+    db.flush()
+    db.delete(sheet)
+    db.flush()
+
+    restored = None
+    if predecessor_id is not None:
+        restored = db.get(FieldSheet, predecessor_id)
+        if restored is None or restored.lab_equipment_id != equipment.id:
+            raise HTTPException(status_code=409, detail="No fue posible restaurar la revisión histórica")
+        restored.is_current = True
+        restored.is_active = True
+        db.flush()
+
+    order = equipment.work_order
+    current_sheets = [item.field_sheet for item in order.equipment if item.id != equipment.id]
+    if restored is not None:
+        current_sheets.append(restored)
+    if order.status == "in_progress":
+        if current_sheets and all(item is not None and item.status == "completed" for item in current_sheets) and len(current_sheets) == len(order.equipment):
+            order.status = "ready_to_close"
+        elif not any(item is not None for item in current_sheets):
+            order.status = "received_signed"
+
+    write_audit_log(
+        db,
+        action="lab_field_sheet.draft_discarded",
+        entity="field_sheets",
+        entity_id=sheet_id,
+        user_id=user.id,
+        previous_values={"status": previous_status, "is_current": True},
+        new_values={
+            "deleted": True,
+            "restored_field_sheet_id": restored.id if restored else None,
+            "work_order_status": order.status,
+        },
+    )
+
+
+def discard_lab_field_sheet(
+    db: Session, work_order_id: int, equipment_id: int, user: User
+) -> None:
+    equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
+    try:
+        _discard_lab_field_sheet_uncommitted(db, equipment, user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
 def _complete_lab_field_sheet_uncommitted(
     db: Session, equipment: LabWorkOrderEquipment, sheet: FieldSheet, user: User
 ) -> None:

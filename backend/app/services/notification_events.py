@@ -23,13 +23,14 @@ TICKET_SIGNATURE_REQUIRED = "ticket.signature_required"
 # se resuelven con lab_folios.resolve; sólo reopen_work_order usa
 # tickets.review/approve. field_sheet_template_request todavía no tiene
 # flujo de resolución (Fase 1F), así que no genera destinatarios de revisión.
-TICKET_TYPE_REVIEW_PERMISSION = {
-    "reopen_work_order": "tickets.review",
-    "manual_myc_folio": "lab_folios.resolve",
-    "linked_folio": "lab_folios.resolve",
-    "partial_close": "lab_folios.resolve",
-    "certificate_folio_block": "lab_folios.resolve",
-    "field_sheet_reopen": "lab_folios.resolve",
+TICKET_TYPE_REVIEW_PERMISSIONS = {
+    "reopen_work_order": ("tickets.review",),
+    "manual_myc_folio": ("lab_folios.resolve",),
+    "linked_folio": ("lab_folios.resolve",),
+    "partial_close": ("lab_folios.resolve",),
+    "certificate_folio_block": ("lab_folios.resolve",),
+    "field_sheet_reopen": ("lab_folios.resolve",),
+    "reception_date_change": ("work_orders.create", "lab_work_orders.use"),
 }
 
 TICKET_TYPE_TITLES = {
@@ -40,6 +41,7 @@ TICKET_TYPE_TITLES = {
     "certificate_folio_block": "Nueva solicitud de folios certificados",
     "field_sheet_template_request": "Nueva solicitud de hoja de campo",
     "field_sheet_reopen": "Nueva solicitud de desbloqueo de hoja",
+    "reception_date_change": "Solicitud de cambio de fecha de recepción",
 }
 
 
@@ -48,8 +50,8 @@ def resolve_notification_recipients(
 ) -> list[User]:
     if event_type != TICKET_CREATED:
         return []
-    required_permission = TICKET_TYPE_REVIEW_PERMISSION.get(ticket_type or "")
-    if required_permission is None:
+    required_permissions = TICKET_TYPE_REVIEW_PERMISSIONS.get(ticket_type or "")
+    if required_permissions is None:
         return []
     users = list(
         db.scalars(
@@ -62,7 +64,11 @@ def resolve_notification_recipients(
             .options(selectinload(User.roles))
         ).all()
     )
-    return [user for user in users if user_has_permission(user, required_permission)]
+    return [
+        user
+        for user in users
+        if any(user_has_permission(user, permission) for permission in required_permissions)
+    ]
 
 
 def _create(
@@ -147,6 +153,7 @@ TICKET_TYPE_REJECTED_TITLES = {
     "certificate_folio_block": "Solicitud de folios certificados rechazada",
     "field_sheet_template_request": "Solicitud de hoja de campo rechazada",
     "field_sheet_reopen": "Solicitud de desbloqueo de hoja rechazada",
+    "reception_date_change": "Solicitud de cambio de fecha rechazada",
 }
 
 
@@ -196,6 +203,7 @@ TICKET_TYPE_RESOLVED_BODIES = {
     "partial_close": "Cierre parcial aprobado en OT {folio}.",
     "certificate_folio_block": "Folios certificados reservados.",
     "field_sheet_reopen": "Hoja de campo desbloqueada en OT {folio}.",
+    "reception_date_change": "Tu solicitud de cambio de fecha de recepción fue atendida.",
 }
 
 

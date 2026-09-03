@@ -127,6 +127,9 @@ export function Field({
   placeholder,
   multiline,
   keyboardType,
+  error,
+  hint,
+  required,
 }: {
   label: string;
   value: string;
@@ -139,10 +142,13 @@ export function Field({
     | 'decimal-pad'
     | 'email-address'
     | 'phone-pad';
+  error?: string;
+  hint?: string;
+  required?: boolean;
 }) {
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>{label}{required ? ' *' : ''}</Text>
 
       <TextInput
         keyboardType={keyboardType ?? 'default'}
@@ -150,9 +156,11 @@ export function Field({
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={colors.textSubtle}
-        style={[styles.input, multiline && styles.inputMultiline]}
+        style={[styles.input, multiline && styles.inputMultiline, !!error && styles.inputError]}
         value={value}
       />
+      {!!error && <Text style={styles.fieldError}>{error}</Text>}
+      {!error && !!hint && <Text style={styles.fieldHint}>{hint}</Text>}
     </View>
   );
 }
@@ -552,6 +560,21 @@ const styles = StyleSheet.create({
     minHeight: 90,
     paddingTop: spacing.sm,
     textAlignVertical: 'top',
+  },
+
+  inputError: {
+    borderColor: colors.danger,
+  },
+
+  fieldError: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  fieldHint: {
+    color: colors.textSubtle,
+    fontSize: 12,
   },
 
   readOnlyValue: {

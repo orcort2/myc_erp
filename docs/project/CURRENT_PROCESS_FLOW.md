@@ -516,6 +516,8 @@ Login interno técnico
 → un único POST grupal o individual crea la sesión completa
 → draft → received_signed; la recepción queda congelada
 → crear la primera FieldSheet → in_progress
+→ guardar o descartar la FieldSheet vigente editable
+→ al descartar recaptura, restaurar la revisión completed predecesora sin mutarla
 → completar todas las FieldSheets requeridas → ready_to_close
 → cerrar sin pedir otra firma → completed y PDF de la cohorte elegida
 → hermanas abiertas conservan su estado y una completed queda históricamente congelada
@@ -525,11 +527,22 @@ Login interno técnico
 → app cierra detalle y vuelve a consultar el listado LAB
 ```
 
+En Vinculado, el valor capturado se autoriza directamente sólo si el actor
+tiene `lab_folios.resolve`; de lo contrario queda `pending` y se conserva como
+`requested_folio` en el Ticket. La fecha de recepción se edita contra
+`LabWorkOrder.reception_date`, no contra una hoja aislada: staff autorizado
+sincroniza en una transacción las revisiones vigentes editables y el técnico
+sólo puede enviar `reception_date_change`. Atender ese Ticket comunica y deja
+trazabilidad, pero nunca aplica la fecha automáticamente.
+
 La entrada “Hojas de Campo” consulta una sola página agregada LAB. Backend
 selecciona exclusivamente la revisión `is_current=true`, calcula progreso desde
 el snapshot y clasifica `pending / in_progress / completed`; Mobile sólo agrupa
 y presenta. Al editar Resultados, “Guardar y salir” cierra únicamente tras
 confirmación de guardado; ante error conserva valores locales y permite retry.
+Los rechazos 422 se normalizan a `fieldErrors`, mantienen un resumen humano y
+marcan el input o celda localizable; editar ese control limpia únicamente su
+propio error.
 Una invalidación técnica retira la revisión vigente completed sin modificarla;
 la siguiente captura crea N+1 y cada revisión conserva su PDF/hash propio.
 

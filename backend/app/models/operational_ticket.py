@@ -17,6 +17,7 @@ TICKET_TYPES = (
     "certificate_folio_block",
     "field_sheet_template_request",
     "field_sheet_reopen",
+    "reception_date_change",
 )
 TICKET_STATUSES = (
     "pending",
@@ -37,7 +38,7 @@ class OperationalTicket(IntegerPkMixin, TimestampMixin, Base):
         CheckConstraint(
             "type IN ('reopen_work_order', 'manual_myc_folio', 'linked_folio', "
             "'partial_close', 'certificate_folio_block', 'field_sheet_template_request', "
-            "'field_sheet_reopen')",
+            "'field_sheet_reopen', 'reception_date_change')",
             name="ck_operational_ticket_type",
         ),
         CheckConstraint(

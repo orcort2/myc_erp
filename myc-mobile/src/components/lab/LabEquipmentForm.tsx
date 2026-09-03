@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import type { LabClient } from '@/src/types/lab-work-order';
 import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
+import { Field } from '@/src/design/primitives';
 import {
   defaultDocumentaryClient,
   selectFinalClient,
@@ -26,6 +27,9 @@ type Props = {
   onSubmit(values: EquipmentFormValues): void;
   request: Request;
   workOrderClientName: string;
+  canResolveLabFolios: boolean;
+  fieldErrors?: Record<string, string>;
+  onFieldChange?(field: string): void;
 };
 
 const SERVICE_OPTIONS: { value: LabServiceType; label: string }[] = [
@@ -48,7 +52,7 @@ const BLANK_EQUIPMENT: EquipmentBasicData = {
  * realmente cambió -- ver diffEquipmentEdit). No hay un segundo formulario.
  */
 export function LabEquipmentForm({
-  busy, folioDisplay, initialValues, mode, onCancel, onSubmit, request, workOrderClientName,
+  busy, canResolveLabFolios, fieldErrors = {}, folioDisplay, initialValues, mode, onCancel, onFieldChange, onSubmit, request, workOrderClientName,
 }: Props) {
   const [equipment, setEquipment] = useState<EquipmentBasicData>(
     initialValues?.equipment ?? BLANK_EQUIPMENT,
@@ -77,16 +81,29 @@ export function LabEquipmentForm({
     onSubmit({ equipment, documentaryClient, service: { serviceType: service, linkedCompanyId: null } });
   }
 
+  function updateEquipment<K extends keyof EquipmentBasicData>(field: K, value: EquipmentBasicData[K]) {
+    setEquipment((current) => ({ ...current, [field]: value }));
+    onFieldChange?.(field);
+  }
+
   return (
     <View style={styles.panel}>
       <Text style={styles.sectionTitle}>Datos del equipo</Text>
-      <Field label="Instrumento" required value={equipment.instrument} onChange={(value) => setEquipment({ ...equipment, instrument: value })} />
-      <Field label="Marca" required value={equipment.brand} onChange={(value) => setEquipment({ ...equipment, brand: value })} />
-      <Field label="Modelo" value={equipment.model ?? ''} onChange={(value) => setEquipment({ ...equipment, model: value || null })} />
-      <Field label="Identificación" required value={equipment.identification} onChange={(value) => setEquipment({ ...equipment, identification: value })} />
-      <Field label="Serie" required value={equipment.serial_number} onChange={(value) => setEquipment({ ...equipment, serial_number: value })} />
+      <Field error={fieldErrors.instrument} label="Instrumento" required value={equipment.instrument} onChange={(value) => updateEquipment('instrument', value)} />
+      <Field error={fieldErrors.brand} label="Marca" required value={equipment.brand} onChange={(value) => updateEquipment('brand', value)} />
+      <Field error={fieldErrors.model} label="Modelo" value={equipment.model ?? ''} onChange={(value) => updateEquipment('model', value || null)} />
+      <Field error={fieldErrors.identification} label="Identificación" required value={equipment.identification} onChange={(value) => updateEquipment('identification', value)} />
+      <Field error={fieldErrors.serial_number} label="Serie" required value={equipment.serial_number} onChange={(value) => updateEquipment('serial_number', value)} />
       {service === 'linked' ? (
-        <Field label="Informe (opcional)" value={equipment.report_number ?? ''} onChange={(value) => setEquipment({ ...equipment, report_number: value || null })} />
+        <Field
+          hint={canResolveLabFolios
+            ? 'Si lo conoces, captúralo. Se autorizará directamente con tu permiso.'
+            : 'Si lo conoces, captúralo. Si no, se solicitará.'}
+          label="Folio de informe vinculado"
+          value={equipment.report_number ?? ''}
+          error={fieldErrors.report_number}
+          onChange={(value) => updateEquipment('report_number', value || null)}
+        />
       ) : (
         <View style={styles.fieldGroup}>
           <Text style={styles.fieldLabel}>Folio de informe</Text>
@@ -178,23 +195,11 @@ export function LabEquipmentForm({
   );
 }
 
-function Field({
-  label, value, onChange, required,
-}: { label: string; value: string; onChange(value: string): void; required?: boolean }) {
-  return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}{required ? ' *' : ''}</Text>
-      <TextInput onChangeText={onChange} style={styles.fieldInput} value={value} />
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   panel: { gap: 8 },
   sectionTitle: { color: '#142b3a', fontSize: 15, fontWeight: '800', marginTop: 10 },
   fieldGroup: { gap: 4 },
   fieldLabel: { color: '#344553', fontSize: 12, fontWeight: '700' },
-  fieldInput: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 9, borderWidth: 1, minHeight: 44, paddingHorizontal: 11 },
   readOnlyValue: { backgroundColor: '#f5f8fa', borderColor: '#dbe4ea', borderRadius: 9, borderWidth: 1, color: '#344553', minHeight: 44, paddingHorizontal: 11, paddingVertical: 12 },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   choice: { backgroundColor: '#f5f8fa', borderColor: '#cbd7df', borderRadius: 9, borderWidth: 1, padding: 10 },

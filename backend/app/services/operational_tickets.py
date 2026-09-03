@@ -19,6 +19,7 @@ from app.schemas.operational_ticket import (
     FieldSheetTemplateRequestCreate,
     FolioTicketCreate,
     PartialCloseTicketCreate,
+    ReceptionDateChangeTicketCreate,
     ReopenTicketCreate,
     TicketRead,
     TicketReject,
@@ -364,6 +365,63 @@ def create_field_sheet_reopen_ticket(
             "equipment_id": equipment.id,
             "field_sheet_id": current.id,
             "revision_number": current.revision_number,
+        },
+    )
+    notify_ticket_created(db, ticket, user)
+    commit_and_dispatch_notifications(db)
+    return _read(_get_ticket(db, ticket.id))
+
+
+def create_reception_date_change_ticket(
+    db: Session,
+    payload: ReceptionDateChangeTicketCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> TicketRead:
+    """Registra una solicitud informativa; nunca modifica la fecha de la OT."""
+    work_order = _get(db, payload.work_order_id, lock=True)
+    equipment = None
+    if payload.equipment_id is not None:
+        equipment = db.scalar(
+            select(LabWorkOrderEquipment).where(
+                LabWorkOrderEquipment.id == payload.equipment_id,
+                LabWorkOrderEquipment.work_order_id == work_order.id,
+            )
+        )
+        if equipment is None:
+            raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
+    if payload.field_sheet_id is not None:
+        if equipment is None or equipment.field_sheet is None or equipment.field_sheet.id != payload.field_sheet_id:
+            raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
+    ticket = OperationalTicket(
+        type="reception_date_change",
+        status="pending",
+        work_order_id=work_order.id,
+        equipment_id=equipment.id if equipment else None,
+        operator_client_id=operator_client_id,
+        requested_by_user_id=user.id,
+        reason=payload.reason.strip(),
+        description=payload.description.strip(),
+        resolution_snapshot={
+            "requested_date": payload.requested_date.isoformat(),
+            "current_date": work_order.reception_date.isoformat(),
+            "field_sheet_id": payload.field_sheet_id,
+        },
+    )
+    db.add(ticket)
+    db.flush()
+    _attach_conversation(db, ticket, user)
+    write_audit_log(
+        db,
+        action="lab_work_order.reception_date_change_requested",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        new_values={
+            "work_order_id": work_order.id,
+            "equipment_id": ticket.equipment_id,
+            **ticket.resolution_snapshot,
         },
     )
     notify_ticket_created(db, ticket, user)
@@ -766,6 +824,14 @@ def resolve_operational_ticket(
     if ticket.requested_by_user_id == user.id:
         raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
     now = datetime.now(timezone.utc)
+    if ticket.type == "reception_date_change":
+        if not (
+            user_has_permission(user, "work_orders.create")
+            or user_has_permission(user, "lab_work_orders.use")
+        ):
+            raise HTTPException(status_code=403, detail="Permiso insuficiente para atender el cambio de fecha")
+    elif not user_has_permission(user, "lab_folios.resolve"):
+        raise HTTPException(status_code=403, detail="Permiso insuficiente para resolver la solicitud")
     if ticket.type == "certificate_folio_block":
         myca = [
             _allocate_lab_certificate_folio(db, "MYCA")
@@ -839,6 +905,9 @@ def resolve_operational_ticket(
             "retired_revision_number": current.revision_number,
         }
         action = "lab_field_sheet.reopen_approved"
+    elif ticket.type == "reception_date_change":
+        # Informativo por contrato: atenderlo no toca LabWorkOrder ni FieldSheet.
+        action = "lab_work_order.reception_date_change_acknowledged"
     else:
         raise HTTPException(status_code=409, detail="La solicitud requiere el flujo específico de reapertura")
     ticket.status = "resolved"

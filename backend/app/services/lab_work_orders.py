@@ -45,6 +45,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderGroupRequestRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
+    LabReceptionDateUpdate,
     LabRelatedWorkOrderRead,
     LabWorkOrderUpdate,
 )
@@ -824,6 +825,28 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
         root_id = _root_id(work_order)
         deleted_folio = work_order.folio
 
+        all_sheets = [sheet for equipment in work_order.equipment for sheet in equipment.field_sheets]
+        protected = [
+            sheet
+            for sheet in all_sheets
+            if not sheet.is_current or sheet.status not in {"draft", "in_progress"}
+            or sheet.final_pdf_path or sheet.final_pdf_sha256
+        ]
+        if protected:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "La OT contiene una hoja de campo completada o histórica y no puede eliminarse. "
+                    "Cancela la OT para conservar su trazabilidad."
+                ),
+            )
+        if all_sheets:
+            from app.services.lab_field_sheets import _discard_lab_field_sheet_uncommitted
+
+            for equipment in work_order.equipment:
+                if equipment.field_sheet is not None:
+                    _discard_lab_field_sheet_uncommitted(db, equipment, user)
+
         revisions = list(
             db.scalars(
                 select(LabWorkOrderRevision)
@@ -1144,6 +1167,50 @@ def update_work_order(
         new_values={
             "fields": sorted(updates),
             "work_order_ids": [item.id for item in editable_members],
+        },
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def update_reception_date(
+    db: Session,
+    work_order_id: int,
+    payload: LabReceptionDateUpdate,
+    user: User,
+) -> LabWorkOrderRead:
+    """Corrige la fecha canónica de una OT y sólo sus hojas vigentes editables."""
+    if not (
+        user_has_permission(user, "work_orders.create")
+        or user_has_permission(user, "lab_work_orders.use")
+    ):
+        raise HTTPException(status_code=403, detail="No tienes permiso para modificar la fecha de recepción")
+    work_order = _get(db, work_order_id, lock=True)
+    if work_order.status in {"completed", "partially_closed", "cancelled"}:
+        raise HTTPException(status_code=409, detail="La fecha de una OT cerrada no puede modificarse")
+    if work_order.departure_date < payload.reception_date:
+        raise HTTPException(status_code=422, detail="La salida no puede ser anterior a la recepción")
+    previous_date = work_order.reception_date
+    if previous_date == payload.reception_date:
+        return _read(db, work_order)
+    work_order.reception_date = payload.reception_date
+    synced_sheet_ids: list[int] = []
+    for equipment in work_order.equipment:
+        sheet = equipment.field_sheet
+        if sheet is not None and sheet.status in EDITABLE_STATUSES:
+            sheet.reception_date = payload.reception_date
+            synced_sheet_ids.append(sheet.id)
+    _bump_edit_version([work_order])
+    write_audit_log(
+        db,
+        action="lab_work_order.reception_date_updated",
+        entity="lab_work_orders",
+        entity_id=work_order.id,
+        user_id=user.id,
+        previous_values={"reception_date": previous_date.isoformat()},
+        new_values={
+            "reception_date": payload.reception_date.isoformat(),
+            "synced_editable_field_sheet_ids": synced_sheet_ids,
         },
     )
     commit_and_dispatch_notifications(db)

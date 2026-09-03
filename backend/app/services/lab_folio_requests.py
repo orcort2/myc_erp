@@ -10,7 +10,12 @@ from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.services.audit_logs import write_audit_log
-from app.services.notification_events import notify_ticket_created, notify_ticket_rejected
+from app.services.auth import user_has_permission
+from app.services.notification_events import (
+    notify_ticket_created,
+    notify_ticket_rejected,
+    notify_ticket_resolved,
+)
 
 
 def ensure_linked_folio_request(
@@ -20,8 +25,9 @@ def ensure_linked_folio_request(
     equipment: LabWorkOrderEquipment,
     user: User,
     operator_client_id: int | None,
-) -> OperationalTicket:
+) -> OperationalTicket | None:
     """Materializa una solicitud Vinculado dentro de la transacción caller."""
+    requested_folio = (equipment.report_number or "").strip() or None
     existing = db.scalar(
         select(OperationalTicket)
         .where(
@@ -31,7 +37,55 @@ def ensure_linked_folio_request(
         )
         .with_for_update()
     )
+
+    if requested_folio and user_has_permission(user, "lab_folios.resolve"):
+        duplicate = db.scalar(
+            select(LabWorkOrderEquipment.id).where(
+                LabWorkOrderEquipment.certificate_folio == requested_folio,
+                LabWorkOrderEquipment.id != equipment.id,
+            )
+        )
+        if duplicate is not None:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=409, detail="El folio ya está asignado a otro equipo LAB")
+        equipment.report_number = requested_folio
+        equipment.certificate_folio = requested_folio
+        equipment.folio_status = "authorized"
+        equipment.folio_ticket_id = None
+        now = datetime.now(timezone.utc)
+        if existing is not None:
+            existing.status = "resolved"
+            existing.requested_folio = requested_folio
+            existing.authorized_folio = requested_folio
+            existing.reviewed_by_user_id = user.id
+            existing.reviewed_at = now
+            existing.resolved_at = now
+            existing.decision_comment = "Autorizado directamente durante la edición del equipo"
+            existing.resolution_snapshot = {
+                "final_folio": requested_folio,
+                "authorized_during_equipment_edit": True,
+            }
+            if existing.requested_by_user_id != user.id:
+                notify_ticket_resolved(db, existing, user)
+        write_audit_log(
+            db,
+            action="lab_folio.authorized_directly",
+            entity="lab_work_order_equipment",
+            entity_id=equipment.id,
+            user_id=user.id,
+            new_values={
+                "work_order_id": work_order.id,
+                "certificate_folio": requested_folio,
+                "resolved_ticket_id": existing.id if existing else None,
+            },
+        )
+        return existing
+
     if existing is not None:
+        if requested_folio:
+            existing.requested_folio = requested_folio
+            equipment.report_number = requested_folio
         equipment.folio_ticket_id = existing.id
         equipment.folio_status = "pending"
         return existing
@@ -56,7 +110,7 @@ def ensure_linked_folio_request(
         operator_client_id=operator_client_id,
         linked_company_id=None,
         requested_by_user_id=user.id,
-        requested_folio=None,
+        requested_folio=requested_folio,
         automatic_folio=None,
         reason="Asignación de folio Vinculado",
         description=identity,
@@ -89,7 +143,7 @@ def ensure_linked_folio_request(
             "work_order_id": work_order.id,
             "equipment_id": equipment.id,
             "automatic_folio": None,
-            "requested_folio": None,
+            "requested_folio": requested_folio,
             "linked_company_id": None,
         },
     )

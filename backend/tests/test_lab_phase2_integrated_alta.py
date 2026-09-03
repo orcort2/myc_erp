@@ -37,6 +37,7 @@ from app.models.lab_work_order import (
 )
 from app.models.linked_company import LinkedCompany
 from app.models.operational_ticket import OperationalTicket
+from app.models.notification import Notification
 from app.models.user import Role, User
 from app.schemas.lab_client import LabClientCreate
 from app.schemas.lab_work_order import LabWorkOrderCreate
@@ -809,6 +810,92 @@ def test_linked_does_not_create_myca_or_myct(phase2_context):
             )
         )
         assert sequences == []
+
+
+def test_permitted_actor_authorizes_linked_report_folio_without_ticket(phase2_context):
+    client, factory, tokens, _tenants = phase2_context
+    order_id = _create_order(client, auth(tokens["admin"]))
+    with factory() as db:
+        sequence_count_before = len(list(db.scalars(select(InstitutionalFolioSequence.id))))
+    payload = configured_payload(1, "linked")
+    payload["equipment"]["report_number"] = "  LV-2026-001  "
+    response = client.post(
+        CONFIGURED_URL.format(order_id=order_id),
+        json=payload,
+        headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 201, response.text
+    equipment = response.json()["equipment"][-1]
+    assert equipment["certificate_folio"] == "LV-2026-001"
+    assert equipment["folio_status"] == "authorized"
+    assert equipment["folio_ticket_id"] is None
+    with factory() as db:
+        assert db.scalar(select(OperationalTicket.id)) is None
+        assert db.scalar(select(Notification.id)) is None
+        assert len(list(db.scalars(select(InstitutionalFolioSequence.id)))) == sequence_count_before
+
+
+def test_technician_linked_report_folio_remains_pending_and_is_preserved(phase2_context):
+    client, factory, tokens, _tenants = phase2_context
+    order_id = _create_order(client, auth(tokens["tech"]))
+    payload = configured_payload(1, "linked")
+    payload["equipment"]["report_number"] = "LV-SOLICITADO-7"
+    response = client.post(
+        CONFIGURED_URL.format(order_id=order_id),
+        json=payload,
+        headers=auth(tokens["tech"]),
+    )
+    assert response.status_code == 201, response.text
+    equipment = response.json()["equipment"][-1]
+    assert equipment["certificate_folio"] is None
+    assert equipment["folio_status"] == "pending"
+    with factory() as db:
+        ticket = db.scalar(select(OperationalTicket).where(OperationalTicket.equipment_id == equipment["id"]))
+        assert ticket.type == "linked_folio"
+        assert ticket.requested_folio == "LV-SOLICITADO-7"
+        notification = db.scalar(
+            select(Notification).where(
+                Notification.entity_id == ticket.id,
+                Notification.notification_type == "ticket.created",
+            )
+        )
+        assert notification is not None
+        assert notification.recipient_user_id != ticket.requested_by_user_id
+
+
+def test_permitted_edit_resolves_pending_linked_ticket_and_notifies_requester(phase2_context):
+    client, factory, tokens, _tenants = phase2_context
+    order_id = _create_order(client, auth(tokens["tech"]))
+    created = client.post(
+        CONFIGURED_URL.format(order_id=order_id),
+        json=configured_payload(1, "linked"),
+        headers=auth(tokens["tech"]),
+    ).json()
+    equipment = created["equipment"][-1]
+    payload = configured_payload(1, "linked")
+    payload["equipment"]["report_number"] = "LV-AUTORIZADO-9"
+    payload["equipment"]["expected_edit_version"] = created["edit_version"]
+    edited = client.patch(
+        CONFIGURED_EDIT_URL.format(order_id=order_id, equipment_id=equipment["id"]),
+        json=payload,
+        headers=auth(tokens["admin"]),
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["equipment"][-1]["certificate_folio"] == "LV-AUTORIZADO-9"
+    assert edited.json()["equipment"][-1]["folio_ticket_id"] is None
+    with factory() as db:
+        ticket = db.scalar(select(OperationalTicket).where(OperationalTicket.equipment_id == equipment["id"]))
+        assert ticket.status == "resolved"
+        assert ticket.authorized_folio == "LV-AUTORIZADO-9"
+        assert ticket.reviewed_by_user_id is not None
+        resolved = db.scalar(
+            select(Notification).where(
+                Notification.entity_id == ticket.id,
+                Notification.notification_type == "ticket.resolved",
+            )
+        )
+        assert resolved is not None
+        assert resolved.recipient_user_id == ticket.requested_by_user_id
 
 
 def test_linked_without_company_creates_one_atomic_folio_request_and_reuses_it(phase2_context):

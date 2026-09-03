@@ -414,6 +414,33 @@ clave histórica de Presión, snapshots, revisiones y PDFs congelados. No hubo
 migración, cambio de `FieldSheetResult`, componente/renderer específico ni
 cambio Mobile. Esta entrega no declara completa la Fase 6A ni la Fase 6.
 
+## Cierre operativo y UX OT LAB previo al build — 2026-09-03
+
+El flujo temporal LAB ahora distingue por permiso el folio documental
+Vinculado: un actor con `lab_folios.resolve` autoriza directamente el valor
+capturado sin reservar MYCA/MYCT ni crear Ticket; un actor sin esa autoridad
+conserva el equipo `pending` y el Ticket guarda `requested_folio`. La edición
+autorizada de un pendiente resuelve el Ticket existente sin eliminar su
+historial. `supported_equipment` y `search_aliases` continúan siendo metadata
+informativa de descubrimiento y no restringen la selección manual.
+
+Una FieldSheet vigente `draft`/`in_progress` puede descartarse; si es primera
+captura restaura el estado técnico de la OT y, si es recaptura, restituye como
+vigente su predecesora completada sin modificarla. El borrado de OT reutiliza
+esa autoridad cuando sólo existen borradores descartables y sigue bloqueado
+si existe una hoja completada o histórica. La fecha de recepción permanece
+canónica en `LabWorkOrder`: sólo staff interno con autoridad de datos generales
+puede cambiarla y la transacción sincroniza exclusivamente hojas vigentes
+editables. El técnico crea un Ticket informativo `reception_date_change`; ni
+crearlo ni resolverlo modifica la fecha.
+
+Mobile incorpora errores 422 estructurados por campo, calendario civil MYC y
+shortcuts experimentales `+6 meses`/`+1 año` calculados desde la fecha de
+calibración con clamp al último día válido. Esos shortcuts son ayuda UX, no
+regla metrológica. El selector de hojas conserva todas las plantillas cargadas
+y buscables, con viewport desplazable de cinco filas. Este cierre no cambia el
+estado **EN REVISIÓN** de Fase 6A.1, no agrega hojas ni modifica el renderer.
+
 ## Alcance implementado 2026-09-02 — Importación y consulta LabClient
 
 El importador LAB conserva los tres encabezados históricos obligatorios y

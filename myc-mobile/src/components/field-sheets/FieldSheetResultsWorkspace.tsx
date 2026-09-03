@@ -39,6 +39,7 @@ import type {
   FieldSheetResultRow,
   FieldSheetResultSection,
 } from '@/src/types/lab-work-order';
+import { ApiError } from '@/src/api/client';
 
 type Props = {
   visible: boolean;
@@ -110,6 +111,7 @@ export function FieldSheetResultsWorkspace({
   const { width } = useWindowDimensions();
 
   const [state, setState] = useState(() => initWorkspaceState(rows));
+  const [cellErrors, setCellErrors] = useState<Record<string, string>>({});
 
   /**
    * Sólo se utiliza para navegación mediante "Next".
@@ -127,6 +129,7 @@ export function FieldSheetResultsWorkspace({
   useEffect(() => {
     if (visible) {
       setState(initWorkspaceState(rows));
+      setCellErrors({});
     }
   }, [visible]);
 
@@ -150,6 +153,12 @@ export function FieldSheetResultsWorkspace({
 
       return true;
     } catch (error) {
+      if (error instanceof ApiError) {
+        setCellErrors(Object.fromEntries(error.fieldErrors.map((item) => {
+          const leaf = item.field.split('.').at(-1) ?? item.field;
+          return [leaf, item.message];
+        })));
+      }
       setState((current) =>
         markSaveError(
           current,
@@ -458,15 +467,21 @@ export function FieldSheetResultsWorkspace({
                                   column.key;
 
                                 return (
+                                  <View key={column.key} style={{ width: columnWidths[columnIndex] }}>
                                   <TextInput
                                     editable={editable}
-                                    key={column.key}
                                     keyboardType={keyboardTypeForFieldType(
                                       column.data_type,
                                     )}
                                     onChangeText={(
                                       value,
-                                    ) =>
+                                    ) => {
+                                      setCellErrors((current) => {
+                                        if (!(sourceKey in current)) return current;
+                                        const next = { ...current };
+                                        delete next[sourceKey];
+                                        return next;
+                                      });
                                       setState(
                                         (current) =>
                                           setCellValue(
@@ -476,7 +491,8 @@ export function FieldSheetResultsWorkspace({
                                             sourceKey,
                                             value,
                                           ),
-                                      )
+                                      );
+                                    }
                                     }
                                     onSubmitEditing={() => {
                                       if (nextKey) {
@@ -499,12 +515,10 @@ export function FieldSheetResultsWorkspace({
                                     }
                                     style={[
                                       styles.tableInput,
-                                      {
-                                        width:
-                                          columnWidths[columnIndex],
-                                      },
+                                      { width: '100%' },
                                       !editable &&
                                         styles.tableInputReadOnly,
+                                      !!cellErrors[sourceKey] && styles.tableInputError,
                                     ]}
                                     value={String(
                                       row.row_data[
@@ -512,6 +526,12 @@ export function FieldSheetResultsWorkspace({
                                       ] ?? '',
                                     )}
                                   />
+                                  {!!cellErrors[sourceKey] && (
+                                    <Text style={styles.cellError}>
+                                      {cellErrors[sourceKey]}
+                                    </Text>
+                                  )}
+                                  </View>
                                 );
                               },
                             )}
@@ -736,6 +756,16 @@ const styles = StyleSheet.create({
   tableInputReadOnly: {
     backgroundColor: colors.background,
     color: colors.textMuted,
+  },
+
+  tableInputError: {
+    borderColor: colors.danger,
+  },
+
+  cellError: {
+    color: colors.danger,
+    fontSize: 10,
+    marginTop: 2,
   },
 
   removeRow: {

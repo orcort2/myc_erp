@@ -22,6 +22,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderGroupRequestRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
+    LabReceptionDateUpdate,
     LabWorkOrderUpdate,
 )
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
@@ -55,12 +56,14 @@ from app.services.lab_work_orders import (
     update_configured_equipment,
     update_equipment,
     update_work_order,
+    update_reception_date,
 )
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.field_sheet_templates import list_field_sheet_templates
 from app.services.lab_field_sheets import (
     complete_lab_field_sheet,
     create_lab_field_sheet,
+    discard_lab_field_sheet,
     read_lab_field_sheet,
     update_lab_field_sheet,
 )
@@ -356,6 +359,21 @@ def patch_lab_work_order(
     )
 
 
+@router.patch("/{work_order_id}/reception-date", response_model=LabWorkOrderRead)
+def patch_lab_reception_date(
+    work_order_id: int,
+    payload: LabReceptionDateUpdate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.create", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="Esta capacidad es exclusiva de staff MYC")
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return update_reception_date(db, work_order_id, payload, context.user)
+
+
 @router.post("/{work_order_id}/equipment", response_model=LabWorkOrderRead, status_code=201)
 def create_lab_equipment(
     work_order_id: int,
@@ -546,6 +564,21 @@ def patch_lab_field_sheet(
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return update_lab_field_sheet(db, work_order_id, equipment_id, payload, context.user)
+
+
+@router.delete("/{work_order_id}/equipment/{equipment_id}/field-sheet", status_code=204)
+def delete_lab_field_sheet(
+    work_order_id: int,
+    equipment_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "field_sheets.capture", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
+    ),
+) -> None:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    discard_lab_field_sheet(db, work_order_id, equipment_id, context.user)
 
 
 @router.post("/{work_order_id}/equipment/{equipment_id}/field-sheet/complete", response_model=FieldSheetRead)
