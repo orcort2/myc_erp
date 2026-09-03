@@ -521,8 +521,8 @@ TEMPLATE_ALIASES = {
 # legacy que todavia no tienen una FieldSheetTemplateDefinition propia en
 # BD (ver build_fallback_template_definition). Los valores aqui son claves
 # legacy (algunas ambiguas, ver AMBIGUOUS_LEGACY_FAMILIES en el motor) que
-# resolve_table_family() interpreta en modo lenient (strict=False) -- nunca
-# se ofrecen como opcion para una definicion nueva.
+# resolve_table_family() interpreta en modo "lenient" -- nunca se ofrecen
+# como opcion para una definicion nueva.
 #
 # Los 4 pilotos oficiales (calibradores/presion/anemometro/bascula) NO
 # tienen entrada aqui a propósito: su family_key vive en su propia
@@ -661,15 +661,20 @@ def _catalog_block_types() -> list[dict]:
     ]
 
 
-def normalize_template_definition(payload: dict, *, strict_table_family: bool = False) -> dict:
-    """`strict_table_family=True` marca esta llamada como una definicion
-    NUEVA/editada de verdad (autoria via CRUD de plantillas): la family_key
-    debe resolver a una de las 8 canonicas (o a un alias legacy seguro
-    equivalente) -- una clave ambigua o desconocida se rechaza con 422, ver
-    resolve_table_family(). `False` (default) es el modo lenient usado para
-    releer definiciones YA persistidas (BD o fallback legacy): una family
-    legacy ambigua se conserva legible tal cual, nunca se rechaza ni se
-    reescribe."""
+def normalize_template_definition(payload: dict, *, table_family_mode: str = "lenient") -> dict:
+    """`table_family_mode` se pasa tal cual a resolve_table_family():
+
+    - "strict" (autoria NUEVA/editada de verdad via CRUD de plantillas): la
+      family_key debe resolver a una de las 8 canonicas (o a un alias
+      legacy seguro equivalente) -- una clave ambigua o desconocida se
+      rechaza con 422.
+    - "import" (reimportacion de un artefacto exportado): admite ademas las
+      legacy ambiguas CONOCIDAS (AMBIGUOUS_LEGACY_FAMILIES), preservandolas
+      tal cual -- pero una clave totalmente desconocida sigue rechazandose
+      con 422.
+    - "lenient" (default; releer definiciones YA persistidas en BD o
+      fallback legacy): una family legacy ambigua o desconocida se
+      conserva legible tal cual, nunca se rechaza ni se reescribe."""
     template_key = _resolve_template_key(payload["template_key"], allow_custom=True)
     blocks = [deepcopy(item) for item in payload.get("blocks") or []]
     if not blocks:
@@ -722,7 +727,7 @@ def normalize_template_definition(payload: dict, *, strict_table_family: bool = 
         "document_revision": payload.get("document_revision") or payload.get("revision") or "R1",
         "table_family": resolve_table_family(
             payload.get("table_family") or LEGACY_TEMPLATE_FAMILY.get(template_key),
-            strict=strict_table_family,
+            mode=table_family_mode,
         ),
         "blocks": sorted(normalized_blocks, key=lambda item: (item["capture_order"], item["print_order"])),
         "validations": dict(payload.get("validations") or {}),
@@ -852,13 +857,24 @@ def get_field_sheet_template(db: Session, template_key: str) -> dict:
     return build_fallback_template_definition(template_key)
 
 
-def create_field_sheet_template(db: Session, payload: FieldSheetTemplateCreate, *, user_id: int | None = None) -> dict:
+def create_field_sheet_template(
+    db: Session,
+    payload: FieldSheetTemplateCreate,
+    *,
+    user_id: int | None = None,
+    table_family_mode: str = "strict",
+) -> dict:
+    """`table_family_mode="strict"` (default) es AUTORIA NUEVA real -- exige
+    family canonica o alias legacy seguro, rechaza cualquier ambigua/
+    desconocida con 422. `import_field_sheet_template` pasa "import" para
+    reimportar un artefacto exportado (micro-cierre Fase 3, hallazgo unico):
+    ese artefacto puede traer una legacy ambigua CONOCIDA ya persistida
+    legitimamente en su momento -- import debe conservarla tal cual, no
+    inventarla ni convertirla, pero sigue rechazando cualquier clave
+    totalmente desconocida (ver resolve_table_family)."""
     template_key = _resolve_template_key(payload.template_key)
-    # Fase 3: una definicion NUEVA siempre resuelve su family en modo
-    # estricto -- no puede apoyarse en compatibilidad legacy ambigua ni
-    # quedar sin family_key resuelta silenciosamente a "custom".
     definition = normalize_template_definition(
-        {**payload.model_dump(), "template_key": template_key}, strict_table_family=True
+        {**payload.model_dump(), "template_key": template_key}, table_family_mode=table_family_mode
     )
     version = _latest_version(db, template_key) + 1 or 1
     desired_status = payload.status if payload.status in {"draft", "active", "inactive"} else "draft"
@@ -904,7 +920,9 @@ def update_field_sheet_template(db: Session, template_id: int, payload: FieldShe
     # de verdad la toca -- editar cualquier otro campo de una plantilla
     # antigua no debe romperse por una family legacy que nadie está
     # tocando en esta llamada.
-    definition = normalize_template_definition(merged, strict_table_family="table_family" in data)
+    definition = normalize_template_definition(
+        merged, table_family_mode="strict" if "table_family" in data else "lenient"
+    )
     if row.status == "active":
         version = _latest_version(db, row.template_key) + 1
         desired_status = data.get("status") if data.get("status") in {"draft", "active", "inactive"} else "draft"
@@ -1068,6 +1086,14 @@ def export_field_sheet_template(db: Session, template_id: int, *, user_id: int |
 
 
 def import_field_sheet_template(db: Session, payload: FieldSheetTemplateImport, *, user_id: int | None = None) -> dict:
+    """Micro-cierre Fase 3 (hallazgo unico): reimportar un artefacto
+    exportado NO es autoria nueva -- su table_family puede ser una legacy
+    ambigua CONOCIDA que ya era legitima cuando se exporto (p.ej.
+    'electrical'). create_field_sheet_template() recibe
+    table_family_mode="import" en vez del "strict" por defecto: preserva esa
+    legacy ambigua tal cual (nunca la inventa, nunca la convierte a otra),
+    sigue resolviendo alias legacy seguros a su canonico, y sigue
+    rechazando con 422 cualquier clave totalmente desconocida."""
     template_payload = payload.template.model_dump()
     template_key = _resolve_template_key(payload.new_template_key or template_payload["template_key"], allow_custom=True)
     template_payload["template_key"] = template_key
@@ -1077,6 +1103,7 @@ def import_field_sheet_template(db: Session, payload: FieldSheetTemplateImport, 
             db,
             FieldSheetTemplateCreate.model_validate(template_payload),
             user_id=user_id,
+            table_family_mode="import",
         )
         write_audit_log(
             db,
@@ -1097,6 +1124,7 @@ def import_field_sheet_template(db: Session, payload: FieldSheetTemplateImport, 
             }
         ),
         user_id=user_id,
+        table_family_mode="import",
     )
     write_audit_log(
         db,

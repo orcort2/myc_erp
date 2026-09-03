@@ -104,29 +104,52 @@ AMBIGUOUS_LEGACY_FAMILIES = {
 }
 
 
-def resolve_table_family(value: str | None, *, strict: bool = False) -> str:
+def resolve_table_family(value: str | None, *, mode: str = "lenient") -> str:
     """Autoridad UNICA de resolucion de una clave de table family.
 
-    - Familia canonica (OFFICIAL_TABLE_FAMILIES): se conserva tal cual.
+    - Familia canonica (OFFICIAL_TABLE_FAMILIES): se conserva tal cual, en
+      cualquier modo.
     - Alias legacy seguro (LEGACY_FAMILY_ALIASES): se resuelve SIEMPRE a su
-      equivalente canonico, tanto para lectura de definiciones legacy/
-      historicas como para definiciones nuevas -- la resolucion ocurre al
+      equivalente canonico, en cualquier modo -- la resolucion ocurre al
       interpretar el valor devuelto, nunca reescribiendo lo persistido.
     - Familia legacy ambigua (AMBIGUOUS_LEGACY_FAMILIES) o clave
-      desconocida:
-        * strict=False (lectura de fallback/historico ya persistido): se
-          conserva tal cual si `value` no es None -- legado legible, nunca
-          "custom" silencioso. Si `value` es None, cae a "custom" como
-          plantilla-sin-tabla defensivo (comportamiento previo).
-        * strict=True (definicion NUEVA/editada via CRUD de plantillas):
-          se rechaza con 422 explicito -- una definicion nueva nunca puede
-          apoyarse en una familia ambigua ni quedar sin family_key.
+      desconocida, segun `mode`:
+        * "lenient" (default; lectura de fallback/historico YA persistido
+          en BD -- _serialize_row, build_fallback_template_definition,
+          duplicate_field_sheet_template): se conserva tal cual si `value`
+          no es None -- legado legible, nunca "custom" silencioso. Si
+          `value` es None, cae a "custom" como plantilla-sin-tabla
+          defensivo (comportamiento previo).
+        * "strict" (AUTORIA NUEVA -- create_field_sheet_template, o
+          update_field_sheet_template cuando la propia edicion toca
+          table_family): se rechaza con 422 explicito -- una definicion
+          nueva nunca puede apoyarse en una familia ambigua ni quedar sin
+          family_key.
+        * "import" (REIMPORTACION de un artefacto exportado --
+          import_field_sheet_template): admite una legacy ambigua sólo si
+          es una de las CONOCIDAS en AMBIGUOUS_LEGACY_FAMILIES,
+          preservandola tal cual (nunca la convierte en canonica ni en
+          otra legacy) -- pero, a diferencia de "lenient", rechaza con 422
+          cualquier clave totalmente desconocida que no sea canonica, alias
+          seguro ni legacy ambigua conocida: un import no debe poder colar
+          una family arbitraria saltandose la politica canonica.
     """
     if value in OFFICIAL_TABLE_FAMILIES:
         return value
     if value in LEGACY_FAMILY_ALIASES:
         return LEGACY_FAMILY_ALIASES[value]
-    if strict:
+    if mode == "import":
+        if value in AMBIGUOUS_LEGACY_FAMILIES:
+            return value
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Familia de tabla no reconocida al reimportar: {value!r}. "
+                f"Debe ser una familia canonica, un alias legacy seguro o una "
+                f"legacy ambigua conocida: {sorted(AMBIGUOUS_LEGACY_FAMILIES)}"
+            ),
+        )
+    if mode == "strict":
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(

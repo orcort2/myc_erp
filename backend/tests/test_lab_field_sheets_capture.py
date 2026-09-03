@@ -1138,8 +1138,8 @@ def test_pressure_and_mass_legacy_resolve_compatibly_at_read_time(lab_context):
     # Los 3 alias se resuelven igual en modo estricto (una definicion nueva
     # SI puede declarar el alias legacy -- se resuelve a su canonico, no se
     # rechaza, porque la equivalencia es segura).
-    assert resolve_table_family("pressure", strict=True) == "direction_cycle"
-    assert resolve_table_family("mass", strict=True) == "mass_balance_composite"
+    assert resolve_table_family("pressure", mode="strict") == "direction_cycle"
+    assert resolve_table_family("mass", mode="strict") == "mass_balance_composite"
 
 
 def test_unknown_family_in_a_new_definition_is_rejected_not_silently_custom(lab_context):
@@ -1157,16 +1157,189 @@ def test_unknown_family_in_a_new_definition_is_rejected_not_silently_custom(lab_
     for unresolvable in ("totalmente_desconocida", "multipoint", "dimensional", "electrical", "repeatability", "custom", None):
         with pytest.raises(HTTPException) as exc_info:
             normalize_template_definition(
-                {**base_payload, "table_family": unresolvable}, strict_table_family=True
+                {**base_payload, "table_family": unresolvable}, table_family_mode="strict"
             )
         assert exc_info.value.status_code == 422
 
     # La misma clave ambigua SI se acepta en modo lenient (fallback/lectura
     # historica) -- nunca "custom" silencioso, se conserva legible.
     lenient = normalize_template_definition(
-        {**base_payload, "table_family": "multipoint"}, strict_table_family=False
+        {**base_payload, "table_family": "multipoint"}, table_family_mode="lenient"
     )
     assert lenient["table_family"] == "multipoint"
+
+
+# --------------------------------------------------------------------------
+# Micro-cierre Fase 3 (hallazgo unico): import_field_sheet_template() ya no
+# reutiliza el modo estricto de create_field_sheet_template() -- reimportar
+# un artefacto exportado con una family legacy ambigua CONOCIDA (p.ej.
+# "electrical") debe seguir funcionando, preservando esa clave tal cual.
+# --------------------------------------------------------------------------
+
+def _legacy_template_payload(table_family: str, *, template_key: str = "electrica") -> dict:
+    # create_field_sheet_template()/_resolve_template_key() sólo aceptan
+    # template_key ya conocidos en TEMPLATE_BLOCK_ASSIGNMENTS (no admite
+    # claves nuevas arbitrarias) -- eso es preexistente y no forma parte de
+    # este hallazgo, asi que estas pruebas usan una clave legacy real.
+    return {
+        "template_key": template_key,
+        "name": "Plantilla legacy de prueba",
+        "table_family": table_family,
+        "blocks": [{"key": "observations", "block_type": "ObservationsBlock", "title": "Datos técnicos"}],
+    }
+
+
+def test_import_round_trip_preserves_a_known_ambiguous_legacy_family(lab_context):
+    """Tests obligatorios 1-4: crear (via import, la unica via legitima de
+    entrada para una family ambigua ya persistida en algun momento),
+    exportar y reimportar una definicion con table_family='electrical' --
+    el import funciona, la family legacy sigue siendo 'electrical' en la
+    definicion reimportada, y el artefacto original nunca se reescribe."""
+    from app.schemas.field_sheet_template import FieldSheetTemplateCreate, FieldSheetTemplateImport
+    from app.services.field_sheet_templates import export_field_sheet_template, import_field_sheet_template
+
+    _client, factory, _tokens = lab_context
+    with factory() as db:
+        # 1) "Crear/persistir" el artefacto legacy -- entra via import (modo
+        # "import" acepta la legacy ambigua conocida), simulando que ya
+        # existia legitimamente antes de esta politica.
+        original = import_field_sheet_template(
+            db,
+            FieldSheetTemplateImport(
+                template=FieldSheetTemplateCreate.model_validate(
+                    _legacy_template_payload("electrical", template_key="electrica")
+                ),
+                mode="new_key",
+                new_template_key="electrica",
+                activate=True,
+            ),
+        )
+        assert original["table_family"] == "electrical"
+        original_id = original["id"]
+
+        # 2) Exportar.
+        exported = export_field_sheet_template(db, original_id)
+        assert exported["template"]["table_family"] == "electrical"
+
+        # 3) Reimportar el payload exportado tal cual, bajo otra clave ya
+        # conocida (como haria un re-import real desde un archivo .json
+        # historico) -- create_field_sheet_template()/_resolve_template_key
+        # sólo aceptan claves ya existentes, ver _legacy_template_payload.
+        reimported = import_field_sheet_template(
+            db,
+            FieldSheetTemplateImport(
+                template=FieldSheetTemplateCreate.model_validate(exported["template"]),
+                mode="new_key",
+                new_template_key="multimetro",
+                activate=True,
+            ),
+        )
+
+        # 4) Import funciona; la legacy sigue siendo "electrical"; el
+        # artefacto original permanece intacto (nunca se reescribio).
+        assert reimported["table_family"] == "electrical"
+        from app.models.field_sheet_template_definition import FieldSheetTemplateDefinition
+
+        original_row = db.get(FieldSheetTemplateDefinition, original_id)
+        assert original_row.definition_json["table_family"] == "electrical"
+
+
+def test_import_round_trip_with_safe_legacy_alias_resolves_to_canonical(lab_context):
+    """Test obligatorio 5: repetido con un alias legacy SEGURO
+    ('direct_comparison'). Comportamiento documentado explicitamente: a
+    diferencia de la legacy ambigua, el alias seguro SI se resuelve a su
+    equivalente canonico durante el import -- el artefacto reimportado
+    persiste 'replicated_comparison', no 'direct_comparison'. Esa
+    resolucion ocurre siempre (import/strict/lenient), nunca reescribe el
+    artefacto ORIGINAL ya exportado."""
+    from app.schemas.field_sheet_template import FieldSheetTemplateCreate, FieldSheetTemplateImport
+    from app.services.field_sheet_templates import export_field_sheet_template, import_field_sheet_template
+
+    _client, factory, _tokens = lab_context
+    with factory() as db:
+        original = import_field_sheet_template(
+            db,
+            FieldSheetTemplateImport(
+                template=FieldSheetTemplateCreate.model_validate(
+                    _legacy_template_payload("direct_comparison", template_key="general")
+                ),
+                mode="new_key",
+                new_template_key="general",
+                activate=True,
+            ),
+        )
+        # El alias seguro ya se resuelve al crear/importar por primera vez.
+        assert original["table_family"] == "replicated_comparison"
+
+        exported = export_field_sheet_template(db, original["id"])
+        assert exported["template"]["table_family"] == "replicated_comparison"
+
+        reimported = import_field_sheet_template(
+            db,
+            FieldSheetTemplateImport(
+                template=FieldSheetTemplateCreate.model_validate(exported["template"]),
+                mode="new_key",
+                new_template_key="temperatura",
+                activate=True,
+            ),
+        )
+        assert reimported["table_family"] == "replicated_comparison"
+
+
+def test_import_with_totally_unknown_family_is_rejected(lab_context):
+    """Test obligatorio 6: reimportar con table_family='random_unknown_family'
+    (ni canonica, ni alias seguro, ni legacy ambigua conocida) debe seguir
+    rechazandose con 422 -- import no es una via para saltarse la politica
+    canonica con una clave arbitraria."""
+    from app.schemas.field_sheet_template import FieldSheetTemplateCreate, FieldSheetTemplateImport
+    from app.services.field_sheet_templates import import_field_sheet_template
+
+    _client, factory, _tokens = lab_context
+    with factory() as db:
+        with pytest.raises(HTTPException) as exc_info:
+            import_field_sheet_template(
+                db,
+                FieldSheetTemplateImport(
+                    template=FieldSheetTemplateCreate.model_validate(
+                        _legacy_template_payload("random_unknown_family", template_key="electrica")
+                    ),
+                    mode="new_key",
+                    new_template_key="electrica",
+                    activate=True,
+                ),
+            )
+        assert exc_info.value.status_code == 422
+
+
+def test_create_with_ambiguous_legacy_family_is_still_rejected(lab_context):
+    """Test obligatorio 7: create_field_sheet_template() directo (autoria
+    NUEVA real, no import) con table_family='electrical' sigue devolviendo
+    422 -- el hallazgo de esta actividad es exclusivo de import, no
+    debilita la politica estricta de autoria nueva."""
+    from app.schemas.field_sheet_template import FieldSheetTemplateCreate
+    from app.services.field_sheet_templates import create_field_sheet_template
+
+    _client, factory, _tokens = lab_context
+    with factory() as db:
+        with pytest.raises(HTTPException) as exc_info:
+            create_field_sheet_template(
+                db, FieldSheetTemplateCreate.model_validate(_legacy_template_payload("electrical"))
+            )
+        assert exc_info.value.status_code == 422
+
+
+def test_create_with_canonical_family_still_works(lab_context):
+    """Test obligatorio 8: create_field_sheet_template() con family
+    canonica explicita sigue funcionando sin cambios."""
+    from app.schemas.field_sheet_template import FieldSheetTemplateCreate
+    from app.services.field_sheet_templates import create_field_sheet_template
+
+    _client, factory, _tokens = lab_context
+    with factory() as db:
+        created = create_field_sheet_template(
+            db, FieldSheetTemplateCreate.model_validate(_legacy_template_payload("threshold_event"))
+        )
+        assert created["table_family"] == "threshold_event"
 
 
 def test_official_templates_expose_organization_and_magnitude_metadata(lab_context):
