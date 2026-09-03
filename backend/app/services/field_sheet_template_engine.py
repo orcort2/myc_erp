@@ -185,8 +185,10 @@ def _section(
     columns: list[dict],
     *,
     ambiguous: bool = False,
+    header_rows: list[dict] | None = None,
+    layout: dict | None = None,
 ) -> dict:
-    return {
+    section = {
         "key": key,
         "title": title,
         "rows": rows,
@@ -201,6 +203,11 @@ def _section(
             "labels_configurable": ambiguous,
         },
     }
+    if header_rows is not None:
+        section["header_rows"] = header_rows
+    if layout is not None:
+        section["layout"] = layout
+    return section
 
 
 def _block(block_type: str, key: str, title: str, order: int, **extra) -> dict:
@@ -342,28 +349,33 @@ def _template(
     supported_equipment: list[str] | None = None,
     search_aliases: list[str] | None = None,
     source_document: str = "FCA-30 R1",
+    document_revision: str = "R1",
+    blocks: list[dict] | None = None,
+    print_layout: dict | None = None,
+    signature_layout: dict | None = None,
 ) -> dict:
     return {
         "template_key": key,
         "key": key,
         "name": name,
-        "description": "Plantilla oficial MYC basada en FCA-30 R1.",
+        "description": f"Plantilla oficial MYC basada en FCA-30 {document_revision}.",
         "status": "active",
         "version": version,
         "is_active": True,
         "code": "FCA-30",
-        "revision": "R1",
+        "revision": document_revision,
         "document_code": "FCA-30",
-        "document_revision": "R1",
+        "document_revision": document_revision,
         "pages": 1,
         "pdf_template": "field_sheet_engine_pdf.html",
         "table_family": family,
-        "blocks": _base_blocks(table),
-        "signature_layout": deepcopy(DEFAULT_SIGNATURE_LAYOUT),
+        "blocks": deepcopy(blocks) if blocks is not None else _base_blocks(table),
+        "print_layout": deepcopy(print_layout or {}),
+        "signature_layout": deepcopy(signature_layout or DEFAULT_SIGNATURE_LAYOUT),
         "pagination": {"mode": "dynamic", "label": "Página X de Y"},
         "automation": {"mode": "manual_only", "calculations": []},
         "metadata": {
-            "official_reference": "FCA-30 R1",
+            "official_reference": f"FCA-30 {document_revision}",
             "functional_validation_pending": ambiguous,
             "visual_designer_compatible": True,
             "organization_key": organization_key,
@@ -426,37 +438,6 @@ OFFICIAL_PILOT_TEMPLATES = {
         supported_equipment=["calibrador vernier", "calibrador de altura", "calibrador de profundidad"],
         search_aliases=["vernier", "calibrador", "dimensional"],
     ),
-    "presion": _template(
-        "presion",
-        "Hoja de Campo Presión",
-        "direction_cycle",
-        _table_block(
-            "PressureTableBlock",
-            "pressure_cycle",
-            "Resultados de la calibración",
-            [
-                _section(
-                    "pressure_cycle",
-                    "Ciclo de presión",
-                    11,
-                    [
-                        _column("ibc_value_1", "IBC", "25%", configurable=True),
-                        _column("pattern_value", "Patrón ascendente", "25%", configurable=True),
-                        _column("ibc_value_2", "Patrón descendente", "25%", configurable=True),
-                        _column("ibc_value_3", "Patrón ascendente", "25%", configurable=True),
-                    ],
-                    ambiguous=True,
-                )
-            ],
-            "direction_cycle",
-            ambiguous=True,
-        ),
-        ambiguous=True,
-        magnitude_key="pressure",
-        magnitude_label="Presión",
-        supported_equipment=["manómetro", "vacuómetro", "manovacuómetro"],
-        search_aliases=["manometro", "vacuometro", "manovacuometro", "presion", "presion diferencial"],
-    ),
     "bascula": _template(
         "bascula",
         "Hoja de Campo Báscula y Balanza",
@@ -504,6 +485,332 @@ OFFICIAL_PILOT_TEMPLATES = {
         search_aliases=["bascula", "balanza", "masa", "peso"],
     ),
 }
+
+
+OFFICIAL_FCA30_PRINT_LAYOUT = {
+    "page": {
+        "size": "letter",
+        "orientation": "portrait",
+        "margins": {"top": 12, "right": 10, "bottom": 14, "left": 10},
+    },
+    "document": {
+        "title_visible": True,
+        "header_visible": True,
+        "footer_visible": True,
+        "grid_columns": 3,
+    },
+}
+
+
+OFFICIAL_FCA30_SIGNATURE_LAYOUT = {
+    "layout": "three_columns",
+    "slots": [
+        {"role": "calibrated_by", "display_label": "CALIBRÓ"},
+        {"role": "reviewed_by", "display_label": "REVISÓ"},
+        {"role": "report_made_by", "display_label": "REALIZÓ INFORME (SMM)"},
+    ],
+    "columns": 1,
+    "direction": "vertical",
+    "trailing_fields": ["purchase_order_or_quotation"],
+}
+
+
+def _official_fca30_blocks(table_block: dict) -> list[dict]:
+    """Composición declarativa común de los formatos FCA-30 inspeccionados."""
+    full_width = {"column_span": 3}
+    return [
+        _block(
+            "HeaderBlock",
+            "institutional_header",
+            "Encabezado institucional",
+            1,
+            visible_fields=["work_order_number", "reserved_certificate_folio"],
+            required=True,
+            print_layout={
+                **full_width,
+                "grid_columns": 2,
+                "title_visible": False,
+                "border": False,
+                "compact": True,
+                "label_position": "inline",
+            },
+            metadata={"identity_source": "institutional_configuration"},
+        ),
+        _block(
+            "ClientBlock",
+            "client_data",
+            "Datos del Usuario",
+            2,
+            visible_fields=["attention", "company", "address"],
+            required=True,
+            print_layout={**full_width, "grid_columns": 1, "compact": True},
+        ),
+        _block(
+            "EquipmentBlock",
+            "equipment_data",
+            "Datos del Instrumento a Calibrar",
+            3,
+            visible_fields=[
+                "instrument",
+                "scope",
+                "minimum_division",
+                "brand",
+                "serial_number",
+                "model",
+                "internal_id",
+                "location",
+            ],
+            required=True,
+            print_layout={**full_width, "grid_columns": 2, "compact": True},
+        ),
+        _block(
+            "CalibrationDataBlock",
+            "calibration_data",
+            "Datos de calibración",
+            4,
+            visible_fields=[
+                "calibration_place",
+                "reception_date",
+                "calibration_date",
+                "next_calibration_date",
+            ],
+            fields=[
+                {
+                    "key": "calibration_place",
+                    "label": "Lugar de calibración",
+                    "column_span": 3,
+                }
+            ],
+            print_layout={
+                **full_width,
+                "grid_columns": 3,
+                "title_visible": False,
+                "compact": True,
+            },
+        ),
+        _block(
+            "EnvironmentalBlock",
+            "environmental_conditions",
+            "Condiciones ambientales",
+            5,
+            visible_fields=[
+                "environment_humidity_start",
+                "environment_temperature_start",
+                "environment_humidity_end",
+                "environment_temperature_end",
+            ],
+            print_layout={
+                **full_width,
+                "grid_columns": 2,
+                "title_visible": False,
+                "compact": True,
+            },
+        ),
+        _block(
+            "ObservationsBlock",
+            "condition_observations",
+            "OBSERVACIONES",
+            6,
+            visible_fields=[
+                "equipment_general_condition",
+                "observations",
+                "consider_equipment_deviations",
+                "units",
+            ],
+            print_layout={**full_width, "grid_columns": 2, "compact": True},
+        ),
+        {
+            **deepcopy(table_block),
+            "order": 7,
+            "capture_order": 7,
+            "print_order": 7,
+            "print_layout": {
+                "column_span": 2,
+                "grid_columns": 2,
+                "compact": True,
+                "break_inside": "avoid",
+            },
+        },
+        _block(
+            "SignaturesBlock",
+            "signatures",
+            "Firmas",
+            8,
+            required=True,
+            print_layout={
+                "column_span": 1,
+                "grid_columns": 1,
+                "title_visible": False,
+                "border": False,
+                "break_inside": "avoid",
+            },
+            metadata={"model": "common_signature"},
+        ),
+        _block(
+            "FooterBlock",
+            "document_footer",
+            "Pie documental",
+            9,
+            print_layout={**full_width, "title_visible": False, "border": False},
+        ),
+    ]
+
+
+def _official_fca30_template(
+    key: str,
+    name: str,
+    family: str,
+    table: dict,
+    *,
+    version: int,
+    magnitude_key: str,
+    magnitude_label: str,
+    supported_equipment: list[str],
+    search_aliases: list[str],
+    source_document: str,
+    document_revision: str,
+) -> dict:
+    return _template(
+        key,
+        name,
+        family,
+        table,
+        version=version,
+        magnitude_key=magnitude_key,
+        magnitude_label=magnitude_label,
+        supported_equipment=supported_equipment,
+        search_aliases=search_aliases,
+        source_document=source_document,
+        document_revision=document_revision,
+        blocks=_official_fca30_blocks(table),
+        print_layout=OFFICIAL_FCA30_PRINT_LAYOUT,
+        signature_layout=OFFICIAL_FCA30_SIGNATURE_LAYOUT,
+    )
+
+
+OFFICIAL_PILOT_TEMPLATES.update(
+    {
+        "temperatura": _official_fca30_template(
+            "temperatura",
+            "Hoja de Campo Temperatura",
+            "replicated_comparison",
+            _table_block(
+                "SimpleComparisonTableBlock",
+                "temperature_measurements",
+                "Resultados de la Calibración",
+                [
+                    _section(
+                        "temperature_measurements",
+                        "Resultados de la Calibración",
+                        10,
+                        [
+                            _column("ibc", "Valores medidos (IBC)", "23%"),
+                            _column("pattern_1", "1", "23%"),
+                            _column("pattern_2", "2", "23%"),
+                            _column("pattern_3", "3", "24%"),
+                        ],
+                        header_rows=[
+                            {"cells": [{"label": "DATOS DE MEDICION", "colspan": 5}]},
+                            {
+                                "cells": [
+                                    {
+                                        "label": "No.",
+                                        "column_key": "__row_number__",
+                                        "rowspan": 2,
+                                    },
+                                    {
+                                        "label": "Valores medidos (IBC)",
+                                        "column_key": "ibc",
+                                        "rowspan": 2,
+                                    },
+                                    {"label": "Patrón", "colspan": 3},
+                                ]
+                            },
+                            {
+                                "cells": [
+                                    {"label": "1", "column_key": "pattern_1"},
+                                    {"label": "2", "column_key": "pattern_2"},
+                                    {"label": "3", "column_key": "pattern_3"},
+                                ]
+                            },
+                        ],
+                        layout={"row_number_width": "7%"},
+                    )
+                ],
+                "replicated_comparison",
+            ),
+            version=2,
+            magnitude_key="temperature",
+            magnitude_label="Temperatura",
+            supported_equipment=[],
+            search_aliases=["temperatura"],
+            source_document="FCA-30 R1 HOJA DE CAMPO TEMPERATURA.pdf",
+            document_revision="R-1",
+        ),
+        "presion": _official_fca30_template(
+            "presion",
+            "Hoja de Campo Presión",
+            "direction_cycle",
+            _table_block(
+                "PressureTableBlock",
+                "pressure_cycle",
+                "Resultados de la Calibración",
+                [
+                    _section(
+                        "pressure_cycle",
+                        "Resultados de la Calibración",
+                        11,
+                        [
+                            _column("ibc_value_1", "Valores Medidos IBC", "22%"),
+                            _column("pattern_value", "Acendente", "24%"),
+                            _column("ibc_value_2", "Descendente", "24%"),
+                            _column("ibc_value_3", "Ascendente", "24%"),
+                        ],
+                        header_rows=[
+                            {"cells": [{"label": "DATOS DE MEDICION", "colspan": 5}]},
+                            {
+                                "cells": [
+                                    {
+                                        "label": "No.",
+                                        "column_key": "__row_number__",
+                                        "rowspan": 2,
+                                    },
+                                    {
+                                        "label": "Valores Medidos IBC",
+                                        "column_key": "ibc_value_1",
+                                        "rowspan": 2,
+                                    },
+                                    {"label": "Valores Medidos Patrón", "colspan": 3},
+                                ]
+                            },
+                            {
+                                "cells": [
+                                    {"label": "Acendente", "column_key": "pattern_value"},
+                                    {"label": "Descendente", "column_key": "ibc_value_2"},
+                                    {"label": "Ascendente", "column_key": "ibc_value_3"},
+                                ]
+                            },
+                        ],
+                        layout={"row_number_width": "6%"},
+                    )
+                ],
+                "direction_cycle",
+            ),
+            version=3,
+            magnitude_key="pressure",
+            magnitude_label="Presión",
+            supported_equipment=["manómetro", "vacuómetro", "diferencial de presión"],
+            search_aliases=[
+                "manometro",
+                "vacuometro",
+                "diferencial de presion",
+                "presion",
+            ],
+            source_document="FCA-30_R1_PRESION.pdf",
+            document_revision="R1",
+        ),
+    }
+)
 
 
 def get_official_pilot_template(template_key: str) -> dict | None:

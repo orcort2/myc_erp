@@ -989,38 +989,27 @@ def test_update_lab_field_sheet_keeps_identity_and_client_snapshot_readonly(lab_
         assert equipment_after.identification == equipment_snapshot_before["identification"]
 
 
-def test_four_official_templates_share_the_identical_canonical_block_structure(lab_context):
-    """Tests 1/2 del encargo: anemometro/calibradores/presion/bascula deben
-    producir exactamente el mismo contrato de captura comun -- mismos
-    block_type en el mismo orden, con el mismo visible_fields, para los
-    bloques que hoy alimentan el contrato canonico (Header/Client/Equipment/
-    CalibrationData/Environmental/Observations). Sólo la tabla de resultados
-    (7mo bloque) y las firmas cambian entre plantillas."""
+def test_official_templates_reuse_the_canonical_common_block_types(lab_context):
+    """Los cinco formatos oficiales componen sus campos comunes con las
+    autoridades de bloque existentes; sólo resultados y layout documental
+    varían por definición declarativa."""
     from app.services.field_sheet_templates import get_template_snapshot
 
     client, factory, tokens = lab_context
     with factory() as db:
         snapshots = {
             key: get_template_snapshot(db, key)[0]
-            for key in ("anemometro", "calibradores", "presion", "bascula")
+            for key in ("anemometro", "calibradores", "temperatura", "presion", "bascula")
         }
 
     common_block_types = [
         "HeaderBlock", "ClientBlock", "EquipmentBlock",
         "CalibrationDataBlock", "EnvironmentalBlock", "ObservationsBlock",
     ]
-    reference = snapshots["anemometro"]
-    reference_blocks = {block["block_type"]: block for block in reference["blocks"] if block["block_type"] in common_block_types}
-    assert set(reference_blocks) == set(common_block_types)
-
     for template_key, snapshot in snapshots.items():
         blocks_by_type = {block["block_type"]: block for block in snapshot["blocks"] if block["block_type"] in common_block_types}
         assert set(blocks_by_type) == set(common_block_types), template_key
-        for block_type in common_block_types:
-            assert blocks_by_type[block_type]["visible_fields"] == reference_blocks[block_type]["visible_fields"], (
-                template_key,
-                block_type,
-            )
+        assert snapshot.get("specialized_fields", []) == [], template_key
 
 
 # --------------------------------------------------------------------------
@@ -1029,8 +1018,8 @@ def test_four_official_templates_share_the_identical_canonical_block_structure(l
 # no mantiene un segundo catalogo paralelo.
 # --------------------------------------------------------------------------
 
-def test_the_four_pilots_produce_the_correct_canonical_family(lab_context):
-    """Test obligatorio 3: anemometro/calibradores -> replicated_comparison,
+def test_the_five_pilots_produce_the_correct_canonical_family(lab_context):
+    """Test obligatorio 3/6A.1: anemometro/calibradores/temperatura -> replicated_comparison,
     presion -> direction_cycle, bascula -> mass_balance_composite -- leidos
     a traves del mismo endpoint que consume Mobile, no directamente del
     motor, para probar que nada legacy los sobrescribe en el camino real."""
@@ -1044,6 +1033,7 @@ def test_the_four_pilots_produce_the_correct_canonical_family(lab_context):
     by_key = {item["template_key"]: item for item in response.json()}
     assert by_key["anemometro"]["table_family"] == "replicated_comparison"
     assert by_key["calibradores"]["table_family"] == "replicated_comparison"
+    assert by_key["temperatura"]["table_family"] == "replicated_comparison"
     assert by_key["presion"]["table_family"] == "direction_cycle"
     assert by_key["bascula"]["table_family"] == "mass_balance_composite"
 
@@ -1343,7 +1333,7 @@ def test_create_with_canonical_family_still_works(lab_context):
 
 
 def test_official_templates_expose_organization_and_magnitude_metadata(lab_context):
-    """Fase 2 del catalogo LAB (2026-09, items 2.1/2.4/2.5): las 4 plantillas
+    """Fase 2/6A.1 del catalogo LAB: las cinco plantillas
     oficiales llevan metadata.organization_key/organization_label/
     magnitude_key/magnitude_label/supported_equipment/search_aliases, y esa
     metadata viaja intacta a traves del endpoint que consume Mobile
@@ -1363,6 +1353,7 @@ def test_official_templates_expose_organization_and_magnitude_metadata(lab_conte
     expectations = {
         "anemometro": {"magnitude_key": "air_velocity", "magnitude_label": "Velocidad de aire", "equipment": "anemómetro", "variant_key": None, "variant_label": None},
         "calibradores": {"magnitude_key": "dimensional", "magnitude_label": "Dimensional", "equipment": "calibrador vernier", "variant_key": "calibradores", "variant_label": "Calibradores"},
+        "temperatura": {"magnitude_key": "temperature", "magnitude_label": "Temperatura", "equipment": None, "variant_key": None, "variant_label": None},
         "presion": {"magnitude_key": "pressure", "magnitude_label": "Presión", "equipment": "manómetro", "variant_key": None, "variant_label": None},
         "bascula": {"magnitude_key": "mass", "magnitude_label": "Masa", "equipment": "báscula", "variant_key": None, "variant_label": None},
     }
@@ -1372,7 +1363,10 @@ def test_official_templates_expose_organization_and_magnitude_metadata(lab_conte
         assert metadata["organization_label"] == "MYC", template_key
         assert metadata["magnitude_key"] == expected["magnitude_key"], template_key
         assert metadata["magnitude_label"] == expected["magnitude_label"], template_key
-        assert expected["equipment"] in metadata["supported_equipment"], template_key
+        if expected["equipment"] is None:
+            assert metadata["supported_equipment"] == [], template_key
+        else:
+            assert expected["equipment"] in metadata["supported_equipment"], template_key
         assert isinstance(metadata["search_aliases"], list) and metadata["search_aliases"], template_key
         # Micro-cierre Fases 1/2 (hallazgo 2): document_variant distingue
         # variante documental dentro de la magnitud -- sólo 'calibradores'
@@ -1387,6 +1381,89 @@ def test_official_templates_expose_organization_and_magnitude_metadata(lab_conte
     assert general_metadata.get("organization_key") is None
     assert general_metadata.get("magnitude_label") is None
     assert general_metadata.get("document_variant_label") is None
+
+
+def test_phase_6a1_pressure_can_be_selected_for_unrelated_equipment(lab_context):
+    """supported_equipment/search_aliases are discovery metadata, never a guard."""
+    client, _factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(
+        client,
+        headers,
+        count=1,
+        instrument="Equipo ajeno al catálogo documental",
+    )
+
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "presion"},
+        headers=headers,
+    )
+
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["template_key"] == "presion"
+    assert body["template_definition"]["metadata"]["supported_equipment"] == [
+        "manómetro",
+        "vacuómetro",
+        "diferencial de presión",
+    ]
+    first_row = body["results_rows"][0]
+    saved = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={
+            "results_rows": [
+                {
+                    "id": first_row["id"],
+                    "section_key": first_row["section_key"],
+                    "row_number": first_row["row_number"],
+                    "row_data": {
+                        "ibc_value_1": "10",
+                        "pattern_value": "10.1",
+                        "ibc_value_2": "9.9",
+                        "ibc_value_3": "10.0",
+                    },
+                }
+            ]
+        },
+        headers=headers,
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["results_rows"][0]["row_data"]["pattern_value"] == "10.1"
+
+
+def test_phase_6a1_pressure_snapshot_wins_after_catalog_definition_changes(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "presion"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    original_definition = created.json()["template_definition"]
+
+    with factory() as db:
+        changed = dict(original_definition)
+        changed["name"] = "DEFINICIÓN POSTERIOR NO HISTÓRICA"
+        db.add(
+            FieldSheetTemplateDefinition(
+                template_key="presion",
+                name=changed["name"],
+                status="active",
+                version=99,
+                definition_json=changed,
+            )
+        )
+        db.commit()
+
+    loaded = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        headers=headers,
+    )
+    assert loaded.status_code == 200, loaded.text
+    assert loaded.json()["template_definition"] == original_definition
 
 
 def test_patch_field_sheet_rejects_empty_string_for_typed_date_and_boolean_fields(lab_context):

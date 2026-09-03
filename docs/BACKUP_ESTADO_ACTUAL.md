@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-09-02
+> Corte actualizado: 2026-09-03
 
 # Estado operativo actual del ERP MYC
 
@@ -120,16 +120,39 @@ Resumen operativo:
 - `signature_layout` está tipado: acepta 1..4 columnas, dirección horizontal o
   vertical y campos posteriores allowlisted. Sin propiedades nuevas conserva
   el grid horizontal derivado; `purchase_order_or_quotation` es la única clave
-  posterior vigente y reutiliza `FIELD_LABELS`/`_field_value`. Esta extensión
-  no materializa todavía Temperatura ni Presión de Fase 6A.1.
+  posterior vigente y reutiliza `FIELD_LABELS`/`_field_value`.
 - Mobile consume el mismo contrato mediante una matriz de posiciones calculadas
   para `row`/`column`/`colspan`/`rowspan`; un header de dos filas ocupa exactamente
   dos filas reales y conserva el scroll horizontal, sin branches por template,
   magnitud u organización.
 - No se cambió `FieldSheetResult`, no se creó tabla/migración ni se modificó la
   base local; no corresponde regenerar `backup_erp_myc_antes_prueba.sql`.
-- Pendiente exclusivo de la fase siguiente: catálogo oficial completo,
+- Pendiente de Fase 6A.2 y siguientes: catálogo oficial completo,
   magnitudes aprobadas, asset CAPYMET definitivo y QA visual/físico por hoja.
+
+## Fase 6A.1 — Temperatura y Presión MYC (2026-09-03)
+
+- Estado: **EN REVISIÓN**; no declara Fase 6A ni Fase 6 completas.
+- `temperatura` versión 2 materializa FCA-30 `R-1`, familia
+  `replicated_comparison`, 10 filas y header agrupado completo con
+  `DATOS DE MEDICION` y Patrón 1/2/3.
+- `presion` conserva su clave histórica y evoluciona a versión 3: FCA-30 `R1`,
+  familia `direction_cycle`, 11 filas y labels literales `Acendente`,
+  `Descendente`, `Ascendente`.
+- Ambas usan Letter portrait, grid declarativo tabla|firmas, tres firmas
+  verticales y OC/Cotización posterior mediante `signature_layout`; no existe
+  renderer/template branch individual.
+- `supported_equipment`/`search_aliases` permanecen exclusivamente en metadata
+  y búsqueda Mobile. Una prueba HTTP crea y guarda Presión para un equipo no
+  relacionado con respuesta 201; no existen guards de compatibilidad.
+- Un snapshot persistido de Presión prevalece frente a una definición activa
+  posterior. No hubo migración, reescritura histórica, cambio de
+  `FieldSheetResult`, contrato API ni cambio Mobile.
+- Se generaron y revisaron visualmente dos PDFs reales en `output/pdf/`; ambos
+  son `%PDF`, una página Letter portrait, con geometría/firmas reconocibles
+  contra sus fuentes originales.
+- Suite backend ampliada relacionada (template engine, DSL/PDF, contrato
+  operacional, captura LAB y revisiones): `117 passed, 18 warnings`, exit 0.
 
 ## Validaciones
 

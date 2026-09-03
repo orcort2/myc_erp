@@ -35,6 +35,7 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
         expected = {
             "anemometro": [("measurements", 10, 4)],
             "calibradores": [("exterior", 7, 4), ("interior", 5, 4), ("depth", 3, 4)],
+            "temperatura": [("temperature_measurements", 10, 4)],
             "presion": [("pressure_cycle", 11, 4)],
             "bascula": [("eccentricity_cycle", 6, 4), ("repeatability_50", 5, 2), ("repeatability_100", 5, 2)],
         }
@@ -46,6 +47,95 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
             )
             self.assertEqual(definition["pdf_template"], "field_sheet_engine_pdf.html")
             self.assertEqual(definition["automation"], {"mode": "manual_only", "calculations": []})
+
+    def test_phase_6a1_templates_preserve_the_inspected_fca30_contract(self):
+        expected = {
+            "temperatura": {
+                "version": 2,
+                "revision": "R-1",
+                "family": "replicated_comparison",
+                "magnitude": ("temperature", "Temperatura"),
+                "supported_equipment": [],
+                "search_aliases": ["temperatura"],
+                "source_document": "FCA-30 R1 HOJA DE CAMPO TEMPERATURA.pdf",
+                "section": "temperature_measurements",
+                "rows": 10,
+                "columns": ["ibc", "pattern_1", "pattern_2", "pattern_3"],
+                "first_header": [("DATOS DE MEDICION", 5, 1)],
+                "last_header": ["1", "2", "3"],
+            },
+            "presion": {
+                "version": 3,
+                "revision": "R1",
+                "family": "direction_cycle",
+                "magnitude": ("pressure", "Presión"),
+                "supported_equipment": ["manómetro", "vacuómetro", "diferencial de presión"],
+                "search_aliases": ["manometro", "vacuometro", "diferencial de presion", "presion"],
+                "source_document": "FCA-30_R1_PRESION.pdf",
+                "section": "pressure_cycle",
+                "rows": 11,
+                "columns": ["ibc_value_1", "pattern_value", "ibc_value_2", "ibc_value_3"],
+                "first_header": [("DATOS DE MEDICION", 5, 1)],
+                "last_header": ["Acendente", "Descendente", "Ascendente"],
+            },
+        }
+
+        for key, contract in expected.items():
+            definition = build_fallback_template_definition(key)
+            metadata = definition["metadata"]
+            section = definition["result_sections"][0]
+            self.assertEqual(definition["version"], contract["version"])
+            self.assertEqual(definition["document_code"], "FCA-30")
+            self.assertEqual(definition["document_revision"], contract["revision"])
+            self.assertEqual(definition["table_family"], contract["family"])
+            self.assertEqual(
+                (metadata["magnitude_key"], metadata["magnitude_label"]),
+                contract["magnitude"],
+            )
+            self.assertIsNone(metadata["document_variant_key"])
+            self.assertIsNone(metadata["document_variant_label"])
+            self.assertEqual(metadata["supported_equipment"], contract["supported_equipment"])
+            self.assertEqual(metadata["search_aliases"], contract["search_aliases"])
+            self.assertEqual(metadata["source_document"], contract["source_document"])
+            self.assertEqual(section["key"], contract["section"])
+            self.assertEqual(section["rows"], contract["rows"])
+            self.assertEqual([column["key"] for column in section["columns"]], contract["columns"])
+            self.assertEqual(
+                [
+                    (cell["label"], cell["colspan"], cell["rowspan"])
+                    for cell in section["header_rows"][0]["cells"]
+                ],
+                contract["first_header"],
+            )
+            self.assertEqual(
+                [cell["label"] for cell in section["header_rows"][-1]["cells"]],
+                contract["last_header"],
+            )
+            self.assertEqual(definition["signature_layout"]["columns"], 1)
+            self.assertEqual(definition["signature_layout"]["direction"], "vertical")
+            self.assertEqual(
+                definition["signature_layout"]["trailing_fields"],
+                ["purchase_order_or_quotation"],
+            )
+            self.assertEqual(
+                definition["print_layout"]["page"],
+                {
+                    "size": "letter",
+                    "orientation": "portrait",
+                    "margins": {"top": 12, "right": 10, "bottom": 14, "left": 10},
+                },
+            )
+            self.assertEqual(definition["print_layout"]["document"]["grid_columns"], 3)
+            table_block = next(
+                block for block in definition["blocks"] if block["sections"]
+            )
+            signatures_block = next(
+                block
+                for block in definition["blocks"]
+                if block["block_type"] == "SignaturesBlock"
+            )
+            self.assertEqual(table_block["print_layout"]["column_span"], 2)
+            self.assertEqual(signatures_block["print_layout"]["column_span"], 1)
 
     def test_default_rows_remain_compatible_with_results_rows(self):
         for key in OFFICIAL_PILOT_TEMPLATES:
@@ -78,6 +168,7 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
         self.assertFalse(hasattr(templates_module, "TEMPLATE_TABLE_FAMILY"))
         self.assertIs(templates_module.resolve_table_family, resolve_table_family)
         self.assertIs(templates_module.OFFICIAL_TABLE_FAMILIES, OFFICIAL_TABLE_FAMILIES)
+        self.assertNotIn("temperatura", templates_module.LEGACY_TEMPLATE_FAMILY)
 
     def test_legacy_family_aliases_are_exactly_the_three_semantically_safe_ones(self):
         self.assertEqual(

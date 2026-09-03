@@ -8,6 +8,7 @@ from weasyprint import HTML
 from app.services.field_sheet_pdfs import _render_html
 from app.services.field_sheet_templates import (
     CANONICAL_PDF_RENDERER_VERSION,
+    build_fallback_template_definition,
     normalize_template_definition,
 )
 
@@ -280,6 +281,51 @@ def test_vertical_signatures_render_trailing_field_and_real_pdf():
     assert "OC-6401" in html
     assert HTML(string=html).write_pdf().startswith(b"%PDF")
     assert CANONICAL_PDF_RENDERER_VERSION == 1
+
+
+@pytest.mark.parametrize(
+    ("template_key", "expected_heading", "expected_revision", "expected_rows", "cycle_labels"),
+    [
+        ("temperatura", "Patrón", "R-1", 10, ["1", "2", "3"]),
+        (
+            "presion",
+            "Valores Medidos Patrón",
+            "R1",
+            11,
+            ["Acendente", "Descendente", "Ascendente"],
+        ),
+    ],
+)
+def test_phase_6a1_official_templates_render_the_source_table_and_pdf(
+    template_key: str,
+    expected_heading: str,
+    expected_revision: str,
+    expected_rows: int,
+    cycle_labels: list[str],
+):
+    definition = build_fallback_template_definition(template_key)
+    signatures = [
+        SimpleNamespace(
+            role=slot["role"],
+            display_label=slot["display_label"],
+            name=f"Firma {index}",
+            signature_data=None,
+            signed_at=None,
+        )
+        for index, slot in enumerate(definition["signature_layout"]["slots"], start=1)
+    ]
+
+    html = _render(definition, signatures=signatures)
+    assert "DATOS DE MEDICION" in html
+    assert "FCA-30" in html
+    assert expected_revision in html
+    assert expected_heading in html
+    assert all(label in html for label in cycle_labels)
+    assert html.count('class="signature"') == 3
+    assert 'data-signature-direction="vertical"' in html
+    assert 'data-field="purchase_order_or_quotation"' in html
+    assert len(_fake_sheet(definition).results_rows) == expected_rows
+    assert HTML(string=html).write_pdf().startswith(b"%PDF")
 
 
 @pytest.mark.parametrize(

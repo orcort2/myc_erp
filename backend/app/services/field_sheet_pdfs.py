@@ -80,6 +80,8 @@ FIELD_LABELS = {
     "pattern_used": "Patrón usado",
     "method": "Método",
     "units": "Unidades",
+    "equipment_general_condition": "Equipo en buen estado general",
+    "consider_equipment_deviations": "Considerar desviaciones del equipo",
     "observations": "Observaciones",
     "evidence_notes": "Evidencia / notas",
     "calibrated_by": "Calibró",

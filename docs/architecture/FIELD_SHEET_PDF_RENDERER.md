@@ -103,8 +103,11 @@ interpretación avanzada sólo se activa cuando el snapshot declara sus
 propiedades, por lo que no cambia el significado material de snapshots v1
 históricos ni sus PDFs ya congelados.
 
-La micro-extensión previa a Fase 6A.1 no materializa plantillas oficiales ni
-cambia el renderer versionado: únicamente permite que un `SignaturesBlock`
-use una o varias columnas, flujo vertical/horizontal y campos posteriores
-seguros dentro del mismo bloque. `field_sheet_engine_pdf.html` continúa siendo
-el único renderer.
+La micro-extensión de Fase 6A.1 no cambia el renderer versionado: permite que
+un `SignaturesBlock` use una o varias columnas, flujo vertical/horizontal y
+campos posteriores seguros dentro del mismo bloque. Las definiciones oficiales
+MYC de Temperatura (FCA-30 `R-1`) y Presión (FCA-30 `R1`) ya la consumen con
+tres firmas verticales y `purchase_order_or_quotation`; sus tablas agrupadas y
+composición tabla|firmas se expresan sólo mediante `header_rows`,
+`print_layout` y `signature_layout`. `field_sheet_engine_pdf.html` continúa
+siendo el único renderer y los snapshots históricos no se reinterpretan.

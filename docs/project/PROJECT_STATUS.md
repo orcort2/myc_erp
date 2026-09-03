@@ -236,6 +236,13 @@ requieren definición metrológica humana. Este cierre acotado no cambia el
 estado global `EN DESARROLLO` de OT LAB/Hojas de Campo mientras falten QA físico
 y los pendientes transversales documentados.
 
+La materialización documental **Fase 6A.1 está EN REVISIÓN**: Temperatura y
+Presión MYC ya cuentan con definición oficial declarativa, PDF real de una
+página Letter y regresión de catálogo/captura/snapshot. El catálogo completo,
+la aceptación física y la deuda metrológica restante impiden declarar 6A o la
+Fase 6 integral como completas; Hojas de Campo conserva estado global
+`EN DESARROLLO`.
+
 La captura de firmas móvil ya permite orientación nativa dinámica, usa pasos
 Cliente → Técnico, reconstruye strokes normalizados al redimensionar, entrega
 el gesto al canvas sólo durante el trazo y liga la captura al contexto de la

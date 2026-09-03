@@ -403,6 +403,17 @@ navega a Mesa Técnica. Se excluyen expresamente ETS, Calidad, Certificados y UI
 LAB operativa en el frontend web. Las definiciones metrológicas faltantes y la
 aceptación física móvil permanecen fuera de este cierre técnico.
 
+### Fase 6A.1 — EN REVISIÓN (2026-09-03)
+
+El catálogo backend materializa `[MYC] Temperatura` y `[MYC] Presión` desde
+los FCA-30 inspeccionados, con 10/11 filas, headers agrupados literales,
+firmas verticales y OC/Cotización mediante el DSL/renderer único vigente.
+Equipo no es eje de catálogo: `supported_equipment` y `search_aliases` sólo
+ayudan al descubrimiento y nunca restringen selección manual. Se preservan la
+clave histórica de Presión, snapshots, revisiones y PDFs congelados. No hubo
+migración, cambio de `FieldSheetResult`, componente/renderer específico ni
+cambio Mobile. Esta entrega no declara completa la Fase 6A ni la Fase 6.
+
 ## Alcance implementado 2026-09-02 — Importación y consulta LabClient
 
 El importador LAB conserva los tres encabezados históricos obligatorios y

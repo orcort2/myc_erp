@@ -1,6 +1,6 @@
 > Estado: VIGENTE — autoridad operativa consolidada; deuda metrológica abierta
 >
-> Corte verificado: 2026-09-01
+> Corte verificado: 2026-09-03
 >
 > Autoridad: inventario real de claves de plantilla de Hojas de Campo (Fase 6)
 >
@@ -33,9 +33,9 @@ incorrecta ni se inventa contenido para cerrar artificialmente esa deuda.
    `PairedChannelMatrixTableBlock`, `ThresholdEventTableBlock`,
    `VerificationComplianceTableBlock`, `CupSpecializedTableBlock`,
    `ControlledDiagramBlock`).
-3. **Pilotos oficiales del motor (4 claves)** --
+3. **Plantillas oficiales del motor (5 claves)** --
    `backend/app/services/field_sheet_template_engine.py::OFFICIAL_PILOT_TEMPLATES`
-   (`anemometro`, `calibradores`, `presion`, `bascula`): las únicas claves
+   (`anemometro`, `calibradores`, `temperatura`, `presion`, `bascula`): las únicas claves
    formalizadas end-to-end en el motor oficial, pero construidas con los
    tipos de bloque **antiguos** (`SimpleComparisonTableBlock`,
    `SectionedTableBlock`, `PressureTableBlock`, `MassBalanceTableBlock`), no
@@ -55,7 +55,7 @@ simulados, sin persistencia ni conexión a backend/base de datos. El esquema
 (`FieldSheetTemplateKey`) y `officialFieldSheetTemplates.js` se extrajeron de
 ese prototipo hacia el código real sin que el motor backend
 (`field_sheet_template_engine.py`) se completara para las 19 claves
-restantes -- sólo 4 llegaron a formalizarse, y con los tipos de bloque
+restantes -- sólo 5 llegaron a formalizarse, y con los tipos de bloque
 antiguos, no los del prototipo.
 
 ## Conjunto real de plantillas canónicas activas (lo que funciona hoy)
@@ -63,9 +63,9 @@ antiguos, no los del prototipo.
 Las **30 claves del conjunto legacy** son las plantillas canónicas activas
 reales: alcanzables por el API, con motor de renderizado PDF funcional
 (`field_sheet_engine_pdf.html`), consumidas igual desde ERP y desde Mobile
-LAB. De esas 30, **4** (`anemometro`, `calibradores`, `presion`, `bascula`)
+LAB. De esas 30, **5** (`anemometro`, `calibradores`, `temperatura`, `presion`, `bascula`)
 tienen además una formalización explícita en `field_sheet_template_engine.py`
-(pilotos oficiales); las 26 restantes se sirven vía
+(plantillas oficiales); las 25 restantes se sirven vía
 `build_fallback_template_definition`/`TEMPLATE_BLOCK_ASSIGNMENTS` sin pasar
 por el motor oficial, pero **sí son reales y reachable**, no vestigiales.
 
@@ -87,7 +87,7 @@ autorizada, y que además tocaría probablemente varios de los tipos de bloque
 
 ### B. 6 claves con dos cuerpos incompatibles bajo la misma clave
 
-`temperatura`, `tacometro`, `dimensional`, `sonido`, `electrica`,
+`tacometro`, `dimensional`, `sonido`, `electrica`,
 `cronometro` existen simultáneamente en el catálogo legacy operativo y en el
 prototipo web con cuerpos distintos. Para operación, el backend resuelve el
 legacy y congela el cuerpo exacto; Mobile y PDF consumen ese snapshot. El
@@ -125,7 +125,7 @@ por el encargo de esta fase.
 
 | Familia | Claves reales que la usan hoy |
 |---|---|
-| `replicated_comparison` | `calibradores`, `anemometro` |
+| `replicated_comparison` | `calibradores`, `anemometro`, `temperatura` |
 | `direction_cycle` | `presion` |
 | `mass_balance_composite` | `bascula` |
 | `before_after`, `paired_multichannel`, `threshold_event`, `verification_compliance`, `cup_specialized` | Ninguna -- declaradas en el motor, sin piloto backend que las use (sólo asignadas especulativamente a claves del conjunto B en `officialFieldSheetTemplates.js`) |
@@ -134,7 +134,7 @@ por el encargo de esta fase.
 
 | Familia | Claves |
 |---|---|
-| `direct_comparison` | `general`, `temperatura`, `termometro`, `termohigrometro`, `cronometro`, `tacometro` |
+| `direct_comparison` | `general`, `termometro`, `termohigrometro`, `cronometro`, `tacometro`; `temperatura` salió de este mapping auxiliar al adquirir definición oficial `replicated_comparison`, sin reescribir snapshots históricos. |
 | `multipoint` | `anemometro`, `luxometro`, `sonido`, `sonometro`, `torquimetro`, `dinamometro`, `durometro`, `volumen` |
 | `pressure` | `manometro`, `transductor_presion`, `valvula` |
 | `dimensional` | `dimensional`, `regla`, `vernier`, `micrometro`, `flexometro` |
@@ -179,6 +179,26 @@ arquitectura de renderizado.
   idénticos. Una recaptura invalidante conserva el PDF de revisión N y crea
   N+1 con artefacto propio.
 
-La deuda restante es contenido metrológico: las 11 claves prototipo y los seis
+La deuda restante es contenido metrológico: las 11 claves prototipo y los cinco
 cuerpos incompatibles requieren una definición documental aprobada. No es un
 bug técnico ni autoriza a inferir columnas, tolerancias, pruebas o aliases.
+
+## Fase 6A.1 — materialización MYC en revisión
+
+Con corte 2026-09-03, `[MYC] Temperatura` y `[MYC] Presión` están
+materializadas desde sus FCA-30 originales y permanecen **EN REVISIÓN**. El
+eje de catálogo sigue siendo organización + magnitud + variante; ambas usan
+variante nula. `supported_equipment` y `search_aliases` son sólo metadata de
+descubrimiento: no participan en creación, permisos, asignación, cierre,
+lifecycle ni elegibilidad PDF, y la selección manual permanece disponible.
+
+- `temperatura`, versión 2: FCA-30 `R-1`, `replicated_comparison`, 10 filas,
+  header de tres niveles con `DATOS DE MEDICION`, IBC y Patrón 1/2/3.
+- `presion`, versión 3 sobre la clave histórica: FCA-30 `R1`,
+  `direction_cycle`, 11 filas y ciclo visible literal `Acendente`,
+  `Descendente`, `Ascendente`.
+- Ambas reutilizan bloques/campos comunes, el renderer canónico y el DSL
+  vigente; `signature_layout` declara tres roles existentes en vertical y
+  `purchase_order_or_quotation` como trailing field. No existe migración,
+  renderer/componente específico, cambio a `FieldSheetResult` ni reescritura
+  de snapshots/PDF históricos.

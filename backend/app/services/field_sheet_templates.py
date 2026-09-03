@@ -531,7 +531,8 @@ TEMPLATE_ALIASES = {
 # resolve_table_family() interpreta en modo "lenient" -- nunca se ofrecen
 # como opcion para una definicion nueva.
 #
-# Los 4 pilotos oficiales (calibradores/presion/anemometro/bascula) NO
+# Las 5 plantillas oficiales
+# (calibradores/presion/anemometro/bascula/temperatura) NO
 # tienen entrada aqui a propósito: su family_key vive en su propia
 # definicion oficial (field_sheet_template_engine.OFFICIAL_PILOT_TEMPLATES)
 # y build_fallback_template_definition la usa directamente sin consultar
@@ -539,7 +540,6 @@ TEMPLATE_ALIASES = {
 # mantenerla igual invitaria a leerla como si fuera autoridad.
 LEGACY_TEMPLATE_FAMILY = {
     "general": "direct_comparison",
-    "temperatura": "direct_comparison",
     "termometro": "direct_comparison",
     "termohigrometro": "direct_comparison",
     "cronometro": "direct_comparison",
