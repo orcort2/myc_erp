@@ -15,6 +15,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, spacing, typography } from '@/src/design/tokens';
+import { PrimaryButton } from '@/src/design/primitives';
 import { computeSectionProgress } from '@/src/services/field-sheet-progress';
 import {
   addRow,
@@ -125,13 +126,19 @@ export function FieldSheetResultsWorkspace({
    * de rows. Resincronizamos únicamente cuando el modal vuelve a abrirse,
    * nunca durante una edición activa por un render del padre.
    */
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  
+  const wasVisible = useRef(false);
+
   useEffect(() => {
-    if (visible) {
+    const justOpened = visible && !wasVisible.current;
+
+    if (justOpened) {
       setState(initWorkspaceState(rows));
       setCellErrors({});
     }
-  }, [visible]);
+
+    wasVisible.current = visible;
+  }, [visible, rows]);
 
   const progressBySection = useMemo(
     () =>
@@ -589,26 +596,14 @@ export function FieldSheetResultsWorkspace({
 
             {!readOnly && (
               <View style={styles.footer}>
-                <Pressable
-                  disabled={
-                    state.saveState === 'saving'
-                  }
+                <PrimaryButton
+                  disabled={state.saveState === 'saving'}
+                  label="Guardar resultados"
+                  loading={state.saveState === 'saving'}
                   onPress={() => {
                     void handleSave();
                   }}
-                  style={[
-                    styles.saveButton,
-                    state.saveState ===
-                      'saving' &&
-                      styles.saveButtonDisabled,
-                  ]}
-                >
-                  <Text style={styles.saveButtonText}>
-                    {state.saveState === 'saving'
-                      ? 'Guardando…'
-                      : 'Guardar resultados'}
-                  </Text>
-                </Pressable>
+                />
               </View>
             )}
           </KeyboardAvoidingView>
@@ -802,20 +797,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
 
-  saveButton: {
-    alignItems: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-
-  saveButtonDisabled: {
-    opacity: 0.55,
-  },
-
-  saveButtonText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 16,
-  },
 });

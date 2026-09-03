@@ -693,14 +693,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderStyle: 'dashed',
     borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
 
   administrativeButtonText: {
     color: colors.warningStrong,
-    fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
+    textAlign: 'center',
   },
 
   buttonDisabled: {

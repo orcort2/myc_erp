@@ -28,7 +28,18 @@ import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
 import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
 import { LabDeliveryFlow } from '@/src/components/lab/LabDeliveryFlow';
 import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
-import { ActionTile, AdministrativeButton, AlertBanner, BackButton, FadeIn, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
+import {
+  ActionRow,
+  ActionTile,
+  AdministrativeButton,
+  AlertBanner,
+  BackButton,
+  CloseButton,
+  DangerButton,
+  FadeIn,
+  PrimaryButton,
+  SecondaryButton,
+} from '@/src/design/primitives';
 import { MycDatePickerField } from '@/src/design/MycDatePickerField';
 import {
   buildConfiguredEquipmentPayload,
@@ -1151,7 +1162,11 @@ export default function WorkOrdersScreen() {
         <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.modalScreen}>
           <View style={styles.modalHeader}>
             <View><Text style={styles.modalTitle}>OT LAB {workOrder ? `· ${workOrder.folio}` : ''}</Text><Text style={styles.modalHint}>{flowContextLabel(step, workOrder?.status)}</Text></View>
-            <Pressable disabled={deleting || signatureSubmitRef.current} onPress={closeFlow}><Text style={styles.close}>Cerrar</Text></Pressable>
+            <CloseButton
+              disabled={deleting || signatureSubmitRef.current}
+              label="Cerrar"
+              onPress={closeFlow}
+            />
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
           <KeyboardAvoidingView
@@ -1201,7 +1216,44 @@ export default function WorkOrdersScreen() {
                     <Field label="Orden de compra / cotización" value={general.purchase_order} onChangeText={(value) => setGeneral({ ...general, purchase_order: value })} />
                     <Field label="Observaciones" multiline value={general.notes} onChangeText={(value) => setGeneral({ ...general, notes: value })} />
                   </FormSection>
-                  <Pressable disabled={!general.lab_client_id || busy || (groupMode !== 'none' && (Number(groupQuantity) < 1 || Number(groupQuantity) > 50))} style={[styles.primary, (!general.lab_client_id || busy) && styles.disabled]} onPress={createWorkOrder}><Text style={styles.primaryText}>{groupMode === 'request' ? 'Enviar solicitud sin reservar folios' : groupMode === 'direct' ? 'Crear grupo y asignar folios' : workOrder ? 'Guardar cambios' : 'Crear OT y capturar equipos'}</Text></Pressable>
+                  {groupMode === 'request' ? (
+                    <AdministrativeButton
+                      disabled={
+                        !general.lab_client_id
+                        || Number(groupQuantity) < 1
+                        || Number(groupQuantity) > 50
+                      }
+                      label="Enviar solicitud sin reservar folios"
+                      loading={busy}
+                      onPress={() => {
+                        void createWorkOrder();
+                      }}
+                    />
+                  ) : (
+                    <PrimaryButton
+                      disabled={
+                        !general.lab_client_id
+                        || (
+                          groupMode !== 'none'
+                          && (
+                            Number(groupQuantity) < 1
+                            || Number(groupQuantity) > 50
+                          )
+                        )
+                      }
+                      label={
+                        groupMode === 'direct'
+                          ? 'Crear grupo y asignar folios'
+                          : workOrder
+                            ? 'Guardar cambios'
+                            : 'Crear OT y capturar equipos'
+                      }
+                      loading={busy}
+                      onPress={() => {
+                        void createWorkOrder();
+                      }}
+                    />
+                  )}
                 </FadeIn>
               )}
 
@@ -1442,15 +1494,23 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.dangerTitle}>Acciones administrativas {adminActionsOpen ? '▾' : '▸'}</Text>
                   </Pressable>
                   {adminActionsOpen && <>
-                    {canCancel && workOrder.status !== 'cancelled' && <Pressable style={styles.cancelWorkOrder} onPress={() => { setTicketDialogMode('cancel'); setTicketOpen(true); }}><Text style={styles.cancelWorkOrderText}>Cancelar y conservar OT</Text></Pressable>}
+                    {canCancel && workOrder.status !== 'cancelled' && (
+                      <AdministrativeButton
+                        disabled={busy || deleting}
+                        label="Cancelar y conservar OT"
+                        onPress={() => {
+                          setTicketDialogMode('cancel');
+                          setTicketOpen(true);
+                        }}
+                      />
+                    )}
                     <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
-                    <Pressable
+                    <DangerButton
                       disabled={busy || deleting}
+                      label="Eliminar orden de trabajo"
+                      loading={deleting}
                       onPress={() => confirmWorkOrderDeletion(workOrder)}
-                      style={[styles.deleteWorkOrder, (busy || deleting) && styles.disabled]}
-                    >
-                      <Text style={styles.deleteWorkOrderText}>Eliminar orden de trabajo</Text>
-                    </Pressable>
+                    />
                   </>}
                 </View>
               )}
@@ -1507,7 +1567,14 @@ export default function WorkOrdersScreen() {
                         request={request}
                         workOrderClientName={workOrder?.client_name ?? ''}
                       />
-                      <Pressable onPress={removeEquipment}><Text style={styles.delete}>Eliminar equipo</Text></Pressable>
+                      <DangerButton
+                        disabled={busy}
+                        label="Eliminar equipo"
+                        loading={busy}
+                        onPress={() => {
+                          void removeEquipment();
+                        }}
+                      />
                     </>
                   ) : null}
                   </FadeIn>
@@ -1538,10 +1605,48 @@ export default function WorkOrdersScreen() {
                   )}
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
                   {ticketDialogMode !== 'void_delivery' && <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />}
-                  <View style={styles.actionRow}>
-                    <Pressable style={styles.cancel} onPress={() => setTicketOpen(false)}><Text>Cancelar</Text></Pressable>
-                    <Pressable disabled={!ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery')} style={styles.save} onPress={submitOperationalAction}><Text style={styles.primaryText}>{ticketDialogMode === 'void_delivery' ? 'Anular acuse' : ticketDialogMode === 'cancel' ? 'Cancelar OT' : ticketDialogMode === 'reopen_direct' ? 'Reabrir orden' : 'Enviar solicitud'}</Text></Pressable>
-                  </View>
+                  <ActionRow>
+                    <SecondaryButton
+                      disabled={busy}
+                      label="Cancelar"
+                      onPress={() => setTicketOpen(false)}
+                    />
+
+                    {ticketDialogMode === 'cancel' ? (
+                      <DangerButton
+                        disabled={
+                          !ticketReason.trim()
+                          || !ticketDescription.trim()
+                        }
+                        label="Cancelar OT"
+                        loading={busy}
+                        onPress={() => {
+                          void submitOperationalAction();
+                        }}
+                      />
+                    ) : (
+                      <AdministrativeButton
+                        disabled={
+                          !ticketReason.trim()
+                          || (
+                            !ticketDescription.trim()
+                            && ticketDialogMode !== 'void_delivery'
+                          )
+                        }
+                        label={
+                          ticketDialogMode === 'void_delivery'
+                            ? 'Anular acuse'
+                            : ticketDialogMode === 'reopen_direct'
+                              ? 'Reabrir orden'
+                              : 'Enviar solicitud'
+                        }
+                        loading={busy}
+                        onPress={() => {
+                          void submitOperationalAction();
+                        }}
+                      />
+                    )}
+                  </ActionRow>
                 </ScrollView>
               </KeyboardAvoidingView>
             </View>
@@ -1647,8 +1752,8 @@ export default function WorkOrdersScreen() {
             )}
 
             {!!selectedGroupRequest?.conversation_id && (
-              <Pressable
-                style={styles.requestConversationButton}
+              <SecondaryButton
+                label="Abrir conversación"
                 onPress={() => {
                   const id = selectedGroupRequest.conversation_id;
                   setSelectedGroupRequest(null);
@@ -1657,19 +1762,15 @@ export default function WorkOrdersScreen() {
                     params: { id: String(id) },
                   });
                 }}
-              >
-                <Text style={styles.requestConversationText}>
-                  Abrir conversación
-                </Text>
-              </Pressable>
+              />
             )}
 
-            <Pressable
-              style={styles.requestCloseButton}
-              onPress={() => setSelectedGroupRequest(null)}
-            >
-              <Text style={styles.requestCloseText}>Cerrar</Text>
-            </Pressable>
+            <View style={styles.requestCloseAction}>
+              <CloseButton
+                label="Cerrar"
+                onPress={() => setSelectedGroupRequest(null)}
+              />
+            </View>
           </View>
         </View>
       </Modal>
@@ -1801,40 +1902,10 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
   },
 
-  primary: {
-    alignItems: 'center',
-    backgroundColor: '#0067a8',
-    borderRadius: 12,
-    justifyContent: 'center',
-    marginTop: 18,
-    minHeight: 52,
-    paddingHorizontal: 18,
-  },
-
-  primaryText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  secondary: {
-    alignItems: 'center',
-    borderColor: '#0067a8',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    marginTop: 14,
-    minHeight: 50,
-  },
-
   secondaryText: {
     color: '#0067a8',
     fontSize: 16,
     fontWeight: '700',
-  },
-
-  disabled: {
-    opacity: 0.4,
   },
 
   loader: {
@@ -1954,13 +2025,6 @@ const styles = StyleSheet.create({
     color: '#637280',
     fontSize: 12,
     marginTop: 5,
-  },
-
-  close: {
-    color: '#0067a8',
-    fontSize: 16,
-    fontWeight: '700',
-    paddingVertical: 8,
   },
 
   modalContent: {
@@ -2270,11 +2334,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  actionRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-
   row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2293,32 +2352,6 @@ const styles = StyleSheet.create({
   choiceActive: {
     backgroundColor: '#dff3f1',
     borderColor: '#008f87',
-  },
-
-  cancel: {
-    alignItems: 'center',
-    backgroundColor: '#e3e8ec',
-    borderRadius: 11,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 50,
-  },
-
-  save: {
-    alignItems: 'center',
-    backgroundColor: '#0067a8',
-    borderRadius: 11,
-    flex: 2,
-    justifyContent: 'center',
-    minHeight: 50,
-  },
-
-  delete: {
-    color: '#a51c30',
-    fontSize: 16,
-    fontWeight: '700',
-    padding: 18,
-    textAlign: 'center',
   },
 
   busy: {
@@ -2355,36 +2388,6 @@ const styles = StyleSheet.create({
     color: '#6f363d',
     lineHeight: 20,
     marginBottom: 16,
-  },
-
-  cancelWorkOrder: {
-    alignItems: 'center',
-    borderColor: '#c36b18',
-    borderRadius: 11,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    marginBottom: 14,
-    minHeight: 50,
-  },
-
-  cancelWorkOrderText: {
-    color: '#a5530b',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  deleteWorkOrder: {
-    alignItems: 'center',
-    backgroundColor: '#a51c30',
-    borderRadius: 11,
-    justifyContent: 'center',
-    minHeight: 52,
-  },
-
-  deleteWorkOrderText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '800',
   },
 
   requestHeader: {
@@ -2540,27 +2543,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  requestConversationButton: {
+  requestCloseAction: {
     alignItems: 'center',
-    borderColor: '#0067a8',
-    borderRadius: 11,
-    borderWidth: 1.5,
-    justifyContent: 'center',
-    marginTop: 22,
-    minHeight: 50,
-  },
-
-  requestConversationText: {
-    color: '#0067a8',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-
-  requestCloseButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
     marginTop: 10,
-    minHeight: 44,
   },
 
   requestCloseText: {
