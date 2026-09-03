@@ -4,9 +4,18 @@ This module intentionally contains no persistence or metrological calculations. 
 defines reusable document blocks, the eight approved table families and the four
 first official templates as plain data so the API, capture UI, PDF renderer and the
 future visual designer can share the same contract.
+
+Fase 3 (2026-09, unificacion del registro de familias de resultados): este
+modulo es la UNICA autoridad canonica de table families. OFFICIAL_TABLE_FAMILIES
+son las 8 familias aprobadas; resolve_table_family() es el unico punto donde
+una clave de family (canonica, legacy segura o legacy ambigua) se interpreta.
+field_sheet_templates.py consume esta autoridad -- ya no mantiene su propio
+catalogo paralelo de familias.
 """
 
 from copy import deepcopy
+
+from fastapi import HTTPException, status
 
 
 OFFICIAL_TABLE_FAMILIES = {
@@ -67,6 +76,65 @@ OFFICIAL_TABLE_FAMILIES = {
         "pdf_behavior": {"repeat_header": True},
     },
 }
+
+
+# Fase 3 (2026-09): mapeos legacy CONCEPTUALMENTE seguros -- equivalencia
+# semantica verificada contra el uso real de estas familias, no inventada
+# solo para eliminar nombres. Se resuelven SIEMPRE al interpretar (aqui, en
+# resolve_table_family), nunca reescribiendo un snapshot persistido.
+LEGACY_FAMILY_ALIASES = {
+    "direct_comparison": "replicated_comparison",
+    "pressure": "direction_cycle",
+    "mass": "mass_balance_composite",
+}
+
+# Claves legacy cuyo significado NO puede mapearse de forma inequivoca a una
+# de las 8 familias oficiales sin cambiar semantica (multipoint podria ser
+# replicated_comparison o direction_cycle segun el caso real; dimensional/
+# electrical/repeatability agrupan geometrias distintas entre si; custom es
+# deliberadamente libre). Se conservan LEGIBLES para reproducibilidad
+# historica -- nunca se ofrecen como opcion para definiciones nuevas, nunca
+# se reinterpretan silenciosamente hacia una familia canonica.
+AMBIGUOUS_LEGACY_FAMILIES = {
+    "multipoint",
+    "dimensional",
+    "electrical",
+    "repeatability",
+    "custom",
+}
+
+
+def resolve_table_family(value: str | None, *, strict: bool = False) -> str:
+    """Autoridad UNICA de resolucion de una clave de table family.
+
+    - Familia canonica (OFFICIAL_TABLE_FAMILIES): se conserva tal cual.
+    - Alias legacy seguro (LEGACY_FAMILY_ALIASES): se resuelve SIEMPRE a su
+      equivalente canonico, tanto para lectura de definiciones legacy/
+      historicas como para definiciones nuevas -- la resolucion ocurre al
+      interpretar el valor devuelto, nunca reescribiendo lo persistido.
+    - Familia legacy ambigua (AMBIGUOUS_LEGACY_FAMILIES) o clave
+      desconocida:
+        * strict=False (lectura de fallback/historico ya persistido): se
+          conserva tal cual si `value` no es None -- legado legible, nunca
+          "custom" silencioso. Si `value` es None, cae a "custom" como
+          plantilla-sin-tabla defensivo (comportamiento previo).
+        * strict=True (definicion NUEVA/editada via CRUD de plantillas):
+          se rechaza con 422 explicito -- una definicion nueva nunca puede
+          apoyarse en una familia ambigua ni quedar sin family_key.
+    """
+    if value in OFFICIAL_TABLE_FAMILIES:
+        return value
+    if value in LEGACY_FAMILY_ALIASES:
+        return LEGACY_FAMILY_ALIASES[value]
+    if strict:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"Familia de tabla no soportada para una definicion nueva: {value!r}. "
+                f"Usa una de las familias canonicas: {sorted(OFFICIAL_TABLE_FAMILIES)}"
+            ),
+        )
+    return value if value else "custom"
 
 
 DEFAULT_SIGNATURE_LAYOUT = {

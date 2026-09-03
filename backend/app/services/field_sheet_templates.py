@@ -19,6 +19,7 @@ from app.services.field_sheet_template_engine import (
     DEFAULT_SIGNATURE_LAYOUT,
     OFFICIAL_TABLE_FAMILIES,
     get_official_pilot_template,
+    resolve_table_family,
 )
 
 
@@ -271,130 +272,6 @@ BLOCK_FAMILY_DEFAULTS = {
     },
 }
 
-TABLE_FAMILY_DEFINITIONS = {
-    "direct_comparison": {
-        "family_key": "direct_comparison",
-        "name": "Comparación directa",
-        "description": "Patrón contra indicación del instrumento",
-        "default_sections": ["mediciones"],
-        "default_rows": 10,
-        "min_rows": 3,
-        "max_rows": 20,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": False,
-        "default_columns": ["point_label", "pattern_value", "instrument_reading", "error_value", "unit", "notes"],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-    "multipoint": {
-        "family_key": "multipoint",
-        "name": "Multipunto",
-        "description": "Varios puntos nominales o de prueba",
-        "default_sections": ["puntos_de_medicion"],
-        "default_rows": 10,
-        "min_rows": 3,
-        "max_rows": 20,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": True,
-        "default_columns": ["nominal_point", "pattern_value", "instrument_reading", "result_value", "unit", "notes"],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-    "pressure": {
-        "family_key": "pressure",
-        "name": "Presión",
-        "description": "Ascendente / descendente",
-        "default_sections": ["ascendente_descendente"],
-        "default_rows": 10,
-        "min_rows": 3,
-        "max_rows": 20,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": False,
-        "default_columns": ["nominal_point", "ascending_pattern", "ascending_instrument", "descending_pattern", "descending_instrument", "error_value", "unit", "notes"],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-    "dimensional": {
-        "family_key": "dimensional",
-        "name": "Dimensional",
-        "description": "Longitud y dimensión",
-        "default_sections": ["medicion_dimensional"],
-        "default_rows": 10,
-        "min_rows": 3,
-        "max_rows": 20,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": True,
-        "default_columns": ["nominal_length", "pattern_reading", "instrument_reading", "error_value", "unit", "notes"],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-    "mass": {
-        "family_key": "mass",
-        "name": "Masa",
-        "description": "Carga, excentricidad y repetibilidad",
-        "default_sections": ["carga", "excentricidad", "repetibilidad"],
-        "default_rows": 10,
-        "min_rows": 3,
-        "max_rows": 20,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": True,
-        "default_columns": ["applied_load", "instrument_reading", "error_value", "eccentricity_value", "repeatability_value", "unit", "notes"],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-    "electrical": {
-        "family_key": "electrical",
-        "name": "Eléctrica",
-        "description": "Múltiples magnitudes por sección",
-        "default_sections": ["voltage_dc", "voltage_ac", "current_dc", "current_ac", "resistance", "frequency", "continuity"],
-        "default_rows": 5,
-        "min_rows": 3,
-        "max_rows": 10,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": True,
-        "default_columns": ["nominal_point", "pattern_value", "instrument_reading", "error_value", "unit", "notes"],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-    "repeatability": {
-        "family_key": "repeatability",
-        "name": "Repetibilidad",
-        "description": "Lecturas múltiples por punto",
-        "default_sections": ["repetibilidad"],
-        "default_rows": 5,
-        "min_rows": 3,
-        "max_rows": 10,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": False,
-        "default_columns": ["point_label", "reading_1", "reading_2", "reading_3", "average_value", "unit", "notes"],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-    "custom": {
-        "family_key": "custom",
-        "name": "Libre",
-        "description": "Columnas y secciones configurables",
-        "default_sections": ["custom_section"],
-        "default_rows": 5,
-        "min_rows": 1,
-        "max_rows": 50,
-        "allow_add_rows": True,
-        "allow_remove_rows": True,
-        "allow_sections": True,
-        "default_columns": [],
-        "pdf_behavior": {"repeat_header": True},
-        "capture_behavior": {"manual_only": True},
-    },
-}
-
-
 def _column(key: str, label: str, width: str | None = None, unit: str | None = None) -> dict:
     return {
         "key": key,
@@ -639,16 +516,27 @@ TEMPLATE_ALIASES = {
     "flujo": "volumen",
 }
 
-TEMPLATE_TABLE_FAMILY = {
-    "calibradores": "replicated_comparison",
-    "presion": "direction_cycle",
+# Fase 3 (2026-09): esto NO es autoridad de familias para definiciones
+# nuevas -- es compatibilidad exclusiva para las plantillas fallback
+# legacy que todavia no tienen una FieldSheetTemplateDefinition propia en
+# BD (ver build_fallback_template_definition). Los valores aqui son claves
+# legacy (algunas ambiguas, ver AMBIGUOUS_LEGACY_FAMILIES en el motor) que
+# resolve_table_family() interpreta en modo lenient (strict=False) -- nunca
+# se ofrecen como opcion para una definicion nueva.
+#
+# Los 4 pilotos oficiales (calibradores/presion/anemometro/bascula) NO
+# tienen entrada aqui a propósito: su family_key vive en su propia
+# definicion oficial (field_sheet_template_engine.OFFICIAL_PILOT_TEMPLATES)
+# y build_fallback_template_definition la usa directamente sin consultar
+# este diccionario -- una entrada aqui nunca podria sobrescribirla, pero
+# mantenerla igual invitaria a leerla como si fuera autoridad.
+LEGACY_TEMPLATE_FAMILY = {
     "general": "direct_comparison",
     "temperatura": "direct_comparison",
     "termometro": "direct_comparison",
     "termohigrometro": "direct_comparison",
     "cronometro": "direct_comparison",
     "tacometro": "direct_comparison",
-    "anemometro": "multipoint",
     "luxometro": "multipoint",
     "sonido": "multipoint",
     "sonometro": "multipoint",
@@ -666,7 +554,6 @@ TEMPLATE_TABLE_FAMILY = {
     "flexometro": "dimensional",
     "masa": "mass",
     "balanza": "mass",
-    "bascula": "mass",
     "peso_patron": "mass",
     "electrica": "electrical",
     "multimetro": "electrical",
@@ -774,7 +661,15 @@ def _catalog_block_types() -> list[dict]:
     ]
 
 
-def normalize_template_definition(payload: dict) -> dict:
+def normalize_template_definition(payload: dict, *, strict_table_family: bool = False) -> dict:
+    """`strict_table_family=True` marca esta llamada como una definicion
+    NUEVA/editada de verdad (autoria via CRUD de plantillas): la family_key
+    debe resolver a una de las 8 canonicas (o a un alias legacy seguro
+    equivalente) -- una clave ambigua o desconocida se rechaza con 422, ver
+    resolve_table_family(). `False` (default) es el modo lenient usado para
+    releer definiciones YA persistidas (BD o fallback legacy): una family
+    legacy ambigua se conserva legible tal cual, nunca se rechaza ni se
+    reescribe."""
     template_key = _resolve_template_key(payload["template_key"], allow_custom=True)
     blocks = [deepcopy(item) for item in payload.get("blocks") or []]
     if not blocks:
@@ -825,7 +720,10 @@ def normalize_template_definition(payload: dict) -> dict:
         "pdf_template": payload.get("pdf_template") or _pdf_template_for_key(template_key),
         "document_code": payload.get("document_code") or payload.get("code") or "FCA-30",
         "document_revision": payload.get("document_revision") or payload.get("revision") or "R1",
-        "table_family": payload.get("table_family") or TEMPLATE_TABLE_FAMILY.get(template_key, "custom"),
+        "table_family": resolve_table_family(
+            payload.get("table_family") or LEGACY_TEMPLATE_FAMILY.get(template_key),
+            strict=strict_table_family,
+        ),
         "blocks": sorted(normalized_blocks, key=lambda item: (item["capture_order"], item["print_order"])),
         "validations": dict(payload.get("validations") or {}),
         "print_config": dict(payload.get("print_config") or {}),
@@ -956,7 +854,12 @@ def get_field_sheet_template(db: Session, template_key: str) -> dict:
 
 def create_field_sheet_template(db: Session, payload: FieldSheetTemplateCreate, *, user_id: int | None = None) -> dict:
     template_key = _resolve_template_key(payload.template_key)
-    definition = normalize_template_definition({**payload.model_dump(), "template_key": template_key})
+    # Fase 3: una definicion NUEVA siempre resuelve su family en modo
+    # estricto -- no puede apoyarse en compatibilidad legacy ambigua ni
+    # quedar sin family_key resuelta silenciosamente a "custom".
+    definition = normalize_template_definition(
+        {**payload.model_dump(), "template_key": template_key}, strict_table_family=True
+    )
     version = _latest_version(db, template_key) + 1 or 1
     desired_status = payload.status if payload.status in {"draft", "active", "inactive"} else "draft"
     row = FieldSheetTemplateDefinition(
@@ -997,7 +900,11 @@ def update_field_sheet_template(db: Session, template_id: int, payload: FieldShe
     previous = {"name": row.name, "status": row.status, "version": row.version}
     data = payload.model_dump(exclude_unset=True)
     merged = {**row.definition_json, **data, "template_key": row.template_key, "name": data.get("name", row.name)}
-    definition = normalize_template_definition(merged)
+    # Fase 3: sólo exigir resolucion estricta de family cuando ESTA edicion
+    # de verdad la toca -- editar cualquier otro campo de una plantilla
+    # antigua no debe romperse por una family legacy que nadie está
+    # tocando en esta llamada.
+    definition = normalize_template_definition(merged, strict_table_family="table_family" in data)
     if row.status == "active":
         version = _latest_version(db, row.template_key) + 1
         desired_status = data.get("status") if data.get("status") in {"draft", "active", "inactive"} else "draft"

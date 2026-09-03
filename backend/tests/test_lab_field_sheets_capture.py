@@ -1023,6 +1023,152 @@ def test_four_official_templates_share_the_identical_canonical_block_structure(l
             )
 
 
+# --------------------------------------------------------------------------
+# Fase 3 (2026-09): unificacion del registro de familias de resultados --
+# resolve_table_family() es la unica autoridad; field_sheet_templates.py ya
+# no mantiene un segundo catalogo paralelo.
+# --------------------------------------------------------------------------
+
+def test_the_four_pilots_produce_the_correct_canonical_family(lab_context):
+    """Test obligatorio 3: anemometro/calibradores -> replicated_comparison,
+    presion -> direction_cycle, bascula -> mass_balance_composite -- leidos
+    a traves del mismo endpoint que consume Mobile, no directamente del
+    motor, para probar que nada legacy los sobrescribe en el camino real."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    response = client.get(
+        "/api/mobile/v1/technician/lab-work-orders/field-sheet-templates",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    by_key = {item["template_key"]: item for item in response.json()}
+    assert by_key["anemometro"]["table_family"] == "replicated_comparison"
+    assert by_key["calibradores"]["table_family"] == "replicated_comparison"
+    assert by_key["presion"]["table_family"] == "direction_cycle"
+    assert by_key["bascula"]["table_family"] == "mass_balance_composite"
+
+
+def test_legacy_ambiguous_families_stay_legible_and_are_not_offered_for_new_templates(lab_context):
+    """Test obligatorio 7: claves legacy ambiguas (dimensional/electrical/
+    multipoint/repeatability/custom) siguen siendo legibles para las
+    plantillas fallback existentes -- pero ninguna aparece en el catalogo
+    de familias disponibles para NUEVAS definiciones."""
+    from app.services.field_sheet_template_engine import AMBIGUOUS_LEGACY_FAMILIES, OFFICIAL_TABLE_FAMILIES
+    from app.services.field_sheet_templates import build_fallback_template_definition, get_field_sheet_template_catalog
+
+    catalog = get_field_sheet_template_catalog()
+    catalog_family_keys = {item["family_key"] for item in catalog["table_families"]}
+    assert catalog_family_keys == set(OFFICIAL_TABLE_FAMILIES)
+    assert catalog_family_keys.isdisjoint(AMBIGUOUS_LEGACY_FAMILIES)
+
+    # "vernier" es un fallback legacy real cuya family (dimensional) es
+    # ambigua -- sigue cargando y exponiendo su family tal cual, legible.
+    definition = build_fallback_template_definition("vernier")
+    assert definition["table_family"] == "dimensional"
+    assert definition["table_family"] in AMBIGUOUS_LEGACY_FAMILIES
+    assert definition["result_sections"]
+
+
+def test_direct_comparison_legacy_resolves_to_replicated_comparison_without_rewriting_persisted_snapshot(lab_context):
+    """Tests obligatorios 4 y 9: un snapshot HISTORICO cuyo table_family
+    persistido es el legacy 'direct_comparison' (equivalente semantico
+    seguro de replicated_comparison) sigue cargando, expone result_sections
+    y genera su PDF -- y el resolver lo interpreta como
+    'replicated_comparison' al leerlo, SIN reescribir lo persistido en BD."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=1)
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet_id = created.json()["id"]
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        definition = dict(sheet.template_definition_json or {})
+        definition["table_family"] = "direct_comparison"
+        sheet.template_definition_json = definition
+        db.add(sheet)
+        db.commit()
+
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(created.json()["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet",
+        json={"observations": "Sin observaciones", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_ids[0]}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["results_rows"]
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        # El snapshot persistido NUNCA se reescribe -- sigue diciendo
+        # 'direct_comparison' tal cual quedo grabado.
+        assert sheet.template_definition_json["table_family"] == "direct_comparison"
+        pdf_bytes, _filename = generate_field_sheet_pdf(db, sheet_id)
+        assert pdf_bytes.startswith(b"%PDF")
+
+
+def test_pressure_and_mass_legacy_resolve_compatibly_at_read_time(lab_context):
+    """Tests obligatorios 5 y 6: 'pressure' -> direction_cycle y 'mass' ->
+    mass_balance_composite, resueltos por resolve_table_family() al leer
+    -- sin exigir el flujo HTTP completo, prueba directa del resolver
+    compartido con field_sheet_templates.normalize_template_definition."""
+    from app.services.field_sheet_template_engine import resolve_table_family
+
+    assert resolve_table_family("pressure") == "direction_cycle"
+    assert resolve_table_family("mass") == "mass_balance_composite"
+    assert resolve_table_family("direct_comparison") == "replicated_comparison"
+    # Los 3 alias se resuelven igual en modo estricto (una definicion nueva
+    # SI puede declarar el alias legacy -- se resuelve a su canonico, no se
+    # rechaza, porque la equivalencia es segura).
+    assert resolve_table_family("pressure", strict=True) == "direction_cycle"
+    assert resolve_table_family("mass", strict=True) == "mass_balance_composite"
+
+
+def test_unknown_family_in_a_new_definition_is_rejected_not_silently_custom(lab_context):
+    """Test obligatorio 8: una definicion NUEVA (autoria real via el CRUD
+    de plantillas, no fallback) con family desconocida o legacy ambigua
+    debe rechazarse con 422 explicito -- nunca caer en 'custom' en
+    silencio."""
+    from app.services.field_sheet_templates import normalize_template_definition
+
+    base_payload = {
+        "template_key": "custom_new_template",
+        "name": "Plantilla nueva de prueba",
+        "blocks": [{"block_type": "ObservationsBlock"}],
+    }
+    for unresolvable in ("totalmente_desconocida", "multipoint", "dimensional", "electrical", "repeatability", "custom", None):
+        with pytest.raises(HTTPException) as exc_info:
+            normalize_template_definition(
+                {**base_payload, "table_family": unresolvable}, strict_table_family=True
+            )
+        assert exc_info.value.status_code == 422
+
+    # La misma clave ambigua SI se acepta en modo lenient (fallback/lectura
+    # historica) -- nunca "custom" silencioso, se conserva legible.
+    lenient = normalize_template_definition(
+        {**base_payload, "table_family": "multipoint"}, strict_table_family=False
+    )
+    assert lenient["table_family"] == "multipoint"
+
+
 def test_official_templates_expose_organization_and_magnitude_metadata(lab_context):
     """Fase 2 del catalogo LAB (2026-09, items 2.1/2.4/2.5): las 4 plantillas
     oficiales llevan metadata.organization_key/organization_label/

@@ -2,9 +2,12 @@ import unittest
 
 from app.schemas.field_sheet import FieldSheetSignatureUpdate
 from app.services.field_sheet_template_engine import (
+    AMBIGUOUS_LEGACY_FAMILIES,
+    LEGACY_FAMILY_ALIASES,
     OFFICIAL_PILOT_TEMPLATES,
     OFFICIAL_TABLE_FAMILIES,
     get_official_pilot_template,
+    resolve_table_family,
 )
 from app.services.field_sheet_templates import (
     build_default_result_rows,
@@ -63,6 +66,30 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
         first["blocks"][0]["title"] = "changed"
         second = get_official_pilot_template("presion")
         self.assertNotEqual(second["blocks"][0]["title"], "changed")
+
+    def test_engine_is_the_single_canonical_authority_of_table_families(self):
+        """Fase 3 (2026-09, test obligatorio 1): field_sheet_templates.py ya
+        no mantiene un segundo catalogo de familias -- TABLE_FAMILY_DEFINITIONS
+        (el segundo diccionario paralelo) fue eliminado por completo, y el
+        unico resolver (resolve_table_family) vive en este motor."""
+        import app.services.field_sheet_templates as templates_module
+
+        self.assertFalse(hasattr(templates_module, "TABLE_FAMILY_DEFINITIONS"))
+        self.assertFalse(hasattr(templates_module, "TEMPLATE_TABLE_FAMILY"))
+        self.assertIs(templates_module.resolve_table_family, resolve_table_family)
+        self.assertIs(templates_module.OFFICIAL_TABLE_FAMILIES, OFFICIAL_TABLE_FAMILIES)
+
+    def test_legacy_family_aliases_are_exactly_the_three_semantically_safe_ones(self):
+        self.assertEqual(
+            LEGACY_FAMILY_ALIASES,
+            {
+                "direct_comparison": "replicated_comparison",
+                "pressure": "direction_cycle",
+                "mass": "mass_balance_composite",
+            },
+        )
+        self.assertTrue(AMBIGUOUS_LEGACY_FAMILIES.isdisjoint(OFFICIAL_TABLE_FAMILIES))
+        self.assertTrue(AMBIGUOUS_LEGACY_FAMILIES.isdisjoint(LEGACY_FAMILY_ALIASES))
 
     def test_signature_contract_accepts_erp_user_and_signature_data(self):
         signature = FieldSheetSignatureUpdate(
