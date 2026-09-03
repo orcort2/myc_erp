@@ -117,6 +117,11 @@ Resumen operativo:
   visibles, grid documental 1, grid de bloque 2, borde/título visibles y
   `break-inside: avoid` con excepción `break-auto`; snapshots sin DSL conservan
   header plano y PDFs congelados no se reinterpretan ni regeneran.
+- `signature_layout` está tipado: acepta 1..4 columnas, dirección horizontal o
+  vertical y campos posteriores allowlisted. Sin propiedades nuevas conserva
+  el grid horizontal derivado; `purchase_order_or_quotation` es la única clave
+  posterior vigente y reutiliza `FIELD_LABELS`/`_field_value`. Esta extensión
+  no materializa todavía Temperatura ni Presión de Fase 6A.1.
 - Mobile consume el mismo contrato mediante una matriz de posiciones calculadas
   para `row`/`column`/`colspan`/`rowspan`; un header de dos filas ocupa exactamente
   dos filas reales y conserva el scroll horizontal, sin branches por template,
@@ -153,6 +158,9 @@ Resumen operativo:
 - Microcierre focal: backend `88 passed`, 12 warnings; Mobile `9 passed`, 0
   fallas; `npx tsc --noEmit` correcto (exit code 0). Cubrió aislamiento CAPYMET,
   posición lógica de `column_key`, rowspan Mobile real y defaults completos v1.
+- Micro-extensión de firmas previa a 6A.1: suite focal backend `112 passed`,
+  18 warnings de deprecación, exit code 0. Cubrió default horizontal derivado,
+  tres firmas verticales, campo posterior, rechazos 422 y PDF real `%PDF`.
 
 ### Navegación de reapertura con firma preservada — 2026-09-02
 

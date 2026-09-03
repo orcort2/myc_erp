@@ -6,7 +6,10 @@ from fastapi import HTTPException
 from weasyprint import HTML
 
 from app.services.field_sheet_pdfs import _render_html
-from app.services.field_sheet_templates import normalize_template_definition
+from app.services.field_sheet_templates import (
+    CANONICAL_PDF_RENDERER_VERSION,
+    normalize_template_definition,
+)
 
 
 def _column(key: str, label: str, width: str = "25%") -> dict:
@@ -47,7 +50,14 @@ def _temperature_definition(**overrides) -> dict:
         "template_key": "temperatura",
         "name": "Fixture temporal temperatura",
         "table_family": "replicated_comparison",
-        "blocks": [block],
+        "blocks": [
+            block,
+            {
+                "key": "signatures",
+                "block_type": "SignaturesBlock",
+                "title": "Firmas",
+            },
+        ],
         **overrides,
     }
     return normalize_template_definition(payload, table_family_mode="strict")
@@ -151,11 +161,33 @@ def _fake_sheet(definition: dict):
         certificate_client_attention=None,
         certificate_client_address=None,
         work_order_number=6401,
+        purchase_order_or_quotation="OC-6401",
         results_rows=rows,
     )
 
 
-def _render(definition: dict, institution: dict | None = None) -> str:
+def _signatures() -> list[SimpleNamespace]:
+    return [
+        SimpleNamespace(
+            role=role,
+            display_label=label,
+            name=name,
+            signature_data=None,
+            signed_at=None,
+        )
+        for role, label, name in (
+            ("calibrated_by", "Calibró", "Técnico Uno"),
+            ("reviewed_by", "Revisó", "Técnico Dos"),
+            ("report_made_by", "Elaboró informe", "Técnico Tres"),
+        )
+    ]
+
+
+def _render(
+    definition: dict,
+    institution: dict | None = None,
+    signatures: list[SimpleNamespace] | None = None,
+) -> str:
     institution = institution or {
         "legal_name": "METROLOGÍA Y CALIBRACIÓN",
         "address": "Domicilio institucional",
@@ -163,7 +195,12 @@ def _render(definition: dict, institution: dict | None = None) -> str:
         "email": "correo@example.com",
         "logo_path": None,
     }
-    return _render_html(_fake_sheet(definition), definition, institution, [])
+    return _render_html(
+        _fake_sheet(definition),
+        definition,
+        institution,
+        signatures or [],
+    )
 
 
 def test_flat_header_legacy_keeps_empty_header_rows_and_default_layout():
@@ -213,6 +250,61 @@ def test_temperature_like_grouped_header_validates_and_renders_pdf():
     assert 'colspan="3"' in html
     assert 'rowspan="2"' in html
     assert HTML(string=html).write_pdf().startswith(b"%PDF")
+
+
+def test_legacy_signature_layout_keeps_the_derived_horizontal_grid():
+    definition = _temperature_definition()
+    assert definition["signature_layout"]["columns"] is None
+    assert definition["signature_layout"]["direction"] == "horizontal"
+    assert definition["signature_layout"]["trailing_fields"] == []
+    html = _render(definition, signatures=_signatures())
+    assert 'data-signature-direction="horizontal"' in html
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in html
+    assert '<div class="signature-trailing-fields">' not in html
+
+
+def test_vertical_signatures_render_trailing_field_and_real_pdf():
+    definition = _temperature_definition(
+        signature_layout={
+            "columns": 1,
+            "direction": "vertical",
+            "trailing_fields": ["purchase_order_or_quotation"],
+        }
+    )
+    html = _render(definition, signatures=_signatures())
+    assert 'data-signature-direction="vertical"' in html
+    assert "grid-template-columns: repeat(1, minmax(0, 1fr))" in html
+    assert html.count('class="signature"') == 3
+    assert 'data-field="purchase_order_or_quotation"' in html
+    assert "Orden de compra / cotización" in html
+    assert "OC-6401" in html
+    assert HTML(string=html).write_pdf().startswith(b"%PDF")
+    assert CANONICAL_PDF_RENDERER_VERSION == 1
+
+
+@pytest.mark.parametrize(
+    "signature_layout",
+    [
+        {"trailing_fields": ["unknown_field"]},
+        {"columns": 1, "direction": "vertical", "css": "display:none"},
+        {"columns": 0},
+        {"columns": 5},
+        {"direction": "diagonal"},
+    ],
+)
+def test_signature_layout_rejects_invalid_values_fields_and_properties(signature_layout):
+    with pytest.raises(HTTPException) as exc_info:
+        _temperature_definition(signature_layout=signature_layout)
+    assert exc_info.value.status_code == 422
+
+
+def test_signature_renderer_has_no_template_or_magnitude_branches():
+    renderer_source = (
+        Path(__file__).parents[1] / "app" / "templates" / "field_sheet_engine_pdf.html"
+    ).read_text(encoding="utf-8")
+    assert "temperatura" not in renderer_source.lower()
+    assert "presión" not in renderer_source.lower()
+    assert "presion" not in renderer_source.lower()
 
 
 @pytest.mark.parametrize(

@@ -25,6 +25,7 @@ from app.services.field_sheet_layouts import (
     ROW_NUMBER_COLUMN_KEY,
     normalize_block_print_layout,
     normalize_print_layout,
+    normalize_signature_layout,
     resolve_organization_print_profile,
 )
 from app.services.institutional_configurations import (
@@ -481,6 +482,27 @@ def _render_html(
         client_address=client_address,
         certificate_folio=certificate_folio,
     )
+    signature_layout = normalize_signature_layout(template_definition.get("signature_layout"))
+    signature_layout["resolved_columns"] = signature_layout["columns"] or max(
+        len(signatures), 1
+    )
+    signature_trailing_fields = [
+        PrintField(
+            key=key,
+            label=FIELD_LABELS[key],
+            value=_field_value(
+                key,
+                field_sheet=field_sheet,
+                template_definition=template_definition,
+                equipment=equipment_values,
+                client_name=client_name,
+                client_attention=client_attention,
+                client_address=client_address,
+                certificate_folio=certificate_folio,
+            ),
+        )
+        for key in signature_layout["trailing_fields"]
+    ]
     print_layout = normalize_print_layout(template_definition.get("print_layout"))
     organization_profile = resolve_organization_print_profile(template_definition)
     if organization_profile["inherit_institutional_contact"]:
@@ -512,6 +534,8 @@ def _render_html(
         organization_profile=organization_profile,
         print_layout=print_layout,
         signatures=signatures,
+        signature_layout=signature_layout,
+        signature_trailing_fields=signature_trailing_fields,
         sections=_group_sections(field_sheet, template_definition),
         print_blocks=print_blocks,
         row_value=_row_value,

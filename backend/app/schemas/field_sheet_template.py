@@ -1,6 +1,9 @@
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+SIGNATURE_TRAILING_FIELD_KEYS = frozenset({"purchase_order_or_quotation"})
 
 
 FieldSheetBlockType = Literal[
@@ -211,6 +214,40 @@ class OrganizationPrintProfileRead(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class SignatureSlotRead(BaseModel):
+    role: str = Field(min_length=1, max_length=80)
+    display_label: str = Field(min_length=1, max_length=180)
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class SignatureLayoutRead(BaseModel):
+    # ``layout`` y ``slots`` forman parte del contrato histórico. Las
+    # propiedades nuevas tienen defaults que reproducen exactamente el grid
+    # horizontal anterior cuando el snapshot no las declara.
+    layout: str = Field(default="three_columns", min_length=1, max_length=80)
+    slots: list[SignatureSlotRead] = Field(
+        default_factory=lambda: [
+            SignatureSlotRead(role="calibrated_by", display_label="Calibró"),
+            SignatureSlotRead(role="reviewed_by", display_label="Revisó"),
+            SignatureSlotRead(role="report_made_by", display_label="Elaboró informe"),
+        ]
+    )
+    columns: int | None = Field(default=None, ge=1, le=4)
+    direction: Literal["horizontal", "vertical"] = "horizontal"
+    trailing_fields: list[str] = Field(default_factory=list)
+
+    @field_validator("trailing_fields")
+    @classmethod
+    def validate_trailing_fields(cls, values: list[str]) -> list[str]:
+        unknown = sorted(set(values) - SIGNATURE_TRAILING_FIELD_KEYS)
+        if unknown:
+            raise ValueError(f"Campos posteriores de firmas no permitidos: {unknown}")
+        return values
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class FieldSheetTemplateCreate(BaseModel):
     template_key: str = Field(min_length=1, max_length=60)
     name: str = Field(min_length=1, max_length=180)
@@ -232,7 +269,7 @@ class FieldSheetTemplateCreate(BaseModel):
     pdf_config: dict[str, Any] = Field(default_factory=dict)
     permissions_config: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    signature_layout: dict[str, Any] = Field(default_factory=dict)
+    signature_layout: SignatureLayoutRead = Field(default_factory=SignatureLayoutRead)
     pagination: dict[str, Any] = Field(default_factory=dict)
     automation: dict[str, Any] = Field(default_factory=dict)
 
@@ -259,7 +296,7 @@ class FieldSheetTemplateUpdate(BaseModel):
     pdf_config: dict[str, Any] | None = None
     permissions_config: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
-    signature_layout: dict[str, Any] | None = None
+    signature_layout: SignatureLayoutRead | None = None
     pagination: dict[str, Any] | None = None
     automation: dict[str, Any] | None = None
 
@@ -306,7 +343,7 @@ class FieldSheetTemplateRead(BaseModel):
     pdf_config: dict[str, Any] = Field(default_factory=dict)
     permissions_config: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
-    signature_layout: dict[str, Any] = Field(default_factory=dict)
+    signature_layout: SignatureLayoutRead = Field(default_factory=SignatureLayoutRead)
     pagination: dict[str, Any] = Field(default_factory=dict)
     automation: dict[str, Any] = Field(default_factory=dict)
     organization_profile: OrganizationPrintProfileRead | None = None

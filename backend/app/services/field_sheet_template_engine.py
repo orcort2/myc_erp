@@ -17,6 +17,8 @@ from copy import deepcopy
 
 from fastapi import HTTPException, status
 
+from app.schemas.field_sheet_template import SignatureLayoutRead
+
 
 OFFICIAL_TABLE_FAMILIES = {
     "replicated_comparison": {
@@ -160,14 +162,7 @@ def resolve_table_family(value: str | None, *, mode: str = "lenient") -> str:
     return value if value else "custom"
 
 
-DEFAULT_SIGNATURE_LAYOUT = {
-    "layout": "three_columns",
-    "slots": [
-        {"role": "calibrated_by", "display_label": "Calibró"},
-        {"role": "reviewed_by", "display_label": "Revisó"},
-        {"role": "report_made_by", "display_label": "Elaboró informe"},
-    ],
-}
+DEFAULT_SIGNATURE_LAYOUT = SignatureLayoutRead().model_dump()
 
 
 def _column(key: str, label: str, width: str | None = None, *, configurable: bool = False) -> dict:

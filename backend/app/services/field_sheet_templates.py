@@ -25,6 +25,7 @@ from app.services.field_sheet_layouts import (
     normalize_block_print_layout,
     normalize_print_layout,
     normalize_result_section,
+    normalize_signature_layout,
     resolve_organization_print_profile,
 )
 
@@ -771,7 +772,9 @@ def normalize_template_definition(payload: dict, *, table_family_mode: str = "le
         "pdf_config": dict(payload.get("pdf_config") or {}),
         "permissions_config": dict(payload.get("permissions_config") or {}),
         "metadata": dict(payload.get("metadata") or {}),
-        "signature_layout": dict(payload.get("signature_layout") or DEFAULT_SIGNATURE_LAYOUT),
+        "signature_layout": normalize_signature_layout(
+            payload.get("signature_layout") or DEFAULT_SIGNATURE_LAYOUT
+        ),
         "pagination": dict(payload.get("pagination") or {"mode": "dynamic", "label": "Página X de Y"}),
         "automation": dict(payload.get("automation") or {"mode": "manual_only", "calculations": []}),
     }

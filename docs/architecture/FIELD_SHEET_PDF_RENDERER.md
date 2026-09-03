@@ -69,6 +69,17 @@ span y su label `top|inline`. No admite HTML, CSS, Jinja, URLs, scripts, paths n
 propiedades desconocidas; las únicas longitudes de tablas permitidas usan
 unidades allowlisted.
 
+`signature_layout` es un contrato tipado. Conserva los slots históricos y
+admite `columns` entre 1 y 4, `direction=horizontal|vertical` y
+`trailing_fields`. Cuando `columns` no se declara, el renderer deriva el número
+de columnas del total de firmas, reproduciendo el comportamiento horizontal
+anterior; `direction` usa `horizontal` y `trailing_fields` queda vacío por
+default. Los campos posteriores se limitan a claves allowlisted (actualmente
+`purchase_order_or_quotation`), y Python resuelve su label y valor mediante las
+mismas autoridades que cualquier otro campo antes de entregar datos limpios a
+Jinja. Claves o propiedades desconocidas responden 422 en definiciones nuevas.
+Los snapshots históricos sin estas propiedades no se reescriben.
+
 La identidad visual se resuelve en Python mediante
 `ORGANIZATION_PRINT_PROFILES`. Existen perfiles `myc` y `capymet`; MYC reutiliza
 el logo y contacto institucional vigentes. CAPYMET usa nombre legal/visible
@@ -91,3 +102,9 @@ permite la excepción declarada). Los headers planos también se preservan. La
 interpretación avanzada sólo se activa cuando el snapshot declara sus
 propiedades, por lo que no cambia el significado material de snapshots v1
 históricos ni sus PDFs ya congelados.
+
+La micro-extensión previa a Fase 6A.1 no materializa plantillas oficiales ni
+cambia el renderer versionado: únicamente permite que un `SignaturesBlock`
+use una o varias columnas, flujo vertical/horizontal y campos posteriores
+seguros dentro del mismo bloque. `field_sheet_engine_pdf.html` continúa siendo
+el único renderer.

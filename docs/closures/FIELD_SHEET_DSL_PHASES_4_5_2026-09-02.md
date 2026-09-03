@@ -60,3 +60,20 @@ Validación focal del microcierre:
 - Mobile (`field-sheet-result-layout.test.ts` y
   `FieldSheetResultsWorkspace.wiring.test.ts`): `9 passed`, 0 fallas.
 - TypeScript: correcto, exit code 0.
+
+## Micro-extensión autorizada previa a Fase 6A.1
+
+El contrato existente `signature_layout` quedó tipado con `columns` 1..4,
+`direction=horizontal|vertical` y `trailing_fields` allowlisted. La ausencia de
+las propiedades nuevas conserva el grid horizontal derivado del número real de
+firmas. El renderer único puede apilar firmas en una columna y presentar debajo
+campos ya resueltos por Python; actualmente sólo se autoriza
+`purchase_order_or_quotation`. No se materializaron Temperatura, Presión ni
+ninguna plantilla del catálogo 6A.1; tampoco hubo migración o cambio de versión
+del renderer.
+
+Validación focal de la extensión (`test_field_sheet_layout_dsl.py`,
+`test_field_sheet_template_engine.py`, `test_field_sheet_operational_contract.py`,
+`test_lab_field_sheets_capture.py` y
+`test_lab_phase6_field_sheet_revisions.py`): `112 passed`, 18 warnings de
+deprecación, exit code 0.

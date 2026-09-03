@@ -42,12 +42,16 @@
     .break-auto { break-inside: auto; }
     .no-repeat-header thead { display: table-row-group; }
     .notes { border: .25mm solid #344054; min-height: 12mm; padding: 1.2mm; white-space: pre-wrap; }
-    .signatures { display: grid; gap: 3mm; grid-template-columns: repeat({{ [signatures|length, 1]|max }}, minmax(0, 1fr)); margin-top: 2mm; }
+    .signatures { display: grid; gap: 3mm; margin-top: 2mm; }
     .signature { min-height: 12mm; text-align: center; }
     .signature-image { display: block; height: 6mm; margin: 0 auto; max-width: 38mm; object-fit: contain; }
     .signature-space { height: 6mm; }
     .signature-line { border-top: .25mm solid #344054; padding-top: 1mm; }
     .signature small { display: block; color: #475467; }
+    .signature-trailing-fields { display: grid; gap: 2mm; margin-top: 3mm; }
+    .signature-trailing-field { min-height: 7mm; text-align: center; }
+    .signature-trailing-field strong { border-top: .25mm solid #344054; display: block; padding-top: 1mm; }
+    .signature-trailing-field span { display: block; }
     .field-grid { display: grid; gap: 0; }
     .field-cell { border: .25mm solid #344054; margin: -.25mm 0 0 -.25mm; min-height: 6mm; padding: .8mm 1.2mm; }
     .field-cell strong { display: block; font-size: 6.8pt; }
@@ -73,7 +77,7 @@
     {% if block.block_type == 'SignaturesBlock' %}
       <section class="{{ block_classes }}" data-block="{{ block.key }}" style="grid-column: span {{ layout.column_span }}; margin-top: {{ layout.spacing_before }}mm; margin-bottom: {{ layout.spacing_after }}mm;">
         {% if layout.title_visible %}<div class="block-title">{{ block.title }}</div>{% endif %}
-        <div class="signatures">
+        <div class="signatures signatures-{{ signature_layout.direction }}" data-signature-direction="{{ signature_layout.direction }}" style="grid-template-columns: repeat({{ signature_layout.resolved_columns }}, minmax(0, 1fr));">
           {% for signature in signatures %}
           <div class="signature">
             {% if signature.signature_data %}<img class="signature-image" src="{{ signature.signature_data }}" alt="Firma {{ signature.display_label }}">{% else %}<div class="signature-space"></div>{% endif %}
@@ -81,6 +85,9 @@
           </div>
           {% endfor %}
         </div>
+        {% if signature_trailing_fields %}<div class="signature-trailing-fields">
+          {% for field in signature_trailing_fields %}<div class="signature-trailing-field" data-field="{{ field.key }}"><strong>{{ field.label }}</strong><span>{{ field.value }}</span></div>{% endfor %}
+        </div>{% endif %}
       </section>
     {% else %}
       {% if block.fields %}

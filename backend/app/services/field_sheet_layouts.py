@@ -7,7 +7,12 @@ from typing import Any
 from fastapi import HTTPException, status
 from pydantic import ValidationError
 
-from app.schemas.field_sheet_template import PrintBlockLayoutRead, PrintLayoutRead, ResultSectionRead
+from app.schemas.field_sheet_template import (
+    PrintBlockLayoutRead,
+    PrintLayoutRead,
+    ResultSectionRead,
+    SignatureLayoutRead,
+)
 
 
 ROW_NUMBER_COLUMN_KEY = "__row_number__"
@@ -141,6 +146,13 @@ def normalize_block_print_layout(value: dict | None) -> dict:
         return PrintBlockLayoutRead.model_validate(value or {}).model_dump()
     except ValidationError as exc:
         raise _unprocessable(f"print_layout de bloque inválido: {exc.errors()}") from exc
+
+
+def normalize_signature_layout(value: dict | None) -> dict:
+    try:
+        return SignatureLayoutRead.model_validate(value or {}).model_dump()
+    except ValidationError as exc:
+        raise _unprocessable(f"signature_layout inválido: {exc.errors()}") from exc
 
 
 def resolve_organization_print_profile(template_definition: dict) -> dict:
