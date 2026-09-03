@@ -25,10 +25,21 @@ OT completed
 `OperationalTicket` es la entidad extensible. El constraint vigente acepta
 `reopen_work_order`, `manual_myc_folio`, `linked_folio`, `partial_close`,
 `certificate_folio_block`, `field_sheet_template_request`,
-`field_sheet_reopen` y `reception_date_change`; sus estados canónicos son `pending`, `approved`,
-`rejected`, `in_progress`, `resolved` y `cancelled`. La aprobación ejecuta la
+`field_sheet_reopen`, `reception_date_change` y `partial_delivery`; sus
+estados canónicos son `pending`, `approved`, `rejected`, `in_progress`,
+`resolved` y `cancelled`. La aprobación de `reopen_work_order` ejecuta la
 reapertura en la misma transacción y deja el ticket directamente
-`in_progress`; `approved` queda reservado para una futura aprobación diferida.
+`in_progress`.
+
+`partial_delivery` es el primer tipo que usa realmente `approved` como
+aprobación diferida: `approve_partial_delivery_ticket` (mismo permiso
+`tickets.review` que aprueba/rechaza cualquier otro ticket, sin autoaprobación)
+sólo autoriza el set de `equipment_ids` solicitado — nunca entrega nada. La
+ejecución posterior (`POST .../delivery/partial/{ticket_id}`, ver
+`LAB_WORK_ORDERS.md`) deja el ticket `resolved` y no es reutilizable; el set
+ejecutado debe coincidir exactamente con el aprobado. Ver
+`create_partial_delivery_ticket`/`approve_partial_delivery_ticket` en
+`app/services/operational_tickets.py`.
 
 ## Solicitud informativa de fecha de recepción
 
@@ -96,6 +107,8 @@ Base: `/api/mobile/v1/technician`.
 - `POST /tickets/{id}/approve`
 - `POST /tickets/{id}/reject`
 - `POST /tickets/reception-date-change`
+- `POST /tickets/partial-delivery`
+- `POST /tickets/{id}/approve-partial-delivery`
 - `POST /tickets/{id}/resolve`
 - `GET /lab-work-orders/{id}/revisions`
 - `GET /lab-work-orders/{id}/revisions/{revision}/pdf`

@@ -413,7 +413,70 @@ LAB tras `204` o `404`. `403`, `409` y errores de red conservan el detalle.
 | GET | `/{id}/pdf` | entregar PDF individual final |
 | GET | `/{id}/revisions` | historial documental |
 | GET | `/{id}/revisions/{revision}/pdf` | PDF histórico inmutable |
+| GET / POST | `/{id}/delivery` | estado de entrega del grupo / registrar entrega normal (todos los pendientes) |
+| POST | `/{id}/delivery/partial/{ticket_id}` | ejecutar una entrega parcial ya aprobada |
+| GET | `/{id}/delivery/{delivery_id}/pdf` | acuse de una exhibición |
+| GET | `/{id}/delivery/final-receipt/pdf` | resumen final consolidado del grupo |
+| POST | `/{id}/delivery/{delivery_id}/void` | anular una exhibición (no destruye historial) |
 | GET | `/export` | ZIP integral administrativo |
+
+## Entrega física (Delivery)
+
+Cierre técnico (`completed`/`partially_closed`) y entrega física de equipos
+son conceptos distintos: cerrar la OT nunca fija `departure_date`. La entrega
+vive a nivel de GRUPO/cohorte (`root_work_order_id`), no por OT individual,
+porque un cliente puede recoger equipos de varias OT del mismo grupo en un
+solo acto.
+
+Cada acto de entrega es una **exhibición** (`LabWorkOrderDelivery`, evento
+inmutable numerado consecutivamente por grupo, nunca reutilizado) con sus
+propios `LabDeliveryItem` (un renglón por equipo, con snapshot histórico de
+instrumento/marca/identificación/serie/folio — nunca recalculado desde el
+equipo mutable). Cada exhibición lleva firma de quien entrega (usuario MYC
+autenticado, `full_name` + firma capturada) y firma de quien recibe (nombre
+libre prellenado con el contacto de la OT + firma), método (`direct` /
+`client_pickup`, enum extensible a futuro) y su propio voucher PDF congelado.
+
+**Entrega normal** incluye automáticamente TODOS los equipos aún pendientes
+del grupo (no requiere selección) y sólo puede registrarse cuando ninguna OT
+relevante del grupo (se excluyen las `cancelled`) sigue sin cerrar
+técnicamente (`completed` o `partially_closed`). "Completar entrega" tras una
+exhibición parcial es la misma operación: una nueva exhibición `full` con lo
+que quede pendiente.
+
+**Entrega parcial** es excepcional: requiere primero un `OperationalTicket`
+`partial_delivery` (equipos solicitados + motivo, `pending`), aprobado por
+`tickets.review` (mismo permiso ya usado por aprobar/rechazar cualquier otro
+tipo de ticket) sin autoaprobación — la aprobación sólo autoriza el set
+(`status=approved`), nunca entrega nada. La ejecución posterior debe coincidir
+EXACTAMENTE con el set aprobado (ni agrega ni omite equipos) y consume el
+ticket (`resolved`); un ticket ya ejecutado no es reutilizable.
+
+`departure_date` de una OT individual se deriva, nunca se captura a mano: es
+la fecha de la exhibición en la que su ÚLTIMO equipo pendiente quedó
+entregado, proyectada independientemente por OT dentro del mismo grupo.
+
+El grupo está completo cuando no quedan equipos pendientes; en ese momento se
+congela un **resumen final** (`LabDeliveryGroupReceipt`, versionado) que lista
+cronológicamente cada exhibición y usa "Mismo contacto" cuando el nombre del
+receptor coincide (comparación exacta normalizada: trim + casefold + espacios
+colapsados, nunca fuzzy) con el primer receptor del grupo — la firma histórica
+de cada exhibición se conserva siempre, sólo el texto se abrevia. `N` cuenta
+únicamente exhibiciones `completed` (una `voided` no cuenta).
+
+Anular una exhibición (`void`, nunca delete) devuelve sus equipos a
+pendientes, recalcula `departure_date` de las OT afectadas y, si rompe la
+completitud del grupo, marca el resumen final vigente como superseded sin
+borrar sus bytes; la siguiente entrega completa genera una nueva versión. Un
+equipo con `LabDeliveryItem` vigente (entrega `completed` no anulada) bloquea
+tanto reabrir como cancelar esa OT — si el equipo regresa físicamente a MYC
+después de entregado, el contrato es una OT nueva, nunca reabrir la anterior.
+Un `departure_date` heredado de datos históricos previos a este dominio (sin
+`LabWorkOrderDelivery`/`LabDeliveryItem` reales) es sólo metadata legacy: no
+se interpreta como entrega digital ni genera acuse/voucher retroactivo.
+
+Evidencia fotográfica y tracking de paquetería quedan deliberadamente fuera de
+esta V1 (el enum `delivery_method` ya es extensible para ese futuro).
 
 ## Exportación y retiro controlado
 

@@ -32,6 +32,7 @@ from app.models.lab_work_order import (
 )
 from app.models.lab_work_order_revision import LabWorkOrderRevision
 from app.models.lab_work_order_delivery import LabWorkOrderDelivery
+from app.models.lab_delivery_item import LabDeliveryItem
 from app.models.notification import Notification
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
@@ -44,7 +45,6 @@ from app.schemas.lab_work_order import (
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
     LabWorkOrderGroupRequestRead,
-    LabWorkOrderDeliveryRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
     LabReceptionDateUpdate,
@@ -101,9 +101,6 @@ def _query_with_relations():
         ),
         selectinload(LabWorkOrder.signature_session).selectinload(
             LabWorkOrderSignatureSession.signatures
-        ),
-        selectinload(LabWorkOrder.deliveries).selectinload(
-            LabWorkOrderDelivery.delivered_by
         ),
     )
 
@@ -328,20 +325,6 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
     result.signature_scope = _recorded_signature_scope(
         db, work_order.signature_session_id
     )
-    delivery = next((item for item in reversed(work_order.deliveries) if item.status == "completed"), None)
-    if delivery is not None:
-        result.delivery = LabWorkOrderDeliveryRead(
-            id=delivery.id,
-            status=delivery.status,
-            delivered_at=delivery.delivered_at,
-            delivered_by_user_id=delivery.delivered_by_user_id,
-            delivered_by_name=delivery.delivered_by.full_name,
-            recipient_name=delivery.recipient_name,
-            notes=delivery.notes,
-            voucher_available=bool(delivery.voucher_pdf),
-            voided_at=delivery.voided_at,
-            void_reason=delivery.void_reason,
-        )
     result.related_work_orders = [
         LabRelatedWorkOrderRead(**{
             "id": item.id,
@@ -1056,10 +1039,18 @@ def cancel_work_order(
     conserva el estado exacto para que restore_work_order lo recupere, en
     vez de reinterpretar la cancelación como una reapertura técnica."""
     work_order = _get(db, work_order_id, lock=True)
-    if any(item.status == "completed" for item in work_order.deliveries):
+    if db.scalar(
+        select(LabDeliveryItem.id)
+        .join(LabWorkOrderDelivery, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+        .where(
+            LabDeliveryItem.work_order_id == work_order.id,
+            LabWorkOrderDelivery.status == "completed",
+        )
+        .limit(1)
+    ) is not None:
         raise HTTPException(
             status_code=409,
-            detail="La OT ya registra la entrega física de los equipos. Anula primero el acuse de entrega.",
+            detail="La OT ya registra la entrega física de equipos. Anula primero el acuse de entrega correspondiente.",
         )
     if work_order.status == "cancelled":
         return _read(db, work_order)

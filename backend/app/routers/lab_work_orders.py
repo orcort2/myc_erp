@@ -13,6 +13,10 @@ from app.schemas.lab_work_order import (
     LabEquipmentWrite,
     LabEquipmentServiceWrite,
     LabCancellationWrite,
+    LabDeliveryCreate,
+    LabDeliveryGroupStatusRead,
+    LabDeliveryRead,
+    LabDeliveryVoid,
     LabDirectReopenWrite,
     LabFieldSheetCreate,
     LabSignatureGroupWrite,
@@ -23,9 +27,6 @@ from app.schemas.lab_work_order import (
     LabWorkOrderListItem,
     LabWorkOrderRead,
     LabReceptionDateUpdate,
-    LabWorkOrderDeliveryCreate,
-    LabWorkOrderDeliveryRead,
-    LabWorkOrderDeliveryVoid,
     LabWorkOrderUpdate,
 )
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
@@ -75,10 +76,12 @@ from app.models.linked_company import LinkedCompany
 from sqlalchemy import select
 from app.services.operational_tickets import get_revision_pdf, list_revisions, reopen_work_order_directly
 from app.services.lab_work_order_deliveries import (
-    complete_lab_work_order_delivery,
+    complete_lab_delivery,
+    execute_partial_delivery,
+    get_lab_delivery_final_receipt_pdf,
+    get_lab_delivery_group_status,
     get_lab_delivery_pdf,
-    get_lab_work_order_delivery,
-    void_lab_work_order_delivery,
+    void_lab_delivery,
 )
 
 
@@ -337,55 +340,99 @@ def get_lab_work_order(
     return get_work_order(db, work_order_id)
 
 
-@router.get("/{work_order_id}/delivery", response_model=LabWorkOrderDeliveryRead | None)
-def get_lab_delivery(
+@router.get("/{work_order_id}/delivery", response_model=LabDeliveryGroupStatusRead)
+def get_lab_delivery_group(
     work_order_id: int,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
     ),
-) -> LabWorkOrderDeliveryRead | None:
+) -> LabDeliveryGroupStatusRead:
+    """Estado de entrega del GRUPO/cohorte (root_work_order_id) al que
+    pertenece esta OT: equipos pendientes, exhibiciones ya registradas y
+    disponibilidad del resumen final. La entrega ya no es un dato binario
+    por OT -- ver LabDeliveryGroupStatusRead."""
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return get_lab_work_order_delivery(db, work_order_id)
+    return get_lab_delivery_group_status(db, work_order_id)
 
 
-@router.post("/{work_order_id}/delivery", response_model=LabWorkOrderDeliveryRead, status_code=201)
+@router.post("/{work_order_id}/delivery", response_model=LabDeliveryRead, status_code=201)
 def post_lab_delivery(
     work_order_id: int,
-    payload: LabWorkOrderDeliveryCreate,
+    payload: LabDeliveryCreate,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(require_mobile_permission("lab_work_orders.use")),
-) -> LabWorkOrderDeliveryRead:
+) -> LabDeliveryRead:
+    """Entrega NORMAL: incluye automáticamente TODOS los equipos aún
+    pendientes del grupo (no requiere selección ni ticket). También es la
+    acción "Completar entrega" tras una exhibición parcial -- misma
+    operación, entrega lo que quede pendiente."""
     if context.actor_type != "internal":
         raise HTTPException(status_code=403, detail="La entrega está reservada a personal MYC")
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return complete_lab_work_order_delivery(db, work_order_id, payload, context.user)
+    return complete_lab_delivery(db, work_order_id, payload, context.user)
 
 
-@router.get("/{work_order_id}/delivery/pdf")
-def get_lab_delivery_voucher(
+@router.post(
+    "/{work_order_id}/delivery/partial/{ticket_id}", response_model=LabDeliveryRead, status_code=201
+)
+def post_lab_partial_delivery(
+    work_order_id: int,
+    ticket_id: int,
+    payload: LabDeliveryCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_mobile_permission("lab_work_orders.use")),
+) -> LabDeliveryRead:
+    """Ejecuta una entrega parcial YA aprobada (ticket type=partial_delivery,
+    status=approved): entrega exactamente el set autorizado, ni más ni
+    menos, y consume el ticket (-> resolved)."""
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La entrega está reservada a personal MYC")
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return execute_partial_delivery(db, work_order_id, ticket_id, payload, context.user)
+
+
+@router.get("/{work_order_id}/delivery/final-receipt/pdf")
+def get_lab_delivery_final_receipt(
     work_order_id: int,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
     ),
 ) -> Response:
+    # Debe registrarse ANTES de /{work_order_id}/delivery/{delivery_id}/pdf --
+    # de lo contrario FastAPI intenta parsear "final-receipt" como delivery_id.
     ensure_lab_work_order_scope(db, work_order_id, context)
-    content, filename = get_lab_delivery_pdf(db, work_order_id)
+    content, filename = get_lab_delivery_final_receipt_pdf(db, work_order_id)
     return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
 
 
-@router.post("/{work_order_id}/delivery/void", response_model=LabWorkOrderDeliveryRead)
+@router.get("/{work_order_id}/delivery/{delivery_id}/pdf")
+def get_lab_delivery_voucher(
+    work_order_id: int,
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.read_organization", "lab_work_orders.use")
+    ),
+) -> Response:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    content, filename = get_lab_delivery_pdf(db, work_order_id, delivery_id)
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@router.post("/{work_order_id}/delivery/{delivery_id}/void", response_model=LabDeliveryRead)
 def post_void_lab_delivery(
     work_order_id: int,
-    payload: LabWorkOrderDeliveryVoid,
+    delivery_id: int,
+    payload: LabDeliveryVoid,
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(require_mobile_permission("lab_work_orders.cancel")),
-) -> LabWorkOrderDeliveryRead:
+) -> LabDeliveryRead:
     if context.actor_type != "internal":
         raise HTTPException(status_code=403, detail="La anulación está reservada a personal MYC")
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return void_lab_work_order_delivery(db, work_order_id, payload.reason, context.user)
+    return void_lab_delivery(db, work_order_id, delivery_id, payload, context.user)
 
 
 @router.delete("/{work_order_id}", status_code=204)

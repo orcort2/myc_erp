@@ -152,8 +152,13 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     )
     operator_client: Mapped["Client | None"] = relationship()
     lab_client: Mapped["LabClient | None"] = relationship()
-    deliveries: Mapped[list["LabWorkOrderDelivery"]] = relationship(
-        back_populates="work_order", order_by="LabWorkOrderDelivery.created_at"
+    # Fase Delivery: la entrega ahora vive a nivel de grupo/cohorte
+    # (root_work_order_id, ver LabWorkOrderDelivery); esta OT sólo conoce sus
+    # PROPIOS items entregados a través de LabDeliveryItem.work_order_id.
+    delivery_items: Mapped[list["LabDeliveryItem"]] = relationship(
+        primaryjoin="LabWorkOrder.id == foreign(LabDeliveryItem.work_order_id)",
+        viewonly=True,
+        order_by="LabDeliveryItem.position_snapshot",
     )
 
 
@@ -377,3 +382,4 @@ from app.models.client import Client  # noqa: E402
 from app.models.field_sheet import FieldSheet  # noqa: E402
 from app.models.lab_client import LabClient  # noqa: E402
 from app.models.linked_company import LinkedCompany  # noqa: E402
+from app.models.lab_delivery_item import LabDeliveryItem  # noqa: E402

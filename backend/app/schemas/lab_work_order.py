@@ -284,25 +284,47 @@ class LabRelatedWorkOrderRead(BaseModel):
     equipment_count: int
 
 
-class LabWorkOrderDeliveryCreate(BaseModel):
+class LabDeliveryCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    delivery_method: Literal["direct", "client_pickup"]
+    delivered_by_signature_data_url: str = Field(min_length=32, max_length=1_500_000)
     recipient_name: str = Field(min_length=1, max_length=180)
     recipient_signature_data_url: str = Field(min_length=32, max_length=1_500_000)
     notes: str | None = Field(default=None, max_length=4000)
 
 
-class LabWorkOrderDeliveryVoid(BaseModel):
+class LabDeliveryVoid(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str = Field(min_length=3, max_length=2000)
 
 
-class LabWorkOrderDeliveryRead(BaseModel):
+class LabDeliveryItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    work_order_id: int
+    work_order_folio: int
+    equipment_id: int
+    position_snapshot: int | None
+    instrument_snapshot: str
+    brand_snapshot: str
+    identification_snapshot: str
+    serial_number_snapshot: str
+    certificate_folio_snapshot: str | None
+
+
+class LabDeliveryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    root_work_order_id: int
+    exhibition_number: int
+    delivery_type: Literal["full", "partial"]
+    delivery_method: Literal["direct", "client_pickup"]
     status: Literal["completed", "voided"]
+    partial_delivery_ticket_id: int | None
     delivered_at: datetime
     delivered_by_user_id: int
     delivered_by_name: str
@@ -311,6 +333,31 @@ class LabWorkOrderDeliveryRead(BaseModel):
     voucher_available: bool
     voided_at: datetime | None
     void_reason: str | None
+    items: list[LabDeliveryItemRead] = Field(default_factory=list)
+
+
+class LabDeliveryPendingEquipmentItem(BaseModel):
+    work_order_id: int
+    work_order_folio: int
+    equipment_id: int
+    position: int
+    instrument: str
+    brand: str
+    identification: str
+    serial_number: str
+    certificate_folio: str | None
+
+
+class LabDeliveryGroupStatusRead(BaseModel):
+    root_work_order_id: int
+    total_equipment: int
+    delivered_equipment: int
+    pending_equipment: list[LabDeliveryPendingEquipmentItem]
+    exhibitions: list[LabDeliveryRead]
+    group_complete: bool
+    final_receipt_available: bool
+    final_receipt_version: int | None = None
+    pending_partial_delivery_ticket_id: int | None = None
 
 
 class LabWorkOrderRead(BaseModel):
@@ -358,7 +405,6 @@ class LabWorkOrderRead(BaseModel):
     updated_at: datetime
     equipment: list[LabEquipmentRead]
     signature_session: LabSignatureSessionRead | None
-    delivery: LabWorkOrderDeliveryRead | None = None
     related_work_orders: list[LabRelatedWorkOrderRead] = Field(default_factory=list)
 
 

@@ -14,6 +14,9 @@ from app.models.operational_ticket import OperationalTicket, TICKET_TYPES
 from app.models.user import Role, User
 
 
+# Tipos vigentes al momento de 9f3a2c7d1e84 -- NUNCA se toca esa migración
+# (ver docstring). Tipos agregados por migraciones posteriores (hoy:
+# 'partial_delivery' via c2d4e6f8a0b1) se validan aparte, no aquí.
 EXPECTED_TYPES = {
     "reopen_work_order",
     "manual_myc_folio",
@@ -24,6 +27,7 @@ EXPECTED_TYPES = {
     "field_sheet_reopen",
     "reception_date_change",
 }
+TYPES_ADDED_AFTER_9F3A2C7D1E84 = {"partial_delivery"}
 
 
 def _migration_module():
@@ -37,7 +41,7 @@ def _migration_module():
 
 def test_ticket_type_model_and_migration_contract_match():
     migration = _migration_module()
-    assert set(TICKET_TYPES) == EXPECTED_TYPES
+    assert set(TICKET_TYPES) == EXPECTED_TYPES | TYPES_ADDED_AFTER_9F3A2C7D1E84
     assert set(migration._CURRENT_TYPES) == EXPECTED_TYPES
     assert migration.down_revision == "b0b560e714db"
     assert set(migration._PREVIOUS_TYPES) == EXPECTED_TYPES - {"reception_date_change"}

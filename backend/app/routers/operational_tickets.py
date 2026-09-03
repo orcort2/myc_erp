@@ -16,6 +16,8 @@ from app.schemas.operational_ticket import (
     FieldSheetTemplateRequestCreate,
     FolioTicketCreate,
     PartialCloseTicketCreate,
+    PartialDeliveryTicketApprove,
+    PartialDeliveryTicketCreate,
     ReceptionDateChangeTicketCreate,
     ReopenTicketCreate,
     TicketRead,
@@ -24,12 +26,14 @@ from app.schemas.operational_ticket import (
     TicketResolve,
 )
 from app.services.operational_tickets import (
+    approve_partial_delivery_ticket,
     approve_reopen_ticket,
     create_certificate_block_ticket,
     create_field_sheet_reopen_ticket,
     create_field_sheet_template_request_ticket,
     create_folio_ticket,
     create_partial_close_ticket,
+    create_partial_delivery_ticket,
     create_reception_date_change_ticket,
     create_reopen_ticket,
     get_ticket,
@@ -138,6 +142,32 @@ def create_certificate_block_request(
     return create_certificate_block_ticket(
         db, payload, context.user, operator_client_id=context.client_id
     )
+
+
+@router.post("/partial-delivery", response_model=TicketRead, status_code=201)
+def create_partial_delivery_request(
+    payload: PartialDeliveryTicketCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("mobile_tickets.create", "tickets.create")
+    ),
+) -> TicketRead:
+    ensure_lab_work_order_scope(db, payload.work_order_id, context)
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La entrega parcial es exclusiva de staff MYC")
+    return create_partial_delivery_ticket(
+        db, payload, context.user, operator_client_id=context.client_id
+    )
+
+
+@router.post("/{ticket_id}/approve-partial-delivery", response_model=TicketRead)
+def approve_partial_delivery_request(
+    ticket_id: int,
+    payload: PartialDeliveryTicketApprove,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(require_internal_mobile_permission("tickets.review")),
+) -> TicketRead:
+    return approve_partial_delivery_ticket(db, ticket_id, payload, context.user)
 
 
 @router.get("", response_model=list[TicketRead])

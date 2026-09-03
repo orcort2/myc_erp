@@ -89,12 +89,34 @@ export type LabWorkOrder = {
   // input libre (ver LabTechnicalCapture, resolveSignerName). Opcional para
   // no romper los fixtures existentes que no modelan firmas.
   signature_session?: LabSignatureSession | null;
-  delivery: LabWorkOrderDelivery | null;
 };
 
-export type LabWorkOrderDelivery = {
+// Fase Delivery: la entrega ya no es un dato binario por OT -- vive a nivel de
+// GRUPO/cohorte (root_work_order_id) como una serie de "exhibiciones", cada
+// una con sus propios equipos entregados. Ver GET .../delivery.
+export type LabDeliveryMethod = 'direct' | 'client_pickup';
+
+export type LabDeliveryItem = {
   id: number;
+  work_order_id: number;
+  work_order_folio: number;
+  equipment_id: number;
+  position_snapshot: number | null;
+  instrument_snapshot: string;
+  brand_snapshot: string;
+  identification_snapshot: string;
+  serial_number_snapshot: string;
+  certificate_folio_snapshot: string | null;
+};
+
+export type LabDelivery = {
+  id: number;
+  root_work_order_id: number;
+  exhibition_number: number;
+  delivery_type: 'full' | 'partial';
+  delivery_method: LabDeliveryMethod;
   status: 'completed' | 'voided';
+  partial_delivery_ticket_id: number | null;
   delivered_at: string;
   delivered_by_user_id: number;
   delivered_by_name: string;
@@ -103,6 +125,39 @@ export type LabWorkOrderDelivery = {
   voucher_available: boolean;
   voided_at: string | null;
   void_reason: string | null;
+  items: LabDeliveryItem[];
+};
+
+export type LabDeliveryPendingEquipmentItem = {
+  work_order_id: number;
+  work_order_folio: number;
+  equipment_id: number;
+  position: number;
+  instrument: string;
+  brand: string;
+  identification: string;
+  serial_number: string;
+  certificate_folio: string | null;
+};
+
+export type LabDeliveryGroupStatus = {
+  root_work_order_id: number;
+  total_equipment: number;
+  delivered_equipment: number;
+  pending_equipment: LabDeliveryPendingEquipmentItem[];
+  exhibitions: LabDelivery[];
+  group_complete: boolean;
+  final_receipt_available: boolean;
+  final_receipt_version: number | null;
+  pending_partial_delivery_ticket_id: number | null;
+};
+
+export type LabDeliveryCreatePayload = {
+  delivery_method: LabDeliveryMethod;
+  delivered_by_signature_data_url: string;
+  recipient_name: string;
+  recipient_signature_data_url: string;
+  notes?: string | null;
 };
 
 export type LabSignature = {

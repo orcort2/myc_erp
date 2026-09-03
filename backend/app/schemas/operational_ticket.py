@@ -91,6 +91,26 @@ class ReceptionDateChangeTicketCreate(BaseModel):
     description: str = Field(min_length=3, max_length=4000)
 
 
+class PartialDeliveryTicketCreate(BaseModel):
+    """Solicitud excepcional de entrega parcial: sólo pide autorización sobre
+    un subconjunto de equipos AÚN PENDIENTES del grupo/cohorte -- nunca
+    entrega nada por sí misma (ver approve_partial_delivery_ticket /
+    execute_partial_delivery)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    work_order_id: int
+    requested_equipment_ids: list[int] = Field(min_length=1)
+    reason: str = Field(min_length=3, max_length=180)
+    description: str = Field(min_length=3, max_length=4000)
+
+
+class PartialDeliveryTicketApprove(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    comment: str | None = Field(default=None, max_length=2000)
+
+
 class CertificateFolioBlockCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

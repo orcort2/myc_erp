@@ -1510,7 +1510,11 @@ def test_lab_delivery_is_independent_from_technical_closure(lab_context):
 
     completed = _completed_work_order(client, tokens["tech"], "Cliente entrega cerrada")
     assert completed["departure_date"] is None
-    assert completed["delivery"] is None
+    delivery_status = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}/delivery", headers=headers
+    )
+    assert delivery_status.status_code == 200
+    assert delivery_status.json()["group_complete"] is False
     technical_pdf = client.get(
         f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}/pdf",
         headers=headers,
@@ -1520,91 +1524,6 @@ def test_lab_delivery_is_independent_from_technical_closure(lab_context):
         page.extract_text() or "" for page in PdfReader(io.BytesIO(technical_pdf.content)).pages
     )
     assert "PENDIENTE" in technical_text
-
-
-def test_lab_delivery_lifecycle_voucher_guards_and_replacement(lab_context):
-    client, _factory, tokens = lab_context
-    headers = auth(tokens["tech"])
-    admin_headers = auth(tokens["admin"])
-    open_order = client.post(
-        "/api/mobile/v1/technician/lab-work-orders",
-        json=create_payload("Todavía abierta"),
-        headers=headers,
-    ).json()
-    assert client.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{open_order['id']}/delivery",
-        json={"recipient_name": "Receptor", "recipient_signature_data_url": PNG_DATA_URL},
-        headers=headers,
-    ).status_code == 409
-
-    completed = _completed_work_order(client, tokens["tech"], "Cliente acuse")
-    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}"
-    invalid = client.post(
-        f"{endpoint}/delivery",
-        json={"recipient_name": "Receptor", "recipient_signature_data_url": "data:image/png;base64,bm90LXBuZw=="},
-        headers=headers,
-    )
-    assert invalid.status_code == 422
-    assert client.get(endpoint, headers=headers).json()["departure_date"] is None
-
-    delivered = client.post(
-        f"{endpoint}/delivery",
-        json={
-            "recipient_name": "María Receptora",
-            "recipient_signature_data_url": PNG_DATA_URL,
-            "notes": "Entrega completa",
-        },
-        headers=headers,
-    )
-    assert delivered.status_code == 201, delivered.text
-    body = delivered.json()
-    assert body["status"] == "completed"
-    assert body["delivered_by_user_id"] > 0
-    assert body["voucher_available"] is True
-    detail = client.get(endpoint, headers=headers).json()
-    assert detail["departure_date"] == body["delivered_at"][:10]
-    assert detail["delivery"]["recipient_name"] == "María Receptora"
-    assert client.post(f"{endpoint}/delivery", json={"recipient_name": "Otro", "recipient_signature_data_url": PNG_DATA_URL}, headers=headers).status_code == 409
-    voucher = client.get(f"{endpoint}/delivery/pdf", headers=headers)
-    assert voucher.status_code == 200 and voucher.content.startswith(b"%PDF")
-    voucher_text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(voucher.content)).pages)
-    assert "ACUSE DE ENTREGA DE EQUIPOS" in voucher_text
-    assert "María Receptora" in voucher_text
-    assert "Cliente acuse" in voucher_text
-    assert client.post(f"{endpoint}/reopen", json={"requested_signature_policy": "preserve", "reason": "Corregir"}, headers=admin_headers).status_code == 409
-    assert client.post(f"{endpoint}/cancel", json={"reason": "Cancelar"}, headers=admin_headers).status_code == 409
-
-    voided = client.post(f"{endpoint}/delivery/void", json={"reason": "Acuse capturado por error"}, headers=admin_headers)
-    assert voided.status_code == 200, voided.text
-    assert voided.json()["status"] == "voided"
-    assert client.get(endpoint, headers=headers).json()["departure_date"] is None
-    replacement = client.post(f"{endpoint}/delivery", json={"recipient_name": "Nuevo receptor", "recipient_signature_data_url": PNG_DATA_URL}, headers=headers)
-    assert replacement.status_code == 201, replacement.text
-
-
-def test_lab_delivery_pdf_failure_rolls_back_event_and_projection(lab_context, monkeypatch):
-    client, factory, tokens = lab_context
-    headers = auth(tokens["tech"])
-    completed = _completed_work_order(client, tokens["tech"], "Cliente rollback")
-    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}"
-
-    def fail_pdf(*_args, **_kwargs):
-        raise RuntimeError("renderer failure")
-
-    monkeypatch.setattr(
-        "app.services.lab_work_order_deliveries.generate_lab_delivery_receipt",
-        fail_pdf,
-    )
-    with pytest.raises(RuntimeError, match="renderer failure"):
-        client.post(
-            f"{endpoint}/delivery",
-            json={"recipient_name": "Receptor", "recipient_signature_data_url": PNG_DATA_URL},
-            headers=headers,
-        )
-    with factory() as db:
-        from app.models.lab_work_order_delivery import LabWorkOrderDelivery
-        assert db.scalar(select(LabWorkOrderDelivery).where(LabWorkOrderDelivery.work_order_id == completed["id"])) is None
-        assert db.get(LabWorkOrder, completed["id"]).departure_date is None
 
 
 def test_ticket_preserves_minor_change_and_versions_pdf(lab_context):

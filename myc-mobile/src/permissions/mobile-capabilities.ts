@@ -29,6 +29,7 @@ export type MobileCapabilities = {
   canOverrideReceptionDate: boolean;
   canRegisterLabDelivery: boolean;
   canVoidLabDelivery: boolean;
+  canRequestPartialDelivery: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -115,5 +116,9 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     canRegisterLabDelivery: user?.actor_type === 'internal' && hasLegacyLabAccess,
     canVoidLabDelivery: user?.actor_type === 'internal'
       && hasPermission(permissions, 'lab_work_orders.cancel'),
+    // La entrega parcial es EXCEPCIONAL: sólo solicita autorización (ticket
+    // type=partial_delivery); la aprobación reutiliza canReviewTickets
+    // (tickets.review, mismo permiso ya usado por approve/reject de tickets).
+    canRequestPartialDelivery: user?.actor_type === 'internal' && hasLegacyLabAccess,
   };
 }

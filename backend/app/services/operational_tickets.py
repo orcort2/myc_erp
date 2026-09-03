@@ -19,6 +19,8 @@ from app.schemas.operational_ticket import (
     FieldSheetTemplateRequestCreate,
     FolioTicketCreate,
     PartialCloseTicketCreate,
+    PartialDeliveryTicketApprove,
+    PartialDeliveryTicketCreate,
     ReceptionDateChangeTicketCreate,
     ReopenTicketCreate,
     TicketRead,
@@ -34,10 +36,16 @@ from app.services.lab_work_orders import (
     _lock_historical_group,
     _notify_work_order_owner,
     _open_group_members,
+    _root_id,
     _signature_cohort,
     _allocate_lab_certificate_folio,
     _missing_completed_sheets,
     _retire_current_field_sheet_revision,
+)
+from app.services.lab_work_order_deliveries import (
+    _delivered_equipment_ids,
+    _pending_equipment,
+    _relevant_group_members,
 )
 from app.services.lab_work_orders import _read as _read_work_order
 from app.services.notification_events import (
@@ -480,6 +488,124 @@ def create_partial_close_ticket(
     return _read(_get_ticket(db, ticket.id))
 
 
+def create_partial_delivery_ticket(
+    db: Session,
+    payload: PartialDeliveryTicketCreate,
+    user: User,
+    *,
+    operator_client_id: int | None,
+) -> TicketRead:
+    """Solicitud EXCEPCIONAL de entrega parcial: sólo pide autorización sobre
+    un subconjunto de equipos aún pendientes del grupo/cohorte (root_work_order_id)
+    -- nunca entrega nada por sí misma (ver approve_partial_delivery_ticket /
+    execute_partial_delivery en lab_work_order_deliveries)."""
+    if operator_client_id is not None:
+        raise HTTPException(status_code=403, detail="La entrega parcial es exclusiva de staff MYC")
+    work_order, group = _lock_historical_group(db, payload.work_order_id)
+    root_work_order = next((item for item in group if item.id == _root_id(work_order)), None)
+    if root_work_order is None:
+        raise HTTPException(status_code=404, detail="Orden de trabajo LAB no encontrada")
+    members = _relevant_group_members(group)
+    delivered_ids = _delivered_equipment_ids(db, root_work_order.id)
+    pending = _pending_equipment(members, delivered_ids)
+    pending_by_id = {equipment.id: equipment for equipment in pending}
+    requested_ids = set(payload.requested_equipment_ids)
+    if not requested_ids or not requested_ids.issubset(pending_by_id.keys()):
+        raise HTTPException(
+            status_code=422,
+            detail="Los equipos solicitados deben pertenecer al grupo y estar pendientes de entrega",
+        )
+    existing = db.scalar(
+        select(OperationalTicket.id).where(
+            OperationalTicket.work_order_id == root_work_order.id,
+            OperationalTicket.type == "partial_delivery",
+            OperationalTicket.status.in_(("pending", "approved")),
+        )
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=409, detail="Ya existe una solicitud de entrega parcial activa para este grupo"
+        )
+    requested_work_orders = sorted({pending_by_id[eid].work_order_id for eid in requested_ids})
+    ticket = OperationalTicket(
+        type="partial_delivery",
+        status="pending",
+        work_order_id=root_work_order.id,
+        operator_client_id=None,
+        requested_by_user_id=user.id,
+        reason=payload.reason.strip(),
+        description=payload.description.strip(),
+        resolution_snapshot={
+            "requested_equipment_ids": sorted(requested_ids),
+            "requested_work_orders": requested_work_orders,
+            "reason": payload.reason.strip(),
+        },
+    )
+    db.add(ticket)
+    db.flush()
+    _attach_conversation(db, ticket, user)
+    write_audit_log(
+        db,
+        action="lab_partial_delivery.requested",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        new_values={
+            "root_work_order_id": root_work_order.id,
+            "requested_equipment_ids": sorted(requested_ids),
+            "requested_work_orders": requested_work_orders,
+        },
+    )
+    notify_ticket_created(db, ticket, user)
+    commit_and_dispatch_notifications(db)
+    return _read(_get_ticket(db, ticket.id))
+
+
+def approve_partial_delivery_ticket(
+    db: Session, ticket_id: int, payload: PartialDeliveryTicketApprove, user: User
+) -> TicketRead:
+    """Autoriza el set de equipos solicitado; NO crea la entrega (ver
+    execute_partial_delivery). Reutiliza tickets.review, el mismo permiso de
+    revisión/decisión administrativa ya usado por approve/reject de tickets
+    (ver routers/operational_tickets.py: /approve y /reject comparten
+    tickets.review para cualquier tipo de ticket)."""
+    ticket = _get_ticket(db, ticket_id, lock=True)
+    if ticket.type != "partial_delivery":
+        raise HTTPException(status_code=409, detail="El ticket no es una solicitud de entrega parcial")
+    if ticket.status != "pending":
+        raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
+    if ticket.requested_by_user_id == user.id:
+        raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
+    if not user_has_permission(user, "tickets.review"):
+        raise HTTPException(status_code=403, detail="No tienes permiso para aprobar esta solicitud")
+    requested_ids = set((ticket.resolution_snapshot or {}).get("requested_equipment_ids") or [])
+    root_work_order = _get(db, ticket.work_order_id, lock=True)
+    group = _group(db, root_work_order, lock=True)
+    members = _relevant_group_members(group)
+    delivered_ids = _delivered_equipment_ids(db, root_work_order.id)
+    pending_ids = {equipment.id for equipment in _pending_equipment(members, delivered_ids)}
+    if not requested_ids or not requested_ids.issubset(pending_ids):
+        raise HTTPException(
+            status_code=409,
+            detail="Los equipos solicitados ya no están pendientes de entrega; rechaza y solicita de nuevo",
+        )
+    ticket.status = "approved"
+    ticket.reviewed_by_user_id = user.id
+    ticket.reviewed_at = datetime.now(timezone.utc)
+    ticket.decision_comment = payload.comment
+    write_audit_log(
+        db,
+        action="ticket.partial_delivery_approved",
+        entity="operational_tickets",
+        entity_id=ticket.id,
+        user_id=user.id,
+        previous_values={"status": "pending"},
+        new_values={"status": "approved", "requested_equipment_ids": sorted(requested_ids)},
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(_get_ticket(db, ticket.id))
+
+
 def create_certificate_block_ticket(
     db: Session,
     payload: CertificateFolioBlockCreate,
@@ -616,12 +742,16 @@ def _reopen_closed_cohort(
     (Admin con autoridad directa, sin ticket artificial) terminan cada uno
     con su propia bitácora."""
     work_order, historical_group = _lock_historical_group(db, work_order_id)
+    from app.models.lab_delivery_item import LabDeliveryItem
     from app.models.lab_work_order_delivery import LabWorkOrderDelivery
     if db.scalar(
-        select(LabWorkOrderDelivery.id).where(
-            LabWorkOrderDelivery.work_order_id.in_([item.id for item in historical_group]),
+        select(LabDeliveryItem.id)
+        .join(LabWorkOrderDelivery, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+        .where(
+            LabDeliveryItem.work_order_id.in_([item.id for item in historical_group]),
             LabWorkOrderDelivery.status == "completed",
-        ).limit(1)
+        )
+        .limit(1)
     ) is not None:
         raise HTTPException(
             status_code=409,

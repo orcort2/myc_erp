@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page { size: Letter; margin: 15mm; }
+    body { color: #173746; font-family: Arial, sans-serif; font-size: 10pt; }
+    h1 { color: #08756f; font-size: 18pt; margin: 4mm 0 1mm; }
+    h2 { font-size: 11pt; margin: 0 0 6mm; }
+    .label { color: #637280; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+    .summary { color: #52636f; font-size: 10pt; margin-bottom: 6mm; }
+    .exhibition { border: 1px solid #d6e1e6; border-radius: 2mm; margin-bottom: 5mm; padding: 3mm; page-break-inside: avoid; }
+    .exhibition h3 { color: #08756f; font-size: 10pt; margin: 0 0 2mm; }
+    .exhibition .meta { color: #52636f; font-size: 8.5pt; margin-bottom: 2mm; }
+    table { border-collapse: collapse; margin: 2mm 0; width: 100%; }
+    th, td { border: 1px solid #aebfc8; font-size: 8.5pt; padding: 1.8mm; }
+    th { background: #eaf4f3; color: #08756f; font-size: 7.5pt; }
+    .signature-row { display: grid; grid-template-columns: auto 1fr; gap: 4mm; margin-top: 2mm; }
+    .signature-row img { height: 16mm; max-width: 40mm; object-fit: contain; }
+  </style>
+</head>
+<body>
+  <div class="label">METROLOGÍA Y SERVICIOS MYC</div>
+  <h1>RESUMEN FINAL DE ENTREGA</h1>
+  <h2>OT {{ root_work_order.folio }} · {{ root_work_order.client_name }}</h2>
+  <div class="summary">Los equipos del grupo fueron entregados en {{ exhibitions_count }} exhibiciones.</div>
+  {% for row in rows %}
+  <div class="exhibition">
+    <h3>Exhibición {{ row.delivery.exhibition_number }}{% if row.delivery.delivery_type == 'partial' %} (parcial){% endif %}</h3>
+    <div class="meta">{{ row.delivered_at_display }} · {{ row.delivery_method_label }}</div>
+    <table>
+      <thead><tr><th>OT</th><th>Instrumento</th><th>Marca</th><th>Identificación</th><th>Serie</th></tr></thead>
+      <tbody>
+      {% for item in row.delivery.items %}
+        <tr><td>{{ item.work_order.folio }}</td><td>{{ item.instrument_snapshot }}</td><td>{{ item.brand_snapshot }}</td><td>{{ item.identification_snapshot }}</td><td>{{ item.serial_number_snapshot }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <div class="signature-row">
+      <img src="{{ row.delivery.recipient_signature_data_url }}">
+      <div><strong>Recibió:</strong> {{ row.recipient_display }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</body>
+</html>

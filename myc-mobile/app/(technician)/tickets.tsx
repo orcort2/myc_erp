@@ -50,6 +50,7 @@ const TICKET_TYPE_LABELS: Record<OperationalTicket['type'], string> = {
   field_sheet_template_request: 'Hoja de campo no encontrada',
   field_sheet_reopen: 'Desbloqueo de hoja de campo',
   reception_date_change: 'Cambio de fecha de recepción',
+  partial_delivery: 'Entrega parcial',
 };
 
 export default function TicketsScreen() {
@@ -231,6 +232,29 @@ export default function TicketsScreen() {
     } finally { setBusy(false); }
   }
 
+  async function approvePartialDelivery() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const updated = await request<OperationalTicket>(
+        `/mobile/v1/technician/tickets/${selected.id}/approve-partial-delivery`,
+        { method: 'POST', body: JSON.stringify({ comment: comment.trim() || null }) },
+      );
+      setSelected(updated);
+      setComment('');
+      await load(true);
+      publishLocalChange({
+        event_type: 'ticket.approved',
+        entity_type: 'ticket',
+        entity_id: updated.id,
+        ticket_id: updated.id,
+        work_order_id: updated.work_order_id ?? undefined,
+      });
+    } catch (approveError) {
+      Alert.alert('No fue posible aprobar', approveError instanceof Error ? approveError.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
   async function resolveSelected() {
     if (!selected) return;
     const needsFolio = selected.type === 'manual_myc_folio' || selected.type === 'linked_folio';
@@ -408,6 +432,15 @@ export default function TicketsScreen() {
               {selected.type === 'field_sheet_reopen' && !!selected.resolution_snapshot?.revision_number && (
                 <><Text style={styles.detailLabel}>Revisión de la hoja</Text><Text style={styles.detail}>Revisión {String(selected.resolution_snapshot.revision_number)}</Text></>
               )}
+              {selected.type === 'partial_delivery' && (
+                <>
+                  <Text style={styles.detailLabel}>Grupo</Text><Text style={styles.detail}>OT {selected.work_order_folio ?? '—'}</Text>
+                  <Text style={styles.detailLabel}>OT involucradas</Text>
+                  <Text style={styles.detail}>{Array.isArray(selected.resolution_snapshot?.requested_work_orders) ? (selected.resolution_snapshot!.requested_work_orders as unknown[]).join(', ') : '—'}</Text>
+                  <Text style={styles.detailLabel}>Equipos solicitados</Text>
+                  <Text style={styles.detail}>{Array.isArray(selected.resolution_snapshot?.requested_equipment_ids) ? (selected.resolution_snapshot!.requested_equipment_ids as unknown[]).length : 0} equipo(s)</Text>
+                </>
+              )}
               {!!selected.decision_comment && <><Text style={styles.detailLabel}>Decisión</Text><Text style={styles.detail}>{selected.decision_comment}</Text></>}
               {canReview && selected.type === 'reopen_work_order' && selected.status === 'pending' && <>
                 <Text style={styles.warning}>Si durante la edición se realiza un cambio estructural, el backend invalidará automáticamente las firmas existentes.</Text>
@@ -416,7 +449,13 @@ export default function TicketsScreen() {
                 <Pressable disabled={busy} onPress={() => review('approve', 'invalidate')} style={styles.secondary}><Text style={styles.secondaryText}>Aprobar y requerir nuevas firmas</Text></Pressable>
                 <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
               </>}
-              {canResolveSelected && selected.type !== 'reopen_work_order' && selected.status === 'pending' && <>
+              {canReview && selected.type === 'partial_delivery' && selected.status === 'pending' && <>
+                <Text style={styles.detail}>Aprobar sólo autoriza estos equipos; la entrega se ejecuta después desde la OT.</Text>
+                <TextInput multiline onChangeText={setComment} placeholder="Comentario de decisión" style={[styles.input, styles.comment]} value={comment} />
+                <Pressable disabled={busy} onPress={approvePartialDelivery} style={styles.primary}><Text style={styles.primaryText}>Aprobar entrega parcial</Text></Pressable>
+                <Pressable disabled={busy} onPress={() => review('reject')} style={styles.reject}><Text style={styles.rejectText}>Rechazar</Text></Pressable>
+              </>}
+              {canResolveSelected && selected.type !== 'reopen_work_order' && selected.type !== 'partial_delivery' && selected.status === 'pending' && <>
                 {(selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && <TextInput autoCapitalize="characters" onChangeText={setAuthorizedFolio} placeholder="Folio completo autorizado" style={styles.input} value={authorizedFolio} />}
                 <TextInput multiline onChangeText={setComment} placeholder="Comentario de resolución" style={[styles.input, styles.comment]} value={comment} />
                 <Pressable disabled={busy || ((selected.type === 'manual_myc_folio' || selected.type === 'linked_folio') && !authorizedFolio.trim())} onPress={resolveSelected} style={styles.primary}><Text style={styles.primaryText}>Resolver solicitud</Text></Pressable>

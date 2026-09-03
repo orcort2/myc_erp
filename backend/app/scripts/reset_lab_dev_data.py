@@ -59,6 +59,8 @@ LAB_TICKET_TYPES = (
     "certificate_folio_block",
     "field_sheet_template_request",
     "field_sheet_reopen",
+    "reception_date_change",
+    "partial_delivery",
 )
 
 

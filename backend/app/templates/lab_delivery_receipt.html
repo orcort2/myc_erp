@@ -6,7 +6,9 @@
     @page { size: Letter; margin: 15mm; }
     body { color: #173746; font-family: Arial, sans-serif; font-size: 10pt; }
     h1 { color: #08756f; font-size: 18pt; margin: 4mm 0 1mm; }
-    h2 { font-size: 11pt; margin: 0 0 6mm; }
+    h2 { font-size: 11pt; margin: 0 0 1mm; }
+    h3 { color: #52636f; font-size: 10pt; font-weight: normal; margin: 0 0 6mm; }
+    .badge { background: #f2b134; color: #173746; display: inline-block; font-size: 8pt; font-weight: bold; margin: 1mm 0 2mm; padding: 1mm 3mm; text-transform: uppercase; }
     .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 2mm 8mm; margin-bottom: 6mm; }
     .label { color: #637280; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
     .value { margin-top: 1mm; }
@@ -23,27 +25,37 @@
 <body>
   <div class="label">METROLOGÍA Y SERVICIOS MYC</div>
   <h1>ACUSE DE ENTREGA DE EQUIPOS</h1>
-  <h2>OT {{ work_order.folio }}</h2>
+  {% if delivery.delivery_type == 'partial' %}
+  <div class="badge">Entrega parcial</div>
+  {% endif %}
+  <h2>OT {{ root_work_order.folio }}</h2>
+  <h3>Exhibición {{ delivery.exhibition_number }}</h3>
   <div class="meta">
-    <div><div class="label">Cliente</div><div class="value">{{ work_order.client_name }}</div></div>
-    <div><div class="label">Atención / contacto de OT</div><div class="value">{{ work_order.contact_name or '—' }}</div></div>
-    <div><div class="label">Fecha de recepción</div><div class="value">{{ work_order.reception_date.strftime('%d/%m/%Y') }}</div></div>
+    <div><div class="label">Cliente</div><div class="value">{{ root_work_order.client_name }}</div></div>
+    <div><div class="label">Método de entrega</div><div class="value">{{ delivery_method_label }}</div></div>
+    <div><div class="label">Fecha de recepción</div><div class="value">{{ root_work_order.reception_date.strftime('%d/%m/%Y') }}</div></div>
     <div><div class="label">Fecha y hora de entrega</div><div class="value">{{ delivered_at_display }}</div></div>
   </div>
   <table>
-    <thead><tr><th>No.</th><th>Instrumento</th><th>Marca</th><th>Identificación</th><th>Serie</th><th>Folio informe/certificado</th></tr></thead>
+    <thead><tr><th>No.</th><th>OT</th><th>Instrumento</th><th>Marca</th><th>Identificación</th><th>Serie</th><th>Folio informe/certificado</th></tr></thead>
     <tbody>
-    {% for equipment in work_order.equipment %}
-      <tr><td>{{ loop.index }}</td><td>{{ equipment.instrument }}</td><td>{{ equipment.brand }}</td><td>{{ equipment.identification }}</td><td>{{ equipment.serial_number }}</td><td>{{ equipment.certificate_folio or equipment.report_number or '—' }}</td></tr>
+    {% for item in delivery.items %}
+      <tr><td>{{ loop.index }}</td><td>{{ item.work_order.folio }}</td><td>{{ item.instrument_snapshot }}</td><td>{{ item.brand_snapshot }}</td><td>{{ item.identification_snapshot }}</td><td>{{ item.serial_number_snapshot }}</td><td>{{ item.certificate_folio_snapshot or '—' }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
   <div class="label">Observaciones de entrega</div>
   <div class="notes">{{ delivery.notes or 'Sin observaciones.' }}</div>
   <div class="signatures">
-    <div class="signature"><strong>Entregó</strong><br>{{ delivered_by_name }}</div>
+    <div class="signature"><img src="{{ delivery.delivered_by_signature_data_url }}"><strong>Entregó</strong><br>{{ delivered_by_name }}</div>
     <div class="signature"><img src="{{ delivery.recipient_signature_data_url }}"><strong>Recibió</strong><br>{{ delivery.recipient_name }}</div>
   </div>
-  <div class="legend">Recibí de conformidad los equipos relacionados en este acuse.</div>
+  <div class="legend">
+    {% if delivery.delivery_type == 'partial' %}
+    Recibí de conformidad los equipos relacionados en esta entrega parcial.
+    {% else %}
+    Recibí de conformidad los equipos relacionados en este acuse.
+    {% endif %}
+  </div>
 </body>
 </html>

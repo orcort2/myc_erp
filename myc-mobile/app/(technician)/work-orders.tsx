@@ -27,6 +27,7 @@ import { MobileSignatureFlow } from '@/src/components/signatures/MobileSignature
 import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
 import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
 import { LabDeliveryFlow } from '@/src/components/lab/LabDeliveryFlow';
+import { LabPartialDeliveryRequest } from '@/src/components/lab/LabPartialDeliveryRequest';
 import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
 import {
   ActionRow,
@@ -85,13 +86,16 @@ import {
 } from '@/src/services/lab-work-order-step';
 import type {
   GeneralData,
+  LabDelivery,
+  LabDeliveryCreatePayload,
+  LabDeliveryGroupStatus,
   LabEquipment,
   LabClient,
   LabListItem,
   LabWorkOrder,
-  LabWorkOrderDelivery,
   LabWorkOrderGroupRequest,
 } from '@/src/types/lab-work-order';
+import type { OperationalTicket } from '@/src/types/operational-ticket';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const PAGE_SIZE = 25;
@@ -110,6 +114,7 @@ const emptyGeneral = (): GeneralData => ({
   notes: '',
 });
 type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery';
+type DeliveryPanelMode = 'closed' | 'full' | 'partial_execute' | 'partial_request';
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
   if (workOrder.signature_scope) return workOrder.signature_scope;
@@ -212,7 +217,10 @@ export default function WorkOrdersScreen() {
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
   const [generalErrors, setGeneralErrors] = useState<Record<string, string>>({});
   const [equipmentErrors, setEquipmentErrors] = useState<Record<string, string>>({});
-  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryPanel, setDeliveryPanel] = useState<DeliveryPanelMode>('closed');
+  const [deliveryStatus, setDeliveryStatus] = useState<LabDeliveryGroupStatus | null>(null);
+  const [deliveryHistoryOpen, setDeliveryHistoryOpen] = useState(false);
+  const [voidingDelivery, setVoidingDelivery] = useState<LabDelivery | null>(null);
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
@@ -230,6 +238,23 @@ export default function WorkOrdersScreen() {
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }, [authorizedFetch]);
+
+  const loadDeliveryStatus = useCallback(async (workOrderId: number) => {
+    try {
+      setDeliveryStatus(await request<LabDeliveryGroupStatus>(`/mobile/v1/technician/lab-work-orders/${workOrderId}/delivery`));
+    } catch { setDeliveryStatus(null); }
+  }, [request]);
+
+  const [partialTicket, setPartialTicket] = useState<OperationalTicket | null>(null);
+  useEffect(() => {
+    const id = deliveryStatus?.pending_partial_delivery_ticket_id;
+    if (!id) { setPartialTicket(null); return; }
+    let active = true;
+    request<OperationalTicket>(`/mobile/v1/technician/tickets/${id}`)
+      .then((ticket) => { if (active) setPartialTicket(ticket); })
+      .catch(() => { if (active) setPartialTicket(null); });
+    return () => { active = false; };
+  }, [deliveryStatus?.pending_partial_delivery_ticket_id, request]);
 
   const receptionOrderIds = workOrder?.related_work_orders.map((item) => item.id).join(',') ?? '';
 
@@ -250,6 +275,18 @@ export default function WorkOrdersScreen() {
       .catch(() => { if (active) setReceptionOrders([workOrder]); });
     return () => { active = false; };
   }, [receptionOrderIds, request, step, workOrder]);
+
+  useEffect(() => {
+    if (!workOrder || !['completed', 'partially_closed'].includes(workOrder.status)) {
+      setDeliveryStatus(null);
+      return;
+    }
+    loadDeliveryStatus(workOrder.id);
+    // Sólo re-consulta cuando cambia la OT abierta o su estado técnico; las
+    // mutaciones de entrega (registrar/anular/ejecutar parcial) refrescan
+    // explícitamente en su propio handler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workOrder?.id, workOrder?.status]);
 
   const refresh = useCallback(async (reset = true) => {
     if (reset) setLoading(true);
@@ -369,6 +406,7 @@ export default function WorkOrdersScreen() {
     canOverrideReceptionDate,
     canRegisterLabDelivery,
     canVoidLabDelivery,
+    canRequestPartialDelivery,
   } = capabilities;
   const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
@@ -394,6 +432,8 @@ export default function WorkOrdersScreen() {
     setSignatureFlowState(null);
     setSignatureDrawing(false);
     setClosureScope('group');
+    setDeliveryPanel('closed');
+    setDeliveryHistoryOpen(false);
     setOpen(true);
   }
 
@@ -524,12 +564,9 @@ export default function WorkOrdersScreen() {
     setBusy(true);
     try {
       if (ticketDialogMode === 'void_delivery') {
-        await request(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/void`, {
-          method: 'POST', body: JSON.stringify({ reason: ticketReason.trim() }),
-        });
-        const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
-        setWorkOrder(detail);
-        Alert.alert('Acuse anulado', 'La entrega permanece en el historial y puede registrarse una nueva entrega.');
+        if (!voidingDelivery) return;
+        await voidDelivery(voidingDelivery.id, ticketReason.trim());
+        setVoidingDelivery(null);
       } else if (ticketDialogMode === 'cancel') {
         const detail = await request<LabWorkOrder>(
           `/mobile/v1/technician/lab-work-orders/${workOrder.id}/cancel`,
@@ -574,6 +611,8 @@ export default function WorkOrdersScreen() {
         technicianName: user?.full_name ?? '',
       }));
       if (!sameSignatureCohort) setSignatureDrawing(false);
+      setDeliveryPanel('closed');
+      setDeliveryHistoryOpen(false);
       setWorkOrder(detail);
       setGeneral({
         lab_client_id: detail.lab_client_id,
@@ -651,39 +690,104 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  async function completeDelivery(payload: { recipient_name: string; recipient_signature_data_url: string; notes: string | null }) {
+  async function completeDelivery(payload: LabDeliveryCreatePayload) {
     if (!workOrder) return;
     setBusy(true);
     try {
-      await request<LabWorkOrderDelivery>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery`, {
+      await request<LabDelivery>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery`, {
         method: 'POST', body: JSON.stringify(payload),
       });
-      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
-      setWorkOrder(detail);
-      setDeliveryOpen(false);
+      await loadDeliveryStatus(workOrder.id);
+      setDeliveryPanel('closed');
       setSignatureDrawing(false);
-      publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+      publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: workOrder.id, work_order_id: workOrder.id });
       await refresh(true);
-      Alert.alert('Entrega completada', 'Se registró la salida y se generó el acuse de entrega.');
+      Alert.alert('Entrega registrada', 'Se registró la exhibición y se generó el acuse de entrega.');
     } catch (error) {
       Alert.alert('No fue posible registrar la entrega', error instanceof Error ? error.message : 'Intenta nuevamente');
       throw error;
     } finally { setBusy(false); }
   }
 
-  async function downloadDeliveryPdf(action: 'print' | 'share') {
+  async function executePartialDelivery(ticketId: number, payload: LabDeliveryCreatePayload) {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      await request<LabDelivery>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/partial/${ticketId}`, {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      await loadDeliveryStatus(workOrder.id);
+      setDeliveryPanel('closed');
+      setSignatureDrawing(false);
+      publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: workOrder.id, work_order_id: workOrder.id });
+      await refresh(true);
+      Alert.alert('Entrega parcial registrada', 'Se registró la exhibición autorizada y se generó el acuse.');
+    } catch (error) {
+      Alert.alert('No fue posible registrar la entrega parcial', error instanceof Error ? error.message : 'Intenta nuevamente');
+      throw error;
+    } finally { setBusy(false); }
+  }
+
+  async function requestPartialDeliveryTicket(payload: { requested_equipment_ids: number[]; reason: string; description: string }) {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      await request('/mobile/v1/technician/tickets/partial-delivery', {
+        method: 'POST',
+        body: JSON.stringify({ work_order_id: workOrder.id, ...payload }),
+      });
+      await loadDeliveryStatus(workOrder.id);
+      setDeliveryPanel('closed');
+      Alert.alert('Entrega parcial pendiente de autorización', 'Admin debe aprobarla antes de poder ejecutarla.');
+    } catch (error) {
+      Alert.alert('No fue posible solicitar la entrega parcial', error instanceof Error ? error.message : 'Intenta nuevamente');
+      throw error;
+    } finally { setBusy(false); }
+  }
+
+  async function voidDelivery(deliveryId: number, reason: string) {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      await request(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/${deliveryId}/void`, {
+        method: 'POST', body: JSON.stringify({ reason }),
+      });
+      await loadDeliveryStatus(workOrder.id);
+      const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
+      setWorkOrder(detail);
+      Alert.alert('Acuse anulado', 'La entrega permanece en el historial y los equipos vuelven a pendientes.');
+    } finally { setBusy(false); }
+  }
+
+  async function downloadDeliveryPdf(deliveryId: number, action: 'print' | 'share') {
     if (!workOrder) return;
     setBusy(true);
     try {
       const result = await FileSystem.downloadAsync(
-        apiUrl(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/pdf`),
-        `${FileSystem.cacheDirectory}acuse-entrega-OT-${workOrder.folio}.pdf`,
+        apiUrl(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/${deliveryId}/pdf`),
+        `${FileSystem.cacheDirectory}acuse-entrega-OT-${workOrder.folio}-exhibicion-${deliveryId}.pdf`,
         { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } },
       );
       if (action === 'print') await Print.printAsync({ uri: result.uri });
       else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf' });
     } catch (error) {
       Alert.alert('No fue posible abrir el acuse', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
+  async function downloadFinalReceiptPdf(action: 'print' | 'share') {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      const result = await FileSystem.downloadAsync(
+        apiUrl(`/mobile/v1/technician/lab-work-orders/${workOrder.id}/delivery/final-receipt/pdf`),
+        `${FileSystem.cacheDirectory}acuse-final-entrega-OT-${workOrder.folio}.pdf`,
+        { headers: { Authorization: `Bearer ${session?.access_token ?? ''}` } },
+      );
+      if (action === 'print') await Print.printAsync({ uri: result.uri });
+      else if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri, { UTI: 'com.adobe.pdf', mimeType: 'application/pdf' });
+    } catch (error) {
+      Alert.alert('No fue posible abrir el acuse final', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally { setBusy(false); }
   }
 
@@ -1268,7 +1372,7 @@ export default function WorkOrdersScreen() {
                       </Pressable>
                     ))}
                   </ScrollView>
-                  <View style={styles.summary}><Text style={styles.summaryClient}>{workOrder.client_name}</Text><Text style={styles.summaryLine}>Recepción: {workOrder.reception_date}</Text><Text style={styles.summaryLine}>{workOrder.delivery ? `Entrega: ${workOrder.departure_date}` : workOrder.departure_date ? `Fecha de salida histórica: ${workOrder.departure_date} · Sin acuse digital` : 'Pendiente de entrega'}</Text><Text style={styles.summaryLine}>{workOrder.address}</Text></View>
+                  <View style={styles.summary}><Text style={styles.summaryClient}>{workOrder.client_name}</Text><Text style={styles.summaryLine}>Recepción: {workOrder.reception_date}</Text><Text style={styles.summaryLine}>{workOrder.departure_date ? `Salida: ${workOrder.departure_date}` : deliveryStatus ? 'Pendiente de entrega' : ''}</Text><Text style={styles.summaryLine}>{workOrder.address}</Text></View>
                 </>
               )}
 
@@ -1461,17 +1565,94 @@ export default function WorkOrdersScreen() {
                 <>
                   <Text style={styles.sectionTitle}>OT {workOrder.folio} · {statusPresentation(workOrder.status).label}</Text>
                   <Text style={styles.notice}>Selecciona arriba cada folio para abrir, imprimir o compartir su PDF individual.</Text>
-                  {workOrder.status === 'completed' && deliveryOpen && (
-                    <LabDeliveryFlow busy={busy} onCancel={() => { setDeliveryOpen(false); setSignatureDrawing(false); }} onDrawingChange={setSignatureDrawing} onSubmit={completeDelivery} workOrder={workOrder} />
+                  {deliveryPanel === 'full' && deliveryStatus && (
+                    <LabDeliveryFlow
+                      busy={busy}
+                      clientName={workOrder.client_name}
+                      defaultRecipientName={workOrder.contact_name ?? ''}
+                      equipment={deliveryStatus.pending_equipment}
+                      isPartial={false}
+                      onCancel={() => { setDeliveryPanel('closed'); setSignatureDrawing(false); }}
+                      onDrawingChange={setSignatureDrawing}
+                      onSubmit={completeDelivery}
+                    />
                   )}
-                  {workOrder.status === 'completed' && !deliveryOpen && !workOrder.delivery && !workOrder.departure_date && (
-                    <View><Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text><Text style={styles.notice}>Pendiente de entrega</Text>{canRegisterLabDelivery && <PrimaryButton label="Registrar entrega" onPress={() => setDeliveryOpen(true)} />}</View>
+                  {deliveryPanel === 'partial_execute' && deliveryStatus && partialTicket && (
+                    <LabDeliveryFlow
+                      busy={busy}
+                      clientName={workOrder.client_name}
+                      defaultRecipientName={workOrder.contact_name ?? ''}
+                      equipment={deliveryStatus.pending_equipment.filter((item) => (
+                        (partialTicket.resolution_snapshot?.requested_equipment_ids as number[] | undefined)?.includes(item.equipment_id)
+                      ))}
+                      isPartial
+                      onCancel={() => { setDeliveryPanel('closed'); setSignatureDrawing(false); }}
+                      onDrawingChange={setSignatureDrawing}
+                      onSubmit={(payload) => executePartialDelivery(partialTicket.id, payload)}
+                    />
                   )}
-                  {workOrder.status === 'completed' && !deliveryOpen && workOrder.delivery && (
-                    <View><Text style={styles.sectionEyebrow}>ENTREGA COMPLETADA</Text><Text style={styles.notice}>{new Date(workOrder.delivery.delivered_at).toLocaleString('es-MX')} · Recibió: {workOrder.delivery.recipient_name}</Text><SecondaryButton label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf('print')} /><SecondaryButton label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf('share')} />{canVoidLabDelivery && <AdministrativeButton label="Anular acuse de entrega" onPress={() => { setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />}</View>
+                  {deliveryPanel === 'partial_request' && deliveryStatus && (
+                    <LabPartialDeliveryRequest
+                      busy={busy}
+                      onCancel={() => setDeliveryPanel('closed')}
+                      onSubmit={requestPartialDeliveryTicket}
+                      pendingEquipment={deliveryStatus.pending_equipment}
+                    />
                   )}
-                  {workOrder.status === 'completed' && !deliveryOpen && !workOrder.delivery && !!workOrder.departure_date && <AlertBanner tone="info">Fecha de salida histórica: {workOrder.departure_date}. Sin acuse digital.</AlertBanner>}
-                  {workOrder.status !== 'cancelled' && !deliveryOpen && <SecondaryButton label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
+                  {deliveryPanel === 'closed' && deliveryStatus && (
+                    <View>
+                      <Text style={styles.sectionEyebrow}>ENTREGA DE EQUIPOS</Text>
+                      {deliveryStatus.group_complete ? (
+                        <>
+                          <Text style={styles.notice}>Entrega completada · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
+                          <SecondaryButton label="Ver / imprimir acuse final" onPress={() => downloadFinalReceiptPdf('print')} />
+                          <SecondaryButton label="Compartir / descargar acuse final" onPress={() => downloadFinalReceiptPdf('share')} />
+                        </>
+                      ) : deliveryStatus.exhibitions.length === 0 ? (
+                        <>
+                          <Text style={styles.notice}>Pendiente de entrega</Text>
+                          {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
+                          {partialTicket?.status === 'approved' ? (
+                            <PrimaryButton label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                          ) : (
+                            canRegisterLabDelivery && <PrimaryButton label="Registrar entrega" onPress={() => setDeliveryPanel('full')} />
+                          )}
+                          {!partialTicket && canRequestPartialDelivery && <AdministrativeButton label="Solicitar entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.notice}>{deliveryStatus.delivered_equipment} de {deliveryStatus.total_equipment} equipos entregados · {deliveryStatus.exhibitions.filter((item) => item.status === 'completed').length} exhibición(es)</Text>
+                          {partialTicket?.status === 'pending' && <AlertBanner tone="info">Entrega parcial pendiente de autorización.</AlertBanner>}
+                          {partialTicket?.status === 'approved' ? (
+                            <PrimaryButton label="Ejecutar entrega parcial autorizada" onPress={() => setDeliveryPanel('partial_execute')} />
+                          ) : (
+                            canRegisterLabDelivery && <PrimaryButton label="Completar entrega" onPress={() => setDeliveryPanel('full')} />
+                          )}
+                          {!partialTicket && canRequestPartialDelivery && <AdministrativeButton label="Solicitar otra entrega parcial" onPress={() => setDeliveryPanel('partial_request')} />}
+                        </>
+                      )}
+                      {!!deliveryStatus.exhibitions.length && (
+                        <SecondaryButton label={deliveryHistoryOpen ? 'Ocultar historial de entregas' : 'Ver historial de entregas'} onPress={() => setDeliveryHistoryOpen((current) => !current)} />
+                      )}
+                      {deliveryHistoryOpen && deliveryStatus.exhibitions.map((exhibition) => (
+                        <View key={exhibition.id} style={styles.deliveryHistoryRow}>
+                          <Text style={styles.deliveryHistoryTitle}>
+                            Exhibición {exhibition.exhibition_number}{exhibition.delivery_type === 'partial' ? ' (parcial)' : ''} · {exhibition.status === 'voided' ? 'Anulada' : 'Completada'}
+                          </Text>
+                          <Text style={styles.detail}>{new Date(exhibition.delivered_at).toLocaleString('es-MX')} · Recibió: {exhibition.recipient_name}</Text>
+                          <SecondaryButton label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
+                          <SecondaryButton label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
+                          {exhibition.status === 'completed' && canVoidLabDelivery && (
+                            <AdministrativeButton label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  {deliveryPanel === 'closed' && !deliveryStatus && !!workOrder.departure_date && (
+                    <AlertBanner tone="info">Fecha de salida histórica: {workOrder.departure_date}. Sin acuse digital.</AlertBanner>
+                  )}
+                  {workOrder.status !== 'cancelled' && deliveryPanel === 'closed' && <SecondaryButton label={`Ver / imprimir OT ${workOrder.folio}`} onPress={() => downloadPdf('print')} />}
                   {workOrder.status !== 'cancelled' && <SecondaryButton label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
                   {canDownloadLabPackages && <SecondaryButton label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
                   {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
@@ -1609,7 +1790,7 @@ export default function WorkOrdersScreen() {
                     <SecondaryButton
                       disabled={busy}
                       label="Cancelar"
-                      onPress={() => setTicketOpen(false)}
+                      onPress={() => { setTicketOpen(false); setVoidingDelivery(null); }}
                     />
 
                     {ticketDialogMode === 'cancel' ? (
@@ -2258,6 +2439,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     padding: 14,
+  },
+
+  detail: {
+    color: '#52636f',
+    fontSize: 13,
+    marginBottom: 8,
+  },
+  deliveryHistoryRow: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    marginTop: 10,
+    padding: 14,
+  },
+  deliveryHistoryTitle: {
+    color: '#142b3a',
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 4,
   },
 
   overlay: {
