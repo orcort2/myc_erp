@@ -195,6 +195,10 @@ class OrganizationPrintProfileRead(BaseModel):
     key: Literal["myc", "capymet"]
     display_name: str
     legal_name: str | None = None
+    inherit_institutional_contact: bool = False
+    address: str = ""
+    phone: str = ""
+    email: str = ""
     logo_key: Literal["institutional", "none"] = "institutional"
     header_variant: Literal["institutional", "text"] = "institutional"
     footer_variant: Literal["document_control", "minimal"] = "document_control"

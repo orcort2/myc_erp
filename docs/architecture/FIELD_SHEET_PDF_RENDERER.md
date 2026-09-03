@@ -52,8 +52,10 @@ revisión vigente.
 `break_inside` y `page_break_before`. Cada celda de header admite `label`,
 `column_key` opcional, `colspan`, `rowspan`, `alignment`, `width` y `metadata`.
 El backend valida spans positivos, claves reales o `__row_number__`, cobertura
-completa de la matriz y ausencia de overlap. Si `header_rows` no existe o está
-vacío, el renderer conserva el header plano histórico.
+completa de la matriz, ausencia de overlap y que cada `column_key` esté ubicado
+en su posición física lógica (`__row_number__` en la columna 0 y las columnas
+de resultados en el orden declarado). Si `header_rows` no existe o está vacío,
+el renderer conserva el header plano histórico.
 
 La geometría vive exclusivamente en el snapshot declarativo. `FieldSheetResult`
 continúa persistiendo sólo `id`, `section_key`, `row_number` y `row_data`;
@@ -69,13 +71,23 @@ unidades allowlisted.
 
 La identidad visual se resuelve en Python mediante
 `ORGANIZATION_PRINT_PROFILES`. Existen perfiles `myc` y `capymet`; MYC reutiliza
-el logo institucional vigente y CAPYMET usa por ahora encabezado textual sin
-inventar un asset. El mismo `field_sheet_engine_pdf.html` consume ambos perfiles
-y todas las geometrías, sin branches por template, magnitud o instrumento.
+el logo y contacto institucional vigentes. CAPYMET usa nombre legal/visible
+CAPYMET, no hereda dirección, teléfono, correo ni logo de MYC y mantiene esos
+datos vacíos hasta contar con configuración real; por ahora usa encabezado
+textual sin inventar un asset. El mismo `field_sheet_engine_pdf.html` consume
+ambos perfiles y todas las geometrías, sin branches por template, magnitud o
+instrumento.
+
+Mobile calcula una matriz lógica de posiciones para `header_rows` y renderiza
+cada celda con `row`, `column`, `colspan` y `rowspan` sobre un contenedor de
+altura exacta. Un header de dos filas con celdas `rowspan=2` ocupa dos filas
+reales, sin filas espaciadoras; el `ScrollView` horizontal se conserva.
 
 Se conserva `CANONICAL_PDF_RENDERER_VERSION = 1`: los defaults nuevos equivalen
 al comportamiento anterior (Letter portrait, márgenes 12/10/14/10, header,
-título, footer, grid de una columna y headers planos). La interpretación
-avanzada sólo se activa cuando el snapshot declara sus propiedades, por lo que
-no cambia el significado material de snapshots v1 históricos ni sus PDFs ya
-congelados.
+título, footer y grid documental de una columna; los bloques conservan grid de
+dos columnas, borde/título visibles y `break-inside: avoid`; `break-auto`
+permite la excepción declarada). Los headers planos también se preservan. La
+interpretación avanzada sólo se activa cuando el snapshot declara sus
+propiedades, por lo que no cambia el significado material de snapshots v1
+históricos ni sus PDFs ya congelados.

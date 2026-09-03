@@ -42,10 +42,12 @@ test('no reintroduce desplazamiento manual incompatible con React Native/Fabric'
 });
 
 test('interpreta el DSL genérico de headers agrupados, widths y row labels', () => {
-  assert.match(source, /buildGroupedHeaderRows\(section\)/);
+  assert.match(source, /buildGroupedHeaderLayout\(\s*section,\s*logicalColumnWidths/);
   assert.match(source, /declaredWidth\(\s*column\.width/);
-  assert.match(source, /segment\.cell\.rowspan/);
-  assert.match(source, /segment\.span/);
+  assert.match(source, /positionedCell\.height/);
+  assert.match(source, /positionedCell\.left/);
+  assert.match(source, /positionedCell\.top/);
+  assert.doesNotMatch(source, /minHeight:\s*32\s*\*\s*\(segment\.cell\.rowspan/);
   assert.match(source, /rowLabel\(section, row\.row_number\)/);
   assert.doesNotMatch(source, /template_key\s*===/);
   assert.doesNotMatch(source, /organization_key\s*===/);

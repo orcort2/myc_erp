@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -154,8 +155,8 @@ def _fake_sheet(definition: dict):
     )
 
 
-def _render(definition: dict) -> str:
-    institution = {
+def _render(definition: dict, institution: dict | None = None) -> str:
+    institution = institution or {
         "legal_name": "METROLOGÍA Y CALIBRACIÓN",
         "address": "Domicilio institucional",
         "phone": "3333333333",
@@ -174,6 +175,31 @@ def test_flat_header_legacy_keeps_empty_header_rows_and_default_layout():
         "orientation": "portrait",
         "margins": {"top": 12, "right": 10, "bottom": 14, "left": 10},
     }
+    assert definition["print_layout"]["document"] == {
+        "title_visible": True,
+        "header_visible": True,
+        "footer_visible": True,
+        "grid_columns": 1,
+    }
+    assert definition["blocks"][0]["print_layout"] == {
+        "grid_columns": 2,
+        "column_span": 1,
+        "order": None,
+        "title_visible": True,
+        "compact": False,
+        "border": True,
+        "spacing_before": 1.4,
+        "spacing_after": 0,
+        "break_inside": "avoid",
+        "page_break_before": False,
+        "label_position": "top",
+        "hide_empty_fields": False,
+        "metadata": {},
+    }
+    renderer_source = (
+        Path(__file__).parents[1] / "app" / "templates" / "field_sheet_engine_pdf.html"
+    ).read_text(encoding="utf-8")
+    assert ".block { break-inside: avoid;" in renderer_source
     html = _render(definition)
     assert '<th class="number"' in html
 
@@ -212,6 +238,31 @@ def test_invalid_header_spans_and_column_keys_raise_422(block):
     assert exc_info.value.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "cells",
+    [
+        [
+            {"label": "Mal", "column_key": "pattern_1"},
+            {"label": "IBC"},
+            {"label": "1"},
+            {"label": "2"},
+            {"label": "3"},
+        ],
+        [
+            {"label": "No."},
+            {"label": "IBC"},
+            {"label": "Mal", "column_key": "__row_number__"},
+            {"label": "2"},
+            {"label": "3"},
+        ],
+    ],
+)
+def test_header_column_key_must_match_its_logical_position(cells):
+    with pytest.raises(HTTPException) as exc_info:
+        _temperature_definition(block={"header_rows": [{"cells": cells}]})
+    assert exc_info.value.status_code == 422
+
+
 def test_row_labels_and_multi_section_geometry_generate_complex_pdf():
     definition = _complex_definition()
     sections = definition["result_sections"]
@@ -234,6 +285,26 @@ def test_organization_profiles_select_myc_and_capymet_without_template_branching
     assert capymet["organization_profile"]["key"] == "capymet"
     assert capymet["organization_profile"]["logo_key"] == "none"
     assert "CAPYMET" in _render(capymet)
+
+
+def test_capymet_profile_never_inherits_myc_contact_or_logo():
+    capymet = _complex_definition()
+    html = _render(
+        capymet,
+        {
+            "legal_name": "LEGAL MYC NO DEBE APARECER",
+            "address": "DOMICILIO MYC NO DEBE APARECER",
+            "phone": "3312345678",
+            "email": "myc-no-debe-aparecer@example.com",
+            "logo_path": "frontend/src/assets/myc-logo.png",
+        },
+    )
+    assert "CAPYMET" in html
+    assert "LEGAL MYC NO DEBE APARECER" not in html
+    assert "DOMICILIO MYC NO DEBE APARECER" not in html
+    assert "3312345678" not in html
+    assert "myc-no-debe-aparecer@example.com" not in html
+    assert '<img class="logo"' not in html
 
 
 @pytest.mark.parametrize(

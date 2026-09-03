@@ -25,7 +25,7 @@
     .control span + span { border-top: .25mm solid #344054; }
     h1 { color: {{ organization_profile.primary_color }}; font-size: 10pt; margin: 1mm 0 2mm; text-align: center; text-transform: uppercase; }
     .document-grid { display: grid; gap: 0 2mm; grid-template-columns: repeat({{ print_layout.document.grid_columns }}, minmax(0, 1fr)); }
-    .block { margin-top: 1.4mm; }
+    .block { break-inside: avoid; margin-top: 1.4mm; }
     .block-title, .section-title { background: {{ organization_profile.header_fill }}; border: .25mm solid #344054; font-weight: 700; padding: 1mm 1.5mm; text-align: center; }
     .without-border, .without-border .field-cell, .without-border .block-title, .without-border .section-title, .without-border .results th, .without-border .results td { border: 0; }
     .compact .field-cell { min-height: 4.5mm; padding: .4mm .8mm; }

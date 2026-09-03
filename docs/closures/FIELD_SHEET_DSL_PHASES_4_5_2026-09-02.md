@@ -30,6 +30,19 @@ Pendiente exclusivo para la fase siguiente: cargar definiciones oficiales del
 catálogo y magnitudes aprobadas, incorporar el asset CAPYMET cuando exista y
 ejecutar validación visual/física formato por formato.
 
+## Microcierre auditado
+
+- CAPYMET queda aislado del snapshot institucional MYC: nombre legal/visible
+  CAPYMET, sin logo y con dirección, teléfono y correo vacíos hasta recibir
+  configuración real.
+- La geometría Mobile usa posiciones calculadas y `rowspan` real; el fixture de
+  temperatura ocupa exactamente dos filas y conserva scroll horizontal.
+- Un `column_key` válido pero colocado fuera de su columna lógica se rechaza
+  con 422.
+- El renderer v1 conserva `.block { break-inside: avoid; }` y la excepción
+  `.break-auto`; los defaults completos de página, documento y bloque quedaron
+  cubiertos por regresión.
+
 ## Validación
 
 - Backend focal ampliado: `101 passed`.
@@ -38,3 +51,12 @@ ejecutar validación visual/física formato por formato.
 - Mobile focal: `9 passed`; Mobile completo: `313 passed, 1 failed`, por la
   prueba preexistente de identidad `linked_folio` en `request-inbox.test.ts`.
 - TypeScript: correcto. Expo lint: 0 errores, 8 warnings preexistentes.
+
+Validación focal del microcierre:
+
+- Backend (`test_field_sheet_layout_dsl.py`,
+  `test_field_sheet_template_engine.py`, `test_lab_field_sheets_capture.py`):
+  `88 passed`, 12 warnings.
+- Mobile (`field-sheet-result-layout.test.ts` y
+  `FieldSheetResultsWorkspace.wiring.test.ts`): `9 passed`, 0 fallas.
+- TypeScript: correcto, exit code 0.

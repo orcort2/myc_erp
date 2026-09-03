@@ -20,6 +20,10 @@ ORGANIZATION_PRINT_PROFILES: dict[str, dict[str, Any]] = {
         "key": "myc",
         "display_name": "MYC",
         "legal_name": None,
+        "inherit_institutional_contact": True,
+        "address": "",
+        "phone": "",
+        "email": "",
         "logo_key": "institutional",
         "header_variant": "institutional",
         "footer_variant": "document_control",
@@ -33,6 +37,10 @@ ORGANIZATION_PRINT_PROFILES: dict[str, dict[str, Any]] = {
         "key": "capymet",
         "display_name": "CAPYMET",
         "legal_name": "CAPYMET",
+        "inherit_institutional_contact": False,
+        "address": "",
+        "phone": "",
+        "email": "",
         "logo_key": "none",
         "header_variant": "text",
         "footer_variant": "minimal",
@@ -62,6 +70,10 @@ def _validate_header_geometry(section: dict) -> None:
     row_count = len(header_rows)
     occupied = [[False] * total_columns for _ in range(row_count)]
     valid_keys = {ROW_NUMBER_COLUMN_KEY, *(column["key"] for column in section.get("columns") or [])}
+    column_positions = {
+        ROW_NUMBER_COLUMN_KEY: 0,
+        **{column["key"]: index for index, column in enumerate(section.get("columns") or [], start=1)},
+    }
 
     for row_index, header_row in enumerate(header_rows):
         cursor = 0
@@ -77,6 +89,10 @@ def _validate_header_geometry(section: dict) -> None:
                 )
             if column_key is not None and colspan != 1:
                 raise _unprocessable("Una celda enlazada a column_key no puede abarcar varias columnas")
+            if column_key is not None and column_positions[column_key] != cursor:
+                raise _unprocessable(
+                    f"header_rows de {section['key']} ubica {column_key} sobre una columna distinta"
+                )
             if cursor + colspan > total_columns or row_index + rowspan > row_count:
                 raise _unprocessable(f"header_rows de {section['key']} excede la geometría de la tabla")
             for target_row in range(row_index, row_index + rowspan):

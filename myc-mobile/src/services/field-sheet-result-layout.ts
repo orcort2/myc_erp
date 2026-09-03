@@ -3,63 +3,90 @@ import type {
   FieldSheetResultSection,
 } from '@/src/types/lab-work-order';
 
-export type HeaderSegment =
-  | { kind: 'cell'; cell: FieldSheetResultHeaderCell; span: number }
-  | { kind: 'spacer'; span: number };
+export type HeaderCellLayout = {
+  cell: FieldSheetResultHeaderCell;
+  row: number;
+  column: number;
+  colspan: number;
+  rowspan: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+export type GroupedHeaderLayout = {
+  columnCount: number;
+  rowCount: number;
+  rowHeight: number;
+  totalWidth: number;
+  totalHeight: number;
+  cells: HeaderCellLayout[];
+};
 
 function safeSpan(value: number | undefined): number {
   return Math.max(1, Math.trunc(value ?? 1));
 }
 
-export function buildGroupedHeaderRows(
+export function buildGroupedHeaderLayout(
   section: FieldSheetResultSection,
-): HeaderSegment[][] {
+  columnWidths: number[],
+  rowHeight = 32,
+): GroupedHeaderLayout | null {
   const rows = section.header_rows ?? [];
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return null;
 
   const columnCount = section.columns.length + 1;
-  const occupiedUntil = Array<number>(columnCount).fill(0);
+  const occupied = Array.from({ length: rows.length }, () =>
+    Array<boolean>(columnCount).fill(false),
+  );
+  const cells: HeaderCellLayout[] = [];
 
-  return rows.map((row, rowIndex) => {
-    const segments: HeaderSegment[] = [];
+  rows.forEach((row, rowIndex) => {
     let columnIndex = 0;
 
     for (const cell of row.cells) {
-      let skipped = 0;
       while (
         columnIndex < columnCount &&
-        occupiedUntil[columnIndex] > rowIndex
+        occupied[rowIndex][columnIndex]
       ) {
-        skipped += 1;
         columnIndex += 1;
-      }
-      if (skipped > 0) {
-        segments.push({ kind: 'spacer', span: skipped });
       }
 
       const colspan = safeSpan(cell.colspan);
       const rowspan = safeSpan(cell.rowspan);
-      segments.push({ kind: 'cell', cell, span: colspan });
-      for (
-        let index = columnIndex;
-        index < Math.min(columnIndex + colspan, columnCount);
-        index += 1
-      ) {
-        occupiedUntil[index] = rowIndex + rowspan;
+      cells.push({
+        cell,
+        row: rowIndex,
+        column: columnIndex,
+        colspan,
+        rowspan,
+        left: columnWidths
+          .slice(0, columnIndex)
+          .reduce((total, width) => total + width, 0),
+        top: rowIndex * rowHeight,
+        width: columnWidths
+          .slice(columnIndex, columnIndex + colspan)
+          .reduce((total, width) => total + width, 0),
+        height: rowspan * rowHeight,
+      });
+      for (let targetRow = rowIndex; targetRow < rowIndex + rowspan; targetRow += 1) {
+        for (let targetColumn = columnIndex; targetColumn < columnIndex + colspan; targetColumn += 1) {
+          if (occupied[targetRow]) occupied[targetRow][targetColumn] = true;
+        }
       }
       columnIndex += colspan;
     }
-
-    let trailing = 0;
-    while (columnIndex < columnCount) {
-      trailing += 1;
-      columnIndex += 1;
-    }
-    if (trailing > 0) {
-      segments.push({ kind: 'spacer', span: trailing });
-    }
-    return segments;
   });
+
+  return {
+    columnCount,
+    rowCount: rows.length,
+    rowHeight,
+    totalWidth: columnWidths.reduce((total, width) => total + width, 0),
+    totalHeight: rows.length * rowHeight,
+    cells,
+  };
 }
 
 export function rowLabel(

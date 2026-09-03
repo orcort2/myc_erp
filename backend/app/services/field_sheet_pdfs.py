@@ -483,7 +483,16 @@ def _render_html(
     )
     print_layout = normalize_print_layout(template_definition.get("print_layout"))
     organization_profile = resolve_organization_print_profile(template_definition)
-    display_institution = dict(institution)
+    if organization_profile["inherit_institutional_contact"]:
+        display_institution = dict(institution)
+    else:
+        display_institution = {
+            "legal_name": organization_profile.get("legal_name")
+            or organization_profile["display_name"],
+            "address": organization_profile["address"],
+            "phone": organization_profile["phone"],
+            "email": organization_profile["email"],
+        }
     if organization_profile.get("legal_name"):
         display_institution["legal_name"] = organization_profile["legal_name"]
     if organization_profile.get("logo_key") == "none":

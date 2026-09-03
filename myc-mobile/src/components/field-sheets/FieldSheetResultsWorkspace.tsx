@@ -31,7 +31,7 @@ import {
 import { keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
 import { computeTableLayout } from '@/src/services/field-sheet-table-layout';
 import {
-  buildGroupedHeaderRows,
+  buildGroupedHeaderLayout,
   declaredWidth,
   rowLabel,
 } from '@/src/services/field-sheet-result-layout';
@@ -286,9 +286,6 @@ export function FieldSheetResultsWorkspace({
                     columnCount,
                   );
 
-                const groupedHeaderRows =
-                  buildGroupedHeaderRows(section);
-
                 const rowNumberWidth = declaredWidth(
                   section.layout?.row_number_width,
                   availableTableWidth,
@@ -302,6 +299,10 @@ export function FieldSheetResultsWorkspace({
                   ),
                 );
                 const logicalColumnWidths = [rowNumberWidth, ...columnWidths];
+                const groupedHeaderLayout = buildGroupedHeaderLayout(
+                  section,
+                  logicalColumnWidths,
+                );
                 const tableWidth = logicalColumnWidths.reduce(
                   (total, value) => total + value,
                   0,
@@ -349,50 +350,37 @@ export function FieldSheetResultsWorkspace({
                           width: tableWidth,
                         }}
                       >
-                        {groupedHeaderRows.length > 0 ? (
-                          groupedHeaderRows.map(
-                            (headerRow, headerRowIndex) => {
-                              let logicalColumn = 0;
-                              return (
-                                <View
-                                  key={`header-${headerRowIndex}`}
-                                  style={styles.tableHeaderRow}
-                                >
-                                  {headerRow.map((segment, segmentIndex) => {
-                                    const segmentWidth = logicalColumnWidths
-                                      .slice(logicalColumn, logicalColumn + segment.span)
-                                      .reduce((total, value) => total + value, 0);
-                                    logicalColumn += segment.span;
-                                    if (segment.kind === 'spacer') {
-                                      return (
-                                        <View
-                                          key={`spacer-${segmentIndex}`}
-                                          style={{ width: segmentWidth }}
-                                        />
-                                      );
-                                    }
-                                    return (
-                                      <Text
-                                        key={`${segment.cell.column_key ?? segment.cell.label}-${segmentIndex}`}
-                                        numberOfLines={3}
-                                        style={[
-                                          styles.tableHeaderCell,
-                                          styles.groupedHeaderCell,
-                                          {
-                                            minHeight: 32 * (segment.cell.rowspan ?? 1),
-                                            textAlign: segment.cell.alignment ?? 'center',
-                                            width: segmentWidth,
-                                          },
-                                        ]}
-                                      >
-                                        {segment.cell.label}
-                                      </Text>
-                                    );
-                                  })}
-                                </View>
-                              );
-                            },
-                          )
+                        {groupedHeaderLayout ? (
+                          <View
+                            style={[
+                              styles.groupedHeader,
+                              {
+                                height: groupedHeaderLayout.totalHeight,
+                                width: groupedHeaderLayout.totalWidth,
+                              },
+                            ]}
+                          >
+                            {groupedHeaderLayout.cells.map((positionedCell) => (
+                              <Text
+                                key={`${positionedCell.row}-${positionedCell.column}-${positionedCell.cell.column_key ?? positionedCell.cell.label}`}
+                                numberOfLines={3}
+                                style={[
+                                  styles.tableHeaderCell,
+                                  styles.groupedHeaderCell,
+                                  {
+                                    height: positionedCell.height,
+                                    left: positionedCell.left,
+                                    position: 'absolute',
+                                    textAlign: positionedCell.cell.alignment ?? 'center',
+                                    top: positionedCell.top,
+                                    width: positionedCell.width,
+                                  },
+                                ]}
+                              >
+                                {positionedCell.cell.label}
+                              </Text>
+                            ))}
+                          </View>
                         ) : (
                         <View style={styles.tableHeaderRow}>
                           <Text
@@ -716,6 +704,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: spacing.xs,
     textAlignVertical: 'center',
+  },
+
+  groupedHeader: {
+    position: 'relative',
   },
 
   tableRow: {

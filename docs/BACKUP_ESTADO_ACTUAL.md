@@ -103,18 +103,24 @@ Resumen operativo:
 
 - `ResultSection` expone headers multinivel, spans, row labels, alineación,
   widths y controles de corte/repetición; la normalización valida una matriz
-  completa contra columnas reales y `__row_number__`.
+  completa contra columnas reales y `__row_number__`, incluyendo la posición
+  física lógica de cada `column_key`; una clave válida mal ubicada responde 422.
 - `print_layout` controla página, márgenes, visibilidad documental, grid,
   spans, orden, títulos, compacidad, bordes, espacios y page breaks mediante
   enums/números seguros. Campos admiten span y label `top|inline`.
 - Perfiles allowlisted `myc` y `capymet` alimentan el mismo renderer. MYC usa
-  identidad/logo institucional; CAPYMET usa fallback textual hasta recibir su
-  asset oficial, sin inventarlo.
+  identidad, contacto y logo institucional. CAPYMET usa nombre legal/visible
+  CAPYMET y no hereda dirección, teléfono, correo ni logo MYC; esos datos quedan
+  vacíos hasta recibir configuración real y no se inventa un asset.
 - `field_sheet_engine_pdf.html` continúa como renderer único versión 1. Los
-  defaults mantienen la salida histórica y snapshots sin DSL conservan header
-  plano; PDFs congelados no se reinterpretan ni regeneran.
-- Mobile consume el mismo contrato para headers agrupados, row labels, widths
-  y scroll horizontal, sin branches por template, magnitud u organización.
+  defaults mantienen Letter portrait, márgenes 12/10/14/10, título/header/footer
+  visibles, grid documental 1, grid de bloque 2, borde/título visibles y
+  `break-inside: avoid` con excepción `break-auto`; snapshots sin DSL conservan
+  header plano y PDFs congelados no se reinterpretan ni regeneran.
+- Mobile consume el mismo contrato mediante una matriz de posiciones calculadas
+  para `row`/`column`/`colspan`/`rowspan`; un header de dos filas ocupa exactamente
+  dos filas reales y conserva el scroll horizontal, sin branches por template,
+  magnitud u organización.
 - No se cambió `FieldSheetResult`, no se creó tabla/migración ni se modificó la
   base local; no corresponde regenerar `backup_erp_myc_antes_prueba.sql`.
 - Pendiente exclusivo de la fase siguiente: catálogo oficial completo,
@@ -144,6 +150,9 @@ Resumen operativo:
 - Fixtures de aceptación temporales Temperatura-like y multisección compleja
   validan HTML con spans y generación real `%PDF`; no se registraron como
   templates oficiales.
+- Microcierre focal: backend `88 passed`, 12 warnings; Mobile `9 passed`, 0
+  fallas; `npx tsc --noEmit` correcto (exit code 0). Cubrió aislamiento CAPYMET,
+  posición lógica de `column_key`, rowspan Mobile real y defaults completos v1.
 
 ### Navegación de reapertura con firma preservada — 2026-09-02
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  buildGroupedHeaderRows,
+  buildGroupedHeaderLayout,
   declaredWidth,
   rowLabel,
 } from './field-sheet-result-layout';
@@ -37,17 +37,38 @@ const temperatureLike: FieldSheetResultSection = {
   row_labels: ['0 %', '10 %', '20 %', '30 %', '40 %', '50 %', '60 %', '70 %', '80 %', '100 %'],
 };
 
-test('interpreta header multinivel con colspan y espacios derivados de rowspan', () => {
-  const rows = buildGroupedHeaderRows(temperatureLike);
-  assert.equal(rows.length, 2);
-  assert.deepEqual(rows[0].map((segment) => segment.span), [1, 1, 3]);
-  assert.equal(rows[1][0].kind, 'spacer');
-  assert.equal(rows[1][0].span, 2);
-  assert.deepEqual(rows[1].slice(1).map((segment) => segment.span), [1, 1, 1]);
+test('calcula un rowspan real de dos filas sin agregar una tercera altura', () => {
+  const layout = buildGroupedHeaderLayout(temperatureLike, [32, 96, 96, 96, 96]);
+  assert.ok(layout);
+  assert.equal(layout.columnCount, 5);
+  assert.equal(layout.rowCount, 2);
+  assert.equal(layout.totalHeight, 64);
+
+  const [number, ibc, pattern, pattern1, pattern2, pattern3] = layout.cells;
+  assert.deepEqual(
+    { row: number.row, column: number.column, rowspan: number.rowspan, height: number.height },
+    { row: 0, column: 0, rowspan: 2, height: 64 },
+  );
+  assert.deepEqual(
+    { row: ibc.row, column: ibc.column, rowspan: ibc.rowspan, height: ibc.height },
+    { row: 0, column: 1, rowspan: 2, height: 64 },
+  );
+  assert.deepEqual(
+    { row: pattern.row, column: pattern.column, colspan: pattern.colspan, width: pattern.width },
+    { row: 0, column: 2, colspan: 3, width: 288 },
+  );
+  assert.deepEqual(
+    [pattern1, pattern2, pattern3].map((cell) => ({ row: cell.row, column: cell.column, top: cell.top })),
+    [
+      { row: 1, column: 2, top: 32 },
+      { row: 1, column: 3, top: 32 },
+      { row: 1, column: 4, top: 32 },
+    ],
+  );
 });
 
 test('mantiene fallback plano cuando no existe header_rows', () => {
-  assert.deepEqual(buildGroupedHeaderRows({ ...temperatureLike, header_rows: [] }), []);
+  assert.equal(buildGroupedHeaderLayout({ ...temperatureLike, header_rows: [] }, [32, 96, 96, 96, 96]), null);
 });
 
 test('resuelve row_labels sin reemplazar la identidad técnica row_number', () => {
