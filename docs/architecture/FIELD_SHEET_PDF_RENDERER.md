@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-09-01
+> Corte verificado: 2026-09-02
 >
 > Autoridad: contrato documental PDF de Hojas de Campo ERP y LAB
 
@@ -44,3 +44,38 @@ fila con su propio `pdf_renderer_key`/`pdf_renderer_version`/
 completarse. Una revisión retirada (`is_current=False`) conserva su PDF
 final exactamente como quedó -- nunca se regenera ni se reasigna a la
 revisión vigente.
+
+## DSL estructural vigente (Fases 4 y 5)
+
+`ResultSection` conserva `key`, `title`, `rows` y `columns`, y puede declarar
+`header_rows`, `row_labels`, `layout.row_number_width`, `repeat_header`,
+`break_inside` y `page_break_before`. Cada celda de header admite `label`,
+`column_key` opcional, `colspan`, `rowspan`, `alignment`, `width` y `metadata`.
+El backend valida spans positivos, claves reales o `__row_number__`, cobertura
+completa de la matriz y ausencia de overlap. Si `header_rows` no existe o está
+vacío, el renderer conserva el header plano histórico.
+
+La geometría vive exclusivamente en el snapshot declarativo. `FieldSheetResult`
+continúa persistiendo sólo `id`, `section_key`, `row_number` y `row_data`;
+`row_labels` cambia la presentación de la identidad técnica, no la identidad.
+
+`print_layout` tipa página (`letter|a4`, `portrait|landscape`, márgenes en mm),
+visibilidad documental y número de columnas del grid. Cada bloque tipa orden,
+span, grid de campos, título, modo compacto, borde, espacios, cortes de página,
+posición de label y ocultamiento de campos vacíos. Cada campo puede ajustar su
+span y su label `top|inline`. No admite HTML, CSS, Jinja, URLs, scripts, paths ni
+propiedades desconocidas; las únicas longitudes de tablas permitidas usan
+unidades allowlisted.
+
+La identidad visual se resuelve en Python mediante
+`ORGANIZATION_PRINT_PROFILES`. Existen perfiles `myc` y `capymet`; MYC reutiliza
+el logo institucional vigente y CAPYMET usa por ahora encabezado textual sin
+inventar un asset. El mismo `field_sheet_engine_pdf.html` consume ambos perfiles
+y todas las geometrías, sin branches por template, magnitud o instrumento.
+
+Se conserva `CANONICAL_PDF_RENDERER_VERSION = 1`: los defaults nuevos equivalen
+al comportamiento anterior (Letter portrait, márgenes 12/10/14/10, header,
+título, footer, grid de una columna y headers planos). La interpretación
+avanzada sólo se activa cuando el snapshot declara sus propiedades, por lo que
+no cambia el significado material de snapshots v1 históricos ni sus PDFs ya
+congelados.

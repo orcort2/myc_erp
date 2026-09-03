@@ -4,15 +4,17 @@
   <meta charset="utf-8">
   <style>
     @page {
-      size: Letter portrait;
+      size: {{ print_layout.page.size }} {{ print_layout.page.orientation }};
       background: #ffffff;
-      margin: 12mm 10mm 14mm;
-      @bottom-left { content: "{{ template_definition.document_code or template_definition.code }} | {{ template_definition.document_revision or template_definition.revision }}"; font: 7pt Arial; color: #475467; }
+      margin: {{ print_layout.page.margins.top }}mm {{ print_layout.page.margins.right }}mm {{ print_layout.page.margins.bottom }}mm {{ print_layout.page.margins.left }}mm;
+      {% if print_layout.document.footer_visible %}
+      {% if organization_profile.footer_show_document_control %}@bottom-left { content: "{{ template_definition.document_code or template_definition.code }} | {{ template_definition.document_revision or template_definition.revision }}"; font: 7pt Arial; color: #475467; }{% endif %}
       @bottom-right { content: "Página " counter(page) " de " counter(pages); font: 7pt Arial; color: #475467; }
+      {% endif %}
     }
     * { box-sizing: border-box; }
     html, body { background: #ffffff; }
-    body { color: #101828; font-family: Arial, Helvetica, sans-serif; font-size: 7.5pt; margin: 0; }
+    body { color: #101828; font-family: Arial, Helvetica, sans-serif; font-size: {{ organization_profile.base_font_size }}pt; margin: 0; }
     .header { align-items: center; display: grid; grid-template-columns: 32mm 1fr 25mm; gap: 3mm; margin-bottom: 2mm; }
     .logo { max-height: 16mm; max-width: 30mm; }
     .identity { line-height: 1.25; text-align: center; }
@@ -21,18 +23,24 @@
     .control { border: .25mm solid #344054; display: grid; font-weight: 700; grid-template-rows: 1fr 1fr; text-align: center; }
     .control span { padding: 1.2mm; }
     .control span + span { border-top: .25mm solid #344054; }
-    h1 { color: #175cd3; font-size: 10pt; margin: 1mm 0 2mm; text-align: center; text-transform: uppercase; }
-    .block { break-inside: avoid; margin-top: 1.4mm; }
-    .block-title, .section-title { background: #dbeafe; border: .25mm solid #344054; font-weight: 700; padding: 1mm 1.5mm; text-align: center; }
+    h1 { color: {{ organization_profile.primary_color }}; font-size: 10pt; margin: 1mm 0 2mm; text-align: center; text-transform: uppercase; }
+    .document-grid { display: grid; gap: 0 2mm; grid-template-columns: repeat({{ print_layout.document.grid_columns }}, minmax(0, 1fr)); }
+    .block { margin-top: 1.4mm; }
+    .block-title, .section-title { background: {{ organization_profile.header_fill }}; border: .25mm solid #344054; font-weight: 700; padding: 1mm 1.5mm; text-align: center; }
+    .without-border, .without-border .field-cell, .without-border .block-title, .without-border .section-title, .without-border .results th, .without-border .results td { border: 0; }
+    .compact .field-cell { min-height: 4.5mm; padding: .4mm .8mm; }
     .info-table td { border: .25mm solid #344054; height: 5.2mm; padding: .8mm 1.2mm; text-align: left; vertical-align: middle; width: 50%; }
     .info-table strong { font-size: 6.8pt; }
     table { border-collapse: collapse; table-layout: fixed; width: 100%; }
     thead { display: table-header-group; }
     tr { break-inside: avoid; }
     .results th, .results td { border: .25mm solid #344054; height: 4.6mm; padding: .5mm; text-align: center; vertical-align: middle; word-break: break-word; }
-    .results th { background: #dbeafe; font-weight: 700; }
+    .results th { background: {{ organization_profile.header_fill }}; font-weight: 700; }
     .results th.number, .results td.number { width: 8mm; }
     .result-section { break-inside: avoid; margin-top: 1.4mm; }
+    .page-break-before { break-before: page; }
+    .break-auto { break-inside: auto; }
+    .no-repeat-header thead { display: table-row-group; }
     .notes { border: .25mm solid #344054; min-height: 12mm; padding: 1.2mm; white-space: pre-wrap; }
     .signatures { display: grid; gap: 3mm; grid-template-columns: repeat({{ [signatures|length, 1]|max }}, minmax(0, 1fr)); margin-top: 2mm; }
     .signature { min-height: 12mm; text-align: center; }
@@ -43,10 +51,11 @@
     .field-grid { display: grid; gap: 0; }
     .field-cell { border: .25mm solid #344054; margin: -.25mm 0 0 -.25mm; min-height: 6mm; padding: .8mm 1.2mm; }
     .field-cell strong { display: block; font-size: 6.8pt; }
+    .field-cell.inline strong { display: inline; margin-right: 1mm; }
   </style>
 </head>
 <body>
-  <header class="header">
+  {% if print_layout.document.header_visible %}<header class="header {{ organization_profile.header_variant }}">
     <div>{% if logo_uri %}<img class="logo" src="{{ logo_uri }}" alt="MYC">{% endif %}</div>
     <div class="identity">
       <strong>{{ institution.legal_name }}</strong>
@@ -54,13 +63,16 @@
       {% if institution.phone or institution.email %}<span>{% if institution.phone %}{{ institution.phone }}{% endif %}{% if institution.phone and institution.email %} · {% endif %}{% if institution.email %}{{ institution.email }}{% endif %}</span>{% endif %}
     </div>
     <div class="control"><span>{{ template_definition.document_code or template_definition.code }}</span><span>{{ template_definition.document_revision or template_definition.revision }}</span></div>
-  </header>
-  <h1>{{ template_definition.name }}</h1>
+  </header>{% endif %}
+  {% if print_layout.document.title_visible %}<h1>{{ template_definition.name }}</h1>{% endif %}
 
+  <main class="document-grid">
   {% for block in print_blocks %}
+    {% set layout = block.print_layout %}
+    {% set block_classes = 'block' ~ (' compact' if layout.compact else '') ~ (' without-border' if not layout.border else '') ~ (' break-auto' if layout.break_inside == 'auto' else '') ~ (' page-break-before' if layout.page_break_before else '') %}
     {% if block.block_type == 'SignaturesBlock' %}
-      <section class="block" data-block="{{ block.key }}">
-        <div class="block-title">{{ block.title }}</div>
+      <section class="{{ block_classes }}" data-block="{{ block.key }}" style="grid-column: span {{ layout.column_span }}; margin-top: {{ layout.spacing_before }}mm; margin-bottom: {{ layout.spacing_after }}mm;">
+        {% if layout.title_visible %}<div class="block-title">{{ block.title }}</div>{% endif %}
         <div class="signatures">
           {% for signature in signatures %}
           <div class="signature">
@@ -72,23 +84,30 @@
       </section>
     {% else %}
       {% if block.fields %}
-      <section class="block" data-block="{{ block.key }}">
-        <div class="block-title">{{ block.title }}</div>
-        <div class="field-grid" style="grid-template-columns: repeat({{ block.grid_columns }}, minmax(0, 1fr));">
-          {% for field in block.fields %}<div class="field-cell"><strong>{{ field.label }}</strong>{{ field.value }}</div>{% endfor %}
+      <section class="{{ block_classes }}" data-block="{{ block.key }}" style="grid-column: span {{ layout.column_span }}; margin-top: {{ layout.spacing_before }}mm; margin-bottom: {{ layout.spacing_after }}mm;">
+        {% if layout.title_visible %}<div class="block-title">{{ block.title }}</div>{% endif %}
+        <div class="field-grid" style="grid-template-columns: repeat({{ layout.grid_columns }}, minmax(0, 1fr));">
+          {% for field in block.fields %}<div class="field-cell {{ field.label_position }}" style="grid-column: span {{ field.column_span }};"><strong>{{ field.label }}{% if field.label_position == 'inline' %}:{% endif %}</strong>{{ field.value }}</div>{% endfor %}
         </div>
       </section>
       {% endif %}
       {% for section in block.sections %}
-      <section class="result-section" data-block="{{ block.key }}" data-table-family="{{ block.table_family }}">
-        <div class="section-title">{{ section.title }}{% if section.unit_value %} · Unidades: {{ section.unit_value }}{% endif %}</div>
-        <table class="results">
-          <thead><tr><th class="number">No.</th>{% for column in section.columns %}<th style="width: {{ column.width or 'auto' }}">{{ column.label }}</th>{% endfor %}</tr></thead>
-          <tbody>{% for row in section.rows %}<tr><td class="number">{{ row.row_number }}</td>{% for column in section.columns %}<td>{{ row_value(row, column) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      <section class="{{ block_classes }} result-section {{ 'break-auto' if section.break_inside == 'auto' else '' }} {{ 'page-break-before' if section.page_break_before else '' }}" data-block="{{ block.key }}" data-table-family="{{ block.table_family }}" style="grid-column: span {{ layout.column_span }}; margin-top: {{ layout.spacing_before }}mm; margin-bottom: {{ layout.spacing_after }}mm;">
+        {% if layout.title_visible %}<div class="section-title">{{ section.title }}{% if section.unit_value %} · Unidades: {{ section.unit_value }}{% endif %}</div>{% endif %}
+        <table class="results {{ '' if section.repeat_header else 'no-repeat-header' }}">
+          <thead>
+          {% if section.header_rows %}
+            {% for header_row in section.header_rows %}<tr>{% for cell in header_row.cells %}<th colspan="{{ cell.colspan }}" rowspan="{{ cell.rowspan }}" style="text-align: {{ cell.alignment }};{% if cell.width %} width: {{ cell.width }};{% endif %}">{{ cell.label }}</th>{% endfor %}</tr>{% endfor %}
+          {% else %}
+            <tr><th class="number" style="width: {{ section.layout.row_number_width or '8mm' }}">No.</th>{% for column in section.columns %}<th style="width: {{ column.width or 'auto' }}; text-align: {{ column.alignment }};">{{ column.label }}</th>{% endfor %}</tr>
+          {% endif %}
+          </thead>
+          <tbody>{% for row in section.rows %}<tr><td class="number">{{ row_label(section, row) }}</td>{% for column in section.columns %}<td style="text-align: {{ column.alignment }};">{{ row_value(row, column) }}</td>{% endfor %}</tr>{% endfor %}</tbody>
         </table>
       </section>
       {% endfor %}
     {% endif %}
   {% endfor %}
+  </main>
 </body>
 </html>

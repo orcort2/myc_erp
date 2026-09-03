@@ -55,6 +55,10 @@ El ERP controla el expediente operativo de servicios metrológicos desde Cliente
   recursos ajenos o sin asignación. La app temporal LAB no consume estas rutas
   productivas en su listado, detalle, documentos ni eliminación.
 - Hojas de Campo, plantillas, snapshots, captura, PDF y paquetes de Captura.
+  El motor declarativo incluye headers multinivel, spans, row labels, layouts
+  seguros de página/bloques/campos y perfiles de impresión MYC/CAPYMET sobre un
+  único renderer; el catálogo oficial completo y los assets CAPYMET definitivos
+  permanecen fuera de este corte.
 - Calidad como única superficie de autenticación, revisión consecutiva por contexto OT/ETS, autoridad transaccional de Certificados, verificación pública y liberación separada.
 - Verificación como variante del pipeline metrológico: partida `verification`,
   equipo/OT obligatorios, alcance de acreditación nulo, Certificado de

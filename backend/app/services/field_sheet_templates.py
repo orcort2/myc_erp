@@ -21,6 +21,12 @@ from app.services.field_sheet_template_engine import (
     get_official_pilot_template,
     resolve_table_family,
 )
+from app.services.field_sheet_layouts import (
+    normalize_block_print_layout,
+    normalize_print_layout,
+    normalize_result_section,
+    resolve_organization_print_profile,
+)
 
 
 FIELD_SHEET_BLOCK_TYPES = {
@@ -604,6 +610,32 @@ def _pdf_template_for_key(template_key: str) -> str:
 
 
 def _build_result_sections(blocks: list[dict]) -> list[dict]:
+    def result_section(block: dict, section: dict, *, key: str, title: str, rows: int) -> dict:
+        source = {
+            "key": key,
+            "title": title,
+            "rows": rows,
+            "columns": deepcopy(section.get("columns") or block.get("columns") or []),
+        }
+        for field_name in (
+            "allow_add_rows",
+            "allow_remove_rows",
+            "min_rows",
+            "max_rows",
+            "header_rows",
+            "row_labels",
+            "layout",
+            "repeat_header",
+            "break_inside",
+            "page_break_before",
+            "metadata",
+        ):
+            if field_name in section:
+                source[field_name] = deepcopy(section[field_name])
+            elif field_name in block:
+                source[field_name] = deepcopy(block[field_name])
+        return normalize_result_section(source)
+
     sections: list[dict] = []
     for block in sorted(blocks, key=lambda item: (item.get("print_order", 0), item.get("capture_order", 0))):
         if block["block_type"] not in TABLE_BLOCK_TYPES:
@@ -611,21 +643,23 @@ def _build_result_sections(blocks: list[dict]) -> list[dict]:
         if block.get("sections"):
             for index, section in enumerate(block["sections"], start=1):
                 sections.append(
-                    {
-                        "key": section.get("key") or f"{block['key']}_{index}",
-                        "title": section["title"],
-                        "rows": int(section.get("rows") or block.get("rows") or 1),
-                        "columns": deepcopy(section.get("columns") or block.get("columns") or []),
-                    }
+                    result_section(
+                        block,
+                        section,
+                        key=section.get("key") or f"{block['key']}_{index}",
+                        title=section.get("title") or block["title"],
+                        rows=int(section.get("rows") or block.get("rows") or 1),
+                    )
                 )
         else:
             sections.append(
-                {
-                    "key": block["key"],
-                    "title": block["title"],
-                    "rows": int(block.get("rows") or 1),
-                    "columns": deepcopy(block.get("columns") or []),
-                }
+                result_section(
+                    block,
+                    block,
+                    key=block["key"],
+                    title=block["title"],
+                    rows=int(block.get("rows") or 1),
+                )
             )
     return sections
 
@@ -703,6 +737,7 @@ def normalize_template_definition(payload: dict, *, table_family_mode: str = "le
         merged["fields"] = [dict(field) for field in (merged.get("fields") or [])]
         merged["table_config"] = dict(merged.get("table_config") or {})
         merged["metadata"] = dict(merged.get("metadata") or {})
+        merged["print_layout"] = normalize_block_print_layout(merged.get("print_layout"))
         merged["print_visible"] = bool(merged.get("print_visible", True))
         merged["capture_visible"] = bool(merged.get("capture_visible", True))
         merged["pdf_visible"] = bool(merged.get("pdf_visible", True))
@@ -732,6 +767,7 @@ def normalize_template_definition(payload: dict, *, table_family_mode: str = "le
         "blocks": sorted(normalized_blocks, key=lambda item: (item["capture_order"], item["print_order"])),
         "validations": dict(payload.get("validations") or {}),
         "print_config": dict(payload.get("print_config") or {}),
+        "print_layout": normalize_print_layout(payload.get("print_layout")),
         "pdf_config": dict(payload.get("pdf_config") or {}),
         "permissions_config": dict(payload.get("permissions_config") or {}),
         "metadata": dict(payload.get("metadata") or {}),
@@ -739,8 +775,23 @@ def normalize_template_definition(payload: dict, *, table_family_mode: str = "le
         "pagination": dict(payload.get("pagination") or {"mode": "dynamic", "label": "Página X de Y"}),
         "automation": dict(payload.get("automation") or {"mode": "manual_only", "calculations": []}),
     }
+    document_grid_columns = definition["print_layout"]["document"]["grid_columns"]
+    for block in definition["blocks"]:
+        block_layout = block["print_layout"]
+        if block_layout["column_span"] > document_grid_columns:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"El column_span de {block['key']} excede el grid documental",
+            )
+        for field in block.get("fields") or []:
+            if int(field.get("column_span") or 1) > block_layout["grid_columns"]:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"El column_span del campo {field.get('key')} excede el grid del bloque",
+                )
     definition["visible_fields"] = _collect_visible_fields(definition["blocks"])
     definition["result_sections"] = _build_result_sections(definition["blocks"])
+    definition["organization_profile"] = resolve_organization_print_profile(definition)
     return definition
 
 

@@ -19,7 +19,7 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Corte operativo
 
 - Rama verificada: `wip/lab-field-sheets-integration`.
-- Baseline recibido: `22f75e40d14ade3ae19ccf43d2cb74bbae7de502`.
+- Baseline recibido para Fases 4+5: `354b7e5f74aeb7790c3b08d127666ea799bc638f`.
 - Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**.
 - Único módulo `SELLADO`: Control Documental V1 dentro de su alcance
   congelado. OT LAB temporal permanece `EN DESARROLLO` hasta QA físico.
@@ -99,7 +99,51 @@ Resumen operativo:
 - `frontend/**` permanece sin tocar desde `92e5ffb`
   (`git diff 92e5ffb --name-only -- frontend/` vacío).
 
+## Estado verificable DSL de Hojas de Campo — Fases 4 y 5
+
+- `ResultSection` expone headers multinivel, spans, row labels, alineación,
+  widths y controles de corte/repetición; la normalización valida una matriz
+  completa contra columnas reales y `__row_number__`.
+- `print_layout` controla página, márgenes, visibilidad documental, grid,
+  spans, orden, títulos, compacidad, bordes, espacios y page breaks mediante
+  enums/números seguros. Campos admiten span y label `top|inline`.
+- Perfiles allowlisted `myc` y `capymet` alimentan el mismo renderer. MYC usa
+  identidad/logo institucional; CAPYMET usa fallback textual hasta recibir su
+  asset oficial, sin inventarlo.
+- `field_sheet_engine_pdf.html` continúa como renderer único versión 1. Los
+  defaults mantienen la salida histórica y snapshots sin DSL conservan header
+  plano; PDFs congelados no se reinterpretan ni regeneran.
+- Mobile consume el mismo contrato para headers agrupados, row labels, widths
+  y scroll horizontal, sin branches por template, magnitud u organización.
+- No se cambió `FieldSheetResult`, no se creó tabla/migración ni se modificó la
+  base local; no corresponde regenerar `backup_erp_myc_antes_prueba.sql`.
+- Pendiente exclusivo de la fase siguiente: catálogo oficial completo,
+  magnitudes aprobadas, asset CAPYMET definitivo y QA visual/físico por hoja.
+
 ## Validaciones
+
+### DSL de Hojas de Campo — Fases 4 y 5 (2026-09-02)
+
+- Suite focal backend (`test_field_sheet_layout_dsl.py`,
+  `test_field_sheet_template_engine.py`, `test_field_sheet_operational_contract.py`,
+  `test_lab_field_sheets_capture.py`, `test_lab_phase6_field_sheet_revisions.py`):
+  `101 passed`, 11 warnings.
+- Suite backend completa: `935 passed, 8 skipped, 2 failed`, 13 warnings y
+  19 subtests passed. Las dos fallas son las preexistentes de
+  `test_api_access_conformity.py`: el runtime tiene 506 operaciones frente al
+  inventario histórico de 477 y el CSV committed no coincide; esta fase no
+  agregó endpoints ni modificó ese inventario.
+- Pruebas Mobile focales del workspace/intérprete: `9 passed, 0 failed`.
+- Suite Mobile completa: `313 passed, 1 failed` (314 total). La falla ajena es
+  `request-inbox.test.ts` (`la solicitud linked_folio presenta identidad real
+  del equipo al Admin`) contra `tickets.tsx`, ambos intactos en esta fase.
+- `npx tsc --noEmit`: correcto, exit code 0.
+- `npx expo lint`: exit code 0, 0 errores y 8 warnings preexistentes (6 imports
+  sin uso en `work-orders.tsx` y 2 advertencias de hook en
+  `FieldSheetResultsWorkspace.tsx`).
+- Fixtures de aceptación temporales Temperatura-like y multisección compleja
+  validan HTML con spans y generación real `%PDF`; no se registraron como
+  templates oficiales.
 
 ### Navegación de reapertura con firma preservada — 2026-09-02
 

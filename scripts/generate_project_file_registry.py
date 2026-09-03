@@ -384,6 +384,14 @@ FORCE_RECLASSIFY = {
     "docs/closures/QUOTATION_CHANGE_SERVICE_EXCEPTION.md",
 }
 FORCE_RECLASSIFY.update({
+    "backend/app/schemas/field_sheet_template.py",
+    "backend/app/services/field_sheet_pdfs.py",
+    "backend/app/services/field_sheet_templates.py",
+    "backend/app/templates/field_sheet_engine_pdf.html",
+    "docs/architecture/FIELD_SHEET_PDF_RENDERER.md",
+    "myc-mobile/src/components/field-sheets/FieldSheetResultsWorkspace.tsx",
+    "myc-mobile/src/components/field-sheets/FieldSheetResultsWorkspace.wiring.test.ts",
+    "myc-mobile/src/types/lab-work-order.ts",
     "backend/app/models/catalog_item.py",
     "backend/app/models/quotation.py",
     "backend/app/models/service_order.py",
@@ -694,6 +702,24 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     }
     if value in notification_files:
         return notification_files[value]
+
+    field_sheet_dsl_files = {
+        "backend/app/schemas/field_sheet_template.py": ("Contrato DSL de Hojas de Campo", "Tipa columnas, headers multinivel, secciones, row labels, layouts seguros de página/bloque/campo y perfiles organizacionales.", "Pydantic y snapshots de plantilla", "API, normalizador, renderer y clientes", "Crítico"),
+        "backend/app/services/field_sheet_layouts.py": ("Normalizador visual de Hojas de Campo", "Valida geometría matricial, longitudes allowlisted y print_layout; resuelve perfiles MYC/CAPYMET sin ramas por template.", "Schemas Pydantic y HTTPException", "Motor de plantillas y renderer PDF", "Crítico"),
+        "backend/app/services/field_sheet_templates.py": ("Motor declarativo de plantillas", "Normaliza bloques, propaga una sola geometría a result_sections y congela DSL/layout/perfil en snapshots compatibles.", "Definiciones persistentes, schemas, layouts y table families", "Servicios FieldSheet, API y renderer PDF", "Crítico"),
+        "backend/app/services/field_sheet_pdfs.py": ("Autoridad documental PDF", "Compone contexto limpio de página, bloques, campos, tablas multinivel, row labels, perfiles y firmas para el renderer único versionado.", "FieldSheet, layouts, Jinja/WeasyPrint, snapshots y storage", "Endpoints PDF, paquetes y cierres FieldSheet", "Crítico"),
+        "backend/app/templates/field_sheet_engine_pdf.html": ("Renderer HTML canónico", "Presenta layout fluido declarativo, perfiles MYC/CAPYMET, grids, headers con colspan/rowspan, row labels y page breaks sin lógica por template.", "Contexto field_sheet_pdfs, Jinja y WeasyPrint", "PDFs nuevos ERP/LAB y snapshots v1 compatibles", "Crítico"),
+        "backend/tests/test_field_sheet_layout_dsl.py": ("Aceptación DSL/PDF Hojas de Campo", "Prueba headers planos/agrupados, spans, geometría inválida 422, row labels, layout, perfiles, seguridad y PDFs de fixtures temporales.", "Pytest, normalizador, Jinja y WeasyPrint", "Gate Fases 4+5", "Crítico"),
+        "myc-mobile/src/services/field-sheet-result-layout.ts": ("Intérprete móvil de tablas declarativas", "Convierte headers multinivel en segmentos flex, resuelve labels de fila y anchos seguros sin lógica por plantilla.", "Tipos FieldSheet TypeScript", "FieldSheetResultsWorkspace", "Alto"),
+        "myc-mobile/src/services/field-sheet-result-layout.test.ts": ("Pruebas del intérprete móvil", "Verifica colspan/rowspan, fallback plano, row labels y widths declarativos seguros.", "node:test y helper de layout", "Suite MYC Mobile", "Alto"),
+        "myc-mobile/src/components/field-sheets/FieldSheetResultsWorkspace.tsx": ("Workspace genérico de resultados", "Renderiza secciones, headers agrupados, labels de fila, anchos y scroll horizontal desde el snapshot sin ramas por template/organización.", "React Native, workspace-state y field-sheet-result-layout", "Captura técnica LAB", "Crítico"),
+        "myc-mobile/src/components/field-sheets/FieldSheetResultsWorkspace.wiring.test.ts": ("Regresión del workspace FieldSheet", "Verifica teclado/Fabric y cableado declarativo de headers, widths y row labels sin ramas específicas.", "node:test y fuente del workspace", "Suite MYC Mobile", "Alto"),
+        "myc-mobile/src/types/lab-work-order.ts": ("Contrato móvil OT LAB/FieldSheet", "Tipifica OT LAB y el DSL de resultados con headers, spans, labels, alineación y layout opcional compatible con snapshots legacy.", "TypeScript y API Mobile", "Pantallas y componentes LAB", "Alto"),
+        "docs/architecture/FIELD_SHEET_PDF_RENDERER.md": ("Contrato PDF de Hojas de Campo", "Documenta renderer único/versionado, DSL estructural, layouts seguros, perfiles, seguridad y compatibilidad histórica.", "Implementación backend/móvil y pruebas", "Arquitectura, desarrollo y QA", "Crítico"),
+        "docs/closures/FIELD_SHEET_DSL_PHASES_4_5_2026-09-02.md": ("Cierre técnico DSL Fases 4+5", "Registra alcance, arquitectura, compatibilidad, validaciones y pendientes exclusivos de la fase siguiente.", "Código, arquitectura y suites", "Desarrollo, QA y auditoría", "Alto"),
+    }
+    if value in field_sheet_dsl_files:
+        return field_sheet_dsl_files[value]
 
     lab_files = {
         "backend/app/routers/lab_clients.py": ("API móvil LabClient", "Expone una sola lista LabClient[] con búsqueda, activos/inactivos y paginación SQL acotada; conserva permisos y scope de organización.", "FastAPI, MobileSecurityContext, schemas y servicio LabClient", "Selector OT, módulo Clientes y pruebas", "Crítico"),

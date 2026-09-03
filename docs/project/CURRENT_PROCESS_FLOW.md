@@ -364,6 +364,14 @@ desactivar ETS; todas las mutaciones HTTP propagan el actor autenticado.
 
 ## 5. Hojas de Campo y Captura
 
+La definición congelada puede describir headers multinivel, grupos de columnas,
+spans, labels fijos de fila, anchos/alineación y múltiples secciones. Backend
+normaliza y valida la matriz antes de persistir; Mobile interpreta el mismo
+contrato con scroll horizontal. Para PDF, Python resuelve `print_layout`, bloques
+y perfil organizacional MYC/CAPYMET y entrega un contexto limpio al único
+renderer Jinja. Definiciones históricas sin el DSL conservan header plano y
+defaults Letter portrait.
+
 Cada equipo puede tener una Hoja de Campo activa con snapshot de plantilla e identidad institucional. Se capturan resultados y firmas, se completa la hoja y se prepara el paquete de Captura por ETS u OT. El paquete depende de una Plantilla Maestra XLSX activa, vigente, existente y cuyo hash coincida con el snapshot del equipo.
 
 Toda hoja nueva fija `field_sheet_engine` versión 1. Mientras está en borrador

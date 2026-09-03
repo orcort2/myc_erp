@@ -21,6 +21,12 @@ from app.services.field_sheet_templates import (
     CANONICAL_PDF_TEMPLATE,
     get_field_sheet_template,
 )
+from app.services.field_sheet_layouts import (
+    ROW_NUMBER_COLUMN_KEY,
+    normalize_block_print_layout,
+    normalize_print_layout,
+    resolve_organization_print_profile,
+)
 from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
     institutional_snapshot,
@@ -88,6 +94,12 @@ class ResultTableSection:
     columns: list
     rows: list[FieldSheetResult]
     unit_value: str | None = None
+    header_rows: list | None = None
+    row_labels: list[str] | None = None
+    layout: dict | None = None
+    repeat_header: bool = True
+    break_inside: str = "avoid"
+    page_break_before: bool = False
 
 
 @dataclass(frozen=True)
@@ -95,6 +107,8 @@ class PrintField:
     key: str
     label: str
     value: str
+    column_span: int = 1
+    label_position: str = "top"
 
 
 @dataclass(frozen=True)
@@ -106,7 +120,7 @@ class PrintBlock:
     sections: list[ResultTableSection]
     table_family: str
     metadata: dict
-    grid_columns: int = 2
+    print_layout: dict
 
 
 def _filename(value: str) -> str:
@@ -126,7 +140,11 @@ def _checkbox(value: bool | None) -> str:
 
 
 def _row_value(row: FieldSheetResult, column) -> str:
-    source = column["source"] if isinstance(column, dict) else column.source
+    source = (
+        (column.get("source") or column.get("key"))
+        if isinstance(column, dict)
+        else (column.source or column.key)
+    )
     if row.row_data and source in row.row_data:
         value = row.row_data.get(source)
         return "" if value is None else str(value)
@@ -172,6 +190,12 @@ def _group_sections(field_sheet: FieldSheet, template_definition: dict) -> list[
                 columns=section["columns"],
                 rows=section_rows,
                 unit_value=str(capture_values.get(unit_field) or "") if unit_field else None,
+                header_rows=section.get("header_rows") or [],
+                row_labels=section.get("row_labels") or [],
+                layout=section.get("layout") or {},
+                repeat_header=section.get("repeat_header", True),
+                break_inside=section.get("break_inside") or "avoid",
+                page_break_before=bool(section.get("page_break_before", False)),
             )
         )
     return sections
@@ -270,12 +294,18 @@ def _build_print_blocks(
     result: list[PrintBlock] = []
     for block in sorted(
         template_definition.get("blocks") or [],
-        key=lambda item: (item.get("print_order", 0), item.get("capture_order", 0)),
+        key=lambda item: (
+            (item.get("print_layout") or {}).get("order")
+            if (item.get("print_layout") or {}).get("order") is not None
+            else item.get("print_order", 0),
+            item.get("capture_order", 0),
+        ),
     ):
         if block.get("visible", True) is False or block.get("print_visible", True) is False or block.get("pdf_visible", True) is False:
             continue
         block_key = block.get("block_key") or block.get("key") or block["block_type"]
         field_specs = {item.get("key"): item for item in block.get("fields") or []}
+        block_layout = normalize_block_print_layout(block.get("print_layout"))
         fields = [
             PrintField(
                 key=key,
@@ -290,9 +320,15 @@ def _build_print_blocks(
                     client_address=client_address,
                     certificate_folio=certificate_folio,
                 ),
+                column_span=max(1, min(int((field_specs.get(key) or {}).get("column_span") or 1), 12)),
+                label_position=(field_specs.get(key) or {}).get("label_position")
+                or block_layout.get("label_position")
+                or "top",
             )
             for key in block.get("visible_fields") or []
         ]
+        if block_layout.get("hide_empty_fields"):
+            fields = [field for field in fields if field.value != "-"]
         section_keys = [item.get("key") for item in block.get("sections") or []]
         if not section_keys and block_key in sections_by_key:
             section_keys = [block_key]
@@ -306,7 +342,7 @@ def _build_print_blocks(
                 sections=[sections_by_key[key] for key in section_keys if key in sections_by_key],
                 table_family=template_definition.get("table_family") or "custom",
                 metadata=metadata,
-                grid_columns=max(1, min(int(metadata.get("columns") or 2), 4)),
+                print_layout=block_layout,
             )
         )
     return result
@@ -445,6 +481,13 @@ def _render_html(
         client_address=client_address,
         certificate_folio=certificate_folio,
     )
+    print_layout = normalize_print_layout(template_definition.get("print_layout"))
+    organization_profile = resolve_organization_print_profile(template_definition)
+    display_institution = dict(institution)
+    if organization_profile.get("legal_name"):
+        display_institution["legal_name"] = organization_profile["legal_name"]
+    if organization_profile.get("logo_key") == "none":
+        logo_path = None
     return template.render(
         field_sheet=field_sheet,
         equipment=equipment_values,
@@ -456,11 +499,19 @@ def _render_html(
         capture_values=capture_values,
         certificate_folio=certificate_folio,
         template_definition=template_definition,
-        institution=institution,
+        institution=display_institution,
+        organization_profile=organization_profile,
+        print_layout=print_layout,
         signatures=signatures,
         sections=_group_sections(field_sheet, template_definition),
         print_blocks=print_blocks,
         row_value=_row_value,
+        row_label=lambda section, row: (
+            section.row_labels[row.row_number - 1]
+            if section.row_labels and 0 < row.row_number <= len(section.row_labels)
+            else row.row_number
+        ),
+        row_number_column_key=ROW_NUMBER_COLUMN_KEY,
         checkbox=_checkbox,
         logo_uri=logo_path.as_uri() if logo_path else None,
     )

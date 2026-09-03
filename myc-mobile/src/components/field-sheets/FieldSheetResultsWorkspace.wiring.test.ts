@@ -40,3 +40,13 @@ test('no reintroduce desplazamiento manual incompatible con React Native/Fabric'
   assert.doesNotMatch(source, /\bmeasureLayout\s*\(/);
   assert.doesNotMatch(source, /\bfindNodeHandle\s*\(/);
 });
+
+test('interpreta el DSL genérico de headers agrupados, widths y row labels', () => {
+  assert.match(source, /buildGroupedHeaderRows\(section\)/);
+  assert.match(source, /declaredWidth\(\s*column\.width/);
+  assert.match(source, /segment\.cell\.rowspan/);
+  assert.match(source, /segment\.span/);
+  assert.match(source, /rowLabel\(section, row\.row_number\)/);
+  assert.doesNotMatch(source, /template_key\s*===/);
+  assert.doesNotMatch(source, /organization_key\s*===/);
+});

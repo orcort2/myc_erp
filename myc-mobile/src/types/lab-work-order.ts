@@ -188,6 +188,22 @@ export type FieldSheetResultColumn = {
   required?: boolean;
   data_type?: string;
   suggested_unit?: string | null;
+  alignment?: 'left' | 'center' | 'right';
+  metadata?: Record<string, unknown>;
+};
+
+export type FieldSheetResultHeaderCell = {
+  label: string;
+  column_key?: string | null;
+  colspan?: number;
+  rowspan?: number;
+  alignment?: 'left' | 'center' | 'right';
+  width?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+export type FieldSheetResultHeaderRow = {
+  cells: FieldSheetResultHeaderCell[];
   metadata?: Record<string, unknown>;
 };
 
@@ -200,6 +216,15 @@ export type FieldSheetResultSection = {
   allow_remove_rows?: boolean;
   min_rows?: number | null;
   max_rows?: number | null;
+  header_rows?: FieldSheetResultHeaderRow[];
+  row_labels?: string[];
+  layout?: {
+    row_number_width?: string | null;
+    metadata?: Record<string, unknown>;
+  };
+  repeat_header?: boolean;
+  break_inside?: 'auto' | 'avoid';
+  page_break_before?: boolean;
   metadata?: Record<string, unknown>;
 };
 

@@ -30,6 +30,11 @@ import {
 } from '@/src/services/field-sheet-results-workspace-state';
 import { keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
 import { computeTableLayout } from '@/src/services/field-sheet-table-layout';
+import {
+  buildGroupedHeaderRows,
+  declaredWidth,
+  rowLabel,
+} from '@/src/services/field-sheet-result-layout';
 import type {
   FieldSheetResultRow,
   FieldSheetResultSection,
@@ -274,11 +279,33 @@ export function FieldSheetResultsWorkspace({
                 const columnCount =
                   section.columns.length;
 
+                const availableTableWidth = width - spacing.lg * 2;
                 const layout =
                   computeTableLayout(
-                    width - spacing.lg * 2,
+                    availableTableWidth,
                     columnCount,
                   );
+
+                const groupedHeaderRows =
+                  buildGroupedHeaderRows(section);
+
+                const rowNumberWidth = declaredWidth(
+                  section.layout?.row_number_width,
+                  availableTableWidth,
+                  32,
+                );
+                const columnWidths = section.columns.map((column) =>
+                  declaredWidth(
+                    column.width,
+                    availableTableWidth - rowNumberWidth,
+                    layout.columnWidth,
+                  ),
+                );
+                const logicalColumnWidths = [rowNumberWidth, ...columnWidths];
+                const tableWidth = logicalColumnWidths.reduce(
+                  (total, value) => total + value,
+                  0,
+                );
 
                 return (
                   <View
@@ -309,33 +336,76 @@ export function FieldSheetResultsWorkspace({
 
                     <ScrollView
                       horizontal={
-                        layout.needsHorizontalScroll
+                        tableWidth > availableTableWidth
                       }
                       keyboardShouldPersistTaps="handled"
                       nestedScrollEnabled
                       showsHorizontalScrollIndicator={
-                        layout.needsHorizontalScroll
+                        tableWidth > availableTableWidth
                       }
                     >
                       <View
                         style={{
-                          width: layout.totalWidth,
+                          width: tableWidth,
                         }}
                       >
-                        <View
-                          style={styles.tableHeaderRow}
-                        >
+                        {groupedHeaderRows.length > 0 ? (
+                          groupedHeaderRows.map(
+                            (headerRow, headerRowIndex) => {
+                              let logicalColumn = 0;
+                              return (
+                                <View
+                                  key={`header-${headerRowIndex}`}
+                                  style={styles.tableHeaderRow}
+                                >
+                                  {headerRow.map((segment, segmentIndex) => {
+                                    const segmentWidth = logicalColumnWidths
+                                      .slice(logicalColumn, logicalColumn + segment.span)
+                                      .reduce((total, value) => total + value, 0);
+                                    logicalColumn += segment.span;
+                                    if (segment.kind === 'spacer') {
+                                      return (
+                                        <View
+                                          key={`spacer-${segmentIndex}`}
+                                          style={{ width: segmentWidth }}
+                                        />
+                                      );
+                                    }
+                                    return (
+                                      <Text
+                                        key={`${segment.cell.column_key ?? segment.cell.label}-${segmentIndex}`}
+                                        numberOfLines={3}
+                                        style={[
+                                          styles.tableHeaderCell,
+                                          styles.groupedHeaderCell,
+                                          {
+                                            minHeight: 32 * (segment.cell.rowspan ?? 1),
+                                            textAlign: segment.cell.alignment ?? 'center',
+                                            width: segmentWidth,
+                                          },
+                                        ]}
+                                      >
+                                        {segment.cell.label}
+                                      </Text>
+                                    );
+                                  })}
+                                </View>
+                              );
+                            },
+                          )
+                        ) : (
+                        <View style={styles.tableHeaderRow}>
                           <Text
                             style={[
                               styles.tableHeaderCell,
-                              { width: 32 },
+                              { width: rowNumberWidth },
                             ]}
                           >
                             #
                           </Text>
 
                           {section.columns.map(
-                            (column) => (
+                            (column, columnIndex) => (
                               <Text
                                 key={column.key}
                                 numberOfLines={2}
@@ -343,7 +413,7 @@ export function FieldSheetResultsWorkspace({
                                   styles.tableHeaderCell,
                                   {
                                     width:
-                                      layout.columnWidth,
+                                      columnWidths[columnIndex],
                                   },
                                 ]}
                               >
@@ -356,6 +426,7 @@ export function FieldSheetResultsWorkspace({
                             <View style={{ width: 40 }} />
                           )}
                         </View>
+                        )}
 
                         {sectionRows.map((row) => (
                           <View
@@ -365,10 +436,10 @@ export function FieldSheetResultsWorkspace({
                             <Text
                               style={[
                                 styles.rowNumber,
-                                { width: 32 },
+                                { width: rowNumberWidth },
                               ]}
                             >
-                              {row.row_number}
+                              {rowLabel(section, row.row_number)}
                             </Text>
 
                             {section.columns.map(
@@ -442,7 +513,7 @@ export function FieldSheetResultsWorkspace({
                                       styles.tableInput,
                                       {
                                         width:
-                                          layout.columnWidth,
+                                          columnWidths[columnIndex],
                                       },
                                       !editable &&
                                         styles.tableInputReadOnly,
@@ -638,6 +709,13 @@ const styles = StyleSheet.create({
   tableHeaderCell: {
     ...typography.label,
     color: colors.textMuted,
+  },
+
+  groupedHeaderCell: {
+    borderColor: colors.border,
+    borderWidth: 1,
+    padding: spacing.xs,
+    textAlignVertical: 'center',
   },
 
   tableRow: {
