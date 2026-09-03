@@ -111,3 +111,28 @@ tres firmas verticales y `purchase_order_or_quotation`; sus tablas agrupadas y
 composición tabla|firmas se expresan sólo mediante `header_rows`,
 `print_layout` y `signature_layout`. `field_sheet_engine_pdf.html` continúa
 siendo el único renderer y los snapshots históricos no se reinterpretan.
+
+## Acabado visual global de impresión
+
+El renderer canónico aplica el mismo estándar a toda hoja nueva, sin ramas por
+template, magnitud o equipo:
+
+- radio exterior de `1.2mm` en controles y bloques con borde;
+- las tablas usan `.results-frame` con borde/radio/recorte, mientras la tabla
+  interna usa bordes separados y omite sus extremos para evitar duplicación;
+- `.field-cell` usa altura mínima `7.6mm`, padding `1.1mm 1.4mm` y line-height
+  `1.2`; en modo compacto conserva `6.8mm` y padding `.95mm 1.2mm`;
+- label usa line-height `1.15` y separación inferior `.45mm`; los campos
+  inline mantienen separación horizontal sin introducir salto adicional;
+- headers/resultados usan alturas mínimas efectivas de `5.4mm`/`5.2mm`,
+  padding `.8mm`/`.7mm .8mm`, centrado vertical, wrapping y line-height
+  `1.15`/`1.2`;
+- firmas y trailing fields declaran line-height/padding propios para que sus
+  labels y valores no toquen las líneas.
+
+El grid de campos dibuja una sola frontera superior/izquierda y cada celda
+aporta únicamente frontera derecha/inferior. Esto sustituye el margen negativo
+vertical que podía cruzar texto al crecer una línea, mantiene continuidad y
+evita bordes dobles. WeasyPrint renderiza el radio mediante wrappers con
+`overflow: hidden`; no se redondea cada celda. Temperatura y Presión conservan
+una página Letter portrait y su composición declarativa aprobada.

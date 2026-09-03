@@ -1,8 +1,10 @@
+import io
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from pypdf import PdfReader
 from weasyprint import HTML
 
 from app.services.field_sheet_pdfs import _render_html
@@ -250,7 +252,40 @@ def test_temperature_like_grouped_header_validates_and_renders_pdf():
     html = _render(definition)
     assert 'colspan="3"' in html
     assert 'rowspan="2"' in html
-    assert HTML(string=html).write_pdf().startswith(b"%PDF")
+    pdf = HTML(string=html).write_pdf()
+    assert pdf.startswith(b"%PDF")
+    reader = PdfReader(io.BytesIO(pdf))
+    assert len(reader.pages) == 1
+    assert float(reader.pages[0].mediabox.width) == 612
+    assert float(reader.pages[0].mediabox.height) == 792
+
+
+def test_renderer_applies_the_global_compact_print_finish_without_template_branches():
+    renderer_source = (
+        Path(__file__).parents[1] / "app" / "templates" / "field_sheet_engine_pdf.html"
+    ).read_text(encoding="utf-8")
+
+    assert '<div class="results-frame">' in renderer_source
+    assert (
+        ".results-frame { border: .25mm solid #344054; border-radius: 1.2mm; "
+        "overflow: hidden; }" in renderer_source
+    )
+    assert (
+        ".block:not(.without-border) { border-radius: 1.2mm; overflow: hidden; }"
+        in renderer_source
+    )
+    assert (
+        ".compact .field-cell { min-height: 6.8mm; padding: .95mm 1.2mm; }"
+        in renderer_source
+    )
+    assert "min-height: 7.6mm" in renderer_source
+    assert "line-height: 1.2" in renderer_source
+    assert "padding: .7mm .8mm" in renderer_source
+    assert "border-collapse: separate" in renderer_source
+    assert ".field-grid { border-left: .25mm solid #344054;" in renderer_source
+    assert "margin: -.25mm 0 0 -.25mm" not in renderer_source
+    assert "border-right: .25mm solid #344054" in renderer_source
+    assert CANONICAL_PDF_RENDERER_VERSION == 1
 
 
 def test_legacy_signature_layout_keeps_the_derived_horizontal_grid():
@@ -279,7 +314,12 @@ def test_vertical_signatures_render_trailing_field_and_real_pdf():
     assert 'data-field="purchase_order_or_quotation"' in html
     assert "Orden de compra / cotización" in html
     assert "OC-6401" in html
-    assert HTML(string=html).write_pdf().startswith(b"%PDF")
+    pdf = HTML(string=html).write_pdf()
+    assert pdf.startswith(b"%PDF")
+    reader = PdfReader(io.BytesIO(pdf))
+    assert len(reader.pages) == 1
+    assert float(reader.pages[0].mediabox.width) == 612
+    assert float(reader.pages[0].mediabox.height) == 792
     assert CANONICAL_PDF_RENDERER_VERSION == 1
 
 
@@ -325,7 +365,12 @@ def test_phase_6a1_official_templates_render_the_source_table_and_pdf(
     assert 'data-signature-direction="vertical"' in html
     assert 'data-field="purchase_order_or_quotation"' in html
     assert len(_fake_sheet(definition).results_rows) == expected_rows
-    assert HTML(string=html).write_pdf().startswith(b"%PDF")
+    pdf = HTML(string=html).write_pdf()
+    assert pdf.startswith(b"%PDF")
+    reader = PdfReader(io.BytesIO(pdf))
+    assert len(reader.pages) == 1
+    assert float(reader.pages[0].mediabox.width) == 612
+    assert float(reader.pages[0].mediabox.height) == 792
 
 
 @pytest.mark.parametrize(

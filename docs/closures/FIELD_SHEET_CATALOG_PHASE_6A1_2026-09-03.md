@@ -47,8 +47,15 @@ visual contra las fuentes. Temperatura muestra FCA-30/R-1, 10 filas y patrón
 1/2/3; Presión muestra FCA-30/R1, 11 filas y los tres labels documentales del
 ciclo. Ambos muestran tres firmas verticales y OC/Cotización bajo ellas.
 
+El micro-pase visual global posterior mantiene las definiciones intactas y
+estandariza radio exterior `1.2mm`, alturas/padding/line-height de campos,
+headers, resultados, firmas y trailing fields. La inspección antes/después
+confirmó que desaparece el contacto texto-línea, que no hay bordes exteriores
+dobles y que la geometría tabla|firmas no cambia. Las dos salidas continúan en
+una página Letter portrait.
+
 La cobertura ampliada de template engine, layout/PDF, contrato operacional,
-captura LAB y revisiones registra `117 passed, 18 warnings`, exit 0.
+captura LAB y revisiones registra `118 passed, 18 warnings`, exit 0.
 
 ## Pendiente
 

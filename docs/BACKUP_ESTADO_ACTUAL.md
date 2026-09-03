@@ -152,7 +152,14 @@ Resumen operativo:
   son `%PDF`, una página Letter portrait, con geometría/firmas reconocibles
   contra sus fuentes originales.
 - Suite backend ampliada relacionada (template engine, DSL/PDF, contrato
-  operacional, captura LAB y revisiones): `117 passed, 18 warnings`, exit 0.
+  operacional, captura LAB y revisiones): `118 passed, 18 warnings`, exit 0.
+- Micro-pase visual global del renderer: radio exterior `1.2mm`, field cells
+  normal/compacta de `7.6mm`/`6.8mm`, padding y line-height explícitos,
+  `results-frame` sin borde exterior duplicado y fronteras de grid sin margen
+  vertical negativo. La comparación visual antes/después y contra las fuentes
+  confirma texto libre de cruces, headers agrupados legibles y una página
+  Letter portrait para Temperatura y Presión. Renderer version 1, DSL,
+  plantillas, snapshots, lifecycle y Mobile permanecen intactos.
 
 ## Validaciones
 
