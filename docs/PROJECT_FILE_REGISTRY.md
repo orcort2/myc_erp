@@ -24,7 +24,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 
 | Sección | Archivos |
 | --- | ---: |
-| Backend | 504 |
+| Backend | 505 |
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
@@ -508,6 +508,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/migrations/versions/d6e8f0a2b4c5_resolution_engine_phase_6_compensation.py | backend/migrations/versions | Migración de Fase 6 | Amplía estados raíz y crea/revierte cuatro tablas compensatorias con FKs exactas, unicidad, índices y protección histórica. | Alembic, PostgreSQL y modelos ORM de compensación | Despliegues, restauraciones y auditoría del Motor | Crítico | Estable |
 | backend/migrations/versions/d6f2a4c8e0b1_mobile_security_context.py | backend/migrations/versions | Migración de scope Mobile | Agrega FK nullable de Client a LAB, índice de scope y unicidad parcial de membership activa con preflight explícito y downgrade reversible. | Alembic, Client, LabWorkOrder y ClientPortalMembership | Alembic local/despliegue controlado | Crítico | En revisión |
 | backend/migrations/versions/d7c297902425_field_sheet_revisions_and_lab_equipment_model_scope.py | backend/migrations/versions | Migración Alembic | Aplica la revisión d7c297902425 field sheet revisions and lab equipment model scope del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
+| backend/migrations/versions/da6ad5a90e57_snapshot_lab_delivery_history_ids.py | backend/migrations/versions | Migración Alembic | Aplica la revisión da6ad5a90e57 snapshot lab delivery history ids del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/e16e7f8091a2_fix_institutional_folio_timestamp_defaults.py | backend/migrations/versions | Migración Alembic | Aplica la revisión e16e7f8091a2 fix institutional folio timestamp defaults del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/e2a4c6d8f0b1_decouple_catalog_type_operational_category.py | backend/migrations/versions | Corrección de identidad de catálogo | Realinea sólo el catálogo vivo desde categorías estructuradas exactas y preserva sin cambios cotizaciones, partidas ETS y snapshots históricos. | Alembic, PostgreSQL y d1f3a5c7e9b2 | Despliegues, revisión de catálogo y compatibilidad histórica | Crítico | En revisión |
 | backend/migrations/versions/e5f6a7b8c9d0_add_metrology_foundation.py | backend/migrations/versions | Migración Alembic | Aplica la revisión e5f6a7b8c9d0 add metrology foundation del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |

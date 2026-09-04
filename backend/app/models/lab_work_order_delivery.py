@@ -12,7 +12,14 @@ from app.models.base import IntegerPkMixin, TimestampMixin
 class LabWorkOrderDelivery(IntegerPkMixin, TimestampMixin, Base):
     """Evento inmutable de entrega física (una 'exhibición') de un subconjunto
     de equipos del grupo/cohorte histórico de una OT LAB (root_work_order_id).
-    Los equipos entregados en este evento viven en LabDeliveryItem."""
+    Los equipos entregados en este evento viven en LabDeliveryItem.
+
+    root_work_order_id es una referencia operativa (SET NULL): válida
+    mientras la OT raíz viva exista, o mientras una OT superviviente del
+    grupo la herede al eliminarse la raíz; queda NULL si el grupo entero
+    desaparece. root_work_order_id_snapshot/root_work_order_folio_snapshot
+    son la autoridad histórica -- se congelan al crear el evento y nunca se
+    reescriben, ni siquiera cuando root_work_order_id se reasigna."""
 
     __tablename__ = "lab_work_order_deliveries"
     __table_args__ = (
@@ -29,9 +36,11 @@ class LabWorkOrderDelivery(IntegerPkMixin, TimestampMixin, Base):
         ),
     )
 
-    root_work_order_id: Mapped[int] = mapped_column(
-        ForeignKey("lab_work_orders.id", ondelete="RESTRICT"), nullable=False, index=True
+    root_work_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lab_work_orders.id", ondelete="SET NULL"), index=True
     )
+    root_work_order_id_snapshot: Mapped[int] = mapped_column(nullable=False)
+    root_work_order_folio_snapshot: Mapped[int] = mapped_column(nullable=False)
     exhibition_number: Mapped[int] = mapped_column(nullable=False)
     delivery_type: Mapped[str] = mapped_column(String(20), nullable=False)
     delivery_method: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -56,7 +65,7 @@ class LabWorkOrderDelivery(IntegerPkMixin, TimestampMixin, Base):
     voucher_pdf_sha256: Mapped[str | None] = mapped_column(String(64))
     voucher_pdf_generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    root_work_order: Mapped["LabWorkOrder"] = relationship(foreign_keys=[root_work_order_id])
+    root_work_order: Mapped["LabWorkOrder | None"] = relationship(foreign_keys=[root_work_order_id])
     delivered_by: Mapped["User"] = relationship(foreign_keys=[delivered_by_user_id])
     voided_by: Mapped["User | None"] = relationship(foreign_keys=[voided_by_user_id])
     partial_delivery_ticket: Mapped["OperationalTicket | None"] = relationship(

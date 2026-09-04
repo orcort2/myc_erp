@@ -304,9 +304,9 @@ class LabDeliveryItemRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    work_order_id: int
+    work_order_id: int | None
     work_order_folio: int
-    equipment_id: int
+    equipment_id: int | None
     position_snapshot: int | None
     instrument_snapshot: str
     brand_snapshot: str
@@ -319,7 +319,7 @@ class LabDeliveryRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    root_work_order_id: int
+    root_work_order_id: int | None
     exhibition_number: int
     delivery_type: Literal["full", "partial"]
     delivery_method: Literal["direct", "client_pickup"]

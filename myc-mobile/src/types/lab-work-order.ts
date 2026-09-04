@@ -98,9 +98,11 @@ export type LabDeliveryMethod = 'direct' | 'client_pickup';
 
 export type LabDeliveryItem = {
   id: number;
-  work_order_id: number;
+  // null cuando la OT/equipo vivo ya fue eliminado -- el histórico se
+  // preserva vía work_order_folio (snapshot backend, siempre presente).
+  work_order_id: number | null;
   work_order_folio: number;
-  equipment_id: number;
+  equipment_id: number | null;
   position_snapshot: number | null;
   instrument_snapshot: string;
   brand_snapshot: string;
@@ -111,7 +113,8 @@ export type LabDeliveryItem = {
 
 export type LabDelivery = {
   id: number;
-  root_work_order_id: number;
+  // null cuando el grupo entero fue eliminado (última OT del cohorte).
+  root_work_order_id: number | null;
   exhibition_number: number;
   delivery_type: 'full' | 'partial';
   delivery_method: LabDeliveryMethod;

@@ -750,14 +750,16 @@ def test_delivered_equipment_blocks_reopen_and_cancel(lab_context):
 
 
 def test_delivered_equipment_blocks_delete(lab_context):
-    """AJUSTE anulación administrativa de entrega -- delete_work_order gana el
-    mismo guard explícito que cancel_work_order ya tenía: una entrega
-    'completed' vigente bloquea la eliminación ANTES de cualquier mutación."""
-    client, _factory, tokens = lab_context
+    """CASO A -- AJUSTE anulación administrativa de entrega: delete_work_order
+    gana el mismo guard explícito que cancel_work_order ya tenía. Sólo una
+    entrega VIGENTE (completed) bloquea la eliminación, antes de cualquier
+    mutación; nada se borra."""
+    client, factory, tokens = lab_context
     tech_headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
     completed = _completed_single(client, tokens["tech"], "Cliente guard delete", equipment_count=1)
-    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}"
+    work_order_id = completed["id"]
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}"
     delivery = client.post(f"{endpoint}/delivery", json=delivery_payload(), headers=tech_headers)
     assert delivery.status_code == 201, delivery.text
 
@@ -765,18 +767,200 @@ def test_delivered_equipment_blocks_delete(lab_context):
     assert delete_while_delivered.status_code == 409
     assert "entrega física de equipos" in delete_while_delivered.json()["detail"]
 
+    with factory() as db:
+        assert db.get(LabWorkOrder, work_order_id) is not None
 
-def test_voided_delivery_still_blocks_delete_but_not_cancel(lab_context):
-    """LabDeliveryItem.work_order_id es procedencia histórica -- nunca se
-    reasigna a otra OT (eso falsearía a qué OT perteneció el equipo
-    entregado). Una entrega anulada sigue bloqueando la eliminación (mensaje
-    explícito, no un 409 genérico de integridad) mientras Cancelar sigue
-    disponible -- ese es el camino correcto para conservar la trazabilidad."""
-    client, _factory, tokens = lab_context
+
+def test_voided_delivery_of_a_single_ot_no_longer_blocks_delete_and_preserves_the_full_history(lab_context):
+    """CASO B + CASO F -- una vez anulada, Delivery deja de bloquear DELETE.
+    La OT y su equipo desaparecen; el delivery sigue voided con voucher/hash/
+    firmas intactos; el LabDeliveryItem sobrevive con live refs en NULL pero
+    *_snapshot intacto; el receipt final (el grupo quedó completo con esta
+    única entrega) también sobrevive con root NULL. Cancelar después de void
+    sigue funcionando igual que antes (guard sin cambios)."""
+    from app.models.lab_work_order import LabWorkOrderEquipment
+
+    client, factory, tokens = lab_context
     tech_headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
-    completed = _completed_single(client, tokens["tech"], "Cliente último miembro", equipment_count=1)
-    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}"
+    completed = _completed_single(client, tokens["tech"], "Cliente void delete", equipment_count=1)
+    work_order_id = completed["id"]
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}"
+
+    delivery = client.post(f"{endpoint}/delivery", json=delivery_payload(), headers=tech_headers)
+    assert delivery.status_code == 201, delivery.text
+    delivery_id = delivery.json()["id"]
+    item = delivery.json()["items"][0]
+    item_id, equipment_id = item["id"], item["equipment_id"]
+
+    with factory() as db:
+        before = db.get(LabWorkOrderDelivery, delivery_id)
+        voucher_before, voucher_hash_before = before.voucher_pdf, before.voucher_pdf_sha256
+        assert voucher_before, "fixture debe generar un voucher real antes de anular"
+        receipt_before = db.scalar(select(LabDeliveryGroupReceipt))
+        assert receipt_before is not None, "una sola OT con toda su entrega completa el grupo -- debe existir receipt"
+        receipt_id, receipt_pdf_before = receipt_before.id, receipt_before.pdf
+
+    void_response = client.post(
+        f"{endpoint}/delivery/{delivery_id}/void",
+        json={"reason": "Corrección administrativa"},
+        headers=admin_headers,
+    )
+    assert void_response.status_code == 200, void_response.text
+
+    delete_after_void = client.delete(endpoint, headers=admin_headers)
+    assert delete_after_void.status_code == 204, delete_after_void.text
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, work_order_id) is None
+        assert db.get(LabWorkOrderEquipment, equipment_id) is None
+
+        reloaded_delivery = db.get(LabWorkOrderDelivery, delivery_id)
+        assert reloaded_delivery is not None, "el historial de entrega nunca debe borrarse"
+        assert reloaded_delivery.status == "voided"
+        assert reloaded_delivery.voucher_pdf == voucher_before
+        assert reloaded_delivery.voucher_pdf_sha256 == voucher_hash_before
+        assert reloaded_delivery.delivered_by_signature_data_url
+        assert reloaded_delivery.recipient_signature_data_url
+        assert reloaded_delivery.root_work_order_id is None
+        assert reloaded_delivery.root_work_order_id_snapshot == work_order_id
+        assert reloaded_delivery.root_work_order_folio_snapshot == completed["folio"]
+
+        reloaded_item = db.get(LabDeliveryItem, item_id)
+        assert reloaded_item is not None, "LabDeliveryItem nunca se borra"
+        assert reloaded_item.work_order_id is None
+        assert reloaded_item.equipment_id is None
+        assert reloaded_item.work_order_id_snapshot == work_order_id
+        assert reloaded_item.work_order_folio_snapshot == completed["folio"]
+        assert reloaded_item.equipment_id_snapshot == equipment_id
+        assert reloaded_item.instrument_snapshot
+
+        reloaded_receipt = db.get(LabDeliveryGroupReceipt, receipt_id)
+        assert reloaded_receipt is not None, "el receipt final nunca se borra"
+        assert reloaded_receipt.pdf == receipt_pdf_before
+        assert reloaded_receipt.root_work_order_id is None
+        assert reloaded_receipt.root_work_order_id_snapshot == work_order_id
+
+
+def test_deleting_the_root_of_a_multi_ot_group_after_void_reassigns_history_to_the_survivor(lab_context):
+    """CASO C + CASO G -- al eliminar la raíz de un grupo con sobreviviente,
+    delivery.root_work_order_id y receipt.root_work_order_id se reasignan al
+    sobreviviente (igual que tickets/sesiones); los snapshots de raíz siguen
+    apuntando a la OT ORIGINAL. Los items de la OT eliminada quedan con live
+    refs NULL (snapshot intacto); los de la hermana viva conservan sus refs.
+    get_lab_delivery_group_status vía la hermana no debe reventar con
+    AttributeError y debe mostrar el folio histórico desde el snapshot."""
+    client, factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    members = _completed_group(client, tokens["tech"], "Cliente grupo caso C", member_count=2)
+    root_id = members[0]["root_work_order_id"]
+    root_folio = next(m["folio"] for m in members if m["id"] == root_id)
+    survivor_id = next(m["id"] for m in members if m["id"] != root_id)
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{root_id}"
+
+    delivery = client.post(f"{endpoint}/delivery", json=delivery_payload(), headers=tech_headers)
+    assert delivery.status_code == 201, delivery.text
+    delivery_id = delivery.json()["id"]
+    root_item = next(i for i in delivery.json()["items"] if i["work_order_id"] == root_id)
+    survivor_item = next(i for i in delivery.json()["items"] if i["work_order_id"] == survivor_id)
+
+    void_response = client.post(
+        f"{endpoint}/delivery/{delivery_id}/void",
+        json={"reason": "Corrección administrativa"},
+        headers=admin_headers,
+    )
+    assert void_response.status_code == 200, void_response.text
+
+    delete_root = client.delete(endpoint, headers=admin_headers)
+    assert delete_root.status_code == 204, delete_root.text
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, root_id) is None
+        assert db.get(LabWorkOrder, survivor_id) is not None
+
+        reloaded_delivery = db.get(LabWorkOrderDelivery, delivery_id)
+        assert reloaded_delivery.root_work_order_id == survivor_id
+        assert reloaded_delivery.root_work_order_id_snapshot == root_id
+        assert reloaded_delivery.root_work_order_folio_snapshot == root_folio
+
+        reloaded_root_item = db.get(LabDeliveryItem, root_item["id"])
+        assert reloaded_root_item.work_order_id is None
+        assert reloaded_root_item.work_order_id_snapshot == root_id
+        assert reloaded_root_item.work_order_folio_snapshot == root_folio
+
+        reloaded_survivor_item = db.get(LabDeliveryItem, survivor_item["id"])
+        assert reloaded_survivor_item.work_order_id == survivor_id
+
+    status_via_survivor = _delivery_status(client, tokens["tech"], survivor_id)
+    assert status_via_survivor["root_work_order_id"] == survivor_id
+    reloaded = next(e for e in status_via_survivor["exhibitions"] if e["id"] == delivery_id)
+    reloaded_root_item_read = next(i for i in reloaded["items"] if i["work_order_folio"] == root_folio)
+    assert reloaded_root_item_read["work_order_id"] is None
+
+
+def test_deleting_a_non_root_sibling_of_a_shared_exhibition_only_nulls_its_own_items(lab_context):
+    """CASO D -- eliminar una OT hermana NO raíz de una exhibición compartida
+    conserva la exhibición completa, el root sigue vivo y sin cambios; sólo
+    los items que pertenecían a la OT eliminada quedan con live refs NULL,
+    los de la OT que sigue viva conservan referencia intacta."""
+    client, factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    members = _completed_group(client, tokens["tech"], "Cliente grupo caso D", member_count=2)
+    root_id = members[0]["root_work_order_id"]
+    sibling_id = next(m["id"] for m in members if m["id"] != root_id)
+    sibling_folio = next(m["folio"] for m in members if m["id"] == sibling_id)
+    endpoint_root = f"/api/mobile/v1/technician/lab-work-orders/{root_id}"
+
+    delivery = client.post(f"{endpoint_root}/delivery", json=delivery_payload(), headers=tech_headers)
+    assert delivery.status_code == 201, delivery.text
+    delivery_id = delivery.json()["id"]
+    sibling_item = next(i for i in delivery.json()["items"] if i["work_order_id"] == sibling_id)
+    root_item = next(i for i in delivery.json()["items"] if i["work_order_id"] == root_id)
+
+    void_response = client.post(
+        f"{endpoint_root}/delivery/{delivery_id}/void",
+        json={"reason": "Corrección administrativa"},
+        headers=admin_headers,
+    )
+    assert void_response.status_code == 200, void_response.text
+
+    delete_sibling = client.delete(
+        f"/api/mobile/v1/technician/lab-work-orders/{sibling_id}", headers=admin_headers
+    )
+    assert delete_sibling.status_code == 204, delete_sibling.text
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, root_id) is not None
+        assert db.get(LabWorkOrder, sibling_id) is None
+
+        reloaded_delivery = db.get(LabWorkOrderDelivery, delivery_id)
+        assert reloaded_delivery.root_work_order_id == root_id, "el root no cambia -- sigue vivo"
+
+        reloaded_sibling_item = db.get(LabDeliveryItem, sibling_item["id"])
+        assert reloaded_sibling_item.work_order_id is None
+        assert reloaded_sibling_item.work_order_id_snapshot == sibling_id
+        assert reloaded_sibling_item.work_order_folio_snapshot == sibling_folio
+
+        reloaded_root_item = db.get(LabDeliveryItem, root_item["id"])
+        assert reloaded_root_item.work_order_id == root_id
+
+
+def test_historical_field_sheet_still_blocks_delete_even_with_a_voided_delivery(lab_context):
+    """CASO E -- Delivery anulado deja de bloquear, pero el guard de
+    FieldSheets protegidas (preexistente, ajeno a este ajuste) sigue vigente
+    e independiente."""
+    from app.models.field_sheet import FieldSheet
+    from app.models.lab_work_order import LabWorkOrderEquipment
+
+    client, factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    completed = _completed_single(client, tokens["tech"], "Cliente caso E", equipment_count=1)
+    work_order_id = completed["id"]
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{work_order_id}"
+
     delivery = client.post(f"{endpoint}/delivery", json=delivery_payload(), headers=tech_headers)
     assert delivery.status_code == 201, delivery.text
     delivery_id = delivery.json()["id"]
@@ -788,84 +972,27 @@ def test_voided_delivery_still_blocks_delete_but_not_cancel(lab_context):
     )
     assert void_response.status_code == 200, void_response.text
 
-    delete_after_void = client.delete(endpoint, headers=admin_headers)
-    assert delete_after_void.status_code == 409
-    assert "historial de entrega" in delete_after_void.json()["detail"]
-
-    cancel_after_void = client.post(f"{endpoint}/cancel", json={"reason": "Cancelar"}, headers=admin_headers)
-    assert cancel_after_void.status_code == 200, cancel_after_void.text
-
-
-def test_deleting_the_root_of_a_multi_ot_group_reassigns_group_level_delivery_records_to_the_survivor(lab_context):
-    """Un miembro puede tener una entrega/receipt de GRUPO (root_work_order_id)
-    sin que su propia OT haya aportado ningún LabDeliveryItem (p.ej. una
-    entrega parcial que sólo cubrió equipos de otros miembros) -- en ese caso
-    sí hay a quién reasignar root_work_order_id (mismo patrón que ya usan
-    tickets/sesiones), y eliminar la raíz no debe romperse por ese FK."""
-    from datetime import datetime, timezone
-
-    from app.models.lab_delivery_group_receipt import LabDeliveryGroupReceipt
-    from app.models.lab_delivery_item import LabDeliveryItem
-    from app.models.lab_work_order_delivery import LabWorkOrderDelivery
-
-    client, factory, tokens = lab_context
-    admin_headers = auth(tokens["admin"])
-    members = _completed_group(client, tokens["tech"], "Cliente grupo reasignación", member_count=2)
-    root_id = members[0]["root_work_order_id"]
-    survivor_id = next(m["id"] for m in members if m["id"] != root_id)
-
     with factory() as db:
-        survivor = db.get(LabWorkOrder, survivor_id)
-        equipment = survivor.equipment[0]
-        now = datetime.now(timezone.utc)
-        delivery = LabWorkOrderDelivery(
-            root_work_order_id=root_id,
-            exhibition_number=1,
-            delivery_type="full",
-            delivery_method="direct",
-            status="voided",
-            delivered_at=now,
-            delivered_by_user_id=survivor.created_by_user_id,
-            delivered_by_signature_data_url=PNG_DATA_URL,
-            recipient_name="Receptor histórico",
-            recipient_signature_data_url=PNG_DATA_URL,
-            voided_at=now,
-            voided_by_user_id=survivor.created_by_user_id,
-            void_reason="Fixture histórica",
-        )
-        db.add(delivery)
-        db.flush()
-        db.add(LabDeliveryItem(
-            delivery_id=delivery.id,
-            work_order_id=survivor.id,
-            equipment_id=equipment.id,
-            instrument_snapshot=equipment.instrument,
-            brand_snapshot=equipment.brand,
-            identification_snapshot=equipment.identification,
-            serial_number_snapshot=equipment.serial_number,
-        ))
-        db.add(LabDeliveryGroupReceipt(
-            root_work_order_id=root_id,
-            version=1,
-            exhibitions_count=1,
-            generated_at=now,
-            generated_by_user_id=survivor.created_by_user_id,
-            pdf=b"%PDF-fixture",
-            pdf_sha256="0" * 64,
+        work_order = db.get(LabWorkOrder, work_order_id)
+        equipment = db.scalars(
+            select(LabWorkOrderEquipment).where(LabWorkOrderEquipment.work_order_id == work_order.id)
+        ).first()
+        db.add(FieldSheet(
+            lab_equipment_id=equipment.id,
+            template_key="general",
+            status="completed",
+            is_current=True,
+            final_pdf_path="storage/fixture.pdf",
+            final_pdf_sha256="0" * 64,
         ))
         db.commit()
-        delivery_id = delivery.id
 
-    delete_root = client.delete(f"/api/mobile/v1/technician/lab-work-orders/{root_id}", headers=admin_headers)
-    assert delete_root.status_code == 204, delete_root.text
+    delete_with_field_sheet = client.delete(endpoint, headers=admin_headers)
+    assert delete_with_field_sheet.status_code == 409
+    assert "hoja de campo" in delete_with_field_sheet.json()["detail"]
 
     with factory() as db:
-        reloaded_delivery = db.get(LabWorkOrderDelivery, delivery_id)
-        assert reloaded_delivery is not None, "el historial de entrega nunca debe borrarse"
-        assert reloaded_delivery.root_work_order_id == survivor_id
-        reloaded_receipt = db.scalar(select(LabDeliveryGroupReceipt))
-        assert reloaded_receipt is not None
-        assert reloaded_receipt.root_work_order_id == survivor_id
+        assert db.get(LabWorkOrder, work_order_id) is not None
 
 
 # ---------------------------------------------------------------------------

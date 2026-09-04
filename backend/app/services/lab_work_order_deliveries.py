@@ -105,7 +105,7 @@ def _read_delivery(delivery: LabWorkOrderDelivery) -> LabDeliveryRead:
             LabDeliveryItemRead(
                 id=item.id,
                 work_order_id=item.work_order_id,
-                work_order_folio=item.work_order.folio,
+                work_order_folio=item.work_order_folio_snapshot,
                 equipment_id=item.equipment_id,
                 position_snapshot=item.position_snapshot,
                 instrument_snapshot=item.instrument_snapshot,
@@ -209,6 +209,8 @@ def _create_delivery_event(
         raise HTTPException(status_code=409, detail="La entrega no puede ser anterior a la recepción")
     delivery = LabWorkOrderDelivery(
         root_work_order_id=root_work_order.id,
+        root_work_order_id_snapshot=root_work_order.id,
+        root_work_order_folio_snapshot=root_work_order.folio,
         exhibition_number=_next_exhibition_number(db, root_work_order.id),
         delivery_type=delivery_type,
         delivery_method=payload.delivery_method,
@@ -229,6 +231,9 @@ def _create_delivery_event(
                 delivery_id=delivery.id,
                 work_order_id=equipment.work_order_id,
                 equipment_id=equipment.id,
+                work_order_id_snapshot=equipment.work_order_id,
+                work_order_folio_snapshot=equipment.work_order.folio,
+                equipment_id_snapshot=equipment.id,
                 position_snapshot=equipment.position,
                 instrument_snapshot=equipment.instrument,
                 brand_snapshot=equipment.brand,
@@ -289,6 +294,8 @@ def _generate_final_receipt(
     pdf, _filename = generate_lab_delivery_final_receipt(root_work_order, deliveries)
     receipt = LabDeliveryGroupReceipt(
         root_work_order_id=root_work_order.id,
+        root_work_order_id_snapshot=root_work_order.id,
+        root_work_order_folio_snapshot=root_work_order.folio,
         version=next_version,
         exhibitions_count=len(deliveries),
         generated_at=now,

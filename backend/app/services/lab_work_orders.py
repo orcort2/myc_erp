@@ -821,29 +821,28 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
     """Delete one LAB work order while preserving valid group-owned resources."""
     try:
         work_order = _get(db, work_order_id, lock=True)
-        # LabDeliveryItem.work_order_id es RESTRICT hacia lab_work_orders.id y
-        # es procedencia histórica de ese equipo específico (voucher_pdf,
-        # firmas y snapshots nunca se borran ni se reasignan a otra OT -- eso
-        # falsearía a qué OT perteneció realmente el equipo entregado). Si
-        # esta OT tiene algún item de entrega, vigente o ya anulado, eliminar
-        # queda bloqueado antes de cualquier mutación; Cancelar preserva esa
-        # trazabilidad sin este conflicto.
-        delivered_statuses = set(db.scalars(
-            select(LabWorkOrderDelivery.status)
-            .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
-            .where(LabDeliveryItem.work_order_id == work_order.id)
-        ).all())
-        if "completed" in delivered_statuses:
-            raise HTTPException(
-                status_code=409,
-                detail="La OT ya registra la entrega física de equipos. Anula primero el acuse de entrega correspondiente.",
+        # Sólo una entrega VIGENTE (completed) bloquea el borrado -- una vez
+        # anulada, delivered_by/root_work_order_id/equipment_id son
+        # referencias operativas SET NULL (ver lab_delivery_item.py /
+        # lab_work_order_delivery.py / lab_delivery_group_receipt.py): la OT
+        # y sus equipos pueden eliminarse sin destruir el histórico, que
+        # sobrevive vía *_snapshot (nunca se borra el delivery/voucher/
+        # firmas/receipt; sólo se desconecta la referencia viva).
+        active_delivery_item = db.scalar(
+            select(LabDeliveryItem.id)
+            .join(LabWorkOrderDelivery, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+            .where(
+                LabDeliveryItem.work_order_id == work_order.id,
+                LabWorkOrderDelivery.status == "completed",
             )
-        if delivered_statuses:
+            .limit(1)
+        )
+        if active_delivery_item is not None:
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "La OT conserva historial de entrega (anulado) y no puede eliminarse. "
-                    "Cancela la OT para conservar su trazabilidad."
+                    "La OT ya registra la entrega física de equipos. "
+                    "Anula primero el acuse de entrega correspondiente."
                 ),
             )
         group = _group(db, work_order, lock=True)
@@ -943,9 +942,14 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             )
 
         if replacement is not None and work_order.id == root_id:
-            # El guard de arriba ya garantiza que, si no hay replacement, no
-            # existe ningún LabWorkOrderDelivery/LabDeliveryGroupReceipt para
-            # este root -- aquí sólo se reasignan cuando sí hay a quién.
+            # root_work_order_id es SET NULL (ver modelos): si esta OT es la
+            # raíz y el grupo entero desaparece con ella, la base de datos ya
+            # deja esos deliveries/receipts con root_work_order_id NULL por sí
+            # sola -- nada que hacer aquí. Sólo redirigimos el puntero cuando
+            # SÍ queda una OT viva a la que apuntar, para que el grupo
+            # superviviente siga viéndolos como propios. root_work_order_id_
+            # snapshot/root_work_order_folio_snapshot nunca se tocan: siguen
+            # identificando la raíz ORIGINAL, reasignada o no.
             for delivery in db.scalars(
                 select(LabWorkOrderDelivery)
                 .where(LabWorkOrderDelivery.root_work_order_id == root_id)
