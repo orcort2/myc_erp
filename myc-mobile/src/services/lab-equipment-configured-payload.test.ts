@@ -288,3 +288,30 @@ test('cualquier cambio real (equipo, cliente documental o servicio) hace que has
     true,
   );
 });
+
+test('observations: hidratar un equipo guardado conserva la observación en el formulario', () => {
+  const values = hydrateEquipmentFormValues(savedEquipment({ observations: 'No tiene empaque' }));
+  assert.equal(values.equipment.observations, 'No tiene empaque');
+});
+
+test('observations: un equipo sin observación hidrata null, no una cadena vacía', () => {
+  const values = hydrateEquipmentFormValues(savedEquipment({ observations: null }));
+  assert.equal(values.equipment.observations, null);
+});
+
+test('observations: el payload de alta/edición la conserva junto al resto del equipo, sin mezclarla con report_number', () => {
+  const payload = buildConfiguredEquipmentPayload(
+    { ...equipment, report_number: 'RPT-1', observations: 'No tiene empaque' },
+    defaultDocumentaryClient(),
+    { serviceType: 'accredited', linkedCompanyId: null },
+  );
+  assert.equal(payload.equipment.observations, 'No tiene empaque');
+  assert.equal(payload.equipment.report_number, 'RPT-1');
+  assert.notEqual(payload.equipment.observations, payload.equipment.report_number);
+});
+
+test('observations: editar únicamente la observación se detecta como cambio real', () => {
+  const initial = hydrateEquipmentFormValues(savedEquipment({ observations: null }));
+  const edited = { ...initial, equipment: { ...initial.equipment, observations: 'No tiene empaque' } };
+  assert.equal(hasEquipmentEditChanges(diffEquipmentEdit(initial, edited)), true);
+});

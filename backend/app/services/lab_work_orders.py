@@ -5,6 +5,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import zipfile
 from datetime import date, datetime, timezone
 
@@ -65,6 +66,8 @@ from app.services.push_notifications import queue_notification_for_delivery
 from app.services.auth import user_has_permission
 from app.realtime.events import publish_to_users
 
+
+logger = logging.getLogger("app.lab_work_orders")
 
 LAB_FOLIO_MIN = 6400
 LAB_FOLIO_MAX = 6999
@@ -1054,13 +1057,6 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             },
         )
         db.commit()
-        if purged_pdf_paths:
-            from app.services.lab_field_sheets import delete_purged_lab_field_sheet_files
-
-            delete_purged_lab_field_sheet_files(
-                db, purged_pdf_paths, user, work_order_id=work_order_id
-            )
-            db.commit()
     except HTTPException:
         db.rollback()
         raise
@@ -1070,6 +1066,30 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             status_code=status.HTTP_409_CONFLICT,
             detail="No fue posible eliminar la orden de trabajo LAB de forma segura",
         ) from exc
+
+    # La OT ya está eliminada y confirmada en PostgreSQL en este punto -- lo
+    # que sigue es limpieza de archivos físicos huérfanos, un paso "best
+    # effort" que nunca debe fingir que el DELETE (la operación principal)
+    # falló. Si el unlink revienta (permisos, carrera con otro proceso, disco
+    # lleno), el registro queda igualmente eliminado; sólo se pierde la
+    # limpieza inmediata del PDF, que se registra para diagnóstico y puede
+    # reintentarse después mediante el barrido de huérfanos existente.
+    if purged_pdf_paths:
+        try:
+            from app.services.lab_field_sheets import delete_purged_lab_field_sheet_files
+
+            delete_purged_lab_field_sheet_files(
+                db, purged_pdf_paths, user, work_order_id=work_order_id
+            )
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception(
+                "delete_work_order: OT %s eliminada correctamente, pero falló la limpieza "
+                "post-commit de PDFs huérfanos %s",
+                work_order_id,
+                purged_pdf_paths,
+            )
 
 
 # Cierre UX 2026-09 (item J): cancelar/restaurar/reabrir directamente ya

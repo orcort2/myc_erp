@@ -657,7 +657,15 @@ def add_message(
     client_message_id: str | None,
     mentions,
 ):
-    normalized_body = body.strip()
+    # Endurecimiento anti-spoofing: [[work_order:N]] es sintaxis de control
+    # interna (ver _message_read) -- el remitente nunca la escribe legítimamente
+    # a mano. Si un usuario la teclea, se retira ANTES de guardar, para que el
+    # único origen posible de ese patrón en el body persistido sea el append
+    # controlado de más abajo, construido a partir de mentions ya autorizadas
+    # por _resolve_mentions (permiso LAB + existencia de la OT). Así, leer el
+    # marcador de vuelta nunca puede fabricar una mención que el emisor no
+    # tenía autoridad real para crear.
+    normalized_body = _WORK_ORDER_MARKER.sub("", body).strip()
     if not normalized_body:
         raise HTTPException(status_code=422, detail="El mensaje no puede estar vacío")
     client_id = client_message_id or f"server-{uuid4()}"
