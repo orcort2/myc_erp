@@ -293,6 +293,14 @@ def create_lab_field_sheet(
         "internal_id": equipment.identification,
         "model": equipment.model,
     }
+    # Snapshot inicial, no vínculo vivo: FieldSheet.observations congela la
+    # observación operativa del equipo AL CREAR esta revisión. Editar
+    # LabWorkOrderEquipment.observations después no toca hojas ya creadas
+    # (draft/in_progress/completed); una reapertura que crea la revisión
+    # N+1 vuelve a leer el valor vigente del equipo en ESE momento, y la
+    # revisión N conserva el suyo intacto -- misma separación que
+    # certificate_folio/report_number, que nunca alimentan este campo.
+    initial_observations = (equipment.observations or "").strip() or None
     sheet = FieldSheet(
         equipment_id=None,
         lab_equipment_id=equipment.id,
@@ -315,6 +323,7 @@ def create_lab_field_sheet(
         equipment_general_condition=equipment.is_good_condition,
         purchase_order_or_quotation=order.purchase_order,
         initial_condition="BUENA" if equipment.is_good_condition else "REQUIERE REVISIÓN",
+        observations=initial_observations,
         capture_values=capture_values,
         # Fase 3: la sesión de firma HISTÓRICA aplicable ya es conocida y
         # estable en este momento -- la OT sólo admite crear hojas cuando ya

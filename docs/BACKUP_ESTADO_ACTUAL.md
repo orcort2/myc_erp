@@ -19,8 +19,9 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Corte operativo
 
 - Rama verificada: `wip/lab-admin-void-delivery`.
-- Working tree previo a este cierre: `213dcb042db143df39713f6419de0b6bcfe7a55c`
-  (padre `c7a7adb3ae13c4687f84a208a1db69969547602a`).
+- Working tree previo a este cierre: `6fb8e2c1e3ba60215e0cdcd1a949adbb5afa6a06`
+  (`fix(lab): preserve equipment history across reopened order edits`, que a
+  su vez partió de `213dcb042db143df39713f6419de0b6bcfe7a55c`).
 - Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**. El push de este cierre
   no es aprobación de merge a `main`; queda pendiente una auditoría
   independiente del SHA resultante.
@@ -265,6 +266,69 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
   SQLite + 1 regresión PostgreSQL real obligatoria vía `LAB_POSTGRES_TEST_URL`,
   ejecutada y verde contra un schema aislado en `erp_myc` local).
 
+## Cierre de pendientes de auditoría — 2026-09-04 (observations snapshot + Mobile test discovery)
+
+Cierre sobre los dos pendientes que la auditoría independiente del cierre
+anterior (`6fb8e2c`) dejó abiertos antes de autorizar merge a `main`. No
+reabre ni revierte ninguno de los fixes preservados del cierre anterior
+(DELETE/storage, Delivery, `@OT`, Captura, notifications, tombstone de
+equipo LAB, migración `7088fa142cc2`).
+
+- **Snapshot de observations en FieldSheet**: `create_lab_field_sheet()` (en
+  `app/services/lab_field_sheets.py`) ahora congela
+  `FieldSheet.observations = normalized(LabWorkOrderEquipment.observations)`
+  al crear cada revisión -- normalización trim + vacío/whitespace → `None`,
+  igual que el resto de campos opcionales del equipo LAB
+  (`normalize_optional_equipment_text`). Es un snapshot inicial, no un
+  vínculo vivo: editar `LabWorkOrderEquipment.observations` después de crear
+  la hoja nunca la altera, una hoja `completed`/histórica es inmutable a ese
+  cambio, y una reapertura que produce una revisión N+1 (vía
+  `field_sheet_reopen` o reopen `invalidate` + edición de un campo crítico)
+  congela el valor vigente del equipo EN ESE MOMENTO, sin tocar el snapshot
+  de la revisión anterior. Nunca lee `certificate_folio` ni `report_number`
+  -- permanecen campos separados, sin mezclarse. El formato del PDF de OT
+  (`INSTRUMENTO -> IDENTIFICACIÓN : OBSERVACIÓN`, ya cubierto exhaustivamente
+  en `test_lab_work_order_observations.py`) no se tocó: lee
+  `LabWorkOrderEquipment.observations` directamente y es un campo distinto
+  del nuevo snapshot en `FieldSheet.observations`.
+- **9 tests nuevos** en `backend/tests/test_lab_work_order_observations.py`
+  (snapshot al crear, normalización de whitespace, PDF de FieldSheet muestra
+  la observation, independencia de certificate_folio/report_number,
+  inmutabilidad tras editar el equipo -- con y sin hoja completed --,
+  revisión N+1 toma el valor vigente mientras la revisión N conserva el
+  suyo, y una prueba explícita de que el formato del PDF de OT no cambió).
+- **Mobile -- brecha de descubrimiento de tests cerrada por completo**: se
+  reemplazó la lista manual de `package.json#scripts.test` por
+  `tsx --test $(node scripts/list-test-files.js)`. El nuevo script
+  (`myc-mobile/scripts/list-test-files.js`) recorre `src/` con `fs` puro (sin
+  depender de `**` globstar de bash, que no es POSIX y no está activo por
+  defecto -- npm ejecuta scripts vía `sh -c`) y devuelve cada `*.test.ts(x)`
+  encontrado; `$(...)` es sustitución de comandos POSIX estándar, portable
+  entre macOS/Linux/CI. Antes corrían 20 archivos explícitos + el glob de
+  `src/wiring-tests/` (253 tests); ahora corren los 48 archivos
+  `*.test.ts` reales bajo `src/` (375 tests), sin ejecutar nada que no sea
+  un test.
+- **`MobileSignatureFlow.wiring.test.ts` diagnosticado y resuelto**: de sus 5
+  tests, 1 exponía un bug real (B) -- el botón "Guardar firmas" delegaba el
+  estado de envío únicamente al spinner mudo de `PrimaryButton` (`loading`),
+  sin ningún texto explícito "Guardando…"; se restauró un estado dedicado
+  (`submitting ? <Text>Guardando firmas…</Text> : <ActionRow>...`) en
+  `MobileSignatureFlow.tsx`. Los otros 4 (aquí y en 3 archivos más:
+  `LabEquipmentForm.wiring.test.ts`,
+  `LabTechnicalCapture.canonical-contract.wiring.test.ts`,
+  `LabTechnicalCapture.wiring.test.ts`) eran (A) tests obsoletos por
+  formato: regex exactas de una sola línea contra código que un paso de
+  reformateo (prettier) reordenó/dividió en múltiples líneas sin cambiar el
+  comportamiento -- se relajaron esas regex a tolerantes a formato, sin
+  tocar producción salvo el caso B ya descrito. Un caso adicional
+  (`canonicalFieldsByGroup(group)` → `canonicalFieldsByGroup(group,
+  canonicalFields)`) resultó ser una evolución legítima ya presente en
+  producción (el segundo argumento sigue derivándose de `CANONICAL_FIELDS`,
+  nunca de `resolveBlockFields`/branching por instrumento) -- se actualizó el
+  test para reflejar el contrato vigente, no se tocó el componente.
+- No se creó ninguna migración: ninguno de los dos pendientes requería
+  cambio de esquema.
+
 ## Validaciones
 
 ### Cierre quirúrgico acumulativo — 2026-09-04
@@ -301,6 +365,30 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
   diff quedó mínimo (la fila `@OT` nueva únicamente).
 - QA físico Mobile: **pendiente**. No se ejecutó ni se reclama validación en
   dispositivo físico ni simulador para este cierre.
+
+### Cierre de pendientes de auditoría — 2026-09-04 (observations snapshot + Mobile test discovery)
+
+- Suite focal backend (`test_lab_work_order_observations.py`,
+  `test_lab_field_sheets_capture.py`, `test_lab_phase6_field_sheet_revisions.py`,
+  `test_lab_work_orders.py`, `test_lab_equipment_soft_delete.py`): `157
+  passed, 9 skipped`, 0 fallas.
+- Backend suite completa: `1146 passed, 12 skipped`, 0 fallas (+9 sobre el
+  cierre anterior, exactamente los tests nuevos de observations).
+- Alembic: `heads`/`current` = `7088fa142cc2 (head)` único (sin cambios;
+  ningún pendiente de esta tanda requería migración); `check` = `No new
+  upgrade operations detected`.
+- Mobile: inventario de `*.test.ts(x)` bajo `src/` = 48 archivos. Antes de
+  este cierre `npm test` ejecutaba 27 de ellos (20 explícitos + 7 bajo
+  `src/wiring-tests/` vía glob) = 253 tests; ahora ejecuta los 48 = `375
+  passed, 0 failed`. Se confirmó que `MobileSignatureFlow.wiring.test.ts`
+  (el único que fallaba al widening) corre y pasa sus 5 casos.
+- `npx tsc --noEmit -p .`: correcto, sin salida.
+- `npm run lint` (`expo lint`): correcto, sin errores.
+- `git diff --check`: limpio.
+- QA físico Mobile: **pendiente** (sin cambios respecto al corte anterior;
+  ninguno de los dos pendientes cerrados aquí requería probarse en
+  dispositivo físico -- son lógica backend y descubrimiento de tests, no UI
+  nueva salvo el texto "Guardando firmas…" ya cubierto por su propio test).
 
 ### Cierre operativo y UX OT LAB — 2026-09-03
 
@@ -402,18 +490,18 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
 
 - QA físico Android/iPhone/TestFlight del recorrido completo de recepción,
   doble firma, orientación/teclado/scroll, FieldSheets, cierre, PDF,
-  refresh/realtime, retiro de equipo tras reapertura y errores. **No
-  ejecutado**; ningún cierre reciente (incluido el de 2026-09-04) lo reclama
-  como hecho.
+  refresh/realtime, retiro de equipo tras reapertura, snapshot de
+  observations y errores. **No ejecutado**; ningún cierre reciente (incluido
+  el de 2026-09-04) lo reclama como hecho.
 - Inventario API (`API_ENDPOINT_INVENTORY_2026-08-03.csv`) resuelto en el
   cierre de 2026-09-04: runtime y CSV committed vuelven a coincidir (518
   operaciones); `test_api_access_conformity.py` pasa sin excepciones.
-- Mobile: ampliar `npm test` para descubrir el resto de archivos
-  `*.test.ts` fuera de `src/wiring-tests/` (hoy sólo se ejecutan los listados
-  explícitamente en `package.json`); requiere primero investigar y corregir
-  la falla preexistente descubierta en `MobileSignatureFlow.wiring.test.ts`
-  al ejecutarla por primera vez (ver cierre 2026-09-04). Tarea separada, no
-  causada por LAB equipment delete.
+- Mobile: descubrimiento de tests resuelto en el cierre de pendientes de
+  auditoría 2026-09-04 -- `npm test` ahora ejecuta los 48 archivos
+  `*.test.ts(x)` reales bajo `src/` (antes 27), vía
+  `myc-mobile/scripts/list-test-files.js`; `MobileSignatureFlow.wiring.test.ts`
+  fue diagnosticado (1 bug real de wiring corregido, 4 asserts de formato
+  actualizados) y corre verde.
 - `test_postgresql_concurrent_individual_cohorts_get_distinct_versions` y
   `test_postgresql_concurrent_folio_allocation_is_unique` fallan contra la
   base local `erp_myc` por estado no-pristino/no aislado (ver Validaciones

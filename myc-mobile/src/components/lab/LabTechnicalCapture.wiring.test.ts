@@ -51,9 +51,9 @@ test('la hoja completed ofrece PDF y, sólo con la OT abierta, desbloqueo', () =
 test('los accesos y acciones usan el canon visual vigente', () => {
   assert.match(source, /<ActionTile icon="table-edit" label="Valores"/);
   assert.match(source, /<SecondaryButton[^>]*label="Ver \/ descargar PDF"/);
-  assert.match(source, /<SecondaryButton label="Guardar borrador"/);
-  assert.match(source, /<PrimaryButton label="Completar hoja"/);
-  assert.match(source, /<AdministrativeButton label="Solicitar desbloqueo"/);
+  assert.match(source, /<SecondaryButton[^>]*label="Guardar borrador"/);
+  assert.match(source, /<PrimaryButton[^>]*label="Completar hoja"/);
+  assert.match(source, /<AdministrativeButton[^>]*label="Solicitar desbloqueo"/);
   assert.match(source, /<DangerButton[^>]*label="Eliminar borrador"/);
   assert.doesNotMatch(source, /<ActionTile[^>]*label="(?:Guardar borrador|Completar hoja)"/);
 });
@@ -70,5 +70,5 @@ test('fecha de recepción respeta autoridad OT y la solicitud técnica es inform
 test('el borrador editable se descarta por DELETE explícito y no aparece para completed', () => {
   assert.match(source, /method: 'DELETE'/);
   assert.match(source, /!captureIsAlwaysReadOnly\(sheet\.status\)/);
-  assert.match(source, /<DangerButton label="Eliminar borrador"/);
+  assert.match(source, /<DangerButton[^>]*label="Eliminar borrador"/);
 });

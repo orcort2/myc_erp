@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   StyleSheet,
   Text,
@@ -371,6 +372,11 @@ export function MobileSignatureFlow({
             onPress={continueToTechnician}
           />
         </ActionRow>
+      ) : submitting ? (
+        <View style={styles.savingState}>
+          <ActivityIndicator color="#08756f" size="small" />
+          <Text style={styles.savingLabel}>Guardando firmas…</Text>
+        </View>
       ) : (
         <ActionRow>
           <SecondaryButton
@@ -464,6 +470,20 @@ const styles = StyleSheet.create({
     color: '#46d8c4',
     fontSize: 58,
     fontWeight: '300',
+  },
+
+  savingLabel: {
+    color: '#08756f',
+    fontSize: 15,
+    fontWeight: '700',
+    marginLeft: 10,
+  },
+
+  savingState: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingVertical: 18,
   },
 
   title: {

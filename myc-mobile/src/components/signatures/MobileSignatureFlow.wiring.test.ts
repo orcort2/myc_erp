@@ -35,7 +35,7 @@ test('un error de envío conserva la firma capturada -- nunca limpia clientCaptu
   assert.doesNotMatch(catchBlock, /onStateChange/);
   assert.doesNotMatch(catchBlock, /clientCapture: emptySignatureCapture/);
   assert.doesNotMatch(catchBlock, /technicianCapture: emptySignatureCapture/);
-  assert.match(source, /setError\(submitError instanceof Error \? submitError\.message/);
+  assert.match(source, /setError\(\s*submitError instanceof Error\s*\?\s*submitError\.message/);
 });
 
 test('el candado de envío sigue siendo la única guarda contra doble submit', () => {
@@ -44,5 +44,5 @@ test('el candado de envío sigue siendo la única guarda contra doble submit', (
 });
 
 test('el timer de éxito se limpia al desmontar, igual que el de transición de paso', () => {
-  assert.match(source, /if \(successTimer\.current\) clearTimeout\(successTimer\.current\)/);
+  assert.match(source, /if \(successTimer\.current\)\s*\{?\s*clearTimeout\(successTimer\.current\);?\s*\}?/);
 });

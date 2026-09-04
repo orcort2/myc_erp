@@ -21,7 +21,12 @@ test('los campos comunes ya no se derivan de resolveBlockFields sobre definition
 
 test('las 5 secciones canónicas se renderizan en el orden fijo del contrato, no por plantilla', () => {
   assert.match(source, /CANONICAL_GROUP_ORDER\.map\(\(group\) => \(/);
-  assert.match(source, /canonicalFieldsByGroup\(group\)\.map\(\(field\) => renderCanonicalField\(field\)\)/);
+  // canonicalFieldsByGroup admite un segundo argumento opcional (el subset
+  // ya calculado por canonicalFieldsForDefinition, que sigue partiendo de
+  // CANONICAL_FIELDS y sólo filtra por visible_fields del template -- nunca
+  // ramifica por template_key/instrumento, ver el resto de este archivo) --
+  // no importa si el caller lo pasa explícito o usa el default.
+  assert.match(source, /canonicalFieldsByGroup\(group(?:, canonicalFields)?\)\.map\(\(field\) => renderCanonicalField\(field\)\)/);
 });
 
 test('los campos especializados quedan en su propia sección, fuera del contrato canónico', () => {

@@ -28,7 +28,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
-| Configuración | 173 |
+| Configuración | 174 |
 | Documentación | 174 |
 | Pruebas | 98 |
 
@@ -894,6 +894,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/hooks/use-color-scheme.web.ts | myc-mobile/hooks | Archivo de soporte | Mantiene la capacidad de use color scheme.web dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/hooks/use-theme-color.ts | myc-mobile/hooks | Archivo de soporte | Mantiene la capacidad de use theme color dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/package.json | myc-mobile | Dependencias y gates móviles | Fija dependencias Expo SDK 54 y scripts TypeScript, lint, autenticación, capacidades, sincronización, Realtime y eliminación OT LAB. | npm, Expo SDK 54 y tsx | Desarrollo, validación y builds manuales | Crítico | Estable |
+| myc-mobile/scripts/list-test-files.js | myc-mobile/scripts | Archivo de soporte | Mantiene la capacidad de list test files dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/scripts/reset-project.js | myc-mobile/scripts | Archivo de soporte | Mantiene la capacidad de reset project dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/api/client.ts | myc-mobile/src/api | Cliente API Mobile | Propaga ApiError enriquecido y el contrato FieldError compartido sin alterar transporte autenticado. | fetch, environment y error-detail | Pantallas y servicios MYC Mobile | Crítico | Estable |
 | myc-mobile/src/api/error-detail.test.ts | myc-mobile/src/api | Pruebas de errores API | Verifica códigos conocidos, detalle estructurado y loc Pydantic convertido a fieldErrors útiles. | node:test y error-detail | Gate Mobile | Alto | Estable |
