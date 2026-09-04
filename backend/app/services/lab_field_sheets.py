@@ -35,6 +35,7 @@ from app.services.institutional_configurations import (
     institutional_snapshot,
 )
 from app.services.lab_work_orders import _missing_completed_sheets, resolve_equipment_certificate_client
+from app.services.storage_service import delete_if_unreferenced
 
 
 # Cierre de contrato canonico LAB (2026-09): identidad readonly del
@@ -475,6 +476,69 @@ def _discard_lab_field_sheet_uncommitted(
             "work_order_status": order.status,
         },
     )
+
+
+def purge_lab_field_sheets_for_deleted_work_order_uncommitted(
+    db: Session,
+    equipment: LabWorkOrderEquipment,
+    sheets: list[FieldSheet],
+    user: User,
+) -> list[str]:
+    """Purga exclusivamente revisiones LAB al eliminar administrativamente una OT.
+
+    El caller conserva la transacción y el commit. Las cuatro colecciones hijas
+    se eliminan de forma explícita; certificados productivos inesperadamente
+    enlazados se preservan y sólo pierden la FK opcional. Las rutas devueltas se
+    retiran mediante storage después del commit, cuando ya no tienen referencias.
+    """
+    if any(
+        sheet.lab_equipment_id != equipment.id or sheet.equipment_id is not None
+        for sheet in sheets
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="La purga administrativa sólo admite FieldSheets LAB del equipo indicado",
+        )
+
+    final_pdf_paths = sorted(
+        {sheet.final_pdf_path for sheet in sheets if sheet.final_pdf_path}
+    )
+    # Rompe primero la cadena autorreferencial N -> N-1 y el índice de vigente.
+    for sheet in sheets:
+        sheet.supersedes_field_sheet_id = None
+        sheet.is_current = False
+    db.flush()
+
+    for sheet in sorted(sheets, key=lambda item: item.revision_number, reverse=True):
+        for certificate in list(sheet.certificates):
+            certificate.field_sheet_id = None
+        for child in (
+            *list(sheet.results_rows),
+            *list(sheet.signatures),
+            *list(sheet.reference_standard_links),
+            *list(sheet.uncertainty_calculations),
+        ):
+            db.delete(child)
+        db.flush()
+        db.delete(sheet)
+    db.flush()
+    return final_pdf_paths
+
+
+def delete_purged_lab_field_sheet_files(
+    db: Session, paths: list[str], user: User, *, work_order_id: int
+) -> None:
+    """Retira artefactos ya huérfanos usando la autoridad institucional."""
+    for path in paths:
+        delete_if_unreferenced(
+            db,
+            path,
+            user_id=user.id,
+            module="lab_field_sheets",
+            entity="lab_work_orders",
+            entity_id=work_order_id,
+            reason="PDF final retirado por purga administrativa de OT LAB cancelada.",
+        )
 
 
 def discard_lab_field_sheet(

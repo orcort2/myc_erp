@@ -38,7 +38,12 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
         country=None,
     )
     purchase_order = (work_order.purchase_order or "").strip()
-    notes = upper(work_order.notes or "")
+    note_lines = [upper(work_order.notes.strip())] if work_order.notes and work_order.notes.strip() else []
+    for item in sorted(work_order.equipment, key=lambda equipment: equipment.position):
+        if item.observations and item.observations.strip():
+            instrument = upper(item.instrument.strip())
+            identification = upper(item.identification.strip()) if item.identification and item.identification.strip() else "SIN IDENTIFICACIÓN"
+            note_lines.append(f"{instrument} -> {identification} : {upper(item.observations.strip())}")
     revision_number = work_order.revision_number or 1
     if revision_number > 1 and work_order.reopen_ticket_id:
         reopening_note = upper(
@@ -50,7 +55,8 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
                 else "Se recabaron nuevas firmas para esta revisión."
             )
         )
-        notes = f"{notes}\n{reopening_note}".strip()
+        note_lines.append(reopening_note)
+    notes = "\n".join(note_lines)
     document = SimpleNamespace(
         created_at=work_order.reception_date,
         service_date=work_order.departure_date or _PendingDeliveryDate(),

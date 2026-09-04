@@ -50,6 +50,7 @@ const BLANK_EQUIPMENT: EquipmentBasicData = {
   identification: '',
   serial_number: '',
   report_number: null,
+  observations: null,
   is_good_condition: true,
 };
 
@@ -203,6 +204,14 @@ export function LabEquipmentForm({
           </Text>
         </View>
       )}
+
+      <Field
+        error={fieldErrors.observations}
+        label="Observaciones del equipo"
+        multiline
+        value={equipment.observations ?? ''}
+        onChange={(value) => updateEquipment('observations', value || null)}
+      />
 
       <Text style={styles.fieldLabel}>Estado físico</Text>
 

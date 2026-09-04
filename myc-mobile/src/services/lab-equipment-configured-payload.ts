@@ -12,6 +12,7 @@ export type EquipmentBasicData = {
   identification: string;
   serial_number: string;
   report_number: string | null;
+  observations?: string | null;
   is_good_condition: boolean;
 };
 
@@ -156,6 +157,7 @@ export function hydrateEquipmentFormValues(equipment: LabEquipment): EquipmentFo
       identification: equipment.identification,
       serial_number: equipment.serial_number,
       report_number: equipment.report_number,
+      observations: equipment.observations,
       is_good_condition: equipment.is_good_condition,
     },
     documentaryClient: equipment.certificate_client_mode === 'different'

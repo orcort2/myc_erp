@@ -256,6 +256,7 @@ class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
     # EquipmentDataBlock); no se prellena desde el equipo.
     model: Mapped[str | None] = mapped_column(String(160))
     report_number: Mapped[str | None] = mapped_column(String(160))
+    observations: Mapped[str | None] = mapped_column(Text)
     is_good_condition: Mapped[bool] = mapped_column(Boolean, nullable=False)
     service_type: Mapped[str | None] = mapped_column(String(20), index=True)
     linked_company_id: Mapped[int | None] = mapped_column(

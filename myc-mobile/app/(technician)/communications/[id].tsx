@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -16,12 +16,13 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { useCommunications } from '@/src/communications/CommunicationsProvider';
 import { BackButton } from '@/src/design/primitives';
 import { deliveryState } from '@/src/communications/message-state';
-import { fetchDirectory } from '@/src/services/communications';
-import type { CommunicationDirectory, MentionDraft } from '@/src/types/communication';
+import { fetchDirectory, searchWorkOrderMentions } from '@/src/services/communications';
+import type { CommunicationDirectory, MentionDraft, WorkOrderMentionSuggestion } from '@/src/types/communication';
 
 export default function ConversationScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const conversationId = Number(params.id);
+  const router = useRouter();
   const { authorizedFetch, user } = useAuth();
   const {
     beforeCursorByConversation,
@@ -38,6 +39,7 @@ export default function ConversationScreen() {
   const [body, setBody] = useState('');
   const [mentions, setMentions] = useState<MentionDraft[]>([]);
   const [directory, setDirectory] = useState<CommunicationDirectory | null>(null);
+  const [workOrderSuggestions, setWorkOrderSuggestions] = useState<WorkOrderMentionSuggestion[]>([]);
   const listRef = useRef<FlatList>(null);
   const conversation = conversations.find((item) => item.id === conversationId);
   const messages = messagesByConversation[conversationId] ?? [];
@@ -55,6 +57,16 @@ export default function ConversationScreen() {
     return match ? match[1].toLocaleLowerCase() : null;
   }, [body]);
   const participantIds = new Set(conversation?.participants.map((item) => item.id) ?? []);
+  useEffect(() => {
+    if (mentionQuery === null) { setWorkOrderSuggestions([]); return; }
+    let active = true;
+    const timer = setTimeout(() => {
+      searchWorkOrderMentions(authorizedFetch, mentionQuery)
+        .then((items) => { if (active) setWorkOrderSuggestions(items); })
+        .catch(() => { if (active) setWorkOrderSuggestions([]); });
+    }, 180);
+    return () => { active = false; clearTimeout(timer); };
+  }, [authorizedFetch, mentionQuery]);
   const suggestions = mentionQuery === null ? [] : [
     ...(directory?.users ?? [])
       .filter((person) => participantIds.has(person.id) && person.id !== user?.id)
@@ -70,6 +82,10 @@ export default function ConversationScreen() {
           ? { kind: 'all' as const }
           : { kind: 'role' as const, key: group.key },
       })),
+    ...workOrderSuggestions.map((item) => ({
+      label: item.label,
+      draft: { kind: 'work_order' as const, work_order_id: item.work_order_id },
+    })),
   ];
 
   function chooseMention(label: string, draft: MentionDraft) {
@@ -113,6 +129,17 @@ export default function ConversationScreen() {
               <View style={[styles.bubble, own ? styles.ownBubble : styles.otherBubble]}>
                 {!own && conversation?.conversation_type === 'group' && <Text style={styles.author}>{item.sender.full_name}</Text>}
                 <Text style={styles.body}>{item.body}</Text>
+                {(item.work_order_mentions ?? []).map((mention: { work_order_id: number }) => (
+                  <Pressable
+                    key={`work-order:${mention.work_order_id}`}
+                    onPress={() => router.push({
+                      pathname: '/(technician)/work-orders',
+                      params: { workOrderId: String(mention.work_order_id) },
+                    })}
+                  >
+                    <Text style={styles.workOrderLink}>Abrir OT mencionada</Text>
+                  </Pressable>
+                ))}
                 <View style={styles.metaRow}>
                   <Text style={styles.time}>{new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
                   {own && <Text style={[styles.state, state === 'failed' && styles.failed]}>{state}</Text>}
@@ -170,6 +197,7 @@ const styles = StyleSheet.create({
   state: { color: '#0067a8', fontSize: 10, marginLeft: 6 },
   failed: { color: '#a12622' },
   retry: { color: '#a12622', fontSize: 12, fontWeight: '800', marginTop: 4, textAlign: 'right' },
+  workOrderLink: { color: '#0067a8', fontSize: 13, fontWeight: '800', marginTop: 6 },
   suggestions: { backgroundColor: '#fff', borderTopColor: '#d8e0e6', borderTopWidth: 1, paddingHorizontal: 14, paddingVertical: 6 },
   suggestion: { color: '#0067a8', fontWeight: '700', paddingVertical: 8 },
   composer: { alignItems: 'flex-end', backgroundColor: '#fff', flexDirection: 'row', padding: 10 },

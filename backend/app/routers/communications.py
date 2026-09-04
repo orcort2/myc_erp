@@ -13,6 +13,7 @@ from app.schemas.communication import (
     CommunicationMessageCreate,
     CommunicationMessagePage,
     CommunicationMessageRead,
+    CommunicationWorkOrderSuggestionRead,
     CommunicationReceiptBatchRead,
     CommunicationReceiptUpdate,
     CommunicationSyncRead,
@@ -28,6 +29,7 @@ from app.services.communications import (
     list_conversations,
     list_directory,
     list_mentions,
+    search_work_order_mentions,
     sync_messages,
     update_receipts,
 )
@@ -51,6 +53,19 @@ def get_mentions(
     current_user: User = Depends(get_communications_user),
 ):
     return list_mentions(db, current_user.id, unread_only=unread_only, limit=limit)
+
+
+@router.get(
+    "/work-order-mentions/search",
+    response_model=list[CommunicationWorkOrderSuggestionRead],
+)
+def search_work_orders_for_mention(
+    q: str = Query(default="", max_length=120),
+    limit: int = Query(default=10, ge=1, le=10),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_communications_user),
+):
+    return search_work_order_mentions(db, current_user, q, limit=limit)
 
 
 @router.get("/conversations", response_model=list[CommunicationConversationRead])

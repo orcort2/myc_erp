@@ -22,6 +22,7 @@ export type LabEquipment = {
   // Fase 6: identidad del equipo (mismo criterio que Equipment productivo).
   model: string | null;
   report_number: string | null;
+  observations?: string | null;
   is_good_condition: boolean;
   service_type: 'accredited' | 'traceable' | 'linked' | null;
   linked_company_id: number | null;
@@ -206,7 +207,7 @@ export type GeneralData = {
 
 export type EquipmentData = Pick<LabEquipment,
   'instrument' | 'brand' | 'model' | 'identification' | 'serial_number'
-  | 'report_number' | 'is_good_condition'
+  | 'report_number' | 'observations' | 'is_good_condition'
 >;
 
 export type LabClient = {

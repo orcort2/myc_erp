@@ -858,20 +858,43 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             if not sheet.is_current or sheet.status not in {"draft", "in_progress"}
             or sheet.final_pdf_path or sheet.final_pdf_sha256
         ]
-        if protected:
+        if protected and work_order.status != "cancelled":
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "La OT contiene una hoja de campo completada o histórica y no puede eliminarse. "
-                    "Cancela la OT para conservar su trazabilidad."
+                    "La OT contiene una hoja de campo completada o histórica. "
+                    "Cancela primero la OT para habilitar la eliminación administrativa."
                 ),
             )
+        purged_sheet_snapshot = [
+            {
+                "id": sheet.id,
+                "revision_number": sheet.revision_number,
+                "status": sheet.status,
+                "final_pdf_sha256": sheet.final_pdf_sha256,
+                "template_key": sheet.template_key,
+            }
+            for sheet in all_sheets
+        ]
+        purged_pdf_paths: list[str] = []
         if all_sheets:
-            from app.services.lab_field_sheets import _discard_lab_field_sheet_uncommitted
+            if work_order.status == "cancelled":
+                from app.services.lab_field_sheets import (
+                    purge_lab_field_sheets_for_deleted_work_order_uncommitted,
+                )
 
-            for equipment in work_order.equipment:
-                if equipment.field_sheet is not None:
-                    _discard_lab_field_sheet_uncommitted(db, equipment, user)
+                for equipment in work_order.equipment:
+                    purged_pdf_paths.extend(
+                        purge_lab_field_sheets_for_deleted_work_order_uncommitted(
+                            db, equipment, list(equipment.field_sheets), user
+                        )
+                    )
+            else:
+                from app.services.lab_field_sheets import _discard_lab_field_sheet_uncommitted
+
+                for equipment in work_order.equipment:
+                    if equipment.field_sheet is not None:
+                        _discard_lab_field_sheet_uncommitted(db, equipment, user)
 
         revisions = list(
             db.scalars(
@@ -1021,6 +1044,7 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             previous_values={
                 "folio": deleted_folio,
                 "root_work_order_id": root_id,
+                "purged_field_sheets": purged_sheet_snapshot,
             },
             new_values={
                 "surviving_work_order_ids": [item.id for item in survivors],
@@ -1030,6 +1054,13 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
             },
         )
         db.commit()
+        if purged_pdf_paths:
+            from app.services.lab_field_sheets import delete_purged_lab_field_sheet_files
+
+            delete_purged_lab_field_sheet_files(
+                db, purged_pdf_paths, user, work_order_id=work_order_id
+            )
+            db.commit()
     except HTTPException:
         db.rollback()
         raise
@@ -1075,6 +1106,54 @@ def _notify_work_order_owner(
     )
     db.add(notification)
     queue_notification_for_delivery(db, notification)
+
+
+def _notify_capture_work_order_completed(
+    db: Session, work_order: LabWorkOrder, actor: User
+) -> None:
+    """Notifica una vez por revisión a cada usuario activo del rol Captura."""
+    recipients = list(
+        db.scalars(
+            select(User)
+            .where(
+                User.account_type == "internal",
+                User.status == "active",
+                User.is_active.is_(True),
+            )
+            .options(selectinload(User.roles))
+        ).all()
+    )
+    for recipient in recipients:
+        if not any(
+            role.is_active and role.name.casefold() == "captura"
+            for role in recipient.roles
+        ):
+            continue
+        event_key = (
+            f"lab-work-order:{work_order.id}:completed:"
+            f"revision:{work_order.revision_number}:user:{recipient.id}"
+        )
+        if db.scalar(select(Notification.id).where(Notification.event_key == event_key)):
+            continue
+        notification = Notification(
+            recipient_user_id=recipient.id,
+            actor_user_id=actor.id,
+            notification_type="work_order.completed",
+            event_key=event_key,
+            title=f"OT {work_order.folio} cerrada técnicamente",
+            body=f"{work_order.client_name}: captura técnica concluida.",
+            entity_type="work_order",
+            entity_id=work_order.id,
+            priority="normal",
+            metadata_json={
+                "work_order_id": work_order.id,
+                "work_order_folio": work_order.folio,
+                "client_name": work_order.client_name,
+                "mobile_path": "/(technician)/work-orders",
+            },
+        )
+        db.add(notification)
+        queue_notification_for_delivery(db, notification)
 
 
 def cancel_work_order(
@@ -2480,6 +2559,7 @@ def _finish_complete_members(
         if item.partial_close_ticket_id:
             item.partially_closed_at = completed_at
         item.signature_preserved = bool(item.reopen_ticket_id and item.signature_preserved)
+        _notify_capture_work_order_completed(db, item, user)
     ticket_ids = {item.reopen_ticket_id for item in members if item.reopen_ticket_id}
     if ticket_ids:
         tickets = list(

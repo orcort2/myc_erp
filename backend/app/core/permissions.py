@@ -129,6 +129,11 @@ ROLE_PERMISSIONS = {
         "work_orders.read_organization",
         "lab_packages.download",
         "lab_clients.read",
+        "lab_clients.create",
+        "lab_clients.update",
+        "lab_clients.deactivate",
+        "tickets.create",
+        "tickets.view_own",
         # Fase 3: permiso mínimo y exclusivo para capturar FieldSheets LAB una
         # vez que la recepción ya quedó firmada (received_signed/in_progress).
         # Deliberadamente NO se usa field_sheets.capture ni lab_work_orders.use

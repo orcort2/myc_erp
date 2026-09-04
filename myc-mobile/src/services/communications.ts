@@ -8,6 +8,7 @@ import type {
   CommunicationMessagePage,
   CommunicationSyncPage,
   MentionDraft,
+  WorkOrderMentionSuggestion,
 } from '@/src/types/communication';
 
 export type AuthorizedFetch = (url: string, init?: RequestInit) => Promise<Response>;
@@ -79,6 +80,14 @@ export async function fetchDirectory(fetcher: AuthorizedFetch) {
 
 export async function fetchMentions(fetcher: AuthorizedFetch) {
   return json<CommunicationMentionInbox[]>(await fetcher(apiUrl('/communications/mentions')));
+}
+
+export async function searchWorkOrderMentions(
+  fetcher: AuthorizedFetch, query: string,
+) {
+  return json<WorkOrderMentionSuggestion[]>(await fetcher(
+    apiUrl(`/communications/work-order-mentions/search?q=${encodeURIComponent(query)}&limit=10`),
+  ));
 }
 
 export async function createConversation(

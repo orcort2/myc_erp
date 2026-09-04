@@ -31,6 +31,7 @@ export type CommunicationMessage = {
   sender: CommunicationActor;
   receipts: CommunicationReceipt[];
   mentions: CommunicationMention[];
+  work_order_mentions?: { work_order_id: number }[];
   delivery_state?: MessageDeliveryState;
 };
 
@@ -79,7 +80,16 @@ export type CommunicationMentionInbox = {
 };
 
 export type MentionDraft = {
-  kind: 'user' | 'all' | 'role';
+  kind: 'user' | 'all' | 'role' | 'work_order';
   user_id?: number;
+  work_order_id?: number;
   key?: string;
+};
+
+export type WorkOrderMentionSuggestion = {
+  work_order_id: number;
+  folio: number;
+  client_name: string;
+  status: string;
+  label: string;
 };

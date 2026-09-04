@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import uuid4
+import re
 
 from fastapi import HTTPException, status
 from sqlalchemy import and_, func, or_, select, update
@@ -17,6 +18,7 @@ from app.models.communication import (
     communication_participants,
 )
 from app.models.notification import Notification
+from app.models.lab_work_order import LabWorkOrder
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.schemas.communication import (
@@ -27,6 +29,8 @@ from app.schemas.communication import (
     CommunicationMentionInboxItem,
     CommunicationMessagePage,
     CommunicationMessageRead,
+    CommunicationWorkOrderMentionRead,
+    CommunicationWorkOrderSuggestionRead,
     CommunicationReceiptBatchRead,
     CommunicationSyncRead,
 )
@@ -36,6 +40,7 @@ from app.services.push_notifications import queue_notification_for_delivery
 
 MASS_MENTION_ROLES = {"administrador", "desarrollador", "calidad"}
 _NOT_PROVIDED = object()
+_WORK_ORDER_MARKER = re.compile(r"\n?\[\[work_order:(\d+)\]\]")
 
 
 def _now() -> datetime:
@@ -51,7 +56,53 @@ def _message_options():
 
 
 def _message_read(message: CommunicationMessage) -> CommunicationMessageRead:
-    return CommunicationMessageRead.model_validate(message)
+    payload = CommunicationMessageRead.model_validate(message)
+    ids = [int(value) for value in _WORK_ORDER_MARKER.findall(payload.body)]
+    payload.body = _WORK_ORDER_MARKER.sub("", payload.body).rstrip()
+    payload.work_order_mentions = [
+        CommunicationWorkOrderMentionRead(work_order_id=value)
+        for value in dict.fromkeys(ids)
+    ]
+    return payload
+
+
+def _can_read_lab_work_orders(user: User) -> bool:
+    return user.account_type == "internal" and any(
+        user_has_permission(user, permission)
+        for permission in (
+            "lab_work_orders.use",
+            "work_orders.read_organization",
+            "work_orders.read",
+        )
+    )
+
+
+def search_work_order_mentions(
+    db: Session, current_user: User, query: str, *, limit: int = 10
+) -> list[CommunicationWorkOrderSuggestionRead]:
+    if not _can_read_lab_work_orders(current_user):
+        raise HTTPException(status_code=403, detail="No tienes permiso para consultar OTs")
+    normalized = query.strip()
+    statement = select(LabWorkOrder)
+    if normalized:
+        folio_query = normalized.upper().removeprefix("OT-")
+        criteria = [LabWorkOrder.client_name.ilike(f"%{normalized}%")]
+        if folio_query.isdigit():
+            criteria.append(LabWorkOrder.folio == int(folio_query))
+        statement = statement.where(or_(*criteria))
+    orders = list(
+        db.scalars(statement.order_by(LabWorkOrder.folio.desc()).limit(limit)).all()
+    )
+    return [
+        CommunicationWorkOrderSuggestionRead(
+            work_order_id=item.id,
+            folio=item.folio,
+            client_name=item.client_name,
+            status=item.status,
+            label=f"OT-{item.folio} · {item.client_name} · {item.status}",
+        )
+        for item in orders
+    ]
 
 
 def _client_read(client: Client | None) -> CommunicationClientRead | None:
@@ -499,11 +550,22 @@ def create_conversation(db: Session, current_user: User, payload):
 
 
 def _resolve_mentions(
-    conversation: CommunicationConversation, current_user: User, mentions
-) -> dict[int, tuple[str, str | None]]:
+    db: Session, conversation: CommunicationConversation, current_user: User, mentions
+) -> tuple[dict[int, tuple[str, str | None]], list[int]]:
     participants = {participant.id: participant for participant in conversation.participants}
     resolved: dict[int, tuple[str, str | None]] = {}
+    work_order_ids: list[int] = []
     for mention in mentions:
+        if mention.kind == "work_order":
+            if not _can_read_lab_work_orders(current_user):
+                raise HTTPException(status_code=403, detail="No tienes permiso para mencionar OTs")
+            exists = db.scalar(
+                select(LabWorkOrder.id).where(LabWorkOrder.id == mention.work_order_id)
+            )
+            if exists is None:
+                raise HTTPException(status_code=422, detail="La OT mencionada no existe")
+            work_order_ids.append(mention.work_order_id)
+            continue
         if mention.kind == "user":
             if mention.user_id not in participants:
                 raise HTTPException(
@@ -539,7 +601,7 @@ def _resolve_mentions(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="El grupo mencionado no tiene participantes autorizados",
             )
-    return resolved
+    return resolved, work_order_ids
 
 
 def _create_message_notifications(
@@ -630,14 +692,19 @@ def add_message(
     )
     if existing:
         return existing, _participant_ids(existing.conversation), [], False
-    resolved_mentions = _resolve_mentions(conversation, current_user, mentions)
+    resolved_mentions, work_order_mentions = _resolve_mentions(
+        db, conversation, current_user, mentions
+    )
     now = _now()
     message = CommunicationMessage(
         conversation_id=conversation.id,
         sender_user_id=current_user.id,
         client_message_id=client_id,
         sequence=conversation.next_message_sequence,
-        body=normalized_body,
+        body=normalized_body + "".join(
+            f"\n[[work_order:{work_order_id}]]"
+            for work_order_id in dict.fromkeys(work_order_mentions)
+        ),
         delivered_at=now,
         created_at=now,
         updated_at=now,

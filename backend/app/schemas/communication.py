@@ -20,8 +20,9 @@ class CommunicationClientRead(BaseModel):
 class CommunicationMentionCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["user", "all", "role"]
+    kind: Literal["user", "all", "role", "work_order"]
     user_id: int | None = None
+    work_order_id: int | None = Field(default=None, gt=0)
     key: str | None = Field(default=None, min_length=1, max_length=80)
 
     @model_validator(mode="after")
@@ -30,6 +31,8 @@ class CommunicationMentionCreate(BaseModel):
             raise ValueError("user_id es obligatorio para una mención individual")
         if self.kind == "role" and not self.key:
             raise ValueError("key es obligatorio para una mención de grupo")
+        if self.kind == "work_order" and self.work_order_id is None:
+            raise ValueError("work_order_id es obligatorio para una mención de OT")
         return self
 
 
@@ -56,6 +59,10 @@ class CommunicationMentionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CommunicationWorkOrderMentionRead(BaseModel):
+    work_order_id: int
+
+
 class CommunicationMessageRead(BaseModel):
     id: int
     conversation_id: int
@@ -68,6 +75,7 @@ class CommunicationMessageRead(BaseModel):
     sender: CommunicationActorRead
     receipts: list[CommunicationReceiptRead] = Field(default_factory=list)
     mentions: list[CommunicationMentionRead] = Field(default_factory=list)
+    work_order_mentions: list[CommunicationWorkOrderMentionRead] = Field(default_factory=list)
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -147,6 +155,14 @@ class CommunicationReceiptBatchRead(BaseModel):
 
 class CommunicationMentionGroupRead(BaseModel):
     key: str
+    label: str
+
+
+class CommunicationWorkOrderSuggestionRead(BaseModel):
+    work_order_id: int
+    folio: int
+    client_name: str
+    status: str
     label: str
 
 

@@ -97,7 +97,16 @@ class LabEquipmentBase(BaseModel):
     serial_number: str = Field(min_length=1, max_length=160)
     model: str | None = Field(default=None, max_length=160)
     report_number: str | None = Field(default=None, max_length=160)
+    observations: str | None = Field(default=None, max_length=4000)
     is_good_condition: bool
+
+    @field_validator("model", "report_number", "observations", mode="before")
+    @classmethod
+    def normalize_optional_equipment_text(cls, value):
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        return normalized or None
 
 
 class LabEquipmentWrite(LabEquipmentBase):
