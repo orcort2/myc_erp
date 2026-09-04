@@ -749,6 +749,125 @@ def test_delivered_equipment_blocks_reopen_and_cancel(lab_context):
     assert cancel.status_code == 409
 
 
+def test_delivered_equipment_blocks_delete(lab_context):
+    """AJUSTE anulación administrativa de entrega -- delete_work_order gana el
+    mismo guard explícito que cancel_work_order ya tenía: una entrega
+    'completed' vigente bloquea la eliminación ANTES de cualquier mutación."""
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    completed = _completed_single(client, tokens["tech"], "Cliente guard delete", equipment_count=1)
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}"
+    delivery = client.post(f"{endpoint}/delivery", json=delivery_payload(), headers=tech_headers)
+    assert delivery.status_code == 201, delivery.text
+
+    delete_while_delivered = client.delete(endpoint, headers=admin_headers)
+    assert delete_while_delivered.status_code == 409
+    assert "entrega física de equipos" in delete_while_delivered.json()["detail"]
+
+
+def test_voided_delivery_still_blocks_delete_but_not_cancel(lab_context):
+    """LabDeliveryItem.work_order_id es procedencia histórica -- nunca se
+    reasigna a otra OT (eso falsearía a qué OT perteneció el equipo
+    entregado). Una entrega anulada sigue bloqueando la eliminación (mensaje
+    explícito, no un 409 genérico de integridad) mientras Cancelar sigue
+    disponible -- ese es el camino correcto para conservar la trazabilidad."""
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    completed = _completed_single(client, tokens["tech"], "Cliente último miembro", equipment_count=1)
+    endpoint = f"/api/mobile/v1/technician/lab-work-orders/{completed['id']}"
+    delivery = client.post(f"{endpoint}/delivery", json=delivery_payload(), headers=tech_headers)
+    assert delivery.status_code == 201, delivery.text
+    delivery_id = delivery.json()["id"]
+
+    void_response = client.post(
+        f"{endpoint}/delivery/{delivery_id}/void",
+        json={"reason": "Corrección administrativa"},
+        headers=admin_headers,
+    )
+    assert void_response.status_code == 200, void_response.text
+
+    delete_after_void = client.delete(endpoint, headers=admin_headers)
+    assert delete_after_void.status_code == 409
+    assert "historial de entrega" in delete_after_void.json()["detail"]
+
+    cancel_after_void = client.post(f"{endpoint}/cancel", json={"reason": "Cancelar"}, headers=admin_headers)
+    assert cancel_after_void.status_code == 200, cancel_after_void.text
+
+
+def test_deleting_the_root_of_a_multi_ot_group_reassigns_group_level_delivery_records_to_the_survivor(lab_context):
+    """Un miembro puede tener una entrega/receipt de GRUPO (root_work_order_id)
+    sin que su propia OT haya aportado ningún LabDeliveryItem (p.ej. una
+    entrega parcial que sólo cubrió equipos de otros miembros) -- en ese caso
+    sí hay a quién reasignar root_work_order_id (mismo patrón que ya usan
+    tickets/sesiones), y eliminar la raíz no debe romperse por ese FK."""
+    from datetime import datetime, timezone
+
+    from app.models.lab_delivery_group_receipt import LabDeliveryGroupReceipt
+    from app.models.lab_delivery_item import LabDeliveryItem
+    from app.models.lab_work_order_delivery import LabWorkOrderDelivery
+
+    client, factory, tokens = lab_context
+    admin_headers = auth(tokens["admin"])
+    members = _completed_group(client, tokens["tech"], "Cliente grupo reasignación", member_count=2)
+    root_id = members[0]["root_work_order_id"]
+    survivor_id = next(m["id"] for m in members if m["id"] != root_id)
+
+    with factory() as db:
+        survivor = db.get(LabWorkOrder, survivor_id)
+        equipment = survivor.equipment[0]
+        now = datetime.now(timezone.utc)
+        delivery = LabWorkOrderDelivery(
+            root_work_order_id=root_id,
+            exhibition_number=1,
+            delivery_type="full",
+            delivery_method="direct",
+            status="voided",
+            delivered_at=now,
+            delivered_by_user_id=survivor.created_by_user_id,
+            delivered_by_signature_data_url=PNG_DATA_URL,
+            recipient_name="Receptor histórico",
+            recipient_signature_data_url=PNG_DATA_URL,
+            voided_at=now,
+            voided_by_user_id=survivor.created_by_user_id,
+            void_reason="Fixture histórica",
+        )
+        db.add(delivery)
+        db.flush()
+        db.add(LabDeliveryItem(
+            delivery_id=delivery.id,
+            work_order_id=survivor.id,
+            equipment_id=equipment.id,
+            instrument_snapshot=equipment.instrument,
+            brand_snapshot=equipment.brand,
+            identification_snapshot=equipment.identification,
+            serial_number_snapshot=equipment.serial_number,
+        ))
+        db.add(LabDeliveryGroupReceipt(
+            root_work_order_id=root_id,
+            version=1,
+            exhibitions_count=1,
+            generated_at=now,
+            generated_by_user_id=survivor.created_by_user_id,
+            pdf=b"%PDF-fixture",
+            pdf_sha256="0" * 64,
+        ))
+        db.commit()
+        delivery_id = delivery.id
+
+    delete_root = client.delete(f"/api/mobile/v1/technician/lab-work-orders/{root_id}", headers=admin_headers)
+    assert delete_root.status_code == 204, delete_root.text
+
+    with factory() as db:
+        reloaded_delivery = db.get(LabWorkOrderDelivery, delivery_id)
+        assert reloaded_delivery is not None, "el historial de entrega nunca debe borrarse"
+        assert reloaded_delivery.root_work_order_id == survivor_id
+        reloaded_receipt = db.scalar(select(LabDeliveryGroupReceipt))
+        assert reloaded_receipt is not None
+        assert reloaded_receipt.root_work_order_id == survivor_id
+
+
 # ---------------------------------------------------------------------------
 # LEGACY
 # ---------------------------------------------------------------------------

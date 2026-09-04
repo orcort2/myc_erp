@@ -28,7 +28,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
-| Configuración | 171 |
+| Configuración | 172 |
 | Documentación | 174 |
 | Pruebas | 93 |
 
@@ -994,6 +994,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/types/operational-ticket.ts | myc-mobile/src/types | Contrato móvil de Tickets | Tipifica lifecycle, contexto y los ocho tipos operativos, incluido reception_date_change. | TypeScript y API backend | Bandeja, filtros y navegación | Alto | Estable |
 | myc-mobile/src/types/sale-delivery.ts | myc-mobile/src/types | Contrato móvil de entregas Venta | Tipifica entrega, líneas, estados y payloads de aceptación/recepción. | TypeScript | Pantalla y cliente API móvil | Alto | En revisión |
 | myc-mobile/src/wiring-tests/lab-delivery-flow.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de lab delivery flow.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
+| myc-mobile/src/wiring-tests/lab-delivery-void-admin.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de lab delivery void admin.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/operational-action-stack.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de operational action stack.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.navigation-lifecycle.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.navigation lifecycle.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.operational-ux.wiring.test.ts | myc-mobile/src/wiring-tests | Regresión UX OT LAB | Verifica canon de botones y cableado de fieldErrors en datos generales/equipo. | node:test y fuente work-orders | Gate Mobile | Alto | Estable |

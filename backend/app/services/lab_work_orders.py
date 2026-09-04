@@ -33,6 +33,7 @@ from app.models.lab_work_order import (
 from app.models.lab_work_order_revision import LabWorkOrderRevision
 from app.models.lab_work_order_delivery import LabWorkOrderDelivery
 from app.models.lab_delivery_item import LabDeliveryItem
+from app.models.lab_delivery_group_receipt import LabDeliveryGroupReceipt
 from app.models.notification import Notification
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
@@ -820,6 +821,31 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
     """Delete one LAB work order while preserving valid group-owned resources."""
     try:
         work_order = _get(db, work_order_id, lock=True)
+        # LabDeliveryItem.work_order_id es RESTRICT hacia lab_work_orders.id y
+        # es procedencia histórica de ese equipo específico (voucher_pdf,
+        # firmas y snapshots nunca se borran ni se reasignan a otra OT -- eso
+        # falsearía a qué OT perteneció realmente el equipo entregado). Si
+        # esta OT tiene algún item de entrega, vigente o ya anulado, eliminar
+        # queda bloqueado antes de cualquier mutación; Cancelar preserva esa
+        # trazabilidad sin este conflicto.
+        delivered_statuses = set(db.scalars(
+            select(LabWorkOrderDelivery.status)
+            .join(LabDeliveryItem, LabDeliveryItem.delivery_id == LabWorkOrderDelivery.id)
+            .where(LabDeliveryItem.work_order_id == work_order.id)
+        ).all())
+        if "completed" in delivered_statuses:
+            raise HTTPException(
+                status_code=409,
+                detail="La OT ya registra la entrega física de equipos. Anula primero el acuse de entrega correspondiente.",
+            )
+        if delivered_statuses:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "La OT conserva historial de entrega (anulado) y no puede eliminarse. "
+                    "Cancela la OT para conservar su trazabilidad."
+                ),
+            )
         group = _group(db, work_order, lock=True)
         survivors = [item for item in group if item.id != work_order.id]
         survivor_ids = {item.id for item in survivors}
@@ -915,6 +941,23 @@ def delete_work_order(db: Session, work_order_id: int, user: User) -> None:
                     .with_for_update()
                 ).all()
             )
+
+        if replacement is not None and work_order.id == root_id:
+            # El guard de arriba ya garantiza que, si no hay replacement, no
+            # existe ningún LabWorkOrderDelivery/LabDeliveryGroupReceipt para
+            # este root -- aquí sólo se reasignan cuando sí hay a quién.
+            for delivery in db.scalars(
+                select(LabWorkOrderDelivery)
+                .where(LabWorkOrderDelivery.root_work_order_id == root_id)
+                .with_for_update()
+            ):
+                delivery.root_work_order_id = replacement.id
+            for receipt in db.scalars(
+                select(LabDeliveryGroupReceipt)
+                .where(LabDeliveryGroupReceipt.root_work_order_id == root_id)
+                .with_for_update()
+            ):
+                receipt.root_work_order_id = replacement.id
 
         work_order.signature_session_id = None
         work_order.reopen_ticket_id = None

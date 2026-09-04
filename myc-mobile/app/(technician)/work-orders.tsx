@@ -412,6 +412,19 @@ export default function WorkOrdersScreen() {
   const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
   const canCancel = !!user && hasPermission(user.permissions, 'lab_work_orders.cancel');
+  // Entregas vigentes que efectivamente afectan a la OT actual -- una
+  // exhibición completed de una OT hermana que no trae equipos de esta OT no
+  // cuenta como bloqueo ni habilita anulación desde aquí (ver AJUSTE de
+  // anulación administrativa de entrega).
+  const activeDeliveriesForCurrentWorkOrder = useMemo(
+    () => (deliveryStatus?.exhibitions ?? []).filter(
+      (exhibition) => exhibition.status === 'completed'
+        && exhibition.items.some((item) => item.work_order_id === workOrder?.id)
+    ),
+    [deliveryStatus, workOrder?.id],
+  );
+  const activeDeliveryCount = activeDeliveriesForCurrentWorkOrder.length;
+  const hasActiveDeliveryForCurrentWorkOrder = activeDeliveryCount > 0;
   // Cierre UX 2026-09: quien YA tiene autoridad de reapertura directa
   // (work_orders.reopen + al menos una política) ve "Reabrir orden" y la
   // ejecuta en una sola llamada -- no se le ofrece "Solicitar reapertura"
@@ -1674,7 +1687,8 @@ export default function WorkOrdersScreen() {
                           <OperationalActionStack>
                             <SecondaryButton icon="printer" label="Ver / imprimir acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'print')} />
                             <SecondaryButton icon="share-variant" label="Compartir / descargar acuse" onPress={() => downloadDeliveryPdf(exhibition.id, 'share')} />
-                            {exhibition.status === 'completed' && canVoidLabDelivery && (
+                            {activeDeliveryCount > 1 && exhibition.status === 'completed' && canVoidLabDelivery
+                              && exhibition.items.some((item) => item.work_order_id === workOrder.id) && (
                               <AdministrativeButton icon="undo" label="Anular esta exhibición" onPress={() => { setVoidingDelivery(exhibition); setTicketDialogMode('void_delivery'); setTicketOpen(true); }} />
                             )}
                           </OperationalActionStack>
@@ -1710,10 +1724,31 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.dangerTitle}>Acciones administrativas {adminActionsOpen ? '▾' : '▸'}</Text>
                   </Pressable>
                   {adminActionsOpen && <>
+                    {canVoidLabDelivery && activeDeliveryCount === 1 && (
+                      <OperationalActionStack>
+                        <AdministrativeButton
+                          disabled={busy}
+                          icon="undo"
+                          label="Anular entrega"
+                          onPress={() => {
+                            setVoidingDelivery(activeDeliveriesForCurrentWorkOrder[0]);
+                            setTicketDialogMode('void_delivery');
+                            setTicketOpen(true);
+                          }}
+                        />
+                      </OperationalActionStack>
+                    )}
+                    {hasActiveDeliveryForCurrentWorkOrder && (
+                      <Text style={styles.dangerDescription}>
+                        {activeDeliveryCount > 1
+                          ? 'Anula primero las entregas físicas vigentes de esta OT para habilitar cancelación o eliminación.'
+                          : 'Anula primero la entrega física vigente de esta OT para habilitar cancelación o eliminación.'}
+                      </Text>
+                    )}
                     {canCancel && workOrder.status !== 'cancelled' && (
                       <OperationalActionStack>
                         <AdministrativeButton
-                          disabled={busy || deleting}
+                          disabled={busy || deleting || hasActiveDeliveryForCurrentWorkOrder}
                           icon="cancel"
                           label="Cancelar y conservar OT"
                           onPress={() => {
@@ -1726,7 +1761,7 @@ export default function WorkOrdersScreen() {
                     <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
                     <OperationalActionStack>
                       <DangerButton
-                        disabled={busy || deleting}
+                        disabled={busy || deleting || hasActiveDeliveryForCurrentWorkOrder}
                         icon="trash-can-outline"
                         label="Eliminar orden de trabajo"
                         loading={deleting}
@@ -1822,6 +1857,24 @@ export default function WorkOrdersScreen() {
                   <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'void_delivery' ? 'ANULACIÓN DE ACUSE' : ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : 'TICKET DE REAPERTURA'}</Text>
                   <Text style={styles.sectionTitle}>{ticketDialogMode === 'void_delivery' ? 'Anular entrega registrada' : ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : '¿Por qué necesitas modificar esta orden?'}</Text>
                   <Text style={styles.sectionDescription}>{ticketDialogMode === 'void_delivery' ? 'La firma y el PDF se conservarán en el historial.' : ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : 'La solicitud requiere resolución de Admin.'}</Text>
+                  {ticketDialogMode === 'void_delivery' && voidingDelivery && (() => {
+                    // La entrega es un evento atómico -- si esta exhibición
+                    // también trae equipos de OT hermanas, anularla las
+                    // regresa también a pendientes de entrega. Nunca se
+                    // anula por item, así que el usuario debe verlo antes de
+                    // confirmar.
+                    const siblingFolios = Array.from(new Set(
+                      voidingDelivery.items
+                        .filter((item) => item.work_order_id !== workOrder?.id)
+                        .map((item) => item.work_order_folio)
+                    ));
+                    if (!siblingFolios.length) return null;
+                    return (
+                      <AlertBanner tone="warning">
+                        {`Esta exhibición también contiene equipos de las OT: ${siblingFolios.join(', ')}.\nAl anularla, esos equipos volverán también a pendientes de entrega.`}
+                      </AlertBanner>
+                    );
+                  })()}
                   {ticketDialogMode === 'reopen_direct' && (
                     <View style={styles.row}>
                       <Pressable onPress={() => setReopenSignaturePolicy('preserve')} style={[styles.choice, reopenSignaturePolicy === 'preserve' && styles.choiceActive]}><Text>Conservar firma</Text></Pressable>
