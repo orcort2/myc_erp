@@ -394,6 +394,51 @@ La app muestra la acción sólo con la capacidad efectiva, usa confirmación
 nativa con folio/cliente, impide doble envío y vuelve a consultar el listado
 LAB tras `204` o `404`. `403`, `409` y errores de red conservan el detalle.
 
+## Retiro de equipo individual (tombstone, no DELETE físico)
+
+`DELETE /{id}/equipment/{equipment_id}` nunca borra físicamente la fila. Retira
+el equipo de la composición operativa vigente mediante `SoftDeleteMixin`
+(`is_active=false`, `deleted_at`, `deleted_by`); el registro permanece en
+`lab_work_order_equipment` para siempre. Antes de este fix, la relación ORM
+`LabWorkOrder.equipment` (`cascade="all, delete-orphan"`) emitía un DELETE
+físico que, vía SQLAlchemy, hacía `UPDATE field_sheets SET lab_equipment_id =
+NULL` antes de borrar -- si el equipo tenía una FieldSheet histórica
+(`completed`), eso violaba `ck_field_sheets_exactly_one_equipment_owner` y
+producía un 500 crudo. El caso concreto: OT completada, reabierta vía ticket
+(`reopen_ticket_id` asignado), y se intenta retirar un equipo cuya FieldSheet
+ya se completó antes del cierre.
+
+Invariantes garantizados por el tombstone:
+
+- La FieldSheet histórica (`status`, `final_pdf_path`, `final_pdf_sha256`,
+  `lab_equipment_id`) nunca se toca ni se pierde.
+- `LabWorkOrder.active_equipment` (equipo con `is_active=true`) es la única
+  fuente para: Mobile (`LabWorkOrderRead.equipment`), el máximo de 10 equipos,
+  el cierre técnico (`_missing_completed_sheets`/`_draft_field_sheet_targets`),
+  las firmas de grupo/individual y el PDF final -- todos ignoran el equipo
+  retirado. `LabWorkOrder.equipment` (la colección completa) sigue existiendo
+  para purga administrativa (`DELETE /lab-work-orders/{id}`), `export_all` y
+  auditoría/histórico.
+- `position` usa un índice único parcial (`uq_lab_equipment_position_active`,
+  `WHERE is_active IS TRUE`) en vez de un `UniqueConstraint` pleno -- un
+  equipo retirado puede compartir posición con uno nuevo. Retirar un equipo
+  compacta las posiciones activas restantes (1..N contiguos); agregar equipo
+  nuevo reutiliza el primer hueco libre.
+- Retirar equipo sobre una OT ya reabierta (`reopen_ticket_id` no nulo) es un
+  cambio estructural: invalida la firma vigente (`signature_required=true`)
+  igual que agregar equipo, incluso bajo política `preserve`.
+- Delivery, `LabDeliveryItem` y sus columnas `*_snapshot` nunca se tocan al
+  retirar equipo -- ni siquiera cuando el equipo retirado ya fue entregado en
+  una exhibición histórica.
+- `expected_edit_version` sólo se exige (409 `REVISION_CONFLICT` si no
+  coincide) cuando la OT ya tiene `reopen_ticket_id`; una OT nunca reabierta
+  no impone control de concurrencia optimista en este endpoint.
+
+Ver migración `7088fa142cc2_soft_delete_lab_equipment` y
+`backend/tests/test_lab_equipment_soft_delete.py` (incluye una regresión
+PostgreSQL real vía `LAB_POSTGRES_TEST_URL`, obligatoria porque el bug
+original sólo se manifestaba contra un motor con FK/CHECK reales).
+
 ## API
 
 | Método | Ruta relativa | Efecto |
@@ -403,7 +448,7 @@ LAB tras `204` o `404`. `403`, `409` y errores de red conservan el detalle.
 | PATCH | `/lab-work-orders/{id}/reception-date` | actualizar fecha canónica y sincronizar hojas vigentes editables |
 | DELETE | `/lab-work-orders/{id}` | eliminar una OT individual y reparar/conservar el grupo |
 | POST | `/{id}/equipment` | agregar hasta 10 |
-| PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / eliminar antes de firma |
+| PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / retirar (tombstone lógico, ver abajo) |
 | DELETE | `/{id}/equipment/{equipment_id}/field-sheet` | descartar únicamente la revisión vigente editable |
 | POST | `/{id}/additional` | crear la siguiente OT del grupo |
 | POST | `/{id}/signatures` | firmar la recepción de la cohorte abierta del grupo histórico |

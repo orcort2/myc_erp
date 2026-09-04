@@ -24,13 +24,13 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 
 | Sección | Archivos |
 | --- | ---: |
-| Backend | 506 |
+| Backend | 507 |
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
 | Configuración | 173 |
 | Documentación | 174 |
-| Pruebas | 97 |
+| Pruebas | 98 |
 
 ## Convenciones
 
@@ -449,6 +449,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/migrations/versions/6ae1d4877cdb_communication_conversations.py | backend/migrations/versions | Migración Alembic | Aplica la revisión 6ae1d4877cdb communication converSATions del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/6b2e9a41c730_allow_pending_maintenance_location.py | backend/migrations/versions | Migración Alembic | Aplica la revisión 6b2e9a41c730 allow pending maintenance location del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/6f7a8b9c0d11_update_equipment_status.py | backend/migrations/versions | Migración Alembic | Aplica la revisión 6f7a8b9c0d11 update equipment status del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
+| backend/migrations/versions/7088fa142cc2_soft_delete_lab_equipment.py | backend/migrations/versions | Migración Alembic | Aplica la revisión 7088fa142cc2 soft delete lab equipment del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/70d92d9b36bf_add_structured_repair_diagnosis.py | backend/migrations/versions | Migración Alembic | Aplica la revisión 70d92d9b36bf add structured repair diagnosis del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/7a8b9c0d1e12_create_field_sheets.py | backend/migrations/versions | Migración Alembic | Aplica la revisión 7a8b9c0d1e12 create field sheETS del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/7b1c213129ec_add_operational_snapshot_to_quotation_.py | backend/migrations/versions | Migración Alembic | Aplica la revisión 7b1c213129ec add operational snapshot to quotation  del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
@@ -1254,6 +1255,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/tests/test_lab_delivery_pdfs_branding.py | backend/tests/test_lab_delivery_pdfs_branding.py | Prueba automatizada | Verifica el contrato operativo de test lab delivery PDF branding y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_lab_delivery_timestamp_defaults.py | backend/tests/test_lab_delivery_timestamp_defaults.py | Prueba automatizada | Verifica el contrato operativo de test lab delivery timestamp defaults y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_lab_domain_phase1.py | backend/tests/test_lab_domain_phase1.py | Regresión de dominio LabClient | Verifica identidad, campos opcionales, soft delete, propagación, permisos y listado server-side con búsqueda, limit, offset e inactivos. | Pytest, TestClient, SQLAlchemy y servicios LAB | Gate backend LabClient | Alto | Estable |
+| backend/tests/test_lab_equipment_soft_delete.py | backend/tests/test_lab_equipment_soft_delete.py | Prueba automatizada | Verifica el contrato operativo de test lab equipment soft delete y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_lab_field_sheets_capture.py | backend/tests/test_lab_field_sheets_capture.py | Regresión captura FieldSheet LAB | Prueba captura/PDF/lifecycle y fecha de recepción editable, histórica e informativa por Ticket. | Pytest, TestClient, SQLAlchemy y servicios LAB | Gate backend LAB/FieldSheets | Crítico | Estable |
 | backend/tests/test_lab_phase2_integrated_alta.py | backend/tests/test_lab_phase2_integrated_alta.py | Regresión alta integrada LAB | Cubre alta/edición atómica y folio Vinculado directo o pending con notificaciones e historial. | Pytest, TestClient, SQLAlchemy y servicios LAB | Gate backend de equipos/folios | Crítico | Estable |
 | backend/tests/test_lab_phase3_reception_signing.py | backend/tests | Suite contractual Fase 3 LAB | Verifica prerrequisitos, doble firma, congelamiento, estados FieldSheet, cierre/legacy, historicidad, grupos, reapertura, partial close, Captura, externos, concurrencia y folios. | Servicios/routers/modelos LAB y fixtures SQLite | Gate backend de recepción y cierre Fase 3 | Crítico | En revisión |

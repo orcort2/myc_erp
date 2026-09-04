@@ -39,7 +39,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
     )
     purchase_order = (work_order.purchase_order or "").strip()
     note_lines = [upper(work_order.notes.strip())] if work_order.notes and work_order.notes.strip() else []
-    for item in sorted(work_order.equipment, key=lambda equipment: equipment.position):
+    for item in sorted(work_order.active_equipment, key=lambda equipment: equipment.position):
         if item.observations and item.observations.strip():
             instrument = upper(item.instrument.strip())
             identification = upper(item.identification.strip()) if item.identification and item.identification.strip() else "SIN IDENTIFICACIÓN"
@@ -73,7 +73,7 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
                 internal_id=upper(item.internal_id),
                 certificates=[],
             )
-            for item in work_order.equipment
+            for item in work_order.active_equipment
         ],
         client=client,
         notes=notes,

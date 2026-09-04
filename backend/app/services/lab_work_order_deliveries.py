@@ -53,17 +53,20 @@ def _delivered_equipment_ids(db: Session, root_work_order_id: int) -> dict[int, 
 def _pending_equipment(
     members: list[LabWorkOrder], delivered_ids: dict[int, datetime]
 ) -> list[LabWorkOrderEquipment]:
+    # Un equipo retirado (tombstone) durante una reapertura ya no forma parte
+    # de la composición vigente -- nunca debe quedar "pendiente de entrega"
+    # eternamente ni bloquear que el grupo se considere completo.
     return [
         equipment
         for item in members
-        for equipment in item.equipment
+        for equipment in item.active_equipment
         if equipment.id not in delivered_ids
     ]
 
 
 def _sync_departure_dates(members: list[LabWorkOrder], delivered_ids: dict[int, datetime]) -> None:
     for item in members:
-        equipment_ids = [equipment.id for equipment in item.equipment]
+        equipment_ids = [equipment.id for equipment in item.active_equipment]
         if not equipment_ids:
             continue
         dates = [delivered_ids[eid] for eid in equipment_ids if eid in delivered_ids]
@@ -126,7 +129,7 @@ def get_lab_delivery_group_status(db: Session, work_order_id: int) -> LabDeliver
     members = _relevant_group_members(group)
     delivered_ids = _delivered_equipment_ids(db, root_id)
     pending = _pending_equipment(members, delivered_ids)
-    total_equipment = sum(len(item.equipment) for item in members)
+    total_equipment = sum(len(item.active_equipment) for item in members)
     deliveries = list(
         db.scalars(
             select(LabWorkOrderDelivery)

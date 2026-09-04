@@ -200,6 +200,23 @@ def _service_order_policy(method: str, path: str) -> AccessPolicy:
     return _permission("service_orders.update")
 
 
+def _communications_policy(_method: str, path: str) -> AccessPolicy:
+    if path == "/api/communications/work-order-mentions/search":
+        # @OT (búsqueda para mención de OT en Comunicaciones): no opera sobre
+        # una conversación ni exige participación/ownership -- exige
+        # autoridad LAB (ver services/communications.py::
+        # _can_read_lab_work_orders: actor interno + lab_work_orders.use /
+        # work_orders.read_organization / work_orders.read). Se registra
+        # aquí bajo el permiso LAB primario; el servicio real acepta
+        # cualquiera de los tres.
+        return _permission("lab_work_orders.use")
+    return AccessPolicy(
+        AccessType.OWNERSHIP,
+        "access_jwt+conversation_context",
+        ownership="conversation_participant",
+    )
+
+
 def _certificate_policy(method: str, path: str) -> AccessPolicy:
     if method == "GET":
         return _permission("certificates.read")
@@ -269,11 +286,7 @@ POLICY_BY_TAG: dict[str, Callable[[str, str], AccessPolicy]] = {
     "equipment": _generic_resource_policy("equipment"),
     "field-sheets": lambda method, _path: _permission("field_sheets.read" if method == "GET" else "field_sheets.update"),
     "certificates": _certificate_policy,
-    "communications": lambda _method, _path: AccessPolicy(
-        AccessType.OWNERSHIP,
-        "access_jwt+conversation_context",
-        ownership="conversation_participant",
-    ),
+    "communications": _communications_policy,
     "invoices": _invoice_policy,
     "integrations": lambda _method, _path: _permission("integrations.facturama.status"),
     "sat-catalogs": lambda method, _path: _permission("sat_catalogs.read" if method == "GET" else "sat_catalogs.manage"),

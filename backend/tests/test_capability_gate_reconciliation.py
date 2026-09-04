@@ -18,7 +18,15 @@ def test_inventory_has_only_the_32_governed_compatibility_gaps():
     current = validator.current_permissions()
     inventory = validator.inventory_permissions()
 
-    assert len(inventory - catalog_permissions) == 32
+    # 33 = 32 (corte previo) + lab_work_orders.use, que entra al inventario
+    # por primera vez con la clasificación real de
+    # GET /api/communications/work-order-mentions/search (@OT, checkpoint
+    # c7a7adb): un permiso LAB legítimo y ya gobernado por ROLE_PERMISSIONS
+    # (ver test_captura_role_is_lab_read_only_despite_generic_field_sheets_permissions
+    # más abajo), simplemente ausente del catálogo institucional congelado
+    # v1.0 -- que es anterior a MYC Mobile/LAB -- igual que el resto de la
+    # familia lab_work_order_groups.*/service_orders.sales.* ya listada aquí.
+    assert len(inventory - catalog_permissions) == 33
     assert inventory <= current
     assert "portal.view" not in inventory
     assert "portal.read" in inventory & catalog_permissions & current
@@ -32,6 +40,7 @@ def test_inventory_has_only_the_32_governed_compatibility_gaps():
         "service_orders.sales.manage",
         "service_orders.sales.deliver",
         "service_orders.sales.authorize",
+        "lab_work_orders.use",
     } <= inventory - catalog_permissions
     assert PERMISSIONS["SERVICE_ORDERS_DELETE"] == "service_orders.delete"
     assert PERMISSIONS["LAB_WORK_ORDERS_DELETE"] == "lab_work_orders.delete"

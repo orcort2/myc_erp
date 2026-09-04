@@ -1539,7 +1539,19 @@ def test_ticket_preserves_minor_change_and_versions_pdf(lab_context):
         "requested_signature_policy": "preserve",
     }
     assert client.post(ticket_url, json=payload).status_code == 401
-    assert client.post(ticket_url, json=payload, headers=auth(tokens["capture"])).status_code == 403
+    # Captura tiene tickets.create (contrato vigente, ver AGENTS.md/permissions.py:
+    # "Captura": {..., "tickets.create", "tickets.view_own"}) -- puede abrir un
+    # ticket igual que Técnico; lo que NO tiene es tickets.review/view_all, así
+    # que no puede aprobarlo (probado más abajo). Se prueba sobre una OT
+    # aparte para no dejar una segunda solicitud activa compitiendo con el
+    # ticket principal que el resto de este test manipula.
+    other_work_order = _completed_work_order(client, tokens["tech"], "Cliente Captura Ticket")
+    capture_ticket = client.post(
+        ticket_url,
+        json={**payload, "work_order_id": other_work_order["id"]},
+        headers=auth(tokens["capture"]),
+    )
+    assert capture_ticket.status_code == 201, capture_ticket.text
     created = client.post(ticket_url, json=payload, headers=tech_headers)
     assert created.status_code == 201, created.text
     ticket = created.json()
@@ -1548,6 +1560,12 @@ def test_ticket_preserves_minor_change_and_versions_pdf(lab_context):
         f"/api/mobile/v1/technician/lab-work-orders/{work_order['id']}", headers=tech_headers
     ).json()
     assert still_closed["status"] == "completed"
+
+    assert client.post(
+        f"{ticket_url}/{ticket['id']}/approve",
+        json={"signature_policy": "preserve", "comment": "Captura no puede aprobar"},
+        headers=auth(tokens["capture"]),
+    ).status_code == 403
 
     approved = client.post(
         f"{ticket_url}/{ticket['id']}/approve",
@@ -1949,7 +1967,7 @@ def test_lab_pdf_leaves_missing_purchase_order_empty():
         **payload,
     )
     work_order.equipment = [
-        LabWorkOrderEquipment(position=1, **equipment_payload(1))
+        LabWorkOrderEquipment(position=1, is_active=True, **equipment_payload(1))
     ]
 
     pdf, _filename = generate_lab_work_order_pdf(work_order)
@@ -1971,7 +1989,7 @@ def test_lab_pdf_uses_certificate_folio_and_preserves_legacy_precedence():
         status="draft",
         **payload,
     )
-    equipment = LabWorkOrderEquipment(position=1, **equipment_payload(1))
+    equipment = LabWorkOrderEquipment(position=1, is_active=True, **equipment_payload(1))
     equipment.certificate_folio = "VIN-2026-001"
     equipment.report_number = "REPORTE-LEGACY"
     work_order.equipment = [equipment]

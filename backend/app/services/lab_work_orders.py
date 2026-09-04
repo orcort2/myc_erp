@@ -11,6 +11,7 @@ from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
 from sqlalchemy import String, cast, delete, func, select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.audit_log import AuditLog
@@ -321,6 +322,12 @@ def _allocate_folio(db: Session) -> int:
 def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
     group = _group(db, work_order)
     result = LabWorkOrderRead.model_validate(work_order)
+    # Un equipo retirado (tombstone, is_active=False) nunca se proyecta como
+    # composición vigente -- sigue existiendo para que sus FieldSheets
+    # históricas resuelvan lab_equipment_id, pero desaparece de la OT que ve
+    # Mobile/el staff.
+    active_ids = {item.id for item in work_order.active_equipment}
+    result.equipment = [item for item in result.equipment if item.id in active_ids]
     by_id = {item.id: item for item in work_order.equipment}
     for projected in result.equipment:
         source = by_id[projected.id]
@@ -336,7 +343,7 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
             "sequence_number": item.sequence_number,
             "status": item.status,
             "signature_session_id": item.signature_session_id,
-            "equipment_count": len(item.equipment),
+            "equipment_count": len(item.active_equipment),
         })
         for item in group
     ]
@@ -803,9 +810,9 @@ def list_work_orders(
             client_name=item.client_name,
             reception_date=item.reception_date,
             status=item.status,
-            equipment_count=len(item.equipment),
+            equipment_count=len(item.active_equipment),
             completed_equipment_count=sum(
-                1 for equipment in item.equipment
+                1 for equipment in item.active_equipment
                 if equipment.field_sheet is not None and equipment.field_sheet.status == "completed"
             ),
             created_at=item.created_at,
@@ -1349,7 +1356,7 @@ def update_reception_date(
         return _read(db, work_order)
     work_order.reception_date = payload.reception_date
     synced_sheet_ids: list[int] = []
-    for equipment in work_order.equipment:
+    for equipment in work_order.active_equipment:
         sheet = equipment.field_sheet
         if sheet is not None and sheet.status in EDITABLE_STATUSES:
             sheet.reception_date = payload.reception_date
@@ -1389,15 +1396,21 @@ def _add_equipment_core(
             user,
             fields=["equipment.added"],
         )
-    count = db.scalar(
+    # Cuenta sólo equipo ACTIVO: un equipo retirado (tombstone) no debe
+    # bloquear el máximo de 10 ni desplazar la position del nuevo equipo --
+    # delete_equipment ya deja las positions activas compactadas 1..N sin
+    # huecos, así que active_count + 1 es siempre la siguiente position
+    # válida.
+    active_count = db.scalar(
         select(func.count(LabWorkOrderEquipment.id)).where(
-            LabWorkOrderEquipment.work_order_id == work_order.id
+            LabWorkOrderEquipment.work_order_id == work_order.id,
+            LabWorkOrderEquipment.is_active.is_(True),
         )
     ) or 0
-    if count >= 10:
+    if active_count >= 10:
         raise HTTPException(status_code=409, detail="La OT ya contiene el máximo de 10 equipos")
     equipment = LabWorkOrderEquipment(
-        work_order_id=work_order.id, position=count + 1, **values
+        work_order_id=work_order.id, position=active_count + 1, **values
     )
     db.add(equipment)
     db.flush()
@@ -2008,6 +2021,12 @@ def delete_equipment(
     *,
     expected_edit_version: int | None = None,
 ) -> LabWorkOrderRead:
+    """Retira un equipo de la composición operativa vigente. NUNCA es un
+    DELETE físico: es un tombstone (is_active=False) -- ver
+    LabWorkOrderEquipment.__doc__. Una FieldSheet completed/histórica de este
+    equipo sigue existiendo y sigue resolviendo lab_equipment_id sin tocarse;
+    retirar el equipo sólo lo saca de la composición activa (Mobile, máximo
+    10, firma, cierre, PDF)."""
     work_order = _get(db, work_order_id, lock=True)
     group = _group(db, work_order, lock=True)
     _ensure_members_editable([work_order])
@@ -2017,6 +2036,7 @@ def delete_equipment(
         select(LabWorkOrderEquipment).where(
             LabWorkOrderEquipment.id == equipment_id,
             LabWorkOrderEquipment.work_order_id == work_order.id,
+            LabWorkOrderEquipment.is_active.is_(True),
         )
     )
     if equipment is None:
@@ -2029,12 +2049,16 @@ def delete_equipment(
             fields=["equipment.deleted"],
         )
     removed_position = equipment.position
-    work_order.equipment.remove(equipment)
+    now = datetime.now(timezone.utc)
+    equipment.is_active = False
+    equipment.deleted_at = now
+    equipment.deleted_by = user.id
     db.flush()
     db.execute(
         update(LabWorkOrderEquipment)
         .where(
             LabWorkOrderEquipment.work_order_id == work_order.id,
+            LabWorkOrderEquipment.is_active.is_(True),
             LabWorkOrderEquipment.position > removed_position,
         )
         .values(position=LabWorkOrderEquipment.position - 1)
@@ -2049,7 +2073,18 @@ def delete_equipment(
         user_id=user.id,
         previous_values={"work_order_id": work_order.id, "position": removed_position},
     )
-    commit_and_dispatch_notifications(db)
+    try:
+        commit_and_dispatch_notifications(db)
+    except IntegrityError as exc:
+        db.rollback()
+        logger.exception(
+            "delete_equipment: IntegrityError inesperado al retirar equipment_id=%s de work_order_id=%s",
+            equipment_id, work_order_id,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="No fue posible retirar el equipo por un conflicto de integridad inesperado.",
+        ) from exc
     return _read(db, _get(db, work_order.id))
 
 
@@ -2068,7 +2103,7 @@ def create_additional_work_order(db: Session, work_order_id: int, user: User) ->
     latest = group[-1]
     if latest.id != source.id:
         raise HTTPException(status_code=409, detail="Sólo la última OT del grupo puede generar una adicional")
-    if len(source.equipment) != 10:
+    if len(source.active_equipment) != 10:
         raise HTTPException(status_code=409, detail="La OT debe tener 10 equipos para asignar una OT extra")
     values = {field: getattr(source, field) for field in GENERAL_FIELDS}
     additional = LabWorkOrder(
@@ -2206,7 +2241,7 @@ def _ensure_reception_prerequisites(members: list[LabWorkOrder]) -> None:
             "reason": reason,
         }
         for item in members
-        for equipment in item.equipment
+        for equipment in item.active_equipment
         for reason in [_equipment_reception_gap(equipment)]
         if reason is not None
     ]
@@ -2282,7 +2317,7 @@ def _missing_completed_sheets(members: list[LabWorkOrder]) -> list[dict]:
             "field_sheet_status": equipment.field_sheet.status if equipment.field_sheet else "missing",
         }
         for item in members
-        for equipment in item.equipment
+        for equipment in item.active_equipment
         # Historical OT created before the LAB client/capture contract remain
         # closable. Every OT created by the evolved flow carries lab_client_id
         # and therefore requires a completed sheet for each equipment item.
@@ -2311,7 +2346,7 @@ def _unresolved_folio_equipment(members: list[LabWorkOrder]) -> list[dict]:
             "folio_status": equipment.folio_status,
         }
         for item in members
-        for equipment in item.equipment
+        for equipment in item.active_equipment
         if item.lab_client_id is not None
         if (
             equipment.service_type in {"accredited", "traceable"}
@@ -2334,7 +2369,7 @@ def _draft_field_sheet_targets(
         (item, equipment)
         for item in members
         if item.id not in exempt_ids and item.lab_client_id is not None
-        for equipment in item.equipment
+        for equipment in item.active_equipment
         if equipment.field_sheet is not None and equipment.field_sheet.status in EDITABLE_STATUSES
     ]
 
@@ -2416,7 +2451,7 @@ def sign_group(
     ]
     if work_order not in members:
         raise HTTPException(status_code=409, detail="La OT ya conserva una firma válida")
-    if any(not item.equipment for item in members):
+    if any(not item.active_equipment for item in members):
         raise HTTPException(
             status_code=409,
             detail="Todas las OT abiertas de la cohorte deben tener al menos un equipo",
@@ -2439,7 +2474,7 @@ def sign_individual(
     _ensure_members_editable([work_order])
     if work_order.signature_session_id is not None and not work_order.signature_required:
         raise HTTPException(status_code=409, detail="La OT ya conserva una firma válida")
-    if not work_order.equipment:
+    if not work_order.active_equipment:
         raise HTTPException(
             status_code=409, detail="La OT debe tener al menos un equipo"
         )

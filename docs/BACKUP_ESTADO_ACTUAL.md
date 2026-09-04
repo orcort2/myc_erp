@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-09-03
+> Corte actualizado: 2026-09-04
 
 # Estado operativo actual del ERP MYC
 
@@ -18,9 +18,12 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 
 ## Corte operativo
 
-- Rama verificada: `wip/lab-field-sheets-integration`.
-- Baseline recibido para Fases 4+5: `354b7e5f74aeb7790c3b08d127666ea799bc638f`.
-- Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**.
+- Rama verificada: `wip/lab-admin-void-delivery`.
+- Working tree previo a este cierre: `213dcb042db143df39713f6419de0b6bcfe7a55c`
+  (padre `c7a7adb3ae13c4687f84a208a1db69969547602a`).
+- Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**. El push de este cierre
+  no es aprobación de merge a `main`; queda pendiente una auditoría
+  independiente del SHA resultante.
 - Único módulo `SELLADO`: Control Documental V1 dentro de su alcance
   congelado. OT LAB temporal permanece `EN DESARROLLO` hasta QA físico.
 - Fase 3 LAB implementa recepción técnico+cliente previa a FieldSheets:
@@ -30,17 +33,24 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único del código y base local verificado: `9f3a2c7d1e84`, con
-  `down_revision = b0b560e714db`.
-- La revisión sólo reemplaza `ck_operational_ticket_type` para conservar sus
-  siete valores anteriores y admitir `reception_date_change`; no crea columna,
-  tabla ni reescribe datos.
-- El downgrade se niega explícitamente si existen tickets del tipo nuevo;
-  únicamente sin esas filas restaura el constraint anterior.
-- El upgrade local `b0b560e714db → 9f3a2c7d1e84` fue aplicado. La consulta de
-  PostgreSQL confirmó los ocho tipos y `alembic_version=9f3a2c7d1e84`.
-- `backup_erp_myc_antes_prueba.sql` fue regenerado después del upgrade y
-  validado no vacío (80 MB); el respaldo permanece excluido del inventario.
+- Head único del código y base local verificado: `7088fa142cc2`
+  (`soft-delete LabWorkOrderEquipment (tombstone), partial unique position`),
+  con `down_revision = c91f47a8b2d0`.
+- La migración agrega `is_active`/`deleted_at`/`deleted_by` (SoftDeleteMixin) a
+  `lab_work_order_equipment`, reemplaza `uq_lab_equipment_position` por el
+  índice único parcial `uq_lab_equipment_position_active`
+  (`WHERE is_active IS TRUE`) y no reescribe ni borra datos: las 14 filas
+  existentes en la base local recibieron `is_active=true`.
+- El downgrade se niega explícitamente (`RuntimeError`) si existen filas
+  tombstone o duplicados de `(work_order_id, position)` que el
+  `UniqueConstraint` histórico no admitiría; sin ese conflicto restaura el
+  constraint pleno anterior.
+- Ciclo `upgrade head → downgrade -1 → upgrade head` verificado contra
+  PostgreSQL real (`erp_myc`); `alembic heads`/`current` confirman
+  `7088fa142cc2 (head)` único y `alembic check` reporta
+  `No new upgrade operations detected`.
+- No se regeneró `backup_erp_myc_antes_prueba.sql` en este cierre: la base
+  local usada es de desarrollo, no el respaldo oficial de producción.
 
 ## Cierre operativo y UX OT LAB — 2026-09-03
 
@@ -183,7 +193,114 @@ Resumen operativo:
   Letter portrait para Temperatura y Presión. Renderer version 1, DSL,
   plantillas, snapshots, lifecycle y Mobile permanecen intactos.
 
+## Cierre quirúrgico acumulativo — 2026-09-04
+
+Cierre sobre `wip/lab-admin-void-delivery`, partiendo de `213dcb0` (que ya
+consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
+`@OT`, notificaciones, observaciones y el admin delete histórico). Este cierre:
+
+- **Preserva sin tocar**: el fix P0 de DELETE/storage (limpieza best-effort
+  post-commit, nunca un 409 falso), el endurecimiento `@OT`, el set exacto de
+  permisos de Captura (`lab_field_sheets.capture`, `tickets.create`,
+  `tickets.view_own`; explícitamente sin `tickets.review`/`view_all`/admin),
+  el diseño de Delivery con IDs nulificables/`SET NULL`/snapshot de
+  `da6ad5a90e57`, y el contrato de observations.
+- **Corrige un bug nuevo confirmado**: `DELETE
+  /api/mobile/v1/technician/lab-work-orders/{id}/equipment/{equipment_id}`
+  devolvía `500` cuando el equipo tenía una FieldSheet histórica completed y
+  la OT había sido reabierta. Causa: `LabWorkOrder.equipment` con
+  `cascade="all, delete-orphan"` emitía `UPDATE field_sheets SET
+  lab_equipment_id = NULL` antes del DELETE físico, violando
+  `ck_field_sheets_exactly_one_equipment_owner`. Detalle arquitectónico
+  completo en [`project/DECISIONS.md`](project/DECISIONS.md)
+  (D-2026-09-04) y en
+  [`architecture/LAB_WORK_ORDERS.md`](architecture/LAB_WORK_ORDERS.md#retiro-de-equipo-individual-tombstone-no-delete-físico).
+- Retirar equipo ahora es siempre un tombstone (`SoftDeleteMixin`), nunca un
+  DELETE físico; `LabWorkOrder.active_equipment` es la única fuente para
+  Mobile, máximo de 10, firmas, cierre técnico y PDF final. FieldSheet
+  histórica, `final_pdf_path`/`final_pdf_sha256`, `lab_equipment_id` y el
+  historial de Delivery (`LabDeliveryItem`) permanecen intactos al retirar
+  equipo. `position` usa un índice único parcial
+  (`uq_lab_equipment_position_active`, `WHERE is_active IS TRUE`) y permite
+  reutilizar la posición liberada.
+- **Deuda de inventario API resuelta** (la pendiente registrada en el corte de
+  Fase 6, ver más abajo): se agregó `GET
+  /api/communications/work-order-mentions/search` (búsqueda `@OT`,
+  checkpoint `c7a7adb`) a `api_access.py` (`_communications_policy`) y se
+  regeneró `API_ENDPOINT_INVENTORY_2026-08-03.csv` — el runtime (518
+  operaciones) y el CSV committed vuelven a coincidir exactamente
+  (`test_committed_inventory_matches_runtime` pasa).
+- **Cuatro tests backend previamente rojos, auditados y corregidos en la
+  autoridad** (no con xfail/skip/debilitamiento):
+  - `test_api_access_conformity.py` (ambos): el conteo `517→518` y la
+    igualdad CSV/runtime se corrigieron regenerando el inventario real, no
+    ajustando el test a un valor arbitrario.
+  - `test_lab_work_orders.py::test_ticket_preserves_minor_change_and_versions_pdf`:
+    esperaba `403` de Captura sobre `tickets.create` porque el contrato
+    vigente ya le otorga ese permiso (ver arriba); el test ahora prueba que
+    Captura SÍ puede crear un ticket y NO puede aprobarlo
+    (`tickets.review`/`view_all` siguen fuera de su alcance).
+  - `test_schema_integrity_stage_2a.py::test_current_revision_is_the_single_head`:
+    tenía hardcodeada una revisión (`b0b560e714db`) de una cadena de
+    migraciones anterior; se reescribió para verificar `len(heads) == 1`, la
+    garantía real detrás del nombre del test, sin acoplarse a un id concreto.
+  - Efecto en cascada: `test_capability_gate_reconciliation.py` subió de 32 a
+    33 gaps gobernados al aparecer `lab_work_orders.use` por primera vez en
+    el inventario (mismo patrón que la familia `lab_work_order_groups.*`/
+    `service_orders.sales.*` ya documentada ahí).
+- **Mobile — brecha de descubrimiento de tests corregida de forma acotada**:
+  `src/services/lab-equipment-configured-payload.test.ts` no estaba en la
+  lista explícita de `package.json#scripts.test` y nunca se ejecutaba bajo
+  `npm test`; se agregó a esa lista. Se confirmó explícitamente que
+  `deep-link-work-order.wiring.test.ts` (cubierto por el glob
+  `src/wiring-tests/*.test.ts`) sigue corriendo. **Hallazgo fuera de alcance,
+  no corregido aquí**: al auditar la lista completa se encontraron ~20
+  archivos `*.test.ts` adicionales (fuera de `src/wiring-tests/`) que tampoco
+  están en `npm test` y uno de ellos falla al ejecutarse por primera vez
+  (`MobileSignatureFlow.wiring.test.ts`); ampliar el descubrimiento a esos
+  archivos requeriría investigar y corregir esa falla preexistente, fuera del
+  alcance de este cierre (LAB equipment delete) — se deja como tarea separada.
+- Nueva migración `7088fa142cc2` (detalle en la sección de Persistencia).
+- Nuevos tests: `backend/tests/test_lab_equipment_soft_delete.py` (10 casos
+  SQLite + 1 regresión PostgreSQL real obligatoria vía `LAB_POSTGRES_TEST_URL`,
+  ejecutada y verde contra un schema aislado en `erp_myc` local).
+
 ## Validaciones
+
+### Cierre quirúrgico acumulativo — 2026-09-04
+
+- Suite focal nueva (`test_lab_equipment_soft_delete.py`): `10 passed, 1
+  skipped` sin `LAB_POSTGRES_TEST_URL`; con la variable exportada contra
+  PostgreSQL local (`erp_myc`), `11 passed` (incluye la regresión Postgres
+  obligatoria, en schema aislado por test).
+- Backend suite completa (sin `LAB_POSTGRES_TEST_URL`, patrón estándar de
+  este repositorio): `1137 passed, 12 skipped`, 0 fallas.
+- Backend suite completa CON `LAB_POSTGRES_TEST_URL` apuntando a `erp_myc`
+  local: `1147 passed, 2 failed`. Las 2 fallas
+  (`test_postgresql_concurrent_individual_cohorts_get_distinct_versions`,
+  `test_postgresql_concurrent_folio_allocation_is_unique`) son ajenas a este
+  cambio y dependientes del estado no-pristino de esa base local (folios ya
+  consumidos por trabajo manual previo; una prueba no aísla su schema).
+  Confirmado idéntico contra el baseline `213dcb0` vía `git stash` antes de
+  restaurar los cambios — no las introdujo ni las agrava este cierre.
+- Alembic: `heads`/`current` = `7088fa142cc2 (head)` único; `check` = `No new
+  upgrade operations detected`; ciclo `downgrade -1 → upgrade head` correcto.
+- Mobile `npm test`: `253 passed, 0 failed`; confirmado explícitamente que
+  `lab-equipment-configured-payload.test.ts` y
+  `deep-link-work-order.wiring.test.ts` corrieron (sus casos aparecen
+  nominalmente en la salida).
+- `npx tsc --noEmit -p .`: correcto, sin salida.
+- `npm run lint` (`expo lint`, comando canónico de `package.json`): correcto,
+  sin errores reportados.
+- `git diff --check`: limpio. Se detectó y corrigió un problema de higiene
+  antes de este corte: la regeneración de
+  `API_ENDPOINT_INVENTORY_2026-08-03.csv` en un paso previo de este mismo
+  trabajo había introducido terminadores `\r\n` en todo el archivo
+  (`csv.DictWriter` por defecto) contra el `\n` original, produciendo un diff
+  de 518 líneas para un cambio real de una sola fila; se normalizó a `\n` y el
+  diff quedó mínimo (la fila `@OT` nueva únicamente).
+- QA físico Mobile: **pendiente**. No se ejecutó ni se reclama validación en
+  dispositivo físico ni simulador para este cierre.
 
 ### Cierre operativo y UX OT LAB — 2026-09-03
 
@@ -285,15 +402,23 @@ Resumen operativo:
 
 - QA físico Android/iPhone/TestFlight del recorrido completo de recepción,
   doble firma, orientación/teclado/scroll, FieldSheets, cierre, PDF,
-  refresh/realtime y errores.
-- Resolver por un trabajo separado la deuda del inventario API: el csv
-  committed (`docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`,
-  477 operaciones) quedó desactualizado contra el runtime actual (500
-  operaciones al corte de este documento); produce 2 fallas en
-  `tests/test_api_access_conformity.py` no relacionadas con FieldSheets/LAB
-  (confirmado preexistente en `92e5ffb` antes del cierre de validación de
-  Fase 6, ver
-  [`docs/closures/LAB_FIELD_SHEETS_PHASE_6_2026-09-01.md`](closures/LAB_FIELD_SHEETS_PHASE_6_2026-09-01.md)).
+  refresh/realtime, retiro de equipo tras reapertura y errores. **No
+  ejecutado**; ningún cierre reciente (incluido el de 2026-09-04) lo reclama
+  como hecho.
+- Inventario API (`API_ENDPOINT_INVENTORY_2026-08-03.csv`) resuelto en el
+  cierre de 2026-09-04: runtime y CSV committed vuelven a coincidir (518
+  operaciones); `test_api_access_conformity.py` pasa sin excepciones.
+- Mobile: ampliar `npm test` para descubrir el resto de archivos
+  `*.test.ts` fuera de `src/wiring-tests/` (hoy sólo se ejecutan los listados
+  explícitamente en `package.json`); requiere primero investigar y corregir
+  la falla preexistente descubierta en `MobileSignatureFlow.wiring.test.ts`
+  al ejecutarla por primera vez (ver cierre 2026-09-04). Tarea separada, no
+  causada por LAB equipment delete.
+- `test_postgresql_concurrent_individual_cohorts_get_distinct_versions` y
+  `test_postgresql_concurrent_folio_allocation_is_unique` fallan contra la
+  base local `erp_myc` por estado no-pristino/no aislado (ver Validaciones
+  2026-09-04); requieren una base Postgres efímera dedicada o aislar su
+  schema, no relacionado con LAB equipment delete.
 - Mantener fuera de esta fase los hallazgos separados de FieldSheets
   (contenido, tabla Valve, overflow, columnas, imprimibles y plantillas),
   NIIMBOT, cambios MYCA/MYCT/rangos, LabClient y Fase 2 sin regresión.

@@ -454,11 +454,11 @@ def _discard_lab_field_sheet_uncommitted(
         db.flush()
 
     order = equipment.work_order
-    current_sheets = [item.field_sheet for item in order.equipment if item.id != equipment.id]
+    current_sheets = [item.field_sheet for item in order.active_equipment if item.id != equipment.id]
     if restored is not None:
         current_sheets.append(restored)
     if order.status == "in_progress":
-        if current_sheets and all(item is not None and item.status == "completed" for item in current_sheets) and len(current_sheets) == len(order.equipment):
+        if current_sheets and all(item is not None and item.status == "completed" for item in current_sheets) and len(current_sheets) == len(order.active_equipment):
             order.status = "ready_to_close"
         elif not any(item is not None for item in current_sheets):
             order.status = "received_signed"

@@ -132,6 +132,7 @@ POST,/api/communications/conversations/{conversation_id}/receipts,communications
 GET,/api/communications/conversations/{conversation_id}/sync,communications,get_message_sync,authenticated_ownership,access_jwt+conversation_context,,conversation_participant,internal_user,no,required,not_applicable,required,
 GET,/api/communications/directory,communications,get_directory,authenticated_ownership,access_jwt+conversation_context,,conversation_participant,internal_user,no,required,not_applicable,required,
 GET,/api/communications/mentions,communications,get_mentions,authenticated_ownership,access_jwt+conversation_context,,conversation_participant,internal_user,no,required,not_applicable,required,
+GET,/api/communications/work-order-mentions/search,communications,search_work_orders_for_mention,authenticated_permission,access_jwt,lab_work_orders.use,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/developers/resolution-engine,Resolution Engine Public API v1,developer_portal,public_environment_controlled,environment_flag,,,anonymous,yes,not_applicable,not_applicable,not_applicable,AUD-030
 GET,/api/document-interpretations,document-interpretations,get_document_interpretations,authenticated_permission,access_jwt,document_interpretations.read,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/document-interpretations,document-interpretations,post_document_interpretation,authenticated_permission,access_jwt,document_interpretations.create,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011

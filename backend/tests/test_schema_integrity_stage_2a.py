@@ -11,12 +11,19 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_current_revision_is_the_single_head() -> None:
+    """El nombre del test es la garantía real: un único head en la cadena de
+    migraciones. La revisión concreta cambia con cada migración nueva y no es
+    parte del contrato -- hardcodearla (como "b0b560e714db", agregada antes
+    de toda la cadena de este WIP y nunca actualizada) sólo produce un test
+    frágil que se rompe con cada migración legítima sin detectar nada real.
+    Una segunda cabeza (branch sin mergear) sí sería un problema genuino."""
     config = Config(ROOT / "backend" / "alembic.ini")
     config.set_main_option(
         "script_location", str(ROOT / "backend" / "migrations")
     )
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["b0b560e714db"]
+    heads = script.get_heads()
+    assert len(heads) == 1, f"se esperaba un único head de Alembic, se encontraron {len(heads)}: {heads}"
 
 
 def test_schema_metadata_matches_legacy_integrity_contracts() -> None:

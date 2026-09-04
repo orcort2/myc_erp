@@ -8,17 +8,19 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     LargeBinary,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
-from app.models.base import IntegerPkMixin, TimestampMixin
+from app.models.base import IntegerPkMixin, SoftDeleteMixin, TimestampMixin
 
 
 class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
@@ -136,11 +138,22 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     signature_required: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     signature_preserved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Colección completa: activo + retirado (tombstone). Preservada así a
+    # propósito -- purga administrativa (delete_work_order sobre OT
+    # cancelled), export_all y cualquier necesidad histórica/auditoría deben
+    # seguir viendo el equipo retirado y sus FieldSheets. Para la composición
+    # operativa vigente (Mobile, firma, cierre, PDF, máximo 10) usar
+    # active_equipment, nunca filtrar esta relación directamente.
     equipment: Mapped[list["LabWorkOrderEquipment"]] = relationship(
         back_populates="work_order",
         cascade="all, delete-orphan",
         order_by="LabWorkOrderEquipment.position",
     )
+
+    @property
+    def active_equipment(self) -> list["LabWorkOrderEquipment"]:
+        return [item for item in self.equipment if item.is_active]
+
     signature_session: Mapped["LabWorkOrderSignatureSession | None"] = relationship(
         back_populates="work_orders",
         foreign_keys=[signature_session_id],
@@ -211,11 +224,31 @@ class LabWorkOrderGroupRequest(IntegerPkMixin, TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
 
 
-class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, Base):
+class LabWorkOrderEquipment(IntegerPkMixin, TimestampMixin, SoftDeleteMixin, Base):
+    """Retirar un equipo de una OT reabierta es un tombstone (is_active=False
+    vía SoftDeleteMixin), nunca un DELETE físico: sus FieldSheets completed/
+    históricas siguen apuntando a esta fila (field_sheets.lab_equipment_id es
+    ON DELETE CASCADE -- borrar la fila destruiría el historial documental,
+    violando la preservación que el resto del sistema exige). La composición
+    operativa vigente (Mobile, firma, cierre, PDF, máximo 10, positions
+    1..N contiguos) se calcula siempre sobre equipo con is_active=True; el
+    equipo retirado permanece resoluble para auditoría/histórico/Delivery."""
+
     __tablename__ = "lab_work_order_equipment"
     __table_args__ = (
         CheckConstraint("position BETWEEN 1 AND 10", name="ck_lab_equipment_position"),
-        UniqueConstraint("work_order_id", "position", name="uq_lab_equipment_position"),
+        # Reemplaza la UniqueConstraint plana original: un tombstone conserva
+        # su position histórica (nunca se reescribe), así que una posición
+        # sólo debe ser única entre el equipo ACTIVO -- permite que un nuevo
+        # equipo reutilice la posición que dejó libre uno retirado.
+        Index(
+            "uq_lab_equipment_position_active",
+            "work_order_id",
+            "position",
+            unique=True,
+            postgresql_where=text("is_active IS TRUE"),
+            sqlite_where=text("is_active"),
+        ),
         CheckConstraint(
             "certificate_client_mode IN ('order', 'different')",
             name="ck_lab_equipment_certificate_client_mode",

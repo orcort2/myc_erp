@@ -352,3 +352,24 @@ versión. La definición congelada gobierna bloques, orden, campos, tablas,
 identidad documental y firmas. Al completar se congela el binario en el storage
 institucional con SHA-256; una descarga final nunca reinterpreta la plantilla
 vigente. Los tres HTML anteriores permanecen sólo como compatibilidad legacy.
+
+## D-2026-09-04 — Retiro de equipo LAB como tombstone, nunca DELETE físico
+
+Retirar un equipo de una OT LAB reutiliza `SoftDeleteMixin`
+(`is_active`/`deleted_at`/`deleted_by`) en vez de un `DELETE` físico: la
+relación ORM `cascade="all, delete-orphan"` emitía un `UPDATE
+field_sheets.lab_equipment_id = NULL` previo al borrado que violaba
+`ck_field_sheets_exactly_one_equipment_owner` en cuanto el equipo tenía una
+FieldSheet histórica completed (típico tras reabrir una OT ya cerrada). No se
+introduce una tabla paralela de histórico ni se toca la relación completa
+`LabWorkOrder.equipment`, que sigue siendo la autoridad para purga
+administrativa y auditoría.
+
+`LabWorkOrder.active_equipment` (equipo con `is_active=true`) pasa a ser la
+única fuente para composición operativa vigente: Mobile, máximo de 10, firmas,
+cierre técnico y PDF final ignoran el equipo retirado sin excepción. La
+posición usa un índice único parcial (`WHERE is_active IS TRUE`) en vez de un
+`UniqueConstraint` pleno, para que una posición liberada sea reutilizable sin
+mover el equipo retirado. Retirar equipo sobre una OT ya reabierta es un
+cambio estructural: invalida la firma vigente igual que agregar equipo, bajo
+cualquier política de reapertura.
