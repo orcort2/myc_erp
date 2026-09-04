@@ -6,12 +6,20 @@ from weasyprint import HTML
 
 from app.models.lab_work_order import LabWorkOrder
 from app.models.lab_work_order_delivery import LabWorkOrderDelivery
-from app.services.work_order_pdfs import APP_DIR, TEMPLATE_DIR, _filename
+from app.services.field_sheet_layouts import ORGANIZATION_PRINT_PROFILES
+from app.services.work_order_pdfs import APP_DIR, LOGO_PATH, TEMPLATE_DIR, _filename
 
 DELIVERY_METHOD_LABELS = {
     "direct": "Entrega directa",
     "client_pickup": "Recolección por cliente",
 }
+
+# El acuse de entrega LAB es exclusivamente MYC (ver AGENTS.md de myc-mobile:
+# el flujo de entrega LAB no es multi-organización como las hojas de campo),
+# así que su branding institucional toma el perfil MYC directamente -- misma
+# autoridad de color que field_sheet_layouts.resolve_organization_print_profile
+# usa para el resto de los imprimibles de hojas de campo.
+_MYC_PRINT_PROFILE = ORGANIZATION_PRINT_PROFILES["myc"]
 
 
 def _normalize_recipient_name(value: str) -> str:
@@ -33,6 +41,9 @@ def generate_lab_delivery_receipt(
         delivered_by_name=delivered_by_name,
         delivery_method_label=DELIVERY_METHOD_LABELS.get(delivery.delivery_method, delivery.delivery_method),
         delivered_at_display=delivery.delivered_at.astimezone().strftime("%d/%m/%Y · %H:%M"),
+        logo_uri=LOGO_PATH.as_uri() if LOGO_PATH.exists() else None,
+        primary_color=_MYC_PRINT_PROFILE["primary_color"],
+        header_fill=_MYC_PRINT_PROFILE["header_fill"],
     )
     return (
         HTML(string=html, base_url=str(APP_DIR)).write_pdf(),
@@ -70,6 +81,9 @@ def generate_lab_delivery_final_receipt(
         root_work_order=root_work_order,
         rows=rows,
         exhibitions_count=len(deliveries),
+        logo_uri=LOGO_PATH.as_uri() if LOGO_PATH.exists() else None,
+        primary_color=_MYC_PRINT_PROFILE["primary_color"],
+        header_fill=_MYC_PRINT_PROFILE["header_fill"],
     )
     return (
         HTML(string=html, base_url=str(APP_DIR)).write_pdf(),

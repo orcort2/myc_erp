@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Iterable
 
+from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
@@ -45,6 +46,7 @@ class VectorTextStyle:
     font_size: float = 8.0
     line_height: float = 1.2
     bold: bool = False
+    color: str | None = None
 
     @property
     def resolved_font_name(self) -> str:
@@ -144,8 +146,15 @@ class FieldSheetVectorDocument:
         line_width: float = 0.6,
         stroke: bool = True,
         fill: bool = False,
+        stroke_color: str | None = None,
+        fill_color: str | None = None,
     ) -> None:
+        self.canvas.saveState()
         self.canvas.setLineWidth(line_width)
+        if stroke_color is not None:
+            self.canvas.setStrokeColor(HexColor(stroke_color))
+        if fill_color is not None:
+            self.canvas.setFillColor(HexColor(fill_color))
 
         self.canvas.roundRect(
             box.x,
@@ -156,6 +165,7 @@ class FieldSheetVectorDocument:
             stroke=1 if stroke else 0,
             fill=1 if fill else 0,
         )
+        self.canvas.restoreState()
 
     def draw_line(
         self,
@@ -165,9 +175,14 @@ class FieldSheetVectorDocument:
         x2: float,
         y2: float,
         line_width: float = 0.6,
+        color: str | None = None,
     ) -> None:
+        self.canvas.saveState()
         self.canvas.setLineWidth(line_width)
+        if color is not None:
+            self.canvas.setStrokeColor(HexColor(color))
         self.canvas.line(x1, y1, x2, y2)
+        self.canvas.restoreState()
 
     def draw_text(
         self,
@@ -179,16 +194,20 @@ class FieldSheetVectorDocument:
     ) -> None:
         resolved = style or VectorTextStyle()
 
+        self.canvas.saveState()
         self.canvas.setFont(
             resolved.resolved_font_name,
             resolved.font_size,
         )
+        if resolved.color is not None:
+            self.canvas.setFillColor(HexColor(resolved.color))
 
         self.canvas.drawString(
             x,
             y,
             text,
         )
+        self.canvas.restoreState()
 
     def draw_centered_text(
         self,
@@ -202,10 +221,13 @@ class FieldSheetVectorDocument:
         font_name = resolved.resolved_font_name
         font_size = resolved.font_size
 
+        self.canvas.saveState()
         self.canvas.setFont(
             font_name,
             font_size,
         )
+        if resolved.color is not None:
+            self.canvas.setFillColor(HexColor(resolved.color))
 
         lines = wrap_text(
             text,
@@ -248,6 +270,8 @@ class FieldSheetVectorDocument:
 
             cursor_y -= line_step
 
+        self.canvas.restoreState()
+
     def draw_wrapped_text(
         self,
         text: str,
@@ -275,10 +299,13 @@ class FieldSheetVectorDocument:
         if max_lines is not None:
             lines = lines[:max_lines]
 
+        self.canvas.saveState()
         self.canvas.setFont(
             resolved.resolved_font_name,
             resolved.font_size,
         )
+        if resolved.color is not None:
+            self.canvas.setFillColor(HexColor(resolved.color))
 
         line_step = (
             resolved.font_size
@@ -303,6 +330,8 @@ class FieldSheetVectorDocument:
             )
 
             cursor_y -= line_step
+
+        self.canvas.restoreState()
 
         return lines
 
@@ -455,6 +484,8 @@ class FieldSheetVectorDocument:
         body_row_height: float = mm(5.2),
         outer_radius: float = mm(1.2),
         line_width: float = 0.6,
+        header_fill: str | None = None,
+        accent_color: str | None = None,
     ) -> None:
         """
         Tabla vectorial estructurada con soporte real para:
@@ -467,6 +498,13 @@ class FieldSheetVectorDocument:
         - cuerpo tabular.
 
         El renderer no conoce etiquetas ni significado de columnas.
+
+        header_fill/accent_color son puramente cosméticos (branding
+        institucional por organización, resuelto por el caller): con ambos
+        en None el resultado es idéntico al de antes de que existieran --
+        ninguna geometría (colspan/rowspan/anchos/alturas) depende de ellos.
+        accent_color tiñe únicamente el marco exterior y los separadores del
+        header; las líneas internas del cuerpo permanecen neutras.
         """
 
         if not column_widths:
@@ -629,6 +667,25 @@ class FieldSheetVectorDocument:
             - header_total_height
         )
 
+        if header_fill is not None:
+            # Banda de fondo del header: rectángulo recto (radius=0), dibujado
+            # antes que el marco exterior redondeado para que sus esquinas
+            # superiores queden bajo el trazo del marco. Puramente cosmético
+            # -- no ocupa geometría propia, no desplaza columnas ni filas.
+            self.draw_rounded_box(
+                VectorBox(
+                    x=box.x,
+                    y=header_bottom,
+                    width=box.width,
+                    height=header_total_height,
+                ),
+                radius=0,
+                line_width=line_width,
+                stroke=False,
+                fill=True,
+                fill_color=header_fill,
+            )
+
         self.draw_rounded_box(
             VectorBox(
                 x=box.x,
@@ -638,12 +695,14 @@ class FieldSheetVectorDocument:
             ),
             radius=outer_radius,
             line_width=line_width,
+            stroke_color=accent_color,
         )
 
         header_style = VectorTextStyle(
             font_size=6.8,
             bold=True,
             line_height=1.12,
+            color=accent_color,
         )
 
         body_style = VectorTextStyle(
@@ -698,6 +757,7 @@ class FieldSheetVectorDocument:
                     x2=x2,
                     y2=y_top,
                     line_width=line_width,
+                    color=accent_color,
                 )
 
             if (
@@ -711,6 +771,7 @@ class FieldSheetVectorDocument:
                     x2=x2,
                     y2=y_bottom,
                     line_width=line_width,
+                    color=accent_color,
                 )
 
         # Frontera entre header y cuerpo.
@@ -720,6 +781,7 @@ class FieldSheetVectorDocument:
             x2=box.x + box.width,
             y2=header_bottom,
             line_width=line_width,
+            color=accent_color,
         )
 
         # Verticales del cuerpo.

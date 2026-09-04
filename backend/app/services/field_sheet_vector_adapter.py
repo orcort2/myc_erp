@@ -13,6 +13,7 @@ from app.services.field_sheet_layouts import (
     normalize_signature_layout,
     resolve_organization_print_profile,
 )
+from app.services.institutional_configurations import resolve_logo_path
 from app.services.field_sheet_pdfs import (
     FIELD_LABELS,
     PrintBlock,
@@ -48,6 +49,8 @@ class VectorRenderContext:
     proyecta estos valores, ya resueltos, sobre los slots declarados por
     signature_layout."""
 
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 TITLE_BAR_HEIGHT = mm(5.2)
 FIELD_ROW_HEIGHT_COMPACT = mm(6.2)
@@ -266,10 +269,21 @@ def _field(context: VectorRenderContext, key: str) -> str:
     )
 
 
-def _draw_section_title(document: FieldSheetVectorDocument, *, title: str, x: float, y: float, width: float) -> float:
+def _draw_section_title(
+    document: FieldSheetVectorDocument, *, title: str, x: float, y: float, width: float, profile: dict[str, Any] | None = None
+) -> float:
     box = VectorBox(x=x, y=y - TITLE_BAR_HEIGHT, width=width, height=TITLE_BAR_HEIGHT)
-    document.draw_rounded_box(box, radius=mm(1.2), line_width=0.6)
-    document.draw_centered_text(title, box=box, style=VectorTextStyle(font_size=7.0, bold=True))
+    primary_color = (profile or {}).get("primary_color")
+    header_fill = (profile or {}).get("header_fill")
+    document.draw_rounded_box(
+        box,
+        radius=mm(1.2),
+        line_width=0.6,
+        fill=header_fill is not None,
+        fill_color=header_fill,
+        stroke_color=primary_color,
+    )
+    document.draw_centered_text(title, box=box, style=VectorTextStyle(font_size=7.0, bold=True, color=primary_color))
     return y - TITLE_BAR_HEIGHT
 
 
@@ -380,7 +394,9 @@ def _table_content_height(prepared: _PreparedTable) -> float:
     return sum(prepared.header_heights) + TABLE_BODY_ROW_HEIGHT * len(prepared.rows)
 
 
-def _draw_table_content(document: FieldSheetVectorDocument, prepared: _PreparedTable, *, x: float, y_top: float, width: float) -> float:
+def _draw_table_content(
+    document: FieldSheetVectorDocument, prepared: _PreparedTable, *, x: float, y_top: float, width: float, profile: dict[str, Any] | None = None
+) -> float:
     height = _table_content_height(prepared)
     document.draw_structured_result_table(
         box=VectorBox(x=x, y=y_top - height, width=width, height=height),
@@ -389,6 +405,8 @@ def _draw_table_content(document: FieldSheetVectorDocument, prepared: _PreparedT
         header_row_heights=prepared.header_heights,
         rows=prepared.rows,
         body_row_height=TABLE_BODY_ROW_HEIGHT,
+        header_fill=(profile or {}).get("header_fill"),
+        accent_color=(profile or {}).get("primary_color"),
     )
     return y_top - height
 
@@ -643,23 +661,32 @@ def _item_total_height(item: _GridItem) -> float:
     return _item_content_height(item) + (TITLE_BAR_HEIGHT if item.title_visible else 0.0)
 
 
-def _draw_item(document: FieldSheetVectorDocument, context: VectorRenderContext, item: _GridItem, *, x: float, y_top: float, width: float) -> float:
+def _draw_item(
+    document: FieldSheetVectorDocument,
+    context: VectorRenderContext,
+    item: _GridItem,
+    *,
+    x: float,
+    y_top: float,
+    width: float,
+    profile: dict[str, Any] | None = None,
+) -> float:
     cursor_y = y_top
     if item.title_visible:
         title_text = item.title
         if item.kind == "table" and item.unit_value:
             title_text = f"{title_text} · Unidades: {item.unit_value}"
-        cursor_y = _draw_section_title(document, title=title_text, x=x, y=cursor_y, width=width)
+        cursor_y = _draw_section_title(document, title=title_text, x=x, y=cursor_y, width=width, profile=profile)
 
     if item.kind == "fields":
         return _draw_fields_item(document, item.payload, x=x, y_top=cursor_y, width=width)
     if item.kind == "table":
-        return _draw_table_content(document, item.payload, x=x, y_top=cursor_y, width=width)
+        return _draw_table_content(document, item.payload, x=x, y_top=cursor_y, width=width, profile=profile)
     if item.kind == "table_group":
         for table in item.payload.tables:
             if item.payload.show_titles and (table.section.layout or {}).get("print_title_visible", True):
-                cursor_y = _draw_section_title(document, title=table.section.title, x=x, y=cursor_y, width=width)
-            cursor_y = _draw_table_content(document, table, x=x, y_top=cursor_y, width=width) - ROW_GAP
+                cursor_y = _draw_section_title(document, title=table.section.title, x=x, y=cursor_y, width=width, profile=profile)
+            cursor_y = _draw_table_content(document, table, x=x, y_top=cursor_y, width=width, profile=profile) - ROW_GAP
         return cursor_y
     if item.kind == "signatures":
         return _draw_signatures_item(document, context, item.payload, x=x, y_top=cursor_y, width=width)
@@ -667,9 +694,8 @@ def _draw_item(document: FieldSheetVectorDocument, context: VectorRenderContext,
         box = VectorBox(x=x, y=cursor_y - item.payload.height, width=width, height=item.payload.height)
         document.draw_rounded_box(box, radius=mm(1.2), line_width=0.6)
         if item.payload.graphic and item.payload.asset_path:
-            project_root = Path(__file__).resolve().parents[3]
-            asset = (project_root / item.payload.asset_path).resolve()
-            allowed_root = (project_root / "backend" / "app" / "assets").resolve()
+            asset = (PROJECT_ROOT / item.payload.asset_path).resolve()
+            allowed_root = (PROJECT_ROOT / "backend" / "app" / "assets").resolve()
             if asset.is_relative_to(allowed_root) and asset.is_file():
                 document.draw_image(str(asset), box=box, padding=mm(1.2))
             else:
@@ -744,6 +770,10 @@ def _paginate(rows: list[_GridRow], *, available_height: float, row_gap: float) 
     return pages or [[]]
 
 
+LETTERHEAD_LOGO_WIDTH = mm(16)
+LETTERHEAD_LOGO_GUTTER = mm(2)
+
+
 def _draw_letterhead_and_title(
     document: FieldSheetVectorDocument,
     *,
@@ -754,46 +784,76 @@ def _draw_letterhead_and_title(
     header_visible: bool,
     title_visible: bool,
     institution: dict[str, Any] | None = None,
+    profile: dict[str, Any] | None = None,
 ) -> float:
     cursor_y = page.height - page.margin_top
+    organization_profile = profile or {}
+    primary_color = organization_profile.get("primary_color")
+    header_fill = organization_profile.get("header_fill")
 
     if header_visible:
-        organization_profile = resolve_organization_print_profile(template_definition)
         institution_values = institution or {}
         institution_name = institution_values.get("legal_name") or organization_profile.get("legal_name") or organization_profile.get("display_name") or "MYC"
 
+        logo_path = (
+            resolve_logo_path(institution_values, PROJECT_ROOT)
+            if organization_profile.get("logo_key") != "none"
+            else None
+        )
+        show_logo = logo_path is not None
+        text_x = x + (LETTERHEAD_LOGO_WIDTH + LETTERHEAD_LOGO_GUTTER if show_logo else 0)
+        text_width = width - (LETTERHEAD_LOGO_WIDTH + LETTERHEAD_LOGO_GUTTER if show_logo else 0)
+        letterhead_top = cursor_y
+
         document.draw_centered_text(
             str(institution_name).upper(),
-            box=VectorBox(x=x, y=cursor_y - mm(5), width=width, height=mm(5)),
-            style=VectorTextStyle(font_size=8.5, bold=True),
+            box=VectorBox(x=text_x, y=cursor_y - mm(5), width=text_width, height=mm(5)),
+            style=VectorTextStyle(font_size=8.5, bold=True, color=primary_color),
         )
         cursor_y -= mm(5.5)
         contact = " · ".join(str(institution_values.get(key) or "") for key in ("address", "phone", "email") if institution_values.get(key))
         if contact:
-            document.draw_centered_text(contact, box=VectorBox(x=x, y=cursor_y - mm(4), width=width - mm(24), height=mm(4)), style=VectorTextStyle(font_size=5.5))
+            document.draw_centered_text(contact, box=VectorBox(x=text_x, y=cursor_y - mm(4), width=text_width - mm(24), height=mm(4)), style=VectorTextStyle(font_size=5.5))
             cursor_y -= mm(4)
+
+        if show_logo:
+            # El logo ocupa exactamente la misma franja vertical que el
+            # nombre institucional (+ contacto si lo hay), a la izquierda --
+            # nunca invade el título ni el bloque de código documental.
+            document.draw_image(
+                str(logo_path),
+                box=VectorBox(x=x, y=cursor_y, width=LETTERHEAD_LOGO_WIDTH, height=letterhead_top - cursor_y),
+                padding=mm(0.5),
+            )
 
         code = template_definition.get("document_code") or template_definition.get("code") or "FCA-30"
         revision = template_definition.get("document_revision") or template_definition.get("revision") or "-"
         control_width = mm(22)
         control_box = VectorBox(x=x + width - control_width, y=cursor_y - mm(0.5), width=control_width, height=mm(8))
-        document.draw_rounded_box(control_box, radius=mm(1), line_width=0.5)
+        document.draw_rounded_box(
+            control_box,
+            radius=mm(1),
+            line_width=0.5,
+            fill=header_fill is not None,
+            fill_color=header_fill,
+            stroke_color=primary_color,
+        )
         document.draw_centered_text(
             str(code),
             box=VectorBox(x=control_box.x, y=control_box.y + control_box.height / 2, width=control_width, height=control_box.height / 2),
-            style=VectorTextStyle(font_size=6, bold=True),
+            style=VectorTextStyle(font_size=6, bold=True, color=primary_color),
         )
         document.draw_centered_text(
             str(revision),
             box=VectorBox(x=control_box.x, y=control_box.y, width=control_width, height=control_box.height / 2),
-            style=VectorTextStyle(font_size=6, bold=True),
+            style=VectorTextStyle(font_size=6, bold=True, color=primary_color),
         )
 
     if title_visible:
         document.draw_centered_text(
             template_definition.get("name") or "HOJA DE CAMPO",
             box=VectorBox(x=x, y=cursor_y - mm(5), width=width, height=mm(5)),
-            style=VectorTextStyle(font_size=9.0, bold=True),
+            style=VectorTextStyle(font_size=9.0, bold=True, color=primary_color),
         )
         cursor_y -= mm(7)
     else:
@@ -838,6 +898,10 @@ def render_field_sheet_vector_preview(context: VectorRenderContext) -> bytes:
     """
 
     template_definition = context.template_definition
+    # Resuelto una sola vez por documento: la organización (MYC/CAPYMET/...)
+    # gobierna logo/colores institucionales de forma transversal -- nunca por
+    # template_key. Ver resolve_organization_print_profile.
+    profile = resolve_organization_print_profile(template_definition)
 
     page_layout = (template_definition.get("print_layout") or {}).get("page") or {}
     margins = page_layout.get("margins") or {}
@@ -899,6 +963,7 @@ def render_field_sheet_vector_preview(context: VectorRenderContext) -> bytes:
             header_visible=header_visible,
             title_visible=title_visible,
             institution=context.institution,
+            profile=profile,
         )
 
         for row in page_rows:
@@ -906,7 +971,7 @@ def render_field_sheet_vector_preview(context: VectorRenderContext) -> bytes:
             for item, col_start, span in row:
                 item_x = x + col_start * (usable_col_width + GRID_GUTTER)
                 item_width = span * usable_col_width + GRID_GUTTER * (span - 1)
-                _draw_item(document, context, item, x=item_x, y_top=cursor_y, width=item_width)
+                _draw_item(document, context, item, x=item_x, y_top=cursor_y, width=item_width, profile=profile)
             cursor_y -= row_height + ROW_GAP
 
         if footer_visible:

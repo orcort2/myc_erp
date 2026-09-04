@@ -5,22 +5,28 @@
   <style>
     @page { size: Letter; margin: 15mm; }
     body { color: #173746; font-family: Arial, sans-serif; font-size: 10pt; }
-    h1 { color: #08756f; font-size: 18pt; margin: 4mm 0 1mm; }
+    .letterhead { align-items: center; display: flex; gap: 4mm; margin-bottom: 2mm; }
+    .letterhead img { height: 14mm; object-fit: contain; width: 14mm; }
+    .letterhead .label { color: {{ primary_color }}; font-size: 9pt; font-weight: bold; text-transform: uppercase; }
+    h1 { color: {{ primary_color }}; font-size: 18pt; margin: 2mm 0 1mm; }
     h2 { font-size: 11pt; margin: 0 0 6mm; }
     .label { color: #637280; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
     .summary { color: #52636f; font-size: 10pt; margin-bottom: 6mm; }
     .exhibition { border: 1px solid #d6e1e6; border-radius: 2mm; margin-bottom: 5mm; padding: 3mm; page-break-inside: avoid; }
-    .exhibition h3 { color: #08756f; font-size: 10pt; margin: 0 0 2mm; }
+    .exhibition h3 { color: {{ primary_color }}; font-size: 10pt; margin: 0 0 2mm; }
     .exhibition .meta { color: #52636f; font-size: 8.5pt; margin-bottom: 2mm; }
     table { border-collapse: collapse; margin: 2mm 0; width: 100%; }
     th, td { border: 1px solid #aebfc8; font-size: 8.5pt; padding: 1.8mm; }
-    th { background: #eaf4f3; color: #08756f; font-size: 7.5pt; }
+    th { background: {{ header_fill }}; color: {{ primary_color }}; font-size: 7.5pt; }
     .signature-row { display: grid; grid-template-columns: auto 1fr; gap: 4mm; margin-top: 2mm; }
     .signature-row img { height: 16mm; max-width: 40mm; object-fit: contain; }
   </style>
 </head>
 <body>
-  <div class="label">METROLOGÍA Y SERVICIOS MYC</div>
+  <div class="letterhead">
+    {% if logo_uri %}<img src="{{ logo_uri }}" alt="MYC">{% endif %}
+    <div class="label">METROLOGÍA Y SERVICIOS MYC</div>
+  </div>
   <h1>RESUMEN FINAL DE ENTREGA</h1>
   <h2>OT {{ root_work_order.folio }} · {{ root_work_order.client_name }}</h2>
   <div class="summary">Los equipos del grupo fueron entregados en {{ exhibitions_count }} exhibiciones.</div>
