@@ -1,3 +1,4 @@
+import base64
 import io
 from pathlib import Path
 from types import SimpleNamespace
@@ -12,10 +13,13 @@ from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.services.field_sheet_pdfs import ResultTableSection
 from app.services.field_sheet_template_engine import OFFICIAL_MYC_TEMPLATE_KEYS
 from app.services.field_sheet_vector_adapter import (
+    FIELD_ROW_HEIGHT_COMPACT,
     VectorRenderContext,
     _filter_meaningful_rows,
+    _row_display_label,
     render_field_sheet_vector_preview,
 )
+from app.services.field_sheet_vector_renderer import FieldSheetVectorDocument, VectorBox, mm
 from app.services.field_sheet_templates import (
     CANONICAL_PDF_RENDERER_VERSION,
     build_default_result_rows,
@@ -43,6 +47,121 @@ def test_all_23_official_templates_render_vector_letter_pdf(template_key):
     assert float(page.mediabox.height) == 792
 
 
+def test_draw_field_cell_prints_the_value_at_the_compact_row_height_used_by_fields_grid():
+    """Regresión de geometría directa sobre FieldSheetVectorDocument: a la
+    altura de fila 'compact' que _draw_fields_item usa siempre para cualquier
+    campo (field_sheet_vector_adapter.FIELD_ROW_HEIGHT_COMPACT), draw_field_cell
+    debe seguir cabiendo tanto la etiqueta como el valor -- antes del fix,
+    value_box quedaba con menos altura que value_style.font_size + 2*padding_y
+    y draw_wrapped_text descartaba el valor sin dibujar ni un carácter."""
+
+    document = FieldSheetVectorDocument()
+    box = VectorBox(x=mm(10), y=mm(10), width=mm(60), height=FIELD_ROW_HEIGHT_COMPACT)
+    document.draw_field_cell(box=box, label="Etiqueta", value="ValorCapturado123", compact=True)
+    pdf = document.finish()
+    text = PdfReader(io.BytesIO(pdf)).pages[0].extract_text() or ""
+    assert "Etiqueta" in text
+    assert "ValorCapturado123" in text
+
+
+@pytest.mark.parametrize("template_key", OFFICIAL_MYC_TEMPLATE_KEYS)
+def test_all_23_official_templates_print_client_and_equipment_field_values(template_key):
+    """Regresión: FieldSheetVectorDocument.draw_field_cell tenía un bug de
+    geometría (value_box quedaba más bajo que font_size + 2*padding en filas
+    'compact', que es como _draw_fields_item siempre invoca draw_field_grid)
+    que hacía que draw_wrapped_text descartara la línea del VALOR antes de
+    dibujar nada -- el documento imprimía únicamente las etiquetas ("Empresa",
+    "Alcance", etc.) y nunca los datos capturados, en las 23 plantillas
+    oficiales por igual. Este test exige que el valor real llegue al PDF."""
+
+    definition = build_fallback_template_definition(template_key)
+    sheet = FieldSheet(
+        id=1, equipment_id=1, template_key=template_key, work_order_number=6414,
+        template_definition_json=definition, capture_values={},
+    )
+    sheet.results_rows = build_default_result_rows(definition)
+    pdf = render_field_sheet_vector_preview(VectorRenderContext(
+        sheet, definition,
+        {"name": "EquipoValorPrueba", "brand": "MarcaValorPrueba", "model": "M1", "serial_number": "S1", "internal_id": "I1", "range_or_capacity": "10"},
+        "ClienteValorPrueba", "AtencionValorPrueba", "DomicilioValorPrueba", "CERT-1",
+    ))
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages)
+    assert "ClienteValorPrueba" in text
+    assert "EquipoValorPrueba" in text
+
+
+_SIGNATURE_PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(
+    base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+    )
+).decode()
+
+
+def test_vector_v2_signatures_draw_resolved_graphic_name_and_pending_placeholder():
+    """El renderer vectorial v2 debe recibir las firmas ya resueltas por la
+    autoridad correspondiente (field_sheet_pdfs._resolve_field_sheet_signatures)
+    a través de VectorRenderContext.signatures, y dibujar para cada slot: la
+    firma gráfica real cuando hay signature_data, el nombre resuelto, y
+    "Pendiente" para los slots documentales que la autoridad aún no llenó --
+    igual que el renderer HTML legacy (signature.name or 'Pendiente')."""
+
+    template_key = OFFICIAL_MYC_TEMPLATE_KEYS[0]
+    definition = build_fallback_template_definition(template_key)
+    sheet = FieldSheet(
+        id=1, equipment_id=1, template_key=template_key, work_order_number=6414,
+        template_definition_json=definition, capture_values={},
+    )
+    sheet.results_rows = build_default_result_rows(definition)
+
+    resolved_signatures = tuple(
+        SimpleNamespace(
+            role=slot["role"],
+            display_label=slot["display_label"],
+            name="Técnico Graficado" if slot["role"] == "calibrated_by" else None,
+            signature_data=_SIGNATURE_PNG_DATA_URL if slot["role"] == "calibrated_by" else None,
+            signed_at=None,
+        )
+        for slot in definition["signature_layout"]["slots"]
+    )
+    assert any(item.signature_data for item in resolved_signatures), "fixture must exercise the graphic path"
+
+    pdf = render_field_sheet_vector_preview(VectorRenderContext(
+        sheet, definition,
+        {"name": "Equipo", "brand": "MYC", "model": "M1", "serial_number": "S1", "internal_id": "I1", "range_or_capacity": "10"},
+        "Cliente", "Atención", "Domicilio", "CERT-1",
+        signatures=resolved_signatures,
+    ))
+    assert pdf.startswith(b"%PDF")
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages).upper()
+    assert "TÉCNICO GRAFICADO" in text
+    # The other documental slots (Revisó / Elaboró informe) never receive a
+    # LAB session signature; they must still show the same "Pendiente"
+    # placeholder as the HTML legacy renderer, not a blank/omitted slot.
+    assert text.count("PENDIENTE") == len(resolved_signatures) - 1
+
+
+def test_vector_v2_without_resolved_signatures_shows_pending_for_every_slot():
+    """Sin firmas resueltas (contexto por defecto), todos los slots deben
+    mostrar 'Pendiente' -- el default de VectorRenderContext.signatures=()
+    no debe producir slots en blanco, para no divergir del legacy."""
+
+    template_key = OFFICIAL_MYC_TEMPLATE_KEYS[0]
+    definition = build_fallback_template_definition(template_key)
+    sheet = FieldSheet(
+        id=1, equipment_id=1, template_key=template_key, work_order_number=6414,
+        template_definition_json=definition, capture_values={},
+    )
+    sheet.results_rows = build_default_result_rows(definition)
+
+    pdf = render_field_sheet_vector_preview(VectorRenderContext(
+        sheet, definition,
+        {"name": "Equipo", "brand": "MYC", "model": "M1", "serial_number": "S1", "internal_id": "I1", "range_or_capacity": "10"},
+        "Cliente", "Atención", "Domicilio", "CERT-1",
+    ))
+    text = "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf)).pages).upper()
+    assert text.count("PENDIENTE") == len(definition["signature_layout"]["slots"])
+
+
 def test_vector_row_filter_drops_all_empty_rows_and_preserves_zero_false_and_original_number():
     columns = [{"key": "value", "source": "value"}]
     rows = [
@@ -54,6 +173,39 @@ def test_vector_row_filter_drops_all_empty_rows_and_preserves_zero_false_and_ori
     ]
     section = ResultTableSection(key="s", title="S", columns=columns, rows=rows)
     assert [row.row_number for row in _filter_meaningful_rows(section)] == [2, 4, 5]
+
+
+def test_vector_row_filter_has_no_exception_for_fixed_row_labels():
+    """Filas con row_labels (categorías fijas del documento, p.ej. válvula
+    Disparo/Cierre o detector de gases H2S/CO) NO se imprimen sólo porque la
+    etiqueta exista -- se filtran igual que cualquier fila de captura libre:
+    únicamente si tienen al menos un valor capturado."""
+
+    columns = [{"key": "value", "source": "value"}]
+
+    valve_rows = [
+        FieldSheetResult(section_key="valve", row_number=1, row_data={}),
+        FieldSheetResult(section_key="valve", row_number=2, row_data={"value": "180 psi"}),
+    ]
+    valve_section = ResultTableSection(
+        key="valve", title="Válvula", columns=columns, rows=valve_rows,
+        row_labels=["Disparo", "Cierre"],
+    )
+    kept = _filter_meaningful_rows(valve_section)
+    assert [row.row_number for row in kept] == [2]
+    assert _row_display_label(valve_section, kept[0]) == "Cierre"
+
+    gas_rows = [
+        FieldSheetResult(section_key="gas", row_number=1, row_data={}),
+        FieldSheetResult(section_key="gas", row_number=2, row_data={"value": "50 ppm"}),
+    ]
+    gas_section = ResultTableSection(
+        key="gas", title="Detector de gases", columns=columns, rows=gas_rows,
+        row_labels=["H2S", "CO"],
+    )
+    kept_gas = _filter_meaningful_rows(gas_section)
+    assert [row.row_number for row in kept_gas] == [2]
+    assert _row_display_label(gas_section, kept_gas[0]) == "CO"
 
 
 def _column(key: str, label: str, width: str = "25%") -> dict:

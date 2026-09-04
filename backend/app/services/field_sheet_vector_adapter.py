@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 from math import ceil
 from pathlib import Path
@@ -40,6 +41,12 @@ class VectorRenderContext:
     client_address: str | None
     certificate_folio: str | None
     institution: dict[str, Any] | None = None
+    signatures: tuple[Any, ...] = field(default_factory=tuple)
+    """Firmas ya resueltas por la autoridad correspondiente (field_sheet_pdfs
+    ._resolve_field_sheet_signatures): objetos con .role/.display_label/
+    .name/.signature_data/.signed_at. El adapter nunca consulta DB -- sólo
+    proyecta estos valores, ya resueltos, sobre los slots declarados por
+    signature_layout."""
 
 
 TITLE_BAR_HEIGHT = mm(5.2)
@@ -209,13 +216,15 @@ def _filter_meaningful_rows(section: ResultTableSection) -> list[Any]:
     """Política de filas vacías del renderer vectorial (más estricta que el
     recorte de sólo-cola del HTML legacy).
 
-    Filas con row_labels representan categorías fijas del documento
-    (p.ej. "Disparo"/"Cierre") que existen como conceptos del formato
-    independientemente de si ya se capturó su dato -- esas SIEMPRE se
-    imprimen. Filas numeradas de captura libre sólo se imprimen cuando
-    tienen al menos un valor capturado (0/False cuentan como capturado vía
-    _has_capture_value); nunca se renumeran -- su etiqueta impresa sigue
-    siendo su row_number/row_label original.
+    El documento sólo imprime filas que contienen información capturada.
+    Esto aplica también a secciones con row_labels fijos (p.ej.
+    "Disparo"/"Cierre", "H2S"/"CO"): la existencia de la etiqueta como
+    concepto del formato NO es excepción -- una fila con row_label sin
+    ningún valor capturado (_row_has_meaningful_capture) se omite igual que
+    una fila numerada de captura libre vacía. 0/"0"/False cuentan como
+    capturados (ver _has_capture_value); None/""/whitespace no. Las filas
+    nunca se renumeran -- su etiqueta impresa sigue siendo su
+    row_number/row_label original.
     """
 
     return [row for row in section.rows if _row_has_meaningful_capture(row, section.columns)]
@@ -401,9 +410,36 @@ class _PreparedStatic:
     asset_path: str | None = None
 
 
-def _prepare_signatures(template_definition: dict[str, Any]) -> _PreparedSignatures:
+def _decode_signature_image(signature_data: str | None) -> bytes | None:
+    """Decodifica un data URL de firma (p.ej. "data:image/png;base64,...")
+    capturado por FieldSheetSignature/LabWorkOrderSignatureSession. Devuelve
+    None si no hay payload utilizable -- nunca lanza sobre datos malformados,
+    el slot simplemente cae de vuelta al nombre/label."""
+
+    if not signature_data or "," not in signature_data:
+        return None
+    _, _, encoded = signature_data.partition(",")
+    try:
+        return base64.b64decode(encoded)
+    except (ValueError, TypeError):
+        return None
+
+
+def _merge_resolved_signature(slot: dict[str, Any], resolved_by_role: dict[str, Any]) -> dict[str, Any]:
+    resolved = resolved_by_role.get(slot.get("role"))
+    if resolved is None:
+        return slot
+    merged = dict(slot)
+    merged["name"] = getattr(resolved, "name", None)
+    merged["signature_data"] = getattr(resolved, "signature_data", None)
+    merged["signed_at"] = getattr(resolved, "signed_at", None)
+    return merged
+
+
+def _prepare_signatures(template_definition: dict[str, Any], resolved_signatures: tuple[Any, ...] = ()) -> _PreparedSignatures:
     layout = normalize_signature_layout(template_definition.get("signature_layout"))
-    slots = layout["slots"]
+    resolved_by_role = {getattr(item, "role", None): item for item in resolved_signatures}
+    slots = [_merge_resolved_signature(slot, resolved_by_role) for slot in layout["slots"]]
     if layout["columns"]:
         columns = layout["columns"]
     elif layout["direction"] == "vertical":
@@ -451,6 +487,9 @@ def _draw_signatures_item(
     else:
         grouped_rows = [(prepared.slots[index:index + cols], cols) for index in range(0, len(prepared.slots), cols)]
 
+    role_line_height = mm(4.2)
+    name_line_height = mm(4.0)
+
     for row, (row_slots, row_columns) in enumerate(grouped_rows):
         row_col_width = (width - GRID_GUTTER * (row_columns - 1)) / row_columns
         for col, slot in enumerate(row_slots):
@@ -458,7 +497,27 @@ def _draw_signatures_item(
             slot_top = y_top - row * (SIGNATURE_SLOT_HEIGHT + SIGNATURE_SLOT_GAP)
             box = VectorBox(x=slot_x, y=slot_top - SIGNATURE_SLOT_HEIGHT, width=row_col_width, height=SIGNATURE_SLOT_HEIGHT)
             document.draw_rounded_box(box, radius=mm(1.2), line_width=0.6)
-            document.draw_centered_text(str(slot.get("display_label") or slot.get("role") or ""), box=box, style=VectorTextStyle(font_size=6.5, bold=True))
+
+            label_text = str(slot.get("display_label") or slot.get("role") or "")
+            name = slot.get("name")
+            image_bytes = _decode_signature_image(slot.get("signature_data"))
+
+            # Paridad documental con el renderer HTML legacy
+            # (field_sheet_engine_pdf.html): siempre "{display_label}" seguido
+            # de "{name}" o, si la sesión LAB/FieldSheetSignature aún no
+            # resolvió firma para ese rol, "Pendiente" -- nunca un placeholder
+            # visual distinto entre v1 y v2.
+            reserved_text_height = role_line_height + name_line_height
+            content_box = VectorBox(
+                x=box.x, y=box.y + reserved_text_height, width=box.width, height=box.height - reserved_text_height
+            )
+            role_box = VectorBox(x=box.x, y=box.y + name_line_height, width=box.width, height=role_line_height)
+            name_box = VectorBox(x=box.x, y=box.y, width=box.width, height=name_line_height)
+
+            if image_bytes:
+                document.draw_image_bytes(image_bytes, box=content_box, padding=mm(0.8))
+            document.draw_centered_text(label_text, box=role_box, style=VectorTextStyle(font_size=6.0, bold=True))
+            document.draw_centered_text(str(name) if name else "Pendiente", box=name_box, style=VectorTextStyle(font_size=6.0))
 
     rows_count = _signatures_rows_count(prepared)
     cursor_y = y_top - (rows_count * SIGNATURE_SLOT_HEIGHT + max(rows_count - 1, 0) * SIGNATURE_SLOT_GAP)
@@ -521,7 +580,7 @@ def _collect_grid_items(print_blocks: list[PrintBlock], context: VectorRenderCon
             continue
 
         if block.block_type == "SignaturesBlock":
-            prepared = _prepare_signatures(context.template_definition)
+            prepared = _prepare_signatures(context.template_definition, context.signatures)
             items.append(
                 _GridItem(kind="signatures", column_span=span, title=block.title, title_visible=title_visible, payload=prepared)
             )

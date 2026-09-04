@@ -566,6 +566,7 @@ def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
     if renderer_key == VECTOR_PDF_RENDERER_KEY:
         from app.services.field_sheet_vector_adapter import VectorRenderContext, render_field_sheet_vector_preview
 
+        signatures = _resolve_field_sheet_signatures(db, field_sheet)
         institution = field_sheet.institutional_snapshot_json
         if not institution:
             institution = institutional_snapshot(get_or_create_institutional_configuration(db))
@@ -597,6 +598,7 @@ def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
             client_address=field_sheet.address,
             certificate_folio=certificate_folio,
             institution=institution,
+            signatures=tuple(signatures),
         ))
     else:
         institution = field_sheet.institutional_snapshot_json

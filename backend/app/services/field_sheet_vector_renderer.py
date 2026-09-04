@@ -112,7 +112,14 @@ class FieldSheetVectorDocument:
 
     def draw_image(self, path: str, *, box: VectorBox, padding: float = mm(1)) -> None:
         """Draw a trusted local reference asset, centered and aspect-safe."""
-        image = ImageReader(path)
+        self._draw_image_reader(ImageReader(path), box=box, padding=padding)
+
+    def draw_image_bytes(self, data: bytes, *, box: VectorBox, padding: float = mm(1)) -> None:
+        """Draw an in-memory raster image (e.g. a decoded signature capture),
+        centered and aspect-safe, same placement rules as draw_image."""
+        self._draw_image_reader(ImageReader(BytesIO(data)), box=box, padding=padding)
+
+    def _draw_image_reader(self, image: ImageReader, *, box: VectorBox, padding: float) -> None:
         source_width, source_height = image.getSize()
         available_width = max(box.width - padding * 2, 1)
         available_height = max(box.height - padding * 2, 1)
@@ -325,33 +332,34 @@ class FieldSheetVectorDocument:
             line_height=1.2,
         )
 
-        label_height = mm(
-            2.8 if compact else 3.2
-        )
+        top_inset = mm(0.3)
+        label_height = mm(2.6 if compact else 3.0)
+        gap = mm(0.3)
+        bottom_inset = mm(0.3)
 
         label_box = VectorBox(
             x=box.x,
-            y=(
-                box.y
-                + box.height
-                - label_height
-                - mm(0.8)
-            ),
+            y=box.y + box.height - top_inset - label_height,
             width=box.width,
             height=label_height,
         )
 
+        value_box_height = max(
+            box.height - top_inset - label_height - gap - bottom_inset,
+            value_style.font_size,
+        )
         value_box = VectorBox(
             x=box.x,
-            y=box.y + mm(0.7),
+            y=box.y + bottom_inset,
             width=box.width,
-            height=max(
-                box.height
-                - label_height
-                - mm(2.0),
-                mm(2.5),
-            ),
+            height=value_box_height,
         )
+        # padding_y se reduce en cajas estrechas para garantizar que el valor
+        # siempre tenga espacio para al menos una línea -- un padding fijo
+        # dejaba value_box más bajo que font_size + 2*padding en filas
+        # compactas, y draw_wrapped_text descartaba la línea entera antes de
+        # dibujar nada (el valor capturado nunca llegaba a imprimirse).
+        value_padding_y = min(mm(0.3), max((value_box_height - value_style.font_size) / 2, 0))
 
         self.draw_wrapped_text(
             label,
@@ -367,7 +375,7 @@ class FieldSheetVectorDocument:
             box=value_box,
             style=value_style,
             padding_x=mm(1.2),
-            padding_y=mm(0.6),
+            padding_y=value_padding_y,
         )
 
     def draw_field_grid(

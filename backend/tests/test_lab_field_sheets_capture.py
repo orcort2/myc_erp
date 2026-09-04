@@ -261,9 +261,11 @@ def test_new_lab_field_sheet_uses_canonical_versioned_renderer_and_refresh_state
     )
     assert first.status_code == 201, first.text
     first_body = first.json()
-    assert first_body["pdf_renderer_key"] == "field_sheet_engine"
-    assert first_body["pdf_renderer_version"] == 1
-    assert first_body["template_definition"]["pdf_template"] == "field_sheet_engine_pdf.html"
+    # "general" es una de las 23 plantillas oficiales MYC del checkpoint
+    # ca4be7f: toda FieldSheet nueva sobre un template oficial se congela con
+    # el renderer vectorial v2, no con el motor HTML/weasyprint legacy v1.
+    assert first_body["pdf_renderer_key"] == "field_sheet_vector"
+    assert first_body["pdf_renderer_version"] == 2
     assert client.get(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers
     ).json()["status"] == "in_progress"
@@ -280,8 +282,8 @@ def test_new_lab_field_sheet_uses_canonical_versioned_renderer_and_refresh_state
 
     with factory() as db:
         persisted = db.get(FieldSheet, first_body["id"])
-        assert persisted.pdf_renderer_key == "field_sheet_engine"
-        assert persisted.pdf_renderer_version == 1
+        assert persisted.pdf_renderer_key == "field_sheet_vector"
+        assert persisted.pdf_renderer_version == 2
 
 
 def test_admin_reception_date_update_syncs_only_current_editable_sheets(lab_context):
