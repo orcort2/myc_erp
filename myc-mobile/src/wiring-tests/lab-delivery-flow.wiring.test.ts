@@ -55,3 +55,31 @@ test('work-orders.tsx pasa deliveredByName desde user.full_name (identidad de se
 test('LabDeliveryFlow nunca cierra el modal principal de la OT -- sólo notifica vía onCancel/onComplete', () => {
   assert.doesNotMatch(deliveryFlowSource, /setOpen\(/);
 });
+
+test('las cuatro parejas de acciones de LabDeliveryFlow (review, recipient, delivered_by_signature, recipient_signature) están dentro de OperationalActionStack', () => {
+  // Cierre quirúrgico de espaciado (2026-09): antes, cada paso renderizaba
+  // <PrimaryButton/><SecondaryButton/> consecutivos sin contenedor -- los
+  // botones quedaban pegados verticalmente. Ahora las 4 parejas deben vivir
+  // dentro de <OperationalActionStack>, que es quien resuelve la separación.
+  const stackMatches = deliveryFlowSource.match(/<OperationalActionStack>/g) ?? [];
+  assert.equal(stackMatches.length, 4, 'se esperan exactamente 4 <OperationalActionStack>, uno por paso');
+
+  const stackBlocks = deliveryFlowSource.split('<OperationalActionStack>').slice(1);
+  assert.equal(stackBlocks.length, 4);
+  for (const block of stackBlocks) {
+    const body = block.slice(0, block.indexOf('</OperationalActionStack>'));
+    assert.match(body, /<PrimaryButton/, 'cada stack debe contener la acción principal del paso');
+    assert.match(body, /<SecondaryButton/, 'cada stack debe contener la acción secundaria del paso');
+  }
+});
+
+test('LabDeliveryFlow no introduce márgenes manuales entre las acciones apiladas', () => {
+  // La separación pertenece al contenedor (OperationalActionStack), nunca a
+  // un marginTop/marginBottom puesto a mano sobre PrimaryButton/SecondaryButton.
+  assert.doesNotMatch(deliveryFlowSource, /<PrimaryButton[^>]*margin/);
+  assert.doesNotMatch(deliveryFlowSource, /<SecondaryButton[^>]*margin/);
+});
+
+test('OperationalActionStack está importado desde los primitives compartidos, no reimplementado localmente', () => {
+  assert.match(deliveryFlowSource, /import \{[^}]*OperationalActionStack[^}]*\} from '@\/src\/design\/primitives'/);
+});

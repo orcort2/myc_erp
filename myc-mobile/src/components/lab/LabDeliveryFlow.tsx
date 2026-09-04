@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { AlertBanner, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
+import { AlertBanner, OperationalActionStack, PrimaryButton, SecondaryButton } from '@/src/design/primitives';
 import { MobileSignaturePad } from '@/src/components/signatures/MobileSignaturePad';
 import { SuccessTransition } from '@/src/components/signatures/StepTransition';
 import { SignatureSubmissionLock } from '@/src/components/signatures/signature-flow-state';
@@ -137,8 +137,10 @@ export function LabDeliveryFlow({
               ))}
             </View>
           ))}
-          <PrimaryButton icon="arrow-right-circle" label="Continuar" onPress={() => goTo('recipient')} />
-          <SecondaryButton icon="close" label="Cancelar" onPress={onCancel} />
+          <OperationalActionStack>
+            <PrimaryButton icon="arrow-right-circle" label="Continuar" onPress={() => goTo('recipient')} />
+            <SecondaryButton icon="close" label="Cancelar" onPress={onCancel} />
+          </OperationalActionStack>
         </>
       )}
 
@@ -150,8 +152,10 @@ export function LabDeliveryFlow({
           <Text style={styles.label}>Observaciones de entrega</Text>
           <TextInput multiline onChangeText={(value) => setState((current) => ({ ...current, notes: value }))} style={[styles.input, styles.notes]} value={state.notes} />
           {!!error && <AlertBanner tone="danger">{error}</AlertBanner>}
-          <PrimaryButton icon="arrow-right-circle" label="Continuar a firmas" onPress={continueFromRecipient} />
-          <SecondaryButton icon="arrow-left" label="Volver" onPress={() => goTo('review')} />
+          <OperationalActionStack>
+            <PrimaryButton icon="arrow-right-circle" label="Continuar a firmas" onPress={continueFromRecipient} />
+            <SecondaryButton icon="arrow-left" label="Volver" onPress={() => goTo('review')} />
+          </OperationalActionStack>
         </>
       )}
 
@@ -169,8 +173,10 @@ export function LabDeliveryFlow({
             onDrawingChange={onDrawingChange}
           />
           {!!error && <AlertBanner tone="danger">{error}</AlertBanner>}
-          <PrimaryButton icon="arrow-right-circle" label="Continuar con receptor" onPress={continueFromDeliveredBySignature} />
-          <SecondaryButton icon="arrow-left" label="Volver" onPress={() => goTo('recipient')} />
+          <OperationalActionStack>
+            <PrimaryButton icon="arrow-right-circle" label="Continuar con receptor" onPress={continueFromDeliveredBySignature} />
+            <SecondaryButton icon="arrow-left" label="Volver" onPress={() => goTo('recipient')} />
+          </OperationalActionStack>
         </>
       )}
 
@@ -193,8 +199,10 @@ export function LabDeliveryFlow({
               : 'Recibí de conformidad los equipos relacionados en este acuse.'}
           </Text>
           {!!error && <AlertBanner tone="danger">{error}</AlertBanner>}
-          <PrimaryButton icon="package-check" label="Confirmar entrega" loading={submitting} onPress={() => void submit()} />
-          <SecondaryButton disabled={submitting} icon="arrow-left" label="Volver" onPress={() => goTo('delivered_by_signature')} />
+          <OperationalActionStack>
+            <PrimaryButton icon="package-check" label="Confirmar entrega" loading={submitting} onPress={() => void submit()} />
+            <SecondaryButton disabled={submitting} icon="arrow-left" label="Volver" onPress={() => goTo('delivered_by_signature')} />
+          </OperationalActionStack>
         </>
       )}
     </View>

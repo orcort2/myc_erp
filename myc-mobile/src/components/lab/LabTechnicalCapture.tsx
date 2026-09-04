@@ -35,7 +35,7 @@ import {
 } from '@/src/services/field-sheet-draft-view-state';
 import { apiUrl, ApiError } from '@/src/api/client';
 import {
-  ActionRow, ActionTile, AdministrativeButton, AlertBanner, Card, DangerButton, EmptyState, FadeIn, Field, LoadingState, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
+  ActionRow, ActionTile, AdministrativeButton, AlertBanner, Card, DangerButton, EmptyState, FadeIn, Field, LoadingState, OperationalActionStack, PrimaryButton, ReadOnlyField, SecondaryButton, Section, StatusBadge,
 } from '@/src/design/primitives';
 import { colors, spacing } from '@/src/design/tokens';
 import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldSheetResultsWorkspace';
@@ -696,9 +696,9 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           {activeEquipment.service_type !== 'linked' && activeEquipment.automatic_certificate_folio && (
             <SecondaryButton icon="send" label="Ticket · Folio MYC manual" onPress={() => setTicketMode('manual_myc_folio')} />
           )}
-          <View style={styles.selectorAction}>
+          <OperationalActionStack>
             <PrimaryButton disabled={!selectedTemplate || !canCapture} icon="clipboard-edit-outline" label="Abrir captura" loading={busy} onPress={createSheet} />
-          </View>
+          </OperationalActionStack>
         </> : <>
           <View style={styles.statusRow}>
             <StatusBadge label={fieldSheetStatusLabel(sheet.status)} tone={statusTone(sheet.status)} />
@@ -781,33 +781,37 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
 
           {canCapture && !captureIsAlwaysReadOnly(sheet.status) && (
             editable ? (
-              <View style={styles.transactionActions}>
+              <OperationalActionStack>
                 <ActionRow>
                   <SecondaryButton icon="content-save" label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
                   <PrimaryButton icon="check-circle" label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
                 </ActionRow>
                 <DangerButton icon="trash-can-outline" label="Eliminar borrador" disabled={busy} onPress={confirmDiscardSheet} />
-              </View>
+              </OperationalActionStack>
             ) : (
-              <SecondaryButton icon="pencil-outline" label="Editar" onPress={() => setViewMode(viewModeAfterEditRequested())} />
+              <OperationalActionStack>
+                <SecondaryButton icon="pencil-outline" label="Editar" onPress={() => setViewMode(viewModeAfterEditRequested())} />
+              </OperationalActionStack>
             )
           )}
 
           {sheet.status === 'completed' && (
-            <View style={styles.documentActions}>
+            <OperationalActionStack>
               <SecondaryButton disabled={downloadingPdf} icon="download" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
               {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
                 <AdministrativeButton icon="lock-open-outline" label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
               )}
-            </View>
+            </OperationalActionStack>
           )}
 
-          <SecondaryButton
-            disabled={!labelPrintService.available}
-            icon="printer"
-            label="Imprimir etiqueta 50×30 · Próxima fase"
-            onPress={() => undefined}
-          />
+          <OperationalActionStack>
+            <SecondaryButton
+              disabled={!labelPrintService.available}
+              icon="printer"
+              label="Imprimir etiqueta 50×30 · Próxima fase"
+              onPress={() => undefined}
+            />
+          </OperationalActionStack>
 
           {definition && (
             <FieldSheetResultsWorkspace
@@ -821,9 +825,9 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
             />
           )}
         </>}
-        <View style={styles.navigationActions}>
+        <OperationalActionStack>
           <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { setActiveEquipment(null); setSheet(null); setTicketMode(null); setViewMode(initialViewMode()); }} />
-        </View>
+        </OperationalActionStack>
         </FadeIn>
       </ScrollView>
     );
@@ -873,10 +877,6 @@ const styles = StyleSheet.create({
   templateIndicator: { alignItems: 'center', borderColor: colors.border, borderRadius: 11, borderWidth: 1, height: 22, justifyContent: 'center', width: 22 },
   templateIndicatorSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
   templateCheck: { color: '#fff', fontWeight: '800' },
-  selectorAction: { gap: spacing.md, marginTop: spacing.md },
-  transactionActions: { gap: spacing.md, marginTop: spacing.lg },
-  documentActions: { gap: spacing.md, marginTop: spacing.lg },
-  navigationActions: { marginTop: spacing.lg },
   eyebrow: { color: colors.accent, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   title: { color: colors.text, fontSize: 22, fontWeight: '800' },
   statusRow: { flexDirection: 'row', marginBottom: spacing.sm },

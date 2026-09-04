@@ -87,10 +87,14 @@ export function flowContextLabel(
   step: Step,
   status: LabWorkOrderStatus | string | undefined,
 ): string {
+  if (step === 'capture' && status === 'draft') return 'Recepción de equipos';
   if (step === 'signatures' && status === 'draft') return 'Revisión y firma de recepción';
   if (step === 'technical' && (status === 'received_signed' || status === 'in_progress')) {
     return 'Captura técnica';
   }
   if (step === 'review' || status === 'ready_to_close') return 'Cierre técnico';
-  return 'Grupo histórico';
+  if (status === 'completed' || status === 'partially_closed' || status === 'cancelled') {
+    return 'Grupo histórico';
+  }
+  return 'Proceso LAB';
 }

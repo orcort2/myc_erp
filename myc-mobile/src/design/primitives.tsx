@@ -351,6 +351,21 @@ export function AdministrativeButton(props: ButtonProps) {
   return <OperationalActionButton {...props} tone="administrative" />;
 }
 
+/**
+ * Composición vertical de acciones operativas full-width (Primary/Secondary/
+ * Administrative/Danger, o un ActionRow horizontal como hijo).
+ *
+ * Distinto de ActionRow: ActionRow es horizontal, para acciones que
+ * genuinamente comparten una fila (ver su propio uso). OperationalActionStack
+ * es la variante vertical -- un paso de wizard, un formulario -- donde cada
+ * acción ocupa el ancho completo y necesita separación vertical consistente.
+ * El botón nunca conoce si tiene hermanos: la separación pertenece siempre
+ * al contenedor, nunca a un marginTop/marginBottom puesto a mano en cada uno.
+ */
+export function OperationalActionStack({ children }: { children: ReactNode }) {
+  return <View style={styles.operationalActionStack}>{children}</View>;
+}
+
 export type StatusTone =
   | 'info'
   | 'warning'
@@ -582,6 +597,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.sm,
     marginTop: spacing.md,
+  },
+
+  /*
+   * Variante vertical de ActionRow: acciones operativas full-width apiladas,
+   * con la separación vertical consistente entre ellas -- ver
+   * OperationalActionStack arriba.
+   */
+  operationalActionStack: {
+    gap: spacing.md,
+    marginTop: spacing.md,
+    width: '100%',
   },
 
   /*

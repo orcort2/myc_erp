@@ -130,9 +130,11 @@ test('sólo draft admite editar la recepción', () => {
 });
 
 test('la revisión de recepción no usa lenguaje de cierre', () => {
+  assert.equal(flowContextLabel('capture', 'draft'), 'Recepción de equipos');
   assert.equal(flowContextLabel('signatures', 'draft'), 'Revisión y firma de recepción');
   assert.equal(flowContextLabel('technical', 'received_signed'), 'Captura técnica');
   assert.equal(flowContextLabel('review', 'ready_to_close'), 'Cierre técnico');
+  assert.equal(flowContextLabel('completed', 'completed'), 'Grupo histórico');
 });
 
 test('11. received_signed oculta agregar equipo (editable gatea "+ Añadir equipo")', () => {

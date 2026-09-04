@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { AdministrativeButton, AlertBanner, SecondaryButton } from '@/src/design/primitives';
+import { AdministrativeButton, AlertBanner, OperationalActionStack, SecondaryButton } from '@/src/design/primitives';
 import type { LabDeliveryPendingEquipmentItem } from '@/src/types/lab-work-order';
 
 type Props = {
@@ -90,8 +90,10 @@ export function LabPartialDeliveryRequest({ busy, onCancel, onSubmit, pendingEqu
       <Text style={styles.label}>Motivo *</Text>
       <TextInput editable={!busy} multiline onChangeText={(value) => { setReason(value); setError(''); }} style={[styles.input, styles.reason]} value={reason} />
       {!!error && <AlertBanner tone="danger">{error}</AlertBanner>}
-      <AdministrativeButton disabled={busy} icon="send" label="Solicitar entrega parcial" loading={busy} onPress={() => void submit()} />
-      <SecondaryButton disabled={busy} icon="close" label="Cancelar" onPress={onCancel} />
+      <OperationalActionStack>
+        <AdministrativeButton disabled={busy} icon="send" label="Solicitar entrega parcial" loading={busy} onPress={() => void submit()} />
+        <SecondaryButton disabled={busy} icon="close" label="Cancelar" onPress={onCancel} />
+      </OperationalActionStack>
     </View>
   );
 }
