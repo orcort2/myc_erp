@@ -373,3 +373,35 @@ posición usa un índice único parcial (`WHERE is_active IS TRUE`) en vez de un
 mover el equipo retirado. Retirar equipo sobre una OT ya reabierta es un
 cambio estructural: invalida la firma vigente igual que agregar equipo, bajo
 cualquier política de reapertura.
+
+## D-2026-09-04 — workflow_mode: flujo "equipo por equipo" como modalidad persistente, no un segundo agregado
+
+El trabajo de campo real ocurre equipo por equipo (servicio → Hoja de Campo →
+siguiente equipo), no siempre "todos los equipos primero, después recepción y
+captura". Se modela como `LabWorkOrder.workflow_mode` (`group` default/
+backfill, `equipment_by_equipment`), NUNCA como una entidad ni máquina de
+estados paralela: el mismo agregado `LabWorkOrder`/`LabWorkOrderEquipment`/
+`FieldSheet`, la misma migración de tombstone, el mismo `LabWorkOrderSignatureSession`,
+el mismo Delivery. Ningún histórico se reinterpreta automáticamente -- la
+conversión de una OT `group` existente es una intervención administrativa
+excepcional, fuera de este alcance, y debe funcionar sin recrear equipos.
+
+`_ensure_capture_allowed` se amplía de forma acotada: `equipment_by_equipment`
+permite captura real de FieldSheet en `draft` (antes de firmar recepción),
+pero nunca se finge `received_signed` -- la OT permanece `draft` durante toda
+la captura previa, y completar/congelar una hoja individualmente sigue
+prohibido pre-firma (`complete_lab_field_sheet` lo bloquea explícitamente).
+La frontera documental sigue siendo la firma: sólo entonces existe
+`lab_signature_session_id`, `status=completed` y PDF/SHA congelados.
+
+`finalize_equipment_by_equipment_work_order` es la única operación de cierre
+para este modo: una transacción única encadena `_sign_members_uncommitted`,
+`_complete_lab_field_sheet_uncommitted` (reutilizando `_validate_ready_to_complete`,
+nunca una segunda política de validación), `_finish_complete_members_uncommitted`
+y `_create_delivery_event`/`_finalize_delivery`, con un solo commit al final
+-- un fallo en cualquier paso no deja firma/hoja/OT/entrega parcial, y el
+retry es seguro porque no existe estado intermedio persistible. La entrega es
+FULL y reutiliza exactamente las mismas firmas Cliente/Técnico ya capturadas;
+nunca pide una segunda firma de entrega. `group` conserva su flujo intacto:
+las excepciones nuevas están condicionadas explícitamente a
+`workflow_mode == "equipment_by_equipment"`.

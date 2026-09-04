@@ -74,7 +74,9 @@ import {
   type LabClosureScope,
 } from '@/src/services/lab-work-order-closure';
 import {
+  getLabEquipmentByEquipmentPrevalidation,
   postLabCompletion,
+  postLabEquipmentByEquipmentFinalize,
   postLabSignatures,
 } from '@/src/services/lab-work-order-signature-submission';
 import {
@@ -85,6 +87,13 @@ import {
   statusPresentation,
   type Step,
 } from '@/src/services/lab-work-order-step';
+import {
+  canRegisterAnotherEquipmentByEquipmentUnit,
+  describeEquipmentByEquipmentAction,
+  formatEquipmentByEquipmentBlocker,
+  WORKFLOW_MODE_OPTIONS,
+  type EquipmentByEquipmentBlocker,
+} from '@/src/services/lab-equipment-by-equipment-flow';
 import type {
   GeneralData,
   LabDelivery,
@@ -95,6 +104,7 @@ import type {
   LabListItem,
   LabWorkOrder,
   LabWorkOrderGroupRequest,
+  LabWorkOrderWorkflowMode,
 } from '@/src/types/lab-work-order';
 import type { OperationalTicket } from '@/src/types/operational-ticket';
 
@@ -199,6 +209,8 @@ export default function WorkOrdersScreen() {
   const [open, setOpen] = useState(false);
   const [groupMode, setGroupMode] = useState<'none' | 'request' | 'direct'>('none');
   const [groupQuantity, setGroupQuantity] = useState('2');
+  const [workflowMode, setWorkflowMode] = useState<LabWorkOrderWorkflowMode>('group');
+  const [equipmentByEquipmentBlockers, setEquipmentByEquipmentBlockers] = useState<EquipmentByEquipmentBlocker[] | null>(null);
   const [step, setStep] = useState<Step>('general');
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
@@ -440,6 +452,8 @@ export default function WorkOrdersScreen() {
 
   function startNew() {
     setGroupMode('none');
+    setWorkflowMode('group');
+    setEquipmentByEquipmentBlockers(null);
     setGeneral(emptyGeneral());
     setWorkOrder(null);
     setStep('general');
@@ -675,7 +689,7 @@ export default function WorkOrdersScreen() {
           state_name: general.state_name || null,
           purchase_order: general.purchase_order || null,
           notes: general.notes || null,
-          ...(workOrder ? { expected_edit_version: workOrder.edit_version } : {}),
+          ...(workOrder ? { expected_edit_version: workOrder.edit_version } : { workflow_mode: workflowMode }),
           ...(groupMode !== 'none' ? { quantity: Number(groupQuantity) } : {}),
         }),
       });
@@ -1042,6 +1056,62 @@ export default function WorkOrdersScreen() {
     }
   }
 
+  // Sección 14 del encargo equipo-por-equipo: prevalidación backend ANTES de
+  // abrir la pantalla de firma. Si hay blockers, nunca se abre la firma --
+  // se muestran en el mismo paso 'signatures'.
+  async function openEquipmentByEquipmentFinalize() {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      const prevalidation = await getLabEquipmentByEquipmentPrevalidation({ request, workOrder });
+      if (!prevalidation.ready) {
+        setEquipmentByEquipmentBlockers(prevalidation.blockers);
+        setStep('signatures');
+        return;
+      }
+      setEquipmentByEquipmentBlockers(null);
+      setSignatureFlowState(() => reconcileSignatureFlowState(null, {
+        clientName: workOrder.contact_name ?? '',
+        rootWorkOrderId: workOrder.id,
+        technicianName: user?.full_name ?? '',
+      }));
+      setStep('signatures');
+    } catch (error) {
+      Alert.alert('No fue posible validar la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Operación atómica única (sección 17): firma -> completa hojas -> cierra
+  // OT -> entrega FULL con las mismas firmas. Al terminar, MobileSignatureFlow
+  // muestra su propia confirmación y, vía onComplete, limpia signatureFlowState;
+  // aquí se avanza el paso a 'completed' de inmediato (nunca vuelve a
+  // Technical Capture ni a una pantalla de Delivery aparte, sección 31).
+  async function applyEquipmentByEquipmentFinalize(payload: SignaturePayload, capturedContextId: number) {
+    if (signatureSubmitRef.current) throw new Error('Las firmas ya se están guardando.');
+    if (!workOrder || workOrder.id !== capturedContextId) {
+      setSignatureFlowState(null);
+      setSignatureDrawing(false);
+      throw new Error('La OT activa cambió. Captura nuevamente las firmas.');
+    }
+    signatureSubmitRef.current = true;
+    setBusy(true);
+    const signedAt = new Date().toISOString();
+    try {
+      const detail = await postLabEquipmentByEquipmentFinalize({ payload, request, signedAt, workOrder });
+      setWorkOrder(detail);
+      setStep('completed');
+      publishLocalChange({ event_type: 'work_order.completed', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+      await refresh();
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : 'No fue posible finalizar el registro de equipos. Intenta nuevamente.');
+    } finally {
+      signatureSubmitRef.current = false;
+      setBusy(false);
+    }
+  }
+
   async function downloadPdf(action: 'print' | 'share') {
     if (!workOrder || !session) return;
     setBusy(true);
@@ -1313,6 +1383,20 @@ export default function WorkOrdersScreen() {
                   {Object.values(generalErrors).some(Boolean) && (
                     <AlertBanner tone="danger">Revisa los campos marcados antes de continuar.</AlertBanner>
                   )}
+                  {!workOrder && groupMode === 'none' && (
+                    <FormSection title="Modalidad de trabajo">
+                      {WORKFLOW_MODE_OPTIONS.map((option) => (
+                        <Pressable
+                          key={option.value}
+                          onPress={() => setWorkflowMode(option.value)}
+                          style={[styles.workflowModeCard, workflowMode === option.value && styles.workflowModeCardSelected]}
+                        >
+                          <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                          <Text style={styles.workflowModeDescription}>{option.description}</Text>
+                        </Pressable>
+                      ))}
+                    </FormSection>
+                  )}
                   <FormSection title="Servicio y cliente">
                     {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <MycDatePickerField error={generalErrors.reception_date} label="Fecha de recepción *" value={general.reception_date} onChange={(value) => { setGeneral({ ...general, reception_date: value }); setGeneralErrors((current) => ({ ...current, reception_date: '' })); }} />
@@ -1404,32 +1488,65 @@ export default function WorkOrdersScreen() {
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
                     const summary = describeEquipmentSummary(item, workOrder.client_name);
+                    const equipmentByEquipmentAction = workOrder.workflow_mode === 'equipment_by_equipment'
+                      ? describeEquipmentByEquipmentAction(item)
+                      : null;
                     return (
-                      <Pressable key={item.id} style={styles.equipmentRow} onPress={() => editable && canManageEquipment && showEquipmentEditor(item)}>
+                      <Pressable
+                        key={item.id}
+                        style={styles.equipmentRow}
+                        onPress={() => {
+                          if (equipmentByEquipmentAction) { setStep('technical'); return; }
+                          if (editable && canManageEquipment) showEquipmentEditor(item);
+                        }}
+                      >
                         <View style={styles.flex}>
                           <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
                           <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
                           <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''} · Folio: {summary.folio}</Text>
+                          {/* Sección 5/29 del encargo equipo-por-equipo: el estado se
+                              reconstruye siempre desde field_sheet_id/field_sheet_status
+                              (describeEquipmentByEquipmentAction), nunca desde el evento
+                              de haber guardado el equipo hace un momento. */}
+                          {equipmentByEquipmentAction && (
+                            <Text style={styles.equipmentByEquipmentAction}>{equipmentByEquipmentAction.label}</Text>
+                          )}
                         </View>
                         <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
                       </Pressable>
                     );
                   })}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
-                  {/* Fase 3: la recepción se firma ANTES de la captura técnica.
-                      Una OT reabierta con "preserve" ya conserva una firma de
-                      recepción válida (canSkipSignaturesAfterReopen) -- no debe
-                      pedirse otra, así que salta directo a captura técnica. */}
-                  <OperationalActionStack>
-                    {editable && canManageEquipment && workOrder.equipment.length < 10 && <SecondaryButton icon="plus" label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />}
-                    {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton icon="file-plus-outline" label="Asignar OT extra" onPress={addAdditional} />}
-                    <PrimaryButton
-                      disabled={!workOrder.equipment.length}
-                      icon="arrow-right-circle"
-                      label={canSkipSignaturesAfterReopen(workOrder) ? 'Continuar proceso' : 'Continuar a recepción de equipos'}
-                      onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
-                    />
-                  </OperationalActionStack>
+                  {workOrder.workflow_mode === 'equipment_by_equipment' ? (
+                    <OperationalActionStack>
+                      {editable && canManageEquipment && canRegisterAnotherEquipmentByEquipmentUnit(workOrder.equipment.length) && (
+                        <SecondaryButton icon="plus" label="Registrar siguiente equipo" onPress={() => showEquipmentEditor('new')} />
+                      )}
+                      <PrimaryButton
+                        disabled={!workOrder.equipment.length}
+                        icon="check-circle"
+                        label="Finalizar registro de equipos"
+                        onPress={() => { void openEquipmentByEquipmentFinalize(); }}
+                      />
+                    </OperationalActionStack>
+                  ) : (
+                    <>
+                      {/* Fase 3: la recepción se firma ANTES de la captura técnica.
+                          Una OT reabierta con "preserve" ya conserva una firma de
+                          recepción válida (canSkipSignaturesAfterReopen) -- no debe
+                          pedirse otra, así que salta directo a captura técnica. */}
+                      <OperationalActionStack>
+                        {editable && canManageEquipment && workOrder.equipment.length < 10 && <SecondaryButton icon="plus" label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />}
+                        {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton icon="file-plus-outline" label="Asignar OT extra" onPress={addAdditional} />}
+                        <PrimaryButton
+                          disabled={!workOrder.equipment.length}
+                          icon="arrow-right-circle"
+                          label={canSkipSignaturesAfterReopen(workOrder) ? 'Continuar proceso' : 'Continuar a recepción de equipos'}
+                          onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
+                        />
+                      </OperationalActionStack>
+                    </>
+                  )}
                 </FadeIn>
               )}
 
@@ -1451,7 +1568,16 @@ export default function WorkOrdersScreen() {
                   />
                   <OperationalActionStack>
                     {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
-                    {canExecuteWorkOrders && <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />}
+                    {/* equipment_by_equipment nunca pasa por 'review'/Technical
+                        Capture-como-cierre -- "Finalizar registro de equipos"
+                        (paso 'capture') es la única puerta de cierre, y ya
+                        formaliza firma+hojas+entrega en una sola operación
+                        atómica (sección 31 del encargo: nunca vuelve a
+                        aparecer una etapa manual de Captura Técnica ni cierre
+                        aparte para esta modalidad). */}
+                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && (
+                      <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />
+                    )}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}
                   </OperationalActionStack>
                 </FadeIn>
@@ -1487,7 +1613,7 @@ export default function WorkOrdersScreen() {
                   captura técnica. La firma representa que MYC y el cliente
                   aceptan los equipos y condiciones recibidos, no que el
                   trabajo técnico terminó. */}
-              {workOrder && step === 'signatures' && workOrder.status === 'draft' && (
+              {workOrder && step === 'signatures' && workOrder.status === 'draft' && workOrder.workflow_mode !== 'equipment_by_equipment' && (
                 <FadeIn transitionKey={step}>
                 {signatureFlowState == null ? (
                   <>
@@ -1557,6 +1683,51 @@ export default function WorkOrdersScreen() {
                     <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />
                   </View>
                 )}
+                </FadeIn>
+              )}
+
+              {/* Sección 14/16 del encargo equipo-por-equipo: una sola firma
+                  Cliente+Técnico formaliza recepción + FieldSheets + entrega.
+                  Prevalidación primero (blockers antes de abrir la firma);
+                  después reutiliza EXACTAMENTE el mismo MobileSignatureFlow
+                  que el flujo group -- nunca un segundo sistema de firmas. */}
+              {workOrder && step === 'signatures' && workOrder.workflow_mode === 'equipment_by_equipment' && (
+                <FadeIn transitionKey={step}>
+                  {signatureFlowState == null ? (
+                    <>
+                      <Text style={styles.sectionTitle}>Finalizar registro de equipos</Text>
+                      {equipmentByEquipmentBlockers && equipmentByEquipmentBlockers.length > 0 ? (
+                        <>
+                          <AlertBanner tone="danger">Resuelve lo siguiente antes de firmar:</AlertBanner>
+                          {equipmentByEquipmentBlockers.map((blocker, index) => (
+                            <Text key={`${blocker.equipment_id ?? 'ot'}-${index}`} style={styles.notice}>
+                              {formatEquipmentByEquipmentBlocker(blocker)}
+                            </Text>
+                          ))}
+                          <OperationalActionStack>
+                            <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { setEquipmentByEquipmentBlockers(null); setStep('capture'); }} />
+                          </OperationalActionStack>
+                        </>
+                      ) : (
+                        <Text style={styles.notice}>La firma de Cliente y Técnico formaliza la recepción, las hojas de campo capturadas y la entrega de los equipos en un solo paso.</Text>
+                      )}
+                    </>
+                  ) : signatureFlowState.rootWorkOrderId === workOrder.id ? (
+                    <MobileSignatureFlow
+                      currentContextId={workOrder.id}
+                      key={signatureFlowState.rootWorkOrderId}
+                      onComplete={() => { setSignatureFlowState(null); setSignatureDrawing(false); }}
+                      onDrawingChange={setSignatureDrawing}
+                      onStateChange={setSignatureFlowState}
+                      onSubmit={applyEquipmentByEquipmentFinalize}
+                      state={signatureFlowState}
+                    />
+                  ) : (
+                    <View style={styles.errorState}>
+                      <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto de la OT.</Text>
+                      <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />
+                    </View>
+                  )}
                 </FadeIn>
               )}
 
@@ -2389,6 +2560,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 4,
     padding: 11,
+  },
+
+  workflowModeCard: {
+    borderColor: '#d6e1e6',
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 10,
+    padding: 13,
+  },
+
+  workflowModeCardSelected: {
+    backgroundColor: '#e4f4ef',
+    borderColor: '#08756f',
+  },
+
+  workflowModeTitle: {
+    color: '#142b3a',
+    fontWeight: '800',
+  },
+
+  workflowModeDescription: {
+    color: '#667582',
+    fontSize: 12,
+    marginTop: 3,
+  },
+
+  equipmentByEquipmentAction: {
+    color: '#08756f',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
   },
 
   change: {

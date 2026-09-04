@@ -12,6 +12,14 @@ export type LabWorkOrderStatus =
   | 'partially_closed'
   | 'cancelled';
 
+// "group": registrar todo el equipo, firmar recepción, luego capturar
+// FieldSheets (único flujo histórico). "equipment_by_equipment": capturar
+// cada FieldSheet completa antes de la firma final; una sola firma
+// Cliente+Técnico formaliza recepción + hojas + entrega a la vez. Autoridad
+// backend persistente -- se elige al crear la OT y sobrevive refresh/kill/
+// logout/reload, nunca se infiere en Mobile.
+export type LabWorkOrderWorkflowMode = 'group' | 'equipment_by_equipment';
+
 export type LabEquipment = {
   id: number;
   position: number;
@@ -71,6 +79,7 @@ export type LabWorkOrder = {
   purchase_order: string | null;
   notes: string | null;
   status: LabWorkOrderStatus;
+  workflow_mode: LabWorkOrderWorkflowMode;
   lab_client_id: number | null;
   revision_number: number;
   edit_version: number;

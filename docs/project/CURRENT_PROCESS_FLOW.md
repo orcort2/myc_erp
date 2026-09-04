@@ -527,6 +527,33 @@ Login interno técnico
 → app cierra detalle y vuelve a consultar el listado LAB
 ```
 
+### Modalidad alterna: equipo por equipo (2026-09-04)
+
+Al crear la OT se elige `workflow_mode` (`group`, default, el flujo de
+arriba; o `equipment_by_equipment`). La elección es backend-autoritativa y
+persistente -- sobrevive refresh/kill/logout/reload y nunca se reinterpreta
+para OT históricas.
+
+```text
+Login interno técnico
+→ OT's → Generar orden → elegir "Equipo por equipo"
+→ datos generales manuales una sola vez
+→ registrar equipo 1 → configurar servicio/folio/cliente documental
+→ Seleccionar Hoja de Campo → elegir template → capturar de verdad (draft/in_progress, sin firma todavía)
+→ guardar y volver → Registrar siguiente equipo (repetir) o Finalizar registro de equipos
+→ prevalidación backend (equipo sin hoja, hoja incompleta, folio no resuelto → blockers explícitos por equipo)
+→ sólo si no hay blockers: firma única Cliente + Técnico
+→ una sola operación atómica: completa cada hoja capturada, cierra la OT, registra entrega FULL con esas mismas firmas
+→ OT completed; nunca vuelve a aparecer Captura Técnica ni una firma/entrega aparte
+→ notificación work_order.completed a Captura, igual que el flujo group
+```
+
+Una OT `group` con equipos ya existentes puede convertirse a
+`equipment_by_equipment` mediante una intervención administrativa
+excepcional (UPDATE directo de la columna, fuera de Mobile) sin recrear
+ningún equipo; al reabrir Mobile, cada equipo existente ofrece de inmediato
+"Seleccionar Hoja de Campo" reconstruido desde backend.
+
 En Vinculado, el valor capturado se autoriza directamente sólo si el actor
 tiene `lab_folios.resolve`; de lo contrario queda `pending` y se conserva como
 `requested_folio` en el Ticket. La fecha de recepción se edita contra

@@ -52,6 +52,10 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
         UniqueConstraint(
             "previous_work_order_id", name="uq_lab_work_order_previous"
         ),
+        CheckConstraint(
+            "workflow_mode IN ('group', 'equipment_by_equipment')",
+            name="ck_lab_work_order_workflow_mode",
+        ),
     )
 
     folio: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
@@ -93,6 +97,15 @@ class LabWorkOrder(IntegerPkMixin, TimestampMixin, Base):
     purchase_order: Mapped[str | None] = mapped_column(String(120))
     notes: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(30), default="draft", index=True, nullable=False)
+    # "group": registrar todo el equipo, firmar recepción, luego capturar
+    # FieldSheets (único flujo histórico). "equipment_by_equipment": capturar
+    # cada FieldSheet completa antes de la firma final; una sola firma
+    # Cliente+Técnico formaliza recepción + hojas + entrega a la vez (ver
+    # finalize_equipment_by_equipment_work_order). Nunca se reinterpreta un
+    # histórico: default/backfill es siempre "group".
+    workflow_mode: Mapped[str] = mapped_column(
+        String(30), default="group", server_default="group", nullable=False
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     partially_closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     partial_close_ticket_id: Mapped[int | None] = mapped_column(

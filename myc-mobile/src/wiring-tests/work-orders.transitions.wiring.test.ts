@@ -24,9 +24,12 @@ test('equipo (capture) usa FadeIn', () => {
   assert.match(block, /<FadeIn transitionKey=\{step\}>/);
 });
 
-test('firmas (signatures, las 3 variantes por status) usan FadeIn', () => {
+test('firmas (signatures, las 4 variantes por status/workflow_mode) usan FadeIn', () => {
+  // 4a variante (encargo equipo-por-equipo): step === 'signatures' &&
+  // workflow_mode === 'equipment_by_equipment' -- prevalidación/blockers +
+  // MobileSignatureFlow reutilizado para la firma única de finalize.
   const matches = source.match(/step === 'signatures'[^\n]*&& \(\s*\n\s*<FadeIn transitionKey=\{step\}>/g) ?? [];
-  assert.equal(matches.length, 3);
+  assert.equal(matches.length, 4);
 });
 
 test('el overlay de alta/edición de equipo usa FadeIn, keyed por identidad del equipo', () => {

@@ -19,6 +19,11 @@ class LabWorkOrderCreate(BaseModel):
     purchase_order: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=4000)
     lab_client_id: int | None = Field(default=None, gt=0)
+    # "group" (default, flujo histórico) o "equipment_by_equipment" (captura
+    # completa por equipo antes de la firma final). Se elige al crear y no
+    # es editable después por un endpoint ordinario -- ver
+    # docs/architecture/LAB_WORK_ORDERS.md.
+    workflow_mode: Literal["group", "equipment_by_equipment"] = "group"
 
 class LabWorkOrderGroupCreate(LabWorkOrderCreate):
     quantity: int = Field(ge=1, le=50)
@@ -262,6 +267,22 @@ class LabSignatureGroupWrite(BaseModel):
 
     technician: LabSignatureWrite
     client: LabSignatureWrite
+    expected_edit_version: int | None = Field(default=None, ge=1)
+
+
+class LabEquipmentByEquipmentBlocker(BaseModel):
+    work_order_id: int
+    work_order_folio: int
+    equipment_id: int | None
+    equipment_position: int | None
+    equipment: str | None
+    reason: str
+    missing_fields: list[str] | None = None
+
+
+class LabEquipmentByEquipmentPrevalidation(BaseModel):
+    ready: bool
+    blockers: list[LabEquipmentByEquipmentBlocker] = Field(default_factory=list)
 
 
 class LabSignatureRead(BaseModel):
@@ -410,6 +431,7 @@ class LabWorkOrderRead(BaseModel):
     reopen_ticket_id: int | None
     signature_required: bool
     signature_preserved: bool
+    workflow_mode: str
     created_at: datetime
     updated_at: datetime
     equipment: list[LabEquipmentRead]
@@ -425,6 +447,7 @@ class LabWorkOrderListItem(BaseModel):
     client_name: str
     reception_date: date
     status: str
+    workflow_mode: str
     equipment_count: int
     completed_equipment_count: int = 0
     created_at: datetime

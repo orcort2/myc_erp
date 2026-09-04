@@ -18,6 +18,7 @@ from app.schemas.lab_work_order import (
     LabDeliveryRead,
     LabDeliveryVoid,
     LabDirectReopenWrite,
+    LabEquipmentByEquipmentPrevalidation,
     LabFieldSheetCreate,
     LabSignatureGroupWrite,
     LabWorkOrderCreate,
@@ -51,9 +52,11 @@ from app.services.lab_work_orders import (
     delete_work_order,
     delete_equipment,
     export_all,
+    finalize_equipment_by_equipment_work_order,
     get_pdf,
     get_work_order,
     list_work_orders,
+    prevalidate_equipment_by_equipment_finalization,
     set_equipment_certificate_client,
     sign_group,
     sign_individual,
@@ -782,6 +785,47 @@ def create_lab_individual_signatures(
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return sign_individual(db, work_order_id, payload, context.user)
+
+
+@router.get(
+    "/{work_order_id}/equipment-by-equipment/prevalidate",
+    response_model=LabEquipmentByEquipmentPrevalidation,
+)
+def get_equipment_by_equipment_prevalidation(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.close", "lab_work_orders.use")
+    ),
+) -> LabEquipmentByEquipmentPrevalidation:
+    """Sección 14 del encargo equipo-por-equipo: Mobile llama esto ANTES de
+    abrir la pantalla de firma para 'Finalizar registro de equipos'. Nunca
+    muta nada -- sólo lectura."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    blockers = prevalidate_equipment_by_equipment_finalization(db, work_order_id)
+    return LabEquipmentByEquipmentPrevalidation(ready=not blockers, blockers=blockers)
+
+
+@router.post(
+    "/{work_order_id}/equipment-by-equipment/finalize",
+    response_model=LabWorkOrderRead,
+)
+def post_finalize_equipment_by_equipment(
+    work_order_id: int,
+    payload: LabSignatureGroupWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.close", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    """Operación atómica única: firma Cliente+Técnico -> completa cada
+    FieldSheet ya capturada -> cierra la OT -> entrega FULL con las mismas
+    firmas. Ver finalize_equipment_by_equipment_work_order."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return finalize_equipment_by_equipment_work_order(
+        db, work_order_id, payload, context.user,
+        expected_edit_version=payload.expected_edit_version,
+    )
 
 
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)

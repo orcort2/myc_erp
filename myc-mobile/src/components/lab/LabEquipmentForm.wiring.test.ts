@@ -17,7 +17,10 @@ test('Vinculado usa un solo input con etiqueta y ayuda según autoridad de folio
 });
 
 test('LabEquipmentForm usa Field compartido, muestra error y limpia sólo el campo editado', () => {
-  assert.match(source, /import \{ Field \} from '@\/src\/design\/primitives'/);
+  // El import puede venir agrupado con otros nombres del mismo módulo
+  // (prettier reformatea la lista a multilinea según su longitud) -- lo que
+  // importa es que Field se importe de primitives, no el layout exacto.
+  assert.match(source, /import \{[^}]*\bField\b[^}]*\} from '@\/src\/design\/primitives'/);
   assert.match(source, /error=\{fieldErrors\.serial_number\}/);
   assert.match(source, /onFieldChange\?\.\(field\)/);
   assert.doesNotMatch(source, /function Field\(/);

@@ -21,9 +21,11 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    # 518 = 517 (corte 2026-08-03) + GET /api/communications/work-order-mentions/search
-    # (@OT, checkpoint c7a7adb) -- ver _communications_policy en api_access.py.
-    assert len(operations) == 518
+    # 520 = 518 (corte previo) + GET/POST
+    # /{work_order_id}/equipment-by-equipment/{prevalidate,finalize} (flujo
+    # LAB equipo-por-equipo) -- ambas caen bajo la clasificación genérica
+    # /api/mobile/v1/ existente, sin override propio.
+    assert len(operations) == 520
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

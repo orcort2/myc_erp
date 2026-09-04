@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
-    "test": "tsx --test src/notifications/refresh-policy.test.ts src/realtime/realtime-client.test.ts src/communications/message-state.test.ts src/services/lab-work-order-deletion.test.ts src/services/lab-work-order-signature-policy.test.ts src/components/signatures/signature-flow-state.test.ts src/services/lab-work-order-signature-submission.test.ts src/services/push-notification-policy.test.ts src/services/auth.service.test.ts src/permissions/mobile-capabilities.test.ts src/services/field-sheet-payload.test.ts src/services/field-sheet-canonical-contract.test.ts src/services/field-sheet-template-selector.test.ts src/services/field-sheet-result-layout.test.ts src/services/field-sheet-results-workspace-state.test.ts src/services/lab-documentary-client.test.ts src/services/lab-work-order-step.test.ts src/services/lab-equipment-configured-payload.test.ts src/components/lab/lab-delivery-flow-state.test.ts src/wiring-tests/*.test.ts",
+    "test": "tsx --test $(node scripts/list-test-files.js)",
     "test:notifications": "tsx --test src/notifications/refresh-policy.test.ts",
     "test:realtime": "tsx --test src/realtime/realtime-client.test.ts",
     "test:communications": "tsx --test src/communications/message-state.test.ts",

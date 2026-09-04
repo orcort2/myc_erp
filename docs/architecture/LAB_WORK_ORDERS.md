@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-09-03
+> Corte verificado: 2026-09-04
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -439,6 +439,87 @@ Ver migración `7088fa142cc2_soft_delete_lab_equipment` y
 PostgreSQL real vía `LAB_POSTGRES_TEST_URL`, obligatoria porque el bug
 original sólo se manifestaba contra un motor con FK/CHECK reales).
 
+## Modalidad de trabajo: `group` vs `equipment_by_equipment`
+
+`LabWorkOrder.workflow_mode` (migración `6640c526c412`, `CheckConstraint IN
+('group', 'equipment_by_equipment')`, default/backfill siempre `group`) es
+autoridad backend persistente, elegida al crear la OT y nunca reinterpretada
+para históricos. No es un segundo agregado ni una máquina de estados
+paralela: reutiliza exactamente `LabWorkOrder`/`LabWorkOrderEquipment`/
+`FieldSheet`/`LabWorkOrderSignatureSession`/Delivery.
+
+**`group`** (default) conserva sin ninguna excepción el flujo descrito
+arriba: recepción firmada primero, captura técnica después. Ninguna regla
+nueva de esta sección aplica a una OT `group`.
+
+**`equipment_by_equipment`** soporta el trabajo real de campo (equipo →
+servicio → Hoja de Campo → siguiente equipo):
+
+- `_ensure_capture_allowed` permite crear/editar FieldSheet con la OT todavía
+  `draft` (antes de firmar recepción) para este modo -- la OT NUNCA finge
+  `received_signed`; permanece `draft` durante toda la captura previa. Es
+  captura real (referencias, resultados, condiciones, observaciones,
+  evidencia), no sólo "preparar" una hoja vacía.
+- `complete_lab_field_sheet` bloquea explícitamente formalizar una hoja
+  individualmente mientras la OT siga `draft` en este modo: la frontera
+  documental sigue siendo la firma final, nunca antes. Antes de firmar:
+  `lab_signature_session_id` es `NULL`, no hay `status=completed` ni PDF/SHA
+  final para ninguna hoja de esta OT.
+- El estado de cada equipo se reconstruye SIEMPRE desde
+  `field_sheet_id`/`field_sheet_status` (nunca desde un evento Mobile
+  efímero de "acabo de guardar"): sin hoja → "Seleccionar Hoja de Campo";
+  `draft`/`in_progress` → "Continuar captura"; `completed` → lista. Esto
+  funciona igual tras refresh, tras cerrar/reabrir la app, y para equipo que
+  ya existía antes de un cambio de `workflow_mode`.
+- `GET /{id}/equipment-by-equipment/prevalidate` es sólo lectura: antes de
+  abrir la pantalla de firma, valida cada equipo activo (`_validate_ready_to_complete`,
+  la MISMA autoridad que usa completar una hoja o el autocompletar de
+  cierre -- nunca una segunda política) y el folio (`_unresolved_folio_equipment`).
+  Devuelve blockers estructurados por equipo; Mobile nunca abre la firma si
+  hay alguno.
+- `POST /{id}/equipment-by-equipment/finalize` (`finalize_equipment_by_equipment_work_order`)
+  es la única operación de cierre: UNA transacción, un solo commit al final,
+  encadena firma (`_sign_members_uncommitted`), asignación explícita de
+  `lab_signature_session_id` a cada FieldSheet vigente, completar cada hoja
+  ya capturada (`_complete_lab_field_sheet_uncommitted`), cerrar la OT
+  (`_finish_complete_members_uncommitted` -- PDF/SHA final, notificación
+  `work_order.completed` a Captura, resolución de tickets de reapertura) y
+  registrar una entrega FULL (`_create_delivery_event`/`_finalize_delivery`)
+  reutilizando EXACTAMENTE las mismas firmas Cliente/Técnico ya capturadas
+  (`delivered_by_signature_data_url`/`recipient_signature_data_url`,
+  `recipient_name` del firmante cliente). Nunca pide una segunda firma de
+  entrega. Un fallo en cualquier paso hace rollback completo (incluida la
+  limpieza de cualquier PDF de FieldSheet ya escrito a disco, mismo patrón
+  que el autocompletar de `_complete_members`) y no deja firma/hoja/OT/
+  entrega parcial. Es idempotente ante retry: si la OT ya quedó
+  `completed`/`partially_closed`, devuelve la lectura actual sin repetir
+  nada -- no existe estado intermedio persistible porque no hay commit
+  antes del final.
+- `sign_group`/`sign_individual` rechazan explícitamente una OT
+  `equipment_by_equipment` que nunca haya pasado por `finalize` (`reopen_ticket_id`
+  nulo): esos endpoints son exclusivos de `group`. Tras una reapertura
+  posterior (`reopen_ticket_id` ya asignado), el sistema normal de firma/
+  reapertura vuelve a aplicar sin excepción.
+- `list_lab_field_sheet_tray` excluye explícitamente una OT
+  `equipment_by_equipment` todavía `draft`: esas FieldSheets pertenecen al
+  técnico que está trabajando en campo, nunca aparecen prematuramente como
+  bandeja de Captura.
+- Una OT adicional (`create_additional_work_order`) hereda siempre el
+  `workflow_mode` de la OT que la origina.
+- Retirar equipo (tombstone) se comporta idéntico en ambos modos: un equipo
+  retirado nunca bloquea `finalize`, nunca cuenta contra el máximo de 10 y
+  nunca entra a la nueva entrega.
+
+**Conversión excepcional de una OT `group` existente**: cambiar únicamente la
+columna `workflow_mode` de `group` a `equipment_by_equipment` sobre una OT
+con equipo ya registrado (sin FieldSheets todavía) es una intervención
+administrativa fuera de Mobile -- nunca automática, nunca parte de un
+endpoint ordinario. Al reabrir Mobile, cada equipo existente conserva su ID/
+position/configuración exacta y ofrece de inmediato "Seleccionar Hoja de
+Campo", reconstruido desde backend sin recrear ni un solo equipo. Ver
+`backend/tests/test_lab_equipment_by_equipment_workflow.py` (incluye el caso
+de 5 equipos preexistentes y su regresión PostgreSQL real).
+
 ## API
 
 | Método | Ruta relativa | Efecto |
@@ -455,6 +536,8 @@ original sólo se manifestaba contra un motor con FK/CHECK reales).
 | POST | `/{id}/signatures/individual` | firmar la recepción únicamente de la OT seleccionada |
 | POST | `/{id}/complete` | completar la cohorte compartida del folio seleccionado |
 | POST | `/{id}/complete/individual` | completar idempotentemente una sesión exclusiva |
+| GET | `/{id}/equipment-by-equipment/prevalidate` | sólo lectura: blockers antes de abrir la firma (`equipment_by_equipment`) |
+| POST | `/{id}/equipment-by-equipment/finalize` | firma única + completar hojas + cerrar OT + entrega FULL, atómico (`equipment_by_equipment`) |
 | GET | `/{id}/pdf` | entregar PDF individual final |
 | GET | `/{id}/revisions` | historial documental |
 | GET | `/{id}/revisions/{revision}/pdf` | PDF histórico inmutable |

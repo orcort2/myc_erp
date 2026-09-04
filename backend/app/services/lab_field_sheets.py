@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session, aliased, contains_eager, selectinload
 
 from app.models.field_sheet import FieldSheet, FieldSheetResult
@@ -140,7 +140,17 @@ def list_lab_field_sheet_tray(
             or_(
                 LabWorkOrder.status.in_(("received_signed", "in_progress")),
                 current_sheet.id.is_not(None),
-            )
+            ),
+            # Sección 27 del encargo equipo-por-equipo: una FieldSheet
+            # capturada pre-firma (OT todavía draft) pertenece al flujo del
+            # técnico que la está trabajando en campo, no a Captura -- no
+            # debe aparecer aquí como si la OT ya hubiera sido recibida.
+            not_(
+                and_(
+                    LabWorkOrder.workflow_mode == "equipment_by_equipment",
+                    LabWorkOrder.status == "draft",
+                )
+            ),
         )
         .options(
             contains_eager(
@@ -229,7 +239,15 @@ def _ensure_capture_allowed(equipment: LabWorkOrderEquipment, *, external: bool)
     # arranque; in_progress cubre la captura ya en marcha (ver
     # create_lab_field_sheet, que hace la transición received_signed ->
     # in_progress en la primera hoja creada).
-    if equipment.work_order.status not in {"received_signed", "in_progress"}:
+    # Flujo equipo-por-equipo (sección 8/11 del encargo): la captura real
+    # SÍ procede en draft para esta modalidad -- ese es el punto del flujo
+    # ("equipo -> servicio -> Hoja de Campo -> equipo -> ..."), sin fingir
+    # una recepción firmada que todavía no existe (sección 10). La firma
+    # final llega recién en finalize_equipment_by_equipment_work_order.
+    allowed_statuses = {"received_signed", "in_progress"}
+    if equipment.work_order.workflow_mode == "equipment_by_equipment":
+        allowed_statuses.add("draft")
+    if equipment.work_order.status not in allowed_statuses:
         raise HTTPException(status_code=409, detail="La OT no admite captura técnica")
     if equipment.service_type is None:
         raise HTTPException(status_code=409, detail="Selecciona el tipo de servicio")
@@ -605,6 +623,17 @@ def complete_lab_field_sheet(
         raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
     if sheet.status not in EDITABLE_STATUSES:
         raise HTTPException(status_code=409, detail="La hoja no puede completarse desde este estado")
+    # Sección 12 del encargo equipo-por-equipo: aunque la captura real
+    # proceda en draft (_ensure_capture_allowed), formalizar/congelar una
+    # hoja pre-firma queda prohibido -- eso sólo lo hace la operación final
+    # atómica (finalize_equipment_by_equipment_work_order), junto con la
+    # firma Cliente+Técnico, para que nunca exista un lab_signature_session_id
+    # NULL en una hoja completed.
+    if equipment.work_order.workflow_mode == "equipment_by_equipment" and equipment.work_order.status == "draft":
+        raise HTTPException(
+            status_code=409,
+            detail="La hoja se finaliza junto con la firma final de la OT (Finalizar registro de equipos)",
+        )
     _validate_ready_to_complete(sheet)
     from app.services.field_sheet_pdfs import guard_final_pdf_write
 
