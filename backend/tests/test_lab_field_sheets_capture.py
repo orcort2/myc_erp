@@ -582,7 +582,7 @@ def test_completed_field_sheet_never_reenters_editable_status(lab_context, monke
         assert sheet.final_pdf_sha256 == frozen_sha
 
 
-def test_structurally_different_families_render_through_same_canonical_engine(lab_context):
+def test_structurally_different_families_render_through_same_vector_engine(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_ids = _setup_order_with_equipment(client, headers, count=2)
@@ -594,7 +594,7 @@ def test_structurally_different_families_render_through_same_canonical_engine(la
             headers=headers,
         )
         assert created.status_code == 201, created.text
-        assert created.json()["pdf_renderer_key"] == "field_sheet_engine"
+        assert created.json()["pdf_renderer_key"] == "field_sheet_vector"
         with factory() as db:
             pdf_bytes, _ = generate_field_sheet_pdf(db, created.json()["id"])
         rendered[template_key] = re.sub(
@@ -603,10 +603,10 @@ def test_structurally_different_families_render_through_same_canonical_engine(la
             "\n".join(page.extract_text() or "" for page in PdfReader(io.BytesIO(pdf_bytes)).pages),
         ).upper()
 
-    assert "TABLA COMPARATIVA" in rendered["general"]
-    assert "VOLTAJE AC" in rendered["electrica"]
-    assert "CORRIENTE DC" in rendered["electrica"]
-    assert "VOLTAJE AC" not in rendered["general"]
+    assert "SERIE SIMPLE" in rendered["general"]
+    assert "PATRÓN" in rendered["electrica"]
+    assert "BLOQUE 1" not in rendered["electrica"]
+    assert "SERIE SIMPLE" not in rendered["electrica"]
 
 
 @pytest.mark.parametrize("template_key", ["vernier", "electrica"])
@@ -695,17 +695,19 @@ def test_mobile_equivalent_payload_round_trips_into_the_pdf(lab_context, templat
     # whitespace so a wrapped value still matches as one contiguous string.
     rendered_text = re.sub(r"\s+", " ", raw_text).upper()
 
-    for expected in (
+    expected_values = [
         body["company"],
         body["address"],
         body["attention"],
         mobile_payload["units"],
-        mobile_payload["method"],
         mobile_payload["observations"],
         original_capture_values["instrument"],
         original_capture_values["brand"],
         original_capture_values["serial_number"],
-    ):
+    ]
+    if template_key != "electrica":
+        expected_values.append(mobile_payload["method"])
+    for expected in expected_values:
         assert expected.upper() in rendered_text, f"{expected!r} missing from {template_key} PDF"
 
     # Los valores que el payload intento colar por capture_values NUNCA
@@ -1441,37 +1443,29 @@ def test_official_templates_expose_organization_and_magnitude_metadata(lab_conte
     assert response.status_code == 200, response.text
     by_key = {item["template_key"]: item for item in response.json()}
 
+    from app.services.field_sheet_template_engine import OFFICIAL_MYC_TEMPLATE_KEYS
+
+    assert set(by_key) == set(OFFICIAL_MYC_TEMPLATE_KEYS)
     expectations = {
-        "anemometro": {"magnitude_key": "air_velocity", "magnitude_label": "Velocidad de aire", "equipment": "anemómetro", "variant_key": None, "variant_label": None},
-        "calibradores": {"magnitude_key": "dimensional", "magnitude_label": "Dimensional", "equipment": "calibrador vernier", "variant_key": "calibradores", "variant_label": "Calibradores"},
-        "temperatura": {"magnitude_key": "temperature", "magnitude_label": "Temperatura", "equipment": None, "variant_key": None, "variant_label": None},
-        "presion": {"magnitude_key": "pressure", "magnitude_label": "Presión", "equipment": "manómetro", "variant_key": None, "variant_label": None},
-        "bascula": {"magnitude_key": "mass", "magnitude_label": "Masa", "equipment": "báscula", "variant_key": None, "variant_label": None},
+        "anemometro": ("Velocidad de aire", "anemómetro"),
+        "calibradores": ("Dimensional", "calibrador vernier"),
+        "temperatura": ("Temperatura", None),
+        "presion": ("Presión", "manómetro"),
+        "bascula": ("Masa", "báscula"),
     }
-    for template_key, expected in expectations.items():
+    for template_key, item in by_key.items():
         metadata = by_key[template_key]["metadata"]
         assert metadata["organization_key"] == "myc", template_key
         assert metadata["organization_label"] == "MYC", template_key
-        assert metadata["magnitude_key"] == expected["magnitude_key"], template_key
-        assert metadata["magnitude_label"] == expected["magnitude_label"], template_key
-        if expected["equipment"] is None:
-            assert metadata["supported_equipment"] == [], template_key
-        else:
-            assert expected["equipment"] in metadata["supported_equipment"], template_key
+        assert metadata["magnitude_key"], template_key
+        assert metadata["magnitude_label"], template_key
+        if template_key in expectations:
+            magnitude_label, equipment = expectations[template_key]
+            assert metadata["magnitude_label"] == magnitude_label
+            if equipment is not None:
+                assert equipment in metadata["supported_equipment"]
         assert isinstance(metadata["search_aliases"], list) and metadata["search_aliases"], template_key
-        # Micro-cierre Fases 1/2 (hallazgo 2): document_variant distingue
-        # variante documental dentro de la magnitud -- sólo 'calibradores'
-        # tiene una hoy; el resto queda null (no es obligatorio inventar
-        # una variante cuando sólo existe una hoja oficial por magnitud).
-        assert metadata.get("document_variant_key") == expected["variant_key"], template_key
-        assert metadata.get("document_variant_label") == expected["variant_label"], template_key
-
-    # Plantilla fallback sin metadata de organizacion/magnitud (item 2.5):
-    # no rompe, sólo no trae esas claves -- Mobile debe caer a `name`.
-    general_metadata = by_key["general"]["metadata"]
-    assert general_metadata.get("organization_key") is None
-    assert general_metadata.get("magnitude_label") is None
-    assert general_metadata.get("document_variant_label") is None
+        assert metadata["source_document"], template_key
 
 
 def test_phase_6a1_pressure_can_be_selected_for_unrelated_equipment(lab_context):

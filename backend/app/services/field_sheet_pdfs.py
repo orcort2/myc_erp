@@ -19,6 +19,8 @@ from app.services.field_sheet_templates import (
     CANONICAL_PDF_RENDERER_KEY,
     CANONICAL_PDF_RENDERER_VERSION,
     CANONICAL_PDF_TEMPLATE,
+    VECTOR_PDF_RENDERER_KEY,
+    VECTOR_PDF_RENDERER_VERSION,
     get_field_sheet_template,
 )
 from app.services.field_sheet_layouts import (
@@ -225,6 +227,8 @@ def resolve_field_sheet_pdf_renderer(field_sheet: FieldSheet, template_definitio
             )
     if key == CANONICAL_PDF_RENDERER_KEY and int(version) == CANONICAL_PDF_RENDERER_VERSION:
         return key, int(version), CANONICAL_PDF_TEMPLATE
+    if key == VECTOR_PDF_RENDERER_KEY and int(version) == VECTOR_PDF_RENDERER_VERSION:
+        return key, int(version), "vector"
     if key.startswith("legacy:") and int(version) == 1:
         template_name = key.removeprefix("legacy:")
         if template_name in LEGACY_PDF_TEMPLATES:
@@ -557,13 +561,50 @@ def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
         db,
         field_sheet.template_key,
     )
-    institution = field_sheet.institutional_snapshot_json
-    if not institution:
-        institution = institutional_snapshot(get_or_create_institutional_configuration(db))
-    signatures = _resolve_field_sheet_signatures(db, field_sheet)
-    html = _render_html(field_sheet, template_definition, institution, signatures)
-    pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
     equipment = field_sheet.equipment or field_sheet.lab_equipment
+    renderer_key, _, _ = resolve_field_sheet_pdf_renderer(field_sheet, template_definition)
+    if renderer_key == VECTOR_PDF_RENDERER_KEY:
+        from app.services.field_sheet_vector_adapter import VectorRenderContext, render_field_sheet_vector_preview
+
+        institution = field_sheet.institutional_snapshot_json
+        if not institution:
+            institution = institutional_snapshot(get_or_create_institutional_configuration(db))
+        lab_equipment = field_sheet.lab_equipment
+        capture_values = field_sheet.capture_values or {}
+        equipment_values = {
+            "name": capture_values.get("instrument") or getattr(equipment, "name", None) or getattr(equipment, "instrument", None),
+            "range_or_capacity": capture_values.get("scope") or getattr(equipment, "range_or_capacity", None),
+            "brand": capture_values.get("brand") or getattr(equipment, "brand", None),
+            "model": capture_values.get("model") or getattr(equipment, "model", None),
+            "serial_number": capture_values.get("serial_number") or getattr(equipment, "serial_number", None),
+            "internal_id": capture_values.get("internal_id") or getattr(equipment, "internal_id", None) or getattr(equipment, "identification", None),
+        }
+        if lab_equipment is not None:
+            order = lab_equipment.work_order
+            default_client = order.client_name
+            certificate_folio = lab_equipment.certificate_folio or "-"
+        else:
+            service_order = equipment.service_order
+            default_client = service_order.client.commercial_name or service_order.client.legal_name
+            certificate = next((item for item in equipment.certificates if item.is_active), None)
+            certificate_folio = (certificate.expected_folio or certificate.folio) if certificate else "-"
+        pdf = render_field_sheet_vector_preview(VectorRenderContext(
+            field_sheet=field_sheet,
+            template_definition=template_definition,
+            equipment=equipment_values,
+            client_name=field_sheet.company or default_client or "",
+            client_attention=field_sheet.attention or default_client or "",
+            client_address=field_sheet.address,
+            certificate_folio=certificate_folio,
+            institution=institution,
+        ))
+    else:
+        institution = field_sheet.institutional_snapshot_json
+        if not institution:
+            institution = institutional_snapshot(get_or_create_institutional_configuration(db))
+        signatures = _resolve_field_sheet_signatures(db, field_sheet)
+        html = _render_html(field_sheet, template_definition, institution, signatures)
+        pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
     equipment_name = (
         getattr(equipment, "name", None)
         or getattr(equipment, "instrument", None)

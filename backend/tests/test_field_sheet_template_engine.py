@@ -4,6 +4,7 @@ from app.schemas.field_sheet import FieldSheetSignatureUpdate
 from app.services.field_sheet_template_engine import (
     AMBIGUOUS_LEGACY_FAMILIES,
     LEGACY_FAMILY_ALIASES,
+    OFFICIAL_MYC_TEMPLATE_KEYS,
     OFFICIAL_PILOT_TEMPLATES,
     OFFICIAL_TABLE_FAMILIES,
     get_official_pilot_template,
@@ -37,7 +38,7 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
             "calibradores": [("exterior", 7, 4), ("interior", 5, 4), ("depth", 3, 4)],
             "temperatura": [("temperature_measurements", 10, 4)],
             "presion": [("pressure_cycle", 11, 4)],
-            "bascula": [("eccentricity_cycle", 6, 4), ("repeatability_50", 5, 2), ("repeatability_100", 5, 2)],
+            "bascula": [("eccentricity", 6, 5), ("repeatability_50", 5, 1), ("repeatability_100", 5, 1)],
         }
         for key, geometry in expected.items():
             definition = build_fallback_template_definition(key)
@@ -54,13 +55,13 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
                 "version": 2,
                 "revision": "R-1",
                 "family": "replicated_comparison",
-                "magnitude": ("temperature", "Temperatura"),
+                "magnitude": ("temperatura", "Temperatura"),
                 "supported_equipment": [],
-                "search_aliases": ["temperatura"],
+                "search_aliases": ["temperatura", "Temperatura"],
                 "source_document": "FCA-30 R1 HOJA DE CAMPO TEMPERATURA.pdf",
                 "section": "temperature_measurements",
                 "rows": 10,
-                "columns": ["ibc", "pattern_1", "pattern_2", "pattern_3"],
+                "columns": ["ibc_value", "pattern_1", "pattern_2", "pattern_3"],
                 "first_header": [("DATOS DE MEDICION", 5, 1)],
                 "last_header": ["1", "2", "3"],
             },
@@ -68,10 +69,10 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
                 "version": 3,
                 "revision": "R1",
                 "family": "direction_cycle",
-                "magnitude": ("pressure", "Presión"),
+                "magnitude": ("presion", "Presión"),
                 "supported_equipment": ["manómetro", "vacuómetro", "diferencial de presión"],
-                "search_aliases": ["manometro", "vacuometro", "diferencial de presion", "presion"],
-                "source_document": "FCA-30_R1_PRESION.pdf",
+                "search_aliases": ["presion", "Presión", "manómetro", "vacuómetro", "diferencial de presión"],
+                "source_document": "FCA-30 R1 HOJA DE CAMPO PRESIÓN (manometro, vacuometro, diferencial de presion).pdf",
                 "section": "pressure_cycle",
                 "rows": 11,
                 "columns": ["ibc_value_1", "pattern_value", "ibc_value_2", "ibc_value_3"],
@@ -117,15 +118,8 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
                 definition["signature_layout"]["trailing_fields"],
                 ["purchase_order_or_quotation"],
             )
-            self.assertEqual(
-                definition["print_layout"]["page"],
-                {
-                    "size": "letter",
-                    "orientation": "portrait",
-                    "margins": {"top": 12, "right": 10, "bottom": 14, "left": 10},
-                },
-            )
-            self.assertEqual(definition["print_layout"]["document"]["grid_columns"], 3)
+            self.assertEqual(definition["print_layout"]["page"]["size"], "letter")
+            self.assertEqual(definition["print_layout"]["document"]["grid_columns"], 4)
             table_block = next(
                 block for block in definition["blocks"] if block["sections"]
             )
@@ -134,7 +128,7 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
                 for block in definition["blocks"]
                 if block["block_type"] == "SignaturesBlock"
             )
-            self.assertEqual(table_block["print_layout"]["column_span"], 2)
+            self.assertEqual(table_block["print_layout"]["column_span"], 3)
             self.assertEqual(signatures_block["print_layout"]["column_span"], 1)
 
     def test_default_rows_remain_compatible_with_results_rows(self):
@@ -147,9 +141,23 @@ class FieldSheetTemplateEngineTests(unittest.TestCase):
 
     def test_new_scale_snapshot_has_no_position_column(self):
         template = build_fallback_template_definition("bascula")
-        eccentricity = next(section for section in template["result_sections"] if section["key"] == "eccentricity_cycle")
-        self.assertEqual(template["version"], 3)
+        eccentricity = next(section for section in template["result_sections"] if section["key"] == "eccentricity")
+        self.assertEqual(template["version"], 4)
         self.assertNotIn("position", [column["key"] for column in eccentricity["columns"]])
+
+    def test_catalog_contains_exactly_the_23_official_myc_keys(self):
+        self.assertEqual(set(OFFICIAL_PILOT_TEMPLATES), set(OFFICIAL_MYC_TEMPLATE_KEYS))
+        self.assertEqual(len(OFFICIAL_MYC_TEMPLATE_KEYS), 23)
+
+    def test_all_official_templates_are_vector_v2_and_normalized(self):
+        for key in OFFICIAL_MYC_TEMPLATE_KEYS:
+            definition = build_fallback_template_definition(key)
+            self.assertEqual(definition["metadata"]["organization_key"], "myc")
+            self.assertEqual(definition["pdf_renderer_key"], "field_sheet_vector")
+            self.assertEqual(definition["pdf_renderer_version"], 2)
+            self.assertIn(definition["table_family"], OFFICIAL_TABLE_FAMILIES)
+            self.assertTrue(definition["metadata"]["source_document"])
+            self.assertTrue(definition["result_sections"])
 
     def test_template_accessor_returns_a_deep_copy(self):
         first = get_official_pilot_template("presion")

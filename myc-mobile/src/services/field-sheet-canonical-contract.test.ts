@@ -5,6 +5,7 @@ import {
   CANONICAL_FIELDS,
   CANONICAL_FIELD_SHEET_KEYS,
   CANONICAL_GROUP_ORDER,
+  canonicalFieldsForDefinition,
   canonicalFieldsByGroup,
   canonicalFieldValue,
   specializedCaptureFields,
@@ -56,7 +57,7 @@ test('2. presion y bascula producen exactamente el mismo contrato común', () =>
   assert.deepEqual(presion.map((f) => f.key), bascula.map((f) => f.key));
 });
 
-test('3. una plantilla que intenta cambiar label/required/order/field_type de un campo canónico no lo logra', () => {
+test('3. la definición puede cambiar label/visibilidad, pero no tipo, readonly ni required canónicos', () => {
   // Fase 1 del cierre 2026-09 (item 1.5.2): la plantilla intenta exactamente
   // los 4 tipos de override -- label de brand, order de company, required de
   // location, field_type de calibration_date -- sobre 4 claves canónicas
@@ -83,33 +84,51 @@ test('3. una plantilla que intenta cambiar label/required/order/field_type de un
   assert.equal(specialized.some((f) => f.key === 'location'), false);
   assert.equal(specialized.some((f) => f.key === 'company'), false);
   assert.equal(specialized.some((f) => f.key === 'calibration_date'), false);
-  // El contrato canónico real conserva su label/orden/kind fijo, sin importar el intento.
-  const brand = CANONICAL_FIELDS.find((f) => f.key === 'brand');
-  const location = CANONICAL_FIELDS.find((f) => f.key === 'location');
-  const company = CANONICAL_FIELDS.find((f) => f.key === 'company');
-  const calibrationDate = CANONICAL_FIELDS.find((f) => f.key === 'calibration_date');
-  assert.equal(brand?.label, 'Marca');
+  const resolved = canonicalFieldsForDefinition(hostileBlocks);
+  const brand = resolved.find((f) => f.key === 'brand');
+  const location = resolved.find((f) => f.key === 'location');
+  const company = resolved.find((f) => f.key === 'company');
+  const calibrationDate = resolved.find((f) => f.key === 'calibration_date');
+  assert.equal(brand?.label, 'MARCA HACKEADA');
   assert.equal(brand?.readOnly, true);
   // `location` es el campo que la plantilla hostil intenta volver required=true.
   // El contrato canónico ignora ese intento por completo.
-  assert.equal(location?.label, 'Ubicación');
+  assert.equal(location?.label, 'UBICACION HACKEADA');
   assert.equal(location?.readOnly, false);
   assert.equal(location?.required, false);
   // `company` es el campo cuyo `order` la plantilla hostil intenta cambiar --
   // el orden real sigue siendo la posición fija entre 'attention' y
   // 'address' en CANONICAL_FIELDS, sin importar el order:-5 del intento.
-  const keysInOrder = CANONICAL_FIELDS.map((f) => f.key);
-  assert.deepEqual(
-    keysInOrder.slice(keysInOrder.indexOf('attention'), keysInOrder.indexOf('address') + 1),
-    ['attention', 'company', 'address'],
-  );
-  assert.equal(company?.label, 'Empresa');
+  const keysInOrder = resolved.map((f) => f.key);
+  assert.deepEqual(keysInOrder, ['company', 'brand', 'location', 'calibration_date']);
+  assert.equal(company?.label, 'EMPRESA HACKEADA');
   // `calibration_date` es el campo cuyo `field_type`/kind la plantilla
   // hostil intenta cambiar a 'number' -- sigue siendo 'date'.
   assert.equal(calibrationDate?.kind, 'date');
-  assert.equal(calibrationDate?.label, 'Fecha de calibración');
-  assert.equal(company?.label, 'Empresa');
+  assert.equal(calibrationDate?.label, 'FECHA HACKEADA');
   assert.equal(company?.readOnly, true);
+});
+
+test('visibilidad canónica depende únicamente de bloques capture_visible', () => {
+  const blocks: FieldSheetTemplateBlock[] = [
+    { key: 'equipment', block_type: 'EquipmentBlock', title: 'Equipo', capture_visible: true, visible_fields: ['instrument', 'brand'], fields: [] },
+    { key: 'hidden', block_type: 'ObservationsBlock', title: 'Oculto', capture_visible: false, visible_fields: ['observations'], fields: [] },
+  ];
+  assert.deepEqual(canonicalFieldsForDefinition(blocks).map((field) => field.key), ['instrument', 'brand']);
+});
+
+test('labels de Verificación cambian sin alterar kind ni readonly', () => {
+  const blocks: FieldSheetTemplateBlock[] = [{
+    key: 'dates', block_type: 'CalibrationDataBlock', title: 'Fechas', capture_visible: true,
+    visible_fields: ['calibration_date', 'next_calibration_date'],
+    fields: [
+      { key: 'calibration_date', label: 'Fecha de verificación', field_type: 'number', required: true },
+      { key: 'next_calibration_date', label: 'Próxima verificación' },
+    ],
+  }];
+  const fields = canonicalFieldsForDefinition(blocks);
+  assert.deepEqual(fields.map((field) => field.label), ['Fecha de verificación', 'Próxima verificación']);
+  assert.ok(fields.every((field) => field.kind === 'date' && field.required === false));
 });
 
 test('3b. required del contrato canónico es autoridad fija -- una plantilla no puede volver required un campo canónico', () => {

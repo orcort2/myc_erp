@@ -55,8 +55,11 @@ export function buildGroupedHeaderLayout(
 
       const colspan = safeSpan(cell.colspan);
       const rowspan = safeSpan(cell.rowspan);
+      const resolvedCell = cell.column_key === '__row_number__' && section.layout?.row_label_header
+        ? { ...cell, label: section.layout.row_label_header }
+        : cell;
       cells.push({
-        cell,
+        cell: resolvedCell,
         row: rowIndex,
         column: columnIndex,
         colspan,

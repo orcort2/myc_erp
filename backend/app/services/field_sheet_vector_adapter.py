@@ -2,7 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from math import ceil
+from pathlib import Path
 from typing import Any
+
+from reportlab.lib.pagesizes import A4, letter, landscape
 
 from app.models.field_sheet import FieldSheet
 from app.services.field_sheet_layouts import (
@@ -36,6 +39,7 @@ class VectorRenderContext:
     client_attention: str
     client_address: str | None
     certificate_folio: str | None
+    institution: dict[str, Any] | None = None
 
 
 TITLE_BAR_HEIGHT = mm(5.2)
@@ -120,9 +124,10 @@ def _build_header_cells(*, section: ResultTableSection) -> tuple[list[VectorHead
 
     header_rows = section.header_rows or []
     physical_column_count = len(section.columns) + 1
+    row_label_header = str((section.layout or {}).get("row_label_header") or "No.")
 
     if not header_rows:
-        cells = [VectorHeaderCell(label="No.", row=0, column=0)]
+        cells = [VectorHeaderCell(label=row_label_header, row=0, column=0)]
         for index, column in enumerate(section.columns):
             if isinstance(column, dict):
                 label = column.get("label") or column.get("title") or column.get("key") or ""
@@ -145,6 +150,8 @@ def _build_header_cells(*, section: ResultTableSection) -> tuple[list[VectorHead
 
         for cell_definition in cells:
             label = str(cell_definition.get("label") or "")
+            if cell_definition.get("column_key") == "__row_number__" and label in {"No.", "#"}:
+                label = row_label_header
             rowspan = int(cell_definition.get("rowspan") or 1)
             colspan = int(cell_definition.get("colspan") or 1)
             column_key = cell_definition.get("column_key")
@@ -211,8 +218,6 @@ def _filter_meaningful_rows(section: ResultTableSection) -> list[Any]:
     siendo su row_number/row_label original.
     """
 
-    if section.row_labels:
-        return list(section.rows)
     return [row for row in section.rows if _row_has_meaningful_capture(row, section.columns)]
 
 
@@ -327,8 +332,29 @@ class _PreparedTable:
     rows: list[list[str]]
 
 
-def _prepare_table(section: ResultTableSection) -> _PreparedTable:
+@dataclass(frozen=True)
+class _PreparedTableGroup:
+    tables: list[_PreparedTable]
+    show_titles: bool
+
+
+def _prepare_table(section: ResultTableSection, capture_values: dict[str, Any] | None = None) -> _PreparedTable:
     header_cells, header_heights = _build_header_cells(section=section)
+    header_choices = (getattr(section, "metadata", None) or {}).get("header_choices") or {}
+    if header_choices:
+        values = capture_values or {}
+        replaced: list[VectorHeaderCell] = []
+        for cell in header_cells:
+            label = cell.label
+            for field_key, choice in header_choices.items():
+                if label != choice.get("label"):
+                    continue
+                selected = values.get(field_key)
+                options = choice.get("options") or []
+                marks = " ".join(f"[{'X' if selected == option else ' '}] {option}" for option in options)
+                label = f"{label}\n{marks}"
+            replaced.append(VectorHeaderCell(label=label, row=cell.row, column=cell.column, rowspan=cell.rowspan, colspan=cell.colspan))
+        header_cells = replaced
     column_widths = _resolve_result_column_widths(section)
     filtered_rows = _filter_meaningful_rows(section)
     rows = _build_result_rows(section, filtered_rows)
@@ -363,6 +389,16 @@ class _PreparedSignatures:
     slots: list[dict]
     trailing_fields: list[str]
     columns: int
+    groups: list[dict]
+
+
+@dataclass(frozen=True)
+class _PreparedStatic:
+    text: str
+    caption: str
+    graphic: bool
+    height: float
+    asset_path: str | None = None
 
 
 def _prepare_signatures(template_definition: dict[str, Any]) -> _PreparedSignatures:
@@ -374,10 +410,12 @@ def _prepare_signatures(template_definition: dict[str, Any]) -> _PreparedSignatu
         columns = 1
     else:
         columns = max(len(slots), 1)
-    return _PreparedSignatures(slots=slots, trailing_fields=layout["trailing_fields"], columns=columns)
+    return _PreparedSignatures(slots=slots, trailing_fields=layout["trailing_fields"], columns=columns, groups=layout.get("groups") or [])
 
 
 def _signatures_rows_count(prepared: _PreparedSignatures) -> int:
+    if prepared.groups:
+        return len(prepared.groups)
     if not prepared.slots:
         return 0
     return ceil(len(prepared.slots) / max(prepared.columns, 1))
@@ -403,18 +441,24 @@ def _draw_signatures_item(
     cols = max(prepared.columns, 1)
     col_width = (width - GRID_GUTTER * (cols - 1)) / cols if cols > 1 else width
 
-    for index, slot in enumerate(prepared.slots):
-        row = index // cols
-        col = index % cols
-        slot_x = x + col * (col_width + GRID_GUTTER)
-        slot_top = y_top - row * (SIGNATURE_SLOT_HEIGHT + SIGNATURE_SLOT_GAP)
-        box = VectorBox(x=slot_x, y=slot_top - SIGNATURE_SLOT_HEIGHT, width=col_width, height=SIGNATURE_SLOT_HEIGHT)
-        document.draw_rounded_box(box, radius=mm(1.2), line_width=0.6)
-        document.draw_centered_text(
-            str(slot.get("display_label") or slot.get("role") or ""),
-            box=box,
-            style=VectorTextStyle(font_size=6.5, bold=True),
-        )
+    grouped_rows: list[tuple[list[dict], int]]
+    if prepared.groups:
+        by_role = {slot.get("role"): slot for slot in prepared.slots}
+        grouped_rows = [
+            ([by_role[role] for role in group.get("slots", []) if role in by_role], max(int(group.get("columns") or 1), 1))
+            for group in prepared.groups
+        ]
+    else:
+        grouped_rows = [(prepared.slots[index:index + cols], cols) for index in range(0, len(prepared.slots), cols)]
+
+    for row, (row_slots, row_columns) in enumerate(grouped_rows):
+        row_col_width = (width - GRID_GUTTER * (row_columns - 1)) / row_columns
+        for col, slot in enumerate(row_slots):
+            slot_x = x + col * (row_col_width + GRID_GUTTER)
+            slot_top = y_top - row * (SIGNATURE_SLOT_HEIGHT + SIGNATURE_SLOT_GAP)
+            box = VectorBox(x=slot_x, y=slot_top - SIGNATURE_SLOT_HEIGHT, width=row_col_width, height=SIGNATURE_SLOT_HEIGHT)
+            document.draw_rounded_box(box, radius=mm(1.2), line_width=0.6)
+            document.draw_centered_text(str(slot.get("display_label") or slot.get("role") or ""), box=box, style=VectorTextStyle(font_size=6.5, bold=True))
 
     rows_count = _signatures_rows_count(prepared)
     cursor_y = y_top - (rows_count * SIGNATURE_SLOT_HEIGHT + max(rows_count - 1, 0) * SIGNATURE_SLOT_GAP)
@@ -447,6 +491,8 @@ class _GridItem:
     title_visible: bool
     payload: Any
     unit_value: str | None = None
+    width_fraction: float | None = None
+    page_break_before: bool = False
 
 
 def _collect_grid_items(print_blocks: list[PrintBlock], context: VectorRenderContext) -> list[_GridItem]:
@@ -456,6 +502,23 @@ def _collect_grid_items(print_blocks: list[PrintBlock], context: VectorRenderCon
         layout = block.print_layout
         span = max(1, int(layout.get("column_span") or 1))
         title_visible = bool(layout.get("title_visible", True))
+
+        if block.block_type in {"StaticTextBlock", "ReferenceGraphicBlock"}:
+            graphic = block.block_type == "ReferenceGraphicBlock"
+            items.append(_GridItem(
+                kind="static",
+                column_span=span,
+                title=block.title,
+                title_visible=title_visible,
+                payload=_PreparedStatic(
+                    text=str(block.metadata.get("text") or ""),
+                    caption=str(block.metadata.get("caption") or ""),
+                    graphic=graphic,
+                    height=mm(28 if graphic else 12),
+                    asset_path=str(block.metadata.get("asset_path") or "") or None,
+                ),
+            ))
+            continue
 
         if block.block_type == "SignaturesBlock":
             prepared = _prepare_signatures(context.template_definition)
@@ -469,15 +532,31 @@ def _collect_grid_items(print_blocks: list[PrintBlock], context: VectorRenderCon
                 _GridItem(kind="fields", column_span=span, title=block.title, title_visible=title_visible, payload=_pack_fields(block))
             )
 
+        if len(block.sections) > 1 and span < 4:
+            items.append(_GridItem(
+                kind="table_group",
+                column_span=span,
+                title=block.title,
+                title_visible=False,
+                payload=_PreparedTableGroup(
+                    tables=[_prepare_table(section, context.field_sheet.capture_values or {}) for section in block.sections],
+                    show_titles=title_visible,
+                ),
+            ))
+            continue
+
         for section in block.sections:
+            section_layout = section.layout or {}
             items.append(
                 _GridItem(
                     kind="table",
                     column_span=span,
                     title=section.title,
-                    title_visible=title_visible,
-                    payload=_prepare_table(section),
+                    title_visible=title_visible and bool(section_layout.get("print_title_visible", True)),
+                    payload=_prepare_table(section, context.field_sheet.capture_values or {}),
                     unit_value=section.unit_value,
+                    width_fraction=float(section_layout.get("width_fraction") or 1.0),
+                    page_break_before=bool(section.page_break_before),
                 )
             )
 
@@ -489,8 +568,15 @@ def _item_content_height(item: _GridItem) -> float:
         return _fields_height(item.payload)
     if item.kind == "table":
         return _table_content_height(item.payload)
+    if item.kind == "table_group":
+        return sum(
+            _table_content_height(table) + (TITLE_BAR_HEIGHT if item.payload.show_titles and (table.section.layout or {}).get("print_title_visible", True) else 0) + ROW_GAP
+            for table in item.payload.tables
+        )
     if item.kind == "signatures":
         return _signatures_height(item.payload)
+    if item.kind == "static":
+        return item.payload.height
     return 0.0
 
 
@@ -510,8 +596,29 @@ def _draw_item(document: FieldSheetVectorDocument, context: VectorRenderContext,
         return _draw_fields_item(document, item.payload, x=x, y_top=cursor_y, width=width)
     if item.kind == "table":
         return _draw_table_content(document, item.payload, x=x, y_top=cursor_y, width=width)
+    if item.kind == "table_group":
+        for table in item.payload.tables:
+            if item.payload.show_titles and (table.section.layout or {}).get("print_title_visible", True):
+                cursor_y = _draw_section_title(document, title=table.section.title, x=x, y=cursor_y, width=width)
+            cursor_y = _draw_table_content(document, table, x=x, y_top=cursor_y, width=width) - ROW_GAP
+        return cursor_y
     if item.kind == "signatures":
         return _draw_signatures_item(document, context, item.payload, x=x, y_top=cursor_y, width=width)
+    if item.kind == "static":
+        box = VectorBox(x=x, y=cursor_y - item.payload.height, width=width, height=item.payload.height)
+        document.draw_rounded_box(box, radius=mm(1.2), line_width=0.6)
+        if item.payload.graphic and item.payload.asset_path:
+            project_root = Path(__file__).resolve().parents[3]
+            asset = (project_root / item.payload.asset_path).resolve()
+            allowed_root = (project_root / "backend" / "app" / "assets").resolve()
+            if asset.is_relative_to(allowed_root) and asset.is_file():
+                document.draw_image(str(asset), box=box, padding=mm(1.2))
+            else:
+                document.draw_centered_text(item.payload.caption, box=box, style=VectorTextStyle(font_size=6.5, bold=True))
+        else:
+            text = item.payload.caption if item.payload.graphic else item.payload.text
+            document.draw_centered_text(text, box=box, style=VectorTextStyle(font_size=6.5, bold=item.payload.graphic))
+        return cursor_y - item.payload.height
     return cursor_y
 
 
@@ -530,7 +637,11 @@ def _pack_grid_rows(items: list[_GridItem], grid_columns: int) -> list[_GridRow]
     cursor_col = 0
 
     for item in items:
-        span = min(max(item.column_span, 1), grid_columns)
+        span = (
+            min(max(round(item.width_fraction * grid_columns), 1), grid_columns)
+            if item.width_fraction is not None
+            else min(max(item.column_span, 1), grid_columns)
+        )
         if current and cursor_col + span > grid_columns:
             rows.append(current)
             current = []
@@ -554,6 +665,10 @@ def _paginate(rows: list[_GridRow], *, available_height: float, row_gap: float) 
     remaining = available_height
 
     for row in rows:
+        if any(item.page_break_before for item, _, _ in row) and current:
+            pages.append(current)
+            current = []
+            remaining = available_height
         row_height = max((_item_total_height(item) for item, _, _ in row), default=0.0)
         needed = row_height + (row_gap if current else 0.0)
         if needed > remaining and current:
@@ -579,12 +694,14 @@ def _draw_letterhead_and_title(
     width: float,
     header_visible: bool,
     title_visible: bool,
+    institution: dict[str, Any] | None = None,
 ) -> float:
     cursor_y = page.height - page.margin_top
 
     if header_visible:
         organization_profile = resolve_organization_print_profile(template_definition)
-        institution_name = organization_profile.get("legal_name") or organization_profile.get("display_name") or "MYC"
+        institution_values = institution or {}
+        institution_name = institution_values.get("legal_name") or organization_profile.get("legal_name") or organization_profile.get("display_name") or "MYC"
 
         document.draw_centered_text(
             str(institution_name).upper(),
@@ -592,6 +709,10 @@ def _draw_letterhead_and_title(
             style=VectorTextStyle(font_size=8.5, bold=True),
         )
         cursor_y -= mm(5.5)
+        contact = " · ".join(str(institution_values.get(key) or "") for key in ("address", "phone", "email") if institution_values.get(key))
+        if contact:
+            document.draw_centered_text(contact, box=VectorBox(x=x, y=cursor_y - mm(4), width=width - mm(24), height=mm(4)), style=VectorTextStyle(font_size=5.5))
+            cursor_y -= mm(4)
 
         code = template_definition.get("document_code") or template_definition.get("code") or "FCA-30"
         revision = template_definition.get("document_revision") or template_definition.get("revision") or "-"
@@ -661,7 +782,12 @@ def render_field_sheet_vector_preview(context: VectorRenderContext) -> bytes:
 
     page_layout = (template_definition.get("print_layout") or {}).get("page") or {}
     margins = page_layout.get("margins") or {}
+    page_size = A4 if page_layout.get("size") == "a4" else letter
+    if page_layout.get("orientation") == "landscape":
+        page_size = landscape(page_size)
     page_spec = VectorPageSpec(
+        width=page_size[0],
+        height=page_size[1],
         margin_top=mm(float(margins.get("top", 12))),
         margin_right=mm(float(margins.get("right", 10))),
         margin_bottom=mm(float(margins.get("bottom", 14))),
@@ -694,7 +820,8 @@ def render_field_sheet_vector_preview(context: VectorRenderContext) -> bytes:
     items = _collect_grid_items(print_blocks, context)
     rows = _pack_grid_rows(items, grid_columns)
 
-    header_and_title_height = (mm(5.5) if header_visible else 0.0) + (mm(7) if title_visible else mm(1.5))
+    institutional_contact_height = mm(4) if header_visible and context.institution and any(context.institution.get(key) for key in ("address", "phone", "email")) else 0
+    header_and_title_height = (mm(5.5) if header_visible else 0.0) + institutional_contact_height + (mm(7) if title_visible else mm(1.5))
     available_height = max(page.content_height - header_and_title_height, mm(20))
 
     pages = _paginate(rows, available_height=available_height, row_gap=ROW_GAP)
@@ -712,6 +839,7 @@ def render_field_sheet_vector_preview(context: VectorRenderContext) -> bytes:
             width=width,
             header_visible=header_visible,
             title_visible=title_visible,
+            institution=context.institution,
         )
 
         for row in page_rows:

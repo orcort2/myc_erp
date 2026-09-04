@@ -42,7 +42,7 @@ export function setCellValue(
   sectionKey: string,
   rowNumber: number,
   columnKey: string,
-  value: string,
+  value: unknown,
 ): WorkspaceState {
   const rows = state.rows.map((row) => (row.section_key === sectionKey && row.row_number === rowNumber)
     ? { ...row, row_data: { ...row.row_data, [columnKey]: value } }

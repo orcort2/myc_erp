@@ -187,6 +187,8 @@ def _section(
     ambiguous: bool = False,
     header_rows: list[dict] | None = None,
     layout: dict | None = None,
+    row_labels: list[str] | None = None,
+    metadata: dict | None = None,
 ) -> dict:
     section = {
         "key": key,
@@ -207,6 +209,10 @@ def _section(
         section["header_rows"] = header_rows
     if layout is not None:
         section["layout"] = layout
+    if row_labels is not None:
+        section["row_labels"] = row_labels
+    if metadata:
+        section["metadata"].update(metadata)
     return section
 
 
@@ -368,6 +374,8 @@ def _template(
         "document_revision": document_revision,
         "pages": 1,
         "pdf_template": "field_sheet_engine_pdf.html",
+        "pdf_renderer_key": "field_sheet_vector",
+        "pdf_renderer_version": 2,
         "table_family": family,
         "blocks": deepcopy(blocks) if blocks is not None else _base_blocks(table),
         "print_layout": deepcopy(print_layout or {}),
@@ -811,6 +819,305 @@ OFFICIAL_PILOT_TEMPLATES.update(
         ),
     }
 )
+
+
+# Catálogo documental MYC 2026-09. Las diferencias entre formatos viven
+# exclusivamente en estas definiciones; Mobile y el renderer consumen el
+# mismo snapshot y no contienen ramas por template_key.
+OFFICIAL_MYC_TEMPLATE_KEYS = (
+    "calibradores", "electrica", "detector_gases", "tld", "general",
+    "angulimetro", "sonido", "pesas", "tacometro", "maestro_altura",
+    "valvula", "flujo", "dimensional", "regla", "anemometro",
+    "cronometro", "copa", "tld_6_canales", "temperatura",
+    "par_torsional", "presion", "verificacion_equipos", "bascula",
+)
+
+
+def _header_rows(title: str, groups: list[tuple[str, list[tuple[str, str]]]]) -> list[dict]:
+    """Build a fully-covered multi-row header for No. plus declared columns."""
+    has_grouped_children = any(len(columns) > 1 for _, columns in groups)
+    second = [{"label": "No.", "column_key": "__row_number__", "rowspan": 2 if has_grouped_children else 1}]
+    third: list[dict] = []
+    for label, columns in groups:
+        if len(columns) == 1:
+            second.append({"label": label, "column_key": columns[0][0], "rowspan": 2 if has_grouped_children else 1})
+        else:
+            second.append({"label": label, "colspan": len(columns)})
+            third.extend({"label": child_label, "column_key": key} for key, child_label in columns)
+    rows = [
+        {"cells": [{"label": title, "colspan": 1 + sum(len(cols) for _, cols in groups)}]},
+        {"cells": second},
+    ]
+    if has_grouped_children:
+        rows.append({"cells": third})
+    return rows
+
+
+def _result_section(
+    key: str,
+    title: str,
+    rows: int,
+    groups: list[tuple[str, list[tuple[str, str]]]],
+    *,
+    row_labels: list[str] | None = None,
+    layout: dict | None = None,
+    metadata: dict | None = None,
+    data_types: dict[str, str] | None = None,
+) -> dict:
+    flattened = [item for _, children in groups for item in children]
+    columns = []
+    for key_name, label in flattened:
+        column = _column(key_name, label)
+        if data_types and key_name in data_types:
+            column["data_type"] = data_types[key_name]
+        columns.append(column)
+    return _section(
+        key, title, rows, columns,
+        header_rows=_header_rows(title, groups),
+        row_labels=row_labels,
+        layout={"row_number_width": "7%", **(layout or {})},
+        metadata=metadata,
+    )
+
+
+def _signature_layout(labels: list[str], *, columns: int, direction: str = "horizontal", groups: list[dict] | None = None) -> dict:
+    roles = ["calibrated_by", "reviewed_by", "report_made_by", "purchase_order_or_quotation"]
+    return {
+        "layout": "declarative_grid",
+        "slots": [{"role": roles[index] if index < len(roles) else f"signature_{index + 1}", "display_label": label} for index, label in enumerate(labels)],
+        "columns": columns,
+        "direction": direction,
+        "trailing_fields": [],
+        "groups": groups or [],
+    }
+
+
+COMMON_VISIBLE_FIELDS = {
+    "header": ["work_order_number", "reserved_certificate_folio"],
+    "client": ["attention", "company", "address"],
+    "equipment": ["instrument", "scope", "minimum_division", "brand", "model", "serial_number", "internal_id", "location"],
+    "calibration": ["reception_date", "calibration_date", "next_calibration_date", "calibration_place"],
+    "environment": ["environment_humidity_start", "environment_humidity_end", "environment_temperature_start", "environment_temperature_end"],
+    "condition": ["equipment_general_condition", "consider_equipment_deviations", "observations", "units"],
+}
+
+
+def _document_blocks(
+    table: dict,
+    *,
+    common_overrides: dict[str, list[str]] | None = None,
+    field_specs: dict[str, list[dict]] | None = None,
+    table_span: int = 4,
+    signature_span: int = 4,
+    extra_blocks: list[dict] | None = None,
+) -> list[dict]:
+    visible = {key: list(value) for key, value in COMMON_VISIBLE_FIELDS.items()}
+    visible.update(common_overrides or {})
+    specs = field_specs or {}
+    for group_key, group_specs in specs.items():
+        visible.setdefault(group_key, [])
+        for spec in group_specs:
+            if spec["key"] not in visible[group_key]:
+                visible[group_key].append(spec["key"])
+    block_definitions = [
+        ("HeaderBlock", "header", "Encabezado", "header"),
+        ("ClientBlock", "client", "Datos del Usuario", "client"),
+        ("EquipmentBlock", "equipment", "Datos del Instrumento", "equipment"),
+        ("CalibrationDataBlock", "calibration", "Datos de calibración", "calibration"),
+        ("EnvironmentalBlock", "environment", "Condiciones ambientales", "environment"),
+        ("ObservationsBlock", "condition", "Observaciones", "condition"),
+    ]
+    blocks: list[dict] = []
+    for order, (block_type, key, title, visible_key) in enumerate(block_definitions, start=1):
+        blocks.append(_block(
+            block_type, key, title, order,
+            visible_fields=visible[visible_key],
+            fields=specs.get(visible_key, []),
+            print_layout={"column_span": 4, "grid_columns": 4, "compact": True, "title_visible": order != 1, "border": order != 1},
+        ))
+    blocks.extend(extra_blocks or [])
+    table = deepcopy(table)
+    table["order"] = table["capture_order"] = table["print_order"] = 20
+    table["print_layout"] = {"column_span": table_span, "grid_columns": 4, "compact": True, "break_inside": "avoid", "title_visible": False}
+    blocks.append(table)
+    blocks.append(_block(
+        "SignaturesBlock", "signatures", "Firmas", 30,
+        print_layout={"column_span": signature_span, "grid_columns": 4, "title_visible": False, "border": False, "break_inside": "avoid"},
+    ))
+    blocks.append(_block("FooterBlock", "footer", "Pie documental", 40, capture_visible=False, print_layout={"column_span": 4, "title_visible": False, "border": False}))
+    return blocks
+
+
+def _official_template(
+    key: str,
+    name: str,
+    family: str,
+    sections: list[dict],
+    *,
+    magnitude: str,
+    source: str,
+    variant: str | None = None,
+    supported: list[str] | None = None,
+    pages: int = 1,
+    signature: dict | None = None,
+    common_overrides: dict[str, list[str]] | None = None,
+    field_specs: dict[str, list[dict]] | None = None,
+    table_span: int = 4,
+    signature_span: int = 4,
+    extra_blocks: list[dict] | None = None,
+) -> dict:
+    table = _table_block("SectionedTableBlock", "results", "Resultados", sections, family)
+    definition = _template(
+        key, name, family, table,
+        magnitude_key=key, magnitude_label=magnitude,
+        document_variant_key=key if variant else None,
+        document_variant_label=variant,
+        supported_equipment=supported or [], search_aliases=[key.replace("_", " "), magnitude, *(supported or [])],
+        source_document=source, document_revision="R1",
+        blocks=_document_blocks(table, common_overrides=common_overrides, field_specs=field_specs, table_span=table_span, signature_span=signature_span, extra_blocks=extra_blocks),
+        print_layout={"page": {"size": "letter", "orientation": "portrait", "margins": {"top": 9, "right": 8, "bottom": 10, "left": 8}}, "document": {"title_visible": True, "header_visible": True, "footer_visible": True, "grid_columns": 4}},
+        signature_layout=signature or _signature_layout(["CALIBRÓ", "REVISÓ", "REALIZÓ INFORME", "OC/COTIZACIÓN"], columns=4),
+    )
+    definition["pages"] = pages
+    return definition
+
+
+P_I3 = [("Patrón", [("pattern_value", "Patrón")]), ("Valores medidos (IBC)", [("ibc_value_1", "1"), ("ibc_value_2", "2"), ("ibc_value_3", "3")])]
+P_I5 = [("Patrón", [("pattern_value", "Patrón")]), ("Valores medidos IBC", [(f"ibc_{i}", str(i)) for i in range(1, 6)])]
+PAIR3 = [
+    ("Valores medidos", [("measured", "Valor")]),
+    ("Patrón / IBC", [item for i in range(1, 4) for item in ((f"pattern_{i}", "Patrón"), (f"ibc_{i}", "IBC"))]),
+]
+
+
+def _materialize_official_templates() -> dict[str, dict]:
+    vertical = _signature_layout(["CALIBRÓ", "REVISÓ", "REALIZÓ INFORME (SMM)"], columns=1, direction="vertical")
+    vertical["trailing_fields"] = ["purchase_order_or_quotation"]
+    two_by_two = _signature_layout(["CALIBRÓ", "REVISÓ", "REALIZÓ INFORME", "OC/COTIZACIÓN"], columns=2)
+    four = _signature_layout(["CALIBRÓ", "REVISÓ", "REALIZÓ INFORME", "OC/COTIZACIÓN"], columns=4)
+    docs: dict[str, dict] = {}
+
+    docs["calibradores"] = _official_template(
+        "calibradores", "Hoja de Campo Calibradores", "replicated_comparison",
+        [_result_section("exterior", "DATOS DE MEDICION DE EXTERIORES", 7, [("Patrón", [("pattern_value", "Patrón")]), ("IBC", [("ibc_value_1", "IBC 1"), ("ibc_value_2", "IBC 2"), ("ibc_value_3", "IBC 3")])]),
+         _result_section("interior", "DATOS DE MEDICION DE INTERIORES", 5, [("Patrón", [("pattern_value", "Patrón")]), ("IBC", [("ibc_value_1", "IBC 1"), ("ibc_value_2", "IBC 2"), ("ibc_value_3", "IBC 3")])]),
+         _result_section("depth", "DATOS DE MEDICION DE PROFUNDIDADES", 3, [("Patrón", [("pattern_value", "Patrón")]), ("IBC", [("ibc_value_1", "IBC 1"), ("ibc_value_2", "IBC 2"), ("ibc_value_3", "IBC 3")])])],
+        magnitude="Dimensional", variant="Calibradores", source="FCA-30 R1 HOJA DE CAMPO CALIBRADORES.pdf", supported=["calibrador vernier", "calibrador de altura", "calibrador de profundidad"], signature=vertical, table_span=3, signature_span=1,
+    )
+
+    electrical_sections = []
+    for index in range(1, 7):
+        electrical_section = _result_section(
+            f"block_{index}", f"Bloque {index}", 5,
+            [("Patrón", [("pattern_value", "Patrón")]), ("IBC", [("ibc_value_1", "IBC 1"), ("ibc_value_2", "IBC 2"), ("ibc_value_3", "IBC 3")])],
+            layout={"capture_title": f"Bloque {index}", "print_title_visible": False},
+            metadata={"unit_field": f"electrical_unit_{index}"},
+        )
+        electrical_section["header_rows"] = electrical_section["header_rows"][1:]
+        electrical_sections.append(electrical_section)
+    docs["electrica"] = _official_template(
+        "electrica", "Hoja de Campo Eléctrica", "replicated_comparison", electrical_sections,
+        magnitude="Eléctrica", source="FCA-30 R1 HOJA DE CAMPO ELECTRICA (amperimetro, multimetro, megaohmetro).pdf",
+        supported=["amperímetro", "multímetro", "megaóhmetro"], pages=2, signature=four,
+        field_specs={"condition": [{"key": f"electrical_unit_{i}", "label": f"Unidades tabla {i}", "order": i, "field_type": "text"} for i in range(1, 7)]},
+    )
+
+    gas_groups = [("Patrón", [("pattern_value", "Patrón")]), ("Valores Medidos", [(f"reading_{i}", label) for i, label in enumerate(["Primera", "Segunda", "Tercera", "Cuarta", "Quinta"], 1)])]
+    gas_labels = ["H₂S", "CO", "O₂", "% LEL"]
+    docs["detector_gases"] = _official_template(
+        "detector_gases", "Hoja de Campo Detector de Gases", "before_after",
+        [_result_section("before", "Antes del ajuste", 4, gas_groups, row_labels=gas_labels, layout={"row_label_header": "GAS"}), _result_section("after", "Despues del ajuste", 4, gas_groups, row_labels=gas_labels, layout={"row_label_header": "GAS"})],
+        magnitude="Concentración de gases", source="FCA-30 R1 HOJA DE CAMPO DETECTOR DE GASES.pdf", signature=four,
+    )
+
+    tld_fields = {"equipment": [{"key": "type", "label": "Tipo", "field_type": "text", "order": 99}]}
+    docs["tld"] = _official_template(
+        "tld", "Hoja de Campo TLD", "paired_multichannel", [_result_section("channel_1", "DATOS DE MEDICIÓN", 5, PAIR3)],
+        magnitude="Temperatura", variant="TLD", source="FCA-30 R1 HOJA DE CAMPO TLD (temperatura de lectura directa).pdf", signature=two_by_two, field_specs=tld_fields,
+    )
+
+    general_groups = [("Serie simple", [("simple_value", "Patrón / IBC")]), ("Serie triple", [(f"triple_{i}", str(i)) for i in range(1, 4)])]
+    docs["general"] = _official_template(
+        "general", "Hoja de Campo General", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 10, general_groups, metadata={"header_choices": {"simple_role": {"label": "Serie simple", "options": ["Patrón", "IBC"]}, "triple_role": {"label": "Serie triple", "options": ["Patrón", "IBC"]}}})],
+        magnitude="General", source="FCA-30 R1 HOJA DE CAMPO GENERAL.pdf", signature=vertical, table_span=3, signature_span=1,
+        field_specs={"condition": [{"key": "simple_role", "label": "Rol de serie simple", "field_type": "enum", "options": ["Patrón", "IBC"]}, {"key": "triple_role", "label": "Rol de serie triple", "field_type": "enum", "options": ["Patrón", "IBC"]}]},
+    )
+
+    docs["angulimetro"] = _official_template("angulimetro", "Hoja de Campo Angulímetro", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICION", 5, P_I3)], magnitude="Ángulo", source="FCA-30 R1 HOJA DE CAMPO ANGULIMETRO.pdf", signature=two_by_two)
+    docs["sonido"] = _official_template("sonido", "Hoja de Campo Sonido", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 10, P_I3)], magnitude="Sonido / Acústica", source="FCA-30 R1 HOJA DE CAMPO SONIDO.pdf", signature=vertical, table_span=3, signature_span=1)
+
+    pesas_groups = [("Patrón", [("pattern_value", "Patrón")]), ("Valores Medidos IBC", [(f"ibc_{i}", str(i)) for i in range(1, 5)]), ("ID", [("weight_id", "ID")])]
+    docs["pesas"] = _official_template("pesas", "Hoja de Campo Pesas", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 10, pesas_groups)], magnitude="Masa", variant="Pesas", source="FCA-30 R1 HOJA DE CAMPO PESAS.pdf", signature=vertical, table_span=3, signature_span=1, field_specs={"equipment": [{"key": "class", "label": "Clase", "field_type": "text"}]})
+    docs["tacometro"] = _official_template("tacometro", "Hoja de Campo Tacómetro", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 5, P_I3)], magnitude="Velocidad de rotación", source="FCA-30 R1 HOJA DE CAMPO TACOMETRO.pdf", signature=two_by_two)
+
+    directional = [("Equipo Patrón", [("pattern_value", "Equipo Patrón")]), ("Valores medidos", [(f"ibc_{i}", str(i)) for i in range(1, 4)])]
+    docs["maestro_altura"] = _official_template("maestro_altura", "Hoja de Campo Maestro de Altura", "direction_cycle", [_result_section("ascending", "DATOS DE MEDICION ASCENDENTE", 10, directional), _result_section("descending", "DATOS DE MEDICION DESCENDENTE", 10, directional)], magnitude="Dimensional", variant="Maestro de altura", source="FCA-30 R1 HOJA DE CAMPO MAESTRO DE ALTURA.pdf", signature=vertical, table_span=3, signature_span=1)
+
+    valve_groups = [("Referencia", [("reference", "Referencia")]), ("Valores Medidos Patrón", [(f"measured_{i}", label) for i, label in enumerate(["Primera", "Segunda", "Tercera"], 1)])]
+    docs["valvula"] = _official_template("valvula", "Hoja de Campo Válvula de Seguridad", "threshold_event", [_result_section("events", "DATOS DE MEDICIÓN", 2, valve_groups, row_labels=["Disparo", "Cierre"], layout={"row_label_header": "Presión"})], magnitude="Presión", variant="Válvula de seguridad", source="FCA-30 R1 HOJA DE CAMPO VALVULA DE SEGURIDAD.pdf", signature=two_by_two, field_specs={"equipment": [{"key": "measure", "label": "Medida", "field_type": "text"}]})
+
+    flow_groups = [("Valores Medidos IBC", [("ibc_value", "Valores Medidos IBC")]), ("Valores Medidos Patrón", [(f"pattern_{i}", str(i)) for i in range(1, 4)])]
+    docs["flujo"] = _official_template("flujo", "Hoja de Campo Flujo", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 10, flow_groups)], magnitude="Flujo", source="FCA-30 R1 HOJA DE CAMPO FLUJO.pdf", signature=vertical, table_span=3, signature_span=1)
+    docs["dimensional"] = _official_template("dimensional", "Hoja de Campo Dimensional", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 10, P_I3)], magnitude="Dimensional", variant="Indicador / micrómetro / medidor de espesores", source="FCA-30 R1 HOJA DE CAMPO DIMENSIONAL (indicador de caratula, micrometro, medidor de espesores).pdf", signature=vertical, table_span=3, signature_span=1)
+
+    rule_groups = [("Equipo", [("equipment_value", "Equipo")]), ("Valores Medidos Patrón", [(f"pattern_{i}", str(i)) for i in range(1, 6)])]
+    docs["regla"] = _official_template("regla", "Hoja de Campo Reglas", "replicated_comparison", [_result_section("measurements", "REGLA", 15, rule_groups)], magnitude="Dimensional", variant="Regla", source="FCA-30 R1 HOJA DE CAMPO REGLAS.pdf", signature=vertical, table_span=3, signature_span=1, field_specs={"header": [{"key": "purchase_order_or_quotation", "label": "ORDEN DE TRABAJO/COTIZACIÓN", "field_type": "text"}]})
+    docs["anemometro"] = _official_template("anemometro", "Hoja de Campo Anemómetro", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 10, P_I3)], magnitude="Velocidad de aire", source="FCA-30 R1 HOJA DE CAMPO ANEMOMETRO.pdf", supported=["anemómetro"], signature=vertical, table_span=3, signature_span=1)
+
+    static_note = _block("StaticTextBlock", "formula_note", "Nota técnica", 19, capture_visible=False, visible_fields=[], print_layout={"column_span": 3, "grid_columns": 1, "compact": True}, metadata={"text": "= 2.16 s\nDRAFT SOP 24-NIST"})
+    docs["cronometro"] = _official_template("cronometro", "Hoja de Campo Cronómetro", "replicated_comparison", [_result_section("measurements", "DATOS DE MEDICIÓN", 5, P_I5)], magnitude="Tiempo", source="FCA-30 R1 HOJA DE CAMPO CRONOMETRO.pdf", signature=vertical, table_span=3, signature_span=1, extra_blocks=[static_note])
+
+    graphic = _block("ReferenceGraphicBlock", "cup_figure", "FORD VISCOSITY CUP", 18, capture_visible=False, visible_fields=[], print_layout={"column_span": 2, "grid_columns": 1, "compact": True}, metadata={"caption": "FIG. 1 Ford Viscosity Cup and Orifices", "asset_key": "ford_viscosity_cup", "asset_path": "backend/app/assets/field-sheets/ford_viscosity_cup.png"})
+    cup_sections = [
+        _result_section("diameter", "Unidades milímetros", 1, [("Característica", [("feature", "Diámetro de salida (mm) No.4")]), ("Mediciones", [(f"measurement_{i}", f"Medición {i}") for i in range(1, 4)])]),
+        _result_section("flow_time", "Unidades segundos", 5, [("Tiempo en derramarse el líquido", [("seconds", "Tiempo")])]),
+        _result_section("standard", "Datos tecnicos del standard de referencia", 1, [("Patron", [("standard", "Patron")]), ("Referencia", [("kinematic_viscosity", "Kinematic Viscosity @ 25 °C"), ("flow_cup_designation", "Flow Cup Designation"), ("flow_cup_size", "Flow Cup Size"), ("time_seconds", "Time (s)")])]),
+        _result_section("temperature", "Temperatura", 1, [("Temperatura de calibracion promedio", [("average_temperature", "Valor")])]),
+    ]
+    cup_common = {"equipment": ["instrument", "brand", "model", "internal_id", "serial_number", "location", "scope", "minimum_division"], "condition": ["observations"], "calibration": ["calibration_date", "calibration_place"], "environment": ["environment_humidity_start", "environment_humidity_end", "environment_temperature_start", "environment_temperature_end"]}
+    cup_signature = {
+        "layout": "grouped",
+        "slots": [
+            {"role": "client", "display_label": "CLIENTE"},
+            {"role": "calibrated_by", "display_label": "CALIBRÓ TÉCNICO"},
+            {"role": "authorized_by", "display_label": "AUTORIZÓ"},
+            {"role": "report_made_by", "display_label": "REALIZÓ INFORME"},
+        ],
+        "columns": 3,
+        "direction": "horizontal",
+        "trailing_fields": [],
+        "groups": [{"slots": ["client"], "columns": 1}, {"slots": ["calibrated_by", "authorized_by", "report_made_by"], "columns": 3}],
+    }
+    docs["copa"] = _official_template("copa", "Hoja de Campo Copa", "cup_specialized", cup_sections, magnitude="Viscosidad", source="HOJA DE CAMPO COPA.pdf", signature=cup_signature, common_overrides=cup_common, extra_blocks=[graphic])
+
+    tld_sections = [_result_section(f"channel_{i}", f"Canal {i}", 5, PAIR3, layout={"row_group": "channels", "group_order": i, "width_fraction": 1.0}) for i in range(1, 7)]
+    docs["tld_6_canales"] = _official_template("tld_6_canales", "Hoja de Campo TLD 6 Canales", "paired_multichannel", tld_sections, magnitude="Temperatura", variant="TLD 6 canales", source="FCA-30 R1 HOJA DE CAMPO TLD (temperatura de lectura directa) 6 CANALES.pdf", pages=2, signature=two_by_two, field_specs=tld_fields)
+
+    docs["temperatura"] = _official_template("temperatura", "Hoja de Campo Temperatura", "replicated_comparison", [_result_section("temperature_measurements", "DATOS DE MEDICION", 10, flow_groups)], magnitude="Temperatura", source="FCA-30 R1 HOJA DE CAMPO TEMPERATURA.pdf", signature=vertical, table_span=3, signature_span=1)
+    docs["temperatura"]["version"] = 2
+    docs["temperatura"]["revision"] = docs["temperatura"]["document_revision"] = "R-1"
+
+    torque_groups = [("Equipo", [("equipment_value", "Equipo")]), ("Valores Medidos Patrón", [(f"pattern_{i}", str(i)) for i in range(1, 6)])]
+    docs["par_torsional"] = _official_template("par_torsional", "Hoja de Campo Par Torsional", "direction_cycle", [_result_section("cw", "Par torsional CW", 5, torque_groups), _result_section("ccw", "Par torsional CCW", 5, torque_groups)], magnitude="Par torsional", source="FCA-30 R1 HOJA DE CAMPO PAR TORSIONAL.pdf", signature=vertical, table_span=3, signature_span=1)
+
+    pressure_groups = [("Valores Medidos IBC", [("ibc_value_1", "Valores Medidos IBC")]), ("Valores Medidos Patrón", [("pattern_value", "Acendente"), ("ibc_value_2", "Descendente"), ("ibc_value_3", "Ascendente")])]
+    docs["presion"] = _official_template("presion", "Hoja de Campo Presión", "direction_cycle", [_result_section("pressure_cycle", "DATOS DE MEDICION", 11, pressure_groups)], magnitude="Presión", source="FCA-30 R1 HOJA DE CAMPO PRESIÓN (manometro, vacuometro, diferencial de presion).pdf", supported=["manómetro", "vacuómetro", "diferencial de presión"], signature=vertical, table_span=3, signature_span=1)
+    docs["presion"]["version"] = 3
+
+    verification_groups = [("Unidades medidas", [("measured_units", "Unidades medidas")]), ("Valores medidos (IBC)", [(f"ibc_{i}", label) for i, label in enumerate(["Primera", "Segunda", "Tercera"], 1)]), ("Cumple", [("complies", "Cumple con funcionamiento")])]
+    verification_common = {"header": [], "client": ["attention", "company", "address"], "equipment": ["instrument", "brand", "serial_number", "model", "internal_id", "location"], "calibration": ["calibration_date", "next_calibration_date", "calibration_place"]}
+    verification_specs = {"calibration": [{"key": "calibration_date", "label": "Fecha de verificación", "field_type": "date"}, {"key": "next_calibration_date", "label": "Próxima verificación", "field_type": "date"}]}
+    docs["verificacion_equipos"] = _official_template("verificacion_equipos", "Hoja de Campo Verificación de Equipos", "verification_compliance", [_result_section("verification", "DATOS DE VERIFICACIÓN", 6, verification_groups, data_types={"complies": "boolean"})], magnitude="Verificación", source="FCA-30 R1 HOJA DE CAMPO VERIFICACION DE EQUIPOS.pdf", signature=four, common_overrides=verification_common, field_specs=verification_specs)
+
+    main_mass = _result_section("eccentricity", "Prueba de Excentrica", 6, [("Prueba de Excentrica", [("eccentricity", "Prueba de Excentrica")]), ("Valores Medidos Patrón", [("pattern_value", "Patrón")]), ("Valores Medidos IBC", [("ascending", "Ascendente"), ("descending", "Descendente"), ("ascending_2", "Asdcendente")])], layout={"width_fraction": 0.62, "row_group": "mass", "group_order": 1})
+    rep50 = _result_section("repeatability_50", "Prueba de Repetibilidad al 50%", 5, [("Valor", [("value", "Valor")])], layout={"width_fraction": 0.19, "row_group": "mass", "group_order": 2})
+    rep100 = _result_section("repeatability_100", "Prueba de Repetibilidad al 100%", 5, [("Valor", [("value", "Valor")])], layout={"width_fraction": 0.19, "row_group": "mass", "group_order": 3})
+    docs["bascula"] = _official_template("bascula", "Hoja de Campo Báscula y Balanza", "mass_balance_composite", [main_mass, rep50, rep100], magnitude="Masa", variant="Báscula y Balanza", source="FCA-30 R1 HOJA DE CAMPO BASCULA Y BALANZA.pdf", supported=["báscula", "balanza"], signature=four)
+    docs["bascula"]["version"] = 4
+    return docs
+
+
+OFFICIAL_PILOT_TEMPLATES.update(_materialize_official_templates())
 
 
 def get_official_pilot_template(template_key: str) -> dict | None:

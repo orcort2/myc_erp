@@ -8,11 +8,52 @@ from pypdf import PdfReader
 from weasyprint import HTML
 
 from app.services.field_sheet_pdfs import _render_html
+from app.models.field_sheet import FieldSheet, FieldSheetResult
+from app.services.field_sheet_pdfs import ResultTableSection
+from app.services.field_sheet_template_engine import OFFICIAL_MYC_TEMPLATE_KEYS
+from app.services.field_sheet_vector_adapter import (
+    VectorRenderContext,
+    _filter_meaningful_rows,
+    render_field_sheet_vector_preview,
+)
 from app.services.field_sheet_templates import (
     CANONICAL_PDF_RENDERER_VERSION,
+    build_default_result_rows,
     build_fallback_template_definition,
     normalize_template_definition,
 )
+
+
+@pytest.mark.parametrize("template_key", OFFICIAL_MYC_TEMPLATE_KEYS)
+def test_all_23_official_templates_render_vector_letter_pdf(template_key):
+    definition = build_fallback_template_definition(template_key)
+    sheet = FieldSheet(id=1, equipment_id=1, template_key=template_key, work_order_number=6414, template_definition_json=definition, capture_values={})
+    sheet.results_rows = build_default_result_rows(definition)
+    for section in definition["result_sections"]:
+        row = next(item for item in sheet.results_rows if item.section_key == section["key"])
+        row.row_data = {column["key"]: (False if column.get("data_type") == "boolean" else "1") for column in section["columns"]}
+    pdf = render_field_sheet_vector_preview(VectorRenderContext(
+        sheet, definition,
+        {"name": "Equipo", "brand": "MYC", "model": "M1", "serial_number": "S1", "internal_id": "I1", "range_or_capacity": "10"},
+        "Cliente", "Atención", "Domicilio", "CERT-1",
+    ))
+    assert pdf.startswith(b"%PDF")
+    page = PdfReader(io.BytesIO(pdf)).pages[0]
+    assert float(page.mediabox.width) == 612
+    assert float(page.mediabox.height) == 792
+
+
+def test_vector_row_filter_drops_all_empty_rows_and_preserves_zero_false_and_original_number():
+    columns = [{"key": "value", "source": "value"}]
+    rows = [
+        FieldSheetResult(section_key="s", row_number=1, row_data={}),
+        FieldSheetResult(section_key="s", row_number=2, row_data={"value": "0"}),
+        FieldSheetResult(section_key="s", row_number=3, row_data={}),
+        FieldSheetResult(section_key="s", row_number=4, row_data={"value": 0}),
+        FieldSheetResult(section_key="s", row_number=5, row_data={"value": False}),
+    ]
+    section = ResultTableSection(key="s", title="S", columns=columns, rows=rows)
+    assert [row.row_number for row in _filter_meaningful_rows(section)] == [2, 4, 5]
 
 
 def _column(key: str, label: str, width: str = "25%") -> dict:

@@ -13,9 +13,9 @@ from app.services.field_sheets import _apply_results_updates, _client_address
 OFFICIAL_TEMPLATE_KEYS = {
     "anemometro", "angulimetro", "bascula", "calibradores", "cronometro",
     "detector_gases", "dimensional", "electrica", "flujo", "general",
-    "maestro_altura", "par_torsional", "pesas", "presion", "reglas",
+    "maestro_altura", "par_torsional", "pesas", "presion", "regla",
     "sonido", "tacometro", "temperatura", "tld_6_canales", "tld",
-    "valvula_seguridad", "verificacion_equipos", "copa",
+    "valvula", "verificacion_equipos", "copa",
 }
 
 

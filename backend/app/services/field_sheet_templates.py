@@ -17,6 +17,7 @@ from app.schemas.field_sheet_template import (
 from app.services.audit_logs import write_audit_log
 from app.services.field_sheet_template_engine import (
     DEFAULT_SIGNATURE_LAYOUT,
+    OFFICIAL_MYC_TEMPLATE_KEYS,
     OFFICIAL_TABLE_FAMILIES,
     get_official_pilot_template,
     resolve_table_family,
@@ -55,10 +56,14 @@ FIELD_SHEET_BLOCK_TYPES = {
     "CustomFieldsBlock",
     "SectionBlock",
     "AttachmentPlaceholderBlock",
+    "StaticTextBlock",
+    "ReferenceGraphicBlock",
 }
 CANONICAL_PDF_RENDERER_KEY = "field_sheet_engine"
 CANONICAL_PDF_RENDERER_VERSION = 1
 CANONICAL_PDF_TEMPLATE = "field_sheet_engine_pdf.html"
+VECTOR_PDF_RENDERER_KEY = "field_sheet_vector"
+VECTOR_PDF_RENDERER_VERSION = 2
 TABLE_BLOCK_TYPES = {
     "ResultsTableBlock",
     "SimpleComparisonTableBlock",
@@ -85,6 +90,8 @@ BLOCK_TYPE_LABELS = {
     "CustomFieldsBlock": "Campos libres",
     "SectionBlock": "Sección",
     "AttachmentPlaceholderBlock": "Adjuntos",
+    "StaticTextBlock": "Texto estático",
+    "ReferenceGraphicBlock": "Referencia gráfica",
     "GeneralDataBlock": "Datos generales",
     "EquipmentDataBlock": "Datos del equipo",
     "SimpleComparisonTableBlock": "Comparación directa",
@@ -127,6 +134,16 @@ FIELD_SHEET_TEMPLATE_KEYS = (
     "dinamometro",
     "durometro",
     "volumen",
+    "detector_gases",
+    "tld",
+    "angulimetro",
+    "pesas",
+    "maestro_altura",
+    "flujo",
+    "copa",
+    "tld_6_canales",
+    "par_torsional",
+    "verificacion_equipos",
 )
 
 BLOCK_FAMILY_DEFAULTS = {
@@ -420,7 +437,7 @@ def _default_block(block_type: str, order: int) -> dict:
         return block
     if block_type == "ResultsTableBlock":
         block = _table_block(block_type, f"results_table_{order}", "Tabla de resultados", COMPARISON_COLUMNS, rows=10)
-    if block_type == "SimpleComparisonTableBlock":
+    elif block_type == "SimpleComparisonTableBlock":
         block = _table_block(block_type, f"simple_comparison_{order}", "Tabla comparativa", COMPARISON_COLUMNS, rows=10)
     elif block_type == "MultiPointTableBlock":
         block = _table_block(block_type, f"multi_point_{order}", "Tabla multipunto", MULTI_POINT_COLUMNS, rows=10)
@@ -460,6 +477,21 @@ def _default_block(block_type: str, order: int) -> dict:
             rows=5,
             sections=[_section("custom_section", "Sección personalizada", 5, ELECTRICAL_COLUMNS)],
         )
+    elif block_type in {"StaticTextBlock", "ReferenceGraphicBlock"}:
+        block = {
+            "key": f"static_{order}",
+            "block_type": block_type,
+            "title": "Contenido estático",
+            "visible_fields": [],
+            "fields": [],
+            "columns": [],
+            "sections": [],
+            "rows": None,
+            "min_rows": None,
+            "max_rows": None,
+            "allow_add_rows": False,
+            "required": False,
+        }
     else:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -510,6 +542,7 @@ TEMPLATE_BLOCK_ASSIGNMENTS = {
     "dinamometro": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "MultiPointTableBlock", "RepeatabilityTableBlock", "ObservationsBlock", "SignaturesBlock"],
     "durometro": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "MultiPointTableBlock", "ObservationsBlock", "SignaturesBlock"],
     "volumen": ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "MultiPointTableBlock", "RepeatabilityTableBlock", "ObservationsBlock", "SignaturesBlock"],
+    **{key: ["GeneralDataBlock", "EquipmentDataBlock", "EnvironmentalBlock", "SectionedTableBlock", "ObservationsBlock", "SignaturesBlock"] for key in OFFICIAL_MYC_TEMPLATE_KEYS},
 }
 
 TEMPLATE_ALIASES = {
@@ -520,7 +553,6 @@ TEMPLATE_ALIASES = {
     "calibrador": "dimensional",
     "pinza_amperimetrica": "multimetro",
     "fuente": "electrica",
-    "flujo": "volumen",
 }
 
 # Fase 3 (2026-09): esto NO es autoridad de familias para definiciones
@@ -759,6 +791,8 @@ def normalize_template_definition(payload: dict, *, table_family_mode: str = "le
         "revision": payload.get("revision") or "R1",
         "pages": int(payload.get("pages") or 1),
         "pdf_template": payload.get("pdf_template") or _pdf_template_for_key(template_key),
+        "pdf_renderer_key": payload.get("pdf_renderer_key"),
+        "pdf_renderer_version": payload.get("pdf_renderer_version"),
         "document_code": payload.get("document_code") or payload.get("code") or "FCA-30",
         "document_revision": payload.get("document_revision") or payload.get("revision") or "R1",
         "table_family": resolve_table_family(
@@ -805,9 +839,17 @@ def canonicalize_new_field_sheet_snapshot(definition: dict) -> dict:
     their legacy ``pdf_template`` through the versioned renderer resolver.
     """
     snapshot = deepcopy(definition)
-    snapshot["pdf_template"] = CANONICAL_PDF_TEMPLATE
-    snapshot["pdf_renderer_key"] = CANONICAL_PDF_RENDERER_KEY
-    snapshot["pdf_renderer_version"] = CANONICAL_PDF_RENDERER_VERSION
+    declares_vector_v2 = (
+        definition.get("pdf_renderer_key") == VECTOR_PDF_RENDERER_KEY
+        and int(definition.get("pdf_renderer_version") or 0) == VECTOR_PDF_RENDERER_VERSION
+    )
+    if declares_vector_v2:
+        snapshot["pdf_renderer_key"] = VECTOR_PDF_RENDERER_KEY
+        snapshot["pdf_renderer_version"] = VECTOR_PDF_RENDERER_VERSION
+    else:
+        snapshot["pdf_template"] = CANONICAL_PDF_TEMPLATE
+        snapshot["pdf_renderer_key"] = CANONICAL_PDF_RENDERER_KEY
+        snapshot["pdf_renderer_version"] = CANONICAL_PDF_RENDERER_VERSION
     return snapshot
 
 
@@ -889,7 +931,7 @@ def list_field_sheet_templates(db: Session, *, include_all: bool = False) -> lis
 
     templates: list[dict] = []
 
-    for template_key in TEMPLATE_BLOCK_ASSIGNMENTS:
+    for template_key in OFFICIAL_MYC_TEMPLATE_KEYS:
         official_template = get_official_pilot_template(template_key)
 
         if official_template is not None:
@@ -1001,7 +1043,11 @@ def create_field_sheet_template(
         new_values={"template_key": row.template_key, "version": row.version, "status": row.status},
     )
     db.commit()
-    return get_field_sheet_template(db, template_key) if row.status == "active" else _serialize_row(row)
+    # La respuesta del CRUD describe exactamente el artefacto administrativo
+    # recién persistido. La autoridad oficial para NUEVAS capturas se aplica
+    # sólo en get_field_sheet_template/list_field_sheet_templates y por tanto
+    # una definición DB nunca eclipsa el catálogo MYC controlado por código.
+    return _serialize_row(row)
 
 
 def update_field_sheet_template(db: Session, template_id: int, payload: FieldSheetTemplateUpdate, *, user_id: int | None = None) -> dict:
@@ -1139,7 +1185,7 @@ def activate_field_sheet_template(db: Session, template_id: int, *, user_id: int
         new_values={"template_key": row.template_key, "version": row.version, "status": row.status},
     )
     db.commit()
-    return get_field_sheet_template(db, row.template_key)
+    return _serialize_row(row)
 
 
 def delete_field_sheet_template(db: Session, template_id: int, *, user_id: int | None = None) -> None:
@@ -1237,7 +1283,7 @@ def get_field_sheet_template_catalog() -> dict:
     return {
         "block_types": _catalog_block_types(),
         "table_families": [deepcopy(item) for item in OFFICIAL_TABLE_FAMILIES.values()],
-        "supported_template_keys": sorted(TEMPLATE_BLOCK_ASSIGNMENTS.keys()),
+        "supported_template_keys": sorted(OFFICIAL_MYC_TEMPLATE_KEYS),
     }
 
 

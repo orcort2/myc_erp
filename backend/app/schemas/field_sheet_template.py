@@ -21,6 +21,8 @@ FieldSheetBlockType = Literal[
     "CustomFieldsBlock",
     "SectionBlock",
     "AttachmentPlaceholderBlock",
+    "StaticTextBlock",
+    "ReferenceGraphicBlock",
     "GeneralDataBlock",
     "EquipmentDataBlock",
     "SimpleComparisonTableBlock",
@@ -71,6 +73,12 @@ class ResultHeaderRowRead(BaseModel):
 
 class ResultSectionLayoutRead(BaseModel):
     row_number_width: str | None = Field(default=None, max_length=32)
+    row_label_header: str = Field(default="No.", max_length=80)
+    width_fraction: float = Field(default=1.0, gt=0, le=1)
+    row_group: str | None = Field(default=None, max_length=80)
+    group_order: int = Field(default=0, ge=0)
+    capture_title: str | None = Field(default=None, max_length=180)
+    print_title_visible: bool = True
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="forbid")
@@ -236,6 +244,7 @@ class SignatureLayoutRead(BaseModel):
     columns: int | None = Field(default=None, ge=1, le=4)
     direction: Literal["horizontal", "vertical"] = "horizontal"
     trailing_fields: list[str] = Field(default_factory=list)
+    groups: list[dict[str, Any]] = Field(default_factory=list)
 
     @field_validator("trailing_fields")
     @classmethod

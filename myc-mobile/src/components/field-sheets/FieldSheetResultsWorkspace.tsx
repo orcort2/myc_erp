@@ -471,7 +471,24 @@ export function FieldSheetResultsWorkspace({
 
                                 return (
                                   <View key={column.key} style={{ width: columnWidths[columnIndex] }}>
-                                  <TextInput
+                                  {column.data_type === 'boolean' ? (
+                                    <Pressable
+                                      disabled={!editable}
+                                      onPress={() => {
+                                        const current = row.row_data[sourceKey];
+                                        setState((workspace) => setCellValue(
+                                          workspace,
+                                          section.key,
+                                          row.row_number,
+                                          sourceKey,
+                                          current === true ? false : current === false ? null : true,
+                                        ));
+                                      }}
+                                      style={[styles.tableInput, !editable && styles.tableInputReadOnly]}
+                                    >
+                                      <Text>{row.row_data[sourceKey] === true ? 'Sí' : row.row_data[sourceKey] === false ? 'No' : 'Pendiente'}</Text>
+                                    </Pressable>
+                                  ) : <TextInput
                                     editable={editable}
                                     keyboardType={keyboardTypeForFieldType(
                                       column.data_type,
@@ -528,7 +545,7 @@ export function FieldSheetResultsWorkspace({
                                         sourceKey
                                       ] ?? '',
                                     )}
-                                  />
+                                  />}
                                   {!!cellErrors[sourceKey] && (
                                     <Text style={styles.cellError}>
                                       {cellErrors[sourceKey]}

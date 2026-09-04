@@ -96,8 +96,30 @@ export const CANONICAL_FIELDS: CanonicalFieldDescriptor[] = [
 
 export const CANONICAL_FIELD_SHEET_KEYS = new Set(CANONICAL_FIELDS.map((field) => field.key));
 
-export function canonicalFieldsByGroup(group: CanonicalFieldGroupKey): CanonicalFieldDescriptor[] {
-  return CANONICAL_FIELDS.filter((field) => field.group === group);
+export function canonicalFieldsForDefinition(
+  blocks: FieldSheetTemplateBlock[] | undefined,
+): CanonicalFieldDescriptor[] {
+  const visible = new Set<string>();
+  const labelOverrides = new Map<string, string>();
+  for (const block of blocks ?? []) {
+    if (block.capture_visible === false || block.visible === false || block.block_type.includes('Table')) continue;
+    for (const key of block.visible_fields ?? []) visible.add(key);
+    for (const field of block.fields ?? []) {
+      if ((block.visible_fields ?? []).includes(field.key) && field.visible !== false && field.label) {
+        labelOverrides.set(field.key, field.label);
+      }
+    }
+  }
+  return CANONICAL_FIELDS
+    .filter((field) => visible.has(field.key))
+    .map((field) => ({ ...field, label: labelOverrides.get(field.key) ?? field.label }));
+}
+
+export function canonicalFieldsByGroup(
+  group: CanonicalFieldGroupKey,
+  fields: CanonicalFieldDescriptor[] = CANONICAL_FIELDS,
+): CanonicalFieldDescriptor[] {
+  return fields.filter((field) => field.group === group);
 }
 
 /** Etiquetas canónicas expuestas para reutilizar en mensajes (p.ej. la

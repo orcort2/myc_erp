@@ -7,6 +7,7 @@ from typing import Iterable
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen.canvas import Canvas
+from reportlab.lib.utils import ImageReader
 
 
 POINTS_PER_INCH = 72.0
@@ -108,6 +109,25 @@ class FieldSheetVectorDocument:
 
     def new_page(self) -> None:
         self.canvas.showPage()
+
+    def draw_image(self, path: str, *, box: VectorBox, padding: float = mm(1)) -> None:
+        """Draw a trusted local reference asset, centered and aspect-safe."""
+        image = ImageReader(path)
+        source_width, source_height = image.getSize()
+        available_width = max(box.width - padding * 2, 1)
+        available_height = max(box.height - padding * 2, 1)
+        scale = min(available_width / source_width, available_height / source_height)
+        width = source_width * scale
+        height = source_height * scale
+        self.canvas.drawImage(
+            image,
+            box.x + (box.width - width) / 2,
+            box.y + (box.height - height) / 2,
+            width=width,
+            height=height,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
 
     def draw_rounded_box(
         self,

@@ -721,8 +721,8 @@ def create_field_sheet(
         template_key=payload.template_key,
         template_definition_json=template_definition,
         template_definition_version=template_version,
-        pdf_renderer_key=CANONICAL_PDF_RENDERER_KEY,
-        pdf_renderer_version=CANONICAL_PDF_RENDERER_VERSION,
+        pdf_renderer_key=template_definition.get("pdf_renderer_key", CANONICAL_PDF_RENDERER_KEY),
+        pdf_renderer_version=int(template_definition.get("pdf_renderer_version") or CANONICAL_PDF_RENDERER_VERSION),
         institutional_snapshot_json=institutional_snapshot(institution),
         status="draft",
         work_order_id=payload.work_order_id or equipment.work_order_id,
@@ -851,8 +851,8 @@ def update_field_sheet(
         template_definition = canonicalize_new_field_sheet_snapshot(template_definition)
         field_sheet.template_definition_json = template_definition
         field_sheet.template_definition_version = template_version
-        field_sheet.pdf_renderer_key = CANONICAL_PDF_RENDERER_KEY
-        field_sheet.pdf_renderer_version = CANONICAL_PDF_RENDERER_VERSION
+        field_sheet.pdf_renderer_key = template_definition.get("pdf_renderer_key", CANONICAL_PDF_RENDERER_KEY)
+        field_sheet.pdf_renderer_version = int(template_definition.get("pdf_renderer_version") or CANONICAL_PDF_RENDERER_VERSION)
         field_sheet.results_rows = build_default_result_rows(template_definition)
 
     if payload.results_rows is not None:

@@ -243,6 +243,8 @@ export type FieldSheetFieldContract = {
   placeholder?: string | null;
   help_text?: string | null;
   options?: string[];
+  column_span?: number;
+  label_position?: 'top' | 'inline' | null;
   metadata?: Record<string, unknown>;
 };
 
@@ -288,6 +290,12 @@ export type FieldSheetResultSection = {
   row_labels?: string[];
   layout?: {
     row_number_width?: string | null;
+    row_label_header?: string;
+    width_fraction?: number;
+    row_group?: string | null;
+    group_order?: number;
+    capture_title?: string | null;
+    print_title_visible?: boolean;
     metadata?: Record<string, unknown>;
   };
   repeat_header?: boolean;
@@ -359,7 +367,7 @@ export type FieldSheetResultRow = {
   ibc_value_3?: string | null;
   unit?: string | null;
   notes?: string | null;
-  row_data: Record<string, string>;
+  row_data: Record<string, unknown>;
 };
 
 export type LabFieldSheet = {

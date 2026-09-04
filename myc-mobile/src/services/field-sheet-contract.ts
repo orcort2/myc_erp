@@ -20,6 +20,7 @@ export type ResolvedCaptureField = {
   order: number;
   placeholder: string | null;
   readOnly: boolean;
+  options: string[];
 };
 
 export function resolveBlockFields(
@@ -39,6 +40,7 @@ export function resolveBlockFields(
         order: rich?.order ?? index,
         placeholder: rich?.placeholder ?? null,
         readOnly: options.readOnlyKeys.has(key),
+        options: rich?.options ?? [],
       };
     })
     .sort((a, b) => a.order - b.order);

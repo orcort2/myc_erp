@@ -16,6 +16,7 @@ import { keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
 import {
   CANONICAL_GROUP_ORDER,
   CANONICAL_GROUP_TITLES,
+  canonicalFieldsForDefinition,
   canonicalFieldsByGroup,
   canonicalFieldValue,
   specializedCaptureFields,
@@ -185,6 +186,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   // especializado (specializedFields, abajo).
   const specializedFields = specializedCaptureFields(definition?.blocks, { fallbackLabels: FIELD_LABELS, readOnlyKeys: readOnlyFields })
     .filter((field) => !SIGNATURE_AUTHORITY_KEYS.has(field.key));
+  const canonicalFields = canonicalFieldsForDefinition(definition?.blocks);
   const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
   const editable = !!sheet && isFieldSheetEditable(sheet.status, viewMode);
   const visibleTemplates = filterFieldSheetTemplates(templates, templateSearch);
@@ -704,7 +706,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
 
           {CANONICAL_GROUP_ORDER.map((group) => (
             <Section key={group} title={CANONICAL_GROUP_TITLES[group]}>
-              {canonicalFieldsByGroup(group).map((field) => renderCanonicalField(field))}
+              {canonicalFieldsByGroup(group, canonicalFields).map((field) => renderCanonicalField(field))}
             </Section>
           ))}
 
@@ -715,7 +717,25 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
                 : !editable
                 ? <ReadOnlyField key={field.key} label={field.label} value={String(values[field.key] ?? '-')} />
                 : (
-                  field.fieldType === 'date' ? (
+                  field.options.length > 0 ? (
+                    <View key={field.key} style={styles.booleanField}>
+                      <Text style={styles.fieldLabel}>{field.label}</Text>
+                      <View style={styles.booleanRow}>
+                        {field.options.map((option) => {
+                          const active = values[field.key] === option;
+                          return (
+                            <Pressable
+                              key={option}
+                              onPress={() => setField(field.key, option)}
+                              style={[styles.booleanChoice, active && styles.booleanChoiceActive]}
+                            >
+                              <Text style={[styles.booleanChoiceText, active && styles.booleanChoiceTextActive]}>{option}</Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : field.fieldType === 'date' ? (
                   <MycDatePickerField
                     error={fieldErrors[field.key]}
                     key={field.key}
