@@ -1,4 +1,4 @@
-import type { LabEquipment, LabWorkOrderWorkflowMode } from '@/src/types/lab-work-order';
+import type { LabEquipment, LabRelatedWorkOrder, LabWorkOrderWorkflowMode } from '@/src/types/lab-work-order';
 
 // Copia de UX para el selector de modalidad al crear una OT LAB (nunca se
 // muestran los nombres internos "group"/"equipment_by_equipment" al usuario).
@@ -49,6 +49,10 @@ export function describeEquipmentByEquipmentAction(
 export type EquipmentByEquipmentBlocker = {
   work_order_id: number;
   work_order_folio: number;
+  // Cierre "grupos mixtos": el workflow_mode del miembro dueño de este
+  // blocker -- una firma grupal mixta puede reportar blockers de miembros
+  // 'group' (recepción) y 'equipment_by_equipment' (captura) a la vez.
+  workflow_mode?: LabWorkOrderWorkflowMode;
   equipment_id: number | null;
   equipment_position: number | null;
   equipment: string | null;
@@ -70,4 +74,33 @@ export function formatEquipmentByEquipmentBlocker(blocker: EquipmentByEquipmentB
 
 export function canRegisterAnotherEquipmentByEquipmentUnit(equipmentCount: number): boolean {
   return equipmentCount < 10;
+}
+
+/**
+ * Cierre "grupos mixtos": UNA firma grupal NUNCA implica el mismo resultado
+ * final para todas las OT -- un miembro 'equipment_by_equipment' recién
+ * cerrado/entregado y uno 'group' que sólo formalizó recepción conviven en
+ * el mismo evento. Esta función arma el mensaje por OT a partir del ESTADO
+ * REAL devuelto por backend (related_work_orders tras la firma), nunca de
+ * lo que Mobile asumió antes de firmar -- así nunca se anuncia "todo
+ * entregado" cuando una OT del grupo sigue pendiente en el laboratorio.
+ */
+export function describeMixedSignatureOutcome(member: LabRelatedWorkOrder): string {
+  if (member.workflow_mode === 'equipment_by_equipment') {
+    if (member.status === 'completed' || member.status === 'partially_closed') {
+      return `OT ${member.folio} completada y entregada`;
+    }
+    return `OT ${member.folio} pendiente de finalizar registro de equipos`;
+  }
+  if (member.status === 'received_signed' || member.status === 'in_progress') {
+    return `OT ${member.folio} recepción firmada, pendiente de captura técnica`;
+  }
+  if (member.status === 'completed' || member.status === 'partially_closed') {
+    return `OT ${member.folio} completada y entregada`;
+  }
+  return `OT ${member.folio}: ${member.status}`;
+}
+
+export function summarizeMixedSignatureOutcome(members: LabRelatedWorkOrder[]): string {
+  return members.map(describeMixedSignatureOutcome).join('. ');
 }

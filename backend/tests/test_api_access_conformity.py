@@ -21,11 +21,12 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    # 520 = 518 (corte previo) + GET/POST
-    # /{work_order_id}/equipment-by-equipment/{prevalidate,finalize} (flujo
-    # LAB equipo-por-equipo) -- ambas caen bajo la clasificación genérica
-    # /api/mobile/v1/ existente, sin override propio.
-    assert len(operations) == 520
+    # 523 = 520 (corte previo) + GET/POST /{work_order_id}/signature-group/
+    # {prevalidate,finalize} (firma grupal mixta) + POST
+    # /{work_order_id}/workflow-mode (cambio administrativo de modalidad) --
+    # las tres caen bajo la clasificación genérica /api/mobile/v1/
+    # existente, sin override propio.
+    assert len(operations) == 523
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

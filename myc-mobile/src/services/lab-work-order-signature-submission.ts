@@ -1,7 +1,7 @@
 import type { SignaturePayload } from '@/src/components/signatures/signature-flow-state';
 import type { EquipmentByEquipmentPrevalidation } from '@/src/services/lab-equipment-by-equipment-flow';
 import type { LabClosureScope } from '@/src/services/lab-work-order-closure';
-import type { LabWorkOrder } from '@/src/types/lab-work-order';
+import type { LabWorkOrder, LabWorkOrderWorkflowMode } from '@/src/types/lab-work-order';
 
 type SignatureRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -75,6 +75,73 @@ export function postLabEquipmentByEquipmentFinalize({
         client: { ...payload.client, signed_at: signedAt, version: 1 },
         expected_edit_version: workOrder.edit_version,
       }),
+    },
+  );
+}
+
+/** Cierre "grupos mixtos": prevalida el scope grupal completo -- puede
+ * mezclar miembros 'group'/'equipment_by_equipment', cada uno validado según
+ * su propia modalidad. Sólo lectura, se llama ANTES de abrir la firma. */
+export function getLabSignatureGroupPrevalidation({
+  request,
+  workOrder,
+}: {
+  request: SignatureRequest;
+  workOrder: LabWorkOrder;
+}): Promise<EquipmentByEquipmentPrevalidation> {
+  return request<EquipmentByEquipmentPrevalidation>(
+    `/mobile/v1/technician/lab-work-orders/${workOrder.id}/signature-group/prevalidate`,
+  );
+}
+
+/** Firma grupal única que puede mezclar miembros 'group' y
+ * 'equipment_by_equipment' -- cada uno avanza según su propia modalidad
+ * (backend decide el efecto real por OT, nunca Mobile). Se firma UNA sola
+ * vez -- nunca abrir MobileSignatureFlow ni enviar firmas por segunda vez. */
+export function postLabSignatureGroupFinalize({
+  payload,
+  request,
+  signedAt,
+  workOrder,
+}: {
+  payload: SignaturePayload;
+  request: SignatureRequest;
+  signedAt: string;
+  workOrder: LabWorkOrder;
+}): Promise<LabWorkOrder> {
+  return request<LabWorkOrder>(
+    `/mobile/v1/technician/lab-work-orders/${workOrder.id}/signature-group/finalize`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        technician: { ...payload.technician, signed_at: signedAt, version: 1 },
+        client: { ...payload.client, signed_at: signedAt, version: 1 },
+        expected_edit_version: workOrder.edit_version,
+      }),
+    },
+  );
+}
+
+/** Acción administrativa "Cambiar modalidad de trabajo" -- nunca confundir
+ * con service_type. Backend es la única autoridad (permiso interno +
+ * motivo obligatorio + guard de pre-firma); este wrapper no valida nada por
+ * su cuenta. */
+export function postLabWorkOrderWorkflowModeChange({
+  newWorkflowMode,
+  reason,
+  request,
+  workOrder,
+}: {
+  newWorkflowMode: LabWorkOrderWorkflowMode;
+  reason: string;
+  request: SignatureRequest;
+  workOrder: LabWorkOrder;
+}): Promise<LabWorkOrder> {
+  return request<LabWorkOrder>(
+    `/mobile/v1/technician/lab-work-orders/${workOrder.id}/workflow-mode`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ new_workflow_mode: newWorkflowMode, reason }),
     },
   );
 }

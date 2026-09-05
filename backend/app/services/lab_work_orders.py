@@ -51,6 +51,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderGroupRequestRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
+    LabWorkOrderWorkflowModeChange,
     LabReceptionDateUpdate,
     LabRelatedWorkOrderRead,
     LabWorkOrderUpdate,
@@ -343,6 +344,7 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
             "folio": item.folio,
             "sequence_number": item.sequence_number,
             "status": item.status,
+            "workflow_mode": item.workflow_mode,
             "signature_session_id": item.signature_session_id,
             "equipment_count": len(item.active_equipment),
         })
@@ -2095,7 +2097,9 @@ def delete_equipment(
     return _read(db, _get(db, work_order.id))
 
 
-def create_additional_work_order(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
+def create_additional_work_order(
+    db: Session, work_order_id: int, user: User, *, workflow_mode: str | None = None,
+) -> LabWorkOrderRead:
     source = _get(db, work_order_id, lock=True)
     group = _group(db, source, lock=True)
     _ensure_members_editable([source])
@@ -2127,10 +2131,15 @@ def create_additional_work_order(db: Session, work_order_id: int, user: User) ->
         reopen_ticket_id=source.reopen_ticket_id,
         signature_required=source.signature_required,
         signature_preserved=False,
-        # Sección 25 del encargo equipo-por-equipo: una OT adicional hereda
-        # siempre la modalidad de la última OT del grupo -- nunca puede
-        # nacer con una modalidad distinta a la de la cohorte que la origina.
-        workflow_mode=source.workflow_mode,
+        # Cierre "grupos mixtos" (2026-09-04, sección 4): una OT adicional
+        # puede elegir SU PROPIA modalidad -- no está forzada a heredar la
+        # de la OT que la origina. Sin elección explícita, hereda la de
+        # `source` (compatibilidad con el caller que no envía el parámetro).
+        # No se valida ni se toca la modalidad de ninguna otra OT del grupo:
+        # un mismo root_work_order_id puede mezclar "group"/
+        # "equipment_by_equipment" libremente (sección 5 -- nunca una
+        # constraint de igualdad por root).
+        workflow_mode=workflow_mode or source.workflow_mode,
         **values,
     )
     db.add(additional)
@@ -2802,6 +2811,7 @@ def _equipment_by_equipment_finalize_blockers(work_order: LabWorkOrder) -> list[
             {
                 "work_order_id": work_order.id,
                 "work_order_folio": work_order.folio,
+                "workflow_mode": work_order.workflow_mode,
                 "equipment_id": None,
                 "equipment_position": None,
                 "equipment": None,
@@ -2816,6 +2826,7 @@ def _equipment_by_equipment_finalize_blockers(work_order: LabWorkOrder) -> list[
                 {
                     "work_order_id": work_order.id,
                     "work_order_folio": work_order.folio,
+                    "workflow_mode": work_order.workflow_mode,
                     "equipment_id": equipment.id,
                     "equipment_position": equipment.position,
                     "equipment": equipment.instrument,
@@ -2831,6 +2842,7 @@ def _equipment_by_equipment_finalize_blockers(work_order: LabWorkOrder) -> list[
                 _draft_target_item(
                     work_order,
                     equipment,
+                    workflow_mode=work_order.workflow_mode,
                     reason=detail.get("message") or "Faltan datos técnicos",
                     missing_fields=detail.get("missing_fields"),
                 )
@@ -2840,6 +2852,7 @@ def _equipment_by_equipment_finalize_blockers(work_order: LabWorkOrder) -> list[
             {
                 "work_order_id": folio_blocker["work_order_id"],
                 "work_order_folio": folio_blocker["work_order_folio"],
+                "workflow_mode": work_order.workflow_mode,
                 "equipment_id": folio_blocker["equipment_id"],
                 "equipment_position": folio_blocker["equipment_position"],
                 "equipment": folio_blocker["equipment"],
@@ -2851,6 +2864,49 @@ def _equipment_by_equipment_finalize_blockers(work_order: LabWorkOrder) -> list[
             }
         )
     return blockers
+
+
+def _reception_blockers_for_member(item: LabWorkOrder) -> list[dict]:
+    """Blockers de un miembro `workflow_mode='group'` en una firma mixta
+    (sección 18 del cierre "grupos mixtos"): sólo debe poder ACEPTAR
+    RECEPCIÓN -- misma condición que _ensure_reception_prerequisites, nunca
+    exige FieldSheets completas (eso destruiría el flujo regular)."""
+    if not item.active_equipment:
+        return [
+            {
+                "work_order_id": item.id,
+                "work_order_folio": item.folio,
+                "workflow_mode": item.workflow_mode,
+                "equipment_id": None,
+                "equipment_position": None,
+                "equipment": None,
+                "reason": "La OT debe tener al menos un equipo",
+            }
+        ]
+    blockers: list[dict] = []
+    for equipment in item.active_equipment:
+        reason = _equipment_reception_gap(equipment)
+        if reason is not None:
+            blockers.append(
+                {
+                    "work_order_id": item.id,
+                    "work_order_folio": item.folio,
+                    "workflow_mode": item.workflow_mode,
+                    "equipment_id": equipment.id,
+                    "equipment_position": equipment.position,
+                    "equipment": equipment.instrument,
+                    "reason": reason,
+                }
+            )
+    return blockers
+
+
+def _finalization_blockers_for_member(item: LabWorkOrder) -> list[dict]:
+    """Despacha por workflow_mode -- autoridad única para ambos casos, sin
+    reimplementar ninguna de las dos políticas ya existentes."""
+    if item.workflow_mode == "equipment_by_equipment":
+        return _equipment_by_equipment_finalize_blockers(item)
+    return _reception_blockers_for_member(item)
 
 
 def prevalidate_equipment_by_equipment_finalization(
@@ -2865,6 +2921,61 @@ def prevalidate_equipment_by_equipment_finalization(
     if work_order.status != "draft":
         return []
     return _equipment_by_equipment_finalize_blockers(work_order)
+
+
+def _ebe_members_and_targets(members: list[LabWorkOrder]) -> tuple[list[LabWorkOrder], list[LabWorkOrderEquipment]]:
+    """Resuelve los miembros equipment_by_equipment y su equipo activo ANTES
+    de mutar nada. El caller debe llamar esto y quedarse con el resultado en
+    SU PROPIO scope (no como valor de retorno de la función que muta) --
+    así, si la firma/completion falla a medio camino, el bloque except sigue
+    conociendo exactamente qué equipo pudo haber escrito un PDF, sin
+    depender de que la función que falló haya llegado a su return."""
+    ebe_members = [item for item in members if item.workflow_mode == "equipment_by_equipment"]
+    ebe_targets = [equipment for item in ebe_members for equipment in item.active_equipment]
+    return ebe_members, ebe_targets
+
+
+def _finalize_signature_members_uncommitted(
+    db: Session,
+    *,
+    work_order: LabWorkOrder,
+    members: list[LabWorkOrder],
+    payload: LabSignatureGroupWrite,
+    user: User,
+    scope: str,
+    ebe_members: list[LabWorkOrder],
+    ebe_targets: list[LabWorkOrderEquipment],
+) -> LabWorkOrderSignatureSession:
+    """Núcleo transaction-neutral compartido por finalize_equipment_by_equipment_work_order
+    (scope='individual') y finalize_lab_signature_group (scope='group')
+    -- cierre "grupos mixtos" (2026-09-04). Firma UNA sesión para `members`;
+    los que sean workflow_mode='equipment_by_equipment' (`ebe_members`/
+    `ebe_targets`, resueltos por el caller vía _ebe_members_and_targets
+    ANTES de llamar aquí) ADEMÁS completan cada FieldSheet vigente y cierran
+    técnicamente (misma autoridad que
+    _complete_lab_field_sheet_uncommitted/_finish_complete_members_uncommitted,
+    nunca una segunda política); los 'group' sólo formalizan recepción
+    (received_signed, vía _sign_members_uncommitted) y continúan su flujo
+    normal después -- UNA firma nunca implica el mismo estado final para
+    todos (sección 17 del encargo)."""
+    session = _sign_members_uncommitted(
+        db, work_order=work_order, members=members, payload=payload, user=user, scope=scope,
+    )
+
+    from app.services.lab_field_sheets import _complete_lab_field_sheet_uncommitted
+
+    for equipment in ebe_targets:
+        # Capturada pre-firma, la hoja congeló lab_signature_session_id=NULL
+        # al crearse (create_lab_field_sheet lee order.signature_session_id,
+        # todavía None en ese momento) -- aquí, ya con la sesión recién
+        # creada, se le asigna explícitamente antes de completarla.
+        equipment.field_sheet.lab_signature_session_id = session.id
+        _complete_lab_field_sheet_uncommitted(db, equipment, equipment.field_sheet, user)
+    if ebe_members:
+        _finish_complete_members_uncommitted(
+            db, work_order=ebe_members[0], members=ebe_members, user=user, scope=scope,
+        )
+    return session
 
 
 def finalize_equipment_by_equipment_work_order(
@@ -2890,7 +3001,6 @@ def finalize_equipment_by_equipment_work_order(
     perdido), devuelve la lectura actual sin repetir firma ni generar una
     segunda entrega -- no hay estado intermedio persistible porque no hay
     ningún commit antes del final."""
-    from app.services.lab_field_sheets import _complete_lab_field_sheet_uncommitted
     from app.services.lab_work_order_deliveries import _create_delivery_event, _finalize_delivery
     from app.services.storage_service import resolve_storage_path
 
@@ -2912,26 +3022,13 @@ def finalize_equipment_by_equipment_work_order(
                 detail={"code": "LAB_EQUIPMENT_BY_EQUIPMENT_BLOCKERS", "items": blockers},
             )
 
-        session = _sign_members_uncommitted(
-            db, work_order=work_order, members=[work_order], payload=payload, user=user,
-            scope="individual",
-        )
-
-        targets = list(work_order.active_equipment)
+        ebe_members, targets = _ebe_members_and_targets([work_order])
         pre_existing_paths = {
             equipment.id: equipment.field_sheet.final_pdf_path for equipment in targets
         }
-        for equipment in targets:
-            # Capturada pre-firma, la hoja congeló lab_signature_session_id=
-            # NULL al crearse (create_lab_field_sheet lee
-            # order.signature_session_id, todavía None en ese momento) --
-            # aquí, ya con la sesión recién creada, se le asigna
-            # explícitamente antes de completarla (sección 17, paso 13).
-            equipment.field_sheet.lab_signature_session_id = session.id
-            _complete_lab_field_sheet_uncommitted(db, equipment, equipment.field_sheet, user)
-
-        _finish_complete_members_uncommitted(
-            db, work_order=work_order, members=[work_order], user=user, scope="individual",
+        _finalize_signature_members_uncommitted(
+            db, work_order=work_order, members=[work_order], payload=payload, user=user,
+            scope="individual", ebe_members=ebe_members, ebe_targets=targets,
         )
 
         delivery_payload = LabDeliveryCreate(
@@ -2978,6 +3075,227 @@ def finalize_equipment_by_equipment_work_order(
                     resolved.unlink(missing_ok=True)
         db.rollback()
         raise
+
+
+def _resolve_group_finalization_members(
+    work_order: LabWorkOrder, group: list[LabWorkOrder],
+) -> list[LabWorkOrder]:
+    """Misma selección de members que sign_group -- editable, sin firma
+    vigente todavía -- independiente de workflow_mode (sección 5/14 del
+    cierre "grupos mixtos": un root puede mezclar 'group'/
+    'equipment_by_equipment' libremente)."""
+    return [
+        item
+        for item in _editable_group_members(group)
+        if item.signature_session_id is None or item.signature_required
+    ]
+
+
+def prevalidate_lab_signature_group(db: Session, work_order_id: int) -> list[dict]:
+    """Sólo lectura -- nunca muta nada. Resuelve exactamente los mismos
+    members que finalize_lab_signature_group aplicaría y agrega los
+    blockers de CADA UNO según su propio workflow_mode (sección 18): un
+    miembro equipment_by_equipment debe poder TERMINAR (captura lista para
+    completarse); un miembro group sólo debe poder ACEPTAR RECEPCIÓN, nunca
+    se le exige FieldSheet completa."""
+    work_order = _get(db, work_order_id)
+    group = _group(db, work_order)
+    members = _resolve_group_finalization_members(work_order, group)
+    if work_order not in members:
+        return []
+    blockers: list[dict] = []
+    for item in members:
+        blockers.extend(_finalization_blockers_for_member(item))
+    return blockers
+
+
+def finalize_lab_signature_group(
+    db: Session,
+    work_order_id: int,
+    payload: LabSignatureGroupWrite,
+    user: User,
+    *,
+    expected_edit_version: int | None = None,
+) -> LabWorkOrderRead:
+    """Firma grupal que puede mezclar miembros 'group' y
+    'equipment_by_equipment' -- cierre "grupos mixtos" (secciones 14-23 del
+    encargo). UNA sola LabWorkOrderSignatureSession para todos los members
+    resueltos por _resolve_group_finalization_members. Cada miembro avanza
+    según SU PROPIO workflow_mode (_finalize_signature_members_uncommitted):
+    un miembro equipment_by_equipment completa sus FieldSheets y cierra
+    técnicamente; un miembro group sólo formaliza recepción
+    (received_signed) y continúa su flujo normal de captura/cierre después.
+    UNA firma nunca implica el mismo estado final para todos.
+
+    Delivery FULL sólo incluye el equipo de los miembros
+    equipment_by_equipment recién completados en ESTE evento -- nunca el de
+    un miembro group que sigue pendiente en LAB (secciones 21/23): ese
+    miembro tendrá su propia Delivery normal cuando de verdad termine.
+
+    Misma transacción única / commit único / rollback completo (incluida
+    limpieza de PDFs huérfanos) / idempotencia ante retry que
+    finalize_equipment_by_equipment_work_order -- nunca una segunda
+    política de cierre."""
+    from app.services.lab_work_order_deliveries import (
+        _create_delivery_event,
+        _finalize_delivery,
+        _relevant_group_members,
+        _resolve_root_work_order,
+    )
+    from app.services.storage_service import resolve_storage_path
+
+    pre_existing_paths: dict[int, str | None] = {}
+    ebe_targets: list[LabWorkOrderEquipment] = []
+    try:
+        work_order, group = _lock_historical_group(db, work_order_id)
+        if work_order.status != "draft":
+            # Idempotencia ante retry (sección 24): un intento anterior ya
+            # llevó a este mismo punto de entrada fuera de 'draft' (a
+            # 'received_signed' si es 'group', a 'completed'/
+            # 'partially_closed' si es 'equipment_by_equipment') -- no hay
+            # commit intermedio posible dentro de esta operación, así que
+            # "ya no está en draft" sólo puede significar que un intento
+            # anterior sí llegó a la base. _ensure_members_editable (abajo)
+            # rechazaría esto con un 409 genérico si se llamara primero;
+            # aquí se distingue explícitamente el caso de retry exitoso del
+            # de una cohorte realmente no editable.
+            return _read(db, work_order)
+        _ensure_members_editable([work_order])
+        members = _resolve_group_finalization_members(work_order, group)
+        if work_order not in members:
+            # Idempotencia ante retry: work_order ya no requiere firma --
+            # este evento ya se aplicó (o nunca aplicó a esta OT). No hay
+            # commit intermedio posible (todo ocurre en esta transacción),
+            # así que "ya no requiere firma" sólo puede significar que un
+            # intento anterior sí llegó a la base.
+            return _read(db, work_order)
+        _check_edit_version(group, expected_edit_version)
+
+        blockers: list[dict] = []
+        for item in members:
+            blockers.extend(_finalization_blockers_for_member(item))
+        if blockers:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "LAB_EQUIPMENT_BY_EQUIPMENT_BLOCKERS", "items": blockers},
+            )
+
+        ebe_members, ebe_targets = _ebe_members_and_targets(members)
+        pre_existing_paths = {
+            equipment.id: equipment.field_sheet.final_pdf_path for equipment in ebe_targets
+        }
+        session = _finalize_signature_members_uncommitted(
+            db, work_order=work_order, members=members, payload=payload, user=user, scope="group",
+            ebe_members=ebe_members, ebe_targets=ebe_targets,
+        )
+
+        delivery_id: int | None = None
+        if ebe_targets:
+            root_work_order = _resolve_root_work_order(work_order, group)
+            delivery_payload = LabDeliveryCreate(
+                delivery_method="direct",
+                delivered_by_signature_data_url=payload.technician.signature_data_url,
+                recipient_name=payload.client.signer_name,
+                recipient_signature_data_url=payload.client.signature_data_url,
+                notes=None,
+            )
+            delivery = _create_delivery_event(
+                db,
+                root_work_order=root_work_order,
+                equipment_items=ebe_targets,
+                delivery_type="full",
+                payload=delivery_payload,
+                user=user,
+                partial_delivery_ticket_id=None,
+            )
+            # members=_relevant_group_members(group), NUNCA sólo ebe_members:
+            # _finalize_delivery decide con esto si el ROOT completo ya no
+            # tiene equipo pendiente (y por lo tanto genera el recibo final
+            # de grupo) -- pasar sólo el subconjunto EBE recién entregado
+            # haría que un miembro 'group' con equipo todavía en laboratorio
+            # (nunca incluido en `members`) quedara invisible para ese
+            # cálculo, disparando un recibo final falso de "todo entregado"
+            # (sección 21-23 del cierre "grupos mixtos": jamás implicar
+            # entrega de equipo que sigue físicamente en el laboratorio).
+            _finalize_delivery(
+                db,
+                root_work_order=root_work_order,
+                members=_relevant_group_members(group),
+                delivery=delivery,
+                user=user,
+            )
+            delivery_id = delivery.id
+
+        write_audit_log(
+            db,
+            action="lab_work_order.signature_group_finalized",
+            entity="lab_work_orders",
+            entity_id=_root_id(work_order),
+            user_id=user.id,
+            new_values={
+                "root_work_order_id": _root_id(work_order),
+                "signature_session_id": session.id,
+                "work_order_ids": [item.id for item in members],
+                "equipment_by_equipment_work_order_ids": [item.id for item in ebe_members],
+                "delivery_id": delivery_id,
+            },
+        )
+        commit_and_dispatch_notifications(db)
+        return _read(db, _get(db, work_order.id))
+    except BaseException:
+        for equipment in ebe_targets:
+            written_path = equipment.field_sheet.final_pdf_path if equipment.field_sheet else None
+            if written_path and written_path != pre_existing_paths.get(equipment.id):
+                resolved = resolve_storage_path(written_path)
+                if resolved is not None and resolved.is_file():
+                    resolved.unlink(missing_ok=True)
+        db.rollback()
+        raise
+
+
+def change_lab_work_order_workflow_mode(
+    db: Session,
+    work_order_id: int,
+    payload: LabWorkOrderWorkflowModeChange,
+    user: User,
+) -> LabWorkOrderRead:
+    """Acción administrativa 'Cambiar modalidad de trabajo' (sección 6-12
+    del cierre "grupos mixtos"). Nunca reescribe historia formalizada: sólo
+    procede mientras la OT sigue en 'draft' y SIN ninguna sesión de firma
+    vigente -- ese único par de condiciones ya excluye por construcción
+    completed/partially_closed/received_signed/in_progress/ready_to_close y
+    cualquier Delivery real (que exige la OT ya completed/partially_closed
+    para registrarse, ver complete_lab_delivery). Reabrir para reinterpretar
+    una OT ya formalizada sigue siendo exclusivamente el sistema normal de
+    Tickets/reapertura -- esto NO es un atajo alterno.
+
+    No toca ninguna otra OT del grupo: un mismo root puede mezclar
+    'group'/'equipment_by_equipment' libremente (sección 5), y esta acción
+    afecta sólo la fila indicada."""
+    work_order = _get(db, work_order_id, lock=True)
+    if work_order.workflow_mode == payload.new_workflow_mode:
+        raise HTTPException(status_code=409, detail="La OT ya tiene esa modalidad de trabajo")
+    if work_order.status != "draft" or work_order.signature_session_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="La modalidad sólo puede cambiarse antes de firmar la recepción",
+        )
+    previous_workflow_mode = work_order.workflow_mode
+    work_order.workflow_mode = payload.new_workflow_mode
+    write_audit_log(
+        db,
+        action="lab_work_order.workflow_mode_changed",
+        entity="lab_work_orders",
+        entity_id=work_order.id,
+        user_id=user.id,
+        previous_values={"workflow_mode": previous_workflow_mode},
+        new_values={
+            "workflow_mode": payload.new_workflow_mode,
+            "reason": payload.reason,
+        },
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
 
 
 def get_pdf(db: Session, work_order_id: int) -> tuple[bytes, str]:

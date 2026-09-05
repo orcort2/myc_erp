@@ -311,6 +311,15 @@ def create_lab_field_sheet(
         "internal_id": equipment.identification,
         "model": equipment.model,
     }
+    # Snapshot inicial, no vínculo vivo (sección 25-28 del cierre "grupos
+    # mixtos"): FieldSheet.observations congela la observación operativa del
+    # equipo AL CREAR esta revisión. Editar LabWorkOrderEquipment.observations
+    # después no toca hojas ya creadas (draft/in_progress/completed); una
+    # reapertura/recaptura que crea la revisión N+1 vuelve a leer el valor
+    # vigente del equipo en ESE momento, y la revisión N conserva el suyo
+    # intacto -- misma separación que certificate_folio/report_number, que
+    # nunca alimentan este campo.
+    initial_observations = (equipment.observations or "").strip() or None
     sheet = FieldSheet(
         equipment_id=None,
         lab_equipment_id=equipment.id,
@@ -333,6 +342,7 @@ def create_lab_field_sheet(
         equipment_general_condition=equipment.is_good_condition,
         purchase_order_or_quotation=order.purchase_order,
         initial_condition="BUENA" if equipment.is_good_condition else "REQUIERE REVISIÓN",
+        observations=initial_observations,
         capture_values=capture_values,
         # Fase 3: la sesión de firma HISTÓRICA aplicable ya es conocida y
         # estable en este momento -- la OT sólo admite crear hojas cuando ya
@@ -397,6 +407,22 @@ def update_lab_field_sheet(
         raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
     if sheet.status not in EDITABLE_STATUSES:
         raise HTTPException(status_code=409, detail="La hoja no admite edición")
+    # Cierre "grupos mixtos" sección 10: un cambio administrativo de
+    # equipment_by_equipment -> group puede dejar una hoja YA CREADA en
+    # draft/in_progress (nunca se borra ni se recrea). Antes de esa acción,
+    # esta combinación exacta (workflow_mode='group' con la OT todavía en
+    # 'draft', sin recepción firmada) era inalcanzable -- una OT group nunca
+    # permite create_lab_field_sheet en draft, así que nunca existía nada que
+    # editar aquí. Bloqueo deliberadamente estrecho (sólo 'group' + 'draft',
+    # no el _ensure_capture_allowed genérico completo): ese helper también
+    # excluye 'ready_to_close', un estado que un pretest histórico sin
+    # lab_client_id SÍ alcanza legítimamente a mitad de completar varias
+    # hojas (ver _requires_field_sheet_discipline/_missing_completed_sheets)
+    # -- reusar el genérico ahí rompería PATCH sobre una hoja hermana
+    # todavía pendiente en ese caso preexistente, no relacionado con este
+    # cierre.
+    if equipment.work_order.workflow_mode == "group" and equipment.work_order.status == "draft":
+        raise HTTPException(status_code=409, detail="La OT no admite captura técnica")
     previous = _serialize_field_sheet(sheet)
     updates = payload.model_dump(
         exclude_unset=True,

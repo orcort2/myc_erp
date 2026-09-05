@@ -109,6 +109,88 @@ Implementación del feature `workflow_mode` sobre `wip/lab-equipment-by-equipmen
   quedó diagnosticado (1 bug real de wiring corregido -- el botón de firmar
   sólo mostraba spinner mudo -- y 4 asserts de formato actualizados).
 
+## Cierre "grupos mixtos" — 2026-09-04 (equipo por equipo + firma grupal mixta + cambio de modalidad)
+
+Continuación sobre la MISMA `wip/lab-equipment-by-equipment-flow`, HEAD de
+partida `d2f774431dd9755d5ed4d77e847655adceeabe9d` (el cierre inmediatamente
+anterior de esta sección). Corrige tres restricciones de ese cierre y añade
+la firma grupal mixta como funcionalidad central nueva. Detalle completo en
+`docs/architecture/LAB_WORK_ORDERS.md` (sección "Modalidad de trabajo") y
+`docs/project/DECISIONS.md` (`D-2026-09-04 — Grupos mixtos`).
+
+- **Sin migración nueva**: `workflow_mode` ya existía (`6640c526c412`); head
+  sigue siendo `6640c526c412`, `alembic check` reporta `No new upgrade
+  operations detected`. No se creó ninguna constraint de igualdad por root.
+- `create_additional_work_order` acepta `workflow_mode` opcional propio
+  (antes forzaba `workflow_mode=source.workflow_mode`); un mismo
+  `root_work_order_id` puede mezclar modalidades libremente, ya lo permitía
+  la estructura existente (confirmado con test, sin cambio de esquema).
+- Nueva acción administrativa `POST /{id}/workflow-mode`
+  (`lab_work_orders.cancel` reutilizado, nunca un permiso nuevo; sólo actor
+  interno; motivo obligatorio; `AuditLog` completo; nunca cascada a
+  hermanas; sólo pre-firma). `group → equipment_by_equipment` y
+  `equipment_by_equipment → group` conservan siempre equipo/FieldSheets sin
+  recrear nada -- incluida una FieldSheet ya en captura real, que sobrevive
+  intacta.
+- Nueva firma grupal mixta `POST /{id}/signature-group/finalize` (+
+  `GET .../prevalidate`, sólo lectura): UNA sola `LabWorkOrderSignatureSession`
+  puede formalizar a la vez miembros `group` y `equipment_by_equipment` de
+  una misma cohorte -- cada uno avanza según su propio contrato, nunca el
+  mismo estado final para todos. La entrega FULL automática de ese evento
+  incluye únicamente el equipo de los miembros `equipment_by_equipment`
+  recién cerrados -- nunca el de un miembro `group` que sigue en el
+  laboratorio. Reutiliza siempre la autoridad ya existente
+  (`_sign_members_uncommitted`, `_complete_lab_field_sheet_uncommitted`,
+  `_finish_complete_members_uncommitted`, `_create_delivery_event`/
+  `_finalize_delivery`, `_ensure_reception_prerequisites`,
+  `_equipment_by_equipment_finalize_blockers`) -- ninguna política
+  duplicada. Un fallo en cualquier paso revierte todo por completo (incluida
+  limpieza de PDFs huérfanos); idempotente ante retry.
+- **Bug real encontrado y corregido durante este cierre** (no pedido
+  explícitamente, descubierto por regresión propia): `_finalize_delivery`
+  decide con su parámetro `members` si el ROOT completo ya no tiene equipo
+  pendiente (y por lo tanto genera el recibo final de grupo). La primera
+  versión de `finalize_lab_signature_group` le pasaba sólo el subconjunto
+  `equipment_by_equipment` recién entregado, lo que habría generado un
+  recibo final falso de "todo entregado" mientras un miembro `group` seguía
+  con equipo físicamente en el laboratorio. Corregido pasando siempre la
+  cohorte completa del grupo (`_relevant_group_members(group)`).
+- **Regresión colateral encontrada y corregida**: extender el guard de
+  `_ensure_capture_allowed` a `update_lab_field_sheet` (PATCH) para bloquear
+  la captura de una hoja preservada tras `equipment_by_equipment → group`
+  mientras la OT sigue `draft` habría roto un caso preexistente no
+  relacionado (una OT histórica sin `lab_client_id` puede alcanzar
+  legítimamente `ready_to_close` a mitad de completar varias hojas, estado
+  que el guard genérico también excluye). Se optó por un guard más estrecho,
+  exclusivo de la combinación `workflow_mode == 'group' and status ==
+  'draft'` -- la única combinación nueva que este cierre hace alcanzable --
+  sin tocar ningún otro estado ya soportado.
+- 15 tests backend nuevos en `test_lab_equipment_by_equipment_workflow.py`
+  (incluye los cuatro escenarios de aceptación obligatorios: grupo EBE puro,
+  grupo mixto con conversión administrativa, OT adicional con modalidad
+  independiente, y el caso productivo de 5 equipos ahora vía el endpoint
+  administrativo). Suite completa backend: 1169 passed, 14 skipped (2
+  regresiones Postgres-gated que ya existían, más la nueva de este cierre,
+  todas requieren `LAB_POSTGRES_TEST_URL`, no ejecutado en este entorno).
+- Mobile: selector de modalidad propio para "Asignar OT extra" (antes
+  heredaba en silencio), nueva pantalla administrativa "Cambiar modalidad de
+  trabajo" (reutiliza el mismo overlay de tickets ya existente, gateada por
+  el mismo permiso `lab_work_orders.cancel`, refetch completo desde backend
+  tras éxito, nunca un parche local), y helpers de resumen veraz por OT
+  (`describeMixedSignatureOutcome`/`summarizeMixedSignatureOutcome`) para
+  que un resultado mixto nunca se anuncie como "todo entregado". **No
+  incluido en este pase**: integrar la elección de scope de firma mixta
+  (individual vs. grupo vs. grupo mixto) dentro de la pantalla de firma de
+  `work-orders.tsx` para una OT `equipment_by_equipment` con hermanas --
+  la capa de servicio (`postLabSignatureGroupFinalize`/
+  `getLabSignatureGroupPrevalidation`) y sus tests ya existen y están
+  probados, pero la pantalla de 3000+ líneas no se tocó en ese punto
+  específico por alcance/riesgo; backend ya es la autoridad completa y
+  correcta independientemente de esa integración visual pendiente.
+- `docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`
+  regenerado a 523 filas (3 endpoints nuevos, clasificación genérica
+  `/api/mobile/v1/` existente, sin override por ruta).
+
 ## Cierre operativo y UX OT LAB — 2026-09-03
 
 - Vinculado con folio se autoriza directamente sólo mediante
@@ -484,13 +566,15 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
   **No ejecutado**; ningún cierre reciente (incluido el de 2026-09-04) lo
   reclama como hecho.
 - Inventario API (`API_ENDPOINT_INVENTORY_2026-08-03.csv`): sincronizado con
-  el runtime (520 operaciones, incluidas las 2 nuevas de
-  equipment-by-equipment); `test_api_access_conformity.py` pasa sin
-  excepciones.
+  el runtime (523 operaciones -- 520 del corte anterior + las 3 del cierre
+  "grupos mixtos": `signature-group/prevalidate`, `signature-group/finalize`,
+  `workflow-mode`); `test_api_access_conformity.py` pasa sin excepciones.
 - Mobile: descubrimiento de tests resuelto en esta rama (recreado desde el
   fix ya aplicado en `wip/lab-admin-void-delivery`, que esta rama no había
-  heredado al partir de `6fb8e2c`) -- `npm test` ejecuta los 50 archivos
-  `*.test.ts(x)` reales bajo `src/` vía `scripts/list-test-files.js`;
+  heredado al partir de `6fb8e2c`) -- `npm test` ejecuta los 51 archivos
+  `*.test.ts(x)` reales bajo `src/` vía `scripts/list-test-files.js` (50 del
+  corte anterior + `work-orders.mixed-workflow.wiring.test.ts` del cierre
+  "grupos mixtos"), 400 tests, 0 fallos;
   `MobileSignatureFlow.wiring.test.ts` corre verde.
 - `test_postgresql_concurrent_individual_cohorts_get_distinct_versions` y
   `test_postgresql_concurrent_folio_allocation_is_unique` pueden fallar
@@ -502,11 +586,10 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
   intencionalmente NO realizada en este trabajo: queda como intervención
   administrativa manual y controlada, posterior a auditoría independiente,
   merge y deploy (ver `docs/architecture/LAB_WORK_ORDERS.md`).
-- `equipment_by_equipment` implementado para el caso individual (una OT);
-  no se implementó el mismo flujo atómico para una cohorte multi-OT
-  (>10 equipos, `create_additional_work_order`) -- `finalize` opera sobre
-  la OT individual. `workflow_mode` sí se hereda correctamente en una OT
-  adicional. Ampliar a cohorte queda como trabajo futuro si se necesita.
+- Superado por el cierre "grupos mixtos" (ver más abajo): `finalize_lab_signature_group`
+  ya cubre la cohorte multi-OT con una sola firma grupal que puede mezclar
+  `group`/`equipment_by_equipment`, y `create_additional_work_order` ya
+  acepta un `workflow_mode` propio en vez de heredar siempre el de origen.
 - Mantener fuera de esta fase los hallazgos separados de FieldSheets
   (contenido, tabla Valve, overflow, columnas, imprimibles y plantillas),
   NIIMBOT, cambios MYCA/MYCT/rangos, LabClient y Fase 2 sin regresión.

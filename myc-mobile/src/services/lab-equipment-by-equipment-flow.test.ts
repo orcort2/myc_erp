@@ -4,9 +4,25 @@ import test from 'node:test';
 import {
   canRegisterAnotherEquipmentByEquipmentUnit,
   describeEquipmentByEquipmentAction,
+  describeMixedSignatureOutcome,
   formatEquipmentByEquipmentBlocker,
+  summarizeMixedSignatureOutcome,
   WORKFLOW_MODE_OPTIONS,
 } from './lab-equipment-by-equipment-flow';
+import type { LabRelatedWorkOrder } from '@/src/types/lab-work-order';
+
+function member(overrides: Partial<LabRelatedWorkOrder>): LabRelatedWorkOrder {
+  return {
+    id: 1,
+    folio: 6400,
+    sequence_number: 1,
+    status: 'draft',
+    workflow_mode: 'group',
+    signature_session_id: null,
+    equipment_count: 1,
+    ...overrides,
+  };
+}
 
 test('el selector de modalidad nunca expone los nombres internos group/equipment_by_equipment', () => {
   const labels = WORKFLOW_MODE_OPTIONS.map((option) => option.title);
@@ -69,4 +85,30 @@ test('canRegisterAnotherEquipmentByEquipmentUnit respeta el máximo de 10', () =
   assert.equal(canRegisterAnotherEquipmentByEquipmentUnit(0), true);
   assert.equal(canRegisterAnotherEquipmentByEquipmentUnit(9), true);
   assert.equal(canRegisterAnotherEquipmentByEquipmentUnit(10), false);
+});
+
+// Cierre "grupos mixtos": UNA firma nunca implica el mismo resultado final
+// para todas las OT -- describeMixedSignatureOutcome/summarizeMixedSignatureOutcome
+// deben reportar el estado REAL por OT, nunca "todo entregado" por defecto.
+test('un miembro equipment_by_equipment completado se reporta como completado y entregado', () => {
+  const outcome = describeMixedSignatureOutcome(member({ folio: 6400, workflow_mode: 'equipment_by_equipment', status: 'completed' }));
+  assert.equal(outcome, 'OT 6400 completada y entregada');
+});
+
+test('un miembro group que sólo firmó recepción se reporta como pendiente de captura, nunca como entregado', () => {
+  const outcome = describeMixedSignatureOutcome(member({ folio: 6402, workflow_mode: 'group', status: 'received_signed' }));
+  assert.equal(outcome, 'OT 6402 recepción firmada, pendiente de captura técnica');
+});
+
+test('summarizeMixedSignatureOutcome refleja el resultado real y distinto de cada OT del evento', () => {
+  const summary = summarizeMixedSignatureOutcome([
+    member({ folio: 6400, workflow_mode: 'equipment_by_equipment', status: 'completed' }),
+    member({ folio: 6401, workflow_mode: 'equipment_by_equipment', status: 'completed' }),
+    member({ folio: 6402, workflow_mode: 'group', status: 'received_signed' }),
+  ]);
+  assert.equal(
+    summary,
+    'OT 6400 completada y entregada. OT 6401 completada y entregada. OT 6402 recepción firmada, pendiente de captura técnica',
+  );
+  assert.doesNotMatch(summary, /todo entregado/i);
 });

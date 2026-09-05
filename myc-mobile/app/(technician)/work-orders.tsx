@@ -78,6 +78,7 @@ import {
   postLabCompletion,
   postLabEquipmentByEquipmentFinalize,
   postLabSignatures,
+  postLabWorkOrderWorkflowModeChange,
 } from '@/src/services/lab-work-order-signature-submission';
 import {
   flowContextLabel,
@@ -124,7 +125,7 @@ const emptyGeneral = (): GeneralData => ({
   purchase_order: '',
   notes: '',
 });
-type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery';
+type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery' | 'change_workflow_mode';
 type DeliveryPanelMode = 'closed' | 'full' | 'partial_execute' | 'partial_request';
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
@@ -224,6 +225,7 @@ export default function WorkOrdersScreen() {
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
   const [reopenSignaturePolicy, setReopenSignaturePolicy] = useState<'preserve' | 'invalidate'>('preserve');
+  const [newWorkflowMode, setNewWorkflowMode] = useState<LabWorkOrderWorkflowMode>('group');
   const [restoring, setRestoring] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -586,7 +588,7 @@ export default function WorkOrdersScreen() {
   }
 
   async function submitOperationalAction() {
-    if (!workOrder || !ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery')) return;
+    if (!workOrder || !ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery' && ticketDialogMode !== 'change_workflow_mode')) return;
     if (ticketDialogMode === 'reopen') return requestReopening();
     if (ticketDialogMode === 'reopen_direct') return reopenDirectly();
     setBusy(true);
@@ -595,6 +597,20 @@ export default function WorkOrdersScreen() {
         if (!voidingDelivery) return;
         await voidDelivery(voidingDelivery.id, ticketReason.trim());
         setVoidingDelivery(null);
+      } else if (ticketDialogMode === 'change_workflow_mode') {
+        // Cierre "grupos mixtos": backend es la única autoridad -- tras
+        // éxito se reconstruye TODO desde su respuesta (workflow_mode +
+        // equipment + FieldSheets + status), nunca un parche local del
+        // estado anterior.
+        const detail = await postLabWorkOrderWorkflowModeChange({
+          newWorkflowMode: newWorkflowMode,
+          reason: ticketReason.trim(),
+          request,
+          workOrder,
+        });
+        setWorkOrder(detail);
+        publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+        Alert.alert('Modalidad actualizada', `La OT ${detail.folio} ahora usa la modalidad "${WORKFLOW_MODE_OPTIONS.find((option) => option.value === detail.workflow_mode)?.title ?? detail.workflow_mode}".`);
       } else if (ticketDialogMode === 'cancel') {
         const detail = await request<LabWorkOrder>(
           `/mobile/v1/technician/lab-work-orders/${workOrder.id}/cancel`,
@@ -947,12 +963,12 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  async function addAdditional() {
+  async function addAdditional(additionalWorkflowMode: LabWorkOrderWorkflowMode) {
     if (!workOrder) return;
     setBusy(true);
     try {
       const detail = await request<LabWorkOrder>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/additional`,
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/additional?workflow_mode=${additionalWorkflowMode}`,
         { method: 'POST' },
       );
       setWorkOrder(detail);
@@ -962,6 +978,23 @@ export default function WorkOrdersScreen() {
     } finally {
       setBusy(false);
     }
+  }
+
+  // Sección 4 del cierre "grupos mixtos": la OT extra elige SU PROPIA
+  // modalidad, nunca hereda forzosamente la de la OT origen -- el usuario
+  // decide aquí mismo, antes de crear la fila.
+  function confirmAddAdditional() {
+    Alert.alert(
+      'Modalidad de la OT extra',
+      '¿Con qué modalidad se registrará la nueva OT?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        ...WORKFLOW_MODE_OPTIONS.map((option) => ({
+          text: option.title,
+          onPress: () => { void addAdditional(option.value); },
+        })),
+      ],
+    );
   }
 
   function openSignatureFlow(scope: LabClosureScope) {
@@ -1537,7 +1570,7 @@ export default function WorkOrdersScreen() {
                           pedirse otra, así que salta directo a captura técnica. */}
                       <OperationalActionStack>
                         {editable && canManageEquipment && workOrder.equipment.length < 10 && <SecondaryButton icon="plus" label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />}
-                        {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton icon="file-plus-outline" label="Asignar OT extra" onPress={addAdditional} />}
+                        {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton icon="file-plus-outline" label="Asignar OT extra" onPress={confirmAddAdditional} />}
                         <PrimaryButton
                           disabled={!workOrder.equipment.length}
                           icon="arrow-right-circle"
@@ -1885,6 +1918,20 @@ export default function WorkOrdersScreen() {
                     {workOrder.status === 'cancelled' && canCancel && !!workOrder.previous_status && (
                       <AdministrativeButton icon="restore" label="Restaurar OT" loading={restoring} onPress={() => confirmRestoreWorkOrder(workOrder)} />
                     )}
+                    {/* Cierre "grupos mixtos" sección 6-9: sólo procede antes
+                        de firmar la recepción -- backend es la autoridad real
+                        de este guard, este `&&` sólo evita el viaje inútil. */}
+                    {canCancel && workOrder.status === 'draft' && workOrder.signature_session_id == null && (
+                      <AdministrativeButton
+                        icon="swap-horizontal"
+                        label="Cambiar modalidad de trabajo"
+                        onPress={() => {
+                          setNewWorkflowMode(workOrder.workflow_mode === 'group' ? 'equipment_by_equipment' : 'group');
+                          setTicketDialogMode('change_workflow_mode');
+                          setTicketOpen(true);
+                        }}
+                      />
+                    )}
                   </OperationalActionStack>
                 </>
               )}
@@ -2013,7 +2060,7 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
-          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly) || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery)) && (
+          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly) || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery) || (ticketDialogMode === 'change_workflow_mode' && canCancel)) && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -2025,9 +2072,9 @@ export default function WorkOrdersScreen() {
                   keyboardShouldPersistTaps="handled"
                 >
                   <View style={styles.overlayHandle} />
-                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'void_delivery' ? 'ANULACIÓN DE ACUSE' : ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : 'TICKET DE REAPERTURA'}</Text>
-                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'void_delivery' ? 'Anular entrega registrada' : ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : '¿Por qué necesitas modificar esta orden?'}</Text>
-                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'void_delivery' ? 'La firma y el PDF se conservarán en el historial.' : ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : 'La solicitud requiere resolución de Admin.'}</Text>
+                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'void_delivery' ? 'ANULACIÓN DE ACUSE' : ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : ticketDialogMode === 'change_workflow_mode' ? 'CAMBIO DE MODALIDAD' : 'TICKET DE REAPERTURA'}</Text>
+                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'void_delivery' ? 'Anular entrega registrada' : ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : ticketDialogMode === 'change_workflow_mode' ? 'Cambiar modalidad de trabajo' : '¿Por qué necesitas modificar esta orden?'}</Text>
+                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'void_delivery' ? 'La firma y el PDF se conservarán en el historial.' : ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : ticketDialogMode === 'change_workflow_mode' ? 'Sólo procede antes de firmar la recepción. No afecta a ninguna otra OT del grupo.' : 'La solicitud requiere resolución de Admin.'}</Text>
                   {ticketDialogMode === 'void_delivery' && voidingDelivery && (() => {
                     // La entrega es un evento atómico -- si esta exhibición
                     // también trae equipos de OT hermanas, anularla las
@@ -2052,8 +2099,22 @@ export default function WorkOrdersScreen() {
                       <Pressable onPress={() => setReopenSignaturePolicy('invalidate')} style={[styles.choice, reopenSignaturePolicy === 'invalidate' && styles.choiceActive]}><Text>Requerir nueva firma</Text></Pressable>
                     </View>
                   )}
+                  {ticketDialogMode === 'change_workflow_mode' && workOrder && (
+                    <FormSection title={`Modalidad actual: ${WORKFLOW_MODE_OPTIONS.find((option) => option.value === workOrder.workflow_mode)?.title ?? workOrder.workflow_mode}`}>
+                      {WORKFLOW_MODE_OPTIONS.map((option) => (
+                        <Pressable
+                          key={option.value}
+                          onPress={() => setNewWorkflowMode(option.value)}
+                          style={[styles.workflowModeCard, newWorkflowMode === option.value && styles.workflowModeCardSelected]}
+                        >
+                          <Text style={styles.workflowModeTitle}>{option.title}</Text>
+                          <Text style={styles.workflowModeDescription}>{option.description}</Text>
+                        </Pressable>
+                      ))}
+                    </FormSection>
+                  )}
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
-                  {ticketDialogMode !== 'void_delivery' && <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />}
+                  {ticketDialogMode !== 'void_delivery' && ticketDialogMode !== 'change_workflow_mode' && <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />}
                   <ActionRow>
                     <SecondaryButton
                       disabled={busy}
@@ -2082,6 +2143,11 @@ export default function WorkOrdersScreen() {
                           || (
                             !ticketDescription.trim()
                             && ticketDialogMode !== 'void_delivery'
+                            && ticketDialogMode !== 'change_workflow_mode'
+                          )
+                          || (
+                            ticketDialogMode === 'change_workflow_mode'
+                            && newWorkflowMode === workOrder?.workflow_mode
                           )
                         }
                         icon={
@@ -2089,14 +2155,18 @@ export default function WorkOrdersScreen() {
                             ? 'undo'
                             : ticketDialogMode === 'reopen_direct'
                               ? 'lock-open-outline'
-                              : 'send'
+                              : ticketDialogMode === 'change_workflow_mode'
+                                ? 'swap-horizontal'
+                                : 'send'
                         }
                         label={
                           ticketDialogMode === 'void_delivery'
                             ? 'Anular acuse'
                             : ticketDialogMode === 'reopen_direct'
                               ? 'Reabrir orden'
-                              : 'Enviar solicitud'
+                              : ticketDialogMode === 'change_workflow_mode'
+                                ? 'Cambiar modalidad'
+                                : 'Enviar solicitud'
                         }
                         loading={busy}
                         onPress={() => {

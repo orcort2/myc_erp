@@ -504,21 +504,142 @@ servicio → Hoja de Campo → siguiente equipo):
   `equipment_by_equipment` todavía `draft`: esas FieldSheets pertenecen al
   técnico que está trabajando en campo, nunca aparecen prematuramente como
   bandeja de Captura.
-- Una OT adicional (`create_additional_work_order`) hereda siempre el
-  `workflow_mode` de la OT que la origina.
+- Una OT adicional (`create_additional_work_order`) puede elegir SU PROPIA
+  `workflow_mode`, independiente de la OT que la origina (parámetro opcional
+  `workflow_mode` en `POST /{id}/additional`; sin él, hereda la de `source`
+  por compatibilidad hacia atrás). No se valida ni se toca la modalidad de
+  ninguna otra OT del grupo.
 - Retirar equipo (tombstone) se comporta idéntico en ambos modos: un equipo
   retirado nunca bloquea `finalize`, nunca cuenta contra el máximo de 10 y
   nunca entra a la nueva entrega.
 
-**Conversión excepcional de una OT `group` existente**: cambiar únicamente la
-columna `workflow_mode` de `group` a `equipment_by_equipment` sobre una OT
-con equipo ya registrado (sin FieldSheets todavía) es una intervención
-administrativa fuera de Mobile -- nunca automática, nunca parte de un
-endpoint ordinario. Al reabrir Mobile, cada equipo existente conserva su ID/
-position/configuración exacta y ofrece de inmediato "Seleccionar Hoja de
-Campo", reconstruido desde backend sin recrear ni un solo equipo. Ver
-`backend/tests/test_lab_equipment_by_equipment_workflow.py` (incluye el caso
-de 5 equipos preexistentes y su regresión PostgreSQL real).
+### Tres autoridades separadas (cierre "grupos mixtos", 2026-09-04)
+
+`workflow_mode`, la firma y la entrega son conceptos independientes que
+nunca deben confundirse entre sí:
+
+1. **`workflow_mode`** (por OT): define CÓMO ejecuta esa OT su trabajo
+   técnico -- `group` o `equipment_by_equipment`. Ver arriba.
+2. **`signature_scope`** (independiente de `workflow_mode`): define CUÁNTAS
+   OT comparten UNA sesión de firma -- `individual` o `group`. Una OT
+   `equipment_by_equipment` puede firmar sola, varias `equipment_by_equipment`
+   pueden compartir una firma grupal, y una cohorte MIXTA de
+   `equipment_by_equipment` + `group` también puede compartir una sola firma
+   grupal cuando el contrato de cada miembro lo permite (ver más abajo).
+3. **Delivery**: representa qué equipo se entrega FÍSICAMENTE en un evento
+   dado. Una firma grupal NUNCA implica por sí sola que todo el equipo
+   firmado se entregó.
+
+**Un mismo `root_work_order_id` puede mezclar libremente `group` y
+`equipment_by_equipment` entre sus miembros** -- no existe ninguna
+constraint de igualdad por root, ninguna actualización en cascada y ninguna
+validación que rechace automáticamente modalidades distintas dentro de la
+misma cohorte histórica.
+
+### Cambio administrativo de modalidad: `POST /{id}/workflow-mode`
+
+Acción administrativa explícita (`change_lab_work_order_workflow_mode`,
+permiso `lab_work_orders.cancel` -- reutilizado, nunca un permiso nuevo;
+nunca otorgado a Captura/Técnico/externos por defecto; sólo actor interno) --
+nunca confundir con `service_type` (accredited/traceable/linked), un
+contrato distinto. Requiere `reason` no vacío (trim; vacío o sólo espacios
+se rechaza) y escribe un `AuditLog` (`lab_work_order.workflow_mode_changed`)
+con `work_order_id` (`entity_id`), `previous_values.workflow_mode`,
+`new_values.workflow_mode`/`reason`, `user_id` y `timestamp` (`created_at`
+del propio `AuditLog`, autoridad canónica -- nunca duplicado dentro de
+`new_values`).
+
+Guard: sólo procede mientras la OT sigue `draft` y sin ninguna sesión de
+firma vigente (`signature_session_id is None`) -- esa única condición ya
+excluye por construcción `completed`/`partially_closed`/`received_signed`/
+`in_progress`/`ready_to_close` y cualquier Delivery real (que exige la OT ya
+cerrada). Reinterpretar una OT ya formalizada sigue siendo exclusivamente el
+sistema normal de Tickets/reapertura -- esta acción NUNCA es un atajo
+alterno. Actúa sobre EXACTAMENTE la OT indicada, nunca cascada a sus
+hermanas del mismo root.
+
+**`group` → `equipment_by_equipment`** conserva ID de OT, todos los IDs de
+equipo, posición, instrumento, marca, serie, identificación, `service_type`,
+folios, observaciones y cliente documental -- nunca recrea equipo. Cada
+equipo existente ofrece de inmediato "Seleccionar Hoja de Campo" (sin
+FieldSheet) reconstruido desde backend. Ver el caso productivo de 5 equipos
+preexistentes en `backend/tests/test_lab_equipment_by_equipment_workflow.py`
+(incluye su regresión PostgreSQL real).
+
+**`equipment_by_equipment` → `group`** (con una FieldSheet ya en captura)
+NUNCA borra ni recrea esa FieldSheet: mismo ID, mismo `template_key`,
+mismos `capture_values`/resultados/observaciones/evidencia/referencias,
+mismo estado `draft`/`in_progress` sin formalizar. Tras el cambio la OT
+obedece el contrato `group`: sin recepción firmada, la captura adicional
+sigue bloqueada (`_ensure_capture_allowed`, y el mismo guard en
+`update_lab_field_sheet` para una hoja que sobrevivió al cambio); una vez
+firmada la recepción, el técnico continúa exactamente la MISMA hoja -- nunca
+se le pide capturar dos veces. El cambio de modalidad nunca completa/congela
+nada por sí mismo.
+
+Un equipo retirado (tombstone, `is_active=False`) nunca se ve afectado por
+un cambio de modalidad: sigue sin reaparecer, sin exigir FieldSheet, sin
+bloquear el cambio, sin poder entrar a una nueva entrega; su historial
+permanece intacto.
+
+### Firma grupal mixta: `POST /{id}/signature-group/finalize`
+
+Cuando el usuario decide cerrar/firmar COMO GRUPO una cohorte que puede
+mezclar miembros `group` y `equipment_by_equipment`, Cliente y Técnico
+firman UNA sola vez, produciendo EXACTAMENTE una `LabWorkOrderSignatureSession`
+compartida -- nunca una sesión por OT, nunca un segundo lienzo de firma.
+`GET /{id}/signature-group/prevalidate` (sólo lectura) resuelve primero el
+scope exacto de miembros editables y despacha la validación de CADA UNO
+según su PROPIO `workflow_mode`: un miembro `equipment_by_equipment` se
+valida como "listo para terminar" (misma autoridad que
+`_equipment_by_equipment_finalize_blockers`/`_validate_ready_to_complete`);
+un miembro `group` se valida sólo como "listo para aceptar recepción" (misma
+autoridad que `_ensure_reception_prerequisites`), NUNCA se le exige
+FieldSheets completas. Si CUALQUIER miembro falla su propio chequeo, ni la
+prevalidación ni la firma proceden -- ninguna mutación ocurre.
+
+`finalize_lab_signature_group` es UNA sola transacción/commit (mismo patrón
+atómico que `finalize_equipment_by_equipment_work_order`, reutilizado, no
+duplicado): firma la sesión compartida (`_sign_members_uncommitted`) y,
+ADEMÁS, cada miembro `equipment_by_equipment` completa sus FieldSheets y
+cierra técnicamente (`_complete_lab_field_sheet_uncommitted`/
+`_finish_complete_members_uncommitted`); cada miembro `group` sólo queda
+`received_signed` y continúa su flujo normal de captura/cierre después --
+**"UNA firma NO implica el mismo estado final para todas las OT"**. La
+entrega FULL automática de ese evento incluye ÚNICAMENTE el equipo de los
+miembros `equipment_by_equipment` recién cerrados -- nunca el de un miembro
+`group` que sigue físicamente en el laboratorio (`_finalize_delivery` recibe
+siempre la cohorte completa del grupo, nunca sólo el subconjunto recién
+entregado, para que el recibo final de grupo no se genere prematuramente
+mientras un miembro siga pendiente). Un fallo en cualquier paso revierte
+firma + hojas completadas + cierre + entrega por completo (incluida la
+limpieza de PDFs huérfanos ya escritos a disco) -- nunca un estado parcial.
+Idempotente ante retry, igual que el finalize individual.
+
+Caso de referencia: OT1 y OT2 `equipment_by_equipment` con captura ya lista
++ OT3 convertida administrativamente a `group` ("Equipo trasladado al
+laboratorio"). Una sola firma grupal: OT1/OT2 quedan `completed` con su
+propia Delivery; OT3 queda `received_signed`, sin Delivery de este evento, y
+continúa después su flujo `group` normal (captura → cierre técnico →
+entrega) de forma completamente independiente.
+
+### Snapshot de observaciones (`FieldSheet.observations`)
+
+`create_lab_field_sheet` congela `FieldSheet.observations =
+normalizado(LabWorkOrderEquipment.observations)` al MOMENTO DE CREAR esa
+revisión (trim; `None`/`""`/sólo espacios → `None`). Es un snapshot inicial,
+nunca un vínculo vivo: editar `LabWorkOrderEquipment.observations` después
+nunca modifica una FieldSheet ya creada (draft, in_progress o completed). La
+FieldSheet puede seguir editando su PROPIO campo `observations` mientras
+siga editable, igual que cualquier otro campo de captura. En una reapertura/
+recaptura, la revisión N conserva el valor que congeló al crearse; la
+revisión N+1 vuelve a leer el valor VIGENTE del equipo en ese momento --
+nunca se reescribe la N para "corregirla" retroactivamente. Nunca se mezcla
+con `certificate_folio`/`report_number`: el renglón de observación por
+equipo del PDF de OT usa el formato `INSTRUMENTO -> IDENTIFICACIÓN :
+OBSERVACIÓN` (fuente: `LabWorkOrderEquipment.observations`), mientras que la
+sección "Observaciones" del PDF de FieldSheet usa exclusivamente
+`FieldSheet.observations` -- dos fuentes distintas, nunca intercambiables.
 
 ## API
 
@@ -531,13 +652,16 @@ de 5 equipos preexistentes y su regresión PostgreSQL real).
 | POST | `/{id}/equipment` | agregar hasta 10 |
 | PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / retirar (tombstone lógico, ver abajo) |
 | DELETE | `/{id}/equipment/{equipment_id}/field-sheet` | descartar únicamente la revisión vigente editable |
-| POST | `/{id}/additional` | crear la siguiente OT del grupo |
+| POST | `/{id}/additional?workflow_mode=` | crear la siguiente OT del grupo; `workflow_mode` opcional elige SU PROPIA modalidad (sin él, hereda la de origen) |
 | POST | `/{id}/signatures` | firmar la recepción de la cohorte abierta del grupo histórico |
 | POST | `/{id}/signatures/individual` | firmar la recepción únicamente de la OT seleccionada |
 | POST | `/{id}/complete` | completar la cohorte compartida del folio seleccionado |
 | POST | `/{id}/complete/individual` | completar idempotentemente una sesión exclusiva |
-| GET | `/{id}/equipment-by-equipment/prevalidate` | sólo lectura: blockers antes de abrir la firma (`equipment_by_equipment`) |
-| POST | `/{id}/equipment-by-equipment/finalize` | firma única + completar hojas + cerrar OT + entrega FULL, atómico (`equipment_by_equipment`) |
+| GET | `/{id}/equipment-by-equipment/prevalidate` | sólo lectura: blockers antes de abrir la firma (`equipment_by_equipment`, scope individual) |
+| POST | `/{id}/equipment-by-equipment/finalize` | firma única + completar hojas + cerrar OT + entrega FULL, atómico (`equipment_by_equipment`, scope individual) |
+| GET | `/{id}/signature-group/prevalidate` | sólo lectura: blockers de TODO el scope grupal mixto, cada miembro según su propio `workflow_mode` |
+| POST | `/{id}/signature-group/finalize` | firma grupal única que puede mezclar miembros `group`/`equipment_by_equipment`; cada uno avanza según su propia modalidad |
+| POST | `/{id}/workflow-mode` | acción administrativa "Cambiar modalidad de trabajo" -- motivo obligatorio, sólo pre-firma, nunca cascada a hermanas |
 | GET | `/{id}/pdf` | entregar PDF individual final |
 | GET | `/{id}/revisions` | historial documental |
 | GET | `/{id}/revisions/{revision}/pdf` | PDF histórico inmutable |

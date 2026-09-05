@@ -549,10 +549,38 @@ Login interno técnico
 ```
 
 Una OT `group` con equipos ya existentes puede convertirse a
-`equipment_by_equipment` mediante una intervención administrativa
-excepcional (UPDATE directo de la columna, fuera de Mobile) sin recrear
-ningún equipo; al reabrir Mobile, cada equipo existente ofrece de inmediato
-"Seleccionar Hoja de Campo" reconstruido desde backend.
+`equipment_by_equipment` (y viceversa) mediante la acción administrativa
+`POST /{id}/workflow-mode` (motivo obligatorio, sólo pre-firma, nunca
+cascada a hermanas) sin recrear ningún equipo ni FieldSheet; al reabrir
+Mobile, cada equipo existente ofrece de inmediato "Seleccionar Hoja de
+Campo" (o "Continuar captura" si ya tenía una hoja en curso) reconstruido
+desde backend.
+
+### Grupos mixtos y firma grupal mixta (2026-09-04)
+
+Al crear un grupo de N OT, la modalidad elegida se aplica a las N filas
+materializadas en esa sola operación. "Asignar OT extra" permite elegir una
+modalidad propia para la nueva OT, independiente de sus hermanas -- un
+mismo `root_work_order_id` puede mezclar `group`/`equipment_by_equipment`
+libremente.
+
+```text
+Grupo de 3 OT: OT1/OT2 equipment_by_equipment (captura ya lista en campo),
+OT3 group (su equipo va al laboratorio)
+→ Admin convierte OT3 a "group" con motivo (Cambiar modalidad de trabajo)
+→ prevalidación backend del scope grupal completo (cada miembro según su
+  propia modalidad -- OT1/OT2 "listas para terminar", OT3 "lista para
+  aceptar recepción", nunca se le exige FieldSheet completa)
+→ Cliente + Técnico firman UNA sola vez (firma grupal mixta)
+→ OT1/OT2: completadas + entrega FULL de su equipo
+→ OT3: sólo recepción firmada (received_signed), sin Delivery de este
+  evento -- continúa después su flujo group normal (captura → cierre →
+  entrega) de forma independiente
+```
+
+"UNA firma NO implica el mismo estado final para todas las OT": el
+resultado de cada una se decide por su propio `workflow_mode`, nunca por el
+hecho de haber compartido la firma.
 
 En Vinculado, el valor capturado se autoriza directamente sólo si el actor
 tiene `lab_folios.resolve`; de lo contrario queda `pending` y se conserva como

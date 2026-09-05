@@ -405,3 +405,52 @@ FULL y reutiliza exactamente las mismas firmas Cliente/Técnico ya capturadas;
 nunca pide una segunda firma de entrega. `group` conserva su flujo intacto:
 las excepciones nuevas están condicionadas explícitamente a
 `workflow_mode == "equipment_by_equipment"`.
+
+## D-2026-09-04 — Grupos mixtos: workflow_mode/signature_scope/Delivery como tres autoridades separadas
+
+La decisión anterior (arriba) dejaba `equipment_by_equipment` como
+individual-only y forzaba a `create_additional_work_order` a heredar
+`workflow_mode` de su OT origen. Ambas restricciones se retiran
+explícitamente: (1) `create_additional_work_order` acepta un
+`workflow_mode` opcional propio (query param, sin él sigue heredando); (2)
+`finalize_lab_signature_group` (`POST /{id}/signature-group/finalize`, con
+su prevalidación de sólo lectura `GET /{id}/signature-group/prevalidate`)
+permite que una sola `LabWorkOrderSignatureSession` formalice una cohorte
+que mezcla miembros `group` y `equipment_by_equipment` a la vez, cada uno
+resuelto según su propio contrato -- nunca el mismo estado final para
+todos. Un mismo `root_work_order_id` puede mezclar modalidades libremente;
+no existe ninguna constraint de igualdad por root ni cascada de
+actualización.
+
+Se separan explícitamente tres autoridades que antes podían confundirse:
+`workflow_mode` (cómo ejecuta la OT su trabajo técnico), `signature_scope`
+(cuántas OT comparten una sesión de firma, ya existente desde Fase 3, ahora
+extendido a cohortes mixtas) y Delivery (qué equipo se entrega físicamente
+en un evento). La entrega automática de una firma grupal mixta incluye
+únicamente el equipo de los miembros `equipment_by_equipment` recién
+cerrados en ESE evento -- nunca el de un miembro `group` que sigue en el
+laboratorio; ese miembro conserva su propio Delivery normal cuando de
+verdad termine.
+
+Nueva acción administrativa `POST /{id}/workflow-mode`
+(`change_lab_work_order_workflow_mode`) permite corregir la modalidad de UNA
+sola OT antes de firmar su recepción, con motivo obligatorio y AuditLog
+(`lab_work_order.workflow_mode_changed`). Reutiliza el permiso
+`lab_work_orders.cancel` ya existente (mismo patrón que cancelar/restaurar,
+mismo actor: interno con autoridad administrativa) en vez de crear un
+permiso nuevo para una autoridad que ya existía; nunca se otorga a Captura,
+Técnico ni actores externos. `group → equipment_by_equipment` y
+`equipment_by_equipment → group` conservan siempre equipo/FieldSheets/IDs
+sin recrear nada -- incluida una FieldSheet ya en captura real, que
+sobrevive intacta y continúa (nunca una segunda captura) una vez firmada la
+recepción bajo el nuevo contrato `group`.
+
+Snapshot de observaciones: `FieldSheet.observations` se congela desde
+`LabWorkOrderEquipment.observations` únicamente AL CREAR cada revisión
+(`create_lab_field_sheet`), nunca como vínculo vivo -- editar el campo del
+equipo después no reescribe una hoja ya creada, y cada nueva revisión vuelve
+a leer el valor vigente del equipo en ese momento. Se documenta en
+`docs/architecture/LAB_WORK_ORDERS.md` para dejar explícita la separación
+frente a `certificate_folio`/`report_number` y frente al renglón de
+observación del PDF de OT (que sigue usando el campo del equipo, no el de
+la FieldSheet).

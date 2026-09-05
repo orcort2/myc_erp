@@ -54,6 +54,10 @@ export type LabRelatedWorkOrder = {
   folio: number;
   sequence_number: number;
   status: LabWorkOrderStatus;
+  // Cierre "grupos mixtos": la modalidad de ESTE miembro -- nunca se asume
+  // igual a la del work order actual, un mismo root puede mezclar 'group'
+  // y 'equipment_by_equipment' libremente.
+  workflow_mode: LabWorkOrderWorkflowMode;
   signature_session_id: number | null;
   equipment_count: number;
 };

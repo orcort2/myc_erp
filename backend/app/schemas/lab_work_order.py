@@ -273,6 +273,12 @@ class LabSignatureGroupWrite(BaseModel):
 class LabEquipmentByEquipmentBlocker(BaseModel):
     work_order_id: int
     work_order_folio: int
+    # workflow_mode del miembro al que pertenece este blocker -- en un scope
+    # "group" mixto, un blocker de un miembro "equipment_by_equipment" exige
+    # captura técnica lista para completarse, mientras uno de un miembro
+    # "group" sólo exige que la recepción pueda formalizarse (nunca exige
+    # FieldSheets completas).
+    workflow_mode: str
     equipment_id: int | None
     equipment_position: int | None
     equipment: str | None
@@ -283,6 +289,26 @@ class LabEquipmentByEquipmentBlocker(BaseModel):
 class LabEquipmentByEquipmentPrevalidation(BaseModel):
     ready: bool
     blockers: list[LabEquipmentByEquipmentBlocker] = Field(default_factory=list)
+
+
+class LabWorkOrderWorkflowModeChange(BaseModel):
+    """Acción administrativa 'Cambiar modalidad de trabajo' -- nunca
+    confundir con service_type (accredited/traceable/linked), que es un
+    contrato distinto. Sólo procede en estado pre-firma (ver
+    change_lab_work_order_workflow_mode)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    new_workflow_mode: Literal["group", "equipment_by_equipment"]
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El motivo es obligatorio")
+        return normalized
 
 
 class LabSignatureRead(BaseModel):
@@ -310,6 +336,11 @@ class LabRelatedWorkOrderRead(BaseModel):
     folio: int
     sequence_number: int
     status: str
+    # Cierre "grupos mixtos": expone la modalidad de CADA miembro para que
+    # Mobile pueda reportar el resultado real por OT tras una firma grupal
+    # mixta (nunca "todo entregado" cuando un miembro 'group' sólo formalizó
+    # recepción) sin una consulta adicional por OT.
+    workflow_mode: Literal["group", "equipment_by_equipment"]
     signature_session_id: int | None
     equipment_count: int
 

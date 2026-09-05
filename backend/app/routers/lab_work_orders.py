@@ -27,6 +27,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderGroupRequestRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
+    LabWorkOrderWorkflowModeChange,
     LabReceptionDateUpdate,
     LabWorkOrderUpdate,
 )
@@ -49,14 +50,17 @@ from app.services.lab_work_orders import (
     claim_group_request,
     approve_group_request,
     reject_group_request,
+    change_lab_work_order_workflow_mode,
     delete_work_order,
     delete_equipment,
     export_all,
     finalize_equipment_by_equipment_work_order,
+    finalize_lab_signature_group,
     get_pdf,
     get_work_order,
     list_work_orders,
     prevalidate_equipment_by_equipment_finalization,
+    prevalidate_lab_signature_group,
     set_equipment_certificate_client,
     sign_group,
     sign_individual,
@@ -743,6 +747,10 @@ def remove_lab_equipment(
 @router.post("/{work_order_id}/additional", response_model=LabWorkOrderRead, status_code=201)
 def create_lab_additional_work_order(
     work_order_id: int,
+    # Sección 4/30 del cierre "grupos mixtos": la OT adicional puede elegir
+    # su propia modalidad; sin este parámetro hereda la de la OT origen
+    # (compatibilidad hacia atrás).
+    workflow_mode: str | None = Query(default=None, pattern="^(group|equipment_by_equipment)$"),
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("work_orders.execute", "lab_work_orders.use")
@@ -754,7 +762,7 @@ def create_lab_additional_work_order(
             status_code=403,
             detail="Los actores externos no pueden materializar OT adicionales",
         )
-    return create_additional_work_order(db, work_order_id, context.user)
+    return create_additional_work_order(db, work_order_id, context.user, workflow_mode=workflow_mode)
 
 
 @router.post("/{work_order_id}/signatures", response_model=LabWorkOrderRead)
@@ -826,6 +834,72 @@ def post_finalize_equipment_by_equipment(
         db, work_order_id, payload, context.user,
         expected_edit_version=payload.expected_edit_version,
     )
+
+
+@router.get(
+    "/{work_order_id}/signature-group/prevalidate",
+    response_model=LabEquipmentByEquipmentPrevalidation,
+)
+def get_lab_signature_group_prevalidation(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.close", "lab_work_orders.use")
+    ),
+) -> LabEquipmentByEquipmentPrevalidation:
+    """Cierre "grupos mixtos": prevalida el scope grupal completo (puede
+    mezclar miembros 'group'/'equipment_by_equipment') ANTES de abrir la
+    firma. Sólo lectura -- ver prevalidate_lab_signature_group."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    blockers = prevalidate_lab_signature_group(db, work_order_id)
+    return LabEquipmentByEquipmentPrevalidation(ready=not blockers, blockers=blockers)
+
+
+@router.post(
+    "/{work_order_id}/signature-group/finalize",
+    response_model=LabWorkOrderRead,
+)
+def post_finalize_lab_signature_group(
+    work_order_id: int,
+    payload: LabSignatureGroupWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.close", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    """Firma grupal única que puede mezclar miembros 'group' y
+    'equipment_by_equipment': cada uno avanza según su propia modalidad
+    (miembros EBE completan/cierran/entregan; miembros group sólo
+    formalizan recepción). Ver finalize_lab_signature_group."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return finalize_lab_signature_group(
+        db, work_order_id, payload, context.user,
+        expected_edit_version=payload.expected_edit_version,
+    )
+
+
+@router.post(
+    "/{work_order_id}/workflow-mode",
+    response_model=LabWorkOrderRead,
+)
+def post_change_lab_work_order_workflow_mode(
+    work_order_id: int,
+    payload: LabWorkOrderWorkflowModeChange,
+    db: Session = Depends(get_db),
+    # Reutiliza lab_work_orders.cancel: misma autoridad administrativa
+    # interna, con motivo obligatorio, ya usada por cancel/restore -- no se
+    # inventa un permiso nuevo para una autoridad que ya existe (sección 7
+    # del cierre "grupos mixtos").
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_orders.cancel")
+    ),
+) -> LabWorkOrderRead:
+    if context.actor_type != "internal":
+        raise HTTPException(
+            status_code=403, detail="Cambiar la modalidad de trabajo está reservado a staff MYC"
+        )
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return change_lab_work_order_workflow_mode(db, work_order_id, payload, context.user)
 
 
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)

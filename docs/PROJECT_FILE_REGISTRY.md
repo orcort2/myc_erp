@@ -28,7 +28,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
-| Configuración | 177 |
+| Configuración | 178 |
 | Documentación | 174 |
 | Pruebas | 99 |
 
@@ -1005,6 +1005,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/wiring-tests/lab-delivery-void-admin.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de lab delivery void admin.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/operational-action-stack.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de operational action stack.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.equipment-by-equipment.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.equipment by equipment.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
+| myc-mobile/src/wiring-tests/work-orders.mixed-workflow.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.mixed workflow.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.navigation-lifecycle.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.navigation lifecycle.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.operational-ux.wiring.test.ts | myc-mobile/src/wiring-tests | Regresión UX OT LAB | Verifica canon de botones y cableado de fieldErrors en datos generales/equipo. | node:test y fuente work-orders | Gate Mobile | Alto | Estable |
 | myc-mobile/src/wiring-tests/work-orders.signature-flow.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.signature flow.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
