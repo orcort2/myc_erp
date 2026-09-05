@@ -517,3 +517,20 @@ etiquetas que ya existía sólo para `missingFields` en
 `LabTechnicalCapture.tsx` -- una sola fuente en vez de dos listas que
 podían divergir. `Field` (`primitives.tsx`) gana `maxLength`/contador
 opt-in, sin cambiar el contrato de los callers existentes que no lo pasan.
+
+**Corrección post-auditoría (2026-09-05, mismo día):** la primera versión
+de `_clone_field_sheet_for_correction` volvía a leer
+`LabWorkOrderEquipment.observations` VIGENTE para la revisión correctiva
+-- copiando literalmente el contrato ya existente de `create_lab_field_sheet`
+sin notar que ese contrato fue escrito para una hoja GENUINAMENTE NUEVA, no
+para una que corrige un documento ya existente. Una auditoría independiente
+lo señaló: una corrección debe partir exactamente de lo que N ya
+documentaba, igual que cualquier otro campo clonado -- se corrige a clonar
+`retired.observations`. La misma auditoría señaló que las estructuras JSON
+clonadas (`capture_values`, `template_definition_json`,
+`institutional_snapshot_json`, `row_data`, `validation_snapshot`) usaban
+copia superficial (`dict(...)`), insuficiente para garantizar
+independencia documental de estructuras anidadas -- se corrige a
+`copy.deepcopy`. Ambas correcciones con test explícito (valores de N y del
+equipo deliberadamente distintos; mutación de una estructura anidada en
+N+1 que no debe alcanzar N).

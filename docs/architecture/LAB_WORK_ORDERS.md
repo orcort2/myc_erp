@@ -324,9 +324,15 @@ revisión ya NO deja un hueco: `_clone_field_sheet_for_correction`
 transacción, la revisión N+1 como clon editable de N (`status="draft"`,
 `revision_number=N+1`, `supersedes_field_sheet_id=N.id`). Se clonan todos
 los campos técnicos editables (template, snapshot institucional,
-condiciones, resultados fila por fila, evidencia, notas, capture_values) y
-`observations` vuelve a leerse VIGENTE del equipo en ese momento (mismo
-contrato ya descrito arriba, "Snapshot de observaciones"). Nunca se clonan
+condiciones, resultados fila por fila, evidencia, notas, capture_values,
+`observations`) exactamente como los tenía N -- una revisión CORRECTIVA
+parte del documento que se está corrigiendo, nunca vuelve a leer
+`LabWorkOrderEquipment.observations` (ese re-lectura sólo aplica a una hoja
+genuinamente nueva, ver "Snapshot de observaciones" arriba). Toda estructura
+JSON mutable clonada (`capture_values`, snapshots de template/institucional,
+filas de resultados) usa `copy.deepcopy`, nunca una copia superficial: N y
+N+1 quedan documentalmente independientes, y mutar N+1 después de clonar
+nunca puede alcanzar N. Nunca se clonan
 `FieldSheetSignature` (una firma ligada a N no puede atestiguar N+1) ni
 `UncertaintyCalculation` (bitácora propia de su revisión). `equipment.field_sheet`
 nunca resuelve a `None` en este camino -- Mobile ve "Continuar captura" de
@@ -703,15 +709,28 @@ revisión (trim; `None`/`""`/sólo espacios → `None`). Es un snapshot inicial,
 nunca un vínculo vivo: editar `LabWorkOrderEquipment.observations` después
 nunca modifica una FieldSheet ya creada (draft, in_progress o completed). La
 FieldSheet puede seguir editando su PROPIO campo `observations` mientras
-siga editable, igual que cualquier otro campo de captura. En una reapertura/
-recaptura, la revisión N conserva el valor que congeló al crearse; la
-revisión N+1 vuelve a leer el valor VIGENTE del equipo en ese momento --
-nunca se reescribe la N para "corregirla" retroactivamente. Nunca se mezcla
+siga editable, igual que cualquier otro campo de captura. Nunca se mezcla
 con `certificate_folio`/`report_number`: el renglón de observación por
 equipo del PDF de OT usa el formato `INSTRUMENTO -> IDENTIFICACIÓN :
 OBSERVACIÓN` (fuente: `LabWorkOrderEquipment.observations`), mientras que la
 sección "Observaciones" del PDF de FieldSheet usa exclusivamente
 `FieldSheet.observations` -- dos fuentes distintas, nunca intercambiables.
+
+Este snapshot inicial desde el equipo aplica exclusivamente a una
+FieldSheet GENUINAMENTE NUEVA: la primera captura, o la hoja en blanco que
+abre un cambio de campo crítico del equipo (`_update_equipment_core` +
+`create_lab_field_sheet`) -- ahí sí corresponde volver a leer
+`LabWorkOrderEquipment.observations` vigente, porque no existe un documento
+previo que corregir. Una revisión **correctiva** (el clon N+1 que abre
+`_clone_field_sheet_for_correction` al retirar una completed sin cambio de
+campo crítico, ver "Reapertura sin hueco operativo" más abajo) sigue una
+regla distinta y deliberada: clona `observations` desde `retired.observations`
+(el valor que N ya congeló), NUNCA vuelve a leer el equipo -- igual que
+cualquier otro campo técnico clonado (resultados, evidencia, condiciones).
+La revisión correctiva debe partir exactamente del documento que se está
+corrigiendo; si el técnico quiere cambiar la observación, la edita
+expresamente en N+1. N conserva siempre el valor que congeló al crearse,
+sin importar cuál de los dos caminos abrió la revisión siguiente.
 
 ## API
 

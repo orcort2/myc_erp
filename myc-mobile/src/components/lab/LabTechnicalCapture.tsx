@@ -129,6 +129,9 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [changingTemplate, setChangingTemplate] = useState(false);
+  const [changingTemplateTo, setChangingTemplateTo] = useState('');
+  const [changingTemplateSearch, setChangingTemplateSearch] = useState('');
 
   async function refreshWorkOrder() {
     const updated = await request<LabWorkOrder>(
@@ -159,6 +162,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
   const editable = !!sheet && isFieldSheetEditable(sheet.status, viewMode);
   const visibleTemplates = filterFieldSheetTemplates(templates, templateSearch);
+  const visibleChangeTemplateOptions = filterFieldSheetTemplates(templates, changingTemplateSearch);
 
   async function openSheet(equipment: LabEquipment) {
     setActiveEquipment(equipment);
@@ -526,6 +530,38 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     );
   }
 
+  /** "Cambiar Hoja de Campo": nunca DELETE+POST manual -- ese camino
+   * restauraría la revisión completed anterior como vigente y un POST
+   * posterior quedaría bloqueado (409 "ya tiene una hoja de campo"). Usa el
+   * endpoint atómico único que retira la editable vigente y abre la nueva
+   * con otra plantilla en una sola operación. */
+  function openChangeTemplate() {
+    if (!activeEquipment || !sheet) return;
+    setChangingTemplateTo('');
+    setChangingTemplateSearch('');
+    setChangingTemplate(true);
+  }
+
+  async function confirmChangeTemplate() {
+    if (!activeEquipment || !changingTemplateTo) return;
+    setBusy(true);
+    try {
+      const updated = await request<LabFieldSheet>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/change-template`,
+        { method: 'POST', body: JSON.stringify({ template_key: changingTemplateTo }) },
+      );
+      setSheet(updated);
+      setSelectedTemplate(updated.template_key);
+      setValues(buildValues(updated));
+      setViewMode(initialViewMode());
+      setChangingTemplate(false);
+      setChangingTemplateTo('');
+      await refreshWorkOrder();
+    } catch (error) {
+      Alert.alert('No fue posible cambiar la hoja de campo', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
   // Mismo PDF institucional que ya congela el backend (final_pdf) -- ningún
   // renderer nuevo, sólo exponerlo vía auth Mobile (mismo patrón que
   // downloadPdf en work-orders.tsx).
@@ -625,7 +661,46 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           </AlertBanner>
         )}
 
-        {!sheet ? <>
+        {sheet && changingTemplate ? <>
+          <Section title="Cambiar Hoja de Campo">
+            <AlertBanner tone="info">Se retira sólo esta revisión editable y se abre una nueva con la plantilla elegida. El historial completado, si existe, se conserva intacto.</AlertBanner>
+            <Field label="Buscar hoja de campo" onChange={setChangingTemplateSearch} placeholder="Ej. presión, termómetro…" value={changingTemplateSearch} />
+            {templatesLoading ? (
+              <LoadingState label="Cargando hojas de campo…" />
+            ) : templatesError ? (
+              <AlertBanner tone="danger">{templatesError}</AlertBanner>
+            ) : visibleChangeTemplateOptions.length > 0 ? (
+              <ScrollView nestedScrollEnabled style={styles.templateList}>
+                {visibleChangeTemplateOptions.map((template, index) => (
+                  <Pressable
+                    key={template.template_key}
+                    onPress={() => setChangingTemplateTo(template.template_key)}
+                    style={({ pressed }) => [
+                      styles.templateRow,
+                      index < visibleChangeTemplateOptions.length - 1 && styles.templateRowDivider,
+                      changingTemplateTo === template.template_key && styles.templateRowSelected,
+                      pressed && styles.templateRowPressed,
+                    ]}
+                  >
+                    <View style={styles.templateText}>
+                      <Text style={styles.templateName}>{templateDisplayLabel(template)}</Text>
+                      <Text style={styles.templateVersion}>Versión {template.version}</Text>
+                    </View>
+                    <View style={[styles.templateIndicator, changingTemplateTo === template.template_key && styles.templateIndicatorSelected]}>
+                      {changingTemplateTo === template.template_key && <Text style={styles.templateCheck}>✓</Text>}
+                    </View>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : (
+              <EmptyState title="Sin resultados" description="Prueba con otro término." />
+            )}
+          </Section>
+          <ActionRow>
+            <SecondaryButton icon="close" label="Cancelar" onPress={() => { setChangingTemplate(false); setChangingTemplateTo(''); }} />
+            <PrimaryButton disabled={!changingTemplateTo || busy} icon="swap-horizontal" label="Confirmar cambio" loading={busy} onPress={confirmChangeTemplate} />
+          </ActionRow>
+        </> : !sheet ? <>
           <Section title="Selecciona hoja de campo">
             <Field label="Buscar hoja de campo" onChange={setTemplateSearch} placeholder="Ej. presión, termómetro…" value={templateSearch} />
             {templatesLoading ? (
@@ -755,6 +830,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
                   <SecondaryButton icon="content-save" label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
                   <PrimaryButton icon="check-circle" label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
                 </ActionRow>
+                <SecondaryButton icon="swap-horizontal" label="Cambiar Hoja de Campo" disabled={busy} onPress={openChangeTemplate} />
                 <DangerButton icon="trash-can-outline" label="Eliminar borrador" disabled={busy} onPress={confirmDiscardSheet} />
               </OperationalActionStack>
             ) : (

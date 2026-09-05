@@ -28,7 +28,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
-| Configuración | 180 |
+| Configuración | 182 |
 | Documentación | 174 |
 | Pruebas | 100 |
 
@@ -968,6 +968,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/services/field-sheet-table-layout.ts | myc-mobile/src/services | Archivo de soporte | Mantiene la capacidad de field sheet table layout dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/services/field-sheet-template-selector.test.ts | myc-mobile/src/services | Pruebas selector FieldSheet | Verifica búsqueda completa por nombre/metadata/equipo y ausencia de recorte a cinco. | node:test y selector | Gate Mobile | Alto | Estable |
 | myc-mobile/src/services/field-sheet-template-selector.ts | myc-mobile/src/services | Filtro de plantillas FieldSheet | Busca sobre todas las plantillas y metadata informativa sin recortar la fuente. | Tipos FieldSheet | LabTechnicalCapture | Alto | Estable |
+| myc-mobile/src/services/lab-certificate-folio-distribution.ts | myc-mobile/src/services | Cliente API de distribución de folios | Tipa y llama GET/POST .../certificate-folios/{preview,distribute}; expone isFolioDistributionSufficient/hasNoPendingCertificateFolios como única autoridad para decidir si la UI ofrece confirmar. | SignatureRequest inyectado (mismo patrón que lab-work-order-signature-submission.ts) | work-orders.tsx | Alto | Estable |
 | myc-mobile/src/services/lab-client-selector.test.ts | myc-mobile/src/services | Regresión de consulta LabClient | Prueba mínimo de búsqueda, límites, include_inactive, offset, reemplazo/agregado de páginas, selección y creación inline. | node:test, helper y fuente de clients.tsx | Gate Mobile LabClient | Alto | Estable |
 | myc-mobile/src/services/lab-client-selector.ts | myc-mobile/src/services | Contrato de consulta LabClient | Construye query selector limit=5 y administración limit=25/offset; decide mínimo de búsqueda y fusiona páginas sin duplicados. | URLSearchParams y tipos LabClient | Selector OT, módulo Clientes y pruebas | Alto | Estable |
 | myc-mobile/src/services/lab-documentary-client.test.ts | myc-mobile/src/services | Archivo de soporte | Mantiene la capacidad de lab documentary client.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
@@ -1007,6 +1008,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/wiring-tests/lab-delivery-void-admin.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de lab delivery void admin.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/operational-action-stack.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de operational action stack.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.equipment-by-equipment.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.equipment by equipment.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
+| myc-mobile/src/wiring-tests/work-orders.folio-distribution.wiring.test.ts | myc-mobile/src/wiring-tests | Regresión de Distribuir folios disponibles | Verifica gate por canCancel, preview antes de confirmar, botón de confirmar sólo con pool suficiente y refetch completo vía openExisting tras distribuir. | node:test y fuente de work-orders.tsx | Gate Mobile | Alto | Estable |
 | myc-mobile/src/wiring-tests/work-orders.mixed-workflow.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.mixed workflow.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.navigation-lifecycle.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.navigation lifecycle.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.operational-ux.wiring.test.ts | myc-mobile/src/wiring-tests | Regresión UX OT LAB | Verifica canon de botones y cableado de fieldErrors en datos generales/equipo. | node:test y fuente work-orders | Gate Mobile | Alto | Estable |

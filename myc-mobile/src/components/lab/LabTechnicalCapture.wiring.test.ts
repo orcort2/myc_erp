@@ -72,3 +72,39 @@ test('el borrador editable se descarta por DELETE explícito y no aparece para c
   assert.match(source, /!captureIsAlwaysReadOnly\(sheet\.status\)/);
   assert.match(source, /<DangerButton[^>]*label="Eliminar borrador"/);
 });
+
+test('auditoría independiente: "Cambiar Hoja de Campo" usa el endpoint atómico, nunca DELETE+POST manual', () => {
+  assert.match(source, /<SecondaryButton icon="swap-horizontal" label="Cambiar Hoja de Campo"[^>]*onPress=\{openChangeTemplate\}/);
+  const fn = source.slice(
+    source.indexOf('async function confirmChangeTemplate'),
+    source.indexOf('async function downloadFieldSheetPdf'),
+  );
+  assert.match(fn, /\/field-sheet\/change-template/);
+  assert.match(fn, /method: 'POST'/);
+  assert.doesNotMatch(fn, /method: 'DELETE'/);
+});
+
+test('"Cambiar Hoja de Campo" sólo vive junto a la revisión editable, nunca para una hoja completed', () => {
+  const stack = source.slice(source.indexOf('{canCapture && !captureIsAlwaysReadOnly(sheet.status) && ('), source.indexOf('{sheet.status === \'completed\' && ('));
+  assert.match(stack, /editable \? \(/);
+  const editableBranch = stack.slice(stack.indexOf('editable ? ('), stack.indexOf(') : ('));
+  assert.match(editableBranch, /label="Cambiar Hoja de Campo"/);
+  const readOnlyBranch = stack.slice(stack.indexOf(') : ('));
+  assert.doesNotMatch(readOnlyBranch, /Cambiar Hoja de Campo/);
+});
+
+test('cambiar de plantilla nunca deja pasar por el selector de "primera captura" -- rama exclusiva y mutuamente excluyente', () => {
+  assert.match(source, /\{sheet && changingTemplate \? <>/);
+  assert.match(source, /<\/> : !sheet \? <>/);
+});
+
+test('confirmar cambio de plantilla reemplaza sheet/values completos desde la respuesta backend, nunca un parche local', () => {
+  const fn = source.slice(
+    source.indexOf('async function confirmChangeTemplate'),
+    source.indexOf('async function downloadFieldSheetPdf'),
+  );
+  assert.match(fn, /setSheet\(updated\)/);
+  assert.match(fn, /setValues\(buildValues\(updated\)\)/);
+  assert.match(fn, /await refreshWorkOrder\(\)/);
+  assert.doesNotMatch(fn, /\{\s*\.\.\.sheet,/);
+});

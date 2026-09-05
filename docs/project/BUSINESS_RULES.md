@@ -284,3 +284,12 @@ la identidad de lo que se mide cambió de verdad. Cambiar de plantilla en vez
 de corregir un dato es una acción explícita distinta ("Cambiar Hoja de
 Campo"), nunca dos peticiones separadas de descartar y crear. Ver
 `LAB_WORK_ORDERS.md` y `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
+
+`observations` de la revisión correctiva se clona del valor ya congelado en
+N, nunca vuelve a leer `LabWorkOrderEquipment.observations` -- una
+corrección parte exactamente del documento que corrige, igual que
+resultados/evidencia/condiciones. La re-lectura del equipo sigue aplicando
+sólo a una FieldSheet genuinamente nueva (primera captura, o la hoja en
+blanco de un cambio de campo crítico). Toda estructura JSON mutable clonada
+usa copia profunda (`copy.deepcopy`), nunca superficial, para que N y la
+correctiva sean documentalmente independientes.

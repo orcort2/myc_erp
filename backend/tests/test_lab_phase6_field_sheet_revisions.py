@@ -185,7 +185,9 @@ def create_and_sign_ready_order(client, headers) -> tuple[int, int]:
     return order_id, equipment_id
 
 
-def complete_field_sheet_fully(client, headers, order_id, equipment_id, *, template_key="general") -> int:
+def complete_field_sheet_fully(
+    client, headers, order_id, equipment_id, *, template_key="general", observations="Sin observaciones"
+) -> int:
     created = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
         json={"template_key": template_key},
@@ -205,7 +207,7 @@ def complete_field_sheet_fully(client, headers, order_id, equipment_id, *, templ
     ]
     patched = client.patch(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        json={"final_condition": "BUENA", "observations": observations, "results_rows": rows},
         headers=headers,
     )
     assert patched.status_code == 200, patched.text
@@ -968,3 +970,114 @@ def test_postgresql_field_sheet_reopen_ticket_clones_forward_without_violating_u
         headers=headers,
     )
     assert completed.status_code == 200, completed.text
+
+
+def test_corrective_clone_observations_come_from_the_retired_sheet_not_the_equipment(lab_context):
+    """Auditoría independiente (2026-09-05): una revisión CORRECTIVA (clon
+    N+1) debe partir exactamente del documento N que se está corrigiendo --
+    igual que resultados/evidencia/condiciones, `observations` se clona de
+    `retired.observations`, nunca se vuelve a leer
+    `LabWorkOrderEquipment.observations`. Sólo una FieldSheet genuinamente
+    NUEVA (primera captura, o la hoja en blanco de un cambio de campo
+    crítico) sigue el contrato de snapshot inicial desde el equipo."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_sheet_id = complete_field_sheet_fully(
+        client, headers, order_id, equipment_id, observations="Observación documental A",
+    )
+    with factory() as db:
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.observations == "Observación documental A"
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        equipment.observations = "Observación operativa B"
+        db.commit()
+
+    requested = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "Corrección de resultado",
+            "description": "El resultado quedó mal transcrito",
+        },
+        headers=headers,
+    )
+    assert requested.status_code == 201, requested.text
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{requested.json()['id']}/resolve",
+        json={"comment": "Procede recaptura"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        clone = equipment.field_sheet
+        assert clone is not None and clone.status == "draft"
+        # El clon parte de lo que N ya documentaba, NO de lo que el equipo
+        # dice ahora -- aunque ambos difieran.
+        assert clone.observations == "Observación documental A"
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.observations == "Observación documental A"
+        assert equipment.observations == "Observación operativa B"
+
+
+def test_corrective_clone_deep_copies_nested_json_so_mutating_n_plus_1_never_touches_n(lab_context):
+    """Auditoría independiente (2026-09-05): toda estructura JSON mutable
+    clonada (capture_values incluida) debe ser una copia profunda -- N y N+1
+    deben ser documentalmente independientes. Una copia superficial
+    (dict(...)) protege sólo las claves de primer nivel; si algún valor
+    anidado (dict/list) queda compartido, mutar N+1 después de clonar
+    corrompería silenciosamente el histórico N ya congelado."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+
+    with factory() as db:
+        first = db.get(FieldSheet, first_sheet_id)
+        capture_values = dict(first.capture_values or {})
+        capture_values["nested_probe"] = {"list": [1, 2, 3]}
+        first.capture_values = capture_values
+        db.commit()
+
+    requested = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "Corrección de resultado",
+            "description": "El resultado quedó mal transcrito",
+        },
+        headers=headers,
+    )
+    assert requested.status_code == 201, requested.text
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{requested.json()['id']}/resolve",
+        json={"comment": "Procede recaptura"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        clone = equipment.field_sheet
+        assert clone.capture_values["nested_probe"]["list"] == [1, 2, 3]
+        # Reasigna con una estructura anidada NUEVA (nunca mutando in-place
+        # la lista original, que rompería la comparación de SQLAlchemy para
+        # columnas JSON planas) y confirma que N no la ve.
+        current = clone.capture_values
+        clone.capture_values = {
+            **current,
+            "nested_probe": {"list": current["nested_probe"]["list"] + [999]},
+        }
+        db.commit()
+
+    with factory() as db:
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.capture_values["nested_probe"]["list"] == [1, 2, 3]
+        clone = db.get(LabWorkOrderEquipment, equipment_id).field_sheet
+        assert clone.capture_values["nested_probe"]["list"] == [1, 2, 3, 999]

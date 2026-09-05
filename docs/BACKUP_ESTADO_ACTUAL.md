@@ -467,12 +467,62 @@ descrito en cierres anteriores -- no se reimplementó nada de eso).
   (bloqueo externo sin pool + rollback, camino feliz con pool, `linked`
   intacto), `test_lab_certificate_folio_distribution.py` (6 casos: preview,
   distribución ordenada, idempotencia, insuficiencia todo-o-nada,
-  aislamiento por tenant, concurrencia real PostgreSQL), 2 casos nuevos +
+  aislamiento por tenant, concurrencia real PostgreSQL), 4 casos nuevos +
   reescritura de uno existente en `test_lab_phase6_field_sheet_revisions.py`
   (clon N+1, cambio de plantilla, regresión PostgreSQL real del índice
   único parcial). Nuevos tests mobile: 3 en `error-detail.test.ts`, 1 en
   `LabEquipmentForm.wiring.test.ts`, 1 nuevo archivo
   `primitives.wiring.test.ts`.
+
+### Correcciones tras auditoría independiente del SHA `102a989` (mismo día)
+
+- **`observations` de la revisión correctiva clonaba mal**: la primera
+  versión de `_clone_field_sheet_for_correction` volvía a leer
+  `LabWorkOrderEquipment.observations` VIGENTE (copiando sin querer el
+  contrato de `create_lab_field_sheet`, escrito para una hoja genuinamente
+  nueva). Corregido a clonar `retired.observations` -- una revisión
+  correctiva parte exactamente de lo que N ya documentaba, igual que
+  cualquier otro campo. Test nuevo con valores de N y del equipo
+  deliberadamente distintos (`test_corrective_clone_observations_come_from_the_retired_sheet_not_the_equipment`).
+- **Copia superficial de JSON mutable**: `capture_values`,
+  `template_definition_json`, `institutional_snapshot_json`, `row_data` y
+  `validation_snapshot` se clonaban con `dict(...)` (superficial). Corregido
+  a `copy.deepcopy` para que N y la revisión correctiva sean
+  documentalmente independientes ante estructuras anidadas. Test nuevo que
+  muta una lista anidada en N+1 y confirma que N no cambia
+  (`test_corrective_clone_deep_copies_nested_json_so_mutating_n_plus_1_never_touches_n`).
+- Mobile: se integró "Distribuir folios disponibles" (Acciones
+  administrativas de la OT, capacidad efectiva, preview → confirmación
+  condicionada al pool → distribute → refetch completo) y "Cambiar Hoja de
+  Campo" (acción explícita sobre una revisión editable de reapertura, usa
+  el endpoint atómico, nunca DELETE+POST manual) -- ninguna de las dos
+  tenía integración Mobile real en `102a989`, sólo el endpoint backend.
+  Nuevo servicio `lab-certificate-folio-distribution.ts` (tipos + llamadas
+  GET/POST + `isFolioDistributionSufficient`/`hasNoPendingCertificateFolios`
+  como única autoridad para ofrecer confirmar); nuevo overlay dedicado en
+  `work-orders.tsx` (no reutiliza el diálogo de "Motivo" obligatorio,
+  porque esta acción no exige uno); "Cambiar Hoja de Campo" vive en
+  `LabTechnicalCapture.tsx` junto a "Eliminar borrador", con un selector de
+  plantilla propio (rama exclusiva `changingTemplate`, nunca simultánea con
+  el selector de primera captura).
+- Ver detalle completo en `project/DECISIONS.md` (adenda 2026-09-05) y
+  `architecture/LAB_WORK_ORDERS.md`.
+
+#### Validación de esta ronda de correcciones
+
+- Backend completo: `1180 passed, 16 skipped`, 0 fallas (un fallo aislado en
+  `test_maintenance_ets_execution.py`, módulo ETS Mantenimiento no tocado
+  por este trabajo, no se repitió en una segunda corrida completa --
+  flake de orden/estado compartido entre tests, no una regresión).
+- Mobile: `npm test` = `416 passed, 0 failed` (405 de la ronda anterior + 7
+  de `work-orders.folio-distribution.wiring.test.ts` + 4 nuevos en
+  `LabTechnicalCapture.wiring.test.ts`).
+- `npx tsc --noEmit -p .`: correcto, sin salida.
+- `npm run lint`: correcto, sin errores.
+- `git diff --check`: sin advertencias.
+- Alembic sin cambios: `6640c526c412 (head)` único, `check` = `No new
+  upgrade operations detected` -- ninguna de estas correcciones tocó
+  esquema.
 
 ## Validaciones
 

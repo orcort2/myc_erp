@@ -81,6 +81,13 @@ import {
   postLabWorkOrderWorkflowModeChange,
 } from '@/src/services/lab-work-order-signature-submission';
 import {
+  getLabCertificateFolioDistributionPreview,
+  hasNoPendingCertificateFolios,
+  isFolioDistributionSufficient,
+  postLabCertificateFolioDistribution,
+  type LabCertificateFolioDistributionPreview,
+} from '@/src/services/lab-certificate-folio-distribution';
+import {
   flowContextLabel,
   inferStepForStatus,
   isReceptionEditable,
@@ -230,6 +237,10 @@ export default function WorkOrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
+  const [folioDistributionOpen, setFolioDistributionOpen] = useState(false);
+  const [folioDistributionPreview, setFolioDistributionPreview] = useState<LabCertificateFolioDistributionPreview | null>(null);
+  const [folioDistributionLoading, setFolioDistributionLoading] = useState(false);
+  const [folioDistributionSubmitting, setFolioDistributionSubmitting] = useState(false);
   const [generalErrors, setGeneralErrors] = useState<Record<string, string>>({});
   const [equipmentErrors, setEquipmentErrors] = useState<Record<string, string>>({});
   const [deliveryPanel, setDeliveryPanel] = useState<DeliveryPanelMode>('closed');
@@ -678,6 +689,50 @@ export default function WorkOrdersScreen() {
       Alert.alert('No fue posible abrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
       setBusy(false);
+    }
+  }
+
+  /** "Distribuir folios disponibles": preview de sólo lectura ANTES de
+   * ofrecer confirmar -- nunca se abre la confirmación a ciegas. */
+  async function openFolioDistribution() {
+    if (!workOrder) return;
+    setFolioDistributionOpen(true);
+    setFolioDistributionPreview(null);
+    setFolioDistributionLoading(true);
+    try {
+      const preview = await getLabCertificateFolioDistributionPreview({ request, workOrder });
+      setFolioDistributionPreview(preview);
+    } catch (error) {
+      setFolioDistributionOpen(false);
+      Alert.alert('No fue posible obtener el estado de folios', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setFolioDistributionLoading(false);
+    }
+  }
+
+  /** Backend es la única autoridad de todo-o-nada; tras éxito se refetch
+   * completo de la OT (nunca un parche local de folio_status/certificate_folio
+   * equipo por equipo). */
+  async function confirmFolioDistribution() {
+    if (!workOrder || !folioDistributionPreview) return;
+    setFolioDistributionSubmitting(true);
+    try {
+      const result = await postLabCertificateFolioDistribution({ request, workOrder });
+      const orderId = workOrder.id;
+      setFolioDistributionOpen(false);
+      setFolioDistributionPreview(null);
+      await openExisting(orderId);
+      publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: orderId, work_order_id: orderId });
+      Alert.alert(
+        'Folios distribuidos',
+        result.assigned.length > 0
+          ? `Se asignaron ${result.assigned.length} folio(s): ${result.assigned.map((item) => item.folio).join(', ')}.`
+          : 'No había equipo pendiente por asignar.',
+      );
+    } catch (error) {
+      Alert.alert('No fue posible distribuir los folios', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setFolioDistributionSubmitting(false);
     }
   }
 
@@ -1976,6 +2031,20 @@ export default function WorkOrdersScreen() {
                         />
                       </OperationalActionStack>
                     )}
+                    {/* Reparación de equipo legacy externo atrapado en
+                        folio_status=pending desde antes del bloqueo 409 en
+                        el alta -- nunca visible para cliente operativo,
+                        misma autoridad administrativa que canCancel. */}
+                    {canCancel && (
+                      <OperationalActionStack>
+                        <AdministrativeButton
+                          disabled={busy}
+                          icon="ticket-confirmation-outline"
+                          label="Distribuir folios disponibles"
+                          onPress={() => void openFolioDistribution()}
+                        />
+                      </OperationalActionStack>
+                    )}
                     <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
                     <OperationalActionStack>
                       <DangerButton
@@ -2172,6 +2241,75 @@ export default function WorkOrdersScreen() {
                         onPress={() => {
                           void submitOperationalAction();
                         }}
+                      />
+                    )}
+                  </ActionRow>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            </View>
+          )}
+
+          {folioDistributionOpen && canCancel && workOrder && (
+            <View style={styles.overlay}>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.overlayCard}
+              >
+                <ScrollView
+                  automaticallyAdjustKeyboardInsets
+                  contentContainerStyle={styles.overlayContent}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  <View style={styles.overlayHandle} />
+                  <Text style={styles.sectionEyebrow}>FOLIOS DE CERTIFICADO</Text>
+                  <Text style={styles.sectionTitle}>Distribuir folios disponibles</Text>
+                  <Text style={styles.sectionDescription}>
+                    Repara equipo de cliente operativo externo atrapado sin folio MYCA/MYCT, usando
+                    únicamente folios ya autorizados para este cliente.
+                  </Text>
+                  {folioDistributionLoading && <ActivityIndicator />}
+                  {!folioDistributionLoading && folioDistributionPreview && (
+                    <>
+                      <Text style={styles.detail}>Acreditado (MYCA) pendiente: {folioDistributionPreview.pending_accredited_count}</Text>
+                      <Text style={styles.detail}>Trazable (MYCT) pendiente: {folioDistributionPreview.pending_traceable_count}</Text>
+                      <Text style={styles.detail}>Disponibles MYCA: {folioDistributionPreview.available_myca_count}</Text>
+                      <Text style={styles.detail}>Disponibles MYCT: {folioDistributionPreview.available_myct_count}</Text>
+                      {hasNoPendingCertificateFolios(folioDistributionPreview) && (
+                        <AlertBanner tone="info">Esta OT no tiene equipo pendiente de folio MYCA/MYCT.</AlertBanner>
+                      )}
+                      {!hasNoPendingCertificateFolios(folioDistributionPreview) && !isFolioDistributionSufficient(folioDistributionPreview) && (
+                        <AlertBanner tone="danger">
+                          El pool disponible no alcanza para todo el equipo pendiente. Autoriza más folios
+                          antes de continuar -- no se asignará nada.
+                        </AlertBanner>
+                      )}
+                      {!hasNoPendingCertificateFolios(folioDistributionPreview) && isFolioDistributionSufficient(folioDistributionPreview) && (
+                        <FormSection title="Asignación propuesta">
+                          {folioDistributionPreview.items.map((item) => (
+                            <Text key={item.equipment_id} style={styles.detail}>
+                              {item.position}. {item.instrument} -- {item.prefix}: {item.folio ?? 'sin folio disponible'}
+                            </Text>
+                          ))}
+                        </FormSection>
+                      )}
+                    </>
+                  )}
+                  <ActionRow>
+                    <SecondaryButton
+                      disabled={folioDistributionSubmitting}
+                      icon="close"
+                      label="Cerrar"
+                      onPress={() => { setFolioDistributionOpen(false); setFolioDistributionPreview(null); }}
+                    />
+                    {folioDistributionPreview
+                      && !hasNoPendingCertificateFolios(folioDistributionPreview)
+                      && isFolioDistributionSufficient(folioDistributionPreview) && (
+                      <AdministrativeButton
+                        disabled={folioDistributionSubmitting}
+                        icon="ticket-confirmation-outline"
+                        label="Distribuir folios"
+                        loading={folioDistributionSubmitting}
+                        onPress={() => void confirmFolioDistribution()}
                       />
                     )}
                   </ActionRow>

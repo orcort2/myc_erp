@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -422,11 +423,10 @@ _CLONED_FIELD_SHEET_ATTRS = (
     "certificate_client_attention",
     "certificate_client_address",
     "apply_certificate_client_to_order",
-    "template_definition_json",
+    "observations",
     "template_definition_version",
     "pdf_renderer_key",
     "pdf_renderer_version",
-    "institutional_snapshot_json",
     "calibration_procedure_id",
     "template_key",
     "work_order_number",
@@ -450,10 +450,25 @@ def _clone_field_sheet_for_correction(
     N+1 nace con todo su contenido técnico ya capturado, lista para
     "Continuar captura" en vez de "Seleccionar Hoja de Campo".
 
-    observations es la única excepción deliberada (contrato ya vigente,
-    sección "Snapshot de observaciones" de LAB_WORK_ORDERS.md): N+1 vuelve a
-    leer el valor VIGENTE de LabWorkOrderEquipment.observations en este
-    momento, nunca copia el valor ya congelado en N.
+    `observations` clona el valor ya congelado en N (`retired.observations`,
+    vía `_CLONED_FIELD_SHEET_ATTRS`), NUNCA vuelve a leer
+    `LabWorkOrderEquipment.observations`: una revisión CORRECTIVA debe partir
+    exactamente del documento que se está corrigiendo, igual que cualquier
+    otro campo clonado (resultados, evidencia, condiciones). Si el técnico
+    quiere cambiar la observación, la edita expresamente en N+1 -- el
+    contrato "snapshot inicial desde el equipo" de
+    `create_lab_field_sheet` (ver LAB_WORK_ORDERS.md, "Snapshot de
+    observaciones") sigue aplicando sin cambios a una FieldSheet genuinamente
+    nueva (primera captura, o la hoja en blanco que abre un cambio de campo
+    crítico de equipo vía `_update_equipment_core`) -- ese caso nunca pasa
+    por esta función.
+
+    Toda estructura JSON mutable (`capture_values`, `template_definition_json`,
+    `institutional_snapshot_json`, `row_data`, `validation_snapshot`) se
+    clona con `copy.deepcopy` -- nunca una copia superficial ni el mismo
+    objeto de N -- para que N y N+1 sean documentalmente independientes:
+    mutar una estructura anidada en N+1 (p.ej. agregar una clave a un dict
+    dentro de `capture_values`) nunca debe poder alcanzar N.
 
     Nunca clona FieldSheetSignature (una firma ligada al contenido de N no
     puede atestiguar N+1) ni UncertaintyCalculation (bitácora de cálculo
@@ -461,7 +476,7 @@ def _clone_field_sheet_for_correction(
     se clonan fila por fila porque son el contenido técnico que el técnico va
     a corregir -- compartir las filas con N las expondría a mutación cuando
     el técnico edite N+1, corrompiendo el histórico congelado."""
-    capture_values = dict(retired.capture_values or {})
+    capture_values = copy.deepcopy(retired.capture_values) if retired.capture_values else {}
     capture_values.update(
         {
             "instrument": equipment.instrument,
@@ -471,6 +486,8 @@ def _clone_field_sheet_for_correction(
             "model": equipment.model,
         }
     )
+    template_definition_json = copy.deepcopy(retired.template_definition_json) if retired.template_definition_json else None
+    institutional_snapshot_json = copy.deepcopy(retired.institutional_snapshot_json) if retired.institutional_snapshot_json else None
     sheet = FieldSheet(
         equipment_id=None,
         lab_equipment_id=equipment.id,
@@ -479,8 +496,9 @@ def _clone_field_sheet_for_correction(
         is_current=True,
         supersedes_field_sheet_id=retired.id,
         status="draft",
-        observations=(equipment.observations or "").strip() or None,
         capture_values=capture_values,
+        template_definition_json=template_definition_json,
+        institutional_snapshot_json=institutional_snapshot_json,
         lab_signature_session_id=equipment.work_order.signature_session_id,
         **{attr: getattr(retired, attr) for attr in _CLONED_FIELD_SHEET_ATTRS},
     )
@@ -494,7 +512,7 @@ def _clone_field_sheet_for_correction(
             ibc_value_3=row.ibc_value_3,
             unit=row.unit,
             notes=row.notes,
-            row_data=dict(row.row_data) if row.row_data is not None else None,
+            row_data=copy.deepcopy(row.row_data) if row.row_data is not None else None,
         )
         for row in retired.results_rows
     ]
@@ -507,12 +525,12 @@ def _clone_field_sheet_for_correction(
             measurement_section=link.measurement_section,
             selection_status=link.selection_status,
             selection_notes=link.selection_notes,
-            validation_snapshot=dict(link.validation_snapshot) if link.validation_snapshot is not None else None,
+            validation_snapshot=copy.deepcopy(link.validation_snapshot) if link.validation_snapshot is not None else None,
             notes=link.notes,
         )
         for link in retired.reference_standard_links
     ]
-    sheet.signatures = _default_signature_slots(retired.template_definition_json or {}, sheet)
+    sheet.signatures = _default_signature_slots(template_definition_json or {}, sheet)
     db.add(sheet)
     db.flush()
     write_audit_log(
