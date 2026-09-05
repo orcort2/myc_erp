@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-09-04
+> Corte actualizado: 2026-09-05
 
 # Estado operativo actual del ERP MYC
 
@@ -23,6 +23,11 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - Working tree previo a este cierre: `6fb8e2c1e3ba60215e0cdcd1a949adbb5afa6a06`
   (`fix(lab): preserve equipment history across reopened order edits`, padre
   `213dcb042db143df39713f6419de0b6bcfe7a55c`).
+- Base auditada del cierre "reapertura sin hueco + folio externo + validación
+  UX" (2026-09-05): `db6e6a2848e0b8119d3caeb93013b58426f53889`
+  (`feat(lab): mixed workflow_mode groups, mixed group signature, and admin
+  modality change`), confirmado como HEAD remoto real de la rama antes de
+  modificar (`git fetch` + comparación explícita, sin divergencia).
 - Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**. El push de este cierre
   no es aprobación de merge a `main`; queda pendiente una auditoría
   independiente del SHA resultante.
@@ -404,7 +409,103 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
   SQLite + 1 regresión PostgreSQL real obligatoria vía `LAB_POSTGRES_TEST_URL`,
   ejecutada y verde contra un schema aislado en `erp_myc` local).
 
+## Cierre "reapertura sin hueco + folio externo + validación UX" — 2026-09-05
+
+Tres correcciones puntuales sobre `wip/lab-equipment-by-equipment-flow`,
+partiendo de `db6e6a2` (auditado primero: el HEAD de la rama ya
+implementaba, con tests, todo el diseño de `workflow_mode`/firma grupal
+mixta/cambio de modalidad/Delivery scoping/snapshot de observaciones
+descrito en cierres anteriores -- no se reimplementó nada de eso).
+
+- **FieldSheet reopen sin hueco operativo**: retirar (`is_current=False`)
+  la revisión `completed` vigente vía Ticket `field_sheet_reopen` o el
+  equipo objetivo de una reapertura de cohorte completa dejaba a
+  `equipment.field_sheet` en `None` hasta que alguien volviera a llamar
+  `create_lab_field_sheet` manualmente -- Mobile mostraba "Seleccionar Hoja
+  de Campo" como si el equipo nunca hubiera capturado nada, aunque el
+  histórico completed siguiera intacto. Nueva función
+  `_clone_field_sheet_for_correction` (`app/services/lab_field_sheets.py`)
+  abre la revisión N+1 ya clonada y editable en la MISMA transacción que
+  retira N (mismo modelo de revisión de Fase 6, sin segunda arquitectura).
+  Nueva acción atómica `POST .../field-sheet/change-template`
+  (`change_lab_field_sheet_template`) para "Cambiar Hoja de Campo" sin
+  componer DELETE+POST (que quedaría bloqueado por el 409 "ya tiene una
+  hoja"). El camino de identidad crítica de equipo (`_update_equipment_core`)
+  sigue dejando una hoja en blanco a propósito, sin tocar. Detalle completo
+  en [`architecture/LAB_WORK_ORDERS.md`](architecture/LAB_WORK_ORDERS.md) y
+  [`project/DECISIONS.md`](project/DECISIONS.md) (D-2026-09-05).
+- **Folio de certificado exige pool externo resuelto**:
+  `_assign_equipment_service_core` dejaba accredited/traceable de un
+  cliente operativo externo sin pool en `folio_status="pending"` en
+  silencio -- indistinguible del `pending` legítimo de Vinculado. Ahora
+  responde `409 LAB_CERTIFICATE_FOLIOS_UNAVAILABLE` con rollback completo;
+  `linked` y staff interno no cambian. Nueva acción administrativa
+  "Distribuir folios disponibles" (`GET/POST .../certificate-folios/{preview,distribute}`)
+  repara equipo legacy ya atrapado en ese `pending`, todo-o-nada por
+  prefijo, mismo locking que el alta, reutilizando `lab_work_orders.cancel`
+  (sin permiso nuevo).
+- **Mobile — validación de observaciones humanizada**: `error-detail.ts`
+  capturaba el `type` de Pydantic pero nunca lo usaba para el mensaje --
+  `string_too_long`/`string_too_short`/`missing` caían siempre al genérico
+  "Revisa el campo X.". Se humanizan por tipo usando `ctx.max_length`/
+  `ctx.min_length` (confirmado contra un 422 real de Pydantic v2 antes de
+  conectar el parser) y un mapa de etiquetas extraído a
+  `myc-mobile/src/services/field-labels.ts` (compartido con
+  `LabTechnicalCapture.tsx`, que antes tenía su propia copia). `Field`
+  (`primitives.tsx`) gana `maxLength`/contador opt-in;
+  `LabEquipmentForm.tsx` lo usa en Observaciones (`maxLength={4000}`, igual
+  al límite ya vigente en `LabEquipmentBase.observations`).
+- Sin migración: no se agregó columna ni tabla nueva; `alembic
+  heads`/`current` confirman `6640c526c412 (head)` único y `alembic check`
+  reporta `No new upgrade operations detected`.
+- Inventario API: 3 endpoints nuevos (526 = 523 del corte anterior +
+  `field-sheet/change-template`, `certificate-folios/preview`,
+  `certificate-folios/distribute`, los tres bajo la clasificación genérica
+  `/api/mobile/v1/` existente); `API_ENDPOINT_INVENTORY_2026-08-03.csv`
+  regenerado y `test_api_access_conformity.py` (ambos casos) verde.
+- Nuevos tests backend: 3 casos en `test_lab_phase2_integrated_alta.py`
+  (bloqueo externo sin pool + rollback, camino feliz con pool, `linked`
+  intacto), `test_lab_certificate_folio_distribution.py` (6 casos: preview,
+  distribución ordenada, idempotencia, insuficiencia todo-o-nada,
+  aislamiento por tenant, concurrencia real PostgreSQL), 2 casos nuevos +
+  reescritura de uno existente en `test_lab_phase6_field_sheet_revisions.py`
+  (clon N+1, cambio de plantilla, regresión PostgreSQL real del índice
+  único parcial). Nuevos tests mobile: 3 en `error-detail.test.ts`, 1 en
+  `LabEquipmentForm.wiring.test.ts`, 1 nuevo archivo
+  `primitives.wiring.test.ts`.
+
 ## Validaciones
+
+### Cierre "reapertura sin hueco + folio externo + validación UX" — 2026-09-05
+
+- Backend suite completa: `1178 passed, 14 skipped`, 0 fallas.
+- Backend con `LAB_POSTGRES_TEST_URL` (schema aislado por test, nunca
+  producción): `1192 passed`; los únicos 2 fallos
+  (`test_postgresql_concurrent_individual_cohorts_get_distinct_versions`,
+  `test_postgresql_concurrent_folio_allocation_is_unique`) se reprodujeron
+  IDÉNTICOS contra el HEAD base `db6e6a2` sin ningún cambio de este cierre
+  (`git stash` + rerun) -- son el mismo requisito de base Postgres
+  pristina/aislada ya documentado como pendiente desde el corte anterior
+  (ver "Pendientes operativos"), no una regresión.
+- Regresión PostgreSQL específica de este cierre, ambas verdes en schema
+  aislado propio: clon N+1 de FieldSheet
+  (`test_postgresql_field_sheet_reopen_ticket_clones_forward_without_violating_unique_current`)
+  y concurrencia real de distribución de folios
+  (`test_postgresql_concurrent_distribution_across_two_orders_never_reuses_a_folio`).
+- Alembic: `heads`/`current` = `6640c526c412 (head)` único; `check` = `No
+  new upgrade operations detected`. Sin migración nueva.
+- Mobile: `npm test` = `405 passed, 0 failed` (400 del corte anterior + 5
+  nuevos: 3 en `error-detail.test.ts`, 1 en
+  `LabEquipmentForm.wiring.test.ts`, 1 en `primitives.wiring.test.ts`).
+- `npx tsc --noEmit -p .`: correcto, sin salida.
+- `npm run lint` (`expo lint`): correcto, sin errores.
+- `git diff --check`: sin advertencias de espacio en blanco.
+- `python3 scripts/generate_project_file_registry.py`: regenerado; filas
+  nuevas para `test_lab_certificate_folio_distribution.py`,
+  `field-labels.ts` y `primitives.wiring.test.ts`; responsabilidad
+  actualizada en las filas de `lab_field_sheets.py`, `lab_work_orders.py`
+  (router y servicio), `operational_tickets.py`, `error-detail.ts`,
+  `LabEquipmentForm.tsx` y `primitives.tsx`.
 
 ### Flujo LAB "equipo por equipo" — 2026-09-04
 
@@ -562,26 +663,24 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
 - QA físico Android/iPhone/TestFlight del recorrido completo de recepción,
   doble firma, orientación/teclado/scroll, FieldSheets, cierre, PDF,
   refresh/realtime, retiro de equipo tras reapertura, flujo equipo-por-equipo
-  (selector, captura pre-firma, finalize, entrega automática) y errores.
-  **No ejecutado**; ningún cierre reciente (incluido el de 2026-09-04) lo
-  reclama como hecho.
+  (selector, captura pre-firma, finalize, entrega automática), reapertura con
+  clon N+1/"Cambiar Hoja de Campo", "Distribuir folios disponibles" y el
+  contador/mensaje de Observaciones. **No ejecutado**; ningún cierre reciente
+  (incluido el de 2026-09-05) lo reclama como hecho.
 - Inventario API (`API_ENDPOINT_INVENTORY_2026-08-03.csv`): sincronizado con
-  el runtime (523 operaciones -- 520 del corte anterior + las 3 del cierre
-  "grupos mixtos": `signature-group/prevalidate`, `signature-group/finalize`,
-  `workflow-mode`); `test_api_access_conformity.py` pasa sin excepciones.
-- Mobile: descubrimiento de tests resuelto en esta rama (recreado desde el
-  fix ya aplicado en `wip/lab-admin-void-delivery`, que esta rama no había
-  heredado al partir de `6fb8e2c`) -- `npm test` ejecuta los 51 archivos
-  `*.test.ts(x)` reales bajo `src/` vía `scripts/list-test-files.js` (50 del
-  corte anterior + `work-orders.mixed-workflow.wiring.test.ts` del cierre
-  "grupos mixtos"), 400 tests, 0 fallos;
-  `MobileSignatureFlow.wiring.test.ts` corre verde.
+  el runtime (526 operaciones -- 523 del corte anterior + las 3 del cierre
+  2026-09-05: `field-sheet/change-template`, `certificate-folios/preview`,
+  `certificate-folios/distribute`); `test_api_access_conformity.py` pasa sin
+  excepciones.
+- Mobile: `npm test` ejecuta 405 tests, 0 fallos (400 del corte anterior + 5
+  nuevos del cierre 2026-09-05).
 - `test_postgresql_concurrent_individual_cohorts_get_distinct_versions` y
   `test_postgresql_concurrent_folio_allocation_is_unique` pueden fallar
   contra una base local `erp_myc` con estado no-pristino/no aislado (folios
   ya consumidos por trabajo manual previo, un test que no aísla su schema);
-  no relacionado con el flujo equipo-por-equipo. Requieren una base
-  Postgres efímera dedicada o aislar su schema.
+  no relacionado con el flujo equipo-por-equipo ni con el cierre 2026-09-05
+  (reproducido idéntico contra el HEAD base `db6e6a2` vía `git stash`, ver
+  arriba). Requieren una base Postgres efímera dedicada o aislar su schema.
 - Conversión de la OT productiva real (`group` → `equipment_by_equipment`)
   intencionalmente NO realizada en este trabajo: queda como intervención
   administrativa manual y controlada, posterior a auditoría independiente,

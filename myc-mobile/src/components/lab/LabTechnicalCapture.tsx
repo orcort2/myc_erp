@@ -10,6 +10,7 @@ import type {
   LabWorkOrder,
 } from '@/src/types/lab-work-order';
 import { labelPrintService } from '@/src/services/label-print-service';
+import { FIELD_LABELS } from '@/src/services/field-labels';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
 import { keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
@@ -68,42 +69,10 @@ const TEMPLATE_ROW_HEIGHT = 56;
 const readOnlyFields = new Set(['work_order_number', 'reserved_certificate_folio']);
 
 // Fase 6: fallback LEGACY -- la autoridad principal es block.fields[] del
-// snapshot (ver resolveBlockFields/field-sheet-contract.ts). Este mapa sólo
-// cubre las claves que el catálogo legacy declara en visible_fields sin
-// traer todavía una entrada rica en fields[].
-const FIELD_LABELS: Record<string, string> = {
-  work_order_number: 'No. de orden de trabajo',
-  reserved_certificate_folio: 'Folio de certificado',
-  attention: 'Atención a',
-  company: 'Empresa',
-  address: 'Dirección',
-  instrument: 'Instrumento',
-  scope: 'Alcance / capacidad',
-  brand: 'Marca',
-  model: 'Modelo',
-  serial_number: 'No. de serie',
-  internal_id: 'ID interno',
-  location: 'Ubicación',
-  minimum_division: 'División mínima',
-  reception_date: 'Fecha de recepción',
-  calibration_date: 'Fecha de calibración',
-  next_calibration_date: 'Próxima calibración',
-  calibration_place: 'Lugar de calibración',
-  environment_humidity_start: 'Humedad inicial',
-  environment_humidity_end: 'Humedad final',
-  environment_temperature_start: 'Temperatura inicial',
-  environment_temperature_end: 'Temperatura final',
-  initial_condition: 'Condición inicial',
-  final_condition: 'Condición final',
-  method: 'Método',
-  units: 'Unidades',
-  observations: 'Observaciones',
-  evidence_notes: 'Notas de evidencia',
-  calibrated_by: 'Calibrado por',
-  reviewed_by: 'Revisado por',
-  report_made_by: 'Reporte elaborado por',
-  purchase_order_or_quotation: 'Orden de compra / cotización',
-};
+// snapshot (ver resolveBlockFields/field-sheet-contract.ts). FIELD_LABELS
+// (importado de field-labels.ts, compartido con error-detail.ts) sólo cubre
+// las claves que el catálogo legacy declara en visible_fields sin traer
+// todavía una entrada rica en fields[].
 
 function buildValues(entity: LabFieldSheet): Record<string, unknown> {
   const picked: Record<string, unknown> = {};

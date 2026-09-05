@@ -25,3 +25,9 @@ test('LabEquipmentForm usa Field compartido, muestra error y limpia sólo el cam
   assert.match(source, /onFieldChange\?\.\(field\)/);
   assert.doesNotMatch(source, /function Field\(/);
 });
+
+test('Observaciones del equipo respeta el límite backend de 4000 caracteres', () => {
+  const fieldMatch = source.match(/<Field\s+error=\{fieldErrors\.observations\}[\s\S]*?\/>/);
+  assert.ok(fieldMatch, 'no se encontró el Field de observations');
+  assert.match(fieldMatch[0], /maxLength=\{4000\}/);
+});

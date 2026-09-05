@@ -311,6 +311,34 @@ class LabWorkOrderWorkflowModeChange(BaseModel):
         return normalized
 
 
+class LabCertificateFolioDistributionItem(BaseModel):
+    equipment_id: int
+    position: int
+    instrument: str
+    prefix: Literal["MYCA", "MYCT"]
+    folio: str | None = None
+
+
+class LabCertificateFolioDistributionPreview(BaseModel):
+    """Vista previa de "Distribuir folios disponibles" -- sólo lectura,
+    nunca muta. `items[].folio` es None cuando el pool disponible no
+    alcanza para ese equipo (ver distribute_pending_certificate_folios,
+    que rechaza todo-o-nada si falta algún folio)."""
+
+    work_order_id: int
+    work_order_folio: int
+    pending_accredited_count: int
+    pending_traceable_count: int
+    available_myca_count: int
+    available_myct_count: int
+    items: list[LabCertificateFolioDistributionItem]
+
+
+class LabCertificateFolioDistributionResult(BaseModel):
+    work_order_id: int
+    assigned: list[LabCertificateFolioDistributionItem]
+
+
 class LabSignatureRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -208,6 +208,7 @@ export function LabEquipmentForm({
       <Field
         error={fieldErrors.observations}
         label="Observaciones del equipo"
+        maxLength={4000}
         multiline
         value={equipment.observations ?? ''}
         onChange={(value) => updateEquipment('observations', value || null)}

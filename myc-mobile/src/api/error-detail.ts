@@ -1,6 +1,9 @@
 // Lógica pura de parseo/presentación de errores HTTP, separada de client.ts
 // para que sea unit-testeable sin arrastrar expo-constants/RN (client.ts
-// importa src/config/environment.ts, que sí los necesita).
+// importa src/config/environment.ts, que sí los necesita). field-labels.ts
+// es, igual que este archivo, libre de react-native -- puede importarse aquí
+// sin arrastrar Expo/RN a la suite node:test.
+import { FIELD_LABELS } from '../services/field-labels';
 
 // Cierre UX 2026-09: varios servicios backend (operational_tickets.py,
 // lab_work_orders.py) todavía devuelven `detail` como un código interno
@@ -47,21 +50,53 @@ const DATE_FIELD_MESSAGES: Record<string, string> = {
   next_calibration_date: 'Próxima calibración: formato incorrecto. Usa AAAA-MM-DD.',
 };
 
+type ValidationErrorContext = {
+  expected?: unknown;
+  max_length?: unknown;
+  min_length?: unknown;
+};
+
+// Cierre UX (observaciones >4000 caracteres): Pydantic v2 ya manda el motivo
+// real en `type`/`ctx` (confirmado contra el 422 real de FastAPI -- ver
+// backend/tests/test_lab_phase2_integrated_alta.py), pero antes se ignoraba
+// por completo y todo caía al fallback genérico "Revisa el campo X.". Se
+// humaniza aquí por `type`, con la MISMA prioridad que ya tenía
+// DATE_FIELD_MESSAGES (se consulta primero y gana si aplica).
+function humanizeByErrorType(
+  type: string,
+  leaf: string,
+  ctx: ValidationErrorContext | undefined,
+): string | null {
+  const label = FIELD_LABELS[leaf] ?? leaf;
+  if (type === 'string_too_long' && typeof ctx?.max_length === 'number') {
+    return `${label} admite máximo ${ctx.max_length.toLocaleString('es-MX')} caracteres.`;
+  }
+  if (type === 'string_too_short' && typeof ctx?.min_length === 'number') {
+    return `${label} requiere al menos ${ctx.min_length} caracteres.`;
+  }
+  if (type === 'missing') {
+    return `${label} es un campo requerido.`;
+  }
+  return null;
+}
+
 function parseValidationErrors(detail: unknown[]): FieldError[] {
   return detail.flatMap((item) => {
     if (!item || typeof item !== 'object') return [];
-    const raw = item as { loc?: unknown; msg?: unknown; type?: unknown; ctx?: { expected?: unknown } };
+    const raw = item as { loc?: unknown; msg?: unknown; type?: unknown; ctx?: ValidationErrorContext };
     const location = Array.isArray(raw.loc)
       ? raw.loc.map(String).filter((part) => !['body', 'query', 'path'].includes(part))
       : [];
     if (location.length === 0) return [];
     const field = location.join('.');
     const leaf = location.at(-1) ?? field;
+    const type = typeof raw.type === 'string' ? raw.type : 'validation_error';
     const message = DATE_FIELD_MESSAGES[leaf]
+      ?? humanizeByErrorType(type, leaf, raw.ctx)
       ?? `Revisa el campo ${field.replaceAll('_', ' ')}.`;
     return [{
       field,
-      code: typeof raw.type === 'string' ? raw.type : 'validation_error',
+      code: type,
       message,
       expected: raw.ctx?.expected == null ? null : String(raw.ctx.expected),
     }];

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, aliased, contains_eager, selectinload
 
 from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
+from app.models.reference_standard import FieldSheetReferenceStandard
 from app.models.user import User
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.lab_work_order import (
@@ -387,6 +388,148 @@ def create_lab_field_sheet(
     return read_lab_field_sheet(db, work_order_id, equipment_id)
 
 
+_CLONED_FIELD_SHEET_ATTRS = (
+    "calibration_place",
+    "minimum_division",
+    "location",
+    "attention",
+    "company",
+    "address",
+    "reception_date",
+    "calibration_date",
+    "next_calibration_date",
+    "environment_humidity_start",
+    "environment_humidity_end",
+    "environment_temperature_start",
+    "environment_temperature_end",
+    "equipment_general_condition",
+    "consider_equipment_deviations",
+    "units",
+    "calibrated_by",
+    "reviewed_by",
+    "report_made_by",
+    "purchase_order_or_quotation",
+    "initial_condition",
+    "final_condition",
+    "pattern_used",
+    "results",
+    "evidence_notes",
+    "method",
+    "environmental_conditions",
+    "technician_notes",
+    "certificate_client_mode",
+    "certificate_client_company",
+    "certificate_client_attention",
+    "certificate_client_address",
+    "apply_certificate_client_to_order",
+    "template_definition_json",
+    "template_definition_version",
+    "pdf_renderer_key",
+    "pdf_renderer_version",
+    "institutional_snapshot_json",
+    "calibration_procedure_id",
+    "template_key",
+    "work_order_number",
+)
+
+
+def _clone_field_sheet_for_correction(
+    db: Session,
+    equipment: LabWorkOrderEquipment,
+    retired: FieldSheet,
+    user: User,
+) -> FieldSheet:
+    """Reapertura sin hueco operativo: cuando una reapertura retira
+    (is_current=False) una FieldSheet ya completed sin que ningún campo
+    crítico del equipo haya cambiado -- el técnico sólo quiere corregir un
+    dato de la MISMA hoja (observación, resultado, evidencia, etc.), nunca
+    elegir otra plantilla -- esta función abre de inmediato la revisión N+1
+    como clon editable de N, en la MISMA transacción que la retira.
+    equipment.field_sheet nunca queda en None: la revisión histórica N
+    permanece intacta (status/final_pdf_path/final_pdf_sha256 sin tocar) y
+    N+1 nace con todo su contenido técnico ya capturado, lista para
+    "Continuar captura" en vez de "Seleccionar Hoja de Campo".
+
+    observations es la única excepción deliberada (contrato ya vigente,
+    sección "Snapshot de observaciones" de LAB_WORK_ORDERS.md): N+1 vuelve a
+    leer el valor VIGENTE de LabWorkOrderEquipment.observations en este
+    momento, nunca copia el valor ya congelado en N.
+
+    Nunca clona FieldSheetSignature (una firma ligada al contenido de N no
+    puede atestiguar N+1) ni UncertaintyCalculation (bitácora de cálculo
+    propia de su propia revisión); results_rows y reference_standard_links sí
+    se clonan fila por fila porque son el contenido técnico que el técnico va
+    a corregir -- compartir las filas con N las expondría a mutación cuando
+    el técnico edite N+1, corrompiendo el histórico congelado."""
+    capture_values = dict(retired.capture_values or {})
+    capture_values.update(
+        {
+            "instrument": equipment.instrument,
+            "brand": equipment.brand,
+            "serial_number": equipment.serial_number,
+            "internal_id": equipment.identification,
+            "model": equipment.model,
+        }
+    )
+    sheet = FieldSheet(
+        equipment_id=None,
+        lab_equipment_id=equipment.id,
+        work_order_id=None,
+        revision_number=retired.revision_number + 1,
+        is_current=True,
+        supersedes_field_sheet_id=retired.id,
+        status="draft",
+        observations=(equipment.observations or "").strip() or None,
+        capture_values=capture_values,
+        lab_signature_session_id=equipment.work_order.signature_session_id,
+        **{attr: getattr(retired, attr) for attr in _CLONED_FIELD_SHEET_ATTRS},
+    )
+    sheet.results_rows = [
+        FieldSheetResult(
+            section_key=row.section_key,
+            row_number=row.row_number,
+            pattern_value=row.pattern_value,
+            ibc_value_1=row.ibc_value_1,
+            ibc_value_2=row.ibc_value_2,
+            ibc_value_3=row.ibc_value_3,
+            unit=row.unit,
+            notes=row.notes,
+            row_data=dict(row.row_data) if row.row_data is not None else None,
+        )
+        for row in retired.results_rows
+    ]
+    sheet.reference_standard_links = [
+        FieldSheetReferenceStandard(
+            reference_standard_id=link.reference_standard_id,
+            reference_standard_certificate_id=link.reference_standard_certificate_id,
+            selected_uncertainty_id=link.selected_uncertainty_id,
+            usage_role=link.usage_role,
+            measurement_section=link.measurement_section,
+            selection_status=link.selection_status,
+            selection_notes=link.selection_notes,
+            validation_snapshot=dict(link.validation_snapshot) if link.validation_snapshot is not None else None,
+            notes=link.notes,
+        )
+        for link in retired.reference_standard_links
+    ]
+    sheet.signatures = _default_signature_slots(retired.template_definition_json or {}, sheet)
+    db.add(sheet)
+    db.flush()
+    write_audit_log(
+        db,
+        action="lab_field_sheet.corrective_revision_created",
+        entity="field_sheets",
+        entity_id=sheet.id,
+        user_id=user.id,
+        new_values={
+            "lab_equipment_id": equipment.id,
+            "supersedes_field_sheet_id": retired.id,
+            "revision_number": sheet.revision_number,
+        },
+    )
+    return sheet
+
+
 def read_lab_field_sheet(db: Session, work_order_id: int, equipment_id: int) -> FieldSheetRead:
     equipment = get_lab_equipment(db, work_order_id, equipment_id)
     if equipment.field_sheet is None or not equipment.field_sheet.is_active:
@@ -595,6 +738,109 @@ def discard_lab_field_sheet(
     except Exception:
         db.rollback()
         raise
+
+
+def change_lab_field_sheet_template(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabFieldSheetCreate,
+    user: User,
+    *,
+    external: bool,
+) -> FieldSheetRead:
+    """"Cambiar Hoja de Campo": retira sólo la revisión editable vigente
+    (nunca una completed histórica -- mismo guard que
+    _discard_lab_field_sheet_uncommitted) y abre, en la MISMA transacción,
+    una revisión nueva con otra plantilla. Deliberadamente NO es
+    "discard + create" en dos peticiones separadas: entre ambas,
+    equipment.field_sheet quedaría apuntando al histórico completed que el
+    discard restaura como vigente, y create_lab_field_sheet lo rechazaría de
+    inmediato con 409 "El equipo ya tiene una hoja de campo" -- un callejón
+    sin salida. Aquí el histórico anterior (si existe) permanece intacto
+    pero NO se restaura como vigente: la nueva revisión toma su lugar sin
+    hueco. _ensure_capture_allowed reutiliza exactamente la misma
+    autorización que create_lab_field_sheet, así que esta acción nunca abre
+    una ventana de captura que el flujo normal no permitiría."""
+    equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
+    _ensure_capture_allowed(equipment, external=external)
+    sheet = equipment.field_sheet
+    if sheet is None or not sheet.is_active:
+        raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
+    if sheet.status not in {"draft", "in_progress"}:
+        raise HTTPException(
+            status_code=409,
+            detail="Sólo puede cambiarse la plantilla de la revisión vigente editable; una hoja completada o histórica se conserva",
+        )
+    if sheet.final_pdf_path or sheet.final_pdf_sha256 or sheet.certificates:
+        raise HTTPException(
+            status_code=409,
+            detail="La hoja ya tiene historial documental y no puede cambiar de plantilla",
+        )
+
+    discarded_id = sheet.id
+    discarded_template_key = sheet.template_key
+    predecessor_id = sheet.supersedes_field_sheet_id
+    sheet.is_current = False
+    db.flush()
+    db.delete(sheet)
+    db.flush()
+
+    order = equipment.work_order
+    previous_revision = equipment.field_sheets[0] if equipment.field_sheets else None
+    revision_number = (previous_revision.revision_number + 1) if previous_revision else 1
+    definition, version = get_template_snapshot(db, payload.template_key)
+    definition = canonicalize_new_field_sheet_snapshot(definition)
+    institution = get_or_create_institutional_configuration(db)
+    documentary_client = resolve_equipment_certificate_client(equipment, order)
+    capture_values = {
+        "instrument": equipment.instrument,
+        "brand": equipment.brand,
+        "serial_number": equipment.serial_number,
+        "internal_id": equipment.identification,
+        "model": equipment.model,
+    }
+    new_sheet = FieldSheet(
+        equipment_id=None,
+        lab_equipment_id=equipment.id,
+        work_order_id=None,
+        work_order_number=order.folio,
+        revision_number=revision_number,
+        is_current=True,
+        supersedes_field_sheet_id=predecessor_id,
+        template_key=payload.template_key,
+        template_definition_json=definition,
+        template_definition_version=version,
+        pdf_renderer_key=definition.get("pdf_renderer_key", CANONICAL_PDF_RENDERER_KEY),
+        pdf_renderer_version=int(definition.get("pdf_renderer_version") or CANONICAL_PDF_RENDERER_VERSION),
+        institutional_snapshot_json=institutional_snapshot(institution),
+        status="draft",
+        company=documentary_client["company"],
+        address=documentary_client["address"],
+        attention=documentary_client["attention"],
+        reception_date=order.reception_date,
+        equipment_general_condition=equipment.is_good_condition,
+        purchase_order_or_quotation=order.purchase_order,
+        initial_condition="BUENA" if equipment.is_good_condition else "REQUIERE REVISIÓN",
+        observations=(equipment.observations or "").strip() or None,
+        capture_values=capture_values,
+        lab_signature_session_id=order.signature_session_id,
+    )
+    new_sheet.results_rows = build_default_result_rows(definition)
+    new_sheet.signatures = _default_signature_slots(definition, new_sheet)
+    db.add(new_sheet)
+    db.flush()
+    write_audit_log(
+        db,
+        action="lab_field_sheet.template_changed",
+        entity="field_sheets",
+        entity_id=new_sheet.id,
+        user_id=user.id,
+        previous_values={"discarded_field_sheet_id": discarded_id, "template_key": discarded_template_key},
+        new_values={"template_key": payload.template_key, "revision_number": revision_number},
+    )
+    db.commit()
+    return read_lab_field_sheet(db, work_order_id, equipment_id)
 
 
 def _complete_lab_field_sheet_uncommitted(

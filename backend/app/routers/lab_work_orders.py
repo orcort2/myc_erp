@@ -8,6 +8,8 @@ from app.services.auth import require_permission
 from app.core.mobile.scope import ensure_lab_work_order_scope
 from app.core.mobile.security import MobileSecurityContext, require_mobile_permission
 from app.schemas.lab_work_order import (
+    LabCertificateFolioDistributionPreview,
+    LabCertificateFolioDistributionResult,
     LabEquipmentCertificateClientWrite,
     LabEquipmentConfiguredCreate,
     LabEquipmentWrite,
@@ -53,12 +55,14 @@ from app.services.lab_work_orders import (
     change_lab_work_order_workflow_mode,
     delete_work_order,
     delete_equipment,
+    distribute_pending_certificate_folios,
     export_all,
     finalize_equipment_by_equipment_work_order,
     finalize_lab_signature_group,
     get_pdf,
     get_work_order,
     list_work_orders,
+    preview_pending_certificate_folio_distribution,
     prevalidate_equipment_by_equipment_finalization,
     prevalidate_lab_signature_group,
     set_equipment_certificate_client,
@@ -72,6 +76,7 @@ from app.services.lab_work_orders import (
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.field_sheet_templates import list_field_sheet_templates
 from app.services.lab_field_sheets import (
+    change_lab_field_sheet_template,
     complete_lab_field_sheet,
     create_lab_field_sheet,
     discard_lab_field_sheet,
@@ -695,6 +700,32 @@ def delete_lab_field_sheet(
     discard_lab_field_sheet(db, work_order_id, equipment_id, context.user)
 
 
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/field-sheet/change-template",
+    response_model=FieldSheetRead,
+)
+def post_change_lab_field_sheet_template(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabFieldSheetCreate,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "field_sheets.capture", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
+    ),
+) -> FieldSheetRead:
+    """"Cambiar Hoja de Campo": retira la revisión editable vigente y abre
+    una nueva con otra plantilla en una sola operación atómica -- ver
+    change_lab_field_sheet_template para por qué esto no puede ser
+    DELETE + POST en dos peticiones separadas."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return change_lab_field_sheet_template(
+        db, work_order_id, equipment_id, payload, context.user,
+        external=context.actor_type == "client",
+    )
+
+
 @router.post("/{work_order_id}/equipment/{equipment_id}/field-sheet/complete", response_model=FieldSheetRead)
 def post_complete_lab_field_sheet(
     work_order_id: int,
@@ -900,6 +931,47 @@ def post_change_lab_work_order_workflow_mode(
         )
     ensure_lab_work_order_scope(db, work_order_id, context)
     return change_lab_work_order_workflow_mode(db, work_order_id, payload, context.user)
+
+
+@router.get(
+    "/{work_order_id}/certificate-folios/preview",
+    response_model=LabCertificateFolioDistributionPreview,
+)
+def get_pending_certificate_folio_distribution_preview(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    # Misma autoridad administrativa interna que "Cambiar modalidad de
+    # trabajo" -- reparar folios de cliente operativo es una acción
+    # administrativa equivalente, no una capacidad nueva de Captura/Técnico.
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_orders.cancel")
+    ),
+) -> LabCertificateFolioDistributionPreview:
+    if context.actor_type != "internal":
+        raise HTTPException(
+            status_code=403, detail="Distribuir folios disponibles está reservado a staff MYC"
+        )
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return preview_pending_certificate_folio_distribution(db, work_order_id)
+
+
+@router.post(
+    "/{work_order_id}/certificate-folios/distribute",
+    response_model=LabCertificateFolioDistributionResult,
+)
+def post_distribute_pending_certificate_folios(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_work_orders.cancel")
+    ),
+) -> LabCertificateFolioDistributionResult:
+    if context.actor_type != "internal":
+        raise HTTPException(
+            status_code=403, detail="Distribuir folios disponibles está reservado a staff MYC"
+        )
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return distribute_pending_certificate_folios(db, work_order_id, context.user)
 
 
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)

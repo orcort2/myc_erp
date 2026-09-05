@@ -40,9 +40,9 @@ from app.models.operational_ticket import OperationalTicket
 from app.models.notification import Notification
 from app.models.user import Role, User
 from app.schemas.lab_client import LabClientCreate
-from app.schemas.lab_work_order import LabWorkOrderCreate
+from app.schemas.lab_work_order import LabEquipmentConfiguredCreate, LabWorkOrderCreate
 from app.services.lab_clients import create_lab_client
-from app.services.lab_work_orders import create_work_order
+from app.services.lab_work_orders import create_configured_equipment, create_work_order
 from app.services.portal.permission_service import ensure_portal_catalog
 
 
@@ -992,6 +992,104 @@ def test_allocation_failure_rolls_back_the_entire_operation(phase2_context):
         assert equipment_count is None
         work_order = db.get(LabWorkOrder, order_id)
         assert work_order.edit_version == 1  # nunca se incrementó: el add_equipment también se revirtió
+
+
+def test_external_accredited_without_a_resolved_folio_pool_is_rejected_and_rolls_back(phase2_context):
+    """Bug confirmado: un cliente operativo externo SIN ticket
+    certificate_folio_block resuelto no puede registrar equipo accredited --
+    antes caía silenciosamente a folio_status='pending' (indistinguible del
+    pending legítimo de Vinculado); ahora responde 409
+    LAB_CERTIFICATE_FOLIOS_UNAVAILABLE y no persiste equipo/edit_version
+    parcial, igual que el agotamiento de secuencia interna. Se ejercita a
+    nivel servicio (como test_external_tenant_cannot_select_another_tenants_lab_client)
+    porque crear la OT en sí está reservado a staff/grupo aprobado -- lo que
+    esta regla protege es el alta externa de equipo (external=True), no la
+    ruta HTTP de creación de OT."""
+    _client, factory, _tokens, tenants = phase2_context
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        order = create_work_order(
+            db, LabWorkOrderCreate(**create_payload()), admin,
+            operator_client_id=tenants["client_a"].id,
+        )
+        with pytest.raises(Exception) as excinfo:
+            create_configured_equipment(
+                db, order.id,
+                LabEquipmentConfiguredCreate(**configured_payload(1, "accredited")),
+                admin, operator_client_id=tenants["client_a"].id, external=True,
+            )
+        assert getattr(excinfo.value, "status_code", None) == 409
+        detail = excinfo.value.detail
+        assert detail["code"] == "LAB_CERTIFICATE_FOLIOS_UNAVAILABLE"
+        assert detail["service_type"] == "accredited"
+        assert detail["required_prefix"] == "MYCA"
+        assert detail["operator_client_id"] == tenants["client_a"].id
+        db.rollback()
+        assert db.scalar(
+            select(LabWorkOrderEquipment).where(LabWorkOrderEquipment.work_order_id == order.id)
+        ) is None
+        work_order = db.get(LabWorkOrder, order.id)
+        assert work_order.edit_version == 1
+
+
+def test_external_traceable_with_a_resolved_pool_reserves_the_folio_and_marks_it_used(phase2_context):
+    """Camino feliz simétrico: con un ticket certificate_folio_block ya
+    resuelto y folios libres, el alta externa SÍ reserva folio -- confirma
+    que el bloqueo de arriba es específico a "pool ausente/agotado", no una
+    regresión que rompa el camino existente."""
+    _client, factory, _tokens, tenants = phase2_context
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        ticket = OperationalTicket(
+            type="certificate_folio_block",
+            status="resolved",
+            work_order_id=None,
+            operator_client_id=tenants["client_a"].id,
+            requested_by_user_id=admin.id,
+            reason="Prueba",
+            description="Reserva de folios de prueba",
+            accredited_quantity=0,
+            traceable_quantity=1,
+            resolution_snapshot={"folios": {"MYCA": [], "MYCT": ["MYCT-01-26-0001"]}, "used": {}},
+        )
+        db.add(ticket)
+        db.commit()
+
+        order = create_work_order(
+            db, LabWorkOrderCreate(**create_payload()), admin,
+            operator_client_id=tenants["client_a"].id,
+        )
+        result = create_configured_equipment(
+            db, order.id,
+            LabEquipmentConfiguredCreate(**configured_payload(1, "traceable")),
+            admin, operator_client_id=tenants["client_a"].id, external=True,
+        )
+        equipment = result.equipment[-1]
+        assert equipment.certificate_folio == "MYCT-01-26-0001"
+        assert equipment.folio_status == "reserved"
+        ticket = db.get(OperationalTicket, ticket.id)
+        assert "MYCT-01-26-0001" in ticket.resolution_snapshot["used"]
+
+
+def test_external_linked_without_any_pool_still_stays_pending(phase2_context):
+    """linked nunca debe bloquearse por esta regla -- sigue su flujo propio
+    de folio_status=pending / linked_folio request, sin tocar
+    certificate_folio_block en absoluto."""
+    _client, factory, _tokens, tenants = phase2_context
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        order = create_work_order(
+            db, LabWorkOrderCreate(**create_payload()), admin,
+            operator_client_id=tenants["client_a"].id,
+        )
+        result = create_configured_equipment(
+            db, order.id,
+            LabEquipmentConfiguredCreate(**configured_payload(1, "linked")),
+            admin, operator_client_id=tenants["client_a"].id, external=True,
+        )
+        equipment = result.equipment[-1]
+        assert equipment.certificate_folio is None
+        assert equipment.folio_status == "pending"
 
 
 # --------------------------------------------------------------------------

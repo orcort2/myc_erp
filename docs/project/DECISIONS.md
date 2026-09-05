@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-09-02
+> Corte verificado: 2026-09-05
 
 # Registro de decisiones vigentes
 
@@ -454,3 +454,66 @@ a leer el valor vigente del equipo en ese momento. Se documenta en
 frente a `certificate_folio`/`report_number` y frente al renglón de
 observación del PDF de OT (que sigue usando el campo del equipo, no el de
 la FieldSheet).
+
+## D-2026-09-05 — Reapertura FieldSheet clona en vez de dejar hueco; folio de certificado exige pool externo
+
+Tres correcciones puntuales sobre el mismo vertical, cada una resuelta
+reutilizando primitivas ya existentes en vez de inventar arquitectura
+nueva.
+
+**Reapertura sin hueco operativo.** Retirar (`is_current=False`) la
+revisión `completed` vigente de una FieldSheet siempre dejaba al equipo sin
+revisión vigente hasta que alguien volviera a llamar `create_lab_field_sheet`
+manualmente -- Mobile lo mostraba como "Seleccionar Hoja de Campo", igual
+que un equipo nunca capturado, aunque el histórico completed siguiera
+intacto. Se decide que esa apariencia es incorrecta sólo cuando la
+retirada NO viene acompañada de un cambio de campo crítico del equipo (el
+caso donde SÍ corresponde una hoja en blanco, sin tocar): para el Ticket
+`field_sheet_reopen` y para el equipo objetivo de una reapertura de cohorte
+completa, `_clone_field_sheet_for_correction`
+(`app/services/lab_field_sheets.py`) abre la revisión N+1 ya clonada y
+editable en la MISMA transacción que retira N. Se reutiliza exactamente el
+modelo de revisión de Fase 6 (`revision_number`, `supersedes_field_sheet_id`,
+`uq_field_sheets_current_lab_equipment`) -- no se crea un segundo esquema
+de versionado. No se clonan firmas ni cálculos de incertidumbre, que
+pertenecen a su propia revisión.
+
+Para "quiero otra plantilla, no corregir un dato" se añade una acción
+explícita y atómica (`POST .../field-sheet/change-template`) en vez de
+componer DELETE+POST desde el cliente: el DELETE de descarte ya existente
+restaura la revisión anterior `completed` como vigente (comportamiento
+correcto para su caso de uso original, "deshacer mi intento"), lo que
+bloquearía un POST posterior con 409. La nueva acción retira sólo la
+editable vigente y crea la siguiente sin ese callejón sin salida, sin
+tocar el descarte existente ni su contrato ya probado.
+
+**Folio de certificado exige pool externo resuelto.** `_assign_equipment_service_core`
+resolvía folio MYCA/MYCT de un cliente operativo externo contra su ticket
+`certificate_folio_block`, pero si no había folio disponible caía en
+silencio a `folio_status="pending"` -- indistinguible del `pending`
+legítimo de Vinculado. Se decide bloquear esa combinación específica
+(externo + accredited/traceable + sin pool) con `409
+LAB_CERTIFICATE_FOLIOS_UNAVAILABLE`, dejando `linked` exento (su `pending`
+siempre fue válido) y sin tocar la resolución de folio de staff interno
+(secuencia institucional propia, nunca sujeta a esta regla).
+
+Para reparar equipo legacy ya atrapado en ese `pending` desde antes de la
+regla, se añade la acción administrativa "Distribuir folios disponibles"
+(`preview_pending_certificate_folio_distribution` /
+`distribute_pending_certificate_folios`), todo-o-nada por prefijo dentro de
+una OT, reutilizando el mismo locking (`SELECT ... FOR UPDATE` sobre el
+ticket) que ya usaba el alta -- no se crea un mecanismo de asignación
+paralelo. Reutiliza el permiso `lab_work_orders.cancel` ya usado por
+"Cambiar modalidad de trabajo" en vez de crear uno nuevo: misma clase de
+autoridad administrativa interna.
+
+**Mobile: validación humanizada.** `error-detail.ts` ya capturaba el `type`
+crudo de Pydantic pero nunca lo usaba para elegir mensaje -- todo caía al
+genérico `"Revisa el campo X."`, incluido un `observations` de más de 4000
+caracteres sin decir por qué. Se humanizan `string_too_long`/
+`string_too_short`/`missing` por tipo, reutilizando (extraído a
+`field-labels.ts`, sin dependencia de React Native) el mismo mapa de
+etiquetas que ya existía sólo para `missingFields` en
+`LabTechnicalCapture.tsx` -- una sola fuente en vez de dos listas que
+podían divergir. `Field` (`primitives.tsx`) gana `maxLength`/contador
+opt-in, sin cambiar el contrato de los callers existentes que no lo pasan.

@@ -26,6 +26,8 @@ reutiliza.
 from __future__ import annotations
 
 import base64
+import os
+import uuid
 from datetime import datetime, timezone
 
 import pytest
@@ -624,8 +626,12 @@ def test_field_sheet_reopen_ticket_retires_and_enables_recapture_without_closing
     ready_to_close al completarla, el approve del ticket retira la revisión
     vigente (mismo _retire_current_field_sheet_revision que ya usa el
     reopen invalidate + edición crítica) y regresa la OT a in_progress
-    -- no a draft, no se toca ninguna firma -- para que create_lab_field_sheet
-    abra normalmente la revisión 2, conservando la 1 intacta con su PDF."""
+    -- no a draft, no se toca ninguna firma. A diferencia del cambio crítico
+    de equipo, esto NO deja equipment.field_sheet en None: la revisión 2
+    nace ya CLONADA y editable en la misma transacción que retira la 1
+    (_clone_field_sheet_for_correction), lista para "Continuar captura" sin
+    volver a elegir plantilla ni recapturar desde cero. La 1 permanece
+    intacta con su PDF."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
@@ -669,15 +675,52 @@ def test_field_sheet_reopen_ticket_retires_and_enables_recapture_without_closing
     assert reverted.json()["status"] == "in_progress"
     with factory() as db:
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
-        assert equipment.field_sheet is None
+        clone = equipment.field_sheet
+        assert clone is not None, "la revision N+1 debe nacer ya clonada, sin hueco operativo"
+        assert clone.is_current is True
+        assert clone.status == "draft"
+        assert clone.revision_number == 2
+        assert clone.supersedes_field_sheet_id == first_sheet_id
+        second_sheet_id = clone.id
+        # Contenido técnico clonado, no una hoja en blanco.
+        assert clone.capture_values.get("serial_number") == "SER-1"
+        assert len(clone.results_rows) == len(db.get(FieldSheet, first_sheet_id).results_rows)
+        # Nunca se clonan firmas: los slots nacen vacíos.
+        assert clone.signatures
+        assert all(signature.signature_data is None for signature in clone.signatures)
+
         first = db.get(FieldSheet, first_sheet_id)
         assert first.is_current is False
         assert first.status == "completed"
         first_pdf_sha = first.final_pdf_sha256
         assert first_pdf_sha is not None
 
-    second_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
-    assert second_sheet_id != first_sheet_id
+    sheet_json = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).json()
+    assert sheet_json["id"] == second_sheet_id
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(sheet_json["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Corrección aplicada", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+
     with factory() as db:
         first = db.get(FieldSheet, first_sheet_id)
         second = db.get(FieldSheet, second_sheet_id)
@@ -688,9 +731,65 @@ def test_field_sheet_reopen_ticket_retires_and_enables_recapture_without_closing
         assert second.is_current is True
         assert second.revision_number == 2
         assert second.supersedes_field_sheet_id == first_sheet_id
+        assert second.status == "completed"
 
     final_status = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
     assert final_status.json()["status"] == "ready_to_close"
+
+
+def test_field_sheet_reopen_ticket_clone_can_switch_template_via_change_template_endpoint(lab_context):
+    """"Cambiar Hoja de Campo": tras el clon automático de la reapertura, el
+    técnico puede optar por otra plantilla en una sola llamada atómica --
+    nunca DELETE + POST por separado, porque el DELETE restauraría la
+    revisión 1 (completed) como vigente y el POST normal la rechazaría con
+    409 "ya tiene una hoja de campo"."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id, template_key="general")
+
+    requested = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "Error de captura",
+            "description": "Se necesita otra plantilla",
+        },
+        headers=headers,
+    )
+    assert requested.status_code == 201, requested.text
+    ticket_id = requested.json()["id"]
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket_id}/resolve",
+        json={"comment": "Procede recaptura"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+
+    with factory() as db:
+        clone_id = db.get(LabWorkOrderEquipment, equipment_id).field_sheet.id
+
+    changed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/change-template",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert changed.status_code == 200, changed.text
+    new_sheet = changed.json()
+    # SQLite puede reutilizar el PK entero recién liberado por el DELETE de
+    # la revisión 2 -- la identidad estable a verificar es revision_number,
+    # no el id crudo.
+    assert new_sheet["supersedes_field_sheet_id"] == first_sheet_id
+    assert new_sheet["revision_number"] == 3
+
+    with factory() as db:
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.is_current is False and first.status == "completed"
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet.id == new_sheet["id"]
+        assert equipment.field_sheet.is_current is True
 
 
 def test_field_sheet_reopen_ticket_does_not_apply_once_the_whole_ot_is_closed(lab_context):
@@ -731,3 +830,141 @@ def test_unsupported_prototype_template_is_explicit_and_never_falls_back_to_gene
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
         assert equipment.field_sheet is None
         assert equipment.field_sheets == []
+
+
+@pytest.fixture()
+def postgres_lab_context():
+    """Regresión PostgreSQL real para el clon N->N+1 (_clone_field_sheet_for_correction):
+    uq_field_sheets_current_lab_equipment es un índice único PARCIAL
+    (postgresql_where=is_current IS TRUE) y los hijos clonados
+    (FieldSheetResult/FieldSheetReferenceStandard/FieldSheetSignature) usan
+    FK/cascade reales -- SQLite no basta para confirmar que el clon nunca
+    deja dos revisiones is_current=True a la vez ni viola esas constraints."""
+    database_url = os.getenv("LAB_POSTGRES_TEST_URL")
+    if not database_url:
+        pytest.skip("requiere LAB_POSTGRES_TEST_URL para probar constraints PostgreSQL reales")
+
+    from sqlalchemy import text as sa_text
+
+    schema = f"lab_field_sheet_revisions_{uuid.uuid4().hex}"
+    admin_engine = create_engine(database_url)
+    with admin_engine.begin() as connection:
+        connection.execute(sa_text(f'CREATE SCHEMA "{schema}"'))
+
+    engine = create_engine(database_url, connect_args={"options": f"-csearch_path={schema}"})
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with factory() as db:
+        roles = {name: Role(name=name, description=name) for name in ("Tecnico", "Administrador")}
+        db.add_all(roles.values())
+        db.flush()
+        users = {}
+        for key, role_name in (("tech", "Tecnico"), ("admin", "Administrador")):
+            role = roles[role_name]
+            user = User(
+                username=f"pg-fsrev-{key}",
+                email=f"pg-fsrev-{key}@example.test",
+                full_name=f"PostgreSQL {key}",
+                hashed_password="unused",
+                account_type="internal",
+                status="active",
+                is_active=True,
+                role_id=role.id,
+                roles=[role],
+            )
+            users[key] = user
+            db.add(user)
+        db.commit()
+
+    def override_db():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_db
+    client = TestClient(app)
+    tokens = {
+        key: create_access_token(
+            str(user.id),
+            extra_claims={"roles": [user.roles[0].name], "auth_context": "internal"},
+        )
+        for key, user in users.items()
+    }
+    try:
+        yield client, factory, tokens
+    finally:
+        app.dependency_overrides.clear()
+        engine.dispose()
+        with create_engine(database_url).begin() as connection:
+            connection.execute(sa_text(f'DROP SCHEMA "{schema}" CASCADE'))
+
+
+def test_postgresql_field_sheet_reopen_ticket_clones_forward_without_violating_unique_current(
+    postgres_lab_context,
+):
+    client, factory, tokens = postgres_lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+
+    requested = client.post(
+        "/api/mobile/v1/technician/tickets/field-sheet-reopen",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "Error de captura",
+            "description": "El resultado quedó mal transcrito",
+        },
+        headers=headers,
+    )
+    assert requested.status_code == 201, requested.text
+    resolved = client.post(
+        f"/api/mobile/v1/technician/tickets/{requested.json()['id']}/resolve",
+        json={"comment": "Procede recaptura"},
+        headers=admin_headers,
+    )
+    assert resolved.status_code == 200, resolved.text
+
+    with factory() as db:
+        # El índice único parcial en Postgres real nunca se violó: exactamente
+        # una fila is_current=True para este equipo.
+        current_rows = list(
+            db.scalars(
+                select(FieldSheet).where(
+                    FieldSheet.lab_equipment_id == equipment_id,
+                    FieldSheet.is_current.is_(True),
+                )
+            )
+        )
+        assert len(current_rows) == 1
+        clone = current_rows[0]
+        assert clone.id != first_sheet_id
+        assert clone.supersedes_field_sheet_id == first_sheet_id
+        assert clone.status == "draft"
+        assert len(clone.results_rows) > 0
+        assert clone.signatures  # slots frescos, no copiados de la revisión 1
+
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.is_current is False and first.status == "completed"
+
+    # El técnico completa la revisión clonada directamente -- FK/cascade
+    # reales sobre resultados/firmas de la nueva fila, sin 500.
+    sheet_json = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).json()
+    rows = [
+        {"id": row["id"], "section_key": row["section_key"], "row_number": row["row_number"], "row_data": row["row_data"]}
+        for row in sheet_json["results_rows"]
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Corrección aplicada", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text

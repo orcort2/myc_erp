@@ -40,6 +40,9 @@ from app.models.notification import Notification
 from app.models.operational_ticket import OperationalTicket
 from app.models.user import User
 from app.schemas.lab_work_order import (
+    LabCertificateFolioDistributionItem,
+    LabCertificateFolioDistributionPreview,
+    LabCertificateFolioDistributionResult,
     LabDeliveryCreate,
     LabEquipmentCertificateClientWrite,
     LabEquipmentConfiguredCreate,
@@ -1711,6 +1714,54 @@ def _allocate_lab_certificate_folio(db: Session, prefix: str) -> str:
     return f"{prefix}-{today:%m}-{today:%y}-{sequence:04d}"
 
 
+def _available_external_certificate_folios(
+    db: Session, operator_client_id: int | None, prefix: str
+) -> list[tuple[str, OperationalTicket]]:
+    """TODOS los folios MYCA/MYCT libres (no en `used`) entre los tickets
+    certificate_folio_block ya resueltos de este operator_client_id, en
+    orden de creación del ticket y luego de almacenamiento del folio dentro
+    de éste. Bloquea las filas candidatas (FOR UPDATE) para que dos
+    asignaciones concurrentes nunca consuman el mismo folio -- reutilizado
+    por _assign_equipment_service_core (alta de equipo) y por
+    preview/distribute_pending_certificate_folios (reparación de pendientes
+    legacy)."""
+    requests = db.scalars(
+        select(OperationalTicket)
+        .where(
+            OperationalTicket.type == "certificate_folio_block",
+            OperationalTicket.operator_client_id == operator_client_id,
+            OperationalTicket.status == "resolved",
+        )
+        .order_by(OperationalTicket.created_at)
+        .with_for_update()
+    ).all()
+    result: list[tuple[str, OperationalTicket]] = []
+    for request in requests:
+        snapshot = dict(request.resolution_snapshot or {})
+        available = list((snapshot.get("folios") or {}).get(prefix) or [])
+        used = dict(snapshot.get("used") or {})
+        for folio in available:
+            if folio not in used:
+                result.append((folio, request))
+    return result
+
+
+def _find_available_external_certificate_folio(
+    db: Session, operator_client_id: int | None, prefix: str
+) -> tuple[str, OperationalTicket] | None:
+    available = _available_external_certificate_folios(db, operator_client_id, prefix)
+    return available[0] if available else None
+
+
+def _reserve_external_certificate_folio(
+    request: OperationalTicket, folio: str, equipment_id: int
+) -> None:
+    snapshot = dict(request.resolution_snapshot or {})
+    used = dict(snapshot.get("used") or {})
+    used[folio] = {"equipment_id": equipment_id, "assigned_at": datetime.now(timezone.utc).isoformat()}
+    request.resolution_snapshot = {**snapshot, "used": used}
+
+
 def _assign_equipment_service_core(
     db: Session,
     work_order: LabWorkOrder,
@@ -1792,35 +1843,34 @@ def _assign_equipment_service_core(
         prefix = "MYCA" if payload.service_type == "accredited" else "MYCT"
         folio = None
         if external:
-            requests = db.scalars(
-                select(OperationalTicket)
-                .where(
-                    OperationalTicket.type == "certificate_folio_block",
-                    OperationalTicket.operator_client_id == work_order.operator_client_id,
-                    OperationalTicket.status == "resolved",
+            found = _find_available_external_certificate_folio(
+                db, work_order.operator_client_id, prefix
+            )
+            if found is None:
+                # Bug confirmado: un cliente operativo externo NO puede
+                # registrar accredited/traceable sin un pool MYCA/MYCT
+                # resuelto y disponible -- antes esto caía silenciosamente
+                # a folio_status="pending" (indistinguible del pending
+                # legítimo de Vinculado). "Distribuir folios disponibles"
+                # (distribute_pending_certificate_folios) repara equipo ya
+                # atrapado en ese estado desde antes de este fix.
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "LAB_CERTIFICATE_FOLIOS_UNAVAILABLE",
+                        "service_type": payload.service_type,
+                        "required_prefix": prefix,
+                        "operator_client_id": work_order.operator_client_id,
+                    },
                 )
-                .order_by(OperationalTicket.created_at)
-                .with_for_update()
-            ).all()
-            for request in requests:
-                snapshot = dict(request.resolution_snapshot or {})
-                available = list((snapshot.get("folios") or {}).get(prefix) or [])
-                used = dict(snapshot.get("used") or {})
-                folio = next((value for value in available if value not in used), None)
-                if folio:
-                    used[folio] = {"equipment_id": equipment.id, "assigned_at": datetime.now(timezone.utc).isoformat()}
-                    request.resolution_snapshot = {**snapshot, "used": used}
-                    break
+            folio, request = found
+            _reserve_external_certificate_folio(request, folio, equipment.id)
         else:
             folio = _allocate_lab_certificate_folio(db, prefix)
-        if folio:
-            equipment.certificate_folio = folio
-            equipment.automatic_certificate_folio = folio
-            equipment.folio_status = "reserved"
-            action = "lab_equipment.folio_reserved"
-        else:
-            equipment.folio_status = "pending"
-            action = "lab_equipment.service_assigned"
+        equipment.certificate_folio = folio
+        equipment.automatic_certificate_folio = folio
+        equipment.folio_status = "reserved"
+        action = "lab_equipment.folio_reserved"
     else:
         equipment.folio_status = "pending"
         action = "lab_equipment.service_assigned"
@@ -3296,6 +3346,135 @@ def change_lab_work_order_workflow_mode(
     )
     commit_and_dispatch_notifications(db)
     return _read(db, _get(db, work_order.id))
+
+
+def _pending_certificate_folio_equipment(work_order: LabWorkOrder) -> list[LabWorkOrderEquipment]:
+    """Sólo equipo realmente atrapado por el bug: activo, accredited/traceable,
+    sin folio y en el pending "normal" (nunca linked, nunca tombstone, nunca
+    ya reservado/authorized)."""
+    return sorted(
+        (
+            item
+            for item in work_order.active_equipment
+            if item.service_type in {"accredited", "traceable"}
+            and item.certificate_folio is None
+            and item.folio_status == "pending"
+        ),
+        key=lambda item: item.position,
+    )
+
+
+def preview_pending_certificate_folio_distribution(
+    db: Session, work_order_id: int
+) -> LabCertificateFolioDistributionPreview:
+    """Sólo lectura -- "Distribuir folios disponibles" (acción administrativa
+    para reparar equipo legacy atrapado en pending por el bug que
+    _assign_equipment_service_core ahora bloquea en el alta). Bloquea la OT y
+    los tickets candidatos (mismo criterio que distribute_...) para que el
+    conteo mostrado sea exactamente el que se ejecutaría si el admin
+    confirma de inmediato después; nunca muta nada."""
+    work_order = _get(db, work_order_id, lock=True)
+    pending = _pending_certificate_folio_equipment(work_order)
+    available = {
+        "MYCA": _available_external_certificate_folios(db, work_order.operator_client_id, "MYCA"),
+        "MYCT": _available_external_certificate_folios(db, work_order.operator_client_id, "MYCT"),
+    }
+    consumed = {"MYCA": 0, "MYCT": 0}
+    items = []
+    for item in pending:
+        prefix = "MYCA" if item.service_type == "accredited" else "MYCT"
+        pool = available[prefix]
+        index = consumed[prefix]
+        folio = pool[index][0] if index < len(pool) else None
+        consumed[prefix] += 1
+        items.append(
+            LabCertificateFolioDistributionItem(
+                equipment_id=item.id,
+                position=item.position,
+                instrument=item.instrument,
+                prefix=prefix,
+                folio=folio,
+            )
+        )
+    return LabCertificateFolioDistributionPreview(
+        work_order_id=work_order.id,
+        work_order_folio=work_order.folio,
+        pending_accredited_count=sum(1 for item in pending if item.service_type == "accredited"),
+        pending_traceable_count=sum(1 for item in pending if item.service_type == "traceable"),
+        available_myca_count=len(available["MYCA"]),
+        available_myct_count=len(available["MYCT"]),
+        items=items,
+    )
+
+
+def distribute_pending_certificate_folios(
+    db: Session, work_order_id: int, user: User
+) -> LabCertificateFolioDistributionResult:
+    """Todo-o-nada por OT: si el pool disponible de CUALQUIER prefijo no
+    alcanza para su conteo pending, no asigna nada y responde 409
+    LAB_CERTIFICATE_FOLIOS_INSUFFICIENT. Reutiliza exactamente el mismo
+    locking (_get lock=True + FOR UPDATE de tickets vía
+    _available_external_certificate_folios) que ya usa
+    _assign_equipment_service_core -- dos ejecuciones concurrentes nunca
+    consumen el mismo folio. Idempotente por construcción: un segundo run
+    no encuentra equipo pending (ya tienen folio), así que no asigna nada."""
+    work_order = _get(db, work_order_id, lock=True)
+    pending = _pending_certificate_folio_equipment(work_order)
+    if not pending:
+        return LabCertificateFolioDistributionResult(work_order_id=work_order.id, assigned=[])
+
+    available = {
+        "MYCA": _available_external_certificate_folios(db, work_order.operator_client_id, "MYCA"),
+        "MYCT": _available_external_certificate_folios(db, work_order.operator_client_id, "MYCT"),
+    }
+    required = {
+        "MYCA": sum(1 for item in pending if item.service_type == "accredited"),
+        "MYCT": sum(1 for item in pending if item.service_type == "traceable"),
+    }
+    for prefix in ("MYCA", "MYCT"):
+        if required[prefix] > len(available[prefix]):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "LAB_CERTIFICATE_FOLIOS_INSUFFICIENT",
+                    "prefix": prefix,
+                    "required": required[prefix],
+                    "available": len(available[prefix]),
+                },
+            )
+
+    consumed = {"MYCA": 0, "MYCT": 0}
+    assigned: list[LabCertificateFolioDistributionItem] = []
+    for item in pending:
+        prefix = "MYCA" if item.service_type == "accredited" else "MYCT"
+        folio, request = available[prefix][consumed[prefix]]
+        consumed[prefix] += 1
+        _reserve_external_certificate_folio(request, folio, item.id)
+        item.certificate_folio = folio
+        item.automatic_certificate_folio = folio
+        item.folio_status = "reserved"
+        assigned.append(
+            LabCertificateFolioDistributionItem(
+                equipment_id=item.id,
+                position=item.position,
+                instrument=item.instrument,
+                prefix=prefix,
+                folio=folio,
+            )
+        )
+    write_audit_log(
+        db,
+        action="lab_work_order.pending_certificate_folios_distributed",
+        entity="lab_work_orders",
+        entity_id=work_order.id,
+        user_id=user.id,
+        new_values={
+            "operator_client_id": work_order.operator_client_id,
+            "assigned": [item.model_dump() for item in assigned],
+        },
+    )
+    db.commit()
+    return LabCertificateFolioDistributionResult(work_order_id=work_order.id, assigned=assigned)
 
 
 def get_pdf(db: Session, work_order_id: int) -> tuple[bytes, str]:

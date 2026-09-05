@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-09-03
+> Corte verificado: 2026-09-05
 >
 > Alcance: Tickets operativos y reapertura documental controlada de OT LAB
 
@@ -50,6 +50,23 @@ descripción y `requested_date`/`current_date`/`field_sheet_id` dentro de
 son usuarios internos con `work_orders.create` o `lab_work_orders.use`, excepto
 el solicitante; resolver exige la misma autoridad y notifica al solicitante que
 la solicitud fue atendida, sin afirmar que la fecha cambió.
+
+## Reapertura sin hueco operativo (2026-09-05)
+
+Retirar la revisión `completed` vigente de una FieldSheet (por
+`field_sheet_reopen`, o por el equipo objetivo de una reapertura de cohorte
+completa) ya NO deja al equipo sin revisión vigente cuando la retirada no
+viene acompañada de un cambio de campo crítico del equipo: en la misma
+transacción se abre una revisión N+1 clonada y editable
+(`_clone_field_sheet_for_correction`, `app/services/lab_field_sheets.py`),
+lista para que el técnico corrija un dato ya capturado (observación,
+resultado, evidencia) sin volver a capturar desde cero. El histórico N
+permanece exactamente intacto (`status`/`final_pdf_path`/`final_pdf_sha256`
+sin tocar); sólo se clonan campos técnicos editables, nunca firmas
+(`FieldSheetSignature`) ni la bitácora de incertidumbre. Ver
+`LAB_WORK_ORDERS.md` ("Estados, Hojas de Campo y reapertura") para el
+contrato completo, incluida la acción explícita "Cambiar Hoja de Campo"
+para cuando el técnico sí quiere otra plantilla.
 
 ## Inmutabilidad y revisiones
 

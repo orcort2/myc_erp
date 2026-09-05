@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-09-02
+> Corte verificado: 2026-09-05
 
 # Flujo operativo actual
 
@@ -646,6 +646,22 @@ coincidencia de cohorte como una captura de firmas activa. Si el backend
 invalida después esa condición, el mismo objeto actualizado recupera
 automáticamente el flujo normal de firmas, sin un bypass persistente en Mobile.
 - Certificados sin pago pueden liberarse sólo cuando el ETS no requiere pago; no se documentó una excepción financiera general independiente del modelo actual.
+
+Desde 2026-09-05, retirar la revisión `completed` vigente de una FieldSheet
+(Ticket `field_sheet_reopen`, o el equipo objetivo de la reapertura de
+cohorte completa de arriba) ya NO deja al equipo sin hoja vigente cuando no
+hay cambio de campo crítico del equipo de por medio: la siguiente revisión
+nace clonada y editable en la misma transacción, con el mismo contenido
+técnico ya capturado, para que el técnico corrija un dato sin recapturar.
+"Cambiar Hoja de Campo" sigue siendo la acción explícita para usar otra
+plantilla en su lugar. Ver `docs/architecture/LAB_WORK_ORDERS.md`.
+
+Un cliente operativo externo que intenta registrar equipo `accredited`/
+`traceable` sin un pool MYCA/MYCT resuelto para su `operator_client_id`
+recibe `409` en el alta, en vez de quedar silenciosamente `pending`;
+`linked` no cambia. "Distribuir folios disponibles" repara equipo legacy ya
+atrapado en ese `pending` desde antes de esta regla, todo-o-nada por
+prefijo dentro de una OT. Ver `docs/architecture/LAB_WORK_ORDERS.md`.
 
 ## Flujo de notificaciones operativas móviles V1
 

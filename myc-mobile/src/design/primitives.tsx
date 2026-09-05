@@ -130,6 +130,7 @@ export function Field({
   error,
   hint,
   required,
+  maxLength,
 }: {
   label: string;
   value: string;
@@ -145,6 +146,9 @@ export function Field({
   error?: string;
   hint?: string;
   required?: boolean;
+  /** Opt-in: activa maxLength en el TextInput y un contador N/max debajo del
+   * campo. Sin efecto en los callers existentes que no lo pasan. */
+  maxLength?: number;
 }) {
   return (
     <View style={styles.field}>
@@ -152,6 +156,7 @@ export function Field({
 
       <TextInput
         keyboardType={keyboardType ?? 'default'}
+        maxLength={maxLength}
         multiline={multiline}
         onChangeText={onChange}
         placeholder={placeholder}
@@ -161,6 +166,7 @@ export function Field({
       />
       {!!error && <Text style={styles.fieldError}>{error}</Text>}
       {!error && !!hint && <Text style={styles.fieldHint}>{hint}</Text>}
+      {!!maxLength && <Text style={styles.fieldCounter}>{value.length} / {maxLength}</Text>}
     </View>
   );
 }
@@ -585,6 +591,12 @@ const styles = StyleSheet.create({
   fieldHint: {
     color: colors.textSubtle,
     fontSize: 12,
+  },
+
+  fieldCounter: {
+    color: colors.textSubtle,
+    fontSize: 11,
+    textAlign: 'right',
   },
 
   readOnlyValue: {

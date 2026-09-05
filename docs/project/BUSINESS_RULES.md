@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y bitácoras cronológicas retiradas conservadas por Git
 >
-> Corte verificado: 2026-09-02
+> Corte verificado: 2026-09-05
 
 # Reglas de negocio vigentes
 
@@ -248,3 +248,39 @@ fecha. Toda descarga posterior devuelve y verifica ese mismo artefacto; una
 ausencia o diferencia de hash bloquea la entrega y no autoriza regeneración
 silenciosa. Los estados editables pueden generar preview dinámico y los
 snapshots históricos conservan su renderer legacy explícito.
+
+## Regla verificada 2026-09-05 — Folio de certificado obligatorio para cliente operativo externo
+
+Un cliente operativo externo sólo puede registrar equipo `accredited` o
+`traceable` si existe un ticket `certificate_folio_block` `resolved` de su
+propio `operator_client_id` con al menos un folio MYCA/MYCT libre; sin eso,
+el alta se rechaza con `409 LAB_CERTIFICATE_FOLIOS_UNAVAILABLE` y no persiste
+nada (equipo/service_type/edit_version incluidos). `linked` es la única
+excepción explícita: puede quedar `pending` sin folio y seguir su flujo
+propio de `linked_folio`/Ticket. Staff interno (`external=False`) no está
+sujeto a esta regla -- siempre resuelve folio de la secuencia institucional
+LAB.
+
+La reparación de equipo legacy atrapado en ese `pending` (de antes de esta
+regla) es exclusivamente la acción administrativa "Distribuir folios
+disponibles": todo-o-nada por prefijo dentro de una OT, sólo consume folios
+ya resueltos del mismo `operator_client_id`, nunca inventa ni reutiliza un
+folio ya `used`, y queda auditada
+(`lab_work_order.pending_certificate_folios_distributed`). Ver
+`LAB_WORK_ORDERS.md` ("Cliente operativo externo: pool obligatorio para
+accredited/traceable") para el contrato completo.
+
+## Regla verificada 2026-09-05 — Reapertura de FieldSheet sin hueco operativo
+
+Retirar la revisión `completed` vigente de una FieldSheet por una corrección
+que NO cambia identidad del equipo (Ticket `field_sheet_reopen`, o el equipo
+objetivo de una reapertura de cohorte completa) nunca deja al equipo sin
+revisión vigente: la revisión N+1 nace clonada y editable en la misma
+transacción, con todo el contenido técnico previamente capturado, para que
+el técnico corrija un dato sin recapturar desde cero. Sólo un cambio de
+campo crítico del equipo (instrumento, marca, modelo, identificación, serie,
+condición física) sigue abriendo una hoja genuinamente en blanco, porque ahí
+la identidad de lo que se mide cambió de verdad. Cambiar de plantilla en vez
+de corregir un dato es una acción explícita distinta ("Cambiar Hoja de
+Campo"), nunca dos peticiones separadas de descartar y crear. Ver
+`LAB_WORK_ORDERS.md` y `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.

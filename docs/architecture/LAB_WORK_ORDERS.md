@@ -1,6 +1,6 @@
 > Estado: VIGENTE
 >
-> Corte verificado: 2026-09-04
+> Corte verificado: 2026-09-05
 >
 > Alcance: módulo temporal y removible de Órdenes de Trabajo LAB para `myc-mobile`
 
@@ -174,6 +174,45 @@ es temporal por diseño (ver `myc-mobile/AGENTS.md`, "Naturaleza temporal del
 LAB") y se espera que sea retirado antes de que ese solape se vuelva relevante
 en la práctica.
 
+#### Cliente operativo externo: pool obligatorio para accredited/traceable
+
+**Bug corregido (2026-09-05):** `_assign_equipment_service_core` resolvía el
+folio MYCA/MYCT de un actor externo buscando un ticket `certificate_folio_block`
+`resolved` de su `operator_client_id`; si no encontraba folio libre (sin
+ticket, o pool agotado), caía en silencio a `folio_status="pending"` --
+indistinguible del `pending` legítimo de Vinculado. Ahora, para
+`service_type in (accredited, traceable)` y actor externo, la ausencia de un
+folio disponible responde `409` con
+`{"code": "LAB_CERTIFICATE_FOLIOS_UNAVAILABLE", "service_type", "required_prefix",
+"operator_client_id"}` y no persiste equipo/service_type/edit_version
+parcial (mismo rollback que el agotamiento de la secuencia interna).
+`linked` permanece exento -- sigue pudiendo quedar `pending` sin bloqueo. El
+staff interno (`external=False`) tampoco se ve afectado: siempre resuelve
+vía `_allocate_lab_certificate_folio`.
+
+**"Distribuir folios disponibles"** (`preview_pending_certificate_folio_distribution`
+/ `distribute_pending_certificate_folios`, `app/services/lab_work_orders.py`)
+repara equipo que quedó `pending` desde antes de este fix. Opera sobre UNA
+OT: sólo equipo activo, `accredited`/`traceable`, `certificate_folio IS NULL`,
+`folio_status="pending"`. Fuente única: tickets `certificate_folio_block`
+`resolved` del mismo `operator_client_id`, excluyendo folios ya `used` --
+nunca la secuencia institucional interna, nunca el pool de otro tenant.
+Preview (`GET .../certificate-folios/preview`) es sólo lectura y devuelve
+conteos pending/disponibles por prefijo y la asignación propuesta
+(`equipment_id`/`position`/`instrument`/`prefix`/`folio`, orden `position
+ASC`). Distribute (`POST .../certificate-folios/distribute`) es todo-o-nada
+por prefijo: si el pool no alcanza, `409 LAB_CERTIFICATE_FOLIOS_INSUFFICIENT`
+(`prefix`/`required`/`available`) sin mutar nada; si alcanza, asigna TODO en
+una transacción, marca cada folio `used` en su ticket y registra
+`AuditLog` `lab_work_order.pending_certificate_folios_distributed`. Locking:
+mismo `SELECT ... FOR UPDATE` sobre las filas de ticket ya usado por el
+alta -- dos distribuciones concurrentes nunca consumen el mismo folio
+(regresión PostgreSQL real en `test_lab_certificate_folio_distribution.py`).
+Idempotente: un segundo run no encuentra equipo pending que reasignar.
+Permiso: reutiliza `lab_work_orders.cancel` + actor interno, mismo criterio
+que "Cambiar modalidad de trabajo" -- ninguna capacidad nueva para Captura,
+Técnico o externos.
+
 ### Folio documental Vinculado
 
 `LabWorkOrderEquipment.report_number` es el único input del folio documental
@@ -269,9 +308,42 @@ esa revisión se retira (`is_current=False`) sin tocar su
 `status`/`final_pdf_path`/`final_pdf_sha256`; `create_lab_field_sheet` abre
 la siguiente (`revision_number` incremental, `supersedes_field_sheet_id`
 apuntando a la anterior) con normalidad en cuanto la OT vuelve a estar
-firmada. Una reapertura `preserve` nunca retira ni versiona nada -- el
-trabajo técnico se conserva tal cual. Ningún documento histórico se
-sobrescribe ni se reinterpreta.
+firmada -- este caso SÍ deja el equipo temporalmente sin revisión vigente,
+porque la identidad del equipo cambió y una hoja en blanco es lo correcto.
+Una reapertura `preserve` nunca retira ni versiona nada -- el trabajo
+técnico se conserva tal cual. Ningún documento histórico se sobrescribe ni
+se reinterpreta.
+
+**Corrección "reapertura sin hueco operativo" (2026-09-05):** cuando la
+retirada de una revisión `completed` NO viene acompañada de un cambio de
+campo crítico -- el técnico sólo quiere corregir un dato ya capturado
+(observación, resultado, evidencia) vía el Ticket `field_sheet_reopen` o el
+equipo objetivo de una reapertura de cohorte completa -- retirar la
+revisión ya NO deja un hueco: `_clone_field_sheet_for_correction`
+(`app/services/lab_field_sheets.py`) abre de inmediato, en la MISMA
+transacción, la revisión N+1 como clon editable de N (`status="draft"`,
+`revision_number=N+1`, `supersedes_field_sheet_id=N.id`). Se clonan todos
+los campos técnicos editables (template, snapshot institucional,
+condiciones, resultados fila por fila, evidencia, notas, capture_values) y
+`observations` vuelve a leerse VIGENTE del equipo en ese momento (mismo
+contrato ya descrito arriba, "Snapshot de observaciones"). Nunca se clonan
+`FieldSheetSignature` (una firma ligada a N no puede atestiguar N+1) ni
+`UncertaintyCalculation` (bitácora propia de su revisión). `equipment.field_sheet`
+nunca resuelve a `None` en este camino -- Mobile ve "Continuar captura" de
+inmediato, nunca "Seleccionar Hoja de Campo", y el técnico corrige sin
+volver a capturar desde cero.
+
+Si en cambio el técnico quiere **cambiar de plantilla** (no corregir un
+dato, sino usar otra Hoja de Campo), la acción explícita es
+`POST .../equipment/{equipment_id}/field-sheet/change-template`
+(`change_lab_field_sheet_template`): retira sólo la revisión editable
+vigente (nunca una `completed` histórica, mismo guard que el DELETE de
+descarte) y abre la siguiente con la plantilla elegida, en una sola
+operación atómica. No es "DELETE + POST" en dos peticiones: el DELETE de
+descarte restaura la revisión anterior `completed` como vigente, y
+`create_lab_field_sheet` rechazaría entonces un POST posterior con 409
+("El equipo ya tiene una hoja de campo") -- un callejón sin salida que esta
+acción evita por construcción.
 
 ## PDF y app móvil
 
@@ -652,6 +724,7 @@ sección "Observaciones" del PDF de FieldSheet usa exclusivamente
 | POST | `/{id}/equipment` | agregar hasta 10 |
 | PATCH / DELETE | `/{id}/equipment/{equipment_id}` | editar / retirar (tombstone lógico, ver abajo) |
 | DELETE | `/{id}/equipment/{equipment_id}/field-sheet` | descartar únicamente la revisión vigente editable |
+| POST | `/{id}/equipment/{equipment_id}/field-sheet/change-template` | "Cambiar Hoja de Campo": retira la editable vigente y abre otra con nueva plantilla, atómico |
 | POST | `/{id}/additional?workflow_mode=` | crear la siguiente OT del grupo; `workflow_mode` opcional elige SU PROPIA modalidad (sin él, hereda la de origen) |
 | POST | `/{id}/signatures` | firmar la recepción de la cohorte abierta del grupo histórico |
 | POST | `/{id}/signatures/individual` | firmar la recepción únicamente de la OT seleccionada |
@@ -662,6 +735,8 @@ sección "Observaciones" del PDF de FieldSheet usa exclusivamente
 | GET | `/{id}/signature-group/prevalidate` | sólo lectura: blockers de TODO el scope grupal mixto, cada miembro según su propio `workflow_mode` |
 | POST | `/{id}/signature-group/finalize` | firma grupal única que puede mezclar miembros `group`/`equipment_by_equipment`; cada uno avanza según su propia modalidad |
 | POST | `/{id}/workflow-mode` | acción administrativa "Cambiar modalidad de trabajo" -- motivo obligatorio, sólo pre-firma, nunca cascada a hermanas |
+| GET | `/{id}/certificate-folios/preview` | sólo lectura: "Distribuir folios disponibles" -- conteos y asignación propuesta para equipo pending accredited/traceable |
+| POST | `/{id}/certificate-folios/distribute` | ejecutar la distribución todo-o-nada; sólo folios ya resueltos del mismo `operator_client_id` |
 | GET | `/{id}/pdf` | entregar PDF individual final |
 | GET | `/{id}/revisions` | historial documental |
 | GET | `/{id}/revisions/{revision}/pdf` | PDF histórico inmutable |

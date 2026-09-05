@@ -58,8 +58,56 @@ test('readApiErrorDetail convierte el 422 estándar de FastAPI en fieldErrors ú
     {
       field: 'equipment.serial_number',
       code: 'missing',
-      message: 'Revisa el campo equipment.serial number.',
+      message: 'No. de serie es un campo requerido.',
       expected: null,
     },
   ]);
+});
+
+test('readApiErrorDetail humaniza string_too_long con el límite real (>4000 en observaciones)', async () => {
+  const detail = await readApiErrorDetail(jsonResponse({
+    detail: [
+      {
+        type: 'string_too_long',
+        loc: ['body', 'equipment', 'observations'],
+        msg: 'String should have at most 4000 characters',
+        ctx: { max_length: 4000 },
+      },
+    ],
+  }, 422));
+  assert.deepEqual(detail.fieldErrors, [
+    {
+      field: 'equipment.observations',
+      code: 'string_too_long',
+      message: 'Observaciones admite máximo 4,000 caracteres.',
+      expected: null,
+    },
+  ]);
+});
+
+test('readApiErrorDetail humaniza string_too_short con el mínimo real', async () => {
+  const detail = await readApiErrorDetail(jsonResponse({
+    detail: [
+      {
+        type: 'string_too_short',
+        loc: ['body', 'equipment', 'instrument'],
+        msg: 'String should have at least 1 character',
+        ctx: { min_length: 1 },
+      },
+    ],
+  }, 422));
+  assert.equal(detail.fieldErrors[0].message, 'Instrumento requiere al menos 1 caracteres.');
+});
+
+test('readApiErrorDetail cae de vuelta al mensaje genérico cuando el campo no tiene label ni tipo humanizado', async () => {
+  const detail = await readApiErrorDetail(jsonResponse({
+    detail: [
+      {
+        type: 'value_error',
+        loc: ['body', 'equipment', 'some_unmapped_field'],
+        msg: 'algo raro pasó',
+      },
+    ],
+  }, 422));
+  assert.equal(detail.fieldErrors[0].message, 'Revisa el campo equipment.some unmapped field.');
 });
