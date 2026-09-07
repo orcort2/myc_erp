@@ -292,6 +292,13 @@ ROLE_PERMISSIONS = {
         "work_orders.reopen",
         "work_orders.reopen_preserve_signatures",
         "work_orders.reopen_invalidate_signatures",
+        # Autoridad administrativa directa para desbloquear una FieldSheet
+        # LAB completed (ver reopen_lab_field_sheet_directly y la
+        # resolución del Ticket field_sheet_reopen, que comparten esta
+        # misma autoridad) -- deliberadamente distinta de
+        # lab_folios.resolve (folios de certificado) y de tickets.review
+        # (triage genérico de tickets).
+        "lab_field_sheets.reopen",
         *ACTIVITY_GOVERNANCE_PERMISSIONS,
         "audit_logs.read",
         "users.read",

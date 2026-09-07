@@ -469,14 +469,27 @@ que un equipo nunca capturado, aunque el histórico completed siguiera
 intacto. Se decide que esa apariencia es incorrecta sólo cuando la
 retirada NO viene acompañada de un cambio de campo crítico del equipo (el
 caso donde SÍ corresponde una hoja en blanco, sin tocar): para el Ticket
-`field_sheet_reopen` y para el equipo objetivo de una reapertura de cohorte
-completa, `_clone_field_sheet_for_correction`
+`field_sheet_reopen`, `_clone_field_sheet_for_correction`
 (`app/services/lab_field_sheets.py`) abre la revisión N+1 ya clonada y
 editable en la MISMA transacción que retira N. Se reutiliza exactamente el
 modelo de revisión de Fase 6 (`revision_number`, `supersedes_field_sheet_id`,
 `uq_field_sheets_current_lab_equipment`) -- no se crea un segundo esquema
 de versionado. No se clonan firmas ni cálculos de incertidumbre, que
 pertenecen a su propia revisión.
+
+**Corrección (2026-09-06, auditoría quirúrgica):** la versión original de
+esta decisión también disparaba este mismo clonado cuando una reapertura de
+COHORTE completa (`reopen_work_order`) traía un `equipment_id` de contexto
+-- es decir, reabrir la OT completa podía desbloquear de facto la FieldSheet
+de ese equipo como efecto colateral. Una auditoría posterior determinó que
+eso viola la regla de dominio "reabrir la OT y desbloquear una FieldSheet
+son SIEMPRE acciones separadas": se corrige para que `equipment_id` en un
+ticket/reopen de OT sea EXCLUSIVAMENTE contexto de auditoría (ver
+`ReopenTicketCreate.equipment_id`) -- nunca dispara `_clone_field_sheet_for_correction`.
+Ese clonado queda reservado en exclusiva al Ticket `field_sheet_reopen` y al
+endpoint directo "Desbloquear hoja" (`lab_field_sheets.reopen`), ambos vía
+`_reopen_field_sheet_uncommitted`. Ver D-2026-09-06 más abajo para el
+detalle completo.
 
 Para "quiero otra plantilla, no corregir un dato" se añade una acción
 explícita y atómica (`POST .../field-sheet/change-template`) en vez de
@@ -534,3 +547,62 @@ independencia documental de estructuras anidadas -- se corrige a
 `copy.deepcopy`. Ambas correcciones con test explícito (valores de N y del
 equipo deliberadamente distintos; mutación de una estructura anidada en
 N+1 que no debe alcanzar N).
+
+## D-2026-09-06 — Auditoría de semántica de reapertura OT/FieldSheet (causa raíz OT 6443)
+
+Producción reportó OT 6443: cerrada, reabierta preservando firma
+(`signature_session_id` conservado, `signature_preserved=true`,
+`signature_required=false`), y sin embargo Mobile mostraba "Recepción de
+equipos" pese a que las 5 FieldSheets seguían `completed`/`is_current`
+intactas en BD. La causa raíz no era pérdida de datos -- era que
+`_reopen_closed_cohort` (D-2026-08-14, arriba) regresaba la OT a `"draft"`
+para AMBAS políticas de reapertura, y Mobile (`inferStepForStatus`)
+interpreta `"draft"` como "recepción pendiente" sin excepción.
+
+**Corrección:** `preserve` ahora deja la OT en `"in_progress"` -- el mismo
+status que ya representa "recepción firmada, trabajo técnico en curso" --
+en vez de `"draft"`. `invalidate` conserva `"draft"` sin cambios, porque ahí
+sí hace falta repetir recepción/firma. Esto resuelve el bug sin tocar
+Mobile: `inferStepForStatus('in_progress')` ya llevaba a captura técnica, y
+reutiliza sin duplicar la máquina de estados existente
+(`_complete_lab_field_sheet_uncommitted` ya sincroniza
+`in_progress → ready_to_close` al completar la última FieldSheet pendiente).
+`_ensure_members_editable`/`_closable_status` se generalizaron para aceptar
+`in_progress` cuando la OT fue reabierta (`reopened_at`, agnóstico de si fue
+vía Ticket o reapertura directa -- `reopen_ticket_id` es `None` en el camino
+directo), preservando exactamente la edición general de datos/equipo que ya
+existía para `"draft"`.
+
+**Se descubrió y corrigió en la misma auditoría:** dos gates adicionales
+(`_editable_group_members`, la validación de firma "ya fue firmada y no
+admite cambios ordinarios", el guard de estructura al agregar/eliminar
+equipo, y los checks "primera finalización" de `equipment_by_equipment`
+usaban literalmente `status == "draft"` o `reopen_ticket_id` como proxy de
+"esta OT es editable/fue reabierta" -- se generalizaron a la misma señal
+(`reopened_at`) para que una reapertura DIRECTA (sin ticket) reciba
+exactamente el mismo tratamiento que una mediada por Ticket, en vez de
+quedar silenciosamente bloqueada. `reopened_at` se expone ahora en
+`LabWorkOrderRead` (antes no viajaba a Mobile) para que la etiqueta
+"Completar cambios" del cierre pueda derivarse de metadata backend real, no
+de state local.
+
+**FieldSheet:** se añade el status `"reopened"` (exclusivo del vertical LAB,
+en `EDITABLE_STATUSES`, nunca cuenta como completed) para la revisión N+1
+clonada por desbloqueo -- antes nacía como `"draft"`, indistinguible de una
+captura genuinamente nueva. Se añade el permiso `lab_field_sheets.reopen`
+(hoy Administrador/Desarrollador) y el endpoint directo
+`POST .../field-sheet/reopen` ("Desbloquear hoja", sin Ticket), compartiendo
+el mismo núcleo (`_reopen_field_sheet_uncommitted`) que ya usaba la
+aprobación del Ticket `field_sheet_reopen` -- deliberadamente distinto de
+`lab_folios.resolve` y `tickets.review`, para no mezclar autoridad de
+mutación documental con triage de tickets o resolución de folios. Ambos
+caminos exigen que la OT dueña siga abierta (misma frontera que ya exigía
+`create_field_sheet_reopen_ticket`) y son idempotentes por construcción: en
+cuanto la revisión vigente deja de ser `completed`, un reintento se rechaza
+sin crear una revisión N+2.
+
+Reabrir una OT sigue sin desbloquear sus FieldSheets automáticamente
+(`_reopen_closed_cohort` sólo retira/clona la FieldSheet del `equipment_id`
+explícito, nunca todas por defecto) y reabrir con Delivery activa sigue
+bloqueado (409) -- ninguna de las dos garantías cambió con esta auditoría,
+sólo se verificaron con test explícito.

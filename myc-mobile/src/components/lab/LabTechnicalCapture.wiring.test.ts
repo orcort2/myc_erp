@@ -45,15 +45,27 @@ test('la hoja completed ofrece PDF y, sólo con la OT abierta, desbloqueo', () =
   assert.match(source, /field-sheet\/pdf/);
   assert.match(source, /requestFieldSheetReopen/);
   assert.match(source, /field-sheet-reopen/);
-  assert.match(source, /!\['completed', 'partially_closed'\]\.includes\(workOrder\.status\)/);
+  assert.match(source, /FIELD_SHEET_UNLOCK_ELIGIBLE_ORDER_STATUSES\.has\(workOrder\.status\)/);
+});
+
+test('auditoría de semántica de reapertura (2026-09): "Desbloquear hoja" vs "Solicitar desbloqueo" son excluyentes, nunca fusionadas', () => {
+  assert.match(source, /canReopenFieldSheetsDirectly: boolean/);
+  assert.match(source, /unlockFieldSheetDirectly/);
+  assert.match(source, /field-sheet\/reopen`/);
+  assert.match(source, /canReopenFieldSheetsDirectly \? \(\s*<AdministrativeButton[\s\S]{0,120}label="Desbloquear hoja"/);
+  assert.match(source, /: canCreateTickets \? \(\s*<AdministrativeButton[^>]*label="Solicitar desbloqueo"/);
+  // Ya no depende de canCapture: esa es autoridad de captura, no de
+  // reapertura administrativa (ver lab_field_sheets.reopen en el backend).
+  assert.doesNotMatch(source, /canCapture && !\[.completed., .partially_closed.\]/);
 });
 
 test('los accesos y acciones usan el canon visual vigente', () => {
   assert.match(source, /<ActionTile icon="table-edit" label="Valores"/);
   assert.match(source, /<SecondaryButton[^>]*label="Ver \/ descargar PDF"/);
-  assert.match(source, /<SecondaryButton[^>]*label="Guardar borrador"/);
+  assert.match(source, /label=\{sheet\.status === 'reopened' \? 'Guardar cambios' : 'Guardar borrador'\}/);
   assert.match(source, /<PrimaryButton[^>]*label="Completar hoja"/);
   assert.match(source, /<AdministrativeButton[^>]*label="Solicitar desbloqueo"/);
+  assert.match(source, /<AdministrativeButton[\s\S]{0,80}label="Desbloquear hoja"/);
   assert.match(source, /<DangerButton[^>]*label="Eliminar borrador"/);
   assert.doesNotMatch(source, /<ActionTile[^>]*label="(?:Guardar borrador|Completar hoja)"/);
 });

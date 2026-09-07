@@ -14,7 +14,7 @@ OT completed
   → ticket pending; la OT permanece cerrada
   → revisor rechaza, o aprueba con preserve/invalidate
   → snapshot inmutable de cada OT de la cohorte de firma y PDF anterior
-  → cohorte draft, revisión N+1, ticket in_progress
+  → cohorte in_progress (preserve) o draft (invalidate), revisión N+1, ticket in_progress
   → edición con edit_version
   → cambio crítico invalida automáticamente la firma activa
   → nueva recepción técnico+cliente si la sesión fue invalidada
@@ -51,22 +51,95 @@ son usuarios internos con `work_orders.create` o `lab_work_orders.use`, excepto
 el solicitante; resolver exige la misma autoridad y notifica al solicitante que
 la solicitud fue atendida, sin afirmar que la fecha cambió.
 
-## Reapertura sin hueco operativo (2026-09-05)
+## Reapertura sin hueco operativo (2026-09-05, corregido 2026-09-06)
 
-Retirar la revisión `completed` vigente de una FieldSheet (por
-`field_sheet_reopen`, o por el equipo objetivo de una reapertura de cohorte
-completa) ya NO deja al equipo sin revisión vigente cuando la retirada no
-viene acompañada de un cambio de campo crítico del equipo: en la misma
-transacción se abre una revisión N+1 clonada y editable
+Retirar la revisión `completed` vigente de una FieldSheet -- EXCLUSIVAMENTE
+por el Ticket `field_sheet_reopen` o el endpoint directo "Desbloquear hoja"
+(`lab_field_sheets.reopen`), nunca por reabrir la OT completa -- ya NO deja
+al equipo sin revisión vigente cuando la retirada no viene acompañada de un
+cambio de campo crítico del equipo: en la misma transacción se abre una
+revisión N+1 clonada y editable con `status="reopened"`
 (`_clone_field_sheet_for_correction`, `app/services/lab_field_sheets.py`),
 lista para que el técnico corrija un dato ya capturado (observación,
-resultado, evidencia) sin volver a capturar desde cero. El histórico N
-permanece exactamente intacto (`status`/`final_pdf_path`/`final_pdf_sha256`
-sin tocar); sólo se clonan campos técnicos editables, nunca firmas
-(`FieldSheetSignature`) ni la bitácora de incertidumbre. Ver
+resultado, evidencia) sin volver a capturar desde cero. `"reopened"` está en
+`EDITABLE_STATUSES` (acepta PATCH/complete, nunca cuenta como completed,
+bloquea el cierre hasta volver a completed) y es exclusivo del vertical LAB
+-- el flujo productivo nunca lo produce. El histórico N permanece
+exactamente intacto (`status`/`final_pdf_path`/`final_pdf_sha256` sin
+tocar); sólo se clonan campos técnicos editables. Nunca se clona la fila
+`FieldSheetSignature` de N (id, `signature_data`, `signed_at` -- evidencia
+documental, nunca duplicada como si fuera nueva de N+1) ni la bitácora de
+incertidumbre; el atributo `name` de cada slot nuevo de N+1 sí hereda el
+texto plano ya clonado como campo técnico genérico
+(`calibrated_by`/`reviewed_by`/`report_made_by`), porque para el vertical
+LAB ese campo es texto corregible (quién calibró/revisó), no evidencia
+firmada -- en LAB estas 3 filas nacen y permanecen siempre sin
+`signature_data`/`signed_at` (Mobile no las escribe ni las lee: "Calibró" se
+resuelve de la sesión de firma de recepción de la OT, no de esta tabla). Ver
 `LAB_WORK_ORDERS.md` ("Estados, Hojas de Campo y reapertura") para el
-contrato completo, incluida la acción explícita "Cambiar Hoja de Campo"
-para cuando el técnico sí quiere otra plantilla.
+contrato completo, incluida la acción explícita "Cambiar Hoja de Campo" para
+cuando el técnico sí quiere otra plantilla.
+
+## Auditoría de semántica de reapertura (2026-09)
+
+**OT (cohorte completa).** `_reopen_closed_cohort` (núcleo compartido por la
+aprobación del ticket `reopen_work_order` y `reopen_work_order_directly`, la
+reapertura directa sin ticket) ya NO regresa la OT a `"draft"` para ambas
+políticas -- reabrir una OT no es volver a recepción:
+
+- `preserve`: la firma sigue vigente (`signature_session_id` conservado,
+  `signature_required=false`) -- el status de dominio correcto es
+  `"in_progress"`, el mismo que ya representa "recepción firmada, trabajo
+  técnico en curso". Esto reutiliza sin duplicar la máquina de estados
+  existente: `_complete_lab_field_sheet_uncommitted` ya sincroniza
+  `in_progress → ready_to_close` cuando se completa la última FieldSheet
+  pendiente, exactamente igual que en el primer cierre.
+- `invalidate`: la firma se invalida (`signature_session_id=None`,
+  `signature_required=true`) -- ahí sí hace falta repetir recepción/firma,
+  así que `"draft"` (pre-firma) sigue siendo correcto, sin cambios.
+
+Este era el bug de producción de la OT 6443: Mobile interpretaba
+`"draft"` siempre como "falta recepción" y volvía a mostrar esa pantalla,
+aunque la OT reabierta con `preserve` conservara sus 5 FieldSheets
+`completed` intactas en BD. Con `preserve → "in_progress"`, Mobile ya usa el
+mismo mapeo de status que la captura técnica normal
+(`inferStepForStatus`), sin necesitar lógica de reopen especial ahí. La
+edición general de datos/equipo tras un reopen preserve (agregar equipo,
+corregir `client_name`) sigue funcionando: `_ensure_members_editable` acepta
+`in_progress` cuando `reopened_at` no es `None` (señal agnóstica de ticket
+vs. directa -- `reopen_ticket_id` es `None` en una reapertura directa), sin
+exigir además `signature_preserved` (un cambio estructural puede invalidar
+la firma a mitad de la corrección sin cerrar la ventana de edición).
+`_closable_status` tiene el carve-out equivalente para cerrar directamente
+una corrección puramente general que nunca tocó ninguna FieldSheet.
+
+**FieldSheet individual ("Desbloquear hoja" vs. "Solicitar desbloqueo").**
+Desbloquear una FieldSheet `completed` mientras la OT sigue abierta ahora
+tiene DOS caminos que comparten el mismo núcleo de dominio
+(`_reopen_field_sheet_uncommitted`, `app/services/lab_field_sheets.py`) para
+no duplicar la regla:
+
+- **Directo** (`POST /{work_order_id}/equipment/{equipment_id}/field-sheet/reopen`,
+  `reopen_lab_field_sheet_directly`): exige el permiso `lab_field_sheets.reopen`
+  (autoridad administrativa directa, hoy Administrador/Desarrollador --
+  deliberadamente distinta de `lab_folios.resolve` y de `tickets.review`).
+  Ejecuta en una sola llamada, sin crear ni autoaprobar ningún Ticket; motivo
+  obligatorio, auditado como `lab_field_sheet.reopened_directly`.
+- **Mediado por ticket** (`field_sheet_reopen`, sin cambios de flujo):
+  `resolve_operational_ticket` exige el MISMO permiso `lab_field_sheets.reopen`
+  para resolverlo (ya no `lab_folios.resolve`) -- un usuario sin esa
+  autoridad directa pero con `tickets.create` puede seguir solicitando vía
+  ticket; la hoja permanece `completed`/bloqueada hasta la aprobación.
+
+Ambos caminos exigen que la OT dueña siga abierta
+(`received_signed`/`in_progress`/`ready_to_close`) -- una OT ya
+`completed`/`partially_closed` no admite desbloquear una hoja suelta, primero
+hay que reabrir la OT completa (misma frontera que ya exigía
+`create_field_sheet_reopen_ticket`). Un segundo intento de desbloqueo sobre
+el mismo equipo es idempotente por construcción: en cuanto la revisión
+vigente deja de ser `completed` (ya es `"reopened"`), el guard
+`current.status != "completed"` rechaza el reintento con 409 sin crear una
+revisión N+2.
 
 ## Inmutabilidad y revisiones
 
@@ -108,11 +181,15 @@ Una versión ausente u obsoleta responde `409 REVISION_CONFLICT`.
 - `work_orders.reopen`: capacidad funcional de reapertura.
 - `work_orders.reopen_preserve_signatures`: aprobar preservación condicionada.
 - `work_orders.reopen_invalidate_signatures`: exigir firma nueva.
+- `lab_field_sheets.reopen`: desbloquear directamente una FieldSheet
+  `completed` ("Desbloquear hoja") o resolver un ticket `field_sheet_reopen`
+  -- hoy sólo Administrador (comodín) y Desarrollador.
 
 El Técnico recibe creación y consulta propia. Calidad recibe consulta global,
-revisión y ambas políticas. Desarrollador recibe el conjunto explícito;
-Administrador conserva su comodín. El frontend sólo oculta acciones; cada
-decisión sensible vuelve a validarse en el backend.
+revisión y ambas políticas de reapertura de OT (no `lab_field_sheets.reopen`,
+que es autoridad de mutación documental, no de triage). Desarrollador recibe
+el conjunto explícito; Administrador conserva su comodín. El frontend sólo
+oculta acciones; cada decisión sensible vuelve a validarse en el backend.
 
 ## API móvil
 
@@ -130,8 +207,13 @@ Base: `/api/mobile/v1/technician`.
 - `GET /lab-work-orders/{id}/revisions`
 - `GET /lab-work-orders/{id}/revisions/{revision}/pdf`
 
-No existe un endpoint alterno de reapertura directa: aprobar el Ticket es el
-único camino para crear snapshots y habilitar edición.
+Además del Ticket, existen dos endpoints de reapertura DIRECTA (misma
+autoridad, mismo núcleo de dominio que el ticket correspondiente, nunca una
+segunda política) documentados en `LAB_WORK_ORDERS.md`:
+`POST /lab-work-orders/{id}/reopen` (OT completa, `work_orders.reopen` +
+política) y `POST /lab-work-orders/{id}/equipment/{equipment_id}/field-sheet/reopen`
+(una FieldSheet, `lab_field_sheets.reopen`). Ninguno crea ni autoaprueba un
+Ticket artificial.
 
 ## Búsqueda y paginación
 

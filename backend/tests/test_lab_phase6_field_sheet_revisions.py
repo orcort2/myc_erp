@@ -32,7 +32,7 @@ from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -41,9 +41,15 @@ import app.models  # noqa: F401
 from app.core.db import Base, get_db
 from app.core.security import create_access_token
 from app.main import app
-from app.models.field_sheet import FieldSheet
+from app.models.audit_log import AuditLog
+from app.models.field_sheet import FieldSheet, FieldSheetSignature
+from app.models.lab_delivery_item import LabDeliveryItem
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
+from app.models.lab_work_order_delivery import LabWorkOrderDelivery
+from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
+from app.schemas.lab_client import LabClientCreate
+from app.services.lab_clients import create_lab_client
 
 
 PNG_DATA_URL = "data:image/png;base64," + base64.b64encode(
@@ -330,7 +336,7 @@ def test_reopen_preserve_never_retires_or_versions_the_field_sheet(lab_context):
     close_order(client, headers, order_id)
     reopen_order(client, headers, admin_headers, order_id, policy="preserve")
     reopened = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers).json()
-    assert reopened["status"] == "draft"
+    assert reopened["status"] == "in_progress"
     assert reopened["signature_preserved"] is True
 
     edited = client.patch(
@@ -680,7 +686,7 @@ def test_field_sheet_reopen_ticket_retires_and_enables_recapture_without_closing
         clone = equipment.field_sheet
         assert clone is not None, "la revision N+1 debe nacer ya clonada, sin hueco operativo"
         assert clone.is_current is True
-        assert clone.status == "draft"
+        assert clone.status == "reopened"
         assert clone.revision_number == 2
         assert clone.supersedes_field_sheet_id == first_sheet_id
         second_sheet_id = clone.id
@@ -817,6 +823,810 @@ def test_field_sheet_reopen_ticket_does_not_apply_once_the_whole_ot_is_closed(la
     assert denied.status_code == 409
 
 
+def _reopen_endpoint(order_id: int, equipment_id: int) -> str:
+    return f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/reopen"
+
+
+def make_lab_client_id(factory) -> int:
+    """La frontera de completitud de FieldSheets (_missing_completed_sheets,
+    ver _requires_field_sheet_discipline) sólo aplica a OT del flujo
+    evolucionado (lab_client_id IS NOT NULL) -- una OT sin cliente LAB queda
+    exenta a propósito. Los tests que ejercen esa frontera (bloquear cierre
+    mientras una FieldSheet sigue "reopened") necesitan una OT con
+    lab_client_id real, no la históricamente exenta que crea
+    create_and_sign_ready_order."""
+    with factory() as db:
+        admin = db.scalar(select(User).where(User.username == "lab-admin"))
+        lab_client = create_lab_client(
+            db, LabClientCreate(company="Cliente LAB Fase 6", address="Calle 1", attention="Ing. Prueba"),
+            admin, operator_client_id=None,
+        )
+        return lab_client.id
+
+
+def create_and_sign_ready_order_with_client(client, headers, lab_client_id) -> tuple[int, int]:
+    order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json={**create_payload(), "lab_client_id": lab_client_id},
+        headers=headers,
+    )
+    assert order.status_code == 201, order.text
+    order_id = order.json()["id"]
+    added = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+        json=equipment_payload(1),
+        headers=headers,
+    )
+    assert added.status_code == 201, added.text
+    equipment_id = added.json()["equipment"][-1]["id"]
+    service = client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service",
+        json={"service_type": "accredited", "linked_company_id": None},
+        headers=headers,
+    )
+    assert service.status_code == 200, service.text
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
+        json=signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
+    return order_id, equipment_id
+
+
+def test_direct_field_sheet_unlock_requires_permission(lab_context):
+    """Auditoría de semántica de reapertura (2026-09): "Desbloquear hoja"
+    (endpoint directo, sin ticket) exige lab_field_sheets.reopen -- un
+    técnico con sólo tickets.create (autoridad para "Solicitar desbloqueo")
+    recibe 403, nunca ejecuta la reapertura directamente."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+
+    denied = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Corrección directa"},
+        headers=headers,
+    )
+    assert denied.status_code == 403
+
+    allowed = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Corrección directa"},
+        headers=admin_headers,
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert allowed.json()["status"] == "reopened"
+
+
+def test_direct_field_sheet_unlock_creates_no_ticket_and_writes_audit_log(lab_context):
+    """"Desbloquear hoja" nunca crea ni autoaprueba un Ticket -- comparte el
+    mismo núcleo de dominio (_reopen_field_sheet_uncommitted) que aprobar un
+    Ticket field_sheet_reopen, pero ejecuta en una sola llamada."""
+    client, factory, tokens = lab_context
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, admin_headers)
+    first_sheet_id = complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+
+    with factory() as db:
+        tickets_before = db.scalar(select(func.count()).select_from(OperationalTicket))
+
+    response = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Corrección directa de folio"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    reopened_id = response.json()["id"]
+
+    with factory() as db:
+        tickets_after = db.scalar(select(func.count()).select_from(OperationalTicket))
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet.id == reopened_id
+        assert equipment.field_sheet.status == "reopened"
+        assert equipment.field_sheet.supersedes_field_sheet_id == first_sheet_id
+    assert tickets_after == tickets_before
+
+    audit = _latest_audit(factory, "lab_field_sheet.reopened_directly", reopened_id)
+    assert audit is not None
+    assert audit.new_values["reason"] == "Corrección directa de folio"
+    assert audit.new_values["supersedes_field_sheet_id"] == first_sheet_id
+
+
+def _latest_audit(factory, action: str, entity_id: int) -> AuditLog | None:
+    with factory() as db:
+        return db.scalar(
+            select(AuditLog)
+            .where(AuditLog.action == action, AuditLog.entity_id == entity_id)
+            .order_by(AuditLog.id.desc())
+        )
+
+
+def test_direct_field_sheet_unlock_rejected_once_the_whole_ot_is_closed(lab_context):
+    """Misma frontera que create_field_sheet_reopen_ticket: una vez la OT
+    completed/partially_closed, "Desbloquear hoja" tampoco aplica -- primero
+    hay que reabrir la OT completa (reopen_work_order)."""
+    client, factory, tokens = lab_context
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, admin_headers)
+    complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+    close_order(client, admin_headers, order_id)
+
+    denied = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Corrección directa"},
+        headers=admin_headers,
+    )
+    assert denied.status_code == 409
+
+
+def test_direct_field_sheet_unlock_is_idempotent_against_a_double_click(lab_context):
+    """Un doble clic/retry sobre "Desbloquear hoja" nunca genera N+2: en
+    cuanto la revisión vigente deja de ser completed (ya es "reopened"), el
+    segundo intento se rechaza limpiamente sin crear otra revisión."""
+    client, factory, tokens = lab_context
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, admin_headers)
+    complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+
+    first = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Corrección directa"},
+        headers=admin_headers,
+    )
+    assert first.status_code == 200, first.text
+    reopened_id = first.json()["id"]
+
+    second = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Reintento por doble clic"},
+        headers=admin_headers,
+    )
+    assert second.status_code == 409
+
+    with factory() as db:
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet.id == reopened_id
+        assert equipment.field_sheet.revision_number == 2
+        all_sheets = list(
+            db.scalars(select(FieldSheet).where(FieldSheet.lab_equipment_id == equipment_id))
+        )
+        assert len(all_sheets) == 2, "no debe existir una tercera revisión (N+2)"
+
+
+def test_field_sheet_reopen_never_clones_signature_rows_only_fresh_empty_slots(lab_context):
+    """Auditoría quirúrgica (2026-09-06) -- semántica de FieldSheet.signatures.
+
+    Para el vertical LAB, las 3 filas FieldSheetSignature que
+    _default_signature_slots crea en toda FieldSheet (calibrated_by/
+    reviewed_by/report_made_by -> "Calibró"/"Revisó"/"Elaboró informe") son
+    SIEMPRE slots vacíos: update_lab_field_sheet excluye "signatures" del
+    payload aceptado (nunca se puede escribir signature_data/signed_at/name
+    vía PATCH para una hoja LAB) y create_lab_field_sheet nunca pasa
+    calibrated_by/reviewed_by/report_made_by al construir la hoja. Mobile
+    (LabTechnicalCapture.tsx) tampoco los lee para pintar "Firmas": "Calibró"
+    se deriva de resolveCalibradoPor(workOrder) (la sesión de firma de
+    RECEPCIÓN a nivel OT, autoridad canónica ya existente) y "Revisó"/
+    "Elaboró informe" se muestran siempre como PENDING_SIGNATURE_LABEL. Es
+    decir: no son evidencia histórica firmada (opción A) ni datos técnicos
+    que el usuario espera recuperar (opción C) -- son placeholders
+    estructurales heredados del modelo compartido con el ERP productivo
+    (donde sí se llenan vía update_field_sheet), sin contenido real en LAB.
+
+    Por eso la regla NO es "clonar firmas por defecto" ni "vaciar todo por
+    defecto": _clone_field_sheet_for_correction nunca copia la FILA
+    FieldSheetSignature de N (id, signature_data, signed_at) -- cada slot de
+    N+1 es una fila nueva, propia, sin evidencia documental heredada, para
+    nunca duplicar una firma histórica haciéndola parecer nueva. Pero SÍ
+    hereda el atributo `name` de cada slot, porque ese texto plano viene de
+    calibrated_by/reviewed_by/report_made_by -- columnas de FieldSheet que
+    _CLONED_FIELD_SHEET_ATTRS ya trata como cualquier otro campo técnico
+    corregible (igual que `observations`/`results`), no como evidencia
+    firmada. Esta prueba fuerza el caso límite: puebla los 3 slots de N con
+    datos no vacíos (name + signature_data + signed_at) directamente en BD
+    (simulando cualquier futuro camino de escritura, hoy inexistente para
+    LAB) y confirma que N+1 nace con filas nuevas cuya evidencia
+    (signature_data/signed_at) siempre es None mientras `name` se propaga
+    como texto plano -- y que N conserva sus 3 filas originales intactas,
+    sin reasignar ninguna a N+1."""
+    client, factory, tokens = lab_context
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, admin_headers)
+    sheet_id = complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        original_roles_and_labels = [(sig.role, sig.display_label) for sig in sheet.signatures]
+        assert len(original_roles_and_labels) == 3
+        for signature in sheet.signatures:
+            signature.name = f"Persona {signature.role}"
+            signature.signature_data = f"data:image/png;base64,FAKE-{signature.role}"
+            signature.signed_at = datetime.now(timezone.utc)
+        sheet.calibrated_by = "Persona calibrated_by"
+        sheet.reviewed_by = "Persona reviewed_by"
+        sheet.report_made_by = "Persona report_made_by"
+        db.commit()
+        original_signature_ids = {sig.id for sig in sheet.signatures}
+
+    unlocked = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Auditoría de firmas"},
+        headers=admin_headers,
+    )
+    assert unlocked.status_code == 200, unlocked.text
+    reopened_id = unlocked.json()["id"]
+
+    with factory() as db:
+        original = db.get(FieldSheet, sheet_id)
+        # N conserva sus firmas exactamente -- nunca reasignadas a N+1.
+        assert {sig.id for sig in original.signatures} == original_signature_ids
+        for signature in original.signatures:
+            assert signature.field_sheet_id == sheet_id
+            assert signature.name == f"Persona {signature.role}"
+            assert signature.signature_data is not None
+            assert signature.signed_at is not None
+        assert original.calibrated_by == "Persona calibrated_by"
+        assert original.is_current is False
+        assert original.status == "completed"
+
+        reopened = db.get(FieldSheet, reopened_id)
+        assert reopened.is_current is True
+        assert reopened.status == "reopened"
+        # N+1 nace con slots FRESCOS -- filas nuevas (id distinto), nunca
+        # comparte ni reasigna la fila de N. La evidencia documental real
+        # (signature_data/signed_at) NUNCA se copia: eso sería duplicar una
+        # firma histórica de N haciéndola parecer nueva de N+1. El atributo
+        # `name` de cada slot SÍ hereda el texto plano ya clonado como campo
+        # técnico genérico (calibrated_by/reviewed_by/report_made_by, vía
+        # _CLONED_FIELD_SHEET_ATTRS -- ver _default_signature_slots,
+        # legacy_names): "quién calibró" es dato técnico corregible, igual
+        # que una observación, NO evidencia criptográfica/documental.
+        assert [(sig.role, sig.display_label) for sig in reopened.signatures] == original_roles_and_labels
+        assert {sig.id for sig in reopened.signatures}.isdisjoint(original_signature_ids)
+        names_by_role = {sig.role: sig.name for sig in reopened.signatures}
+        assert names_by_role == {
+            "calibrated_by": "Persona calibrated_by",
+            "reviewed_by": "Persona reviewed_by",
+            "report_made_by": "Persona report_made_by",
+        }
+        for signature in reopened.signatures:
+            assert signature.field_sheet_id == reopened_id
+            assert signature.signature_data is None
+            assert signature.signed_at is None
+        # calibrated_by/reviewed_by/report_made_by SÍ son parte del clonado
+        # genérico de campos técnicos (_CLONED_FIELD_SHEET_ATTRS) -- el
+        # texto plano (quién calibró/revisó, no una firma) se conserva.
+        assert reopened.calibrated_by == "Persona calibrated_by"
+        assert reopened.reviewed_by == "Persona reviewed_by"
+        assert reopened.report_made_by == "Persona report_made_by"
+
+
+def test_ot_reopen_preserve_without_equipment_never_touches_any_field_sheet(lab_context):
+    """Regla de dominio #2: reabrir la OT NO desbloquea sus FieldSheets
+    automáticamente. Un ticket reopen_work_order sin equipment_id (el caso
+    general, "no target") deja cada FieldSheet exactamente como estaba --
+    mismo id, mismo status completed, mismo is_current, mismo PDF/hash --
+    sólo la OT pasa a in_progress con la firma preservada. Usa una OT CON
+    lab_client_id (_requires_field_sheet_discipline=True) para que el cierre
+    final ejercite de verdad el carve-out de _closable_status (in_progress +
+    reopened_at + signature_preserved + sin FieldSheets pendientes), no la
+    exención histórica de OT sin cliente LAB."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order_with_client(client, headers, lab_client_id)
+    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    close_order(client, headers, order_id)
+
+    with factory() as db:
+        before = db.get(FieldSheet, sheet_id)
+        before_snapshot = {
+            "status": before.status,
+            "is_current": before.is_current,
+            "final_pdf_sha256": before.final_pdf_sha256,
+            "revision_number": before.revision_number,
+        }
+
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": order_id,
+            "reason": "Corrección general",
+            "description": "Ajustar un dato de la OT, sin tocar hojas",
+            "requested_signature_policy": "preserve",
+        },
+        headers=headers,
+    )
+    assert ticket.status_code == 201, ticket.text
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket.json()['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    reopened = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers,
+    ).json()
+    assert reopened["status"] == "in_progress"
+    assert reopened["signature_preserved"] is True
+
+    with factory() as db:
+        after = db.get(FieldSheet, sheet_id)
+        assert after.id == sheet_id
+        assert after.status == before_snapshot["status"] == "completed"
+        assert after.is_current == before_snapshot["is_current"] is True
+        assert after.final_pdf_sha256 == before_snapshot["final_pdf_sha256"]
+        assert after.revision_number == before_snapshot["revision_number"] == 1
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet.id == sheet_id
+
+    # Prueba T#12: corrección puramente general -- "Completar cambios" cierra
+    # directo (_closable_status), sin exigir tocar ninguna FieldSheet.
+    reclosed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=headers,
+    )
+    assert reclosed.status_code == 200, reclosed.text
+    assert reclosed.json()["status"] == "completed"
+
+
+def test_ot_reopen_with_equipment_id_context_still_never_touches_that_field_sheet(lab_context):
+    """Auditoría quirúrgica (2026-09-06): reabrir la OT y desbloquear una
+    FieldSheet son SIEMPRE acciones separadas -- incluso cuando el ticket
+    reopen_work_order trae equipment_id como CONTEXTO de qué equipo motivó
+    la solicitud (ReopenTicketCreate.equipment_id). Antes de esta corrección,
+    _reopen_closed_cohort usaba ese equipment_id para retirar la revisión
+    completed vigente y clonar N+1 reopened como efecto colateral del reopen
+    de OT -- desbloqueando la hoja sin que nadie hubiera pedido "Desbloquear
+    hoja" ni aprobado un Ticket field_sheet_reopen. Este test fija que ya no
+    ocurre: la FieldSheet permanece completed/current/idéntica byte a byte
+    (capture_values, results_rows, signatures, final_pdf_sha256,
+    revision_number) tras el reopen, y sólo un desbloqueo explícito y
+    SEPARADO (el endpoint directo) crea la revisión N+1."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order_with_client(client, headers, lab_client_id)
+    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    close_order(client, headers, order_id)
+
+    with factory() as db:
+        before = db.get(FieldSheet, sheet_id)
+        before_snapshot = {
+            "status": before.status,
+            "is_current": before.is_current,
+            "revision_number": before.revision_number,
+            "supersedes_field_sheet_id": before.supersedes_field_sheet_id,
+            "final_pdf_sha256": before.final_pdf_sha256,
+            "capture_values": dict(before.capture_values),
+            "results_rows": [(row.section_key, row.row_number, dict(row.row_data or {})) for row in before.results_rows],
+            "signatures": [(sig.role, sig.signature_data) for sig in before.signatures],
+        }
+        equipment_count_before = db.scalar(
+            select(func.count()).select_from(FieldSheet).where(FieldSheet.lab_equipment_id == equipment_id)
+        )
+
+    # El ticket SÍ trae equipment_id -- exactamente el caso que antes
+    # disparaba el auto-unlock.
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": equipment_id,
+            "reason": "Corrección de datos generales",
+            "description": "El equipo motivó la solicitud, pero sólo se corrige un dato de la OT.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=headers,
+    )
+    assert ticket.status_code == 201, ticket.text
+    assert ticket.json()["equipment_id"] == equipment_id
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket.json()['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+    # equipment_id se conserva como contexto de auditoría en el ticket
+    # resuelto, sin haber mutado ninguna FieldSheet.
+    assert approved.json().get("resolution_snapshot", {}).get("equipment_id") == equipment_id
+
+    reopened = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers,
+    ).json()
+    assert reopened["status"] == "in_progress"
+    assert reopened["signature_preserved"] is True
+
+    with factory() as db:
+        after = db.get(FieldSheet, sheet_id)
+        assert after.id == sheet_id
+        assert after.status == before_snapshot["status"] == "completed"
+        assert after.is_current is True and before_snapshot["is_current"] is True
+        assert after.revision_number == before_snapshot["revision_number"] == 1
+        assert after.supersedes_field_sheet_id == before_snapshot["supersedes_field_sheet_id"] is None
+        assert after.final_pdf_sha256 == before_snapshot["final_pdf_sha256"]
+        assert dict(after.capture_values) == before_snapshot["capture_values"]
+        assert [
+            (row.section_key, row.row_number, dict(row.row_data or {})) for row in after.results_rows
+        ] == before_snapshot["results_rows"]
+        assert [(sig.role, sig.signature_data) for sig in after.signatures] == before_snapshot["signatures"]
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet.id == sheet_id
+        equipment_count_after = db.scalar(
+            select(func.count()).select_from(FieldSheet).where(FieldSheet.lab_equipment_id == equipment_id)
+        )
+        assert equipment_count_after == equipment_count_before, "reopen de OT no debe crear ninguna revisión N+1"
+
+    # Ahora un desbloqueo EXPLÍCITO y SEPARADO ("Desbloquear hoja") sí debe
+    # crear N+1 reopened -- prueba que la separación es real, no que el
+    # dominio quedó incapaz de desbloquear.
+    unlocked = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/reopen",
+        json={"reason": "Ahora sí, desbloqueo explícito"},
+        headers=admin_headers,
+    )
+    assert unlocked.status_code == 200, unlocked.text
+    assert unlocked.json()["status"] == "reopened"
+    assert unlocked.json()["supersedes_field_sheet_id"] == sheet_id
+
+    with factory() as db:
+        original = db.get(FieldSheet, sheet_id)
+        assert original.is_current is False
+        assert original.status == "completed"
+        equipment = db.get(LabWorkOrderEquipment, equipment_id)
+        assert equipment.field_sheet.id != sheet_id
+        assert equipment.field_sheet.status == "reopened"
+
+
+def test_ot_6443_regression_reopen_preserve_then_unlock_only_one_of_five_sheets(lab_context):
+    """Regresión específica OT 6443 (auditoría quirúrgica 2026-09-06).
+
+    Modela el caso real de producción: una OT con 5 equipos, cada uno con su
+    propia FieldSheet completed/current, cerrada con firma de recepción.
+    Reabrir con preserve debe dejar EXACTAMENTE: OT in_progress, firma
+    preservada, las 5 FieldSheets bit a bit idénticas (mismo id, revisión,
+    capture_values, resultados, firmas, PDF/hash) -- reabrir la OT nunca
+    desbloquea ninguna. Sólo un desbloqueo explícito y separado sobre el
+    equipo #3 debe retirar esa FieldSheet a histórica y abrir su N+1
+    reopened -- las otras cuatro permanecen exactamente como estaban.
+    Completar #3 debe habilitar el cierre ("Completar cambios" en Mobile,
+    aquí verificado vía reopened_at + status), y ese cierre no debe generar
+    una segunda recepción/firma ni ningún registro de Delivery."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    # lab_client_id real: _requires_field_sheet_discipline debe ser True,
+    # si no _missing_completed_sheets exime la OT y el motor de cierre
+    # marcaría ready_to_close en cuanto la PRIMERA hoja completara, antes de
+    # poder capturar las otras cuatro.
+    lab_client_id = make_lab_client_id(factory)
+
+    order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders",
+        json={**create_payload(), "lab_client_id": lab_client_id},
+        headers=headers,
+    )
+    assert order.status_code == 201, order.text
+    order_id = order.json()["id"]
+
+    equipment_ids: list[int] = []
+    for index in range(1, 6):
+        added = client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+            json=equipment_payload(index),
+            headers=headers,
+        )
+        assert added.status_code == 201, added.text
+        equipment_id = added.json()["equipment"][-1]["id"]
+        equipment_ids.append(equipment_id)
+        service = client.put(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service",
+            json={"service_type": "accredited", "linked_company_id": None},
+            headers=headers,
+        )
+        assert service.status_code == 200, service.text
+    assert len(equipment_ids) == 5
+
+    signed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
+        json=signatures_payload(),
+        headers=headers,
+    )
+    assert signed.status_code == 200, signed.text
+    original_signature_session_id = signed.json()["signature_session_id"]
+    assert original_signature_session_id is not None
+
+    sheet_ids = {
+        equipment_id: complete_field_sheet_fully(
+            client, headers, order_id, equipment_id, observations=f"Observación equipo {position}",
+        )
+        for position, equipment_id in enumerate(equipment_ids, start=1)
+    }
+
+    closed = client.post(f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=headers)
+    assert closed.status_code == 200, closed.text
+    assert closed.json()["status"] == "completed"
+
+    with factory() as db:
+        before_snapshot = {}
+        for equipment_id, sheet_id in sheet_ids.items():
+            sheet = db.get(FieldSheet, sheet_id)
+            before_snapshot[equipment_id] = {
+                "sheet_id": sheet.id,
+                "revision_number": sheet.revision_number,
+                "status": sheet.status,
+                "is_current": sheet.is_current,
+                "capture_values": dict(sheet.capture_values),
+                "final_pdf_sha256": sheet.final_pdf_sha256,
+                "signature_ids": {sig.id for sig in sheet.signatures},
+            }
+            assert before_snapshot[equipment_id]["status"] == "completed"
+            assert before_snapshot[equipment_id]["is_current"] is True
+            assert before_snapshot[equipment_id]["final_pdf_sha256"] is not None
+        delivery_count_before = db.scalar(select(func.count()).select_from(LabWorkOrderDelivery))
+
+    # --- reopen preserve: el ticket trae equipment_id de un equipo (#3)
+    # como contexto de por qué se pidió la reapertura -- eso NO debe
+    # desbloquear esa ni ninguna otra FieldSheet.
+    target_equipment_id = equipment_ids[2]
+    ticket = client.post(
+        "/api/mobile/v1/technician/tickets",
+        json={
+            "work_order_id": order_id,
+            "equipment_id": target_equipment_id,
+            "reason": "Corrección solicitada por el cliente",
+            "description": "El equipo #3 motivó la solicitud, pero se revisará junto con datos generales.",
+            "requested_signature_policy": "preserve",
+        },
+        headers=headers,
+    )
+    assert ticket.status_code == 201, ticket.text
+    approved = client.post(
+        f"/api/mobile/v1/technician/tickets/{ticket.json()['id']}/approve",
+        json={"signature_policy": "preserve"},
+        headers=admin_headers,
+    )
+    assert approved.status_code == 200, approved.text
+
+    reopened = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers).json()
+    assert reopened["status"] == "in_progress"
+    assert reopened["signature_preserved"] is True
+    assert reopened["signature_session_id"] == original_signature_session_id
+    assert reopened["reopened_at"] is not None
+
+    with factory() as db:
+        for equipment_id, sheet_id in sheet_ids.items():
+            sheet = db.get(FieldSheet, sheet_id)
+            snapshot = before_snapshot[equipment_id]
+            assert sheet.id == snapshot["sheet_id"]
+            assert sheet.revision_number == snapshot["revision_number"]
+            assert sheet.status == snapshot["status"] == "completed"
+            assert sheet.is_current == snapshot["is_current"] is True
+            assert dict(sheet.capture_values) == snapshot["capture_values"]
+            assert sheet.final_pdf_sha256 == snapshot["final_pdf_sha256"]
+            assert {sig.id for sig in sheet.signatures} == snapshot["signature_ids"]
+        all_sheets_count = db.scalar(
+            select(func.count()).select_from(FieldSheet).where(
+                FieldSheet.lab_equipment_id.in_(equipment_ids)
+            )
+        )
+        assert all_sheets_count == 5, "reopen de OT no debe crear ninguna revisión N+1 en ningún equipo"
+
+    # --- desbloqueo explícito, separado, SOLO del equipo #3.
+    unlocked = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{target_equipment_id}/field-sheet/reopen",
+        json={"reason": "Ahora sí se corrige el equipo #3"},
+        headers=admin_headers,
+    )
+    assert unlocked.status_code == 200, unlocked.text
+    target_sheet_reopened_id = unlocked.json()["id"]
+    assert unlocked.json()["status"] == "reopened"
+    assert unlocked.json()["supersedes_field_sheet_id"] == sheet_ids[target_equipment_id]
+
+    with factory() as db:
+        for equipment_id, sheet_id in sheet_ids.items():
+            equipment = db.get(LabWorkOrderEquipment, equipment_id)
+            if equipment_id == target_equipment_id:
+                assert equipment.field_sheet.id == target_sheet_reopened_id
+                assert equipment.field_sheet.status == "reopened"
+                original = db.get(FieldSheet, sheet_id)
+                assert original.is_current is False
+                assert original.status == "completed"
+                assert original.final_pdf_sha256 == before_snapshot[equipment_id]["final_pdf_sha256"]
+            else:
+                # Los otros cuatro: exactamente como estaban, sin tocar.
+                snapshot = before_snapshot[equipment_id]
+                assert equipment.field_sheet.id == snapshot["sheet_id"]
+                assert equipment.field_sheet.status == snapshot["status"] == "completed"
+                assert equipment.field_sheet.is_current is True
+                assert equipment.field_sheet.final_pdf_sha256 == snapshot["final_pdf_sha256"]
+
+    blocked_close = client.post(f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=headers)
+    assert blocked_close.status_code == 409, blocked_close.text
+
+    # --- completar la #3 recapturada.
+    sheet_json = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{target_equipment_id}/field-sheet",
+        headers=headers,
+    ).json()
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "3.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(sheet_json["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{target_equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Corregido equipo #3", "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    recompleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{target_equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert recompleted.status_code == 200, recompleted.text
+
+    ready = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers).json()
+    assert ready["status"] == "ready_to_close"
+    # Señal que Mobile usa para decidir "Completar cambios": reopened_at
+    # sigue presente (histórico permanente) y el status ya no es completed.
+    assert ready["reopened_at"] is not None
+
+    reclosed = client.post(f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=headers)
+    assert reclosed.status_code == 200, reclosed.text
+    final_body = reclosed.json()
+    assert final_body["status"] == "completed"
+    # No recepción/firma duplicada: misma sesión de firma de siempre.
+    assert final_body["signature_session_id"] == original_signature_session_id
+
+    with factory() as db:
+        # No Delivery generado por el cierre -- Delivery es un flujo
+        # explícito y separado (POST .../delivery), nunca un efecto
+        # colateral de completar cambios.
+        delivery_count_after = db.scalar(select(func.count()).select_from(LabWorkOrderDelivery))
+        assert delivery_count_after == delivery_count_before == 0
+
+        for equipment_id, sheet_id in sheet_ids.items():
+            equipment = db.get(LabWorkOrderEquipment, equipment_id)
+            assert equipment.field_sheet.status == "completed"
+            assert equipment.field_sheet.is_current is True
+            if equipment_id == target_equipment_id:
+                # #3 ahora es la revisión N+1, completed, con SU PROPIO PDF.
+                assert equipment.field_sheet.id == target_sheet_reopened_id
+                assert equipment.field_sheet.revision_number == 2
+                assert equipment.field_sheet.final_pdf_sha256 is not None
+                # El histórico N conserva su PDF/hash original, nunca regenerado.
+                original = db.get(FieldSheet, sheet_id)
+                assert original.final_pdf_sha256 == before_snapshot[equipment_id]["final_pdf_sha256"]
+                assert original.is_current is False
+            else:
+                # Los otros cuatro: mismos ids, mismo PDF/hash de siempre --
+                # el recierre nunca los regenera ni los toca.
+                snapshot = before_snapshot[equipment_id]
+                assert equipment.field_sheet.id == snapshot["sheet_id"]
+                assert equipment.field_sheet.revision_number == snapshot["revision_number"] == 1
+                assert equipment.field_sheet.final_pdf_sha256 == snapshot["final_pdf_sha256"]
+
+
+def test_reopened_field_sheet_blocks_ot_closure_until_recompleted(lab_context):
+    """Sección 13 del encargo: la OT NO puede completar cambios mientras
+    exista una FieldSheet vigente en "reopened" -- en cuanto se completa de
+    nuevo, el mismo mecanismo que ya sincroniza in_progress->ready_to_close
+    (_complete_lab_field_sheet_uncommitted) desbloquea el cierre, sin una
+    segunda política de cierre."""
+    client, factory, tokens = lab_context
+    admin_headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order_with_client(client, admin_headers, lab_client_id)
+    complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+    close_order(client, admin_headers, order_id)
+    reopened_ot = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección directa de OT"},
+        headers=admin_headers,
+    )
+    assert reopened_ot.status_code == 200, reopened_ot.text
+
+    unlocked = client.post(
+        _reopen_endpoint(order_id, equipment_id),
+        json={"reason": "Corrección directa"},
+        headers=admin_headers,
+    )
+    assert unlocked.status_code == 200, unlocked.text
+
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.status == "in_progress"
+
+    blocked = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=admin_headers,
+    )
+    assert blocked.status_code == 409, blocked.text
+
+    sheet_json = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=admin_headers,
+    ).json()
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "2.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(sheet_json["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": "Corregido", "results_rows": rows},
+        headers=admin_headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=admin_headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.status == "ready_to_close"
+
+    reclosed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=admin_headers,
+    )
+    assert reclosed.status_code == 200, reclosed.text
+    assert reclosed.json()["status"] == "completed"
+
+
+def test_admin_direct_ot_reopen_without_ticket_stays_editable_and_closable(lab_context):
+    """La reapertura DIRECTA de la OT completa (sin ticket,
+    reopen_work_order_directly) usa reopened_at -- no reopen_ticket_id --
+    como señal de "fue reabierta": reopen_ticket_id es None en este camino,
+    así que la edición general y el cierre directo deben seguir funcionando
+    igual que en el camino mediado por ticket."""
+    client, factory, tokens = lab_context
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, admin_headers)
+    complete_field_sheet_fully(client, admin_headers, order_id, equipment_id)
+    close_order(client, admin_headers, order_id)
+
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección directa de OT"},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "in_progress"
+
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.reopen_ticket_id is None
+        assert order.reopened_at is not None
+        edit_version = order.edit_version
+
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
+        json={"notes": "Nota corregida directamente", "expected_edit_version": edit_version},
+        headers=admin_headers,
+    )
+    assert edited.status_code == 200, edited.text
+
+    reclosed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=admin_headers,
+    )
+    assert reclosed.status_code == 200, reclosed.text
+    assert reclosed.json()["status"] == "completed"
+
+
 def test_unsupported_prototype_template_is_explicit_and_never_falls_back_to_general(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
@@ -942,7 +1752,7 @@ def test_postgresql_field_sheet_reopen_ticket_clones_forward_without_violating_u
         clone = current_rows[0]
         assert clone.id != first_sheet_id
         assert clone.supersedes_field_sheet_id == first_sheet_id
-        assert clone.status == "draft"
+        assert clone.status == "reopened"
         assert len(clone.results_rows) > 0
         assert clone.signatures  # slots frescos, no copiados de la revisión 1
 
@@ -1015,7 +1825,7 @@ def test_corrective_clone_observations_come_from_the_retired_sheet_not_the_equip
     with factory() as db:
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
         clone = equipment.field_sheet
-        assert clone is not None and clone.status == "draft"
+        assert clone is not None and clone.status == "reopened"
         # El clon parte de lo que N ya documentaba, NO de lo que el equipo
         # dice ahora -- aunque ambos difieran.
         assert clone.observations == "Observación documental A"

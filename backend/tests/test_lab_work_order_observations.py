@@ -89,8 +89,17 @@ def _equipment(position: int, instrument: str, identification: str, observations
     )
 
 
-def _work_order(*, notes: str | None, equipment: list, revision_number: int = 1, reopen_ticket_id: int | None = None, signature_preserved: bool = True) -> SimpleNamespace:
+def _work_order(
+    *,
+    notes: str | None,
+    equipment: list,
+    revision_number: int = 1,
+    reopen_ticket_id: int | None = None,
+    reopened_at: object | None = None,
+    signature_preserved: bool = True,
+) -> SimpleNamespace:
     return SimpleNamespace(
+        reopened_at=reopened_at,
         signature_session=None,
         client_name="Cliente PDF Observaciones",
         contact_name="Contacto",
@@ -135,6 +144,7 @@ def test_pdf_orders_general_notes_before_per_equipment_observations_before_reope
         equipment=[_equipment(1, "Manómetro", "MAN-02", "No tiene empaque")],
         revision_number=2,
         reopen_ticket_id=77,
+        reopened_at=date(2026, 1, 5),
         signature_preserved=True,
     )
     pdf, _filename = generate_lab_work_order_pdf(work_order)
@@ -148,6 +158,47 @@ def test_pdf_orders_general_notes_before_per_equipment_observations_before_reope
     assert observation_index != -1
     assert reopening_index != -1
     assert general_index < observation_index < reopening_index
+    assert "TICKET #77" in text
+
+
+def test_pdf_reopening_note_uses_reopened_at_not_reopen_ticket_id_so_a_direct_reopen_is_never_silently_omitted():
+    """Auditoría de semántica de reapertura (2026-09): una reapertura DIRECTA
+    por autoridad administrativa (reopen_work_order_directly) nunca pasa por
+    Ticket -- reopen_ticket_id queda None. Antes de esta corrección, la nota
+    de auditoría del PDF se omitía en silencio para ese camino porque exigía
+    reopen_ticket_id; ahora usa reopened_at, presente en ambos caminos."""
+    from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
+
+    work_order = _work_order(
+        notes=None,
+        equipment=[_equipment(1, "Manómetro", "MAN-02", None)],
+        revision_number=2,
+        reopen_ticket_id=None,
+        reopened_at=date(2026, 1, 5),
+        signature_preserved=True,
+    )
+    pdf, _filename = generate_lab_work_order_pdf(work_order)
+    text = _pdf_text(pdf)
+
+    assert "REAPERTURA AUTORIZADA" in text
+    assert "REAPERTURA ADMINISTRATIVA DIRECTA" in text
+    assert "TICKET #" not in text
+
+
+def test_pdf_never_shows_reopening_note_when_the_order_was_never_reopened():
+    from app.services.lab_work_order_pdfs import generate_lab_work_order_pdf
+
+    work_order = _work_order(
+        notes=None,
+        equipment=[_equipment(1, "Manómetro", "MAN-02", None)],
+        revision_number=1,
+        reopen_ticket_id=None,
+        reopened_at=None,
+    )
+    pdf, _filename = generate_lab_work_order_pdf(work_order)
+    text = _pdf_text(pdf)
+
+    assert "REAPERTURA" not in text
 
 
 def test_pdf_keeps_multiple_equipment_observations_in_position_order():

@@ -235,3 +235,112 @@ test('19. un conflicto de versión (REVISION_CONFLICT) se presenta con el mensaj
   // error.message antes que un texto genérico.
   assert.match(source, /error instanceof Error \? error\.message : /);
 });
+
+// --------------------------------------------------------------------------
+// Auditoría de semántica de reapertura (2026-09) -- causa raíz OT 6443
+// --------------------------------------------------------------------------
+// Producción: OT 6443 fue cerrada, luego reabierta preservando la firma
+// (signature_session_id conservado, signature_preserved=true,
+// signature_required=false); backend regresaba la OT a "draft" y Mobile
+// interpretaba ese "draft" siempre como "falta recepción", mostrando de
+// nuevo "Recepción de equipos" pese a que las 5 FieldSheets seguían
+// completed/is_current intactas en BD. La corrección real vive en el
+// backend (operational_tickets.py::_reopen_closed_cohort: preserve ahora
+// produce "in_progress", no "draft" -- invalidate sigue siendo "draft"
+// porque ahí sí hace falta repetir la recepción/firma). Estas pruebas fijan
+// el contrato que Mobile ya cumple gracias a ese cambio de status de
+// dominio, sin necesitar lógica especial de reopen aquí.
+
+test('OT 6443: una reapertura preserve (status in_progress) nunca vuelve a "Recepción de equipos"', () => {
+  const step = inferStepForStatus('in_progress');
+  assert.equal(step, 'technical');
+  assert.equal(flowContextLabel(step, 'in_progress'), 'Captura técnica');
+});
+
+test('OT 6443: una reapertura invalidate (status draft) sí exige recepción de nuevo -- comportamiento correcto, no el bug', () => {
+  // Distinto del caso preserve: invalidate limpia signature_session_id y
+  // exige signature_required=true, así que volver a "Recepción de equipos"
+  // aquí es el comportamiento correcto, no una regresión del bug de OT 6443.
+  const step = inferStepForStatus('draft');
+  assert.equal(step, 'capture');
+  assert.equal(flowContextLabel(step, 'draft'), 'Recepción de equipos');
+});
+
+test('el mensaje obsoleto "volvió a draft y puede editarse" ya no existe en el reopen directo', () => {
+  const source = screenSource();
+  assert.doesNotMatch(source, /volvió a draft/);
+});
+
+test('reopenDirectly navega de inmediato al step correcto tras el 200 (no depende de un refresh/evento aparte)', () => {
+  const source = screenSource();
+  const reopenDirectlyBlock = source.slice(
+    source.indexOf('async function reopenDirectly()'),
+    source.indexOf('async function reopenDirectly()') + 1500,
+  );
+  assert.match(reopenDirectlyBlock, /setStep\(inferStepForStatus\(detail\.status\)\)/);
+  assert.match(reopenDirectlyBlock, /La OT fue reabierta para correcciones\. La recepción y las firmas preservadas se mantienen\./);
+});
+
+test('"Solicitar desbloqueo" de OT (ticket reopen) dice que la OT sigue cerrada hasta aprobación', () => {
+  const source = screenSource();
+  assert.match(source, /La OT seguirá cerrada hasta que un usuario autorizado apruebe el ticket\./);
+});
+
+test('sección 12: "Completar cambios" reemplaza la etiqueta normal de cierre exclusivamente cuando workOrder.reopened_at existe (metadata backend, no state local)', () => {
+  const source = screenSource();
+  const occurrences = source.split("'Completar cambios'").length - 1;
+  assert.equal(occurrences, 2, 'ambas variantes del botón de cierre (con y sin canSkipSignaturesAfterReopen) deben usar la misma condición');
+  assert.match(source, /workOrder\.reopened_at \? 'Completar cambios'/);
+  // Usa el MISMO mecanismo de cierre (completeClosure) -- nunca un endpoint paralelo.
+  assert.doesNotMatch(source, /\/complete-changes/);
+});
+
+// --------------------------------------------------------------------------
+// Auditoría quirúrgica (2026-09-06) -- "Completar cambios" no debe quedar
+// pegado una vez que la OT vuelve a completed.
+// --------------------------------------------------------------------------
+// reopened_at es trazabilidad histórica PERMANENTE (nunca se limpia, ni debe
+// limpiarse) -- así que la condición para mostrar "Completar cambios" no
+// puede depender sólo de reopened_at != null, se combina con el STEP actual
+// (derivado de status, nunca state local suelto). Estas pruebas fijan que:
+// (a) el botón vive exclusivamente dentro del bloque step === 'review'
+// (OT todavía abierta tras el reopen), nunca dentro de step === 'completed'
+// (donde vive el bloque histórico/entrega); y (b) completeClosure siempre
+// fuerza setStep('completed') al recibir un 200, así que la pantalla nunca
+// se queda mostrando el botón de cierre después de que la OT ya cerró.
+
+test('"Completar cambios" vive exclusivamente en step === \'review\' -- nunca aparece en el bloque step === \'completed\'', () => {
+  const source = screenSource();
+  const reviewBlockStart = source.indexOf("step === 'review' &&");
+  const completedBlockStart = source.indexOf("step === 'completed' &&");
+  assert.ok(reviewBlockStart !== -1 && completedBlockStart !== -1 && reviewBlockStart < completedBlockStart);
+
+  const reviewBlock = source.slice(reviewBlockStart, completedBlockStart);
+  assert.match(reviewBlock, /'Completar cambios'/);
+
+  // El bloque 'completed' se extiende hasta el siguiente paso declarado con
+  // el mismo patrón "step === '...' &&" (o fin de archivo si es el último).
+  const nextStepBlockStart = source.indexOf("step === '", completedBlockStart + 1);
+  const completedBlock = source.slice(
+    completedBlockStart,
+    nextStepBlockStart === -1 ? undefined : nextStepBlockStart,
+  );
+  assert.doesNotMatch(completedBlock, /Completar cambios/);
+});
+
+test('completeClosure siempre fuerza setStep(\'completed\') al recibir 200 -- la pantalla de "Completar cambios" nunca queda pegada tras un cierre exitoso', () => {
+  const source = screenSource();
+  const fnStart = source.indexOf('async function completeClosure(');
+  const fnBody = source.slice(fnStart, fnStart + 800);
+  assert.match(fnBody, /const detail = await postLabCompletion\(/);
+  assert.match(fnBody, /setStep\('completed'\)/);
+});
+
+test('reopened_at != null y status completed: el mismo workOrder ya no cae en el bloque review (regresión "pegado")', () => {
+  // inferStepForStatus ignora reopened_at por diseño -- el status terminal
+  // manda siempre, así que un workOrder ya completed (con o sin
+  // reopened_at histórico) resuelve a 'completed', nunca a 'review'.
+  const stepWithHistory = inferStepForStatus('completed');
+  assert.equal(stepWithHistory, 'completed');
+  assert.notEqual(stepWithHistory, 'review');
+});

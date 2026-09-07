@@ -30,7 +30,7 @@ from app.schemas.operational_ticket import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.auth import user_has_permission
-from app.services.lab_field_sheets import _clone_field_sheet_for_correction
+from app.services.lab_field_sheets import _reopen_field_sheet_uncommitted
 from app.services.lab_work_orders import (
     _get,
     _group,
@@ -41,7 +41,6 @@ from app.services.lab_work_orders import (
     _signature_cohort,
     _allocate_lab_certificate_folio,
     _missing_completed_sheets,
-    _retire_current_field_sheet_revision,
 )
 from app.services.lab_work_order_deliveries import (
     _delivered_equipment_ids,
@@ -736,12 +735,15 @@ def _reopen_closed_cohort(
 ) -> tuple[LabWorkOrder, list[LabWorkOrder], dict | None]:
     """Núcleo compartido de reapertura: valida que la cohorte de cierre esté
     realmente cerrada, congela un LabWorkOrderRevision por miembro (snapshot
-    inmutable -- histórico nunca se pierde) y regresa cada uno a draft con la
-    política preserve/invalidate. Retira la revisión vigente de la
-    FieldSheet del equipo si se indica. No hace commit ni toca el ticket --
-    approve_reopen_ticket (mediado por ticket) y reopen_work_order_directly
-    (Admin con autoridad directa, sin ticket artificial) terminan cada uno
-    con su propia bitácora."""
+    inmutable -- histórico nunca se pierde) y mueve cada uno a
+    in_progress/draft según la política preserve/invalidate. NUNCA toca
+    ninguna FieldSheet -- reabrir la OT y desbloquear una hoja son acciones
+    siempre separadas (ver _reopen_field_sheet_uncommitted). equipment_id
+    sólo se conserva como contexto de auditoría (qué equipo motivó la
+    solicitud), nunca como disparador de dominio. No hace commit ni toca el
+    ticket -- approve_reopen_ticket (mediado por ticket) y
+    reopen_work_order_directly (Admin con autoridad directa, sin ticket
+    artificial) terminan cada uno con su propia bitácora."""
     work_order, historical_group = _lock_historical_group(db, work_order_id)
     from app.models.lab_delivery_item import LabDeliveryItem
     from app.models.lab_work_order_delivery import LabWorkOrderDelivery
@@ -790,43 +792,60 @@ def _reopen_closed_cohort(
         item.signature_required = not preserve
         if not preserve:
             item.signature_session_id = None
-        # Fase 3: sin cambios aquí -- la distinción preserve/invalidate ya
-        # gobierna correctamente qué ediciones invalidan la firma de
-        # recepción (ver CRITICAL_GENERAL_FIELDS/CRITICAL_EQUIPMENT_FIELDS y
-        # _member_signatures_preserved en lab_work_orders.py: con preserve,
-        # sólo cambios estructurales -- p.ej. agregar equipo -- invalidan;
-        # correcciones de datos ya existentes no). "draft" sigue siendo el
-        # estado de reapertura para ambas políticas; _closable_status permite
-        # completar directamente desde draft cuando la reapertura fue
-        # preserve, igual que antes de esta fase.
-        item.status = "draft"
+        # Corrección de semántica (2026-09, causa raíz OT 6443): reabrir una
+        # OT NO es volver a recepción. "draft" es el estado PRE-firma de
+        # recepción -- usarlo también para preserve hacía que Mobile (y
+        # cualquier otro consumidor que interprete draft == "falta
+        # recepción") tratara una OT con firma preservada como si nunca se
+        # hubiera recibido, aunque las 5 FieldSheets siguieran completed
+        # intactas en BD (bug confirmado en producción).
+        #
+        # - preserve: la firma de recepción sigue vigente
+        #   (signature_session_id conservado, signature_required=False), así
+        #   que el estado de dominio correcto es el mismo que ya representa
+        #   "recepción firmada, trabajo técnico en curso": in_progress. Esto
+        #   además reutiliza SIN duplicar la máquina de estados existente --
+        #   _complete_lab_field_sheet_uncommitted ya sincroniza
+        #   in_progress -> ready_to_close cuando la última hoja pendiente se
+        #   completa (misma autoridad que el primer cierre, no una paralela).
+        # - invalidate: la firma se invalida (signature_session_id=None,
+        #   signature_required=True) -- ahí sí hace falta repetir la
+        #   recepción/firma, así que "draft" (pre-firma) sigue siendo
+        #   correcto y sin cambios respecto al comportamiento anterior.
+        #
+        # _ensure_members_editable acepta in_progress específicamente cuando
+        # reopened_at no es None (además de draft) -- señal agnóstica de si
+        # la reapertura fue mediada por ticket o directa por autoridad
+        # administrativa (reopen_ticket_id es None en ese segundo caso) --
+        # para que la corrección general de datos/equipo (agregar equipo,
+        # corregir client_name, etc.) siga funcionando igual que antes de
+        # este cambio
+        # -- ver test_reopen_preserve_edit_general_critical_field_keeps_signature,
+        # test_structural_change_invalidates_signature_and_requires_new_signature.
+        # _closable_status tiene el carve-out equivalente para cerrar
+        # directamente una corrección puramente general (sin ninguna
+        # FieldSheet tocada) que nunca dispara el trigger de "última hoja
+        # completada".
+        item.status = "in_progress" if preserve else "draft"
         item.completed_at = None
         item.final_pdf = None
         item.final_pdf_sha256 = None
         item.final_pdf_generated_at = None
 
-    retired_snapshot = None
-    if equipment_id is not None:
-        equipment = db.scalar(
-            select(LabWorkOrderEquipment)
-            .where(LabWorkOrderEquipment.id == equipment_id)
-            .with_for_update()
-        )
-        if equipment is not None:
-            retired = equipment.field_sheet
-            _retire_current_field_sheet_revision(equipment)
-            if retired is not None and retired.status == "completed":
-                # No deja hueco operativo: N permanece intacta como
-                # histórico (is_current=False) y N+1 nace ya clonada y
-                # editable en la misma transacción -- ver
-                # _clone_field_sheet_for_correction para el porqué (el
-                # técnico corrige un dato, nunca vuelve a capturar desde
-                # cero).
-                _clone_field_sheet_for_correction(db, equipment, retired, user)
-                retired_snapshot = {
-                    "retired_field_sheet_id": retired.id,
-                    "retired_revision_number": retired.revision_number,
-                }
+    # Auditoría de semántica de reapertura (2026-09-06): reabrir la OT y
+    # desbloquear una FieldSheet son SIEMPRE acciones separadas -- ni
+    # siquiera cuando el ticket/llamada trae un equipment_id. Antes de esta
+    # corrección, un equipment_id aquí retiraba la revisión completed
+    # vigente y clonaba N+1 reopened como efecto colateral del reopen de OT,
+    # desbloqueando esa hoja SIN que nadie hubiera pedido "Desbloquear
+    # hoja"/aprobado un Ticket field_sheet_reopen. equipment_id se conserva
+    # en el contrato (viene de ReopenTicketCreate.equipment_id, ver
+    # create_reopen_ticket) puramente como CONTEXTO de auditoría -- qué
+    # equipo motivó la solicitud de reapertura -- nunca como disparador de
+    # dominio. Desbloquear una FieldSheet completed sigue siendo
+    # EXCLUSIVAMENTE _reopen_field_sheet_uncommitted, vía el Ticket
+    # field_sheet_reopen o el endpoint directo "Desbloquear hoja".
+    retired_snapshot = {"equipment_id": equipment_id} if equipment_id is not None else None
     return work_order, cohort, retired_snapshot
 
 
@@ -859,7 +878,7 @@ def reopen_work_order_directly(
         user_id=user.id,
         previous_values={"status": "completed_or_partially_closed"},
         new_values={
-            "status": "draft",
+            "status": "in_progress" if signature_policy == "preserve" else "draft",
             "signature_policy": signature_policy,
             "reason": reason.strip(),
         },
@@ -979,6 +998,14 @@ def resolve_operational_ticket(
             or user_has_permission(user, "lab_work_orders.use")
         ):
             raise HTTPException(status_code=403, detail="Permiso insuficiente para atender el cambio de fecha")
+    elif ticket.type == "field_sheet_reopen":
+        # Autoridad de reapertura de FieldSheet, nunca lab_folios.resolve
+        # (folios de certificado) ni tickets.review (triage genérico de
+        # tickets) -- mezclar esas autoridades con la de mutar un documento
+        # técnico ya formalizado sería incorrecto. Misma autoridad exacta
+        # que exige el endpoint directo (reopen_lab_field_sheet_directly).
+        if not user_has_permission(user, "lab_field_sheets.reopen"):
+            raise HTTPException(status_code=403, detail="Permiso insuficiente para desbloquear la hoja")
     elif not user_has_permission(user, "lab_folios.resolve"):
         raise HTTPException(status_code=403, detail="Permiso insuficiente para resolver la solicitud")
     if ticket.type == "certificate_folio_block":
@@ -1032,30 +1059,16 @@ def resolve_operational_ticket(
         ticket.resolution_snapshot = work_order.partial_close_pending_snapshot
         action = "lab_partial_close.approved"
     elif ticket.type == "field_sheet_reopen":
-        equipment = db.scalar(
-            select(LabWorkOrderEquipment)
-            .where(LabWorkOrderEquipment.id == ticket.equipment_id)
-            .with_for_update()
-        )
-        if equipment is None:
-            raise HTTPException(status_code=409, detail="El equipo solicitado ya no está disponible")
-        current = equipment.field_sheet
-        if current is None or current.status != "completed":
-            raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
-        _retire_current_field_sheet_revision(equipment)
-        # No deja hueco operativo: current permanece intacta como histórico
-        # (is_current=False) y la revisión N+1 nace ya clonada y editable en
-        # la misma transacción -- ver _clone_field_sheet_for_correction.
-        _clone_field_sheet_for_correction(db, equipment, current, user)
-        # ready_to_close exige que TODO el equipo tenga hoja completed
-        # (_missing_completed_sheets); al retirar una revisión ese invariante
-        # deja de cumplirse, así que se re-deriva la misma regla que ya
-        # produce ready_to_close hacia adelante -- no es un estado nuevo.
-        if equipment.work_order.status == "ready_to_close":
-            equipment.work_order.status = "in_progress"
+        # Núcleo único compartido con la reapertura directa por autoridad
+        # administrativa (reopen_lab_field_sheet_directly) -- misma regla,
+        # nunca duplicada: bloquea, exige completed/current, retira N a
+        # histórico, clona N -> N+1 (status="reopened") y regresa
+        # ready_to_close -> in_progress si aplica.
+        reopened = _reopen_field_sheet_uncommitted(db, ticket.work_order_id, ticket.equipment_id, user)
         ticket.resolution_snapshot = {
-            "retired_field_sheet_id": current.id,
-            "retired_revision_number": current.revision_number,
+            "retired_field_sheet_id": reopened.supersedes_field_sheet_id,
+            "retired_revision_number": reopened.revision_number - 1,
+            "reopened_field_sheet_id": reopened.id,
         }
         action = "lab_field_sheet.reopen_approved"
     elif ticket.type == "reception_date_change":

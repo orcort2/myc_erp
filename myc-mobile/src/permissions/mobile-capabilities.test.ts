@@ -239,3 +239,25 @@ test('cierre UX 2026-09: canEditLabClients requiere lab_clients.update explícit
   const legacy = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_work_orders.use']));
   assert.equal(legacy.canEditLabClients, true);
 });
+
+test('auditoría de semántica de reapertura (2026-09): canReopenFieldSheetsDirectly exige lab_field_sheets.reopen explícito', () => {
+  const withPermission = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_field_sheets.reopen']));
+  assert.equal(withPermission.canReopenFieldSheetsDirectly, true);
+
+  const withWildcard = deriveMobileCapabilities(user('internal', ['*']));
+  assert.equal(withWildcard.canReopenFieldSheetsDirectly, true);
+
+  // lab_work_orders.use (autoridad legado que sí habilita casi todo lo
+  // demás, ver "staff conserva compatibilidad LAB") NO debe habilitar el
+  // desbloqueo directo por sí solo -- un Técnico normal lo tiene y NO debe
+  // recibir esta autoridad administrativa.
+  const legacyOnly = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_work_orders.use']));
+  assert.equal(legacyOnly.canReopenFieldSheetsDirectly, false);
+
+  // El permiso por sí solo, sin actor_type internal, tampoco basta.
+  const externalWithPermission = deriveMobileCapabilities(user('client', ['lab_field_sheets.reopen']));
+  assert.equal(externalWithPermission.canReopenFieldSheetsDirectly, false);
+
+  const withoutPermission = deriveMobileCapabilities(user('internal', ['mobile.access', 'tickets.create']));
+  assert.equal(withoutPermission.canReopenFieldSheetsDirectly, false);
+});

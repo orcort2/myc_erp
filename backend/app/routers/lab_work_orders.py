@@ -8,6 +8,7 @@ from app.services.auth import require_permission
 from app.core.mobile.scope import ensure_lab_work_order_scope
 from app.core.mobile.security import MobileSecurityContext, require_mobile_permission
 from app.schemas.lab_work_order import (
+    FieldSheetDirectReopenRequest,
     LabCertificateFolioDistributionPreview,
     LabCertificateFolioDistributionResult,
     LabEquipmentCertificateClientWrite,
@@ -81,6 +82,7 @@ from app.services.lab_field_sheets import (
     create_lab_field_sheet,
     discard_lab_field_sheet,
     read_lab_field_sheet,
+    reopen_lab_field_sheet_directly,
     update_lab_field_sheet,
 )
 from app.services.lab_packages import generate_lab_package
@@ -739,6 +741,31 @@ def post_complete_lab_field_sheet(
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return complete_lab_field_sheet(db, work_order_id, equipment_id, context.user)
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/field-sheet/reopen",
+    response_model=FieldSheetRead,
+)
+def post_reopen_lab_field_sheet_directly(
+    work_order_id: int,
+    equipment_id: int,
+    payload: FieldSheetDirectReopenRequest,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_field_sheets.reopen")
+    ),
+) -> FieldSheetRead:
+    """"Desbloquear hoja": reapertura administrativa DIRECTA de una
+    FieldSheet completed -- exclusiva de quien ya tiene
+    lab_field_sheets.reopen (verificado de nuevo dentro del servicio). No
+    pasa por Ticket ni requiere aprobación de un segundo actor; comparte el
+    mismo núcleo de dominio que aprobar el Ticket field_sheet_reopen (ver
+    reopen_lab_field_sheet_directly)."""
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="Desbloquear una hoja está reservado a staff MYC")
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return reopen_lab_field_sheet_directly(db, work_order_id, equipment_id, payload, context.user)
 
 
 @router.patch("/{work_order_id}/equipment/{equipment_id}", response_model=LabWorkOrderRead)

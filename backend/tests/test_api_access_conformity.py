@@ -21,13 +21,12 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    # 526 = 523 (corte previo) + POST
-    # /{work_order_id}/equipment/{equipment_id}/field-sheet/change-template
-    # ("Cambiar Hoja de Campo") + GET /{work_order_id}/certificate-folios/preview
-    # + POST /{work_order_id}/certificate-folios/distribute ("Distribuir
-    # folios disponibles") -- las tres caen bajo la clasificación genérica
+    # 527 = 526 (corte previo) + POST
+    # /{work_order_id}/equipment/{equipment_id}/field-sheet/reopen
+    # ("Desbloquear hoja" -- reapertura administrativa directa de una
+    # FieldSheet completed) -- cae bajo la clasificación genérica
     # /api/mobile/v1/ existente, sin override propio.
-    assert len(operations) == 526
+    assert len(operations) == 527
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

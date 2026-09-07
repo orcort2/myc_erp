@@ -20,6 +20,12 @@ FieldSheetStatus = Literal[
     "approved",
     "rejected",
     "cancelled",
+    # Exclusivo del vertical LAB: una FieldSheet completed desbloqueada para
+    # corrección (Ticket field_sheet_reopen o reapertura directa) clona una
+    # revisión N+1 con este status -- ver
+    # _clone_field_sheet_for_correction/EDITABLE_STATUSES. El flujo
+    # productivo nunca lo produce.
+    "reopened",
 ]
 
 FieldSheetTemplateKey = Literal[

@@ -151,8 +151,9 @@ def _open_group_members(group: list[LabWorkOrder]) -> list[LabWorkOrder]:
 
 
 def _editable_group_members(group: list[LabWorkOrder]) -> list[LabWorkOrder]:
-    """Return only draft members that may still receive ordinary mutations."""
-    return [item for item in group if item.status == "draft"]
+    """Return only members that may still receive ordinary mutations -- draft,
+    or in_progress from a preserve reopen (see _member_editable_status)."""
+    return [item for item in group if _member_editable_status(item)]
 
 
 def _signature_cohort(
@@ -193,15 +194,49 @@ def _lock_historical_group(
     return work_order, group
 
 
+def _member_editable_status(item: LabWorkOrder) -> bool:
+    """draft: estado normal pre-firma, siempre editable. in_progress:
+    editable SOLO cuando ese in_progress viene de una reapertura -- la
+    corrección general de datos/equipo tras un reopen preserve (ver
+    _reopen_closed_cohort en operational_tickets.py) es una reapertura tan
+    real como corregir una FieldSheet, y desde 2026-09 el status de dominio
+    de ese reopen es in_progress, no draft.
+
+    Usa reopened_at (no reopen_ticket_id) como señal: reopen_ticket_id es
+    None en una reapertura DIRECTA por autoridad administrativa
+    (reopen_work_order_directly, sin ticket), pero _reopen_closed_cohort
+    siempre marca reopened_at/reopened_by_user_id sin importar el camino
+    (mediado por ticket o directo) -- así que sólo reopened_at identifica
+    "fue reabierta" en ambos casos por igual.
+
+    Deliberadamente NO exige además signature_preserved aquí: un cambio
+    estructural (agregar equipo) dentro de esa misma reapertura invalida la
+    firma (signature_preserved pasa a False, ver invalidate_member_signatures)
+    pero la OT debe seguir editable para seguir corrigiendo hasta volver a
+    firmar -- exactamente igual que el diseño anterior (status="draft"
+    siempre editable, sin importar signature_preserved). La otra mitad de
+    esta función (abajo, en _ensure_members_editable) ya bloquea el caso que
+    sí importa: una firma VÁLIDA y no preservada (session_id set,
+    signature_preserved False) SÍ cierra la ventana de edición general,
+    exactamente como antes.
+
+    Un in_progress "normal" (captura técnica de una OT nunca reabierta) no
+    tiene reopened_at y por tanto sigue sin ser editable para datos
+    generales -- sólo las FieldSheets lo son, vía su propio flujo."""
+    if item.status == "draft":
+        return True
+    return item.status == "in_progress" and item.reopened_at is not None
+
+
 def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
-    if not members or any(item.status != "draft" for item in members):
+    if not members or any(not _member_editable_status(item) for item in members):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="INVALID_STATE_TRANSITION: la OT no está disponible para edición",
         )
     if any(
         item.signature_session_id is not None
-        and not (item.reopen_ticket_id and item.signature_preserved)
+        and not (item.reopened_at is not None and item.signature_preserved)
         for item in members
     ):
         raise HTTPException(
@@ -211,7 +246,7 @@ def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
 
 
 def _check_edit_version(group: list[LabWorkOrder], expected: int | None) -> None:
-    if not any(item.reopen_ticket_id for item in group):
+    if not any(item.reopened_at is not None for item in group):
         return
     current = max(item.edit_version for item in group)
     if expected is None or expected != current:
@@ -1401,7 +1436,7 @@ def _add_equipment_core(
     """Núcleo sin commit de add_equipment: crea la fila y hace flush, pero deja
     la transacción abierta para que un caller (el endpoint público, o Fase 2
     create_configured_equipment) decida cuándo confirmar/hacer rollback."""
-    if work_order.reopen_ticket_id:
+    if work_order.reopened_at is not None:
         invalidate_member_signatures(
             db,
             _affected_signature_members(group, work_order),
@@ -2100,7 +2135,7 @@ def delete_equipment(
     )
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
-    if work_order.reopen_ticket_id:
+    if work_order.reopened_at is not None:
         invalidate_member_signatures(
             db,
             _affected_signature_members(group, work_order),
@@ -2154,7 +2189,7 @@ def create_additional_work_order(
     group = _group(db, source, lock=True)
     _ensure_members_editable([source])
     editable_members = _editable_group_members(group)
-    if source.reopen_ticket_id:
+    if source.reopened_at is not None:
         invalidate_member_signatures(
             db,
             _affected_signature_members(group, source),
@@ -2530,15 +2565,29 @@ def _closable_status(item: LabWorkOrder) -> bool:
     existente de _missing_completed_sheets: no requiere FieldSheets
     completas para cerrar, así que basta con que ya esté firmada
     (received_signed/in_progress), sin necesidad de alcanzar ready_to_close.
-    Una reapertura 'preserve' vuelve a draft con la firma histórica intacta
-    (signature_preserved=True) -- exactamente el mismo camino de cierre que
-    ya existía antes de esta fase, sin necesidad de re-pasar por
-    received_signed/ready_to_close."""
+    Una reapertura 'preserve' vuelve a in_progress con la firma histórica
+    intacta (signature_preserved=True, ver _reopen_closed_cohort) -- para
+    una OT sin lab_client_id ya cubre la condición anterior (lab_client_id
+    is None + in_progress). Para una OT CON lab_client_id, el camino normal
+    es que in_progress llegue a ready_to_close solo cuando se completa la
+    última FieldSheet pendiente (_complete_lab_field_sheet_uncommitted); el
+    carve-out de abajo cubre el caso donde la corrección fue puramente
+    general (ningún FieldSheet tocado, todas ya completed desde antes) y por
+    lo tanto ese trigger nunca dispara -- sin él, esa OT quedaría atascada en
+    in_progress para siempre pese a no tener nada pendiente."""
     if item.status in {"ready_to_close", "ready_for_signatures"}:
         return True
     if item.lab_client_id is None and item.status in {"received_signed", "in_progress"}:
         return True
-    return item.status == "draft" and bool(item.reopen_ticket_id) and item.signature_preserved
+    return (
+        item.status == "in_progress"
+        # reopened_at (no reopen_ticket_id): una reapertura DIRECTA por
+        # autoridad administrativa (reopen_work_order_directly) nunca pasa
+        # por ticket -- ver _member_editable_status, misma señal.
+        and item.reopened_at is not None
+        and item.signature_preserved
+        and not _missing_completed_sheets([item])
+    )
 
 
 def sign_group(
@@ -2546,11 +2595,12 @@ def sign_group(
 ) -> LabWorkOrderRead:
     work_order, group = _lock_historical_group(db, work_order_id)
     _ensure_members_editable([work_order])
-    if work_order.workflow_mode == "equipment_by_equipment" and work_order.reopen_ticket_id is None:
+    if work_order.workflow_mode == "equipment_by_equipment" and work_order.reopened_at is None:
         # Sólo bloquea el PRIMER paso por firma (nunca finalizada todavía):
         # ese camino es exclusivo de finalize_equipment_by_equipment_work_order.
-        # Una OT ya finalizada y reabierta (reopen_ticket_id no nulo) vuelve
-        # al sistema normal de reapertura/firma -- sección 33 del encargo.
+        # Una OT ya finalizada y reabierta (reopened_at no nulo -- directa o
+        # mediada por ticket) vuelve al sistema normal de reapertura/firma
+        # -- sección 33 del encargo.
         raise HTTPException(
             status_code=409,
             detail="Esta OT usa el flujo equipo por equipo: usa Finalizar registro de equipos",
@@ -2583,11 +2633,12 @@ def sign_individual(
 ) -> LabWorkOrderRead:
     work_order, _group_members = _lock_historical_group(db, work_order_id)
     _ensure_members_editable([work_order])
-    if work_order.workflow_mode == "equipment_by_equipment" and work_order.reopen_ticket_id is None:
+    if work_order.workflow_mode == "equipment_by_equipment" and work_order.reopened_at is None:
         # Sólo bloquea el PRIMER paso por firma (nunca finalizada todavía):
         # ese camino es exclusivo de finalize_equipment_by_equipment_work_order.
-        # Una OT ya finalizada y reabierta (reopen_ticket_id no nulo) vuelve
-        # al sistema normal de reapertura/firma -- sección 33 del encargo.
+        # Una OT ya finalizada y reabierta (reopened_at no nulo -- directa o
+        # mediada por ticket) vuelve al sistema normal de reapertura/firma
+        # -- sección 33 del encargo.
         raise HTTPException(
             status_code=409,
             detail="Esta OT usa el flujo equipo por equipo: usa Finalizar registro de equipos",
@@ -2739,7 +2790,7 @@ def _finish_complete_members_uncommitted(
         item.status = "partially_closed" if item.partial_close_ticket_id else "completed"
         if item.partial_close_ticket_id:
             item.partially_closed_at = completed_at
-        item.signature_preserved = bool(item.reopen_ticket_id and item.signature_preserved)
+        item.signature_preserved = bool(item.reopened_at is not None and item.signature_preserved)
         _notify_capture_work_order_completed(db, item, user)
     ticket_ids = {item.reopen_ticket_id for item in members if item.reopen_ticket_id}
     if ticket_ids:

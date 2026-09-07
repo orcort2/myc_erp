@@ -49,11 +49,26 @@ type Props = {
   canCapture: boolean;
   canCreateTickets: boolean;
   canOverrideReceptionDate: boolean;
+  // Auditoría de semántica de reapertura (2026-09): autoridad administrativa
+  // DIRECTA para desbloquear una FieldSheet completed ("Desbloquear hoja",
+  // sin Ticket) -- deliberadamente distinta de canCapture (autoridad de
+  // captura, no de reapertura administrativa) y de canCreateTickets
+  // (autoridad de "Solicitar desbloqueo", que sigue exigiendo aprobación).
+  canReopenFieldSheetsDirectly: boolean;
   external: boolean;
   onUpdated(order: LabWorkOrder): void;
   request: Request;
   workOrder: LabWorkOrder;
 };
+
+// Auditoría de semántica de reapertura (2026-09): el desbloqueo directo y la
+// solicitud vía Ticket sólo aplican mientras la OT dueña sigue abierta --
+// misma frontera exacta que create_field_sheet_reopen_ticket/
+// _reopen_field_sheet_uncommitted en el backend. Ni 'completed' ni
+// 'partially_closed' (ya cerradas: usar reapertura de OT completa) ni
+// 'draft'/'ready_for_signatures'/'cancelled' (todavía no llegan a tener una
+// FieldSheet completed que desbloquear) admiten esta acción.
+const FIELD_SHEET_UNLOCK_ELIGIBLE_ORDER_STATUSES = new Set(['received_signed', 'in_progress', 'ready_to_close']);
 
 // Firmas/autoridad documental: nunca capturados como texto libre (ver
 // lab-signature-authority.ts). Se excluyen de los "campos ordinarios" y se
@@ -84,7 +99,7 @@ function buildValues(entity: LabFieldSheet): Record<string, unknown> {
 
 function statusTone(status: string): 'warning' | 'info' | 'success' {
   if (status === 'completed') return 'success';
-  if (status === 'draft') return 'warning';
+  if (status === 'draft' || status === 'reopened') return 'warning';
   return 'info';
 }
 
@@ -95,6 +110,10 @@ const FIELD_SHEET_STATUS_LABELS: Record<string, string> = {
   draft: 'BORRADOR',
   in_progress: 'EN CAPTURA',
   completed: 'COMPLETADA',
+  // Exclusivo del vertical LAB (ver EDITABLE_STATUSES en el backend): una
+  // FieldSheet completed desbloqueada para corrección -- nace ya clonada y
+  // editable, nunca una hoja vacía.
+  reopened: 'REABIERTA · CORRECCIÓN EN CURSO',
 };
 
 function fieldSheetStatusLabel(status: string): string {
@@ -109,7 +128,7 @@ function fieldSheetStatusLabel(status: string): string {
  * genéricamente, igual que antes de esta fase, ahora con el contrato de
  * campo completo del snapshot y sin tablas inline.
  */
-export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets, canOverrideReceptionDate, onUpdated, request, workOrder }: Props) {
+export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets, canOverrideReceptionDate, canReopenFieldSheetsDirectly, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templatesError, setTemplatesError] = useState('');
@@ -120,7 +139,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [viewMode, setViewMode] = useState<FieldSheetViewMode>(initialViewMode());
   const [resultsOpen, setResultsOpen] = useState(false);
-  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'field_sheet_template' | 'field_sheet_reopen' | 'reception_date_change' | null>(null);
+  const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'field_sheet_template' | 'field_sheet_reopen' | 'field_sheet_unlock_direct' | 'reception_date_change' | null>(null);
   const [requestedFolio, setRequestedFolio] = useState('');
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
@@ -469,9 +488,38 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
       });
       setTicketMode(null);
       setActiveEquipment(null);
-      Alert.alert('Solicitud enviada', 'Un administrador debe autorizar el desbloqueo antes de recapturar.');
+      Alert.alert('Solicitud enviada', 'La hoja permanecerá bloqueada hasta su autorización.');
     } catch (error) {
       Alert.alert('No fue posible solicitar el desbloqueo', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
+  // Auditoría de semántica de reapertura (2026-09): "Desbloquear hoja" --
+  // autoridad administrativa DIRECTA (lab_field_sheets.reopen), sin Ticket
+  // ni segunda aprobación. Comparte el mismo núcleo de dominio que aprobar
+  // el Ticket field_sheet_reopen (_reopen_field_sheet_uncommitted en el
+  // backend); esta llamada sólo evita el paso intermedio cuando quien
+  // desbloquea ya tiene la autoridad para hacerlo. La respuesta ya es la
+  // FieldSheet N+1 reopened/current, clonada y lista para corregir -- se
+  // muestra de inmediato, sin volver a "Seleccionar hoja".
+  async function unlockFieldSheetDirectly() {
+    if (!activeEquipment || ticketMode !== 'field_sheet_unlock_direct') return;
+    if (!ticketReason.trim()) return;
+    setBusy(true);
+    try {
+      const reopened = await request<LabFieldSheet>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/reopen`,
+        { method: 'POST', body: JSON.stringify({ reason: ticketReason.trim() }) },
+      );
+      setSheet(reopened);
+      setSelectedTemplate(reopened.template_key);
+      setValues(buildValues(reopened));
+      setViewMode(initialViewMode());
+      setTicketMode(null);
+      await refreshWorkOrder();
+      Alert.alert('Hoja desbloqueada', 'Puedes corregir los datos existentes.');
+    } catch (error) {
+      Alert.alert('No fue posible desbloquear la hoja', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally { setBusy(false); }
   }
 
@@ -606,6 +654,18 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         <ActionRow>
           <SecondaryButton icon="arrow-left" label="Volver" onPress={() => setTicketMode(null)} />
           <PrimaryButton icon="send" label="Enviar Ticket" loading={busy} onPress={requestFieldSheetReopen} />
+        </ActionRow>
+      </ScrollView>
+    );
+    if (ticketMode === 'field_sheet_unlock_direct') return (
+      <ScrollView contentContainerStyle={styles.panel}>
+        <Text style={styles.title}>Desbloquear hoja</Text>
+        <Text style={styles.meta}>{activeEquipment.instrument} · OT {workOrder.folio} · Hoja {sheet ? fieldSheetStatusLabel(sheet.status).toLowerCase() : ''}</Text>
+        <AlertBanner tone="info">Se desbloquea de inmediato, sin Ticket ni aprobación adicional. El historial completado (PDF y datos) se conserva intacto; la corrección abre una nueva revisión editable.</AlertBanner>
+        <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
+        <ActionRow>
+          <SecondaryButton icon="arrow-left" label="Volver" onPress={() => setTicketMode(null)} />
+          <PrimaryButton disabled={!ticketReason.trim()} icon="lock-open-outline" label="Desbloquear hoja" loading={busy} onPress={unlockFieldSheetDirectly} />
         </ActionRow>
       </ScrollView>
     );
@@ -827,7 +887,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
             editable ? (
               <OperationalActionStack>
                 <ActionRow>
-                  <SecondaryButton icon="content-save" label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
+                  <SecondaryButton
+                    icon="content-save"
+                    label={sheet.status === 'reopened' ? 'Guardar cambios' : 'Guardar borrador'}
+                    loading={busy}
+                    onPress={() => saveSheet(false)}
+                  />
                   <PrimaryButton icon="check-circle" label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
                 </ActionRow>
                 <SecondaryButton icon="swap-horizontal" label="Cambiar Hoja de Campo" disabled={busy} onPress={openChangeTemplate} />
@@ -843,8 +908,25 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           {sheet.status === 'completed' && (
             <OperationalActionStack>
               <SecondaryButton disabled={downloadingPdf} icon="download" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
-              {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
-                <AdministrativeButton icon="lock-open-outline" label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+              {/* Auditoría de semántica de reapertura (2026-09): tres casos
+                  excluyentes, nunca fusionados -- (A) autoridad directa
+                  (lab_field_sheets.reopen) ejecuta sin Ticket; (B) sin esa
+                  autoridad pero con tickets.create sólo puede solicitar,
+                  la hoja sigue bloqueada hasta que se apruebe; (C) sin
+                  ninguna de las dos, no se ofrece ninguna acción de
+                  desbloqueo. Deliberadamente ya NO depende de canCapture:
+                  esa es autoridad de captura, no de reapertura
+                  administrativa (ver lab_field_sheets.reopen). */}
+              {FIELD_SHEET_UNLOCK_ELIGIBLE_ORDER_STATUSES.has(workOrder.status) && (
+                canReopenFieldSheetsDirectly ? (
+                  <AdministrativeButton
+                    icon="lock-open-outline"
+                    label="Desbloquear hoja"
+                    onPress={() => { setTicketReason(''); setTicketMode('field_sheet_unlock_direct'); }}
+                  />
+                ) : canCreateTickets ? (
+                  <AdministrativeButton icon="lock-open-outline" label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+                ) : null
               )}
             </OperationalActionStack>
           )}
@@ -894,8 +976,16 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
             <Text style={styles.meta}>{equipment.brand} · {equipment.serial_number}</Text>
           </View>
           <StatusBadge
-            label={equipment.field_sheet_status === 'completed' ? 'COMPLETA' : equipment.field_sheet_status ? 'EN CAPTURA' : 'SIN HOJA'}
-            tone={equipment.field_sheet_status === 'completed' ? 'success' : equipment.field_sheet_status ? 'info' : 'neutral'}
+            label={
+              equipment.field_sheet_status === 'completed' ? 'COMPLETA'
+                : equipment.field_sheet_status === 'reopened' ? 'REABIERTA'
+                : equipment.field_sheet_status ? 'EN CAPTURA' : 'SIN HOJA'
+            }
+            tone={
+              equipment.field_sheet_status === 'completed' ? 'success'
+                : equipment.field_sheet_status === 'reopened' ? 'warning'
+                : equipment.field_sheet_status ? 'info' : 'neutral'
+            }
           />
         </View>
         <Text style={styles.meta}>{equipment.service_type ? serviceLabels[equipment.service_type] : 'Sin asignar'} · {equipment.certificate_folio ?? (equipment.folio_status === 'pending' ? 'PENDIENTE' : 'Sin resolver')}</Text>

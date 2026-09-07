@@ -23,13 +23,20 @@ TICKET_SIGNATURE_REQUIRED = "ticket.signature_required"
 # se resuelven con lab_folios.resolve; sólo reopen_work_order usa
 # tickets.review/approve. field_sheet_template_request todavía no tiene
 # flujo de resolución (Fase 1F), así que no genera destinatarios de revisión.
+#
+# field_sheet_reopen (2026-09, auditoría de semántica de reapertura): ya NO
+# se resuelve con lab_folios.resolve -- resolve_operational_ticket exige
+# específicamente lab_field_sheets.reopen para este tipo (autoridad de
+# desbloqueo de FieldSheet, deliberadamente distinta de folios de
+# certificado). Los destinatarios de notificación deben coincidir con quien
+# de verdad puede resolver el ticket.
 TICKET_TYPE_REVIEW_PERMISSIONS = {
     "reopen_work_order": ("tickets.review",),
     "manual_myc_folio": ("lab_folios.resolve",),
     "linked_folio": ("lab_folios.resolve",),
     "partial_close": ("lab_folios.resolve",),
     "certificate_folio_block": ("lab_folios.resolve",),
-    "field_sheet_reopen": ("lab_folios.resolve",),
+    "field_sheet_reopen": ("lab_field_sheets.reopen",),
     "reception_date_change": ("work_orders.create", "lab_work_orders.use"),
 }
 

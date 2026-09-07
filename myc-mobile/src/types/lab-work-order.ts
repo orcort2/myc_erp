@@ -88,6 +88,12 @@ export type LabWorkOrder = {
   revision_number: number;
   edit_version: number;
   reopen_ticket_id: number | null;
+  // Auditoría de semántica de reapertura (2026-09): agnóstico de si la
+  // reapertura fue mediada por ticket (reopen_ticket_id) o directa por
+  // autoridad administrativa (reopen_ticket_id null en ese caso) -- señal
+  // canónica de "esta OT ya fue reabierta alguna vez" para decidir la
+  // etiqueta "Completar cambios" del cierre (ver lab-work-order-step.ts).
+  reopened_at: string | null;
   signature_required: boolean;
   signature_preserved: boolean;
   partial_close_ticket_id: number | null;

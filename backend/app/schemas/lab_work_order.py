@@ -311,6 +311,25 @@ class LabWorkOrderWorkflowModeChange(BaseModel):
         return normalized
 
 
+class FieldSheetDirectReopenRequest(BaseModel):
+    """"Desbloquear hoja": reapertura directa de UNA FieldSheet completed por
+    autoridad administrativa (permiso lab_field_sheets.reopen), sin pasar por
+    el Ticket field_sheet_reopen. Motivo obligatorio, igual que el resto de
+    acciones administrativas directas (ver LabWorkOrderWorkflowModeChange)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("El motivo es obligatorio")
+        return normalized
+
+
 class LabCertificateFolioDistributionItem(BaseModel):
     equipment_id: int
     position: int
@@ -488,6 +507,12 @@ class LabWorkOrderRead(BaseModel):
     revision_number: int
     edit_version: int
     reopen_ticket_id: int | None
+    # Auditoría de semántica de reapertura (2026-09): señal agnóstica de si
+    # la reapertura fue mediada por ticket o directa por autoridad
+    # administrativa (reopen_ticket_id es None en ese segundo caso) --
+    # ver _member_editable_status/_closable_status en lab_work_orders.py.
+    # Mobile la usa para decidir la etiqueta "Completar cambios" del cierre.
+    reopened_at: datetime | None = None
     signature_required: bool
     signature_preserved: bool
     workflow_mode: str

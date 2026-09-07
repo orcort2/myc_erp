@@ -30,6 +30,7 @@ export type MobileCapabilities = {
   canRegisterLabDelivery: boolean;
   canVoidLabDelivery: boolean;
   canRequestPartialDelivery: boolean;
+  canReopenFieldSheetsDirectly: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -120,5 +121,15 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     // type=partial_delivery); la aprobación reutiliza canReviewTickets
     // (tickets.review, mismo permiso ya usado por approve/reject de tickets).
     canRequestPartialDelivery: user?.actor_type === 'internal' && hasLegacyLabAccess,
+    // Auditoría de semántica de reapertura (2026-09): autoridad administrativa
+    // DIRECTA para desbloquear una FieldSheet completed ("Desbloquear hoja",
+    // sin Ticket) -- deliberadamente NO usa hasLegacyLabAccess como el resto
+    // de estas capacidades: lab_work_orders.use lo tiene cualquier Técnico
+    // (ver backend/app/core/permissions.py), y esa autoridad de desbloqueo es
+    // exclusiva de lab_field_sheets.reopen (hoy Administrador/Desarrollador).
+    // Un usuario sin este permiso conserva "Solicitar desbloqueo" vía
+    // canCreateTickets -- nunca se le oculta toda acción, sólo la directa.
+    canReopenFieldSheetsDirectly: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_field_sheets.reopen'),
   };
 }

@@ -433,6 +433,7 @@ export default function WorkOrdersScreen() {
     canRegisterLabDelivery,
     canVoidLabDelivery,
     canRequestPartialDelivery,
+    canReopenFieldSheetsDirectly,
   } = capabilities;
   const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
   const canDelete = !!user && canDeleteLabWorkOrder(user.permissions);
@@ -543,6 +544,16 @@ export default function WorkOrdersScreen() {
   // llamada (POST .../reopen), sin crear ni aprobar un ticket artificial.
   // Misma confirmación/auditoría que el flujo mediado por ticket, sólo sin
   // el paso intermedio que el usuario no necesita.
+  //
+  // Auditoría de semántica de reapertura (2026-09, causa raíz OT 6443): el
+  // status de dominio tras un reopen preserve ya es "in_progress" (no
+  // "draft" -- ver operational_tickets.py::_reopen_closed_cohort), así que
+  // inferStepForStatus ya lleva directo a 'technical' (captura técnica,
+  // recepción y firma preservadas intactas), nunca de vuelta a "Recepción
+  // de equipos". setStep es explícito aquí (este componente NO deriva el
+  // paso automáticamente de workOrder.status) para que la pantalla
+  // transicione de inmediato tras el 200, sin esperar un refresh/evento
+  // realtime aparte.
   async function reopenDirectly() {
     if (!workOrder || !ticketReason.trim() || !ticketDescription.trim()) return;
     setBusy(true);
@@ -561,8 +572,14 @@ export default function WorkOrdersScreen() {
       setTicketReason('');
       setTicketDescription('');
       setWorkOrder(detail);
+      setStep(inferStepForStatus(detail.status));
       publishLocalChange({ event_type: 'work_order.reopened', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
-      Alert.alert('OT reabierta', `La OT ${detail.folio} volvió a draft y puede editarse.`);
+      Alert.alert(
+        'OT reabierta',
+        reopenSignaturePolicy === 'preserve'
+          ? 'La OT fue reabierta para correcciones. La recepción y las firmas preservadas se mantienen.'
+          : `La OT ${detail.folio} requiere firmar la recepción nuevamente antes de continuar.`,
+      );
       await refresh(true);
     } catch (error) {
       Alert.alert('No fue posible reabrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -1649,6 +1666,7 @@ export default function WorkOrdersScreen() {
                     canCapture={canCaptureFieldSheets}
                     canCreateTickets={canCreateTickets}
                     canOverrideReceptionDate={canOverrideReceptionDate}
+                    canReopenFieldSheetsDirectly={canReopenFieldSheetsDirectly}
                     external={user.actor_type === 'client'}
                     onUpdated={setWorkOrder}
                     request={request}
@@ -1682,12 +1700,25 @@ export default function WorkOrdersScreen() {
                   <OperationalActionStack>
                     <SecondaryButton icon="clipboard-edit-outline" label="Revisar captura técnica" onPress={() => setStep('technical')} />
                     {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <AdministrativeButton icon="send" label="Solicitar excepción de cierre parcial" onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }} />}
+                    {/* Sección 12 del encargo: "Completar cambios" reemplaza la
+                        etiqueta normal de cierre exclusivamente cuando la OT
+                        ya fue reabierta alguna vez (workOrder.reopened_at,
+                        metadata backend persistente -- nunca state local).
+                        Reutiliza el MISMO mecanismo de cierre
+                        (completeClosure/_finish_complete_members); sólo
+                        cambia el texto del botón. */}
                     {canCloseWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
-                      <PrimaryButton icon="check-circle" label="Cerrar OT individual reabierta" onPress={() => completeClosure(closureScope)} />
+                      <PrimaryButton
+                        icon="check-circle"
+                        label={workOrder.reopened_at ? 'Completar cambios' : 'Cerrar OT individual reabierta'}
+                        onPress={() => completeClosure(closureScope)}
+                      />
                     ) : canCloseWorkOrders ? (
                       <PrimaryButton
                         icon="check-circle"
-                        label={closureScope === 'group' && closureOptions?.hasHistoricalSiblings
+                        label={workOrder.reopened_at
+                          ? 'Completar cambios'
+                          : closureScope === 'group' && closureOptions?.hasHistoricalSiblings
                           ? `Cerrar grupo activo (${closureOptions.activeCohortSize} OT)`
                           : `Cerrar OT ${workOrder.folio}`}
                         onPress={() => completeClosure(closureScope)}

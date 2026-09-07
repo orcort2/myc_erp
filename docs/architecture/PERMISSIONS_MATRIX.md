@@ -74,6 +74,12 @@ inferencia documental.
   `work_orders.reopen_preserve_signatures` y
   `work_orders.reopen_invalidate_signatures`. Técnico crea/consulta propios;
   Calidad revisa todos y decide política; backend conserva autoridad final.
+- Desbloqueo directo de FieldSheet LAB: `lab_field_sheets.reopen`
+  ("Desbloquear hoja", sin Ticket, o resolver un Ticket `field_sheet_reopen`)
+  -- deliberadamente distinto de `lab_folios.resolve` (folios de
+  certificado) y de `tickets.review` (triage genérico de tickets). Hoy sólo
+  Administrador (`*`) y Desarrollador; ni Técnico, Captura, Calidad ni
+  Operador lo reciben.
 - SAT: lectura, administración, favoritos y alias.
 - Centro de Resoluciones: `read`, `read_all`, `create`, `prepare`, `analyze`,
   `plan`, `simulate`, `authorize`, `execute`, `audit` e `infrastructure`.

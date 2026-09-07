@@ -223,7 +223,7 @@ def resolve_ticket(
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission(
-            "lab_folios.resolve", "work_orders.create", "lab_work_orders.use"
+            "lab_folios.resolve", "work_orders.create", "lab_work_orders.use", "lab_field_sheets.reopen"
         )
     ),
 ) -> TicketRead:

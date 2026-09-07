@@ -1006,7 +1006,7 @@ def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_cont
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["status"] == "draft"
+    assert body["status"] == "in_progress"
     with factory() as db:
         order = db.get(LabWorkOrder, order_id)
         assert order.reopen_ticket_id is None

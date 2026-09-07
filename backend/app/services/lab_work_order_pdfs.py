@@ -45,10 +45,20 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
             identification = upper(item.identification.strip()) if item.identification and item.identification.strip() else "SIN IDENTIFICACIÓN"
             note_lines.append(f"{instrument} -> {identification} : {upper(item.observations.strip())}")
     revision_number = work_order.revision_number or 1
-    if revision_number > 1 and work_order.reopen_ticket_id:
+    # Auditoría de semántica de reapertura (2026-09): reopened_at (no
+    # reopen_ticket_id) es la señal correcta -- una reapertura DIRECTA por
+    # autoridad administrativa (reopen_work_order_directly) nunca pasa por
+    # Ticket, y antes de esta corrección esa nota de auditoría se omitía en
+    # silencio para ese camino.
+    if revision_number > 1 and work_order.reopened_at is not None:
+        reopening_authority = (
+            f"Ticket #{work_order.reopen_ticket_id}"
+            if work_order.reopen_ticket_id
+            else "reapertura administrativa directa"
+        )
         reopening_note = upper(
             f"Revisión {revision_number}: reapertura autorizada mediante "
-            f"Ticket #{work_order.reopen_ticket_id}. "
+            f"{reopening_authority}. "
             + (
                 "Firma de la revisión anterior preservada."
                 if work_order.signature_preserved

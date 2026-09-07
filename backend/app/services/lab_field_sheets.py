@@ -13,6 +13,7 @@ from app.models.reference_standard import FieldSheetReferenceStandard
 from app.models.user import User
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.lab_work_order import (
+    FieldSheetDirectReopenRequest,
     LabFieldSheetCreate,
     LabFieldSheetTrayItem,
     LabFieldSheetTrayPage,
@@ -36,7 +37,11 @@ from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
     institutional_snapshot,
 )
-from app.services.lab_work_orders import _missing_completed_sheets, resolve_equipment_certificate_client
+from app.services.lab_work_orders import (
+    _missing_completed_sheets,
+    _retire_current_field_sheet_revision,
+    resolve_equipment_certificate_client,
+)
 from app.services.storage_service import delete_if_unreferenced
 
 
@@ -450,6 +455,14 @@ def _clone_field_sheet_for_correction(
     N+1 nace con todo su contenido técnico ya capturado, lista para
     "Continuar captura" en vez de "Seleccionar Hoja de Campo".
 
+    N+1 nace con `status="reopened"` (distinto de "draft"/"in_progress"):
+    es editable exactamente igual (está en EDITABLE_STATUSES,
+    ver field_sheets.py) pero deja explícito en el dato -- y visible en
+    Mobile -- que esta revisión existe porque una completed se desbloqueó
+    para corrección, nunca porque nazca de una captura nueva desde cero.
+    Sigue bloqueando el cierre de la OT igual que cualquier estado no
+    completed (_missing_completed_sheets sólo acepta "completed").
+
     `observations` clona el valor ya congelado en N (`retired.observations`,
     vía `_CLONED_FIELD_SHEET_ATTRS`), NUNCA vuelve a leer
     `LabWorkOrderEquipment.observations`: una revisión CORRECTIVA debe partir
@@ -495,7 +508,7 @@ def _clone_field_sheet_for_correction(
         revision_number=retired.revision_number + 1,
         is_current=True,
         supersedes_field_sheet_id=retired.id,
-        status="draft",
+        status="reopened",
         capture_values=capture_values,
         template_definition_json=template_definition_json,
         institutional_snapshot_json=institutional_snapshot_json,
@@ -546,6 +559,86 @@ def _clone_field_sheet_for_correction(
         },
     )
     return sheet
+
+
+def _reopen_field_sheet_uncommitted(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    user: User,
+) -> FieldSheet:
+    """Núcleo único de "desbloquear una FieldSheet completed": bloquea el
+    equipo (FOR UPDATE vía get_lab_equipment), exige que su revisión vigente
+    siga completed/current, retira N a histórico y clona N -> N+1
+    (status="reopened"/current -- ver _clone_field_sheet_for_correction), y
+    si la OT dueña ya estaba ready_to_close la regresa a in_progress (mismo
+    motivo que el cierre normal: _missing_completed_sheets deja de estar
+    satisfecho). Compartido, sin duplicar, por la resolución del Ticket
+    field_sheet_reopen y la reapertura directa por autoridad administrativa
+    -- una sola regla en un solo lugar. No hace commit ni escribe auditoría:
+    cada caller decide con qué acción/motivo registrar el evento (el
+    ticket ya escribe su propio audit log genérico de resolución; la
+    reapertura directa registra uno propio con el motivo capturado).
+
+    Exige que la OT dueña siga abierta (received_signed/in_progress/
+    ready_to_close) -- misma frontera que create_field_sheet_reopen_ticket:
+    una OT ya completed/partially_closed no admite desbloquear una hoja
+    suelta, primero hay que reabrir la OT completa (reopen_work_order,
+    opcionalmente con equipment_id en el mismo ticket/acción directa), que
+    tiene su propia ceremonia de firmas/versión."""
+    equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
+    if equipment.work_order.status not in {"received_signed", "in_progress", "ready_to_close"}:
+        raise HTTPException(
+            status_code=409,
+            detail="La OT ya está cerrada; reabre la OT completa antes de desbloquear una hoja",
+        )
+    current = equipment.field_sheet
+    if current is None or current.status != "completed":
+        raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
+    _retire_current_field_sheet_revision(equipment)
+    reopened = _clone_field_sheet_for_correction(db, equipment, current, user)
+    # _clone_field_sheet_for_correction crea una fila NUEVA vía FK cruda
+    # (lab_equipment_id=equipment.id), no vía la colección Python de la
+    # relación -- current_field_sheet es lazy="selectin" y, si ya se
+    # accedió antes en esta misma transacción (como aquí, `current =
+    # equipment.field_sheet`), queda cacheada apuntando a la revisión
+    # retirada. Sin expirarla, cualquier lectura posterior en la MISMA
+    # sesión (p.ej. _missing_completed_sheets) vería la hoja equivocada.
+    db.expire(equipment, ["current_field_sheet"])
+    if equipment.work_order.status == "ready_to_close":
+        equipment.work_order.status = "in_progress"
+    return reopened
+
+
+def reopen_lab_field_sheet_directly(
+    db: Session,
+    work_order_id: int,
+    equipment_id: int,
+    payload: FieldSheetDirectReopenRequest,
+    user: User,
+) -> FieldSheetRead:
+    """"Desbloquear hoja": reapertura directa de autoridad administrativa
+    (permiso lab_field_sheets.reopen, ver router), sin Ticket ni aprobación
+    de un segundo actor. Motivo obligatorio y auditado explícitamente --
+    distinto del Ticket field_sheet_reopen (que exige aprobación de otra
+    persona) y de "Cambiar Hoja de Campo" (que cambia de plantilla en vez de
+    corregir la misma)."""
+    reopened = _reopen_field_sheet_uncommitted(db, work_order_id, equipment_id, user)
+    write_audit_log(
+        db,
+        action="lab_field_sheet.reopened_directly",
+        entity="field_sheets",
+        entity_id=reopened.id,
+        user_id=user.id,
+        new_values={
+            "lab_equipment_id": equipment_id,
+            "supersedes_field_sheet_id": reopened.supersedes_field_sheet_id,
+            "revision_number": reopened.revision_number,
+            "reason": payload.reason,
+        },
+    )
+    db.commit()
+    return read_lab_field_sheet(db, work_order_id, equipment_id)
 
 
 def read_lab_field_sheet(db: Session, work_order_id: int, equipment_id: int) -> FieldSheetRead:
@@ -628,7 +721,7 @@ def _discard_lab_field_sheet_uncommitted(
     sheet = equipment.field_sheet
     if sheet is None or not sheet.is_active:
         raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
-    if sheet.status not in {"draft", "in_progress"}:
+    if sheet.status not in {"draft", "in_progress", "reopened"}:
         raise HTTPException(
             status_code=409,
             detail="Sólo puede eliminarse el borrador vigente; una hoja completada o histórica se conserva",
@@ -785,7 +878,7 @@ def change_lab_field_sheet_template(
     sheet = equipment.field_sheet
     if sheet is None or not sheet.is_active:
         raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
-    if sheet.status not in {"draft", "in_progress"}:
+    if sheet.status not in {"draft", "in_progress", "reopened"}:
         raise HTTPException(
             status_code=409,
             detail="Sólo puede cambiarse la plantilla de la revisión vigente editable; una hoja completada o histórica se conserva",

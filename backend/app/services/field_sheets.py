@@ -42,8 +42,16 @@ FIELD_SHEET_REFERENCE_USAGE_ROLES = {
     "environmental",
     "other",
 }
-EDITABLE_STATUSES = {"draft", "in_progress", "rejected", "returned_to_technician"}
+EDITABLE_STATUSES = {"draft", "in_progress", "rejected", "returned_to_technician", "reopened"}
 TERMINAL_STATUSES = {"approved", "cancelled"}
+# "reopened" es exclusivo del vertical LAB: sólo _clone_field_sheet_for_correction
+# (lab_field_sheets.py) lo asigna, cuando una FieldSheet completed se
+# desbloquea para corrección (ticket field_sheet_reopen o reapertura directa).
+# Editable igual que draft/in_progress, pero deliberadamente distinguible --
+# nunca se reescribe a "in_progress" al primer PATCH -- para que Mobile y el
+# histórico dejen explícito que esa revisión nació de un desbloqueo, no de
+# una captura nueva. El flujo productivo (equipment_id) nunca produce este
+# valor.
 
 # Cierre de contrato canonico LAB (2026-09): estas claves son la experiencia
 # de captura comun a TODAS las hojas de campo LAB Mobile -- ninguna

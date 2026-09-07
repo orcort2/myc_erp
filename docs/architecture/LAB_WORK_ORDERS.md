@@ -258,10 +258,10 @@ no cambia estado. La hoja guarda exactamente
 última versión de la raíz. Completar la última hoja requerida mueve, en la
 misma transacción, `in_progress → ready_to_close`.
 
-Una revisión vigente `draft` o `in_progress` se puede descartar por el endpoint
-DELETE de la hoja. En primera captura se eliminan sólo sus dependencias
-exclusivas y, cuando ya no queda otra captura técnica, la OT vuelve a
-`received_signed`. En recaptura se elimina N+1 y se restaura N como
+Una revisión vigente `draft`, `in_progress` o `reopened` se puede descartar
+por el endpoint DELETE de la hoja. En primera captura se eliminan sólo sus
+dependencias exclusivas y, cuando ya no queda otra captura técnica, la OT
+vuelve a `received_signed`. En recaptura se elimina N+1 y se restaura N como
 `is_current=true`; la revisión completed, su PDF y SHA permanecen inmutables.
 Una hoja completed nunca muestra ni acepta descarte. El hard delete de OT
 reutiliza esta operación sólo cuando todas sus hojas son borradores vigentes;
@@ -287,14 +287,23 @@ alta o edición de OT/equipo, firma, folios, cierre, cancelación ni revisión d
 Tickets. Los actores externos no reciben ese permiso interno y conservan
 tenant scope y la excepción histórica de cierre sin hojas.
 
-La reapertura sólo ocurre al aprobar un Ticket y afecta a la cohorte histórica
-identificada por la `signature_session_id` de la OT solicitada. Una sesión
-individual reabre sólo esa OT; una sesión compartida reabre sólo sus
-participantes, nunca hermanas de otra cohorte.
-El PDF y la firma anteriores permanecen en la revisión histórica. La política
-`preserve` admite cambios no sustantivos; cualquier cambio estructural invalida
-automáticamente la firma activa y exige una nueva sesión. El contrato detallado
-está en `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
+La reapertura ocurre al aprobar un Ticket `reopen_work_order` o, con la misma
+autoridad y núcleo de dominio, mediante el endpoint directo
+`POST .../reopen` (`reopen_work_order_directly`, sin ticket ni segunda
+aprobación) -- afecta a la cohorte histórica identificada por la
+`signature_session_id` de la OT solicitada. Una sesión individual reabre
+sólo esa OT; una sesión compartida reabre sólo sus participantes, nunca
+hermanas de otra cohorte. El PDF y la firma anteriores permanecen en la
+revisión histórica. La política `preserve` admite cambios no sustantivos y
+deja la OT en `"in_progress"` (la firma sigue vigente, es el mismo status
+que la captura técnica normal); cualquier cambio estructural invalida
+automáticamente la firma activa y exige una nueva sesión. La política
+`invalidate` deja la OT en `"draft"` porque sí hace falta repetir
+recepción/firma. `_reopen_closed_cohort` nunca toca las FieldSheets de la
+cohorte salvo que se indique explícitamente un `equipment_id` objetivo --
+reabrir la OT no desbloquea sus hojas automáticamente. El contrato detallado,
+incluida la auditoría de semántica de reapertura de 2026-09 (causa raíz del
+bug de producción OT 6443), está en `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
 
 Fase 6 agrega un modelo de revisión propio para `FieldSheet` (distinto de
 `LabWorkOrderRevision`, que versiona la OT). `field_sheets.lab_equipment_id`
@@ -314,15 +323,24 @@ Una reapertura `preserve` nunca retira ni versiona nada -- el trabajo
 técnico se conserva tal cual. Ningún documento histórico se sobrescribe ni
 se reinterpreta.
 
-**Corrección "reapertura sin hueco operativo" (2026-09-05):** cuando la
-retirada de una revisión `completed` NO viene acompañada de un cambio de
-campo crítico -- el técnico sólo quiere corregir un dato ya capturado
-(observación, resultado, evidencia) vía el Ticket `field_sheet_reopen` o el
-equipo objetivo de una reapertura de cohorte completa -- retirar la
-revisión ya NO deja un hueco: `_clone_field_sheet_for_correction`
-(`app/services/lab_field_sheets.py`) abre de inmediato, en la MISMA
-transacción, la revisión N+1 como clon editable de N (`status="draft"`,
-`revision_number=N+1`, `supersedes_field_sheet_id=N.id`). Se clonan todos
+**Corrección "reapertura sin hueco operativo" (2026-09-05, alcance acotado
+2026-09-06):** cuando la retirada de una revisión `completed` NO viene
+acompañada de un cambio de campo crítico -- el técnico sólo quiere corregir
+un dato ya capturado (observación, resultado, evidencia) vía el Ticket
+`field_sheet_reopen` o el endpoint directo `POST .../field-sheet/reopen`
+("Desbloquear hoja", `lab_field_sheets.reopen`) -- retirar la revisión ya NO
+deja un hueco. Reabrir la OT completa (`reopen_work_order`, directo o vía
+ticket) NUNCA dispara este camino, ni siquiera cuando el ticket trae un
+`equipment_id` -- ese campo es sólo contexto de auditoría (qué equipo
+motivó la solicitud), reabrir la OT y desbloquear una FieldSheet son
+siempre acciones separadas (ver `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`,
+"Auditoría de semántica de reapertura"):
+`_clone_field_sheet_for_correction` (`app/services/lab_field_sheets.py`)
+abre de inmediato, en la MISMA transacción, la revisión N+1 como clon
+editable de N con `status="reopened"` (exclusivo del vertical LAB, en
+`EDITABLE_STATUSES`, nunca cuenta como completed y bloquea el cierre hasta
+volver a completarla), `revision_number=N+1`,
+`supersedes_field_sheet_id=N.id`. Se clonan todos
 los campos técnicos editables (template, snapshot institucional,
 condiciones, resultados fila por fila, evidencia, notas, capture_values,
 `observations`) exactamente como los tenía N -- una revisión CORRECTIVA
@@ -332,12 +350,18 @@ genuinamente nueva, ver "Snapshot de observaciones" arriba). Toda estructura
 JSON mutable clonada (`capture_values`, snapshots de template/institucional,
 filas de resultados) usa `copy.deepcopy`, nunca una copia superficial: N y
 N+1 quedan documentalmente independientes, y mutar N+1 después de clonar
-nunca puede alcanzar N. Nunca se clonan
-`FieldSheetSignature` (una firma ligada a N no puede atestiguar N+1) ni
-`UncertaintyCalculation` (bitácora propia de su revisión). `equipment.field_sheet`
-nunca resuelve a `None` en este camino -- Mobile ve "Continuar captura" de
-inmediato, nunca "Seleccionar Hoja de Campo", y el técnico corrige sin
-volver a capturar desde cero.
+nunca puede alcanzar N. Nunca se clona la fila `FieldSheetSignature` de N
+(una firma ligada al id de N no puede atestiguar N+1: N+1 nace con slots
+`FieldSheetSignature` propios y nuevos, vía `_default_signature_slots`, con
+`signature_data`/`signed_at` siempre `None`) ni `UncertaintyCalculation`
+(bitácora propia de su revisión). El atributo `name` de cada slot nuevo sí
+hereda el valor ya clonado de `calibrated_by`/`reviewed_by`/`report_made_by`
+(parte del clonado genérico de campos técnicos, arriba) -- para LAB ese
+texto plano nunca tiene contenido real hoy (Mobile no lo escribe ni lo lee),
+pero conceptualmente es dato corregible, no evidencia firmada.
+`equipment.field_sheet` nunca resuelve a `None` en este camino -- Mobile ve
+"Continuar captura" de inmediato, nunca "Seleccionar Hoja de Campo", y el
+técnico corrige sin volver a capturar desde cero.
 
 Si en cambio el técnico quiere **cambiar de plantilla** (no corregir un
 dato, sino usar otra Hoja de Campo), la acción explícita es
@@ -350,6 +374,19 @@ descarte restaura la revisión anterior `completed` como vigente, y
 `create_lab_field_sheet` rechazaría entonces un POST posterior con 409
 ("El equipo ya tiene una hoja de campo") -- un callejón sin salida que esta
 acción evita por construcción.
+
+Mobile distingue tres acciones sobre una FieldSheet `completed`, nunca
+fusionadas: "Desbloquear hoja" (directa, `lab_field_sheets.reopen`, sin
+Ticket), "Solicitar desbloqueo" (Ticket `field_sheet_reopen`, autoridad
+`tickets.create`, la hoja permanece bloqueada hasta su aprobación) y
+"Cambiar Hoja de Campo" (arriba). Mientras cualquier FieldSheet vigente de
+la OT siga en `"reopened"`, el cierre normal se bloquea (mismo
+`_missing_completed_sheets` que ya exige `completed`); al completarla de
+nuevo, Mobile muestra "Completar cambios" en vez de la etiqueta normal de
+cierre cuando la OT ya fue reabierta alguna vez
+(`LabWorkOrder.reopened_at`), reutilizando el mismo endpoint de cierre --
+nunca uno paralelo. Detalle completo de la autoridad directa vs. mediada por
+ticket en `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
 
 ## PDF y app móvil
 

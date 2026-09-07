@@ -879,7 +879,20 @@ def test_partial_close_ticket_still_works_under_new_states(phase3_context):
 
 def test_reopen_preserve_still_completes_without_resigning_reception(phase3_context):
     """30. Reapertura preservando la firma sigue funcionando: no exige
-    volver a firmar la recepción para poder cerrar de nuevo."""
+    volver a firmar la recepción para poder cerrar de nuevo. Desde la
+    corrección de semántica (2026-09, causa raíz OT 6443), el status de
+    dominio de un reopen preserve es "in_progress" -- no "draft", que queda
+    reservado a invalidate (donde sí hace falta repetir recepción/firma).
+    _ensure_members_editable acepta in_progress+reopen_ticket_id para seguir
+    permitiendo corregir datos generales/equipo durante la reapertura (ver
+    test_reopen_preserve_edit_general_critical_field_keeps_signature), y
+    _closable_status sabe cerrar directo desde ese in_progress cuando
+    signature_preserved=True y no quedan FieldSheets pendientes (esta OT
+    nunca tocó ninguna). El bug real (Mobile mostrando "Recepción de
+    equipos" para una OT reabierta con firma preservada, OT 6443 en
+    producción, con las FieldSheets completed intactas en BD) ya no puede
+    ocurrir: in_progress es el mismo status que ya usa Mobile para la
+    captura técnica normal."""
     client, factory, tokens, _tenants = phase3_context
     headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
@@ -910,7 +923,7 @@ def test_reopen_preserve_still_completes_without_resigning_reception(phase3_cont
     reopened = client.get(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers,
     ).json()
-    assert reopened["status"] == "draft"
+    assert reopened["status"] == "in_progress"
     assert reopened["signature_preserved"] is True
     assert reopened["signature_session_id"] == original_session_id
 
@@ -1065,8 +1078,12 @@ def test_cross_tenant_scope_still_blocks_external_access(phase3_context):
 
 def test_stale_edit_version_is_rejected_before_reception(phase3_context):
     """37. expected_edit_version obsoleto sigue siendo rechazado (optimistic
-    concurrency preservado) -- ejercitado aquí sobre una OT reabierta, donde
-    el versionado de edición vuelve a aplicar."""
+    concurrency preservado) -- ejercitado aquí sobre una OT reabierta con
+    preserve (status="in_progress" desde la corrección de semántica 2026-09;
+    ver _ensure_members_editable, que acepta in_progress+reopen_ticket_id
+    para permitir corrección general de la OT). _check_edit_version no
+    depende del status -- sólo de reopen_ticket_id -- así que preserve sigue
+    siendo el caso representativo del ticket original."""
     client, factory, tokens, _tenants = phase3_context
     headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
@@ -1086,6 +1103,10 @@ def test_stale_edit_version_is_rejected_before_reception(phase3_context):
         json={"signature_policy": "preserve"}, headers=admin_headers,
     )
     assert approved.status_code == 200, approved.text
+    reopened = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers,
+    ).json()
+    assert reopened["status"] == "in_progress"
     stale = client.patch(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
         json={"notes": "usando versión vieja", "expected_edit_version": 1},

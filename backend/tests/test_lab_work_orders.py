@@ -1223,7 +1223,7 @@ def test_individual_closure_requires_equipment_and_reopens_only_its_cohort(
 
     reopened_root = client.get(root_endpoint, headers=tech_headers).json()
     second_after = client.get(second_endpoint, headers=tech_headers).json()
-    assert reopened_root["status"] == "draft"
+    assert reopened_root["status"] == "in_progress"
     assert reopened_root["revision_number"] == 2
     assert reopened_root["signature_preserved"] is True
     assert second_after["status"] == "draft"

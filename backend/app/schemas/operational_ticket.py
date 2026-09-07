@@ -8,10 +8,13 @@ class ReopenTicketCreate(BaseModel):
 
     work_order_id: int
     # Trazabilidad opcional: qué equipo/hoja motivó la solicitud cuando el
-    # ticket se origina desde el contexto de una FieldSheet específica (la
-    # OT ya cerrada sigue reabriéndose completa -- ver approve_reopen_ticket
-    # -- esto sólo identifica la hoja para auditoría y para retirar su
-    # revisión vigente en cuanto se aprueba).
+    # ticket se origina desde el contexto de una FieldSheet específica.
+    # Auditoría de semántica de reapertura (2026-09-06): esto es
+    # EXCLUSIVAMENTE contexto de auditoría -- aprobar este ticket reabre la
+    # OT completa (ver approve_reopen_ticket/_reopen_closed_cohort) pero
+    # NUNCA toca la FieldSheet de este equipo. Desbloquear una FieldSheet
+    # completed sigue siendo una acción separada y explícita (Ticket
+    # field_sheet_reopen o el endpoint directo "Desbloquear hoja").
     equipment_id: int | None = Field(default=None, gt=0)
     reason: str = Field(min_length=3, max_length=180)
     description: str = Field(min_length=3, max_length=4000)

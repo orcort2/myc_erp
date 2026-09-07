@@ -160,7 +160,9 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 
 ## Reglas de Tickets y reapertura móvil — 2026-08-14
 
-1. Una OT LAB cerrada no es editable ni cambia a borrador sin Ticket aprobado.
+1. Una OT LAB cerrada no es editable sin Ticket aprobado o reapertura directa
+   por autoridad administrativa equivalente (ver regla de semántica de
+   reapertura, 2026-09-06, más abajo).
 2. Aprobar crea revisión nueva del grupo sin cambiar folios ni sobrescribir PDF.
 3. `preserve` sólo conserva firma mientras no cambien cliente, fechas,
    domicilio, composición o identidad/condición del equipo; el backend invalida
@@ -273,9 +275,12 @@ accredited/traceable") para el contrato completo.
 ## Regla verificada 2026-09-05 — Reapertura de FieldSheet sin hueco operativo
 
 Retirar la revisión `completed` vigente de una FieldSheet por una corrección
-que NO cambia identidad del equipo (Ticket `field_sheet_reopen`, o el equipo
-objetivo de una reapertura de cohorte completa) nunca deja al equipo sin
-revisión vigente: la revisión N+1 nace clonada y editable en la misma
+que NO cambia identidad del equipo -- exclusivamente vía el Ticket
+`field_sheet_reopen` o el endpoint directo "Desbloquear hoja"
+(`lab_field_sheets.reopen`); reabrir la OT completa NUNCA dispara este
+camino, ni con `equipment_id` de contexto en el ticket (ver regla
+2026-09-06 más abajo) -- nunca deja al equipo sin revisión vigente: la
+revisión N+1 nace clonada y editable en la misma
 transacción, con todo el contenido técnico previamente capturado, para que
 el técnico corrija un dato sin recapturar desde cero. Sólo un cambio de
 campo crítico del equipo (instrumento, marca, modelo, identificación, serie,
@@ -293,3 +298,55 @@ sólo a una FieldSheet genuinamente nueva (primera captura, o la hoja en
 blanco de un cambio de campo crítico). Toda estructura JSON mutable clonada
 usa copia profunda (`copy.deepcopy`), nunca superficial, para que N y la
 correctiva sean documentalmente independientes.
+
+## Regla verificada 2026-09-06 — Auditoría de semántica de reapertura OT/FieldSheet (causa raíz OT 6443)
+
+1. Reabrir una OT LAB NO es volver a recepción. La política `preserve` deja
+   la OT en `"in_progress"` (la firma de recepción sigue vigente) -- no en
+   `"draft"`, que queda reservado a `invalidate` (donde sí hace falta repetir
+   recepción/firma porque la sesión se invalidó). Este era el bug de
+   producción de la OT 6443: Mobile interpretaba `"draft"` siempre como
+   "falta recepción" y mostraba de nuevo esa pantalla, aunque las 5
+   FieldSheets siguieran `completed` intactas en BD.
+2. Reabrir una OT NUNCA desbloquea sus FieldSheets -- ni siquiera cuando el
+   ticket/llamada de reapertura trae un `equipment_id` como contexto de qué
+   equipo motivó la solicitud (`ReopenTicketCreate.equipment_id`).
+   `_reopen_closed_cohort` no toca ninguna FieldSheet bajo ninguna
+   circunstancia; ese `equipment_id` se conserva sólo para auditoría
+   (`resolution_snapshot`), nunca ejecuta `_clone_field_sheet_for_correction`.
+   Reabrir una OT y desbloquear una FieldSheet son SIEMPRE acciones
+   separadas. Las FieldSheets `completed` permanecen `completed`/bloqueadas
+   hasta que alguien las desbloquea explícitamente. (Corrección
+   2026-09-06: una versión anterior de esta regla permitía que el
+   `equipment_id` de una reapertura de OT completa disparara el desbloqueo
+   como efecto colateral -- se eliminó por violar esta separación.)
+3. Desbloquear una FieldSheet `completed` tiene dos caminos con la misma
+   autoridad de dominio, nunca duplicada: directo ("Desbloquear hoja",
+   permiso `lab_field_sheets.reopen`, sin Ticket ni segunda aprobación -- hoy
+   sólo Administrador/Desarrollador) o mediado por Ticket
+   (`field_sheet_reopen`, autoridad `tickets.create` para solicitar,
+   `lab_field_sheets.reopen` para resolver -- la hoja permanece bloqueada
+   hasta la aprobación). Ambos producen la misma revisión N+1 clonada con
+   `status="reopened"` (nunca cuenta como completed, bloquea el cierre hasta
+   volver a completarse, exclusivo del vertical LAB). `lab_field_sheets.reopen`
+   es deliberadamente distinto de `lab_folios.resolve` (folios de
+   certificado) y de `tickets.review` (triage genérico de tickets) o
+   `field_sheets.capture`/`lab_field_sheets.capture` (autoridad de captura,
+   no de reapertura administrativa). La clonación nunca copia la fila
+   `FieldSheetSignature` de N (evidencia documental -- `signature_data`/
+   `signed_at` -- nunca duplicada como si fuera nueva de N+1); el atributo
+   `name` de cada slot nuevo sí hereda el texto plano ya clonado como campo
+   técnico genérico (`calibrated_by`/`reviewed_by`/`report_made_by`), que
+   para LAB siempre está vacío hoy (Mobile ni lo escribe ni lo lee: "Calibró"
+   se deriva de la sesión de firma de recepción de la OT, no de esta tabla).
+4. Una reapertura de OT o de FieldSheet nunca duplica recepción, firma
+   preservada ni Delivery: reabrir una OT con Delivery activa está bloqueado
+   (409) hasta anular esa entrega primero; el cierre tras corregir
+   ("Completar cambios") reutiliza el mismo mecanismo de cierre y nunca
+   invoca la creación de Delivery.
+5. Mobile presenta "Completar cambios" en vez de la etiqueta normal de
+   cierre exclusivamente cuando la OT ya fue reabierta alguna vez
+   (`LabWorkOrder.reopened_at`, metadata backend persistente -- nunca state
+   local), y sólo permite completar cuando ninguna FieldSheet vigente
+   requerida sigue en `"reopened"`/`"draft"`/`"in_progress"`. Ver
+   `LAB_WORK_ORDERS.md` y `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
