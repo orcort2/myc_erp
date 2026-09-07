@@ -22,6 +22,7 @@ from app.schemas.lab_work_order import (
     LabDirectReopenWrite,
     LabEquipmentByEquipmentPrevalidation,
     LabFieldSheetCreate,
+    LabFieldSheetDirectReopenWrite,
     LabSignatureGroupWrite,
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
@@ -81,6 +82,7 @@ from app.services.lab_field_sheets import (
     create_lab_field_sheet,
     discard_lab_field_sheet,
     read_lab_field_sheet,
+    reopen_lab_field_sheet_directly,
     update_lab_field_sheet,
 )
 from app.services.lab_packages import generate_lab_package
@@ -723,6 +725,33 @@ def post_change_lab_field_sheet_template(
     return change_lab_field_sheet_template(
         db, work_order_id, equipment_id, payload, context.user,
         external=context.actor_type == "client",
+    )
+
+
+@router.post(
+    "/{work_order_id}/equipment/{equipment_id}/field-sheet/reopen",
+    response_model=FieldSheetRead,
+)
+def post_reopen_lab_field_sheet_directly(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabFieldSheetDirectReopenWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("lab_folios.resolve")
+    ),
+) -> FieldSheetRead:
+    """Reapertura administrativa directa de UNA FieldSheet completed --
+    exclusiva de quien YA tiene lab_folios.resolve (verificado de nuevo
+    dentro del servicio). No pasa por tickets; ver
+    reopen_lab_field_sheet_directly. Distinto de post_reopen_lab_work_order_directly
+    (reabre la OT completa): esto sólo desbloquea una hoja, la OT sigue
+    abierta."""
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="La reapertura directa está reservada a staff MYC")
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return reopen_lab_field_sheet_directly(
+        db, work_order_id, equipment_id, context.user, reason=payload.reason,
     )
 
 

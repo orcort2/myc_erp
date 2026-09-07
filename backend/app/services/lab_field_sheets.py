@@ -36,7 +36,12 @@ from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
     institutional_snapshot,
 )
-from app.services.lab_work_orders import _missing_completed_sheets, resolve_equipment_certificate_client
+from app.services.auth import user_has_permission
+from app.services.lab_work_orders import (
+    _missing_completed_sheets,
+    _retire_current_field_sheet_revision,
+    resolve_equipment_certificate_client,
+)
 from app.services.storage_service import delete_if_unreferenced
 
 
@@ -856,6 +861,54 @@ def change_lab_field_sheet_template(
         user_id=user.id,
         previous_values={"discarded_field_sheet_id": discarded_id, "template_key": discarded_template_key},
         new_values={"template_key": payload.template_key, "revision_number": revision_number},
+    )
+    db.commit()
+    return read_lab_field_sheet(db, work_order_id, equipment_id)
+
+
+_FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES = {"received_signed", "in_progress", "ready_to_close"}
+
+
+def reopen_lab_field_sheet_directly(
+    db: Session, work_order_id: int, equipment_id: int, user: User, *, reason: str,
+) -> FieldSheetRead:
+    """Reapertura administrativa directa de UNA FieldSheet completed: el
+    actor YA posee lab_folios.resolve -- la misma autoridad que
+    resolve_operational_ticket ya exige para ejecutar el ticket
+    field_sheet_reopen (ver operational_tickets.py) -- así que desbloquea en
+    una sola llamada, sin crear ni pasar por un ticket artificial que
+    después alguien más tendría que resolver (a diferencia de un ticket,
+    aquí no aplica "TICKET_SELF_APPROVAL_FORBIDDEN": no hay una solicitud de
+    un tercero que aprobar, el propio actor ejerce su autoridad). Misma
+    ventana de elegibilidad que create_field_sheet_reopen_ticket
+    (OT todavía received_signed/in_progress/ready_to_close, nunca closed) y
+    mismos dos primitivos que ya usa esa rama del ticket
+    (_retire_current_field_sheet_revision + _clone_field_sheet_for_correction):
+    N permanece histórica intacta (status/final_pdf_path/final_pdf_sha256
+    sin tocar) y N+1 nace ya clonada y editable en la misma transacción."""
+    if not user_has_permission(user, "lab_folios.resolve"):
+        raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
+    equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
+    if equipment.work_order.status not in _FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="La OT ya está cerrada; solicita la reapertura de la OT completa",
+        )
+    current = equipment.field_sheet
+    if current is None or current.status != "completed":
+        raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
+    _retire_current_field_sheet_revision(equipment)
+    _clone_field_sheet_for_correction(db, equipment, current, user)
+    if equipment.work_order.status == "ready_to_close":
+        equipment.work_order.status = "in_progress"
+    write_audit_log(
+        db,
+        action="lab_field_sheet.reopened_directly",
+        entity="field_sheets",
+        entity_id=current.id,
+        user_id=user.id,
+        previous_values={"status": "completed"},
+        new_values={"reason": reason.strip()},
     )
     db.commit()
     return read_lab_field_sheet(db, work_order_id, equipment_id)

@@ -43,6 +43,7 @@ from app.core.security import create_access_token
 from app.main import app
 from app.models.field_sheet import FieldSheet
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
+from app.models.operational_ticket import OperationalTicket
 from app.models.user import Role, User
 
 
@@ -813,6 +814,92 @@ def test_field_sheet_reopen_ticket_does_not_apply_once_the_whole_ot_is_closed(la
             "description": "La OT ya cerró",
         },
         headers=headers,
+    )
+    assert denied.status_code == 409
+
+
+def test_reopen_field_sheet_directly_with_lab_folios_resolve_skips_ticket_and_self_approval(lab_context):
+    """BUG fix 2026-09: quien YA tiene lab_folios.resolve (la misma
+    autoridad que resolve_operational_ticket exige para ejecutar el ticket
+    field_sheet_reopen, ver arriba) desbloquea una FieldSheet completed en
+    una sola llamada -- sin crear ni pasar por un OperationalTicket, así que
+    TICKET_SELF_APPROVAL_FORBIDDEN nunca aplica aquí: no hay una solicitud
+    de un tercero que aprobar. Mismo resultado de fondo que el ticket
+    mediado (mismos _retire_current_field_sheet_revision +
+    _clone_field_sheet_for_correction): N permanece completed/is_current=False
+    con su PDF intacto, N+1 nace draft/vigente, y la OT regresa a
+    in_progress."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+
+    detail = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
+    assert detail.json()["status"] == "ready_to_close"
+
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/reopen",
+        json={"reason": "Admin detecta un dato mal transcrito"},
+        headers=admin_headers,
+    )
+    assert reopened.status_code == 200, reopened.text
+    clone = reopened.json()
+    assert clone["status"] == "draft"
+    assert clone["is_current"] is True
+    assert clone["revision_number"] == 2
+    assert clone["supersedes_field_sheet_id"] == first_sheet_id
+
+    reverted = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers)
+    assert reverted.json()["status"] == "in_progress"
+
+    with factory() as db:
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.is_current is False
+        assert first.status == "completed"
+        assert first.final_pdf_path is not None, "el PDF histórico de N nunca se borra"
+        tickets = db.scalars(select(OperationalTicket)).all()
+        assert tickets == [], "la reapertura directa no debe crear ningún OperationalTicket"
+
+
+def test_reopen_field_sheet_directly_forbidden_without_lab_folios_resolve(lab_context):
+    """Sin lab_folios.resolve (p.ej. Tecnico, el mismo rol que sólo puede
+    pedir el ticket) el endpoint directo rechaza con 403 y no toca nada --
+    la única vía que le queda es solicitar vía ticket."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    first_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+
+    denied = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/reopen",
+        json={"reason": "Intento sin autoridad"},
+        headers=headers,
+    )
+    assert denied.status_code == 403
+
+    with factory() as db:
+        first = db.get(FieldSheet, first_sheet_id)
+        assert first.is_current is True
+        assert first.status == "completed"
+
+
+def test_reopen_field_sheet_directly_does_not_apply_once_the_whole_ot_is_closed(lab_context):
+    """Misma ventana de elegibilidad que el ticket: una vez la OT está
+    completed/partially_closed, la corrección directa de una hoja individual
+    ya no aplica -- sólo la reapertura de la OT completa (reopen_direct /
+    reopen_work_order) puede tocarla."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    close_order(client, headers, order_id)
+
+    denied = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/reopen",
+        json={"reason": "La OT ya cerró"},
+        headers=admin_headers,
     )
     assert denied.status_code == 409
 

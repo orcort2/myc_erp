@@ -25,7 +25,7 @@ test('"Distribuir folios disponibles" vive en Acciones administrativas, gateada 
 });
 
 test('el botón vive dentro de la sección de Acciones administrativas (nunca visible a cliente operativo)', () => {
-  const adminSectionStart = source.indexOf('{workOrder && canDelete && (');
+  const adminSectionStart = source.indexOf('{workOrder && (canDelete || canReopenDirectly) && (');
   const adminSectionEnd = source.indexOf('{equipmentEditor && (');
   assert.ok(adminSectionStart > -1 && adminSectionEnd > adminSectionStart);
   const adminSection = source.slice(adminSectionStart, adminSectionEnd);

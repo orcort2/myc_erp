@@ -49,6 +49,11 @@ type Props = {
   canCapture: boolean;
   canCreateTickets: boolean;
   canOverrideReceptionDate: boolean;
+  // BUG fix 2026-09: autoridad directa de desbloqueo/reapertura de UNA
+  // FieldSheet completed -- distinta de canCreateTickets (esa sólo permite
+  // solicitar), derivada de lab_folios.resolve (ver mobile-capabilities.ts).
+  // NUNCA se deriva de canCreateTickets ni de role === 'admin'.
+  canReopenFieldSheetDirectly: boolean;
   external: boolean;
   onUpdated(order: LabWorkOrder): void;
   request: Request;
@@ -109,7 +114,7 @@ function fieldSheetStatusLabel(status: string): string {
  * genéricamente, igual que antes de esta fase, ahora con el contrato de
  * campo completo del snapshot y sin tablas inline.
  */
-export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets, canOverrideReceptionDate, onUpdated, request, workOrder }: Props) {
+export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets, canOverrideReceptionDate, canReopenFieldSheetDirectly, onUpdated, request, workOrder }: Props) {
   const [templates, setTemplates] = useState<FieldSheetTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(true);
   const [templatesError, setTemplatesError] = useState('');
@@ -475,6 +480,33 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     } finally { setBusy(false); }
   }
 
+  // BUG fix 2026-09: quien YA tiene autoridad directa
+  // (canReopenFieldSheetDirectly, misma lab_folios.resolve que
+  // resolve_operational_ticket exige para ejecutar el ticket
+  // field_sheet_reopen) desbloquea en una sola llamada -- nunca crea el
+  // OperationalTicket que requestFieldSheetReopen sí crea, ver
+  // reopen_lab_field_sheet_directly en el backend. Misma composición de
+  // reason que reopenDirectly (OT completa) en work-orders.tsx.
+  async function reopenFieldSheetDirectly() {
+    if (!activeEquipment || ticketMode !== 'field_sheet_reopen') return;
+    if (!ticketReason.trim() || !ticketDescription.trim()) return;
+    setBusy(true);
+    try {
+      const clone = await request<LabFieldSheet>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${activeEquipment.id}/field-sheet/reopen`,
+        { method: 'POST', body: JSON.stringify({ reason: `${ticketReason.trim()}: ${ticketDescription.trim()}` }) },
+      );
+      setSheet(clone);
+      setValues(buildValues(clone));
+      setViewMode(initialViewMode());
+      setTicketMode(null);
+      await refreshWorkOrder();
+      Alert.alert('Hoja desbloqueada', 'La revisión anterior quedó como histórico; puedes continuar la captura.');
+    } catch (error) {
+      Alert.alert('No fue posible desbloquear la hoja', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally { setBusy(false); }
+  }
+
   async function requestReceptionDateChange() {
     if (!activeEquipment || !sheet || ticketMode !== 'reception_date_change') return;
     if (!ticketReason.trim() || !ticketDescription.trim()) return;
@@ -599,13 +631,21 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     );
     if (ticketMode === 'field_sheet_reopen') return (
       <ScrollView contentContainerStyle={styles.panel}>
-        <Text style={styles.title}>Solicitar desbloqueo</Text>
+        <Text style={styles.title}>{canReopenFieldSheetDirectly ? 'Desbloquear hoja' : 'Solicitar desbloqueo'}</Text>
         <Text style={styles.meta}>{activeEquipment.instrument} · OT {workOrder.folio} · Hoja {sheet ? fieldSheetStatusLabel(sheet.status).toLowerCase() : ''}</Text>
+        {canReopenFieldSheetDirectly && (
+          <Text style={styles.meta}>Tienes autoridad directa: se desbloquea de inmediato, sin ticket.</Text>
+        )}
         <Field label="Motivo" onChange={setTicketReason} value={ticketReason} />
         <Field label="Descripción" multiline onChange={setTicketDescription} value={ticketDescription} />
         <ActionRow>
           <SecondaryButton icon="arrow-left" label="Volver" onPress={() => setTicketMode(null)} />
-          <PrimaryButton icon="send" label="Enviar Ticket" loading={busy} onPress={requestFieldSheetReopen} />
+          <PrimaryButton
+            icon={canReopenFieldSheetDirectly ? 'lock-open-outline' : 'send'}
+            label={canReopenFieldSheetDirectly ? 'Desbloquear' : 'Enviar Ticket'}
+            loading={busy}
+            onPress={canReopenFieldSheetDirectly ? reopenFieldSheetDirectly : requestFieldSheetReopen}
+          />
         </ActionRow>
       </ScrollView>
     );
@@ -843,8 +883,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           {sheet.status === 'completed' && (
             <OperationalActionStack>
               <SecondaryButton disabled={downloadingPdf} icon="download" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
-              {canCapture && !['completed', 'partially_closed'].includes(workOrder.status) && (
-                <AdministrativeButton icon="lock-open-outline" label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+              {!['completed', 'partially_closed'].includes(workOrder.status) && (
+                canReopenFieldSheetDirectly ? (
+                  <AdministrativeButton icon="lock-open-outline" label="Desbloquear hoja" onPress={() => setTicketMode('field_sheet_reopen')} />
+                ) : canCreateTickets ? (
+                  <AdministrativeButton icon="lock-open-outline" label="Solicitar desbloqueo" onPress={() => setTicketMode('field_sheet_reopen')} />
+                ) : null
               )}
             </OperationalActionStack>
           )}

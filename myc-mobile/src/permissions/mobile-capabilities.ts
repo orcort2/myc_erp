@@ -26,6 +26,7 @@ export type MobileCapabilities = {
   canEditLabClients: boolean;
   canDeactivateLabClients: boolean;
   canResolveLabFolios: boolean;
+  canReopenFieldSheetDirectly: boolean;
   canOverrideReceptionDate: boolean;
   canRegisterLabDelivery: boolean;
   canVoidLabDelivery: boolean;
@@ -108,6 +109,16 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     canDeactivateLabClients: user?.actor_type === 'internal'
       && hasPermission(permissions, 'lab_clients.deactivate'),
     canResolveLabFolios: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_folios.resolve'),
+    // BUG fix 2026-09: reapertura/desbloqueo directo de UNA FieldSheet
+    // completed (backend: reopen_lab_field_sheet_directly) reutiliza
+    // exactamente lab_folios.resolve -- la misma autoridad que ya exige
+    // resolve_operational_ticket para ejecutar el ticket
+    // field_sheet_reopen (ver operational_tickets.py). Deliberadamente
+    // igual a canResolveLabFolios; nombre propio para que
+    // LabTechnicalCapture no dependa de un capability de folios para una
+    // decisión de UX de FieldSheet.
+    canReopenFieldSheetDirectly: user?.actor_type === 'internal'
       && hasPermission(permissions, 'lab_folios.resolve'),
     canOverrideReceptionDate: user?.actor_type === 'internal' && (
       hasPermission(permissions, 'work_orders.create')

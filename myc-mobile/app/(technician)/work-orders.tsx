@@ -429,6 +429,7 @@ export default function WorkOrdersScreen() {
     canCaptureFieldSheets,
     canDownloadLabPackages,
     canResolveLabFolios,
+    canReopenFieldSheetDirectly,
     canOverrideReceptionDate,
     canRegisterLabDelivery,
     canVoidLabDelivery,
@@ -1649,6 +1650,7 @@ export default function WorkOrdersScreen() {
                     canCapture={canCaptureFieldSheets}
                     canCreateTickets={canCreateTickets}
                     canOverrideReceptionDate={canOverrideReceptionDate}
+                    canReopenFieldSheetDirectly={canReopenFieldSheetDirectly}
                     external={user.actor_type === 'client'}
                     onUpdated={setWorkOrder}
                     request={request}
@@ -1963,12 +1965,13 @@ export default function WorkOrdersScreen() {
                     {workOrder.status !== 'cancelled' && <SecondaryButton icon="share-variant" label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
                     {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton icon="download" label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
-                    {workOrder.status !== 'cancelled' && (
-                      canReopenDirectly ? (
-                        <AdministrativeButton icon="lock-open-outline" label="Reabrir orden" onPress={() => { setTicketDialogMode('reopen_direct'); setReopenSignaturePolicy('preserve'); setTicketOpen(true); }} />
-                      ) : canCreateTickets ? (
-                        <AdministrativeButton icon="send" label="Solicitar reapertura" onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }} />
-                      ) : null
+                    {/* "Reabrir orden" (canReopenDirectly) vive en Acciones
+                        administrativas, justo después de "Anular entrega" --
+                        sigue siendo una acción administrativa, no operativa.
+                        Aquí sólo queda la solicitud de reapertura sin
+                        autoridad directa. */}
+                    {workOrder.status !== 'cancelled' && !canReopenDirectly && canCreateTickets && (
+                      <AdministrativeButton icon="send" label="Solicitar reapertura" onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }} />
                     )}
                     {workOrder.status === 'cancelled' && canCancel && !!workOrder.previous_status && (
                       <AdministrativeButton icon="restore" label="Restaurar OT" loading={restoring} onPress={() => confirmRestoreWorkOrder(workOrder)} />
@@ -1991,7 +1994,7 @@ export default function WorkOrdersScreen() {
                 </>
               )}
 
-              {workOrder && canDelete && (
+              {workOrder && (canDelete || canReopenDirectly) && (
                 <View style={styles.dangerZone}>
                   <Pressable onPress={() => setAdminActionsOpen((value) => !value)}>
                     <Text style={styles.dangerTitle}>Acciones administrativas {adminActionsOpen ? '▾' : '▸'}</Text>
@@ -2010,6 +2013,23 @@ export default function WorkOrdersScreen() {
                           }}
                         />
                       </OperationalActionStack>
+                    )}
+                    {workOrder.status !== 'cancelled' && canReopenDirectly && (
+                      <OperationalActionStack>
+                        <AdministrativeButton
+                          disabled={busy || hasActiveDeliveryForCurrentWorkOrder}
+                          icon="lock-open-outline"
+                          label="Reabrir orden"
+                          onPress={() => {
+                            setTicketDialogMode('reopen_direct');
+                            setReopenSignaturePolicy('preserve');
+                            setTicketOpen(true);
+                          }}
+                        />
+                      </OperationalActionStack>
+                    )}
+                    {workOrder.status !== 'cancelled' && canReopenDirectly && hasActiveDeliveryForCurrentWorkOrder && (
+                      <Text style={styles.dangerDescription}>Anula primero la entrega registrada para poder reabrir esta orden.</Text>
                     )}
                     {hasActiveDeliveryForCurrentWorkOrder && (
                       <Text style={styles.dangerDescription}>
@@ -2045,16 +2065,18 @@ export default function WorkOrdersScreen() {
                         />
                       </OperationalActionStack>
                     )}
-                    <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
-                    <OperationalActionStack>
-                      <DangerButton
-                        disabled={busy || deleting || hasActiveDeliveryForCurrentWorkOrder}
-                        icon="trash-can-outline"
-                        label="Eliminar orden de trabajo"
-                        loading={deleting}
-                        onPress={() => confirmWorkOrderDeletion(workOrder)}
-                      />
-                    </OperationalActionStack>
+                    {canDelete && <>
+                      <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
+                      <OperationalActionStack>
+                        <DangerButton
+                          disabled={busy || deleting || hasActiveDeliveryForCurrentWorkOrder}
+                          icon="trash-can-outline"
+                          label="Eliminar orden de trabajo"
+                          loading={deleting}
+                          onPress={() => confirmWorkOrderDeletion(workOrder)}
+                        />
+                      </OperationalActionStack>
+                    </>}
                   </>}
                 </View>
               )}

@@ -246,6 +246,12 @@ class LabFieldSheetCreate(BaseModel):
     template_key: str = Field(min_length=1, max_length=60)
 
 
+class LabFieldSheetDirectReopenWrite(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=2000)
+
+
 class LabSignatureWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

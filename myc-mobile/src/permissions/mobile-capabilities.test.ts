@@ -211,6 +211,16 @@ test('resolver folios vinculados exige actor interno y lab_folios.resolve', () =
   assert.equal(deriveMobileCapabilities(user('client', ['lab_folios.resolve'])).canResolveLabFolios, false);
 });
 
+test('BUG fix 2026-09: reapertura directa de FieldSheet exige actor interno y lab_folios.resolve -- nunca canCreateTickets ni role admin', () => {
+  assert.equal(deriveMobileCapabilities(user('internal', ['lab_folios.resolve'])).canReopenFieldSheetDirectly, true);
+  // tickets.create/mobile_tickets.create (canCreateTickets) por sí solos nunca dan autoridad directa.
+  assert.equal(deriveMobileCapabilities(user('internal', ['tickets.create'])).canReopenFieldSheetDirectly, false);
+  assert.equal(deriveMobileCapabilities(user('internal', ['mobile_tickets.create'])).canReopenFieldSheetDirectly, false);
+  assert.equal(deriveMobileCapabilities(user('internal', ['work_orders.create'])).canReopenFieldSheetDirectly, false);
+  assert.equal(deriveMobileCapabilities(user('client', ['lab_folios.resolve'])).canReopenFieldSheetDirectly, false);
+  assert.equal(deriveMobileCapabilities(user('internal', [])).canReopenFieldSheetDirectly, false);
+});
+
 test('editar fecha de recepción exige actor interno y autoridad de datos generales', () => {
   assert.equal(deriveMobileCapabilities(user('internal', ['work_orders.create'])).canOverrideReceptionDate, true);
   assert.equal(deriveMobileCapabilities(user('internal', ['lab_work_orders.use'])).canOverrideReceptionDate, true);

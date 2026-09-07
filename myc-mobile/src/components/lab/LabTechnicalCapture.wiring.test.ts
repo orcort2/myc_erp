@@ -48,6 +48,75 @@ test('la hoja completed ofrece PDF y, sólo con la OT abierta, desbloqueo', () =
   assert.match(source, /!\['completed', 'partially_closed'\]\.includes\(workOrder\.status\)/);
 });
 
+/**
+ * BUG fix 2026-09: LabTechnicalCapture no distinguía autoridad directa de
+ * autoridad de sólo-ticket para desbloquear una FieldSheet completed --
+ * cualquiera con canCapture veía "Solicitar desbloqueo", incluido un Admin
+ * con lab_folios.resolve (la misma autoridad que ya ejecuta el ticket
+ * field_sheet_reopen del lado del backend, ver
+ * reopen_lab_field_sheet_directly). Estos tests fijan el contrato nuevo:
+ * canReopenFieldSheetDirectly (prop explícita, nunca derivada de
+ * canCreateTickets ni de un role) decide entre acción directa sin ticket y
+ * la solicitud existente.
+ */
+
+test('canReopenFieldSheetDirectly es una prop explícita, nunca derivada de canCreateTickets ni de un role dentro del componente', () => {
+  assert.match(source, /canReopenFieldSheetDirectly: boolean;/);
+  assert.match(source, /export function LabTechnicalCapture\(\{[^}]*canReopenFieldSheetDirectly[^}]*\}: Props\)/);
+  assert.doesNotMatch(source, /canReopenFieldSheetDirectly\s*=\s*canCreateTickets/);
+});
+
+test('CASO 1: con canReopenFieldSheetDirectly, el disparador ofrece "Desbloquear hoja" y nunca "Solicitar desbloqueo"', () => {
+  const gateStart = source.indexOf("{!['completed', 'partially_closed'].includes(workOrder.status) && (");
+  assert.notEqual(gateStart, -1);
+  const gateBlock = source.slice(gateStart, source.indexOf('</OperationalActionStack>', gateStart));
+  assert.match(gateBlock, /canReopenFieldSheetDirectly \? \(/);
+  const directBranch = gateBlock.slice(gateBlock.indexOf('canReopenFieldSheetDirectly ? ('), gateBlock.indexOf(') : canCreateTickets ? ('));
+  assert.match(directBranch, /<AdministrativeButton icon="lock-open-outline" label="Desbloquear hoja" onPress=\{\(\) => setTicketMode\('field_sheet_reopen'\)\}/);
+  assert.doesNotMatch(directBranch, /Solicitar desbloqueo/);
+});
+
+test('CASO 2: sin autoridad directa pero con canCreateTickets, sigue ofreciendo "Solicitar desbloqueo" (flujo de ticket intacto)', () => {
+  const gateStart = source.indexOf("{!['completed', 'partially_closed'].includes(workOrder.status) && (");
+  const gateBlock = source.slice(gateStart, source.indexOf('</OperationalActionStack>', gateStart));
+  assert.match(gateBlock, /\) : canCreateTickets \? \(\s*<AdministrativeButton icon="lock-open-outline" label="Solicitar desbloqueo" onPress=\{\(\) => setTicketMode\('field_sheet_reopen'\)\}/);
+});
+
+test('CASO 3: sin autoridad directa ni canCreateTickets, ninguna acción de desbloqueo se ofrece', () => {
+  const gateStart = source.indexOf("{!['completed', 'partially_closed'].includes(workOrder.status) && (");
+  const gateBlock = source.slice(gateStart, source.indexOf('</OperationalActionStack>', gateStart));
+  assert.match(gateBlock, /\) : null\s*\)\}/);
+});
+
+test('la reapertura directa nunca crea un OperationalTicket -- pega a field-sheet/reopen, nunca a tickets/field-sheet-reopen', () => {
+  const fn = source.slice(
+    source.indexOf('async function reopenFieldSheetDirectly'),
+    source.indexOf('if (activeEquipment) {'),
+  );
+  assert.match(fn, /\/field-sheet\/reopen`/);
+  assert.doesNotMatch(fn, /\/tickets\/field-sheet-reopen/);
+  assert.match(fn, /method: 'POST'/);
+  assert.match(fn, /await refreshWorkOrder\(\)/);
+  assert.match(fn, /setSheet\(clone\)/, 'N+1 editable debe reemplazar la hoja en pantalla, lista para continuar captura');
+});
+
+test('el flujo de ticket (requestFieldSheetReopen) sigue creando el OperationalTicket sin cambios', () => {
+  const fn = source.slice(
+    source.indexOf('async function requestFieldSheetReopen'),
+    source.indexOf('async function reopenFieldSheetDirectly'),
+  );
+  assert.match(fn, /\/tickets\/field-sheet-reopen'/);
+  assert.match(fn, /method: 'POST'/);
+});
+
+test('el diálogo de desbloqueo cambia título y acción según canReopenFieldSheetDirectly, sin duplicar la pantalla', () => {
+  const dialogStart = source.indexOf("if (ticketMode === 'field_sheet_reopen') return (");
+  const dialogBlock = source.slice(dialogStart, source.indexOf("if (ticketMode === 'reception_date_change')", dialogStart));
+  assert.match(dialogBlock, /canReopenFieldSheetDirectly \? 'Desbloquear hoja' : 'Solicitar desbloqueo'/);
+  assert.match(dialogBlock, /canReopenFieldSheetDirectly \? 'Desbloquear' : 'Enviar Ticket'/);
+  assert.match(dialogBlock, /onPress=\{canReopenFieldSheetDirectly \? reopenFieldSheetDirectly : requestFieldSheetReopen\}/);
+});
+
 test('los accesos y acciones usan el canon visual vigente', () => {
   assert.match(source, /<ActionTile icon="table-edit" label="Valores"/);
   assert.match(source, /<SecondaryButton[^>]*label="Ver \/ descargar PDF"/);
