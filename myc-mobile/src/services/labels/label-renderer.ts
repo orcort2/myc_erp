@@ -20,7 +20,7 @@ import { drawMycBadge } from './myc-badge';
  * este renderer deba inventar sólo porque la arquitectura lo permitiría.
  */
 
-export type LabelRenderErrorCode = 'missing_calibration_date';
+export type LabelRenderErrorCode = 'missing_calibration_date' | 'missing_certificate_folio';
 
 export class LabelRenderError extends Error {
   readonly code: LabelRenderErrorCode;
@@ -36,7 +36,6 @@ const MIN_SCALE = 1;
 const MAX_SCALE = 4;
 const CHAR_ADVANCE_DOTS = 6; // 5 puntos de glifo + 1 de espaciado
 const NOT_AVAILABLE = 'N/A';
-const PENDING_FOLIO = 'PENDIENTE';
 const TRUNCATION_MARK = '>';
 
 function formatDateDDMMYYYY(value: string): string {
@@ -53,13 +52,26 @@ function formatDateDDMMYYYY(value: string): string {
 export type LabelLine = { label: string; value: string };
 
 /** Extraído como función pura exportada para poder probar el contenido
- * textual exacto de cada línea (fecha formateada, N/A, PENDIENTE) sin
+ * textual exacto de cada línea (fecha formateada, N/A) sin
  * depender de inspección de píxeles/OCR sobre el raster final. */
 export function buildLabelLines(payload: LabLabelPayload): LabelLine[] {
   if (!payload.calibrationDate || !payload.calibrationDate.trim()) {
     throw new LabelRenderError(
       'missing_calibration_date',
       'La hoja no tiene fecha de calibración capturada; complétala antes de imprimir la etiqueta.',
+    );
+  }
+  // Regla de negocio confirmada: una etiqueta física FINAL sólo se imprime
+  // con datos finales reales. INFORME nunca se imprime con un texto de
+  // relleno/placeholder -- si el equipo todavía no tiene folio de
+  // certificado asignado, la impresión se bloquea aquí (frontera de
+  // dominio/validación), no sólo en el manejador de UI, para que ningún
+  // llamador futuro pueda generar un raster ni un trabajo BLE sin folio
+  // real. Nunca se sintetiza ni se solicita un folio desde este flujo.
+  if (!payload.certificateFolio || !payload.certificateFolio.trim()) {
+    throw new LabelRenderError(
+      'missing_certificate_folio',
+      'El equipo aún no tiene folio de certificado asignado. No se puede imprimir la etiqueta final.',
     );
   }
   return [
@@ -70,7 +82,7 @@ export function buildLabelLines(payload: LabLabelPayload): LabelLine[] {
     },
     { label: 'CODIGO', value: payload.equipmentCode },
     { label: 'O.T.', value: payload.workOrderFolio },
-    { label: 'INFORME', value: payload.certificateFolio ?? PENDING_FOLIO },
+    { label: 'INFORME', value: payload.certificateFolio },
   ];
 }
 
@@ -116,6 +128,11 @@ function drawLine(canvas: BitmapCanvas, text: string, x: number, y: number, scal
 }
 
 export function renderLabel(payload: LabLabelPayload, profile: LabelProfile, dpi: number): RasterLabel {
+  // Validar ANTES de tocar el canvas: si falta un dato requerido
+  // (calibrationDate, certificateFolio), no debe generarse ningún raster,
+  // ni siquiera parcialmente en memoria -- ver buildLabelLines.
+  const rawLines = buildLabelLines(payload);
+
   const canvasSize = profileCanvasPx(profile, dpi);
   const safeArea = profileSafeAreaPx(profile, dpi);
   const canvas = createBitmapCanvas(canvasSize.widthPx, canvasSize.heightPx);
@@ -124,7 +141,6 @@ export function renderLabel(payload: LabLabelPayload, profile: LabelProfile, dpi
   const badgeGapPx = Math.max(1, Math.round(badgeSize * 0.15));
   drawMycBadge(canvas, safeArea.x, safeArea.y, badgeSize);
 
-  const rawLines = buildLabelLines(payload);
   const textAreaY = safeArea.y + badgeSize + badgeGapPx;
   const textAreaHeightPx = safeArea.y + safeArea.heightPx - textAreaY;
   const lineHeightPx = Math.floor(textAreaHeightPx / rawLines.length);

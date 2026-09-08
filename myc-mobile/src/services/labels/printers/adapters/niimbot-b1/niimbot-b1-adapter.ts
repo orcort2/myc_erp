@@ -1,5 +1,6 @@
 import type { RasterLabel } from '../../../label-types';
 import type { BleTransport, Unsubscribe } from '../../ble-transport';
+import { cropRasterToPrintableWidth } from '../../raster-adapt';
 import type { LabelPrinterAdapter, PrintOptions, PrinterCapabilities, PrinterDevice } from '../../types';
 import {
   NIIMBOT_BLE_CHARACTERISTIC_UUID,
@@ -29,6 +30,22 @@ import {
  * FUENTES): la identificación post-conexión (PrinterStatusData) se envía
  * por trazabilidad/diagnóstico, pero un timeout en esa respuesta no bloquea
  * la conexión ni la impresión.
+ *
+ * REVISADO 2026-09-08 (gate de QA física, sin cambios de comportamiento):
+ * waitForPrintComplete() acepta CUALQUIER PrintStatusResult válido como
+ * señal de "página lista", sin parsear ningún byte de conteo de páginas.
+ * Se revisaron de nuevo las fuentes auditadas en protocol.ts buscando el
+ * layout exacto de esa respuesta: niim.blue documenta un poll de
+ * PrintStatus "hasta page >= 1" pero NUNCA especifica en qué byte/offset
+ * del payload de 0xB3 vive ese "page"; niimprint (la única librería
+ * confirmada contra hardware B1 real) ni siquiera hace ese poll -- su
+ * end_print() reintenta PrintEnd(0xF3) directamente. Ninguna de las 3
+ * fuentes da un layout de bytes verificable para PrintStatusResult. Parsear
+ * un offset inventado sería fabricar certeza que no existe -- se mantiene
+ * deliberadamente la interpretación conservadora (cualquier respuesta
+ * válida al comando correcto == avanzar) y esto sigue siendo un punto de
+ * control obligatorio de QA física, no algo que este archivo pueda resolver
+ * por sí solo.
  */
 
 const DEFAULT_TIMEOUTS = {
@@ -95,7 +112,14 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
     try {
       await this.sendAndWait(buildConnectPacket(), NIIMBOT_REQUEST.ConnectResult, this.timeouts.connectTimeoutMs);
     } catch (error) {
-      await this.teardownConnection();
+      // AUDITORÍA 2026-09-08: la conexión BLE ya se estableció con éxito
+      // (this.ble.connect() de arriba no lanzó) antes de que el handshake
+      // fallara -- si sólo se limpia el estado local del adaptador, el SO
+      // puede seguir físicamente conectado mientras el adaptador se cree
+      // desconectado, dejando el dispositivo inalcanzable para un
+      // reintento inmediato. physicallyDisconnect: true fuerza el
+      // desconectado real, no sólo el estado en memoria.
+      await this.teardownConnection({ physicallyDisconnect: true });
       throw error;
     }
 
@@ -109,9 +133,7 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
   }
 
   async disconnect(): Promise<void> {
-    await this.teardownConnection();
-    if (this.deviceId) await this.ble.disconnect(this.deviceId).catch(() => undefined);
-    this.deviceId = null;
+    await this.teardownConnection({ physicallyDisconnect: true });
   }
 
   async print(label: RasterLabel, options?: PrintOptions): Promise<void> {
@@ -124,7 +146,14 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
     this.printing = true;
     try {
       const copies = Math.max(1, options?.copies ?? 1);
-      const packets = buildPrintJobPackets(label, { density: options?.density });
+      // El raster llega a las dimensiones físicas completas del perfil
+      // (p.ej. 400px de ancho para MYC_50X30 a 203dpi) -- el cabezal del B1
+      // sólo puede imprimir capabilities.printableWidthPx (384) puntos por
+      // fila. Recorta el margen físico ya vacío antes de construir los
+      // paquetes: SetPageSize y cada PrintBitmapRow deben usar dimensiones
+      // realmente válidas para el cabezal, ver raster-adapt.ts.
+      const printable = cropRasterToPrintableWidth(label, this.capabilities.printableWidthPx);
+      const packets = buildPrintJobPackets(printable, { density: options?.density });
       for (let copy = 0; copy < copies; copy += 1) {
         for (const packet of packets) {
           await this.write(packet);
@@ -159,7 +188,12 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
   }
 
   private async write(packet: { command: number; data: Uint8Array }): Promise<void> {
-    if (!this.deviceId) throw new NiimbotNotConnectedError('No hay conexión activa con la impresora NIIMBOT B1.');
+    // Todo caller de write() (connect()/print()) ya validó this.deviceId
+    // antes de empezar -- si desapareció aquí, fue una desconexión a mitad
+    // de una operación en curso (ver teardownConnection/
+    // handleUnexpectedDisconnect), nunca "nunca se conectó". Ese caso ya lo
+    // cubre el guard explícito al inicio de print().
+    if (!this.deviceId) throw new NiimbotDisconnectedError('La impresora NIIMBOT B1 se desconectó durante la operación en curso.');
     await this.ble.writeWithoutResponse(
       this.deviceId,
       NIIMBOT_BLE_SERVICE_UUID,
@@ -174,6 +208,14 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
     timeoutMs: number,
   ): Promise<DecodedNiimbotPacket> {
     const responsePromise = this.waitForResponse(expectedResponse, timeoutMs);
+    // Si write() falla (protocolo/transporte, ver AUDITORÍA 2026-09-08),
+    // responsePromise queda huérfana: nadie más la espera, pero
+    // teardownConnection() igual la rechazará más tarde al limpiar
+    // this.waiters. Sin este catch mudo, eso dispara un unhandledRejection
+    // -- el resultado real (el error de write()) se sigue propagando abajo
+    // con el throw normal, esto sólo evita que la promesa huérfana quede
+    // sin ningún handler.
+    responsePromise.catch(() => undefined);
     await this.write(packet);
     return responsePromise;
   }
@@ -218,16 +260,30 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
   }
 
   private handleUnexpectedDisconnect(): void {
-    this.connected = false;
-    const error = new NiimbotDisconnectedError('La impresora NIIMBOT B1 se desconectó inesperadamente.');
-    for (const [command, list] of this.waiters) {
-      list.forEach((waiter) => waiter.reject(error));
-      this.waiters.delete(command);
-    }
+    // El SO ya desconectó físicamente el dispositivo (por eso este callback
+    // se disparó) -- physicallyDisconnect: false, para no reintentar un
+    // ble.disconnect() redundante/potencialmente fallido sobre algo que ya
+    // no está conectado. Fire-and-forget: es un callback síncrono del
+    // transporte (onDisconnected), no hay nada que awaitar aquí.
+    void this.teardownConnection({ physicallyDisconnect: false });
   }
 
-  private async teardownConnection(): Promise<void> {
+  /**
+   * Único primitivo de limpieza, idempotente -- AUDITORÍA 2026-09-08: antes
+   * había DOS caminos de limpieza que podían divergir (teardownConnection()
+   * sólo limpiaba estado local; disconnect() además desconectaba
+   * físicamente por su cuenta). Ahora normal disconnect() y un handshake
+   * fallido usan exactamente esta misma función, con physicallyDisconnect
+   * indicando si hace falta cerrar la conexión BLE real (true) o si ya se
+   * cerró sola y sólo queda limpiar estado (false, ver
+   * handleUnexpectedDisconnect). Deja deviceId/estado local listos para un
+   * reintento inmediato: waiters/suscripciones de la sesión anterior nunca
+   * reciben datos de la sesión siguiente.
+   */
+  private async teardownConnection(options: { physicallyDisconnect: boolean }): Promise<void> {
+    const deviceId = this.deviceId;
     this.connected = false;
+    this.deviceId = null;
     this.unsubscribeNotifications?.();
     this.unsubscribeNotifications = null;
     this.unsubscribeDisconnect?.();
@@ -236,6 +292,9 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
     for (const [command, list] of this.waiters) {
       list.forEach((waiter) => waiter.reject(new NiimbotDisconnectedError('Conexión NIIMBOT B1 cerrada.')));
       this.waiters.delete(command);
+    }
+    if (options.physicallyDisconnect && deviceId) {
+      await this.ble.disconnect(deviceId).catch(() => undefined);
     }
   }
 }

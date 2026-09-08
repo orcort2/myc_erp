@@ -74,26 +74,71 @@ export class BleManagerTransport implements BleTransport {
     return granted === PermissionsAndroid.RESULTS.GRANTED;
   }
 
+  private discoverSubscription: { remove(): void } | null = null;
+  private stopScanSubscription: { remove(): void } | null = null;
+  private scanSafetyTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingScanSettle: (() => void) | null = null;
+
+  /** AUDITORÍA 2026-09-08: BleManager.scan(...) resuelve en cuanto el scan
+   * NATIVO arranca, no cuando termina -- awaitarlo solo (como hacía la
+   * versión anterior) devolvía el control de inmediato mientras el scan
+   * seguía activo, dejando `scanning` en la UI desincronizado del estado
+   * real y sin garantía de limpieza de listeners. startScan() ahora
+   * resuelve recién cuando el scan LÓGICO termina: por el evento nativo
+   * onStopScan (que la propia librería dispara al agotarse `seconds`, o al
+   * llamar stopScan()), por una cancelación explícita vía stopScan(), o por
+   * un timer de seguridad en JS (timeoutMs + margen) si por algún motivo
+   * onStopScan nunca llegara. Los listeners (discover + stopScan) se crean
+   * una sola vez por scan y siempre se limpian en cleanupScanListeners,
+   * sin importar cuál de las tres rutas resolvió -- así una segunda
+   * llamada a startScan() nunca acumula suscripciones de la anterior. */
   async startScan(onDeviceFound: (device: BleTransportDevice) => void, timeoutMs: number): Promise<void> {
     await ensureStarted();
-    const subscription = BleManager.onDiscoverPeripheral((peripheral) => {
-      onDeviceFound({
-        id: peripheral.id,
-        name: peripheral.name ?? peripheral.advertising?.localName ?? null,
-        rssi: peripheral.rssi,
-        advertisedServiceUUIDs: peripheral.advertising?.serviceUUIDs,
+    this.cleanupScanListeners(); // por si un scan previo no se cerró limpiamente
+
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settleOnce = (run: () => void) => {
+        if (settled) return;
+        settled = true;
+        this.cleanupScanListeners();
+        run();
+      };
+      this.pendingScanSettle = () => settleOnce(resolve);
+
+      this.discoverSubscription = BleManager.onDiscoverPeripheral((peripheral) => {
+        onDeviceFound({
+          id: peripheral.id,
+          name: peripheral.name ?? peripheral.advertising?.localName ?? null,
+          rssi: peripheral.rssi,
+          advertisedServiceUUIDs: peripheral.advertising?.serviceUUIDs,
+        });
+      });
+      this.stopScanSubscription = BleManager.onStopScan(() => settleOnce(resolve));
+      this.scanSafetyTimer = setTimeout(() => settleOnce(resolve), timeoutMs + 1_000);
+
+      BleManager.scan({ seconds: Math.max(1, Math.round(timeoutMs / 1000)) }).catch((error) => {
+        settleOnce(() => reject(error instanceof Error ? error : new Error(String(error))));
       });
     });
-    this.scanSubscription = subscription;
-    await BleManager.scan({ seconds: Math.max(1, Math.round(timeoutMs / 1000)) });
   }
 
-  private scanSubscription: { remove(): void } | null = null;
-
+  /** Cancela un scan en curso (si lo hay) y resuelve limpiamente la
+   * promesa pendiente de startScan() -- nunca la deja colgada. Segura de
+   * llamar sin un scan activo (no-op). */
   async stopScan(): Promise<void> {
     await BleManager.stopScan();
-    this.scanSubscription?.remove();
-    this.scanSubscription = null;
+    this.pendingScanSettle?.();
+  }
+
+  private cleanupScanListeners(): void {
+    this.discoverSubscription?.remove();
+    this.discoverSubscription = null;
+    this.stopScanSubscription?.remove();
+    this.stopScanSubscription = null;
+    if (this.scanSafetyTimer) clearTimeout(this.scanSafetyTimer);
+    this.scanSafetyTimer = null;
+    this.pendingScanSettle = null;
   }
 
   async connect(deviceId: string): Promise<void> {

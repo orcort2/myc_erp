@@ -621,9 +621,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   // Etiqueta térmica 50x30 -- ver src/services/labels/. equipmentCode viene
   // de identification (el "ID interno"/"CODIGO" que ya usa el resto de la
   // app, ver field-sheet-canonical-contract.ts internal_id), nunca de
-  // serial_number. INFORME = certificateFolio (LabEquipment.certificate_folio,
-  // puede ser null/pendiente -- el renderer lo imprime como "PENDIENTE", no
-  // bloquea). calibrationKind ya no forma parte del contrato impreso.
+  // serial_number. INFORME = certificateFolio (LabEquipment.certificate_folio).
+  // Una etiqueta FINAL sólo se imprime con datos finales reales: si el
+  // equipo aún no tiene folio (null/pendiente), printLabel/renderLabel
+  // bloquean con LabelRenderError('missing_certificate_folio') -- nunca se
+  // imprime "PENDIENTE" ni se genera un raster/trabajo BLE sin folio real.
+  // calibrationKind ya no forma parte del contrato impreso.
   async function printFieldSheetLabel() {
     if (!activeEquipment || !sheet) return;
     if (printingLabel) return; // evita un segundo trabajo por doble tap mientras el primero sigue en curso

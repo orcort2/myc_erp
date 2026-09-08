@@ -46,6 +46,7 @@ class MockBleTransport implements BleTransport {
   writes: { command: number; data: Uint8Array }[] = [];
   connectedDevices = new Set<string>();
   disconnectHandlers = new Map<string, (() => void)[]>();
+  disconnectCalls: string[] = [];
   private notificationHandler: BleNotificationHandler | null = null;
   private autoResponses = new Map<number, number>();
   connectDelayMs = 0;
@@ -72,6 +73,7 @@ class MockBleTransport implements BleTransport {
   }
 
   async disconnect(deviceId: string): Promise<void> {
+    this.disconnectCalls.push(deviceId);
     this.connectedDevices.delete(deviceId);
   }
 
@@ -93,8 +95,13 @@ class MockBleTransport implements BleTransport {
     };
   }
 
+  failWriteForCommand: number | null = null;
+
   async writeWithoutResponse(_deviceId: string, _serviceUUID: string, _characteristicUUID: string, data: Uint8Array): Promise<void> {
     const decoded = decodeNiimbotPacket(data);
+    if (this.failWriteForCommand === decoded.command) {
+      throw new Error('fallo simulado de transporte/protocolo al escribir');
+    }
     this.writes.push(decoded);
     const responseCommand = this.autoResponses.get(decoded.command);
     if (responseCommand !== undefined) {
@@ -147,6 +154,81 @@ test('connect() sin respuesta ConnectResult expira con NiimbotTimeoutError y no 
   assert.equal(adapter.isConnected(), false);
 });
 
+// AUDITORÍA 2026-09-08: la conexión BLE ya se había establecido con éxito
+// (transport.connect() nunca lanzó) antes de que el handshake fallara --
+// teardownConnection() sólo limpiaba estado local del adaptador, nunca
+// desconectaba físicamente. El SO podía seguir "conectado" mientras el
+// adaptador se creía libre, dejando el dispositivo inalcanzable para un
+// reintento inmediato. Corregido: cualquier fallo de handshake posterior a
+// una conexión BLE exitosa debe desconectar físicamente.
+
+test('AUDITORÍA: handshake expirado (timeout) desconecta físicamente el dispositivo, no sólo el estado local', async () => {
+  const transport = new MockBleTransport(); // sin auto-respuesta a Connect -> expira
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), NiimbotTimeoutError);
+
+  assert.deepEqual(transport.disconnectCalls, [DEVICE.id]);
+  assert.equal(transport.connectedDevices.has(DEVICE.id), false, 'el transporte ya no debe reportar el dispositivo conectado');
+});
+
+test('AUDITORÍA: un fallo de protocolo/transporte durante el handshake (no sólo timeout) también desconecta físicamente', async () => {
+  const transport = new MockBleTransport();
+  transport.failWriteForCommand = NIIMBOT_REQUEST.Connect; // la escritura del propio Connect falla
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE));
+
+  assert.deepEqual(transport.disconnectCalls, [DEVICE.id]);
+  assert.equal(adapter.isConnected(), false);
+});
+
+test('AUDITORÍA: la limpieza tras un handshake fallido nunca desconecta dos veces', async () => {
+  const transport = new MockBleTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), NiimbotTimeoutError);
+  await adapter.disconnect(); // llamar disconnect() explícitamente después no debe volver a desconectar
+
+  assert.deepEqual(transport.disconnectCalls, [DEVICE.id], 'un solo disconnect físico, sin duplicados');
+});
+
+test('AUDITORÍA: tras un handshake fallido, un reintento inmediato conecta con estado completamente fresco', async () => {
+  const transport = new MockBleTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), NiimbotTimeoutError);
+  assert.equal(adapter.isConnected(), false);
+
+  transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
+  await adapter.connect(DEVICE);
+
+  assert.equal(adapter.isConnected(), true);
+  // El reintento debe volver a conectar/suscribirse desde cero -- nunca
+  // reutilizar la sesión BLE fallida anterior.
+  assert.equal(transport.connectedDevices.has(DEVICE.id), true);
+});
+
+test('AUDITORÍA: una respuesta que llega después de que el handshake ya expiró no la recibe ningún waiter de la sesión siguiente', async () => {
+  const transport = new MockBleTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), NiimbotTimeoutError);
+
+  // Reconecta con éxito -- una nueva sesión con sus propios waiters.
+  transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
+  await adapter.connect(DEVICE);
+  assert.equal(adapter.isConnected(), true);
+
+  // Una impresión debe poder avanzar con normalidad en la sesión nueva --
+  // si algún waiter/suscripción de la sesión fallida hubiera quedado vivo,
+  // esto podría resolver con datos equivocados o quedarse colgado.
+  transport.respondTo(NIIMBOT_REQUEST.PrintStatus, NIIMBOT_REQUEST.PrintStatusResult);
+  transport.respondTo(NIIMBOT_REQUEST.PrintEnd, NIIMBOT_REQUEST.PrintEndResult);
+  const raster = renderLabel(PAYLOAD, MYC_50X30, 203);
+  await assert.doesNotReject(adapter.print(raster));
+});
+
 test('connect() no bloquea si la identificación (PrinterStatusData) no responde a tiempo -- es best-effort', async () => {
   const transport = new MockBleTransport();
   transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
@@ -184,6 +266,31 @@ test('print() envía densidad->tipo->inicio->página->tamaño->filas->fin de pá
   assert.ok(commands.includes(NIIMBOT_REQUEST.PageEnd));
   assert.ok(commands.includes(NIIMBOT_REQUEST.PrintStatus), 'debe sondear el estado antes de terminar');
   assert.equal(commands[commands.length - 1], NIIMBOT_REQUEST.PrintEnd, 'PrintEnd debe ser el último comando enviado');
+});
+
+test('print() recorta el raster físico (400px) al ancho real del cabezal (384px) antes de construir SetPageSize/filas -- AUDITORÍA 2026-09-08', async () => {
+  const transport = fullyResponsiveTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+  await adapter.connect(DEVICE);
+  transport.writes = [];
+
+  const raster = renderLabel(PAYLOAD, MYC_50X30, 203);
+  assert.equal(raster.widthPx, 400, 'precondición: el raster físico completo es 400px, más ancho que el cabezal');
+  await adapter.print(raster);
+
+  const setPageSize = transport.writes.find((packet) => packet.command === NIIMBOT_REQUEST.SetPageSize);
+  assert.ok(setPageSize);
+  // data = [heightHi,heightLo,widthHi,widthLo,0,1] -- ver buildSetPageSizePacket.
+  const sentWidthPx = (setPageSize!.data[2] << 8) | setPageSize!.data[3];
+  assert.equal(sentWidthPx, adapter.capabilities.printableWidthPx, 'SetPageSize debe llevar el ancho real imprimible (384), nunca el ancho físico completo (400)');
+  assert.notEqual(sentWidthPx, raster.widthPx);
+
+  const rowPackets = transport.writes.filter((packet) => packet.command === NIIMBOT_REQUEST.PrintBitmapRow);
+  const expectedStride = Math.ceil(adapter.capabilities.printableWidthPx / 8);
+  for (const row of rowPackets) {
+    // data = [rowHi,rowLo,0,0,0,repeat, ...bytesDeLaFila] -- header de 6 bytes, ver encodeRowPacket.
+    assert.equal(row.data.length - 6, expectedStride, 'cada fila enviada debe tener exactamente el stride de 384px, nunca el de 400px');
+  }
 });
 
 test('print() nunca deja avanzar una segunda impresión mientras la primera sigue en curso (doble tap)', async () => {

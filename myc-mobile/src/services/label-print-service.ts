@@ -5,7 +5,7 @@ import { NiimbotB1Adapter } from './labels/printers/adapters/niimbot-b1/niimbot-
 import { clearPreferredPrinter, readPreferredPrinter, writePreferredPrinter } from './labels/printers/preferred-printer-storage';
 import { PrinterManager, PrinterNotReadyError } from './labels/printers/printer-manager';
 import { MYC_50X30 } from './labels/label-profile';
-import { renderLabel } from './labels/label-renderer';
+import { buildLabelLines, renderLabel } from './labels/label-renderer';
 import type { LabLabelPayload } from './labels/label-types';
 
 /**
@@ -61,6 +61,12 @@ export const printerManager = new PrinterManager(
  * la pantalla de configuración, nunca reintentar en silencio ni fallar de
  * forma genérica. */
 export async function printLabel(payload: LabLabelPayload, options?: { copies?: number }): Promise<void> {
+  // Validar el payload ANTES de tocar BLE -- una impresión que de todas
+  // formas va a fallar por datos faltantes (p.ej. sin certificateFolio)
+  // nunca debe intentar reconectar la impresora primero. buildLabelLines
+  // lanza LabelRenderError aquí mismo si algo requerido falta; el resultado
+  // se descarta a propósito, sólo importa que no haya lanzado.
+  buildLabelLines(payload);
   if (!printerManager.isReady()) {
     await printerManager.connectPreferred().catch(() => false);
   }

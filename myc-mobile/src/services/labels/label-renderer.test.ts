@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { MYC_50X30, mmToPx, profileCanvasPx, profileSafeAreaPx } from './label-profile';
 import {
@@ -92,11 +95,52 @@ test('nextCalibrationDate null se imprime como N/A, nunca bloquea ni se omite', 
   assert.doesNotThrow(() => renderLabel({ ...BASE_PAYLOAD, nextCalibrationDate: null }, MYC_50X30, 203));
 });
 
-test('certificateFolio null/pendiente se imprime como PENDIENTE, nunca bloquea la impresión', () => {
-  const lines = buildLabelLines({ ...BASE_PAYLOAD, certificateFolio: null });
+test('certificateFolio presente se imprime tal cual como INFORME -- el dato final real, nunca transformado', () => {
+  const lines = buildLabelLines({ ...BASE_PAYLOAD, certificateFolio: 'MYCA-0042' });
   const informe = lines.find((line) => line.label === 'INFORME');
-  assert.equal(informe?.value, 'PENDIENTE');
-  assert.doesNotThrow(() => renderLabel({ ...BASE_PAYLOAD, certificateFolio: null }, MYC_50X30, 203));
+  assert.equal(informe?.value, 'MYCA-0042');
+});
+
+test('REGLA DE NEGOCIO: certificateFolio null bloquea la impresión final -- nunca "PENDIENTE" ni ningún placeholder', () => {
+  assert.throws(
+    () => buildLabelLines({ ...BASE_PAYLOAD, certificateFolio: null }),
+    (error: unknown) => error instanceof LabelRenderError && error.code === 'missing_certificate_folio',
+  );
+  assert.throws(
+    () => renderLabel({ ...BASE_PAYLOAD, certificateFolio: null }, MYC_50X30, 203),
+    (error: unknown) => error instanceof LabelRenderError,
+  );
+});
+
+test('REGLA DE NEGOCIO: certificateFolio undefined también bloquea la impresión final', () => {
+  const { certificateFolio: _omitted, ...withoutFolio } = BASE_PAYLOAD;
+  assert.throws(
+    () => buildLabelLines(withoutFolio),
+    (error: unknown) => error instanceof LabelRenderError && error.code === 'missing_certificate_folio',
+  );
+});
+
+test('REGLA DE NEGOCIO: certificateFolio vacío/sólo espacios también bloquea -- no basta con "no ser null"', () => {
+  for (const value of ['', '   ', '\t\n']) {
+    assert.throws(
+      () => buildLabelLines({ ...BASE_PAYLOAD, certificateFolio: value }),
+      (error: unknown) => error instanceof LabelRenderError && error.code === 'missing_certificate_folio',
+      `debe bloquear para certificateFolio=${JSON.stringify(value)}`,
+    );
+  }
+});
+
+test('REGLA DE NEGOCIO: renderLabel nunca genera un raster cuando falta certificateFolio -- no queda ni un canvas parcial que un llamador pueda usar por error', () => {
+  assert.throws(() => renderLabel({ ...BASE_PAYLOAD, certificateFolio: null }, MYC_50X30, 203));
+  // buildLabelLines es lo primero que corre dentro de renderLabel (ver
+  // comentario "Validar ANTES de tocar el canvas"): si esto lanza, ningún
+  // RasterLabel se devuelve jamás -- no hay forma de que un llamador reciba
+  // un raster para pasarle a PrinterManager.print/BLE.
+});
+
+test('el string "PENDIENTE" ya no existe en ningún camino del renderer final', () => {
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), './label-renderer.ts'), 'utf8');
+  assert.doesNotMatch(source, /PENDIENTE/);
 });
 
 test('calibrationDate ausente/vacía bloquea la impresión con un error explícito y tipado, nunca una etiqueta en blanco', () => {

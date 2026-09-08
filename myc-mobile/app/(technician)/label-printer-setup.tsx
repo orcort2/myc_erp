@@ -61,6 +61,15 @@ export default function LabelPrinterSetupScreen() {
     readPreferredPrinter().then(setPreferred).catch(() => setPreferred(null));
   }, []);
 
+  // AUDITORÍA 2026-09-08: si la pantalla se desmonta mientras hay un scan
+  // en curso (el usuario navega fuera), el escaneo nativo debe cortarse
+  // limpiamente en vez de seguir corriendo en segundo plano indefinidamente
+  // -- printerManager.stopScan() es seguro de llamar incluso sin un scan
+  // activo (no-op), ver scan-lifecycle.test.ts.
+  useEffect(() => () => {
+    printerManager.stopScan().catch(() => undefined);
+  }, []);
+
   const startScan = useCallback(async () => {
     setError('');
     setDevices([]);

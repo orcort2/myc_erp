@@ -55,6 +55,10 @@ test('la prueba de impresión usa buildTestPrintPayload -- nunca inventa un foli
   assert.match(fn, /printLabel\(buildTestPrintPayload\(\)\)/);
 });
 
+test('AUDITORÍA 2026-09-08: al desmontar la pantalla, un scan en curso se cancela limpiamente (printerManager.stopScan)', () => {
+  assert.match(source, /useEffect\(\(\) => \(\) => \{\s*printerManager\.stopScan\(\)\.catch\(\(\) => undefined\);\s*\}, \[\]\);/);
+});
+
 test('"Olvidar impresora" desconecta y borra la preferida vía PrinterManager.forget, nunca borra sólo el estado local', () => {
   const fn = source.slice(source.indexOf('const forget'), source.indexOf('if (isLoading)'));
   assert.match(fn, /await printerManager\.forget\(\)/);

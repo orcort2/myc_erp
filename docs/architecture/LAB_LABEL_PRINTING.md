@@ -2,12 +2,48 @@
 >
 > Tipo: Arquitectura de MYC Mobile
 >
-> Corte verificado: 2026-09-07
+> Corte verificado: 2026-09-08 (auditoría de seguimiento, ver "Correcciones
+> de auditoría" abajo)
 >
 > QA física pendiente -- ver "Estado de soporte" y "Gate de QA física" antes
 > de considerar esto listo para producción.
 
 # Impresión de etiquetas térmicas LAB (BLE)
+
+## Correcciones de auditoría (2026-09-08)
+
+Una auditoría independiente sobre el corte 2026-09-07 encontró 4 problemas
+reales, corregidos en esta revisión:
+
+1. **Regla de negocio de INFORME invertida.** La versión anterior imprimía
+   `"PENDIENTE"` cuando `certificateFolio` era null. Corregido: una etiqueta
+   FINAL sólo se imprime con folio real -- `certificateFolio` ausente/vacío
+   ahora bloquea con `LabelRenderError('missing_certificate_folio')`, tanto
+   en la frontera de dominio (`LabelRenderer.buildLabelLines`) como antes de
+   tocar BLE (`label-print-service.ts printLabel`). Ver "Contrato v1" abajo.
+2. **El raster físico (400px) se enviaba tal cual a un cabezal de 384px.**
+   Corregido con `printers/raster-adapt.ts` -- ver "Mapeo 50x30 físico ->
+   raster imprimible del B1" abajo.
+3. **El ciclo de vida del scan BLE no esperaba a que terminara.**
+   `BleManagerTransport.startScan()` sólo esperaba a que el scan NATIVO
+   arrancara, no a que terminara -- corregido para resolver recién cuando
+   el scan lógico termina (evento `onStopScan`, cancelación explícita, o un
+   timer de seguridad), con limpieza de listeners garantizada en las tres
+   rutas. La pantalla de configuración ahora también cancela el scan al
+   desmontarse.
+4. **Un handshake NIIMBOT fallido no desconectaba físicamente.** Si
+   `Connect`/`ConnectResult` fallaba después de que la conexión BLE ya se
+   había establecido, sólo se limpiaba estado local -- el SO podía seguir
+   conectado. Corregido con un único primitivo de limpieza idempotente
+   (`teardownConnection`) que también desconecta físicamente cuando
+   corresponde, usado tanto por `disconnect()` normal como por un handshake
+   fallido.
+
+También se revisó de nuevo (sin cambios de comportamiento, ver "Protocolo
+NIIMBOT B1" abajo) la semántica exacta de `PrintStatusResult`: sigue sin
+poder establecerse desde las fuentes auditadas, así que se mantiene
+deliberadamente como punto de control de QA física, no se fabricó una
+interpretación de bytes.
 
 ## Contrato v1
 
@@ -24,7 +60,8 @@ type LabLabelPayload = {
   equipmentCode: string;          // LabEquipment.identification (CODIGO)
   workOrderFolio: string;         // String(LabWorkOrder.folio) (O.T.)
   certificateFolio?: string | null; // LabEquipment.certificate_folio (INFORME);
-                                     // null/pendiente -> "PENDIENTE", nunca bloquea
+                                     // REQUERIDO para imprimir la etiqueta final --
+                                     // ver "Comportamiento ante datos ausentes"
 };
 ```
 
@@ -40,11 +77,21 @@ folio.
 
 ### Comportamiento ante datos ausentes (decisión explícita de esta fase, no una regla preexistente -- el botón nunca fue funcional antes)
 
+**Regla de negocio confirmada (corrección 2026-09-08):** una etiqueta física
+FINAL sólo se imprime con datos finales reales. `INFORME` **nunca** se
+imprime como `"PENDIENTE"` ni ningún otro placeholder -- si el equipo
+todavía no tiene folio de certificado asignado, la impresión se bloquea con
+un error explícito, tanto en `LabelRenderer.buildLabelLines` (frontera de
+dominio -- ningún llamador futuro puede generar un raster ni un trabajo BLE
+sin folio real) como en el manejador de UI (`printFieldSheetLabel`, que
+nunca llega a invocar `printLabel`/BLE si la validación falla). Nunca se
+sintetiza ni se solicita un folio desde el flujo de impresión.
+
 | Campo | Si falta | ¿Bloquea impresión? |
 |---|---|---|
 | `calibrationDate` | `LabelRenderError('missing_calibration_date')` | Sí -- nunca una etiqueta con la fecha en blanco |
-| `nextCalibrationDate` | se imprime `N/A` | No |
-| `certificateFolio` | se imprime `PENDIENTE` | No -- el flujo "linked" ya permite capturar sin folio resuelto |
+| `nextCalibrationDate` | se imprime `N/A` | No -- no todo servicio exige recalibración periódica |
+| `certificateFolio` | `LabelRenderError('missing_certificate_folio')` | Sí -- nunca `"PENDIENTE"` ni ningún placeholder en la etiqueta final |
 
 El botón "Imprimir etiqueta 50×30" en `LabTechnicalCapture` sólo se ofrece
 con `sheet.status === 'completed'` (misma gate que "Ver / descargar PDF").
@@ -160,6 +207,17 @@ contra hardware B1 real) siempre manda ceros ahí y funciona. Se adoptó la
 variante de niimprint por ser la única validada contra hardware real --
 validar durante QA física.
 
+**`PrintStatusResult` (0xB3), semántica de bytes no verificable (revisado
+2026-09-08, sin cambios de comportamiento):** niim.blue documenta un poll
+"hasta page >= 1" pero nunca especifica en qué byte/offset del payload vive
+ese contador; niimprint ni siquiera hace ese poll (reintenta `PrintEnd`
+directamente). Ninguna de las 3 fuentes auditadas da un layout de bytes
+verificable. `waitForPrintComplete()` (`niimbot-b1-adapter.ts`) acepta
+deliberadamente cualquier `PrintStatusResult` válido como señal de avance,
+sin parsear ningún byte -- parsear un offset no confirmado sería fabricar
+certeza inexistente. Se mantiene como punto de control obligatorio de QA
+física.
+
 `NiimbotFrameAssembler` reensambla notificaciones BLE fragmentadas
 (confirmado como riesgo real por la propia wiki de NIIMBOT: "Fragmentation
 Warning") y descarta basura/frames corruptos sin perder el resto del stream.
@@ -169,6 +227,43 @@ consultas `PrinterInfo`) es **best-effort**: informativo/diagnóstico, nunca
 bloquea la conexión si la impresora no responde a tiempo -- 203 dpi y 384px
 de ancho imprimible son las especificaciones públicas conocidas del B1, no
 se negocian en tiempo real en v1.
+
+### Mapeo 50x30 físico -> raster imprimible del B1 (corrección 2026-09-08)
+
+`MYC_50X30` a 203 dpi produce un raster físico de **400x240 px** (ver
+"Perfil físico y DPI" arriba) -- pero el cabezal del B1 sólo puede imprimir
+**384 px por fila** (`NiimbotB1Adapter.capabilities.printableWidthPx`).
+Enviar el raster de 400px tal cual (como hacía la versión anterior de este
+archivo) habría producido un `SetPageSize`/filas con dimensiones inválidas
+para el cabezal real -- corregido.
+
+**Por qué WIDTH es el eje limitado por el cabezal, nunca HEIGHT** (evidencia
+de las fuentes ya auditadas en `protocol.ts`, no una suposición): cada fila
+transmitida vía `PrintBitmapRow` lleva un índice de fila (0..heightPx-1, uno
+por avance de papel) y una tira de `ceil(widthPx/8)` bytes -- confirmado en
+niimprint (`_encode_image`: itera `range(img.height)` filas, cada una con
+`ceil(img.width/8)` bytes). El cabezal físico es una fila FIJA de puntos
+térmicos perpendicular al avance del papel: ese número fijo de puntos
+(384) es exactamente lo que limita `widthPx` (píxeles por fila); `heightPx`
+(cuántas filas se mandan) no tiene límite de cabezal, sólo de largo de
+página/rollo. `MYC_50X30.physicalWidthMm` (50mm) es por lo tanto el eje que
+debe caber en el cabezal.
+
+`printers/raster-adapt.ts` (`cropRasterToPrintableWidth`) recorta el raster
+físico completo (400px) al ancho real del cabezal (384px) **quitando
+únicamente el margen físico que `LabelRenderer` ya deja vacío** alrededor
+del área segura -- 400-384=16px, exactamente los 8px por lado (~1mm) que
+`profileSafeAreaPx` ya calcula. Esto no es una coincidencia asumida a
+ciegas: la función verifica bit a bit que las columnas que va a recortar
+estén realmente vacías antes de recortarlas; si hubiera tinta ahí (un
+perfil/impresora futuros donde el margen no alcance), bloquea con
+`RasterExceedsPrintableWidthError` en vez de recortar contenido real en
+silencio. Nunca escala ni distorsiona -- sólo recorta margen físico vacío.
+`heightPx` (eje de avance, sin límite de cabezal) nunca se toca.
+`NiimbotB1Adapter.print()` aplica este recorte antes de construir
+`SetPageSize`/las filas -- ver `raster-adapt.test.ts` y
+`niimbot-b1-adapter.test.ts` para la prueba end-to-end de que el ancho
+realmente enviado es 384, nunca 400.
 
 ## Decisión de librería BLE
 

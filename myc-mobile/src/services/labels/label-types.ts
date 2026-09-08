@@ -22,10 +22,13 @@ export type LabLabelPayload = {
   equipmentCode: string;
   /** String(LabWorkOrder.folio). O.T. en la etiqueta. */
   workOrderFolio: string;
-  /** LabEquipment.certificate_folio. Puede ser null/pendiente (folio_status
-   * === 'pending', p.ej. servicio "linked" a la espera de autorización) --
-   * se imprime como "PENDIENTE", nunca bloquea la impresión. INFORME en la
-   * etiqueta. */
+  /** LabEquipment.certificate_folio. INFORME en la etiqueta -- REQUERIDO
+   * para imprimir la etiqueta final (regla de negocio confirmada 2026-09-08:
+   * una etiqueta final sólo se imprime con datos finales reales). Nulo es un
+   * valor válido del dominio (folio_status === 'pending', p.ej. servicio
+   * "linked" a la espera de autorización), pero LabelRenderer.buildLabelLines
+   * bloquea la impresión con LabelRenderError('missing_certificate_folio')
+   * en ese caso -- nunca imprime un placeholder como "PENDIENTE". */
   certificateFolio?: string | null;
 };
 
