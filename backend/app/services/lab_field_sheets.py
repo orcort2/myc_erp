@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import copy
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, not_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session, aliased, contains_eager, selectinload
 
 from app.models.field_sheet import FieldSheet, FieldSheetResult
 from app.models.lab_work_order import LabWorkOrder, LabWorkOrderEquipment
-from app.models.reference_standard import FieldSheetReferenceStandard
 from app.models.user import User
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.lab_work_order import (
@@ -36,12 +34,7 @@ from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
     institutional_snapshot,
 )
-from app.services.auth import user_has_permission
-from app.services.lab_work_orders import (
-    _missing_completed_sheets,
-    _retire_current_field_sheet_revision,
-    resolve_equipment_certificate_client,
-)
+from app.services.lab_work_orders import _missing_completed_sheets, resolve_equipment_certificate_client
 from app.services.storage_service import delete_if_unreferenced
 
 
@@ -147,17 +140,7 @@ def list_lab_field_sheet_tray(
             or_(
                 LabWorkOrder.status.in_(("received_signed", "in_progress")),
                 current_sheet.id.is_not(None),
-            ),
-            # Sección 27 del encargo equipo-por-equipo: una FieldSheet
-            # capturada pre-firma (OT todavía draft) pertenece al flujo del
-            # técnico que la está trabajando en campo, no a Captura -- no
-            # debe aparecer aquí como si la OT ya hubiera sido recibida.
-            not_(
-                and_(
-                    LabWorkOrder.workflow_mode == "equipment_by_equipment",
-                    LabWorkOrder.status == "draft",
-                )
-            ),
+            )
         )
         .options(
             contains_eager(
@@ -246,15 +229,7 @@ def _ensure_capture_allowed(equipment: LabWorkOrderEquipment, *, external: bool)
     # arranque; in_progress cubre la captura ya en marcha (ver
     # create_lab_field_sheet, que hace la transición received_signed ->
     # in_progress en la primera hoja creada).
-    # Flujo equipo-por-equipo (sección 8/11 del encargo): la captura real
-    # SÍ procede en draft para esta modalidad -- ese es el punto del flujo
-    # ("equipo -> servicio -> Hoja de Campo -> equipo -> ..."), sin fingir
-    # una recepción firmada que todavía no existe (sección 10). La firma
-    # final llega recién en finalize_equipment_by_equipment_work_order.
-    allowed_statuses = {"received_signed", "in_progress"}
-    if equipment.work_order.workflow_mode == "equipment_by_equipment":
-        allowed_statuses.add("draft")
-    if equipment.work_order.status not in allowed_statuses:
+    if equipment.work_order.status not in {"received_signed", "in_progress"}:
         raise HTTPException(status_code=409, detail="La OT no admite captura técnica")
     if equipment.service_type is None:
         raise HTTPException(status_code=409, detail="Selecciona el tipo de servicio")
@@ -318,14 +293,13 @@ def create_lab_field_sheet(
         "internal_id": equipment.identification,
         "model": equipment.model,
     }
-    # Snapshot inicial, no vínculo vivo (sección 25-28 del cierre "grupos
-    # mixtos"): FieldSheet.observations congela la observación operativa del
-    # equipo AL CREAR esta revisión. Editar LabWorkOrderEquipment.observations
-    # después no toca hojas ya creadas (draft/in_progress/completed); una
-    # reapertura/recaptura que crea la revisión N+1 vuelve a leer el valor
-    # vigente del equipo en ESE momento, y la revisión N conserva el suyo
-    # intacto -- misma separación que certificate_folio/report_number, que
-    # nunca alimentan este campo.
+    # Snapshot inicial, no vínculo vivo: FieldSheet.observations congela la
+    # observación operativa del equipo AL CREAR esta revisión. Editar
+    # LabWorkOrderEquipment.observations después no toca hojas ya creadas
+    # (draft/in_progress/completed); una reapertura que crea la revisión
+    # N+1 vuelve a leer el valor vigente del equipo en ESE momento, y la
+    # revisión N conserva el suyo intacto -- misma separación que
+    # certificate_folio/report_number, que nunca alimentan este campo.
     initial_observations = (equipment.observations or "").strip() or None
     sheet = FieldSheet(
         equipment_id=None,
@@ -394,165 +368,6 @@ def create_lab_field_sheet(
     return read_lab_field_sheet(db, work_order_id, equipment_id)
 
 
-_CLONED_FIELD_SHEET_ATTRS = (
-    "calibration_place",
-    "minimum_division",
-    "location",
-    "attention",
-    "company",
-    "address",
-    "reception_date",
-    "calibration_date",
-    "next_calibration_date",
-    "environment_humidity_start",
-    "environment_humidity_end",
-    "environment_temperature_start",
-    "environment_temperature_end",
-    "equipment_general_condition",
-    "consider_equipment_deviations",
-    "units",
-    "calibrated_by",
-    "reviewed_by",
-    "report_made_by",
-    "purchase_order_or_quotation",
-    "initial_condition",
-    "final_condition",
-    "pattern_used",
-    "results",
-    "evidence_notes",
-    "method",
-    "environmental_conditions",
-    "technician_notes",
-    "certificate_client_mode",
-    "certificate_client_company",
-    "certificate_client_attention",
-    "certificate_client_address",
-    "apply_certificate_client_to_order",
-    "observations",
-    "template_definition_version",
-    "pdf_renderer_key",
-    "pdf_renderer_version",
-    "calibration_procedure_id",
-    "template_key",
-    "work_order_number",
-)
-
-
-def _clone_field_sheet_for_correction(
-    db: Session,
-    equipment: LabWorkOrderEquipment,
-    retired: FieldSheet,
-    user: User,
-) -> FieldSheet:
-    """Reapertura sin hueco operativo: cuando una reapertura retira
-    (is_current=False) una FieldSheet ya completed sin que ningún campo
-    crítico del equipo haya cambiado -- el técnico sólo quiere corregir un
-    dato de la MISMA hoja (observación, resultado, evidencia, etc.), nunca
-    elegir otra plantilla -- esta función abre de inmediato la revisión N+1
-    como clon editable de N, en la MISMA transacción que la retira.
-    equipment.field_sheet nunca queda en None: la revisión histórica N
-    permanece intacta (status/final_pdf_path/final_pdf_sha256 sin tocar) y
-    N+1 nace con todo su contenido técnico ya capturado, lista para
-    "Continuar captura" en vez de "Seleccionar Hoja de Campo".
-
-    `observations` clona el valor ya congelado en N (`retired.observations`,
-    vía `_CLONED_FIELD_SHEET_ATTRS`), NUNCA vuelve a leer
-    `LabWorkOrderEquipment.observations`: una revisión CORRECTIVA debe partir
-    exactamente del documento que se está corrigiendo, igual que cualquier
-    otro campo clonado (resultados, evidencia, condiciones). Si el técnico
-    quiere cambiar la observación, la edita expresamente en N+1 -- el
-    contrato "snapshot inicial desde el equipo" de
-    `create_lab_field_sheet` (ver LAB_WORK_ORDERS.md, "Snapshot de
-    observaciones") sigue aplicando sin cambios a una FieldSheet genuinamente
-    nueva (primera captura, o la hoja en blanco que abre un cambio de campo
-    crítico de equipo vía `_update_equipment_core`) -- ese caso nunca pasa
-    por esta función.
-
-    Toda estructura JSON mutable (`capture_values`, `template_definition_json`,
-    `institutional_snapshot_json`, `row_data`, `validation_snapshot`) se
-    clona con `copy.deepcopy` -- nunca una copia superficial ni el mismo
-    objeto de N -- para que N y N+1 sean documentalmente independientes:
-    mutar una estructura anidada en N+1 (p.ej. agregar una clave a un dict
-    dentro de `capture_values`) nunca debe poder alcanzar N.
-
-    Nunca clona FieldSheetSignature (una firma ligada al contenido de N no
-    puede atestiguar N+1) ni UncertaintyCalculation (bitácora de cálculo
-    propia de su propia revisión); results_rows y reference_standard_links sí
-    se clonan fila por fila porque son el contenido técnico que el técnico va
-    a corregir -- compartir las filas con N las expondría a mutación cuando
-    el técnico edite N+1, corrompiendo el histórico congelado."""
-    capture_values = copy.deepcopy(retired.capture_values) if retired.capture_values else {}
-    capture_values.update(
-        {
-            "instrument": equipment.instrument,
-            "brand": equipment.brand,
-            "serial_number": equipment.serial_number,
-            "internal_id": equipment.identification,
-            "model": equipment.model,
-        }
-    )
-    template_definition_json = copy.deepcopy(retired.template_definition_json) if retired.template_definition_json else None
-    institutional_snapshot_json = copy.deepcopy(retired.institutional_snapshot_json) if retired.institutional_snapshot_json else None
-    sheet = FieldSheet(
-        equipment_id=None,
-        lab_equipment_id=equipment.id,
-        work_order_id=None,
-        revision_number=retired.revision_number + 1,
-        is_current=True,
-        supersedes_field_sheet_id=retired.id,
-        status="draft",
-        capture_values=capture_values,
-        template_definition_json=template_definition_json,
-        institutional_snapshot_json=institutional_snapshot_json,
-        lab_signature_session_id=equipment.work_order.signature_session_id,
-        **{attr: getattr(retired, attr) for attr in _CLONED_FIELD_SHEET_ATTRS},
-    )
-    sheet.results_rows = [
-        FieldSheetResult(
-            section_key=row.section_key,
-            row_number=row.row_number,
-            pattern_value=row.pattern_value,
-            ibc_value_1=row.ibc_value_1,
-            ibc_value_2=row.ibc_value_2,
-            ibc_value_3=row.ibc_value_3,
-            unit=row.unit,
-            notes=row.notes,
-            row_data=copy.deepcopy(row.row_data) if row.row_data is not None else None,
-        )
-        for row in retired.results_rows
-    ]
-    sheet.reference_standard_links = [
-        FieldSheetReferenceStandard(
-            reference_standard_id=link.reference_standard_id,
-            reference_standard_certificate_id=link.reference_standard_certificate_id,
-            selected_uncertainty_id=link.selected_uncertainty_id,
-            usage_role=link.usage_role,
-            measurement_section=link.measurement_section,
-            selection_status=link.selection_status,
-            selection_notes=link.selection_notes,
-            validation_snapshot=copy.deepcopy(link.validation_snapshot) if link.validation_snapshot is not None else None,
-            notes=link.notes,
-        )
-        for link in retired.reference_standard_links
-    ]
-    sheet.signatures = _default_signature_slots(template_definition_json or {}, sheet)
-    db.add(sheet)
-    db.flush()
-    write_audit_log(
-        db,
-        action="lab_field_sheet.corrective_revision_created",
-        entity="field_sheets",
-        entity_id=sheet.id,
-        user_id=user.id,
-        new_values={
-            "lab_equipment_id": equipment.id,
-            "supersedes_field_sheet_id": retired.id,
-            "revision_number": sheet.revision_number,
-        },
-    )
-    return sheet
-
-
 def read_lab_field_sheet(db: Session, work_order_id: int, equipment_id: int) -> FieldSheetRead:
     equipment = get_lab_equipment(db, work_order_id, equipment_id)
     if equipment.field_sheet is None or not equipment.field_sheet.is_active:
@@ -573,22 +388,6 @@ def update_lab_field_sheet(
         raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
     if sheet.status not in EDITABLE_STATUSES:
         raise HTTPException(status_code=409, detail="La hoja no admite edición")
-    # Cierre "grupos mixtos" sección 10: un cambio administrativo de
-    # equipment_by_equipment -> group puede dejar una hoja YA CREADA en
-    # draft/in_progress (nunca se borra ni se recrea). Antes de esa acción,
-    # esta combinación exacta (workflow_mode='group' con la OT todavía en
-    # 'draft', sin recepción firmada) era inalcanzable -- una OT group nunca
-    # permite create_lab_field_sheet en draft, así que nunca existía nada que
-    # editar aquí. Bloqueo deliberadamente estrecho (sólo 'group' + 'draft',
-    # no el _ensure_capture_allowed genérico completo): ese helper también
-    # excluye 'ready_to_close', un estado que un pretest histórico sin
-    # lab_client_id SÍ alcanza legítimamente a mitad de completar varias
-    # hojas (ver _requires_field_sheet_discipline/_missing_completed_sheets)
-    # -- reusar el genérico ahí rompería PATCH sobre una hoja hermana
-    # todavía pendiente en ese caso preexistente, no relacionado con este
-    # cierre.
-    if equipment.work_order.workflow_mode == "group" and equipment.work_order.status == "draft":
-        raise HTTPException(status_code=409, detail="La OT no admite captura técnica")
     previous = _serialize_field_sheet(sheet)
     updates = payload.model_dump(
         exclude_unset=True,
@@ -763,157 +562,6 @@ def discard_lab_field_sheet(
         raise
 
 
-def change_lab_field_sheet_template(
-    db: Session,
-    work_order_id: int,
-    equipment_id: int,
-    payload: LabFieldSheetCreate,
-    user: User,
-    *,
-    external: bool,
-) -> FieldSheetRead:
-    """"Cambiar Hoja de Campo": retira sólo la revisión editable vigente
-    (nunca una completed histórica -- mismo guard que
-    _discard_lab_field_sheet_uncommitted) y abre, en la MISMA transacción,
-    una revisión nueva con otra plantilla. Deliberadamente NO es
-    "discard + create" en dos peticiones separadas: entre ambas,
-    equipment.field_sheet quedaría apuntando al histórico completed que el
-    discard restaura como vigente, y create_lab_field_sheet lo rechazaría de
-    inmediato con 409 "El equipo ya tiene una hoja de campo" -- un callejón
-    sin salida. Aquí el histórico anterior (si existe) permanece intacto
-    pero NO se restaura como vigente: la nueva revisión toma su lugar sin
-    hueco. _ensure_capture_allowed reutiliza exactamente la misma
-    autorización que create_lab_field_sheet, así que esta acción nunca abre
-    una ventana de captura que el flujo normal no permitiría."""
-    equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
-    _ensure_capture_allowed(equipment, external=external)
-    sheet = equipment.field_sheet
-    if sheet is None or not sheet.is_active:
-        raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
-    if sheet.status not in {"draft", "in_progress"}:
-        raise HTTPException(
-            status_code=409,
-            detail="Sólo puede cambiarse la plantilla de la revisión vigente editable; una hoja completada o histórica se conserva",
-        )
-    if sheet.final_pdf_path or sheet.final_pdf_sha256 or sheet.certificates:
-        raise HTTPException(
-            status_code=409,
-            detail="La hoja ya tiene historial documental y no puede cambiar de plantilla",
-        )
-
-    discarded_id = sheet.id
-    discarded_template_key = sheet.template_key
-    predecessor_id = sheet.supersedes_field_sheet_id
-    sheet.is_current = False
-    db.flush()
-    db.delete(sheet)
-    db.flush()
-
-    order = equipment.work_order
-    previous_revision = equipment.field_sheets[0] if equipment.field_sheets else None
-    revision_number = (previous_revision.revision_number + 1) if previous_revision else 1
-    definition, version = get_template_snapshot(db, payload.template_key)
-    definition = canonicalize_new_field_sheet_snapshot(definition)
-    institution = get_or_create_institutional_configuration(db)
-    documentary_client = resolve_equipment_certificate_client(equipment, order)
-    capture_values = {
-        "instrument": equipment.instrument,
-        "brand": equipment.brand,
-        "serial_number": equipment.serial_number,
-        "internal_id": equipment.identification,
-        "model": equipment.model,
-    }
-    new_sheet = FieldSheet(
-        equipment_id=None,
-        lab_equipment_id=equipment.id,
-        work_order_id=None,
-        work_order_number=order.folio,
-        revision_number=revision_number,
-        is_current=True,
-        supersedes_field_sheet_id=predecessor_id,
-        template_key=payload.template_key,
-        template_definition_json=definition,
-        template_definition_version=version,
-        pdf_renderer_key=definition.get("pdf_renderer_key", CANONICAL_PDF_RENDERER_KEY),
-        pdf_renderer_version=int(definition.get("pdf_renderer_version") or CANONICAL_PDF_RENDERER_VERSION),
-        institutional_snapshot_json=institutional_snapshot(institution),
-        status="draft",
-        company=documentary_client["company"],
-        address=documentary_client["address"],
-        attention=documentary_client["attention"],
-        reception_date=order.reception_date,
-        equipment_general_condition=equipment.is_good_condition,
-        purchase_order_or_quotation=order.purchase_order,
-        initial_condition="BUENA" if equipment.is_good_condition else "REQUIERE REVISIÓN",
-        observations=(equipment.observations or "").strip() or None,
-        capture_values=capture_values,
-        lab_signature_session_id=order.signature_session_id,
-    )
-    new_sheet.results_rows = build_default_result_rows(definition)
-    new_sheet.signatures = _default_signature_slots(definition, new_sheet)
-    db.add(new_sheet)
-    db.flush()
-    write_audit_log(
-        db,
-        action="lab_field_sheet.template_changed",
-        entity="field_sheets",
-        entity_id=new_sheet.id,
-        user_id=user.id,
-        previous_values={"discarded_field_sheet_id": discarded_id, "template_key": discarded_template_key},
-        new_values={"template_key": payload.template_key, "revision_number": revision_number},
-    )
-    db.commit()
-    return read_lab_field_sheet(db, work_order_id, equipment_id)
-
-
-_FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES = {"received_signed", "in_progress", "ready_to_close"}
-
-
-def reopen_lab_field_sheet_directly(
-    db: Session, work_order_id: int, equipment_id: int, user: User, *, reason: str,
-) -> FieldSheetRead:
-    """Reapertura administrativa directa de UNA FieldSheet completed: el
-    actor YA posee lab_folios.resolve -- la misma autoridad que
-    resolve_operational_ticket ya exige para ejecutar el ticket
-    field_sheet_reopen (ver operational_tickets.py) -- así que desbloquea en
-    una sola llamada, sin crear ni pasar por un ticket artificial que
-    después alguien más tendría que resolver (a diferencia de un ticket,
-    aquí no aplica "TICKET_SELF_APPROVAL_FORBIDDEN": no hay una solicitud de
-    un tercero que aprobar, el propio actor ejerce su autoridad). Misma
-    ventana de elegibilidad que create_field_sheet_reopen_ticket
-    (OT todavía received_signed/in_progress/ready_to_close, nunca closed) y
-    mismos dos primitivos que ya usa esa rama del ticket
-    (_retire_current_field_sheet_revision + _clone_field_sheet_for_correction):
-    N permanece histórica intacta (status/final_pdf_path/final_pdf_sha256
-    sin tocar) y N+1 nace ya clonada y editable en la misma transacción."""
-    if not user_has_permission(user, "lab_folios.resolve"):
-        raise HTTPException(status_code=403, detail="REOPEN_NOT_AUTHORIZED")
-    equipment = get_lab_equipment(db, work_order_id, equipment_id, lock=True)
-    if equipment.work_order.status not in _FIELD_SHEET_REOPEN_ELIGIBLE_WORK_ORDER_STATUSES:
-        raise HTTPException(
-            status_code=409,
-            detail="La OT ya está cerrada; solicita la reapertura de la OT completa",
-        )
-    current = equipment.field_sheet
-    if current is None or current.status != "completed":
-        raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
-    _retire_current_field_sheet_revision(equipment)
-    _clone_field_sheet_for_correction(db, equipment, current, user)
-    if equipment.work_order.status == "ready_to_close":
-        equipment.work_order.status = "in_progress"
-    write_audit_log(
-        db,
-        action="lab_field_sheet.reopened_directly",
-        entity="field_sheets",
-        entity_id=current.id,
-        user_id=user.id,
-        previous_values={"status": "completed"},
-        new_values={"reason": reason.strip()},
-    )
-    db.commit()
-    return read_lab_field_sheet(db, work_order_id, equipment_id)
-
-
 def _complete_lab_field_sheet_uncommitted(
     db: Session, equipment: LabWorkOrderEquipment, sheet: FieldSheet, user: User
 ) -> None:
@@ -966,17 +614,6 @@ def complete_lab_field_sheet(
         raise HTTPException(status_code=404, detail="Hoja de campo LAB no encontrada")
     if sheet.status not in EDITABLE_STATUSES:
         raise HTTPException(status_code=409, detail="La hoja no puede completarse desde este estado")
-    # Sección 12 del encargo equipo-por-equipo: aunque la captura real
-    # proceda en draft (_ensure_capture_allowed), formalizar/congelar una
-    # hoja pre-firma queda prohibido -- eso sólo lo hace la operación final
-    # atómica (finalize_equipment_by_equipment_work_order), junto con la
-    # firma Cliente+Técnico, para que nunca exista un lab_signature_session_id
-    # NULL en una hoja completed.
-    if equipment.work_order.workflow_mode == "equipment_by_equipment" and equipment.work_order.status == "draft":
-        raise HTTPException(
-            status_code=409,
-            detail="La hoja se finaliza junto con la firma final de la OT (Finalizar registro de equipos)",
-        )
     _validate_ready_to_complete(sheet)
     from app.services.field_sheet_pdfs import guard_final_pdf_write
 

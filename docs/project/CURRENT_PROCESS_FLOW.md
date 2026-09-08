@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/flujo-general.md` y secuencias operativas de las especificaciones V2/V3
 >
-> Corte verificado: 2026-09-05
+> Corte verificado: 2026-09-02
 
 # Flujo operativo actual
 
@@ -527,61 +527,6 @@ Login interno técnico
 → app cierra detalle y vuelve a consultar el listado LAB
 ```
 
-### Modalidad alterna: equipo por equipo (2026-09-04)
-
-Al crear la OT se elige `workflow_mode` (`group`, default, el flujo de
-arriba; o `equipment_by_equipment`). La elección es backend-autoritativa y
-persistente -- sobrevive refresh/kill/logout/reload y nunca se reinterpreta
-para OT históricas.
-
-```text
-Login interno técnico
-→ OT's → Generar orden → elegir "Equipo por equipo"
-→ datos generales manuales una sola vez
-→ registrar equipo 1 → configurar servicio/folio/cliente documental
-→ Seleccionar Hoja de Campo → elegir template → capturar de verdad (draft/in_progress, sin firma todavía)
-→ guardar y volver → Registrar siguiente equipo (repetir) o Finalizar registro de equipos
-→ prevalidación backend (equipo sin hoja, hoja incompleta, folio no resuelto → blockers explícitos por equipo)
-→ sólo si no hay blockers: firma única Cliente + Técnico
-→ una sola operación atómica: completa cada hoja capturada, cierra la OT, registra entrega FULL con esas mismas firmas
-→ OT completed; nunca vuelve a aparecer Captura Técnica ni una firma/entrega aparte
-→ notificación work_order.completed a Captura, igual que el flujo group
-```
-
-Una OT `group` con equipos ya existentes puede convertirse a
-`equipment_by_equipment` (y viceversa) mediante la acción administrativa
-`POST /{id}/workflow-mode` (motivo obligatorio, sólo pre-firma, nunca
-cascada a hermanas) sin recrear ningún equipo ni FieldSheet; al reabrir
-Mobile, cada equipo existente ofrece de inmediato "Seleccionar Hoja de
-Campo" (o "Continuar captura" si ya tenía una hoja en curso) reconstruido
-desde backend.
-
-### Grupos mixtos y firma grupal mixta (2026-09-04)
-
-Al crear un grupo de N OT, la modalidad elegida se aplica a las N filas
-materializadas en esa sola operación. "Asignar OT extra" permite elegir una
-modalidad propia para la nueva OT, independiente de sus hermanas -- un
-mismo `root_work_order_id` puede mezclar `group`/`equipment_by_equipment`
-libremente.
-
-```text
-Grupo de 3 OT: OT1/OT2 equipment_by_equipment (captura ya lista en campo),
-OT3 group (su equipo va al laboratorio)
-→ Admin convierte OT3 a "group" con motivo (Cambiar modalidad de trabajo)
-→ prevalidación backend del scope grupal completo (cada miembro según su
-  propia modalidad -- OT1/OT2 "listas para terminar", OT3 "lista para
-  aceptar recepción", nunca se le exige FieldSheet completa)
-→ Cliente + Técnico firman UNA sola vez (firma grupal mixta)
-→ OT1/OT2: completadas + entrega FULL de su equipo
-→ OT3: sólo recepción firmada (received_signed), sin Delivery de este
-  evento -- continúa después su flujo group normal (captura → cierre →
-  entrega) de forma independiente
-```
-
-"UNA firma NO implica el mismo estado final para todas las OT": el
-resultado de cada una se decide por su propio `workflow_mode`, nunca por el
-hecho de haber compartido la firma.
-
 En Vinculado, el valor capturado se autoriza directamente sólo si el actor
 tiene `lab_folios.resolve`; de lo contrario queda `pending` y se conserva como
 `requested_folio` en el Ticket. La fecha de recepción se edita contra
@@ -632,13 +577,13 @@ compacta `sequence_number`. `204`/`404` cierran el detalle y refrescan desde el
 backend; `403`, `409` o red mantienen la OT local. Ninguna llamada usa
 `/api/service-orders/...`.
 
-Desde 2026-08-27, una OT `completed` sólo vuelve a edición mediante Ticket. El
-técnico solicita; la OT sigue cerrada; Calidad/autoridad rechaza o aprueba una
+Una OT `completed` vuelve a edición por Ticket aprobado o por reapertura
+administrativa directa autorizada. En la vía Ticket, el técnico solicita; la OT sigue cerrada; Calidad/autoridad rechaza o aprueba una
 política de firma; el backend crea snapshots de la cohorte de sesión y abre
 revisión N+1 sólo para ella;
 cada edición valida `edit_version`; los cambios estructurales invalidan la
 firma activa; el cierre exige firma válida, genera PDF nuevo y resuelve el
-Ticket. El PDF y firma anteriores permanecen consultables.
+Ticket cuando existe. La vía directa deja `reopen_ticket_id=NULL`. El PDF y firma anteriores permanecen consultables.
 Cuando la reapertura conserva una sesión histórica válida
 (`canSkipSignaturesAfterReopen=true`), el CTA de equipos continúa directamente
 a captura técnica y `openExisting`/`selectRelated`/realtime no interpretan la
@@ -646,22 +591,6 @@ coincidencia de cohorte como una captura de firmas activa. Si el backend
 invalida después esa condición, el mismo objeto actualizado recupera
 automáticamente el flujo normal de firmas, sin un bypass persistente en Mobile.
 - Certificados sin pago pueden liberarse sólo cuando el ETS no requiere pago; no se documentó una excepción financiera general independiente del modelo actual.
-
-Desde 2026-09-05, retirar la revisión `completed` vigente de una FieldSheet
-(Ticket `field_sheet_reopen`, o el equipo objetivo de la reapertura de
-cohorte completa de arriba) ya NO deja al equipo sin hoja vigente cuando no
-hay cambio de campo crítico del equipo de por medio: la siguiente revisión
-nace clonada y editable en la misma transacción, con el mismo contenido
-técnico ya capturado, para que el técnico corrija un dato sin recapturar.
-"Cambiar Hoja de Campo" sigue siendo la acción explícita para usar otra
-plantilla en su lugar. Ver `docs/architecture/LAB_WORK_ORDERS.md`.
-
-Un cliente operativo externo que intenta registrar equipo `accredited`/
-`traceable` sin un pool MYCA/MYCT resuelto para su `operator_client_id`
-recibe `409` en el alta, en vez de quedar silenciosamente `pending`;
-`linked` no cambia. "Distribuir folios disponibles" repara equipo legacy ya
-atrapado en ese `pending` desde antes de esta regla, todo-o-nada por
-prefijo dentro de una OT. Ver `docs/architecture/LAB_WORK_ORDERS.md`.
 
 ## Flujo de notificaciones operativas móviles V1
 
@@ -784,3 +713,8 @@ primera y reparenta solicitud/cadena/recursos compartidos; sin sobrevivientes
 deja la raíz de la solicitud en `NULL` y conserva `approved`, decisión,
 participantes y conversación. Todo ocurre antes del `DELETE` y dentro del mismo
 commit. El secuenciador no se reduce ni reutiliza folios eliminados.
+
+
+## Hotfix LAB — 2026-09-08
+
+Reapertura directa o por ticket preserve → draft con sesión original → correcciones ordinarias con edit_version → «Completar cambios» → completed y nuevo PDF OT. El cierre sincroniza automáticamente los datos heredados y crea/congela sólo las revisiones FieldSheet afectadas, en el mismo commit. No requiere una acción por hoja. La regeneración administrativa explícita sigue disponible como excepción separada, pero no participa en este flujo.

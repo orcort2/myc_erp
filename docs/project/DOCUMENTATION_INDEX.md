@@ -49,7 +49,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | --- | --- |
 | [`../architecture/CATALOGOS_SAT.md`](../architecture/CATALOGOS_SAT.md) | Fuente, importación, versionado y consumo de Catálogos SAT. |
 | [`../architecture/FIELD_SHEET_FIELD_REGISTRY.md`](../architecture/FIELD_SHEET_FIELD_REGISTRY.md) | Claves y semántica canónica de campos de Hojas de Campo. |
-| [`../architecture/FIELD_SHEET_PDF_RENDERER.md`](../architecture/FIELD_SHEET_PDF_RENDERER.md) | Autoridad única, renderer versionado, compatibilidad legacy y artefacto final inmutable de FieldSheets ERP/LAB. |
+| [`../architecture/FIELD_SHEET_PDF_RENDERER.md`](../architecture/FIELD_SHEET_PDF_RENDERER.md) | Autoridad única, renderer versionado, compatibilidad legacy y artefacto final congelado de FieldSheets ERP/LAB y excepción administrativa explícita sobre la revisión vigente. |
 | [`../architecture/PERMISSIONS_MATRIX.md`](../architecture/PERMISSIONS_MATRIX.md) | Roles/permisos declarados y brechas de aplicación. |
 | [`../architecture/files/INSTITUTIONAL_FILE_STORAGE.md`](../architecture/files/INSTITUTIONAL_FILE_STORAGE.md) | Contrato vigente de rutas, publicación atómica, checksum, temporales y custodia local institucional. |
 | [`../architecture/files/UPLOAD_SECURITY_POLICY.md`](../architecture/files/UPLOAD_SECURITY_POLICY.md) | Perfiles, límites y validaciones obligatorias para entradas PDF, imagen, texto, ZIP, OOXML y XML. |
@@ -58,7 +58,7 @@ En dos documentos del mismo nivel prevalece el de fecha verificable más recient
 | [`../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md`](../architecture/CATALOGO_INSTITUCIONAL_CAPACIDADES_PERMISOS_ERP_MYC_2026-08-04.md) | Snapshot técnico reproducible de ETAPA 2B: 36 superficies, 305 operaciones HTTP y 493 campos; no es autoridad funcional posterior a la validación. |
 | [`../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md`](../architecture/security/CAPABILITY_MODEL_GAPS_2026-08-04.md) | Brechas verificadas entre Catálogo Institucional, bootstrap `permissions.py` e inventario HTTP; base de revisión previa a cualquier RBAC dinámico. |
 | [`../architecture/security/API_ACCESS_CONTROL.md`](../architecture/security/API_ACCESS_CONTROL.md) | Deny-by-default, clasificación de rutas, excepciones públicas, JWT, portal/ownership y relación backend/frontend. |
-| [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible vigente de 477 operaciones FastAPI; conserva la fecha del archivo de origen y su política mínima verificable. |
+| [`../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`](../architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv) | Inventario reproducible vigente de 519 operaciones FastAPI; conserva la fecha del archivo de origen y su política mínima verificable. |
 | [`../architecture/INVOICE_WORKBENCH_CONTROLLER.md`](../architecture/INVOICE_WORKBENCH_CONTROLLER.md) | Controlador único, contexto explícito y composición obligatoria de la pestaña Facturación del ETS. |
 | [`../architecture/CALIBRATION_SCOPE_CONTRACT.md`](../architecture/CALIBRATION_SCOPE_CONTRACT.md) | Claves canónicas, propagación automática y compatibilidad de datos de `calibration_scope`. |
 | [`../architecture/COMPOSITE_CATALOG_SERVICES.md`](../architecture/COMPOSITE_CATALOG_SERVICES.md) | Relación normalizada, validaciones y expansión comercial→operativa de Servicios Compuestos. |

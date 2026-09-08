@@ -74,19 +74,9 @@ import {
   type LabClosureScope,
 } from '@/src/services/lab-work-order-closure';
 import {
-  getLabEquipmentByEquipmentPrevalidation,
   postLabCompletion,
-  postLabEquipmentByEquipmentFinalize,
   postLabSignatures,
-  postLabWorkOrderWorkflowModeChange,
 } from '@/src/services/lab-work-order-signature-submission';
-import {
-  getLabCertificateFolioDistributionPreview,
-  hasNoPendingCertificateFolios,
-  isFolioDistributionSufficient,
-  postLabCertificateFolioDistribution,
-  type LabCertificateFolioDistributionPreview,
-} from '@/src/services/lab-certificate-folio-distribution';
 import {
   flowContextLabel,
   inferStepForStatus,
@@ -95,13 +85,6 @@ import {
   statusPresentation,
   type Step,
 } from '@/src/services/lab-work-order-step';
-import {
-  canRegisterAnotherEquipmentByEquipmentUnit,
-  describeEquipmentByEquipmentAction,
-  formatEquipmentByEquipmentBlocker,
-  WORKFLOW_MODE_OPTIONS,
-  type EquipmentByEquipmentBlocker,
-} from '@/src/services/lab-equipment-by-equipment-flow';
 import type {
   GeneralData,
   LabDelivery,
@@ -112,7 +95,6 @@ import type {
   LabListItem,
   LabWorkOrder,
   LabWorkOrderGroupRequest,
-  LabWorkOrderWorkflowMode,
 } from '@/src/types/lab-work-order';
 import type { OperationalTicket } from '@/src/types/operational-ticket';
 
@@ -132,7 +114,7 @@ const emptyGeneral = (): GeneralData => ({
   purchase_order: '',
   notes: '',
 });
-type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery' | 'change_workflow_mode';
+type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery';
 type DeliveryPanelMode = 'closed' | 'full' | 'partial_execute' | 'partial_request';
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
@@ -217,8 +199,6 @@ export default function WorkOrdersScreen() {
   const [open, setOpen] = useState(false);
   const [groupMode, setGroupMode] = useState<'none' | 'request' | 'direct'>('none');
   const [groupQuantity, setGroupQuantity] = useState('2');
-  const [workflowMode, setWorkflowMode] = useState<LabWorkOrderWorkflowMode>('group');
-  const [equipmentByEquipmentBlockers, setEquipmentByEquipmentBlockers] = useState<EquipmentByEquipmentBlocker[] | null>(null);
   const [step, setStep] = useState<Step>('general');
   const [general, setGeneral] = useState<GeneralData>(emptyGeneral);
   const [workOrder, setWorkOrder] = useState<LabWorkOrder | null>(null);
@@ -232,15 +212,10 @@ export default function WorkOrdersScreen() {
   const [ticketReason, setTicketReason] = useState('');
   const [ticketDescription, setTicketDescription] = useState('');
   const [reopenSignaturePolicy, setReopenSignaturePolicy] = useState<'preserve' | 'invalidate'>('preserve');
-  const [newWorkflowMode, setNewWorkflowMode] = useState<LabWorkOrderWorkflowMode>('group');
   const [restoring, setRestoring] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
-  const [folioDistributionOpen, setFolioDistributionOpen] = useState(false);
-  const [folioDistributionPreview, setFolioDistributionPreview] = useState<LabCertificateFolioDistributionPreview | null>(null);
-  const [folioDistributionLoading, setFolioDistributionLoading] = useState(false);
-  const [folioDistributionSubmitting, setFolioDistributionSubmitting] = useState(false);
   const [generalErrors, setGeneralErrors] = useState<Record<string, string>>({});
   const [equipmentErrors, setEquipmentErrors] = useState<Record<string, string>>({});
   const [deliveryPanel, setDeliveryPanel] = useState<DeliveryPanelMode>('closed');
@@ -429,7 +404,6 @@ export default function WorkOrdersScreen() {
     canCaptureFieldSheets,
     canDownloadLabPackages,
     canResolveLabFolios,
-    canReopenFieldSheetDirectly,
     canOverrideReceptionDate,
     canRegisterLabDelivery,
     canVoidLabDelivery,
@@ -466,8 +440,6 @@ export default function WorkOrdersScreen() {
 
   function startNew() {
     setGroupMode('none');
-    setWorkflowMode('group');
-    setEquipmentByEquipmentBlockers(null);
     setGeneral(emptyGeneral());
     setWorkOrder(null);
     setStep('general');
@@ -600,7 +572,7 @@ export default function WorkOrdersScreen() {
   }
 
   async function submitOperationalAction() {
-    if (!workOrder || !ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery' && ticketDialogMode !== 'change_workflow_mode')) return;
+    if (!workOrder || !ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery')) return;
     if (ticketDialogMode === 'reopen') return requestReopening();
     if (ticketDialogMode === 'reopen_direct') return reopenDirectly();
     setBusy(true);
@@ -609,20 +581,6 @@ export default function WorkOrdersScreen() {
         if (!voidingDelivery) return;
         await voidDelivery(voidingDelivery.id, ticketReason.trim());
         setVoidingDelivery(null);
-      } else if (ticketDialogMode === 'change_workflow_mode') {
-        // Cierre "grupos mixtos": backend es la única autoridad -- tras
-        // éxito se reconstruye TODO desde su respuesta (workflow_mode +
-        // equipment + FieldSheets + status), nunca un parche local del
-        // estado anterior.
-        const detail = await postLabWorkOrderWorkflowModeChange({
-          newWorkflowMode: newWorkflowMode,
-          reason: ticketReason.trim(),
-          request,
-          workOrder,
-        });
-        setWorkOrder(detail);
-        publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
-        Alert.alert('Modalidad actualizada', `La OT ${detail.folio} ahora usa la modalidad "${WORKFLOW_MODE_OPTIONS.find((option) => option.value === detail.workflow_mode)?.title ?? detail.workflow_mode}".`);
       } else if (ticketDialogMode === 'cancel') {
         const detail = await request<LabWorkOrder>(
           `/mobile/v1/technician/lab-work-orders/${workOrder.id}/cancel`,
@@ -693,50 +651,6 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  /** "Distribuir folios disponibles": preview de sólo lectura ANTES de
-   * ofrecer confirmar -- nunca se abre la confirmación a ciegas. */
-  async function openFolioDistribution() {
-    if (!workOrder) return;
-    setFolioDistributionOpen(true);
-    setFolioDistributionPreview(null);
-    setFolioDistributionLoading(true);
-    try {
-      const preview = await getLabCertificateFolioDistributionPreview({ request, workOrder });
-      setFolioDistributionPreview(preview);
-    } catch (error) {
-      setFolioDistributionOpen(false);
-      Alert.alert('No fue posible obtener el estado de folios', error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally {
-      setFolioDistributionLoading(false);
-    }
-  }
-
-  /** Backend es la única autoridad de todo-o-nada; tras éxito se refetch
-   * completo de la OT (nunca un parche local de folio_status/certificate_folio
-   * equipo por equipo). */
-  async function confirmFolioDistribution() {
-    if (!workOrder || !folioDistributionPreview) return;
-    setFolioDistributionSubmitting(true);
-    try {
-      const result = await postLabCertificateFolioDistribution({ request, workOrder });
-      const orderId = workOrder.id;
-      setFolioDistributionOpen(false);
-      setFolioDistributionPreview(null);
-      await openExisting(orderId);
-      publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: orderId, work_order_id: orderId });
-      Alert.alert(
-        'Folios distribuidos',
-        result.assigned.length > 0
-          ? `Se asignaron ${result.assigned.length} folio(s): ${result.assigned.map((item) => item.folio).join(', ')}.`
-          : 'No había equipo pendiente por asignar.',
-      );
-    } catch (error) {
-      Alert.alert('No fue posible distribuir los folios', error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally {
-      setFolioDistributionSubmitting(false);
-    }
-  }
-
   async function createWorkOrder() {
     if (!general.client_name.trim()) return;
     setBusy(true);
@@ -761,7 +675,7 @@ export default function WorkOrdersScreen() {
           state_name: general.state_name || null,
           purchase_order: general.purchase_order || null,
           notes: general.notes || null,
-          ...(workOrder ? { expected_edit_version: workOrder.edit_version } : { workflow_mode: workflowMode }),
+          ...(workOrder ? { expected_edit_version: workOrder.edit_version } : {}),
           ...(groupMode !== 'none' ? { quantity: Number(groupQuantity) } : {}),
         }),
       });
@@ -1019,12 +933,12 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  async function addAdditional(additionalWorkflowMode: LabWorkOrderWorkflowMode) {
+  async function addAdditional() {
     if (!workOrder) return;
     setBusy(true);
     try {
       const detail = await request<LabWorkOrder>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/additional?workflow_mode=${additionalWorkflowMode}`,
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/additional`,
         { method: 'POST' },
       );
       setWorkOrder(detail);
@@ -1034,23 +948,6 @@ export default function WorkOrdersScreen() {
     } finally {
       setBusy(false);
     }
-  }
-
-  // Sección 4 del cierre "grupos mixtos": la OT extra elige SU PROPIA
-  // modalidad, nunca hereda forzosamente la de la OT origen -- el usuario
-  // decide aquí mismo, antes de crear la fila.
-  function confirmAddAdditional() {
-    Alert.alert(
-      'Modalidad de la OT extra',
-      '¿Con qué modalidad se registrará la nueva OT?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        ...WORKFLOW_MODE_OPTIONS.map((option) => ({
-          text: option.title,
-          onPress: () => { void addAdditional(option.value); },
-        })),
-      ],
-    );
   }
 
   function openSignatureFlow(scope: LabClosureScope) {
@@ -1107,8 +1004,19 @@ export default function WorkOrdersScreen() {
   // atómica (confirm_draft_completion=true). Si alguna no pasa validación
   // (LAB_DRAFT_SHEETS_INVALID), no se completa ni se cierra nada -- se
   // muestran los blockers exactos y la OT sigue abierta.
-  async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false) {
+  async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false, confirmReopenedChanges = false) {
     if (!workOrder) return;
+    if (workOrder.revision_number > 1 && !confirmReopenedChanges && !confirmDraftCompletion) {
+      Alert.alert(
+        'Completar cambios',
+        'Al completar los cambios, la información actualizada se aplicará automáticamente a los equipos y documentos involucrados. Las versiones anteriores permanecerán disponibles para consulta y trazabilidad.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Completar cambios', onPress: () => { void completeClosure(scope, false, true); } },
+        ],
+      );
+      return;
+    }
     setBusy(true);
     try {
       const detail = await postLabCompletion({ confirmDraftCompletion, request, scope, workOrder });
@@ -1141,62 +1049,6 @@ export default function WorkOrdersScreen() {
       }
       Alert.alert('No fue posible finalizar el grupo', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
-      setBusy(false);
-    }
-  }
-
-  // Sección 14 del encargo equipo-por-equipo: prevalidación backend ANTES de
-  // abrir la pantalla de firma. Si hay blockers, nunca se abre la firma --
-  // se muestran en el mismo paso 'signatures'.
-  async function openEquipmentByEquipmentFinalize() {
-    if (!workOrder) return;
-    setBusy(true);
-    try {
-      const prevalidation = await getLabEquipmentByEquipmentPrevalidation({ request, workOrder });
-      if (!prevalidation.ready) {
-        setEquipmentByEquipmentBlockers(prevalidation.blockers);
-        setStep('signatures');
-        return;
-      }
-      setEquipmentByEquipmentBlockers(null);
-      setSignatureFlowState(() => reconcileSignatureFlowState(null, {
-        clientName: workOrder.contact_name ?? '',
-        rootWorkOrderId: workOrder.id,
-        technicianName: user?.full_name ?? '',
-      }));
-      setStep('signatures');
-    } catch (error) {
-      Alert.alert('No fue posible validar la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Operación atómica única (sección 17): firma -> completa hojas -> cierra
-  // OT -> entrega FULL con las mismas firmas. Al terminar, MobileSignatureFlow
-  // muestra su propia confirmación y, vía onComplete, limpia signatureFlowState;
-  // aquí se avanza el paso a 'completed' de inmediato (nunca vuelve a
-  // Technical Capture ni a una pantalla de Delivery aparte, sección 31).
-  async function applyEquipmentByEquipmentFinalize(payload: SignaturePayload, capturedContextId: number) {
-    if (signatureSubmitRef.current) throw new Error('Las firmas ya se están guardando.');
-    if (!workOrder || workOrder.id !== capturedContextId) {
-      setSignatureFlowState(null);
-      setSignatureDrawing(false);
-      throw new Error('La OT activa cambió. Captura nuevamente las firmas.');
-    }
-    signatureSubmitRef.current = true;
-    setBusy(true);
-    const signedAt = new Date().toISOString();
-    try {
-      const detail = await postLabEquipmentByEquipmentFinalize({ payload, request, signedAt, workOrder });
-      setWorkOrder(detail);
-      setStep('completed');
-      publishLocalChange({ event_type: 'work_order.completed', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
-      await refresh();
-    } catch (error) {
-      throw new Error(error instanceof Error ? error.message : 'No fue posible finalizar el registro de equipos. Intenta nuevamente.');
-    } finally {
-      signatureSubmitRef.current = false;
       setBusy(false);
     }
   }
@@ -1472,20 +1324,6 @@ export default function WorkOrdersScreen() {
                   {Object.values(generalErrors).some(Boolean) && (
                     <AlertBanner tone="danger">Revisa los campos marcados antes de continuar.</AlertBanner>
                   )}
-                  {!workOrder && groupMode === 'none' && (
-                    <FormSection title="Modalidad de trabajo">
-                      {WORKFLOW_MODE_OPTIONS.map((option) => (
-                        <Pressable
-                          key={option.value}
-                          onPress={() => setWorkflowMode(option.value)}
-                          style={[styles.workflowModeCard, workflowMode === option.value && styles.workflowModeCardSelected]}
-                        >
-                          <Text style={styles.workflowModeTitle}>{option.title}</Text>
-                          <Text style={styles.workflowModeDescription}>{option.description}</Text>
-                        </Pressable>
-                      ))}
-                    </FormSection>
-                  )}
                   <FormSection title="Servicio y cliente">
                     {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <MycDatePickerField error={generalErrors.reception_date} label="Fecha de recepción *" value={general.reception_date} onChange={(value) => { setGeneral({ ...general, reception_date: value }); setGeneralErrors((current) => ({ ...current, reception_date: '' })); }} />
@@ -1571,71 +1409,38 @@ export default function WorkOrdersScreen() {
 
               {workOrder && step === 'capture' && (
                 <FadeIn transitionKey={step}>
-                  {!!workOrder.reopen_ticket_id && editable && (
+                  {workOrder.revision_number > 1 && editable && (
                     <SecondaryButton icon="pencil-outline" label="Editar datos generales" onPress={() => setStep('general')} />
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
                     const summary = describeEquipmentSummary(item, workOrder.client_name);
-                    const equipmentByEquipmentAction = workOrder.workflow_mode === 'equipment_by_equipment'
-                      ? describeEquipmentByEquipmentAction(item)
-                      : null;
                     return (
-                      <Pressable
-                        key={item.id}
-                        style={styles.equipmentRow}
-                        onPress={() => {
-                          if (equipmentByEquipmentAction) { setStep('technical'); return; }
-                          if (editable && canManageEquipment) showEquipmentEditor(item);
-                        }}
-                      >
+                      <Pressable key={item.id} style={styles.equipmentRow} onPress={() => editable && canManageEquipment && showEquipmentEditor(item)}>
                         <View style={styles.flex}>
                           <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
                           <Text style={styles.equipmentMeta}>{item.brand} · {item.identification} · {item.serial_number}</Text>
                           <Text style={styles.equipmentMeta}>{summary.client} · {summary.service}{summary.linkedCompany ? ` (${summary.linkedCompany})` : ''} · Folio: {summary.folio}</Text>
-                          {/* Sección 5/29 del encargo equipo-por-equipo: el estado se
-                              reconstruye siempre desde field_sheet_id/field_sheet_status
-                              (describeEquipmentByEquipmentAction), nunca desde el evento
-                              de haber guardado el equipo hace un momento. */}
-                          {equipmentByEquipmentAction && (
-                            <Text style={styles.equipmentByEquipmentAction}>{equipmentByEquipmentAction.label}</Text>
-                          )}
                         </View>
                         <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
                       </Pressable>
                     );
                   })}
                   {!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}
-                  {workOrder.workflow_mode === 'equipment_by_equipment' ? (
-                    <OperationalActionStack>
-                      {editable && canManageEquipment && canRegisterAnotherEquipmentByEquipmentUnit(workOrder.equipment.length) && (
-                        <SecondaryButton icon="plus" label="Registrar siguiente equipo" onPress={() => showEquipmentEditor('new')} />
-                      )}
-                      <PrimaryButton
-                        disabled={!workOrder.equipment.length}
-                        icon="check-circle"
-                        label="Finalizar registro de equipos"
-                        onPress={() => { void openEquipmentByEquipmentFinalize(); }}
-                      />
-                    </OperationalActionStack>
-                  ) : (
-                    <>
-                      {/* Fase 3: la recepción se firma ANTES de la captura técnica.
-                          Una OT reabierta con "preserve" ya conserva una firma de
-                          recepción válida (canSkipSignaturesAfterReopen) -- no debe
-                          pedirse otra, así que salta directo a captura técnica. */}
-                      <OperationalActionStack>
-                        {editable && canManageEquipment && workOrder.equipment.length < 10 && <SecondaryButton icon="plus" label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />}
-                        {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton icon="file-plus-outline" label="Asignar OT extra" onPress={confirmAddAdditional} />}
-                        <PrimaryButton
-                          disabled={!workOrder.equipment.length}
-                          icon="arrow-right-circle"
-                          label={canSkipSignaturesAfterReopen(workOrder) ? 'Continuar proceso' : 'Continuar a recepción de equipos'}
-                          onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
-                        />
-                      </OperationalActionStack>
-                    </>
-                  )}
+                  {/* Fase 3: la recepción se firma ANTES de la captura técnica.
+                      Una OT reabierta con "preserve" ya conserva una firma de
+                      recepción válida (canSkipSignaturesAfterReopen) -- no debe
+                      pedirse otra, así que salta directo a captura técnica. */}
+                  <OperationalActionStack>
+                    {editable && canManageEquipment && workOrder.equipment.length < 10 && <SecondaryButton icon="plus" label="+ Añadir equipo" onPress={() => showEquipmentEditor('new')} />}
+                    {editable && canCreateWorkOrders && workOrder.equipment.length === 10 && <AdministrativeButton icon="file-plus-outline" label="Asignar OT extra" onPress={addAdditional} />}
+                    <PrimaryButton
+                      disabled={!workOrder.equipment.length}
+                      icon="arrow-right-circle"
+                      label={canSkipSignaturesAfterReopen(workOrder) ? 'Continuar proceso' : 'Continuar a recepción de equipos'}
+                      onPress={() => setStep(canSkipSignaturesAfterReopen(workOrder) ? 'technical' : 'signatures')}
+                    />
+                  </OperationalActionStack>
                 </FadeIn>
               )}
 
@@ -1650,7 +1455,6 @@ export default function WorkOrdersScreen() {
                     canCapture={canCaptureFieldSheets}
                     canCreateTickets={canCreateTickets}
                     canOverrideReceptionDate={canOverrideReceptionDate}
-                    canReopenFieldSheetDirectly={canReopenFieldSheetDirectly}
                     external={user.actor_type === 'client'}
                     onUpdated={setWorkOrder}
                     request={request}
@@ -1658,16 +1462,7 @@ export default function WorkOrdersScreen() {
                   />
                   <OperationalActionStack>
                     {editable && <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />}
-                    {/* equipment_by_equipment nunca pasa por 'review'/Technical
-                        Capture-como-cierre -- "Finalizar registro de equipos"
-                        (paso 'capture') es la única puerta de cierre, y ya
-                        formaliza firma+hojas+entrega en una sola operación
-                        atómica (sección 31 del encargo: nunca vuelve a
-                        aparecer una etapa manual de Captura Técnica ni cierre
-                        aparte para esta modalidad). */}
-                    {workOrder.workflow_mode !== 'equipment_by_equipment' && canExecuteWorkOrders && (
-                      <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />
-                    )}
+                    {canExecuteWorkOrders && <PrimaryButton icon="arrow-right-circle" label="Continuar a cierre" onPress={() => setStep('review')} />}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete disponible" onPress={() => downloadPackage('share')} />}
                   </OperationalActionStack>
                 </FadeIn>
@@ -1685,7 +1480,7 @@ export default function WorkOrdersScreen() {
                     <SecondaryButton icon="clipboard-edit-outline" label="Revisar captura técnica" onPress={() => setStep('technical')} />
                     {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <AdministrativeButton icon="send" label="Solicitar excepción de cierre parcial" onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }} />}
                     {canCloseWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
-                      <PrimaryButton icon="check-circle" label="Cerrar OT individual reabierta" onPress={() => completeClosure(closureScope)} />
+                      <PrimaryButton icon="check-circle" label="Completar cambios" onPress={() => completeClosure(closureScope)} />
                     ) : canCloseWorkOrders ? (
                       <PrimaryButton
                         icon="check-circle"
@@ -1703,7 +1498,7 @@ export default function WorkOrdersScreen() {
                   captura técnica. La firma representa que MYC y el cliente
                   aceptan los equipos y condiciones recibidos, no que el
                   trabajo técnico terminó. */}
-              {workOrder && step === 'signatures' && workOrder.status === 'draft' && workOrder.workflow_mode !== 'equipment_by_equipment' && (
+              {workOrder && step === 'signatures' && workOrder.status === 'draft' && !canSkipSignaturesAfterReopen(workOrder) && (
                 <FadeIn transitionKey={step}>
                 {signatureFlowState == null ? (
                   <>
@@ -1773,51 +1568,6 @@ export default function WorkOrdersScreen() {
                     <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />
                   </View>
                 )}
-                </FadeIn>
-              )}
-
-              {/* Sección 14/16 del encargo equipo-por-equipo: una sola firma
-                  Cliente+Técnico formaliza recepción + FieldSheets + entrega.
-                  Prevalidación primero (blockers antes de abrir la firma);
-                  después reutiliza EXACTAMENTE el mismo MobileSignatureFlow
-                  que el flujo group -- nunca un segundo sistema de firmas. */}
-              {workOrder && step === 'signatures' && workOrder.workflow_mode === 'equipment_by_equipment' && (
-                <FadeIn transitionKey={step}>
-                  {signatureFlowState == null ? (
-                    <>
-                      <Text style={styles.sectionTitle}>Finalizar registro de equipos</Text>
-                      {equipmentByEquipmentBlockers && equipmentByEquipmentBlockers.length > 0 ? (
-                        <>
-                          <AlertBanner tone="danger">Resuelve lo siguiente antes de firmar:</AlertBanner>
-                          {equipmentByEquipmentBlockers.map((blocker, index) => (
-                            <Text key={`${blocker.equipment_id ?? 'ot'}-${index}`} style={styles.notice}>
-                              {formatEquipmentByEquipmentBlocker(blocker)}
-                            </Text>
-                          ))}
-                          <OperationalActionStack>
-                            <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => { setEquipmentByEquipmentBlockers(null); setStep('capture'); }} />
-                          </OperationalActionStack>
-                        </>
-                      ) : (
-                        <Text style={styles.notice}>La firma de Cliente y Técnico formaliza la recepción, las hojas de campo capturadas y la entrega de los equipos en un solo paso.</Text>
-                      )}
-                    </>
-                  ) : signatureFlowState.rootWorkOrderId === workOrder.id ? (
-                    <MobileSignatureFlow
-                      currentContextId={workOrder.id}
-                      key={signatureFlowState.rootWorkOrderId}
-                      onComplete={() => { setSignatureFlowState(null); setSignatureDrawing(false); }}
-                      onDrawingChange={setSignatureDrawing}
-                      onStateChange={setSignatureFlowState}
-                      onSubmit={applyEquipmentByEquipmentFinalize}
-                      state={signatureFlowState}
-                    />
-                  ) : (
-                    <View style={styles.errorState}>
-                      <Text style={styles.errorText}>La captura anterior se descartó porque cambió el contexto de la OT.</Text>
-                      <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={() => setStep('capture')} />
-                    </View>
-                  )}
                 </FadeIn>
               )}
 
@@ -1965,36 +1715,21 @@ export default function WorkOrdersScreen() {
                     {workOrder.status !== 'cancelled' && <SecondaryButton icon="share-variant" label={`Compartir OT ${workOrder.folio}`} onPress={() => downloadPdf('share')} />}
                     {canDownloadLabPackages && <SecondaryButton icon="download" label="Descargar paquete de esta OT" onPress={() => downloadPackage('share', false)} />}
                     {canDownloadLabPackages && workOrder.related_work_orders.length > 1 && <SecondaryButton icon="download" label="Descargar paquete del grupo" onPress={() => downloadPackage('share', true)} />}
-                    {/* "Reabrir orden" (canReopenDirectly) vive en Acciones
-                        administrativas, justo después de "Anular entrega" --
-                        sigue siendo una acción administrativa, no operativa.
-                        Aquí sólo queda la solicitud de reapertura sin
-                        autoridad directa. */}
-                    {workOrder.status !== 'cancelled' && !canReopenDirectly && canCreateTickets && (
-                      <AdministrativeButton icon="send" label="Solicitar reapertura" onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }} />
+                    {workOrder.status !== 'cancelled' && (
+                      canReopenDirectly ? (
+                        <AdministrativeButton icon="lock-open-outline" label="Reabrir orden" onPress={() => { setTicketDialogMode('reopen_direct'); setReopenSignaturePolicy('preserve'); setTicketOpen(true); }} />
+                      ) : canCreateTickets ? (
+                        <AdministrativeButton icon="send" label="Solicitar reapertura" onPress={() => { setTicketDialogMode('reopen'); setTicketOpen(true); }} />
+                      ) : null
                     )}
                     {workOrder.status === 'cancelled' && canCancel && !!workOrder.previous_status && (
                       <AdministrativeButton icon="restore" label="Restaurar OT" loading={restoring} onPress={() => confirmRestoreWorkOrder(workOrder)} />
-                    )}
-                    {/* Cierre "grupos mixtos" sección 6-9: sólo procede antes
-                        de firmar la recepción -- backend es la autoridad real
-                        de este guard, este `&&` sólo evita el viaje inútil. */}
-                    {canCancel && workOrder.status === 'draft' && workOrder.signature_session_id == null && (
-                      <AdministrativeButton
-                        icon="swap-horizontal"
-                        label="Cambiar modalidad de trabajo"
-                        onPress={() => {
-                          setNewWorkflowMode(workOrder.workflow_mode === 'group' ? 'equipment_by_equipment' : 'group');
-                          setTicketDialogMode('change_workflow_mode');
-                          setTicketOpen(true);
-                        }}
-                      />
                     )}
                   </OperationalActionStack>
                 </>
               )}
 
-              {workOrder && (canDelete || canReopenDirectly) && (
+              {workOrder && canDelete && (
                 <View style={styles.dangerZone}>
                   <Pressable onPress={() => setAdminActionsOpen((value) => !value)}>
                     <Text style={styles.dangerTitle}>Acciones administrativas {adminActionsOpen ? '▾' : '▸'}</Text>
@@ -2013,23 +1748,6 @@ export default function WorkOrdersScreen() {
                           }}
                         />
                       </OperationalActionStack>
-                    )}
-                    {workOrder.status !== 'cancelled' && canReopenDirectly && (
-                      <OperationalActionStack>
-                        <AdministrativeButton
-                          disabled={busy || hasActiveDeliveryForCurrentWorkOrder}
-                          icon="lock-open-outline"
-                          label="Reabrir orden"
-                          onPress={() => {
-                            setTicketDialogMode('reopen_direct');
-                            setReopenSignaturePolicy('preserve');
-                            setTicketOpen(true);
-                          }}
-                        />
-                      </OperationalActionStack>
-                    )}
-                    {workOrder.status !== 'cancelled' && canReopenDirectly && hasActiveDeliveryForCurrentWorkOrder && (
-                      <Text style={styles.dangerDescription}>Anula primero la entrega registrada para poder reabrir esta orden.</Text>
                     )}
                     {hasActiveDeliveryForCurrentWorkOrder && (
                       <Text style={styles.dangerDescription}>
@@ -2051,32 +1769,16 @@ export default function WorkOrdersScreen() {
                         />
                       </OperationalActionStack>
                     )}
-                    {/* Reparación de equipo legacy externo atrapado en
-                        folio_status=pending desde antes del bloqueo 409 en
-                        el alta -- nunca visible para cliente operativo,
-                        misma autoridad administrativa que canCancel. */}
-                    {canCancel && (
-                      <OperationalActionStack>
-                        <AdministrativeButton
-                          disabled={busy}
-                          icon="ticket-confirmation-outline"
-                          label="Distribuir folios disponibles"
-                          onPress={() => void openFolioDistribution()}
-                        />
-                      </OperationalActionStack>
-                    )}
-                    {canDelete && <>
-                      <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
-                      <OperationalActionStack>
-                        <DangerButton
-                          disabled={busy || deleting || hasActiveDeliveryForCurrentWorkOrder}
-                          icon="trash-can-outline"
-                          label="Eliminar orden de trabajo"
-                          loading={deleting}
-                          onPress={() => confirmWorkOrderDeletion(workOrder)}
-                        />
-                      </OperationalActionStack>
-                    </>}
+                    <Text style={styles.dangerDescription}>La eliminación retira únicamente esta OT LAB y conserva los recursos compartidos por sus OT hermanas.</Text>
+                    <OperationalActionStack>
+                      <DangerButton
+                        disabled={busy || deleting || hasActiveDeliveryForCurrentWorkOrder}
+                        icon="trash-can-outline"
+                        label="Eliminar orden de trabajo"
+                        loading={deleting}
+                        onPress={() => confirmWorkOrderDeletion(workOrder)}
+                      />
+                    </OperationalActionStack>
                   </>}
                 </View>
               )}
@@ -2151,7 +1853,7 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
-          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly) || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery) || (ticketDialogMode === 'change_workflow_mode' && canCancel)) && (
+          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly) || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery)) && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -2163,9 +1865,9 @@ export default function WorkOrdersScreen() {
                   keyboardShouldPersistTaps="handled"
                 >
                   <View style={styles.overlayHandle} />
-                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'void_delivery' ? 'ANULACIÓN DE ACUSE' : ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : ticketDialogMode === 'change_workflow_mode' ? 'CAMBIO DE MODALIDAD' : 'TICKET DE REAPERTURA'}</Text>
-                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'void_delivery' ? 'Anular entrega registrada' : ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : ticketDialogMode === 'change_workflow_mode' ? 'Cambiar modalidad de trabajo' : '¿Por qué necesitas modificar esta orden?'}</Text>
-                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'void_delivery' ? 'La firma y el PDF se conservarán en el historial.' : ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : ticketDialogMode === 'change_workflow_mode' ? 'Sólo procede antes de firmar la recepción. No afecta a ninguna otra OT del grupo.' : 'La solicitud requiere resolución de Admin.'}</Text>
+                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'void_delivery' ? 'ANULACIÓN DE ACUSE' : ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : 'TICKET DE REAPERTURA'}</Text>
+                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'void_delivery' ? 'Anular entrega registrada' : ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : '¿Por qué necesitas modificar esta orden?'}</Text>
+                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'void_delivery' ? 'La firma y el PDF se conservarán en el historial.' : ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : 'La solicitud requiere resolución de Admin.'}</Text>
                   {ticketDialogMode === 'void_delivery' && voidingDelivery && (() => {
                     // La entrega es un evento atómico -- si esta exhibición
                     // también trae equipos de OT hermanas, anularla las
@@ -2190,22 +1892,8 @@ export default function WorkOrdersScreen() {
                       <Pressable onPress={() => setReopenSignaturePolicy('invalidate')} style={[styles.choice, reopenSignaturePolicy === 'invalidate' && styles.choiceActive]}><Text>Requerir nueva firma</Text></Pressable>
                     </View>
                   )}
-                  {ticketDialogMode === 'change_workflow_mode' && workOrder && (
-                    <FormSection title={`Modalidad actual: ${WORKFLOW_MODE_OPTIONS.find((option) => option.value === workOrder.workflow_mode)?.title ?? workOrder.workflow_mode}`}>
-                      {WORKFLOW_MODE_OPTIONS.map((option) => (
-                        <Pressable
-                          key={option.value}
-                          onPress={() => setNewWorkflowMode(option.value)}
-                          style={[styles.workflowModeCard, newWorkflowMode === option.value && styles.workflowModeCardSelected]}
-                        >
-                          <Text style={styles.workflowModeTitle}>{option.title}</Text>
-                          <Text style={styles.workflowModeDescription}>{option.description}</Text>
-                        </Pressable>
-                      ))}
-                    </FormSection>
-                  )}
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
-                  {ticketDialogMode !== 'void_delivery' && ticketDialogMode !== 'change_workflow_mode' && <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />}
+                  {ticketDialogMode !== 'void_delivery' && <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />}
                   <ActionRow>
                     <SecondaryButton
                       disabled={busy}
@@ -2234,11 +1922,6 @@ export default function WorkOrdersScreen() {
                           || (
                             !ticketDescription.trim()
                             && ticketDialogMode !== 'void_delivery'
-                            && ticketDialogMode !== 'change_workflow_mode'
-                          )
-                          || (
-                            ticketDialogMode === 'change_workflow_mode'
-                            && newWorkflowMode === workOrder?.workflow_mode
                           )
                         }
                         icon={
@@ -2246,92 +1929,19 @@ export default function WorkOrdersScreen() {
                             ? 'undo'
                             : ticketDialogMode === 'reopen_direct'
                               ? 'lock-open-outline'
-                              : ticketDialogMode === 'change_workflow_mode'
-                                ? 'swap-horizontal'
-                                : 'send'
+                              : 'send'
                         }
                         label={
                           ticketDialogMode === 'void_delivery'
                             ? 'Anular acuse'
                             : ticketDialogMode === 'reopen_direct'
                               ? 'Reabrir orden'
-                              : ticketDialogMode === 'change_workflow_mode'
-                                ? 'Cambiar modalidad'
-                                : 'Enviar solicitud'
+                              : 'Enviar solicitud'
                         }
                         loading={busy}
                         onPress={() => {
                           void submitOperationalAction();
                         }}
-                      />
-                    )}
-                  </ActionRow>
-                </ScrollView>
-              </KeyboardAvoidingView>
-            </View>
-          )}
-
-          {folioDistributionOpen && canCancel && workOrder && (
-            <View style={styles.overlay}>
-              <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={styles.overlayCard}
-              >
-                <ScrollView
-                  automaticallyAdjustKeyboardInsets
-                  contentContainerStyle={styles.overlayContent}
-                  keyboardShouldPersistTaps="handled"
-                >
-                  <View style={styles.overlayHandle} />
-                  <Text style={styles.sectionEyebrow}>FOLIOS DE CERTIFICADO</Text>
-                  <Text style={styles.sectionTitle}>Distribuir folios disponibles</Text>
-                  <Text style={styles.sectionDescription}>
-                    Repara equipo de cliente operativo externo atrapado sin folio MYCA/MYCT, usando
-                    únicamente folios ya autorizados para este cliente.
-                  </Text>
-                  {folioDistributionLoading && <ActivityIndicator />}
-                  {!folioDistributionLoading && folioDistributionPreview && (
-                    <>
-                      <Text style={styles.detail}>Acreditado (MYCA) pendiente: {folioDistributionPreview.pending_accredited_count}</Text>
-                      <Text style={styles.detail}>Trazable (MYCT) pendiente: {folioDistributionPreview.pending_traceable_count}</Text>
-                      <Text style={styles.detail}>Disponibles MYCA: {folioDistributionPreview.available_myca_count}</Text>
-                      <Text style={styles.detail}>Disponibles MYCT: {folioDistributionPreview.available_myct_count}</Text>
-                      {hasNoPendingCertificateFolios(folioDistributionPreview) && (
-                        <AlertBanner tone="info">Esta OT no tiene equipo pendiente de folio MYCA/MYCT.</AlertBanner>
-                      )}
-                      {!hasNoPendingCertificateFolios(folioDistributionPreview) && !isFolioDistributionSufficient(folioDistributionPreview) && (
-                        <AlertBanner tone="danger">
-                          El pool disponible no alcanza para todo el equipo pendiente. Autoriza más folios
-                          antes de continuar -- no se asignará nada.
-                        </AlertBanner>
-                      )}
-                      {!hasNoPendingCertificateFolios(folioDistributionPreview) && isFolioDistributionSufficient(folioDistributionPreview) && (
-                        <FormSection title="Asignación propuesta">
-                          {folioDistributionPreview.items.map((item) => (
-                            <Text key={item.equipment_id} style={styles.detail}>
-                              {item.position}. {item.instrument} -- {item.prefix}: {item.folio ?? 'sin folio disponible'}
-                            </Text>
-                          ))}
-                        </FormSection>
-                      )}
-                    </>
-                  )}
-                  <ActionRow>
-                    <SecondaryButton
-                      disabled={folioDistributionSubmitting}
-                      icon="close"
-                      label="Cerrar"
-                      onPress={() => { setFolioDistributionOpen(false); setFolioDistributionPreview(null); }}
-                    />
-                    {folioDistributionPreview
-                      && !hasNoPendingCertificateFolios(folioDistributionPreview)
-                      && isFolioDistributionSufficient(folioDistributionPreview) && (
-                      <AdministrativeButton
-                        disabled={folioDistributionSubmitting}
-                        icon="ticket-confirmation-outline"
-                        label="Distribuir folios"
-                        loading={folioDistributionSubmitting}
-                        onPress={() => void confirmFolioDistribution()}
                       />
                     )}
                   </ActionRow>
@@ -2790,37 +2400,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     gap: 4,
     padding: 11,
-  },
-
-  workflowModeCard: {
-    borderColor: '#d6e1e6',
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 10,
-    padding: 13,
-  },
-
-  workflowModeCardSelected: {
-    backgroundColor: '#e4f4ef',
-    borderColor: '#08756f',
-  },
-
-  workflowModeTitle: {
-    color: '#142b3a',
-    fontWeight: '800',
-  },
-
-  workflowModeDescription: {
-    color: '#667582',
-    fontSize: 12,
-    marginTop: 3,
-  },
-
-  equipmentByEquipmentAction: {
-    color: '#08756f',
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 2,
   },
 
   change: {

@@ -19,11 +19,6 @@ class LabWorkOrderCreate(BaseModel):
     purchase_order: str | None = Field(default=None, max_length=120)
     notes: str | None = Field(default=None, max_length=4000)
     lab_client_id: int | None = Field(default=None, gt=0)
-    # "group" (default, flujo histórico) o "equipment_by_equipment" (captura
-    # completa por equipo antes de la firma final). Se elige al crear y no
-    # es editable después por un endpoint ordinario -- ver
-    # docs/architecture/LAB_WORK_ORDERS.md.
-    workflow_mode: Literal["group", "equipment_by_equipment"] = "group"
 
 class LabWorkOrderGroupCreate(LabWorkOrderCreate):
     quantity: int = Field(ge=1, le=50)
@@ -115,6 +110,7 @@ class LabEquipmentBase(BaseModel):
 
 
 class LabEquipmentWrite(LabEquipmentBase):
+    identity_change_kind: Literal["correction", "replacement"] = "correction"
     expected_edit_version: int | None = Field(default=None, ge=1)
 
 
@@ -246,12 +242,6 @@ class LabFieldSheetCreate(BaseModel):
     template_key: str = Field(min_length=1, max_length=60)
 
 
-class LabFieldSheetDirectReopenWrite(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    reason: str = Field(min_length=3, max_length=2000)
-
-
 class LabSignatureWrite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -273,76 +263,6 @@ class LabSignatureGroupWrite(BaseModel):
 
     technician: LabSignatureWrite
     client: LabSignatureWrite
-    expected_edit_version: int | None = Field(default=None, ge=1)
-
-
-class LabEquipmentByEquipmentBlocker(BaseModel):
-    work_order_id: int
-    work_order_folio: int
-    # workflow_mode del miembro al que pertenece este blocker -- en un scope
-    # "group" mixto, un blocker de un miembro "equipment_by_equipment" exige
-    # captura técnica lista para completarse, mientras uno de un miembro
-    # "group" sólo exige que la recepción pueda formalizarse (nunca exige
-    # FieldSheets completas).
-    workflow_mode: str
-    equipment_id: int | None
-    equipment_position: int | None
-    equipment: str | None
-    reason: str
-    missing_fields: list[str] | None = None
-
-
-class LabEquipmentByEquipmentPrevalidation(BaseModel):
-    ready: bool
-    blockers: list[LabEquipmentByEquipmentBlocker] = Field(default_factory=list)
-
-
-class LabWorkOrderWorkflowModeChange(BaseModel):
-    """Acción administrativa 'Cambiar modalidad de trabajo' -- nunca
-    confundir con service_type (accredited/traceable/linked), que es un
-    contrato distinto. Sólo procede en estado pre-firma (ver
-    change_lab_work_order_workflow_mode)."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    new_workflow_mode: Literal["group", "equipment_by_equipment"]
-    reason: str = Field(min_length=1, max_length=2000)
-
-    @field_validator("reason")
-    @classmethod
-    def normalize_reason(cls, value: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise ValueError("El motivo es obligatorio")
-        return normalized
-
-
-class LabCertificateFolioDistributionItem(BaseModel):
-    equipment_id: int
-    position: int
-    instrument: str
-    prefix: Literal["MYCA", "MYCT"]
-    folio: str | None = None
-
-
-class LabCertificateFolioDistributionPreview(BaseModel):
-    """Vista previa de "Distribuir folios disponibles" -- sólo lectura,
-    nunca muta. `items[].folio` es None cuando el pool disponible no
-    alcanza para ese equipo (ver distribute_pending_certificate_folios,
-    que rechaza todo-o-nada si falta algún folio)."""
-
-    work_order_id: int
-    work_order_folio: int
-    pending_accredited_count: int
-    pending_traceable_count: int
-    available_myca_count: int
-    available_myct_count: int
-    items: list[LabCertificateFolioDistributionItem]
-
-
-class LabCertificateFolioDistributionResult(BaseModel):
-    work_order_id: int
-    assigned: list[LabCertificateFolioDistributionItem]
 
 
 class LabSignatureRead(BaseModel):
@@ -370,11 +290,6 @@ class LabRelatedWorkOrderRead(BaseModel):
     folio: int
     sequence_number: int
     status: str
-    # Cierre "grupos mixtos": expone la modalidad de CADA miembro para que
-    # Mobile pueda reportar el resultado real por OT tras una firma grupal
-    # mixta (nunca "todo entregado" cuando un miembro 'group' sólo formalizó
-    # recepción) sin una consulta adicional por OT.
-    workflow_mode: Literal["group", "equipment_by_equipment"]
     signature_session_id: int | None
     equipment_count: int
 
@@ -496,7 +411,6 @@ class LabWorkOrderRead(BaseModel):
     reopen_ticket_id: int | None
     signature_required: bool
     signature_preserved: bool
-    workflow_mode: str
     created_at: datetime
     updated_at: datetime
     equipment: list[LabEquipmentRead]
@@ -512,7 +426,6 @@ class LabWorkOrderListItem(BaseModel):
     client_name: str
     reception_date: date
     status: str
-    workflow_mode: str
     equipment_count: int
     completed_equipment_count: int = 0
     created_at: datetime

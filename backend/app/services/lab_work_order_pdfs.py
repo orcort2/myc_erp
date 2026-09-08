@@ -45,10 +45,11 @@ def generate_lab_work_order_pdf(work_order: LabWorkOrder) -> tuple[bytes, str]:
             identification = upper(item.identification.strip()) if item.identification and item.identification.strip() else "SIN IDENTIFICACIÓN"
             note_lines.append(f"{instrument} -> {identification} : {upper(item.observations.strip())}")
     revision_number = work_order.revision_number or 1
-    if revision_number > 1 and work_order.reopen_ticket_id:
+    if revision_number > 1:
         reopening_note = upper(
-            f"Revisión {revision_number}: reapertura autorizada mediante "
-            f"Ticket #{work_order.reopen_ticket_id}. "
+            f"Revisión {revision_number}: "
+            + (f"reapertura autorizada mediante Ticket #{work_order.reopen_ticket_id}. "
+               if work_order.reopen_ticket_id else "reapertura administrativa directa. ")
             + (
                 "Firma de la revisión anterior preservada."
                 if work_order.signature_preserved

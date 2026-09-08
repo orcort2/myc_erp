@@ -30,7 +30,6 @@ from app.schemas.operational_ticket import (
 )
 from app.services.audit_logs import write_audit_log
 from app.services.auth import user_has_permission
-from app.services.lab_field_sheets import _clone_field_sheet_for_correction
 from app.services.lab_work_orders import (
     _get,
     _group,
@@ -694,6 +693,8 @@ def get_ticket(
 
 
 def _snapshot(item: LabWorkOrder) -> dict:
+    from app.services.lab_document_reconciliation import inherited_document_values
+
     return {
         "folio": item.folio,
         "status": item.status,
@@ -712,6 +713,9 @@ def _snapshot(item: LabWorkOrder) -> dict:
         "notes": item.notes,
         "equipment": [
             {
+                "id": equipment.id,
+                "is_active": equipment.is_active,
+                "inherited_document_values": inherited_document_values(equipment, item),
                 "position": equipment.position,
                 "instrument": equipment.instrument,
                 "brand": equipment.brand,
@@ -816,13 +820,6 @@ def _reopen_closed_cohort(
             retired = equipment.field_sheet
             _retire_current_field_sheet_revision(equipment)
             if retired is not None and retired.status == "completed":
-                # No deja hueco operativo: N permanece intacta como
-                # histórico (is_current=False) y N+1 nace ya clonada y
-                # editable en la misma transacción -- ver
-                # _clone_field_sheet_for_correction para el porqué (el
-                # técnico corrige un dato, nunca vuelve a capturar desde
-                # cero).
-                _clone_field_sheet_for_correction(db, equipment, retired, user)
                 retired_snapshot = {
                     "retired_field_sheet_id": retired.id,
                     "retired_revision_number": retired.revision_number,
@@ -1043,10 +1040,6 @@ def resolve_operational_ticket(
         if current is None or current.status != "completed":
             raise HTTPException(status_code=409, detail="La hoja ya no está completed; nada que reabrir")
         _retire_current_field_sheet_revision(equipment)
-        # No deja hueco operativo: current permanece intacta como histórico
-        # (is_current=False) y la revisión N+1 nace ya clonada y editable en
-        # la misma transacción -- ver _clone_field_sheet_for_correction.
-        _clone_field_sheet_for_correction(db, equipment, current, user)
         # ready_to_close exige que TODO el equipo tenga hoja completed
         # (_missing_completed_sheets); al retirar una revisión ese invariante
         # deja de cumplirse, así que se re-deriva la misma regla que ya

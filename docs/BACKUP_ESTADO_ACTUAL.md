@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-09-05
+> Corte actualizado: 2026-09-08
 
 # Estado operativo actual del ERP MYC
 
@@ -18,183 +18,157 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 
 ## Corte operativo
 
-- Rama verificada: `wip/lab-equipment-by-equipment-flow` (rama nueva, creada
-  desde `6fb8e2c` -- no se acumuló sobre `wip/lab-admin-void-delivery`).
-- Working tree previo a este cierre: `6fb8e2c1e3ba60215e0cdcd1a949adbb5afa6a06`
-  (`fix(lab): preserve equipment history across reopened order edits`, padre
-  `213dcb042db143df39713f6419de0b6bcfe7a55c`).
-- Base auditada del cierre "reapertura sin hueco + folio externo + validación
-  UX" (2026-09-05): `db6e6a2848e0b8119d3caeb93013b58426f53889`
-  (`feat(lab): mixed workflow_mode groups, mixed group signature, and admin
-  modality change`), confirmado como HEAD remoto real de la rama antes de
-  modificar (`git fetch` + comparación explícita, sin divergencia).
-- Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**. El push de este cierre
-  no es aprobación de merge a `main`; queda pendiente una auditoría
-  independiente del SHA resultante.
+- Rama verificada: `wip/lab-admin-void-delivery`.
+- HEAD inicial de este endurecimiento: `43f9bb9f4566c3444c9762fb9656bf1fe60b79e1`.
+- Hotfix preparado en worktree separado `/private/tmp/myc-erp-lab-hotfix`;
+  el checkout original conserva su rama Mobile y sus cambios locales.
+- Trabajo exclusivo de `wip/lab-admin-void-delivery`, sin merge, rebase ni intervención en producción.
+- Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**; este hotfix no cambia
+  el estado general del proyecto ni sustituye la auditoría independiente.
 - Único módulo `SELLADO`: Control Documental V1 dentro de su alcance
   congelado. OT LAB temporal permanece `EN DESARROLLO` hasta QA físico.
 - Fase 3 LAB implementa recepción técnico+cliente previa a FieldSheets:
   `draft → received_signed → in_progress → ready_to_close → completed`.
   `ready_for_signatures` queda sólo como compatibilidad histórica.
 
+## Endurecimiento de reconciliación LAB — 2026-09-08
+
+- Backend decide correction/replacement para serie e identificación interna;
+  Mobile sólo expresa intención. Normalización y una edición mínima acotada,
+  según [contrato LAB](architecture/LAB_WORK_ORDERS.md). Cambios sustanciales
+  limpian la sesión actual, exigen nueva firma y bloquean cierre con la antigua.
+- AuditLog conserva identidad anterior/nueva, intención, clasificación efectiva,
+  razón e invalidación. Se reutiliza el núcleo de edición simple/integrada.
+- `initial_condition`, `equipment_general_condition` y `observations` son
+  prefills editables: únicamente propagan si siguen coincidiendo con la
+  herencia anterior, incluido cualquier duplicado declarativo. Sin procedencia
+  verificable, se conserva captura. Metadata de cliente/equipo sigue su autoridad.
+- Revisiones nuevas conservan captura, ambientales, notas, resultados, firmas
+  propias y referencias; la revisión previa sólo cambia su condición de vigente.
+  Sus datos documentales y bytes PDF no se reinterpretan. Se mantienen selección
+  dos de diez, domicilio global con cliente independiente, no-op y rollback.
+- `build_endpoint_inventory(app)` arroja 519 operaciones; CSV regenerado con
+  `field_sheets.review` en regeneración administrativa, igual a ruta/servicio.
+- No se modificaron Mobile, migraciones, dependencias ni datos locales. El
+  enlace preexistente `myc-mobile/node_modules` queda fuera del commit.
+- Validación focalizada: 78 passed, 0 failed, 2 warnings (Starlette/httpx y
+  deprecación de crypt). Validaciones completas aún en ejecución en este corte.
+- Pendientes de alcance: QA físico Mobile y pruebas opcionales PostgreSQL;
+  la compensación síncrona conserva su límite ante terminación abrupta.
+
+## Hotfix acotado LAB — 2026-09-08
+
+- Firma preservada reconocida por sesión existente, `signature_preserved=true`
+  y `signature_required=false`, sin exigir ticket. Edición, cierre desde draft,
+  persistencia del flag al completar y Mobile consumen ese contrato.
+- Altas/bajas de equipo y OT adicional siguen invalidando la sesión, también
+  en reapertura directa. `expected_edit_version` cubre reaperturas directas.
+- Mobile muestra «Completar cambios», evita recaptura de firma preservada y
+  permite editar datos generales por revisión. El PDF OT identifica reapertura
+  directa y conserva el historial anterior.
+- Nueva acción `POST /api/field-sheets/{id}/pdf/regenerate`, body
+  `{"reason":"motivo administrativo"}`: sólo staff interno con
+  `field_sheets.review`, hoja activa/final/vigente. Renderiza metadata ya
+  corregida, conserva revisión/snapshot/firmas y audita path/hash anteriores y
+  nuevos. Archivo nuevo único, borrado protegido del anterior y compensación
+  síncrona en fallos; no reinterpreta revisiones retiradas.
+- Sin migraciones ni modificaciones a la BD local productiva: no procede
+  regenerar el respaldo SQL. Head de código comprobado: `7088fa142cc2`.
+  No se consultó ni se reparó OT 6443 en producción.
+
+### Archivos del parche
+
+Código y pruebas: `backend/app/services/lab_work_orders.py`,
+`backend/app/services/lab_work_order_pdfs.py`,
+`backend/app/services/field_sheet_pdfs.py`,
+`backend/app/routers/field_sheets.py`, `backend/app/schemas/field_sheet.py`,
+`backend/tests/test_lab_phase5_operational_closure.py`,
+`myc-mobile/app/(technician)/work-orders.tsx`,
+`myc-mobile/src/services/lab-work-order-signature-policy.ts` y su `.test.ts`.
+Se ajusta `scripts/generate_project_file_registry.py` para registrar las
+responsabilidades modificadas de API, schema, renderer y suite.
+
+Documentación: este corte, `PROJECT_FILE_REGISTRY.md`,
+`project/DOCUMENTATION_INDEX.md`, `project/CURRENT_SCOPE.md`,
+`project/CURRENT_PROCESS_FLOW.md`, `project/BUSINESS_RULES.md`,
+`project/DECISIONS.md`, `project/OBSERVATIONS_REGISTER.md`,
+`architecture/LAB_WORK_ORDERS.md`,
+`architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md` y
+`architecture/FIELD_SHEET_PDF_RENDERER.md`.
+Revisados sin cambios: `project/PROJECT_STATUS.md`, `project/TECHNICAL_DEBT.md`
+y `architecture/files/INSTITUTIONAL_FILE_STORAGE.md`: no cambia el estado
+modular ni la deuda previa; se reutilizan las utilidades vigentes de storage.
+No hay archivos funcionales nuevos, movimientos, fusiones ni archivado.
+
+### Validación del hotfix
+
+Dependencias del venv local estaban `dataless` (descargadas del disco por macOS),
+y bloquearon la importación de tinycss2/WeasyPrint. Se interrumpieron esos
+intentos y se instaló una copia temporal con versiones de `requirements.txt`
+en `/private/tmp/myc-lab-hotfix-deps`, sin cambiar dependencias del repositorio
+ni el venv original. Se omitió docopt de esa copia (no tiene wheel y no lo
+requieren estas pruebas). Se usa Python 3.12 del venv existente.
+
+Comandos backend desde la raíz del worktree, con
+`XDG_CACHE_HOME=/private/tmp/myc-lab-font-cache` y
+`PYTHONPATH=/private/tmp/myc-lab-hotfix-deps:backend`, mediante
+`/Users/saulcortes/Desktop/myc_erp/venv/bin/python -m pytest`:
+
+- Focalizados: `-q backend/tests/test_lab_phase5_operational_closure.py backend/tests/test_lab_work_orders.py -k 'directly_without or directly_with_invalidate or direct_preserve_structural or regenerate or ticket_preserves_minor_change'`: **18 passed**.
+- Suite relevante: `-q backend/tests/test_lab*.py backend/tests/test_field_sheet*.py`:
+  **519 passed, 12 skipped**, y un fallo de cwd en
+  `test_delivery_endpoints_are_gated_to_internal_actors`. Repetido desde
+  `backend` con `PYTHONPATH=/private/tmp/myc-lab-hotfix-deps:.` y
+  `-q tests/test_lab_work_order_deliveries.py::test_delivery_endpoints_are_gated_to_internal_actors`:
+  **1 passed**. Total de la selección: **520 aprobados, 12 omitidos**;
+  los omitidos requieren `LAB_POSTGRES_TEST_URL`.
+- Storage: `-q backend/tests/test_institutional_file_security.py`: **14 passed**.
+- Repetición final de `-q backend/tests/test_lab_phase5_operational_closure.py -k regenerate`,
+  incluyendo histórico inactivo que comparte archivo: **12 passed**.
+- Mobile desde `myc-mobile`: `tsx --test src/services/lab-work-order-signature-policy.test.ts`:
+  **6 passed**; `npm test`: **376 passed**.
+- `tsc --noEmit`: dos TS2322 en `src/realtime/realtime-client.ts:205,231`,
+  archivo no modificado por el hotfix. Los mismos dos errores se reprodujeron
+  con `tsc --noEmit` en una extracción limpia de `HEAD=d9d6ccd` y las mismas
+  dependencias Mobile; son previos al parche.
+- Desde `backend`, `python -m alembic heads` con el mismo PYTHONPATH:
+  **7088fa142cc2 (head)**. Sólo lectura del grafo, sin aplicar migraciones.
+- `python3 scripts/generate_project_file_registry.py` y `git diff --check`:
+  correctos; filas afectadas revisadas y todas las rutas del inventario existentes.
+
+Las nuevas regresiones cubren reapertura preserve con/sin edición ordinaria,
+misma sesión y ambas firmas, revisión previa/PDF intactos, invalidación
+estructural, regeneración auditada, descarga congelada habitual, históricos
+compartidos, permisos/estado/motivo y fallos de render/flush/audit/delete/commit
+sin archivos huérfanos. `invalidate` y ticket preserve conservan sus pruebas.
+Pendientes de despliegue: QA físico Mobile, pruebas PostgreSQL opcionales y
+aplicación administrativa autorizada en producción. La compensación de archivos
+es síncrona; no garantiza recuperación frente a terminación abrupta del proceso.
+
+Commit sugerido: `fix(lab): preserve direct reopen signatures and regenerate current field sheet PDF`.
+
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único del código y base local verificado: `6640c526c412`
-  (`add LabWorkOrder.workflow_mode (group / equipment_by_equipment)`), con
-  `down_revision = 7088fa142cc2`.
-- La migración agrega una sola columna `workflow_mode` (`String(30)`,
-  `NOT NULL`, `server_default='group'`) a `lab_work_orders` más
-  `CheckConstraint IN ('group', 'equipment_by_equipment')`; no toca ninguna
-  fila existente más allá del backfill automático a `'group'` y no crea
-  tabla ni índice nuevo. El downgrade sólo elimina esa columna/constraint
-  (sin riesgo de pérdida de distinción activo/histórico como el de
-  `7088fa142cc2`, porque no hay una semántica previa que preservar).
+- Head de código verificado en este hotfix (la coincidencia con la base local
+  corresponde al corte previo y no se volvió a comprobar): `7088fa142cc2`
+  (`soft-delete LabWorkOrderEquipment (tombstone), partial unique position`),
+  con `down_revision = c91f47a8b2d0`.
+- La migración agrega `is_active`/`deleted_at`/`deleted_by` (SoftDeleteMixin) a
+  `lab_work_order_equipment`, reemplaza `uq_lab_equipment_position` por el
+  índice único parcial `uq_lab_equipment_position_active`
+  (`WHERE is_active IS TRUE`) y no reescribe ni borra datos: las 14 filas
+  existentes en la base local recibieron `is_active=true`.
+- El downgrade se niega explícitamente (`RuntimeError`) si existen filas
+  tombstone o duplicados de `(work_order_id, position)` que el
+  `UniqueConstraint` histórico no admitiría; sin ese conflicto restaura el
+  constraint pleno anterior.
 - Ciclo `upgrade head → downgrade -1 → upgrade head` verificado contra
   PostgreSQL real (`erp_myc`); `alembic heads`/`current` confirman
-  `6640c526c412 (head)` único y `alembic check` reporta
+  `7088fa142cc2 (head)` único y `alembic check` reporta
   `No new upgrade operations detected`.
 - No se regeneró `backup_erp_myc_antes_prueba.sql` en este cierre: la base
-  local usada es de desarrollo, no el respaldo oficial de producción. Ninguna
-  OT existente fue convertida a `equipment_by_equipment` -- ese cambio queda
-  para una intervención administrativa posterior y excepcional, fuera de
-  este trabajo (ver `docs/architecture/LAB_WORK_ORDERS.md`).
-
-## Flujo LAB "equipo por equipo" — 2026-09-04
-
-Implementación del feature `workflow_mode` sobre `wip/lab-equipment-by-equipment-flow`
-(nueva rama desde `6fb8e2c`, no acumulada sobre `wip/lab-admin-void-delivery`).
-
-- `LabWorkOrder.workflow_mode` (`group` default/backfill,
-  `equipment_by_equipment`) es autoridad backend persistente elegida al
-  crear la OT. Ningún histórico se reinterpreta automáticamente. `group`
-  conserva el flujo histórico completo sin ninguna excepción nueva.
-- `equipment_by_equipment` permite captura real de FieldSheet en `draft`
-  (`_ensure_capture_allowed` ampliado de forma acotada) sin fingir
-  `received_signed`; `complete_lab_field_sheet` sigue bloqueando formalizar
-  una hoja individualmente pre-firma.
-- `finalize_equipment_by_equipment_work_order` (`POST
-  /{id}/equipment-by-equipment/finalize`): una sola transacción firma
-  Cliente+Técnico, asigna `lab_signature_session_id` a cada FieldSheet
-  vigente, completa cada hoja ya capturada (reutilizando
-  `_validate_ready_to_complete`/`_complete_lab_field_sheet_uncommitted`,
-  nunca una segunda política), cierra la OT
-  (`_finish_complete_members_uncommitted`, con notificación
-  `work_order.completed` a Captura igual que siempre) y registra una
-  entrega FULL (`_create_delivery_event`/`_finalize_delivery`) reutilizando
-  esas mismas firmas -- un solo commit al final, rollback completo (incluida
-  limpieza de PDFs huérfanos) ante cualquier fallo, idempotente ante retry.
-  `GET /{id}/equipment-by-equipment/prevalidate` es sólo lectura y se llama
-  antes de abrir la firma.
-- `sign_group`/`sign_individual` rechazan una OT `equipment_by_equipment`
-  que nunca pasó por `finalize` (`reopen_ticket_id` nulo); tras una
-  reapertura posterior, el sistema normal de firma/reapertura vuelve a
-  aplicar sin excepción. `list_lab_field_sheet_tray` excluye una OT
-  `equipment_by_equipment` todavía `draft` -- esas hojas nunca aparecen
-  prematuramente como bandeja de Captura.
-- Caso productivo crítico verificado (backend, SQLite y PostgreSQL real):
-  una OT `group` con 5 equipos ya registrados (sin FieldSheets) puede
-  cambiar su `workflow_mode` sin recrear ni un solo equipo; al reabrir
-  Mobile, los 5 ofrecen de inmediato "Seleccionar Hoja de Campo" y el flujo
-  completo (captura, prevalidación, firma única, cierre, entrega) funciona
-  igual que si hubieran nacido bajo esa modalidad. Ninguna OT productiva
-  real fue convertida -- eso queda para una intervención administrativa
-  posterior y excepcional, fuera de este trabajo.
-- Mobile: selector de modalidad al crear (nombres internos nunca expuestos),
-  estado por equipo reconstruido exclusivamente desde backend
-  (`describeEquipmentByEquipmentAction`), "Finalizar registro de equipos"
-  con prevalidación/blockers antes de firmar, y reutilización exacta de
-  `MobileSignatureFlow` -- nunca un segundo sistema de firmas ni una etapa
-  de Captura Técnica/Delivery aparte tras finalizar.
-- Deuda de descubrimiento de tests Mobile (pendiente heredado de la
-  auditoría de `wip/lab-admin-void-delivery`, no resuelta todavía en esta
-  rama al partir de `6fb8e2c`) resuelta también aquí: `npm test` pasó de
-  ejecutar 27 de 48 archivos `*.test.ts(x)` a los 50 reales (48 + 2 nuevos
-  de este cierre) vía `scripts/list-test-files.js`; `MobileSignatureFlow.wiring.test.ts`
-  quedó diagnosticado (1 bug real de wiring corregido -- el botón de firmar
-  sólo mostraba spinner mudo -- y 4 asserts de formato actualizados).
-
-## Cierre "grupos mixtos" — 2026-09-04 (equipo por equipo + firma grupal mixta + cambio de modalidad)
-
-Continuación sobre la MISMA `wip/lab-equipment-by-equipment-flow`, HEAD de
-partida `d2f774431dd9755d5ed4d77e847655adceeabe9d` (el cierre inmediatamente
-anterior de esta sección). Corrige tres restricciones de ese cierre y añade
-la firma grupal mixta como funcionalidad central nueva. Detalle completo en
-`docs/architecture/LAB_WORK_ORDERS.md` (sección "Modalidad de trabajo") y
-`docs/project/DECISIONS.md` (`D-2026-09-04 — Grupos mixtos`).
-
-- **Sin migración nueva**: `workflow_mode` ya existía (`6640c526c412`); head
-  sigue siendo `6640c526c412`, `alembic check` reporta `No new upgrade
-  operations detected`. No se creó ninguna constraint de igualdad por root.
-- `create_additional_work_order` acepta `workflow_mode` opcional propio
-  (antes forzaba `workflow_mode=source.workflow_mode`); un mismo
-  `root_work_order_id` puede mezclar modalidades libremente, ya lo permitía
-  la estructura existente (confirmado con test, sin cambio de esquema).
-- Nueva acción administrativa `POST /{id}/workflow-mode`
-  (`lab_work_orders.cancel` reutilizado, nunca un permiso nuevo; sólo actor
-  interno; motivo obligatorio; `AuditLog` completo; nunca cascada a
-  hermanas; sólo pre-firma). `group → equipment_by_equipment` y
-  `equipment_by_equipment → group` conservan siempre equipo/FieldSheets sin
-  recrear nada -- incluida una FieldSheet ya en captura real, que sobrevive
-  intacta.
-- Nueva firma grupal mixta `POST /{id}/signature-group/finalize` (+
-  `GET .../prevalidate`, sólo lectura): UNA sola `LabWorkOrderSignatureSession`
-  puede formalizar a la vez miembros `group` y `equipment_by_equipment` de
-  una misma cohorte -- cada uno avanza según su propio contrato, nunca el
-  mismo estado final para todos. La entrega FULL automática de ese evento
-  incluye únicamente el equipo de los miembros `equipment_by_equipment`
-  recién cerrados -- nunca el de un miembro `group` que sigue en el
-  laboratorio. Reutiliza siempre la autoridad ya existente
-  (`_sign_members_uncommitted`, `_complete_lab_field_sheet_uncommitted`,
-  `_finish_complete_members_uncommitted`, `_create_delivery_event`/
-  `_finalize_delivery`, `_ensure_reception_prerequisites`,
-  `_equipment_by_equipment_finalize_blockers`) -- ninguna política
-  duplicada. Un fallo en cualquier paso revierte todo por completo (incluida
-  limpieza de PDFs huérfanos); idempotente ante retry.
-- **Bug real encontrado y corregido durante este cierre** (no pedido
-  explícitamente, descubierto por regresión propia): `_finalize_delivery`
-  decide con su parámetro `members` si el ROOT completo ya no tiene equipo
-  pendiente (y por lo tanto genera el recibo final de grupo). La primera
-  versión de `finalize_lab_signature_group` le pasaba sólo el subconjunto
-  `equipment_by_equipment` recién entregado, lo que habría generado un
-  recibo final falso de "todo entregado" mientras un miembro `group` seguía
-  con equipo físicamente en el laboratorio. Corregido pasando siempre la
-  cohorte completa del grupo (`_relevant_group_members(group)`).
-- **Regresión colateral encontrada y corregida**: extender el guard de
-  `_ensure_capture_allowed` a `update_lab_field_sheet` (PATCH) para bloquear
-  la captura de una hoja preservada tras `equipment_by_equipment → group`
-  mientras la OT sigue `draft` habría roto un caso preexistente no
-  relacionado (una OT histórica sin `lab_client_id` puede alcanzar
-  legítimamente `ready_to_close` a mitad de completar varias hojas, estado
-  que el guard genérico también excluye). Se optó por un guard más estrecho,
-  exclusivo de la combinación `workflow_mode == 'group' and status ==
-  'draft'` -- la única combinación nueva que este cierre hace alcanzable --
-  sin tocar ningún otro estado ya soportado.
-- 15 tests backend nuevos en `test_lab_equipment_by_equipment_workflow.py`
-  (incluye los cuatro escenarios de aceptación obligatorios: grupo EBE puro,
-  grupo mixto con conversión administrativa, OT adicional con modalidad
-  independiente, y el caso productivo de 5 equipos ahora vía el endpoint
-  administrativo). Suite completa backend: 1169 passed, 14 skipped (2
-  regresiones Postgres-gated que ya existían, más la nueva de este cierre,
-  todas requieren `LAB_POSTGRES_TEST_URL`, no ejecutado en este entorno).
-- Mobile: selector de modalidad propio para "Asignar OT extra" (antes
-  heredaba en silencio), nueva pantalla administrativa "Cambiar modalidad de
-  trabajo" (reutiliza el mismo overlay de tickets ya existente, gateada por
-  el mismo permiso `lab_work_orders.cancel`, refetch completo desde backend
-  tras éxito, nunca un parche local), y helpers de resumen veraz por OT
-  (`describeMixedSignatureOutcome`/`summarizeMixedSignatureOutcome`) para
-  que un resultado mixto nunca se anuncie como "todo entregado". **No
-  incluido en este pase**: integrar la elección de scope de firma mixta
-  (individual vs. grupo vs. grupo mixto) dentro de la pantalla de firma de
-  `work-orders.tsx` para una OT `equipment_by_equipment` con hermanas --
-  la capa de servicio (`postLabSignatureGroupFinalize`/
-  `getLabSignatureGroupPrevalidation`) y sus tests ya existen y están
-  probados, pero la pantalla de 3000+ líneas no se tocó en ese punto
-  específico por alcance/riesgo; backend ya es la autoridad completa y
-  correcta independientemente de esa integración visual pendiente.
-- `docs/architecture/security/API_ENDPOINT_INVENTORY_2026-08-03.csv`
-  regenerado a 523 filas (3 endpoints nuevos, clasificación genérica
-  `/api/mobile/v1/` existente, sin override por ruta).
+  local usada es de desarrollo, no el respaldo oficial de producción.
 
 ## Cierre operativo y UX OT LAB — 2026-09-03
 
@@ -409,173 +383,70 @@ consolidaba el fix P0 de DELETE/storage, el endurecimiento anti-spoofing
   SQLite + 1 regresión PostgreSQL real obligatoria vía `LAB_POSTGRES_TEST_URL`,
   ejecutada y verde contra un schema aislado en `erp_myc` local).
 
-## Cierre "reapertura sin hueco + folio externo + validación UX" — 2026-09-05
+## Cierre de pendientes de auditoría — 2026-09-04 (observations snapshot + Mobile test discovery)
 
-Tres correcciones puntuales sobre `wip/lab-equipment-by-equipment-flow`,
-partiendo de `db6e6a2` (auditado primero: el HEAD de la rama ya
-implementaba, con tests, todo el diseño de `workflow_mode`/firma grupal
-mixta/cambio de modalidad/Delivery scoping/snapshot de observaciones
-descrito en cierres anteriores -- no se reimplementó nada de eso).
+Cierre sobre los dos pendientes que la auditoría independiente del cierre
+anterior (`6fb8e2c`) dejó abiertos antes de autorizar merge a `main`. No
+reabre ni revierte ninguno de los fixes preservados del cierre anterior
+(DELETE/storage, Delivery, `@OT`, Captura, notifications, tombstone de
+equipo LAB, migración `7088fa142cc2`).
 
-- **FieldSheet reopen sin hueco operativo**: retirar (`is_current=False`)
-  la revisión `completed` vigente vía Ticket `field_sheet_reopen` o el
-  equipo objetivo de una reapertura de cohorte completa dejaba a
-  `equipment.field_sheet` en `None` hasta que alguien volviera a llamar
-  `create_lab_field_sheet` manualmente -- Mobile mostraba "Seleccionar Hoja
-  de Campo" como si el equipo nunca hubiera capturado nada, aunque el
-  histórico completed siguiera intacto. Nueva función
-  `_clone_field_sheet_for_correction` (`app/services/lab_field_sheets.py`)
-  abre la revisión N+1 ya clonada y editable en la MISMA transacción que
-  retira N (mismo modelo de revisión de Fase 6, sin segunda arquitectura).
-  Nueva acción atómica `POST .../field-sheet/change-template`
-  (`change_lab_field_sheet_template`) para "Cambiar Hoja de Campo" sin
-  componer DELETE+POST (que quedaría bloqueado por el 409 "ya tiene una
-  hoja"). El camino de identidad crítica de equipo (`_update_equipment_core`)
-  sigue dejando una hoja en blanco a propósito, sin tocar. Detalle completo
-  en [`architecture/LAB_WORK_ORDERS.md`](architecture/LAB_WORK_ORDERS.md) y
-  [`project/DECISIONS.md`](project/DECISIONS.md) (D-2026-09-05).
-- **Folio de certificado exige pool externo resuelto**:
-  `_assign_equipment_service_core` dejaba accredited/traceable de un
-  cliente operativo externo sin pool en `folio_status="pending"` en
-  silencio -- indistinguible del `pending` legítimo de Vinculado. Ahora
-  responde `409 LAB_CERTIFICATE_FOLIOS_UNAVAILABLE` con rollback completo;
-  `linked` y staff interno no cambian. Nueva acción administrativa
-  "Distribuir folios disponibles" (`GET/POST .../certificate-folios/{preview,distribute}`)
-  repara equipo legacy ya atrapado en ese `pending`, todo-o-nada por
-  prefijo, mismo locking que el alta, reutilizando `lab_work_orders.cancel`
-  (sin permiso nuevo).
-- **Mobile — validación de observaciones humanizada**: `error-detail.ts`
-  capturaba el `type` de Pydantic pero nunca lo usaba para el mensaje --
-  `string_too_long`/`string_too_short`/`missing` caían siempre al genérico
-  "Revisa el campo X.". Se humanizan por tipo usando `ctx.max_length`/
-  `ctx.min_length` (confirmado contra un 422 real de Pydantic v2 antes de
-  conectar el parser) y un mapa de etiquetas extraído a
-  `myc-mobile/src/services/field-labels.ts` (compartido con
-  `LabTechnicalCapture.tsx`, que antes tenía su propia copia). `Field`
-  (`primitives.tsx`) gana `maxLength`/contador opt-in;
-  `LabEquipmentForm.tsx` lo usa en Observaciones (`maxLength={4000}`, igual
-  al límite ya vigente en `LabEquipmentBase.observations`).
-- Sin migración: no se agregó columna ni tabla nueva; `alembic
-  heads`/`current` confirman `6640c526c412 (head)` único y `alembic check`
-  reporta `No new upgrade operations detected`.
-- Inventario API: 3 endpoints nuevos (526 = 523 del corte anterior +
-  `field-sheet/change-template`, `certificate-folios/preview`,
-  `certificate-folios/distribute`, los tres bajo la clasificación genérica
-  `/api/mobile/v1/` existente); `API_ENDPOINT_INVENTORY_2026-08-03.csv`
-  regenerado y `test_api_access_conformity.py` (ambos casos) verde.
-- Nuevos tests backend: 3 casos en `test_lab_phase2_integrated_alta.py`
-  (bloqueo externo sin pool + rollback, camino feliz con pool, `linked`
-  intacto), `test_lab_certificate_folio_distribution.py` (6 casos: preview,
-  distribución ordenada, idempotencia, insuficiencia todo-o-nada,
-  aislamiento por tenant, concurrencia real PostgreSQL), 4 casos nuevos +
-  reescritura de uno existente en `test_lab_phase6_field_sheet_revisions.py`
-  (clon N+1, cambio de plantilla, regresión PostgreSQL real del índice
-  único parcial). Nuevos tests mobile: 3 en `error-detail.test.ts`, 1 en
-  `LabEquipmentForm.wiring.test.ts`, 1 nuevo archivo
-  `primitives.wiring.test.ts`.
-
-### Correcciones tras auditoría independiente del SHA `102a989` (mismo día)
-
-- **`observations` de la revisión correctiva clonaba mal**: la primera
-  versión de `_clone_field_sheet_for_correction` volvía a leer
-  `LabWorkOrderEquipment.observations` VIGENTE (copiando sin querer el
-  contrato de `create_lab_field_sheet`, escrito para una hoja genuinamente
-  nueva). Corregido a clonar `retired.observations` -- una revisión
-  correctiva parte exactamente de lo que N ya documentaba, igual que
-  cualquier otro campo. Test nuevo con valores de N y del equipo
-  deliberadamente distintos (`test_corrective_clone_observations_come_from_the_retired_sheet_not_the_equipment`).
-- **Copia superficial de JSON mutable**: `capture_values`,
-  `template_definition_json`, `institutional_snapshot_json`, `row_data` y
-  `validation_snapshot` se clonaban con `dict(...)` (superficial). Corregido
-  a `copy.deepcopy` para que N y la revisión correctiva sean
-  documentalmente independientes ante estructuras anidadas. Test nuevo que
-  muta una lista anidada en N+1 y confirma que N no cambia
-  (`test_corrective_clone_deep_copies_nested_json_so_mutating_n_plus_1_never_touches_n`).
-- Mobile: se integró "Distribuir folios disponibles" (Acciones
-  administrativas de la OT, capacidad efectiva, preview → confirmación
-  condicionada al pool → distribute → refetch completo) y "Cambiar Hoja de
-  Campo" (acción explícita sobre una revisión editable de reapertura, usa
-  el endpoint atómico, nunca DELETE+POST manual) -- ninguna de las dos
-  tenía integración Mobile real en `102a989`, sólo el endpoint backend.
-  Nuevo servicio `lab-certificate-folio-distribution.ts` (tipos + llamadas
-  GET/POST + `isFolioDistributionSufficient`/`hasNoPendingCertificateFolios`
-  como única autoridad para ofrecer confirmar); nuevo overlay dedicado en
-  `work-orders.tsx` (no reutiliza el diálogo de "Motivo" obligatorio,
-  porque esta acción no exige uno); "Cambiar Hoja de Campo" vive en
-  `LabTechnicalCapture.tsx` junto a "Eliminar borrador", con un selector de
-  plantilla propio (rama exclusiva `changingTemplate`, nunca simultánea con
-  el selector de primera captura).
-- Ver detalle completo en `project/DECISIONS.md` (adenda 2026-09-05) y
-  `architecture/LAB_WORK_ORDERS.md`.
-
-#### Validación de esta ronda de correcciones
-
-- Backend completo: `1180 passed, 16 skipped`, 0 fallas (un fallo aislado en
-  `test_maintenance_ets_execution.py`, módulo ETS Mantenimiento no tocado
-  por este trabajo, no se repitió en una segunda corrida completa --
-  flake de orden/estado compartido entre tests, no una regresión).
-- Mobile: `npm test` = `416 passed, 0 failed` (405 de la ronda anterior + 7
-  de `work-orders.folio-distribution.wiring.test.ts` + 4 nuevos en
-  `LabTechnicalCapture.wiring.test.ts`).
-- `npx tsc --noEmit -p .`: correcto, sin salida.
-- `npm run lint`: correcto, sin errores.
-- `git diff --check`: sin advertencias.
-- Alembic sin cambios: `6640c526c412 (head)` único, `check` = `No new
-  upgrade operations detected` -- ninguna de estas correcciones tocó
-  esquema.
+- **Snapshot de observations en FieldSheet**: `create_lab_field_sheet()` (en
+  `app/services/lab_field_sheets.py`) ahora congela
+  `FieldSheet.observations = normalized(LabWorkOrderEquipment.observations)`
+  al crear cada revisión -- normalización trim + vacío/whitespace → `None`,
+  igual que el resto de campos opcionales del equipo LAB
+  (`normalize_optional_equipment_text`). Es un snapshot inicial, no un
+  vínculo vivo: editar `LabWorkOrderEquipment.observations` después de crear
+  la hoja nunca la altera, una hoja `completed`/histórica es inmutable a ese
+  cambio, y una reapertura que produce una revisión N+1 (vía
+  `field_sheet_reopen` o reopen `invalidate` + edición de un campo crítico)
+  congela el valor vigente del equipo EN ESE MOMENTO, sin tocar el snapshot
+  de la revisión anterior. Nunca lee `certificate_folio` ni `report_number`
+  -- permanecen campos separados, sin mezclarse. El formato del PDF de OT
+  (`INSTRUMENTO -> IDENTIFICACIÓN : OBSERVACIÓN`, ya cubierto exhaustivamente
+  en `test_lab_work_order_observations.py`) no se tocó: lee
+  `LabWorkOrderEquipment.observations` directamente y es un campo distinto
+  del nuevo snapshot en `FieldSheet.observations`.
+- **9 tests nuevos** en `backend/tests/test_lab_work_order_observations.py`
+  (snapshot al crear, normalización de whitespace, PDF de FieldSheet muestra
+  la observation, independencia de certificate_folio/report_number,
+  inmutabilidad tras editar el equipo -- con y sin hoja completed --,
+  revisión N+1 toma el valor vigente mientras la revisión N conserva el
+  suyo, y una prueba explícita de que el formato del PDF de OT no cambió).
+- **Mobile -- brecha de descubrimiento de tests cerrada por completo**: se
+  reemplazó la lista manual de `package.json#scripts.test` por
+  `tsx --test $(node scripts/list-test-files.js)`. El nuevo script
+  (`myc-mobile/scripts/list-test-files.js`) recorre `src/` con `fs` puro (sin
+  depender de `**` globstar de bash, que no es POSIX y no está activo por
+  defecto -- npm ejecuta scripts vía `sh -c`) y devuelve cada `*.test.ts(x)`
+  encontrado; `$(...)` es sustitución de comandos POSIX estándar, portable
+  entre macOS/Linux/CI. Antes corrían 20 archivos explícitos + el glob de
+  `src/wiring-tests/` (253 tests); ahora corren los 48 archivos
+  `*.test.ts` reales bajo `src/` (375 tests), sin ejecutar nada que no sea
+  un test.
+- **`MobileSignatureFlow.wiring.test.ts` diagnosticado y resuelto**: de sus 5
+  tests, 1 exponía un bug real (B) -- el botón "Guardar firmas" delegaba el
+  estado de envío únicamente al spinner mudo de `PrimaryButton` (`loading`),
+  sin ningún texto explícito "Guardando…"; se restauró un estado dedicado
+  (`submitting ? <Text>Guardando firmas…</Text> : <ActionRow>...`) en
+  `MobileSignatureFlow.tsx`. Los otros 4 (aquí y en 3 archivos más:
+  `LabEquipmentForm.wiring.test.ts`,
+  `LabTechnicalCapture.canonical-contract.wiring.test.ts`,
+  `LabTechnicalCapture.wiring.test.ts`) eran (A) tests obsoletos por
+  formato: regex exactas de una sola línea contra código que un paso de
+  reformateo (prettier) reordenó/dividió en múltiples líneas sin cambiar el
+  comportamiento -- se relajaron esas regex a tolerantes a formato, sin
+  tocar producción salvo el caso B ya descrito. Un caso adicional
+  (`canonicalFieldsByGroup(group)` → `canonicalFieldsByGroup(group,
+  canonicalFields)`) resultó ser una evolución legítima ya presente en
+  producción (el segundo argumento sigue derivándose de `CANONICAL_FIELDS`,
+  nunca de `resolveBlockFields`/branching por instrumento) -- se actualizó el
+  test para reflejar el contrato vigente, no se tocó el componente.
+- No se creó ninguna migración: ninguno de los dos pendientes requería
+  cambio de esquema.
 
 ## Validaciones
-
-### Cierre "reapertura sin hueco + folio externo + validación UX" — 2026-09-05
-
-- Backend suite completa: `1178 passed, 14 skipped`, 0 fallas.
-- Backend con `LAB_POSTGRES_TEST_URL` (schema aislado por test, nunca
-  producción): `1192 passed`; los únicos 2 fallos
-  (`test_postgresql_concurrent_individual_cohorts_get_distinct_versions`,
-  `test_postgresql_concurrent_folio_allocation_is_unique`) se reprodujeron
-  IDÉNTICOS contra el HEAD base `db6e6a2` sin ningún cambio de este cierre
-  (`git stash` + rerun) -- son el mismo requisito de base Postgres
-  pristina/aislada ya documentado como pendiente desde el corte anterior
-  (ver "Pendientes operativos"), no una regresión.
-- Regresión PostgreSQL específica de este cierre, ambas verdes en schema
-  aislado propio: clon N+1 de FieldSheet
-  (`test_postgresql_field_sheet_reopen_ticket_clones_forward_without_violating_unique_current`)
-  y concurrencia real de distribución de folios
-  (`test_postgresql_concurrent_distribution_across_two_orders_never_reuses_a_folio`).
-- Alembic: `heads`/`current` = `6640c526c412 (head)` único; `check` = `No
-  new upgrade operations detected`. Sin migración nueva.
-- Mobile: `npm test` = `405 passed, 0 failed` (400 del corte anterior + 5
-  nuevos: 3 en `error-detail.test.ts`, 1 en
-  `LabEquipmentForm.wiring.test.ts`, 1 en `primitives.wiring.test.ts`).
-- `npx tsc --noEmit -p .`: correcto, sin salida.
-- `npm run lint` (`expo lint`): correcto, sin errores.
-- `git diff --check`: sin advertencias de espacio en blanco.
-- `python3 scripts/generate_project_file_registry.py`: regenerado; filas
-  nuevas para `test_lab_certificate_folio_distribution.py`,
-  `field-labels.ts` y `primitives.wiring.test.ts`; responsabilidad
-  actualizada en las filas de `lab_field_sheets.py`, `lab_work_orders.py`
-  (router y servicio), `operational_tickets.py`, `error-detail.ts`,
-  `LabEquipmentForm.tsx` y `primitives.tsx`.
-
-### Flujo LAB "equipo por equipo" — 2026-09-04
-
-- Suite focal nueva (`test_lab_equipment_by_equipment_workflow.py`): `17
-  passed, 1 skipped` sin `LAB_POSTGRES_TEST_URL`; `18 passed` con la
-  variable exportada contra PostgreSQL local (incluye la regresión
-  obligatoria del caso de 5 equipos preexistentes en schema aislado).
-- Suite focal ampliada (equipo-por-equipo + LAB completo + access
-  conformity + capability gate): `188 passed, 10 skipped`.
-- Backend suite completa: `1154 passed, 13 skipped`, 0 fallas.
-- Alembic: `heads`/`current` = `6640c526c412 (head)` único; ciclo `upgrade
-  head → downgrade -1 → upgrade head` correcto contra PostgreSQL real;
-  `check` = `No new upgrade operations detected`.
-- Mobile: inventario de `*.test.ts(x)` = 50 (48 heredados + 2 nuevos de este
-  cierre); `npm test` los ejecuta todos = `391 passed, 0 failed`.
-- `npx tsc --noEmit -p .`: correcto, sin salida.
-- `npm run lint` (`expo lint`): correcto, sin errores.
-- `git diff --check`: limpio.
-- QA físico Mobile: **pendiente**. No se ejecutó ni se reclama validación en
-  dispositivo físico ni simulador para este cierre.
 
 ### Cierre quirúrgico acumulativo — 2026-09-04
 
@@ -611,6 +482,30 @@ descrito en cierres anteriores -- no se reimplementó nada de eso).
   diff quedó mínimo (la fila `@OT` nueva únicamente).
 - QA físico Mobile: **pendiente**. No se ejecutó ni se reclama validación en
   dispositivo físico ni simulador para este cierre.
+
+### Cierre de pendientes de auditoría — 2026-09-04 (observations snapshot + Mobile test discovery)
+
+- Suite focal backend (`test_lab_work_order_observations.py`,
+  `test_lab_field_sheets_capture.py`, `test_lab_phase6_field_sheet_revisions.py`,
+  `test_lab_work_orders.py`, `test_lab_equipment_soft_delete.py`): `157
+  passed, 9 skipped`, 0 fallas.
+- Backend suite completa: `1146 passed, 12 skipped`, 0 fallas (+9 sobre el
+  cierre anterior, exactamente los tests nuevos de observations).
+- Alembic: `heads`/`current` = `7088fa142cc2 (head)` único (sin cambios;
+  ningún pendiente de esta tanda requería migración); `check` = `No new
+  upgrade operations detected`.
+- Mobile: inventario de `*.test.ts(x)` bajo `src/` = 48 archivos. Antes de
+  este cierre `npm test` ejecutaba 27 de ellos (20 explícitos + 7 bajo
+  `src/wiring-tests/` vía glob) = 253 tests; ahora ejecuta los 48 = `375
+  passed, 0 failed`. Se confirmó que `MobileSignatureFlow.wiring.test.ts`
+  (el único que fallaba al widening) corre y pasa sus 5 casos.
+- `npx tsc --noEmit -p .`: correcto, sin salida.
+- `npm run lint` (`expo lint`): correcto, sin errores.
+- `git diff --check`: limpio.
+- QA físico Mobile: **pendiente** (sin cambios respecto al corte anterior;
+  ninguno de los dos pendientes cerrados aquí requería probarse en
+  dispositivo físico -- son lógica backend y descubrimiento de tests, no UI
+  nueva salvo el texto "Guardando firmas…" ya cubierto por su propio test).
 
 ### Cierre operativo y UX OT LAB — 2026-09-03
 
@@ -712,33 +607,23 @@ descrito en cierres anteriores -- no se reimplementó nada de eso).
 
 - QA físico Android/iPhone/TestFlight del recorrido completo de recepción,
   doble firma, orientación/teclado/scroll, FieldSheets, cierre, PDF,
-  refresh/realtime, retiro de equipo tras reapertura, flujo equipo-por-equipo
-  (selector, captura pre-firma, finalize, entrega automática), reapertura con
-  clon N+1/"Cambiar Hoja de Campo", "Distribuir folios disponibles" y el
-  contador/mensaje de Observaciones. **No ejecutado**; ningún cierre reciente
-  (incluido el de 2026-09-05) lo reclama como hecho.
-- Inventario API (`API_ENDPOINT_INVENTORY_2026-08-03.csv`): sincronizado con
-  el runtime (526 operaciones -- 523 del corte anterior + las 3 del cierre
-  2026-09-05: `field-sheet/change-template`, `certificate-folios/preview`,
-  `certificate-folios/distribute`); `test_api_access_conformity.py` pasa sin
-  excepciones.
-- Mobile: `npm test` ejecuta 405 tests, 0 fallos (400 del corte anterior + 5
-  nuevos del cierre 2026-09-05).
+  refresh/realtime, retiro de equipo tras reapertura, snapshot de
+  observations y errores. **No ejecutado**; ningún cierre reciente (incluido
+  el de 2026-09-04) lo reclama como hecho.
+- Inventario API (`API_ENDPOINT_INVENTORY_2026-08-03.csv`) resuelto en el
+  cierre de 2026-09-04: runtime y CSV committed vuelven a coincidir (518
+  operaciones); `test_api_access_conformity.py` pasa sin excepciones.
+- Mobile: descubrimiento de tests resuelto en el cierre de pendientes de
+  auditoría 2026-09-04 -- `npm test` ahora ejecuta los 48 archivos
+  `*.test.ts(x)` reales bajo `src/` (antes 27), vía
+  `myc-mobile/scripts/list-test-files.js`; `MobileSignatureFlow.wiring.test.ts`
+  fue diagnosticado (1 bug real de wiring corregido, 4 asserts de formato
+  actualizados) y corre verde.
 - `test_postgresql_concurrent_individual_cohorts_get_distinct_versions` y
-  `test_postgresql_concurrent_folio_allocation_is_unique` pueden fallar
-  contra una base local `erp_myc` con estado no-pristino/no aislado (folios
-  ya consumidos por trabajo manual previo, un test que no aísla su schema);
-  no relacionado con el flujo equipo-por-equipo ni con el cierre 2026-09-05
-  (reproducido idéntico contra el HEAD base `db6e6a2` vía `git stash`, ver
-  arriba). Requieren una base Postgres efímera dedicada o aislar su schema.
-- Conversión de la OT productiva real (`group` → `equipment_by_equipment`)
-  intencionalmente NO realizada en este trabajo: queda como intervención
-  administrativa manual y controlada, posterior a auditoría independiente,
-  merge y deploy (ver `docs/architecture/LAB_WORK_ORDERS.md`).
-- Superado por el cierre "grupos mixtos" (ver más abajo): `finalize_lab_signature_group`
-  ya cubre la cohorte multi-OT con una sola firma grupal que puede mezclar
-  `group`/`equipment_by_equipment`, y `create_additional_work_order` ya
-  acepta un `workflow_mode` propio en vez de heredar siempre el de origen.
+  `test_postgresql_concurrent_folio_allocation_is_unique` fallan contra la
+  base local `erp_myc` por estado no-pristino/no aislado (ver Validaciones
+  2026-09-04); requieren una base Postgres efímera dedicada o aislar su
+  schema, no relacionado con LAB equipment delete.
 - Mantener fuera de esta fase los hallazgos separados de FieldSheets
   (contenido, tabla Valve, overflow, columnas, imprimibles y plantillas),
   NIIMBOT, cambios MYCA/MYCT/rangos, LabClient y Fase 2 sin regresión.

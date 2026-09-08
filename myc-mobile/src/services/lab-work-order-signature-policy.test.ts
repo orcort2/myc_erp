@@ -16,8 +16,15 @@ test('a preserved reopening with its valid historical session skips signature ca
   assert.equal(canSkipSignaturesAfterReopen(base()), true);
 });
 
-test('a brand-new (non-reopened) work order always needs signatures', () => {
-  assert.equal(canSkipSignaturesAfterReopen({ ...base(), reopen_ticket_id: null }), false);
+test('a direct preserved reopening without a ticket skips signature capture', () => {
+  const direct = { ...base(), reopen_ticket_id: null };
+  assert.equal(canSkipSignaturesAfterReopen(direct), true);
+});
+
+test('a brand-new unsigned draft still needs signatures', () => {
+  assert.equal(canSkipSignaturesAfterReopen({
+    signature_preserved: false, signature_required: true, signature_session_id: null,
+  }), false);
 });
 
 test('a later backend invalidation restores the normal signature flow automatically', () => {

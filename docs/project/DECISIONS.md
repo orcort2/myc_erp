@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: decisiones incompatibles de especificaciones archivadas y propuestas no ratificadas
 >
-> Corte verificado: 2026-09-05
+> Corte verificado: 2026-09-02
 
 # Registro de decisiones vigentes
 
@@ -374,163 +374,12 @@ mover el equipo retirado. Retirar equipo sobre una OT ya reabierta es un
 cambio estructural: invalida la firma vigente igual que agregar equipo, bajo
 cualquier política de reapertura.
 
-## D-2026-09-04 — workflow_mode: flujo "equipo por equipo" como modalidad persistente, no un segundo agregado
 
-El trabajo de campo real ocurre equipo por equipo (servicio → Hoja de Campo →
-siguiente equipo), no siempre "todos los equipos primero, después recepción y
-captura". Se modela como `LabWorkOrder.workflow_mode` (`group` default/
-backfill, `equipment_by_equipment`), NUNCA como una entidad ni máquina de
-estados paralela: el mismo agregado `LabWorkOrder`/`LabWorkOrderEquipment`/
-`FieldSheet`, la misma migración de tombstone, el mismo `LabWorkOrderSignatureSession`,
-el mismo Delivery. Ningún histórico se reinterpreta automáticamente -- la
-conversión de una OT `group` existente es una intervención administrativa
-excepcional, fuera de este alcance, y debe funcionar sin recrear equipos.
+## Hotfix LAB — 2026-09-08
 
-`_ensure_capture_allowed` se amplía de forma acotada: `equipment_by_equipment`
-permite captura real de FieldSheet en `draft` (antes de firmar recepción),
-pero nunca se finge `received_signed` -- la OT permanece `draft` durante toda
-la captura previa, y completar/congelar una hoja individualmente sigue
-prohibido pre-firma (`complete_lab_field_sheet` lo bloquea explícitamente).
-La frontera documental sigue siendo la firma: sólo entonces existe
-`lab_signature_session_id`, `status=completed` y PDF/SHA congelados.
+El ticket es procedencia opcional, no autoridad de firma. Se reutilizan los flags/sesión existentes y el freezer canónico; la regeneración administrativa conserva la revisión FieldSheet vigente, escribe una ruta única y compensa fallos de transacción. No se agrega una autoridad documental paralela ni una migración.
 
-`finalize_equipment_by_equipment_work_order` es la única operación de cierre
-para este modo: una transacción única encadena `_sign_members_uncommitted`,
-`_complete_lab_field_sheet_uncommitted` (reutilizando `_validate_ready_to_complete`,
-nunca una segunda política de validación), `_finish_complete_members_uncommitted`
-y `_create_delivery_event`/`_finalize_delivery`, con un solo commit al final
--- un fallo en cualquier paso no deja firma/hoja/OT/entrega parcial, y el
-retry es seguro porque no existe estado intermedio persistible. La entrega es
-FULL y reutiliza exactamente las mismas firmas Cliente/Técnico ya capturadas;
-nunca pide una segunda firma de entrega. `group` conserva su flujo intacto:
-las excepciones nuevas están condicionadas explícitamente a
-`workflow_mode == "equipment_by_equipment"`.
 
-## D-2026-09-04 — Grupos mixtos: workflow_mode/signature_scope/Delivery como tres autoridades separadas
+## Consolidación documental de reapertura — 2026-09-08
 
-La decisión anterior (arriba) dejaba `equipment_by_equipment` como
-individual-only y forzaba a `create_additional_work_order` a heredar
-`workflow_mode` de su OT origen. Ambas restricciones se retiran
-explícitamente: (1) `create_additional_work_order` acepta un
-`workflow_mode` opcional propio (query param, sin él sigue heredando); (2)
-`finalize_lab_signature_group` (`POST /{id}/signature-group/finalize`, con
-su prevalidación de sólo lectura `GET /{id}/signature-group/prevalidate`)
-permite que una sola `LabWorkOrderSignatureSession` formalice una cohorte
-que mezcla miembros `group` y `equipment_by_equipment` a la vez, cada uno
-resuelto según su propio contrato -- nunca el mismo estado final para
-todos. Un mismo `root_work_order_id` puede mezclar modalidades libremente;
-no existe ninguna constraint de igualdad por root ni cascada de
-actualización.
-
-Se separan explícitamente tres autoridades que antes podían confundirse:
-`workflow_mode` (cómo ejecuta la OT su trabajo técnico), `signature_scope`
-(cuántas OT comparten una sesión de firma, ya existente desde Fase 3, ahora
-extendido a cohortes mixtas) y Delivery (qué equipo se entrega físicamente
-en un evento). La entrega automática de una firma grupal mixta incluye
-únicamente el equipo de los miembros `equipment_by_equipment` recién
-cerrados en ESE evento -- nunca el de un miembro `group` que sigue en el
-laboratorio; ese miembro conserva su propio Delivery normal cuando de
-verdad termine.
-
-Nueva acción administrativa `POST /{id}/workflow-mode`
-(`change_lab_work_order_workflow_mode`) permite corregir la modalidad de UNA
-sola OT antes de firmar su recepción, con motivo obligatorio y AuditLog
-(`lab_work_order.workflow_mode_changed`). Reutiliza el permiso
-`lab_work_orders.cancel` ya existente (mismo patrón que cancelar/restaurar,
-mismo actor: interno con autoridad administrativa) en vez de crear un
-permiso nuevo para una autoridad que ya existía; nunca se otorga a Captura,
-Técnico ni actores externos. `group → equipment_by_equipment` y
-`equipment_by_equipment → group` conservan siempre equipo/FieldSheets/IDs
-sin recrear nada -- incluida una FieldSheet ya en captura real, que
-sobrevive intacta y continúa (nunca una segunda captura) una vez firmada la
-recepción bajo el nuevo contrato `group`.
-
-Snapshot de observaciones: `FieldSheet.observations` se congela desde
-`LabWorkOrderEquipment.observations` únicamente AL CREAR cada revisión
-(`create_lab_field_sheet`), nunca como vínculo vivo -- editar el campo del
-equipo después no reescribe una hoja ya creada, y cada nueva revisión vuelve
-a leer el valor vigente del equipo en ese momento. Se documenta en
-`docs/architecture/LAB_WORK_ORDERS.md` para dejar explícita la separación
-frente a `certificate_folio`/`report_number` y frente al renglón de
-observación del PDF de OT (que sigue usando el campo del equipo, no el de
-la FieldSheet).
-
-## D-2026-09-05 — Reapertura FieldSheet clona en vez de dejar hueco; folio de certificado exige pool externo
-
-Tres correcciones puntuales sobre el mismo vertical, cada una resuelta
-reutilizando primitivas ya existentes en vez de inventar arquitectura
-nueva.
-
-**Reapertura sin hueco operativo.** Retirar (`is_current=False`) la
-revisión `completed` vigente de una FieldSheet siempre dejaba al equipo sin
-revisión vigente hasta que alguien volviera a llamar `create_lab_field_sheet`
-manualmente -- Mobile lo mostraba como "Seleccionar Hoja de Campo", igual
-que un equipo nunca capturado, aunque el histórico completed siguiera
-intacto. Se decide que esa apariencia es incorrecta sólo cuando la
-retirada NO viene acompañada de un cambio de campo crítico del equipo (el
-caso donde SÍ corresponde una hoja en blanco, sin tocar): para el Ticket
-`field_sheet_reopen` y para el equipo objetivo de una reapertura de cohorte
-completa, `_clone_field_sheet_for_correction`
-(`app/services/lab_field_sheets.py`) abre la revisión N+1 ya clonada y
-editable en la MISMA transacción que retira N. Se reutiliza exactamente el
-modelo de revisión de Fase 6 (`revision_number`, `supersedes_field_sheet_id`,
-`uq_field_sheets_current_lab_equipment`) -- no se crea un segundo esquema
-de versionado. No se clonan firmas ni cálculos de incertidumbre, que
-pertenecen a su propia revisión.
-
-Para "quiero otra plantilla, no corregir un dato" se añade una acción
-explícita y atómica (`POST .../field-sheet/change-template`) en vez de
-componer DELETE+POST desde el cliente: el DELETE de descarte ya existente
-restaura la revisión anterior `completed` como vigente (comportamiento
-correcto para su caso de uso original, "deshacer mi intento"), lo que
-bloquearía un POST posterior con 409. La nueva acción retira sólo la
-editable vigente y crea la siguiente sin ese callejón sin salida, sin
-tocar el descarte existente ni su contrato ya probado.
-
-**Folio de certificado exige pool externo resuelto.** `_assign_equipment_service_core`
-resolvía folio MYCA/MYCT de un cliente operativo externo contra su ticket
-`certificate_folio_block`, pero si no había folio disponible caía en
-silencio a `folio_status="pending"` -- indistinguible del `pending`
-legítimo de Vinculado. Se decide bloquear esa combinación específica
-(externo + accredited/traceable + sin pool) con `409
-LAB_CERTIFICATE_FOLIOS_UNAVAILABLE`, dejando `linked` exento (su `pending`
-siempre fue válido) y sin tocar la resolución de folio de staff interno
-(secuencia institucional propia, nunca sujeta a esta regla).
-
-Para reparar equipo legacy ya atrapado en ese `pending` desde antes de la
-regla, se añade la acción administrativa "Distribuir folios disponibles"
-(`preview_pending_certificate_folio_distribution` /
-`distribute_pending_certificate_folios`), todo-o-nada por prefijo dentro de
-una OT, reutilizando el mismo locking (`SELECT ... FOR UPDATE` sobre el
-ticket) que ya usaba el alta -- no se crea un mecanismo de asignación
-paralelo. Reutiliza el permiso `lab_work_orders.cancel` ya usado por
-"Cambiar modalidad de trabajo" en vez de crear uno nuevo: misma clase de
-autoridad administrativa interna.
-
-**Mobile: validación humanizada.** `error-detail.ts` ya capturaba el `type`
-crudo de Pydantic pero nunca lo usaba para elegir mensaje -- todo caía al
-genérico `"Revisa el campo X."`, incluido un `observations` de más de 4000
-caracteres sin decir por qué. Se humanizan `string_too_long`/
-`string_too_short`/`missing` por tipo, reutilizando (extraído a
-`field-labels.ts`, sin dependencia de React Native) el mismo mapa de
-etiquetas que ya existía sólo para `missingFields` en
-`LabTechnicalCapture.tsx` -- una sola fuente en vez de dos listas que
-podían divergir. `Field` (`primitives.tsx`) gana `maxLength`/contador
-opt-in, sin cambiar el contrato de los callers existentes que no lo pasan.
-
-**Corrección post-auditoría (2026-09-05, mismo día):** la primera versión
-de `_clone_field_sheet_for_correction` volvía a leer
-`LabWorkOrderEquipment.observations` VIGENTE para la revisión correctiva
--- copiando literalmente el contrato ya existente de `create_lab_field_sheet`
-sin notar que ese contrato fue escrito para una hoja GENUINAMENTE NUEVA, no
-para una que corrige un documento ya existente. Una auditoría independiente
-lo señaló: una corrección debe partir exactamente de lo que N ya
-documentaba, igual que cualquier otro campo clonado -- se corrige a clonar
-`retired.observations`. La misma auditoría señaló que las estructuras JSON
-clonadas (`capture_values`, `template_definition_json`,
-`institutional_snapshot_json`, `row_data`, `validation_snapshot`) usaban
-copia superficial (`dict(...)`), insuficiente para garantizar
-independencia documental de estructuras anidadas -- se corrige a
-`copy.deepcopy`. Ambas correcciones con test explícito (valores de N y del
-equipo deliberadamente distintos; mutación de una estructura anidada en
-N+1 que no debe alcanzar N).
+Se reutiliza FieldSheet como entidad de revisión y el snapshot de reapertura como comparación por ID de equipo, con fallback a la hoja congelada para legacy. No hay flags dirty, tablas ni motor paralelo. La consolidación vive en lab_document_reconciliation.py; la transacción de cierre y guard_final_pdf_batch gobiernan todos los writes. La excepción administrativa de regeneración in-place no se usa para consolidar una reapertura. La clasificación efectiva de serie e identificación interna pertenece al backend: la intención del cliente sólo puede endurecer la política. Se usa normalización y comparación conservadora de una edición, según LAB_WORK_ORDERS.md, sin nuevas dependencias. Los prefills editables se comparan contra la herencia previa para proteger captura técnica, incluso en duplicados declarativos.

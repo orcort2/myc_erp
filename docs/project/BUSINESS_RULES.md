@@ -6,7 +6,7 @@
 >
 > Prevalece sobre: `archive/process/reglas-negocio.md`, reglas de especificaciones V2/V3 y bitácoras cronológicas retiradas conservadas por Git
 >
-> Corte verificado: 2026-09-05
+> Corte verificado: 2026-09-02
 
 # Reglas de negocio vigentes
 
@@ -103,8 +103,6 @@ Sólo se incluyen reglas verificadas en la implementación o en una decisión vi
 | BR-069 | LabClient Mobile | El XLSX LAB exige empresa/contacto/dirección con encabezados normalizados y puede aportar código postal/ciudad/estado; auxiliares no se importan y la deduplicación continúa por empresa+dirección+atención. Toda consulta respeta permisos/scope y limita en SQL: selector sólo con 2+ caracteres y máximo 5; administración en páginas de 25. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicios/routers LabClient y suites backend/móvil | 2026-09-02 |
 | BR-070 | OT LAB / Folio Vinculado | El folio Vinculado capturado es documental externo y nunca consume MYCA/MYCT. Con `lab_folios.resolve` se autoriza directamente y, si había Ticket pendiente, éste queda resuelto conservando historial; sin autoridad el equipo continúa `pending` y el Ticket preserva `requested_folio`. Los destinatarios se resuelven por permiso efectivo y no existe self-notification de creación. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicio de folios y Notifications | 2026-09-03 |
 | BR-071 | FieldSheet LAB / Fecha de recepción | Sólo una revisión vigente `draft`/`in_progress` puede descartarse. La primera captura descartada puede regresar la OT a `received_signed`; una recaptura restaura su predecesora completed sin alterar historia. `LabWorkOrder.reception_date` es la autoridad: staff interno con `work_orders.create` o fallback `lab_work_orders.use` puede editarla y sincroniza sólo hojas vigentes editables. `reception_date_change` es informativo; crear o resolver el Ticket jamás muta la fecha. | Arquitecturas LAB/Tickets, servicios y suites backend/móvil | 2026-09-03 |
-| BR-072 | OT LAB / workflow_mode equipo por equipo | `LabWorkOrder.workflow_mode` (`group` default/backfill, `equipment_by_equipment`) es autoridad backend persistente elegida al crear; ningún histórico se reinterpreta automáticamente. En `equipment_by_equipment` la captura real de FieldSheet procede en `draft` (antes de firmar recepción), pero completar/congelar una hoja individualmente sigue prohibido pre-firma. `finalize_equipment_by_equipment_work_order` es la única puerta de cierre: una sola firma Cliente+Técnico, en una transacción atómica, completa cada hoja ya capturada, cierra la OT y registra una entrega FULL reutilizando esas mismas firmas -- nunca deja firma/hoja/OT/entrega parcial ante un fallo. `group` conserva el flujo histórico intacto sin ninguna excepción nueva. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), migración `6640c526c412`, servicios y suites backend/móvil | 2026-09-04 |
-| BR-073 | OT LAB / grupos mixtos, firma grupal mixta y cambio de modalidad | `workflow_mode` (por OT), `signature_scope` (cuántas OT comparten una firma) y Delivery (qué equipo se entrega físicamente) son tres autoridades independientes; un mismo `root_work_order_id` puede mezclar `group`/`equipment_by_equipment` libremente, sin constraint de igualdad ni cascada. `create_additional_work_order` elige su propia modalidad (parámetro opcional, ya no forzada). `POST /{id}/signature-group/finalize` permite UNA sola firma grupal que formaliza a la vez miembros `group` y `equipment_by_equipment`: cada uno avanza según su propio contrato (nunca el mismo estado final para todos) y la entrega automática incluye únicamente el equipo de los miembros `equipment_by_equipment` recién cerrados. `POST /{id}/workflow-mode` permite corregir la modalidad de una sola OT antes de firmar su recepción, con motivo obligatorio, `AuditLog` completo y sin afectar a ninguna otra OT del grupo; reutiliza `lab_work_orders.cancel`, nunca otorgado a Captura/Técnico/externos. | [`../architecture/LAB_WORK_ORDERS.md`](../architecture/LAB_WORK_ORDERS.md), servicios y suites backend/móvil | 2026-09-04 |
 
 ## Reglas históricas no vigentes como obligación actual
 
@@ -160,7 +158,7 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 
 ## Reglas de Tickets y reapertura móvil — 2026-08-14
 
-1. Una OT LAB cerrada no es editable ni cambia a borrador sin Ticket aprobado.
+1. Una OT LAB cerrada sólo vuelve a borrador por Ticket aprobado o reapertura administrativa directa autorizada, sin ticket artificial.
 2. Aprobar crea revisión nueva del grupo sin cambiar folios ni sobrescribir PDF.
 3. `preserve` sólo conserva firma mientras no cambien cliente, fechas,
    domicilio, composición o identidad/condición del equipo; el backend invalida
@@ -249,47 +247,18 @@ ausencia o diferencia de hash bloquea la entrega y no autoriza regeneración
 silenciosa. Los estados editables pueden generar preview dinámico y los
 snapshots históricos conservan su renderer legacy explícito.
 
-## Regla verificada 2026-09-05 — Folio de certificado obligatorio para cliente operativo externo
 
-Un cliente operativo externo sólo puede registrar equipo `accredited` o
-`traceable` si existe un ticket `certificate_folio_block` `resolved` de su
-propio `operator_client_id` con al menos un folio MYCA/MYCT libre; sin eso,
-el alta se rechaza con `409 LAB_CERTIFICATE_FOLIOS_UNAVAILABLE` y no persiste
-nada (equipo/service_type/edit_version incluidos). `linked` es la única
-excepción explícita: puede quedar `pending` sin folio y seguir su flujo
-propio de `linked_folio`/Ticket. Staff interno (`external=False`) no está
-sujeto a esta regla -- siempre resuelve folio de la secuencia institucional
-LAB.
+## Hotfix documental LAB — 2026-09-08
 
-La reparación de equipo legacy atrapado en ese `pending` (de antes de esta
-regla) es exclusivamente la acción administrativa "Distribuir folios
-disponibles": todo-o-nada por prefijo dentro de una OT, sólo consume folios
-ya resueltos del mismo `operator_client_id`, nunca inventa ni reutiliza un
-folio ya `used`, y queda auditada
-(`lab_work_order.pending_certificate_folios_distributed`). Ver
-`LAB_WORK_ORDERS.md` ("Cliente operativo externo: pool obligatorio para
-accredited/traceable") para el contrato completo.
+La preservación de firma depende de sesión y flags, nunca del ticket. Ediciones
+ordinarias conservan la firma con `preserve`; altas/bajas de equipo y OT
+adicional la invalidan. Ambas reaperturas aplican control de versión.
+Regenerar el PDF final FieldSheet exige actor interno con `field_sheets.review`,
+motivo y revisión vigente final; no cambia la revisión ni sus datos técnicos.
+Contratos: `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md` y
+`FIELD_SHEET_PDF_RENDERER.md` en `docs/architecture/`.
 
-## Regla verificada 2026-09-05 — Reapertura de FieldSheet sin hueco operativo
 
-Retirar la revisión `completed` vigente de una FieldSheet por una corrección
-que NO cambia identidad del equipo (Ticket `field_sheet_reopen`, o el equipo
-objetivo de una reapertura de cohorte completa) nunca deja al equipo sin
-revisión vigente: la revisión N+1 nace clonada y editable en la misma
-transacción, con todo el contenido técnico previamente capturado, para que
-el técnico corrija un dato sin recapturar desde cero. Sólo un cambio de
-campo crítico del equipo (instrumento, marca, modelo, identificación, serie,
-condición física) sigue abriendo una hoja genuinamente en blanco, porque ahí
-la identidad de lo que se mide cambió de verdad. Cambiar de plantilla en vez
-de corregir un dato es una acción explícita distinta ("Cambiar Hoja de
-Campo"), nunca dos peticiones separadas de descartar y crear. Ver
-`LAB_WORK_ORDERS.md` y `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md`.
+## Consolidación documental de reapertura — 2026-09-08
 
-`observations` de la revisión correctiva se clona del valor ya congelado en
-N, nunca vuelve a leer `LabWorkOrderEquipment.observations` -- una
-corrección parte exactamente del documento que corrige, igual que
-resultados/evidencia/condiciones. La re-lectura del equipo sigue aplicando
-sólo a una FieldSheet genuinamente nueva (primera captura, o la hoja en
-blanco de un cambio de campo crítico). Toda estructura JSON mutable clonada
-usa copia profunda (`copy.deepcopy`), nunca superficial, para que N y la
-correctiva sean documentalmente independientes.
+El cierre de una reapertura es una transacción única para sincronización documental, nuevas revisiones FieldSheet, PDFs y OT. Sólo se versionan hojas afectadas; se conserva la captura no invalidada y el histórico. `identity_change_kind=replacement` invalida firma aunque exista preserve; sólo una corrección verificada por backend permite conservarla. Serie e identificación interna se clasifican con normalización y ediciones mínimas conservadoras; el payload no puede imponer preserve. Los prefills editables sólo se propagan cuando aún coinciden con la herencia anterior, preservando overrides técnicos. Una firma requerida o validación técnica pendiente bloquea el cierre sin cambios parciales. El contrato completo está en ../architecture/LAB_WORK_ORDERS.md.

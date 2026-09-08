@@ -9,7 +9,7 @@ import type { LabWorkOrder } from '@/src/types/lab-work-order';
  * the review step must skip straight to closing the group instead of
  * routing through the signature-capture step.
  *
- * All four fields are checked (not just signature_preserved) because a
+ * All three signature fields are checked (not just signature_preserved) because a
  * structural change (added/removed equipment, extra OT) invalidates the
  * session server-side by clearing signature_session_id and flipping
  * signature_required back to true — at that point this must return false
@@ -18,12 +18,11 @@ import type { LabWorkOrder } from '@/src/types/lab-work-order';
 export function canSkipSignaturesAfterReopen(
   workOrder: Pick<
     LabWorkOrder,
-    'reopen_ticket_id' | 'signature_preserved' | 'signature_required' | 'signature_session_id'
+    'signature_preserved' | 'signature_required' | 'signature_session_id'
   >,
 ): boolean {
   return (
-    workOrder.reopen_ticket_id != null
-    && workOrder.signature_preserved === true
+    workOrder.signature_preserved === true
     && workOrder.signature_required === false
     && workOrder.signature_session_id != null
   );

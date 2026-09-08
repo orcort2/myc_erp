@@ -180,6 +180,25 @@ export function LabEquipmentForm({
         onChange={(value) => updateEquipment('serial_number', value)}
       />
 
+      {mode === 'edit' && (
+        <View>
+          <Text>Tipo de cambio de identidad</Text>
+          <ActionRow>
+            <SecondaryButton
+              icon="pencil"
+              label={(equipment.identity_change_kind ?? 'correction') === 'correction' ? '✓ Corrección de datos' : 'Corrección de datos'}
+              onPress={() => updateEquipment('identity_change_kind', 'correction')}
+            />
+            <SecondaryButton
+              icon="swap-horizontal"
+              label={equipment.identity_change_kind === 'replacement' ? '✓ Sustitución / serie distinta' : 'Sustitución / serie distinta'}
+              onPress={() => updateEquipment('identity_change_kind', 'replacement')}
+            />
+          </ActionRow>
+          {equipment.identity_change_kind === 'replacement' && <Text>La sustitución requiere nuevas firmas y recaptura técnica del equipo.</Text>}
+        </View>
+      )}
+
       {service === 'linked' ? (
         <Field
           hint={
@@ -208,7 +227,6 @@ export function LabEquipmentForm({
       <Field
         error={fieldErrors.observations}
         label="Observaciones del equipo"
-        maxLength={4000}
         multiline
         value={equipment.observations ?? ''}
         onChange={(value) => updateEquipment('observations', value || null)}

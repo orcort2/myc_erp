@@ -284,7 +284,10 @@ POLICY_BY_TAG: dict[str, Callable[[str, str], AccessPolicy]] = {
     "service-orders": _service_order_policy,
     "technical-profiles": _generic_resource_policy("technical_profiles"),
     "equipment": _generic_resource_policy("equipment"),
-    "field-sheets": lambda method, _path: _permission("field_sheets.read" if method == "GET" else "field_sheets.update"),
+    "field-sheets": lambda method, path: _permission(
+        "field_sheets.review" if method == "POST" and path.endswith("/pdf/regenerate")
+        else "field_sheets.read" if method == "GET" else "field_sheets.update"
+    ),
     "certificates": _certificate_policy,
     "communications": _communications_policy,
     "invoices": _invoice_policy,

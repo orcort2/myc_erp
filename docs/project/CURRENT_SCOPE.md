@@ -471,3 +471,13 @@ de carga/paginación existentes.
 Quedan fuera mapas/rastreo externo, Gmail, una plantilla institucional avanzada
 de nota, aceptación física y workflows de categorías distintas. El frente
 queda **EN REVISIÓN**.
+
+
+## Hotfix LAB — 2026-09-08
+
+Se incorpora regeneración administrativa explícita del PDF final FieldSheet vigente, con permiso interno, motivo y auditoría. Se corrige reapertura directa preserve en edición/cierre y Mobile. No incluye modificación técnica, regeneración histórica ni reparación de datos en producción.
+
+
+## Consolidación documental de reapertura — 2026-09-08
+
+«Completar cambios» consolida automáticamente documentos LAB: versionado selectivo de FieldSheets finales afectadas, copia de captura sin recaptura documental manual, PDFs nuevos, auditoría y rollback conjunto. Incluye intención correction/replacement con clasificación final backend de identidad y protección de overrides en prefills editables. No reemite certificados ni sustituye una recaptura técnicamente invalidada.

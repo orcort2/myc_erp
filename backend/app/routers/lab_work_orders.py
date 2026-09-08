@@ -8,8 +8,6 @@ from app.services.auth import require_permission
 from app.core.mobile.scope import ensure_lab_work_order_scope
 from app.core.mobile.security import MobileSecurityContext, require_mobile_permission
 from app.schemas.lab_work_order import (
-    LabCertificateFolioDistributionPreview,
-    LabCertificateFolioDistributionResult,
     LabEquipmentCertificateClientWrite,
     LabEquipmentConfiguredCreate,
     LabEquipmentWrite,
@@ -20,9 +18,7 @@ from app.schemas.lab_work_order import (
     LabDeliveryRead,
     LabDeliveryVoid,
     LabDirectReopenWrite,
-    LabEquipmentByEquipmentPrevalidation,
     LabFieldSheetCreate,
-    LabFieldSheetDirectReopenWrite,
     LabSignatureGroupWrite,
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
@@ -30,7 +26,6 @@ from app.schemas.lab_work_order import (
     LabWorkOrderGroupRequestRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
-    LabWorkOrderWorkflowModeChange,
     LabReceptionDateUpdate,
     LabWorkOrderUpdate,
 )
@@ -53,19 +48,12 @@ from app.services.lab_work_orders import (
     claim_group_request,
     approve_group_request,
     reject_group_request,
-    change_lab_work_order_workflow_mode,
     delete_work_order,
     delete_equipment,
-    distribute_pending_certificate_folios,
     export_all,
-    finalize_equipment_by_equipment_work_order,
-    finalize_lab_signature_group,
     get_pdf,
     get_work_order,
     list_work_orders,
-    preview_pending_certificate_folio_distribution,
-    prevalidate_equipment_by_equipment_finalization,
-    prevalidate_lab_signature_group,
     set_equipment_certificate_client,
     sign_group,
     sign_individual,
@@ -77,12 +65,10 @@ from app.services.lab_work_orders import (
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.field_sheet_templates import list_field_sheet_templates
 from app.services.lab_field_sheets import (
-    change_lab_field_sheet_template,
     complete_lab_field_sheet,
     create_lab_field_sheet,
     discard_lab_field_sheet,
     read_lab_field_sheet,
-    reopen_lab_field_sheet_directly,
     update_lab_field_sheet,
 )
 from app.services.lab_packages import generate_lab_package
@@ -702,59 +688,6 @@ def delete_lab_field_sheet(
     discard_lab_field_sheet(db, work_order_id, equipment_id, context.user)
 
 
-@router.post(
-    "/{work_order_id}/equipment/{equipment_id}/field-sheet/change-template",
-    response_model=FieldSheetRead,
-)
-def post_change_lab_field_sheet_template(
-    work_order_id: int,
-    equipment_id: int,
-    payload: LabFieldSheetCreate,
-    db: Session = Depends(get_db),
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission(
-            "field_sheets.capture", "lab_work_orders.use", "lab_field_sheets.capture"
-        )
-    ),
-) -> FieldSheetRead:
-    """"Cambiar Hoja de Campo": retira la revisión editable vigente y abre
-    una nueva con otra plantilla en una sola operación atómica -- ver
-    change_lab_field_sheet_template para por qué esto no puede ser
-    DELETE + POST en dos peticiones separadas."""
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    return change_lab_field_sheet_template(
-        db, work_order_id, equipment_id, payload, context.user,
-        external=context.actor_type == "client",
-    )
-
-
-@router.post(
-    "/{work_order_id}/equipment/{equipment_id}/field-sheet/reopen",
-    response_model=FieldSheetRead,
-)
-def post_reopen_lab_field_sheet_directly(
-    work_order_id: int,
-    equipment_id: int,
-    payload: LabFieldSheetDirectReopenWrite,
-    db: Session = Depends(get_db),
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("lab_folios.resolve")
-    ),
-) -> FieldSheetRead:
-    """Reapertura administrativa directa de UNA FieldSheet completed --
-    exclusiva de quien YA tiene lab_folios.resolve (verificado de nuevo
-    dentro del servicio). No pasa por tickets; ver
-    reopen_lab_field_sheet_directly. Distinto de post_reopen_lab_work_order_directly
-    (reabre la OT completa): esto sólo desbloquea una hoja, la OT sigue
-    abierta."""
-    if context.actor_type != "internal":
-        raise HTTPException(status_code=403, detail="La reapertura directa está reservada a staff MYC")
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    return reopen_lab_field_sheet_directly(
-        db, work_order_id, equipment_id, context.user, reason=payload.reason,
-    )
-
-
 @router.post("/{work_order_id}/equipment/{equipment_id}/field-sheet/complete", response_model=FieldSheetRead)
 def post_complete_lab_field_sheet(
     work_order_id: int,
@@ -807,10 +740,6 @@ def remove_lab_equipment(
 @router.post("/{work_order_id}/additional", response_model=LabWorkOrderRead, status_code=201)
 def create_lab_additional_work_order(
     work_order_id: int,
-    # Sección 4/30 del cierre "grupos mixtos": la OT adicional puede elegir
-    # su propia modalidad; sin este parámetro hereda la de la OT origen
-    # (compatibilidad hacia atrás).
-    workflow_mode: str | None = Query(default=None, pattern="^(group|equipment_by_equipment)$"),
     db: Session = Depends(get_db),
     context: MobileSecurityContext = Depends(
         require_mobile_permission("work_orders.execute", "lab_work_orders.use")
@@ -822,7 +751,7 @@ def create_lab_additional_work_order(
             status_code=403,
             detail="Los actores externos no pueden materializar OT adicionales",
         )
-    return create_additional_work_order(db, work_order_id, context.user, workflow_mode=workflow_mode)
+    return create_additional_work_order(db, work_order_id, context.user)
 
 
 @router.post("/{work_order_id}/signatures", response_model=LabWorkOrderRead)
@@ -853,154 +782,6 @@ def create_lab_individual_signatures(
 ) -> LabWorkOrderRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return sign_individual(db, work_order_id, payload, context.user)
-
-
-@router.get(
-    "/{work_order_id}/equipment-by-equipment/prevalidate",
-    response_model=LabEquipmentByEquipmentPrevalidation,
-)
-def get_equipment_by_equipment_prevalidation(
-    work_order_id: int,
-    db: Session = Depends(get_db),
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("work_orders.close", "lab_work_orders.use")
-    ),
-) -> LabEquipmentByEquipmentPrevalidation:
-    """Sección 14 del encargo equipo-por-equipo: Mobile llama esto ANTES de
-    abrir la pantalla de firma para 'Finalizar registro de equipos'. Nunca
-    muta nada -- sólo lectura."""
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    blockers = prevalidate_equipment_by_equipment_finalization(db, work_order_id)
-    return LabEquipmentByEquipmentPrevalidation(ready=not blockers, blockers=blockers)
-
-
-@router.post(
-    "/{work_order_id}/equipment-by-equipment/finalize",
-    response_model=LabWorkOrderRead,
-)
-def post_finalize_equipment_by_equipment(
-    work_order_id: int,
-    payload: LabSignatureGroupWrite,
-    db: Session = Depends(get_db),
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("work_orders.close", "lab_work_orders.use")
-    ),
-) -> LabWorkOrderRead:
-    """Operación atómica única: firma Cliente+Técnico -> completa cada
-    FieldSheet ya capturada -> cierra la OT -> entrega FULL con las mismas
-    firmas. Ver finalize_equipment_by_equipment_work_order."""
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    return finalize_equipment_by_equipment_work_order(
-        db, work_order_id, payload, context.user,
-        expected_edit_version=payload.expected_edit_version,
-    )
-
-
-@router.get(
-    "/{work_order_id}/signature-group/prevalidate",
-    response_model=LabEquipmentByEquipmentPrevalidation,
-)
-def get_lab_signature_group_prevalidation(
-    work_order_id: int,
-    db: Session = Depends(get_db),
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("work_orders.close", "lab_work_orders.use")
-    ),
-) -> LabEquipmentByEquipmentPrevalidation:
-    """Cierre "grupos mixtos": prevalida el scope grupal completo (puede
-    mezclar miembros 'group'/'equipment_by_equipment') ANTES de abrir la
-    firma. Sólo lectura -- ver prevalidate_lab_signature_group."""
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    blockers = prevalidate_lab_signature_group(db, work_order_id)
-    return LabEquipmentByEquipmentPrevalidation(ready=not blockers, blockers=blockers)
-
-
-@router.post(
-    "/{work_order_id}/signature-group/finalize",
-    response_model=LabWorkOrderRead,
-)
-def post_finalize_lab_signature_group(
-    work_order_id: int,
-    payload: LabSignatureGroupWrite,
-    db: Session = Depends(get_db),
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("work_orders.close", "lab_work_orders.use")
-    ),
-) -> LabWorkOrderRead:
-    """Firma grupal única que puede mezclar miembros 'group' y
-    'equipment_by_equipment': cada uno avanza según su propia modalidad
-    (miembros EBE completan/cierran/entregan; miembros group sólo
-    formalizan recepción). Ver finalize_lab_signature_group."""
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    return finalize_lab_signature_group(
-        db, work_order_id, payload, context.user,
-        expected_edit_version=payload.expected_edit_version,
-    )
-
-
-@router.post(
-    "/{work_order_id}/workflow-mode",
-    response_model=LabWorkOrderRead,
-)
-def post_change_lab_work_order_workflow_mode(
-    work_order_id: int,
-    payload: LabWorkOrderWorkflowModeChange,
-    db: Session = Depends(get_db),
-    # Reutiliza lab_work_orders.cancel: misma autoridad administrativa
-    # interna, con motivo obligatorio, ya usada por cancel/restore -- no se
-    # inventa un permiso nuevo para una autoridad que ya existe (sección 7
-    # del cierre "grupos mixtos").
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("lab_work_orders.cancel")
-    ),
-) -> LabWorkOrderRead:
-    if context.actor_type != "internal":
-        raise HTTPException(
-            status_code=403, detail="Cambiar la modalidad de trabajo está reservado a staff MYC"
-        )
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    return change_lab_work_order_workflow_mode(db, work_order_id, payload, context.user)
-
-
-@router.get(
-    "/{work_order_id}/certificate-folios/preview",
-    response_model=LabCertificateFolioDistributionPreview,
-)
-def get_pending_certificate_folio_distribution_preview(
-    work_order_id: int,
-    db: Session = Depends(get_db),
-    # Misma autoridad administrativa interna que "Cambiar modalidad de
-    # trabajo" -- reparar folios de cliente operativo es una acción
-    # administrativa equivalente, no una capacidad nueva de Captura/Técnico.
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("lab_work_orders.cancel")
-    ),
-) -> LabCertificateFolioDistributionPreview:
-    if context.actor_type != "internal":
-        raise HTTPException(
-            status_code=403, detail="Distribuir folios disponibles está reservado a staff MYC"
-        )
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    return preview_pending_certificate_folio_distribution(db, work_order_id)
-
-
-@router.post(
-    "/{work_order_id}/certificate-folios/distribute",
-    response_model=LabCertificateFolioDistributionResult,
-)
-def post_distribute_pending_certificate_folios(
-    work_order_id: int,
-    db: Session = Depends(get_db),
-    context: MobileSecurityContext = Depends(
-        require_mobile_permission("lab_work_orders.cancel")
-    ),
-) -> LabCertificateFolioDistributionResult:
-    if context.actor_type != "internal":
-        raise HTTPException(
-            status_code=403, detail="Distribuir folios disponibles está reservado a staff MYC"
-        )
-    ensure_lab_work_order_scope(db, work_order_id, context)
-    return distribute_pending_certificate_folios(db, work_order_id, context.user)
 
 
 @router.post("/{work_order_id}/complete", response_model=LabWorkOrderRead)
