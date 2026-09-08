@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global __dirname */
 
 /**
  * Discovers every "*.test.ts"/"*.test.tsx" file under src/ and prints their
@@ -23,19 +24,23 @@ const TEST_FILE_PATTERN = /\.test\.tsx?$/;
 function collectTestFiles(dir, results) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const fullPath = path.join(dir, entry.name);
+
     if (entry.isDirectory()) {
       collectTestFiles(fullPath, results);
     } else if (entry.isFile() && TEST_FILE_PATTERN.test(entry.name)) {
       results.push(path.relative(ROOT, fullPath).split(path.sep).join("/"));
     }
   }
+
   return results;
 }
 
 const files = collectTestFiles(SRC, []).sort();
 
 if (files.length === 0) {
-  console.error("list-test-files: no *.test.ts(x) files found under src/ -- refusing to run an empty test suite");
+  console.error(
+    "list-test-files: no *.test.ts(x) files found under src/ -- refusing to run an empty test suite",
+  );
   process.exit(1);
 }
 
