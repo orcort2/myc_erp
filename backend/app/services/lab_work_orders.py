@@ -201,7 +201,7 @@ def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
         )
     if any(
         item.signature_session_id is not None
-        and not (item.reopen_ticket_id and item.signature_preserved)
+        and not _member_signatures_preserved([item])
         for item in members
     ):
         raise HTTPException(
@@ -211,7 +211,7 @@ def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
 
 
 def _check_edit_version(group: list[LabWorkOrder], expected: int | None) -> None:
-    if not any(item.reopen_ticket_id for item in group):
+    if not any(item.reopened_at or item.reopen_ticket_id for item in group):
         return
     current = max(item.edit_version for item in group)
     if expected is None or expected != current:
@@ -228,21 +228,30 @@ def _bump_edit_version(group: list[LabWorkOrder]) -> None:
 
 
 def _member_signatures_preserved(members: list[LabWorkOrder]) -> bool:
-    """True when the members' current signature comes from a preserved reopening
-    approved with requested_signature_policy = "preserve".
+    """True when the members' current signature comes from a preserved reopening.
 
-    ``_ensure_members_editable`` already guarantees that, once a member is
-    editable, any item that still carries a ``signature_session_id`` must
-    have ``reopen_ticket_id`` and ``signature_preserved`` set (otherwise the
-    group would have been rejected as "ya fue firmado"). So the presence of
-    a live signature session on an editable group means that session was
-    explicitly preserved through a reopening and must not be invalidated by
-    ordinary edits to already-existing data (general fields or equipment).
+    Corrección 2026-09-08: antes exigía además ``item.reopen_ticket_id is not
+    None``, asumiendo que TODA reapertura pasa por un ticket administrativo.
+    ``reopen_work_order_directly`` (autoridad directa de Admin, sin ticket
+    artificial -- ver operational_tickets.py) deja ``reopen_ticket_id`` en
+    None a propósito incluso cuando SÍ preservó la firma
+    (``_reopen_closed_cohort`` fija ``signature_preserved``/
+    ``signature_required``/``signature_session_id`` de forma idéntica para
+    ambos caminos). Con la condición vieja, cualquier edición ordinaria
+    después de una reapertura directa con "Conservar firma" quedaba
+    bloqueada de entrada por ``_ensure_members_editable`` (409 "la cohorte
+    ya fue firmada"), o si de algún modo pasaba ese guard, invalidaba la
+    firma en la primera edición -- exactamente lo contrario de lo que el
+    usuario eligió. Los otros tres campos ya bastan: ``signature_preserved``
+    sólo puede volverse True dentro de ``_reopen_closed_cohort``, así que
+    por sí solos ya implican una reapertura con firma preservada, sea
+    mediada por ticket o directa. Un ticket es procedencia administrativa
+    opcional, nunca autoridad de firma.
     """
     return any(
         item.signature_session_id is not None
-        and item.reopen_ticket_id is not None
         and item.signature_preserved
+        and not item.signature_required
         for item in members
     )
 
@@ -2538,7 +2547,7 @@ def _closable_status(item: LabWorkOrder) -> bool:
         return True
     if item.lab_client_id is None and item.status in {"received_signed", "in_progress"}:
         return True
-    return item.status == "draft" and bool(item.reopen_ticket_id) and item.signature_preserved
+    return item.status == "draft" and _member_signatures_preserved([item])
 
 
 def sign_group(
@@ -2739,7 +2748,7 @@ def _finish_complete_members_uncommitted(
         item.status = "partially_closed" if item.partial_close_ticket_id else "completed"
         if item.partial_close_ticket_id:
             item.partially_closed_at = completed_at
-        item.signature_preserved = bool(item.reopen_ticket_id and item.signature_preserved)
+        item.signature_preserved = _member_signatures_preserved([item])
         _notify_capture_work_order_completed(db, item, user)
     ticket_ids = {item.reopen_ticket_id for item in members if item.reopen_ticket_id}
     if ticket_ids:

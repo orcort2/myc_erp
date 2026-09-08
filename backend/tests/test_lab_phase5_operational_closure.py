@@ -1019,6 +1019,62 @@ def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_cont
     assert audit.user_id is not None
 
 
+def test_admin_reopens_directly_with_preserve_and_can_actually_edit_afterward(phase5_context):
+    """Corrección 2026-09-08: _ensure_members_editable()/_member_signatures_preserved()
+    exigían además item.reopen_ticket_id is not None -- reopen_work_order_directly
+    (autoridad directa de Admin, sin ticket) deja ese campo en None a propósito
+    incluso cuando SÍ preservó la firma (signature_preserved/signature_required/
+    signature_session_id quedan idénticos a una reapertura mediada por ticket).
+    Con la condición vieja, la PRIMERA edición ordinaria tras una reapertura
+    directa con "Conservar firma" quedaba bloqueada de entrada con 409 "la
+    cohorte ya fue firmada y no admite cambios ordinarios" -- exactamente lo
+    contrario de lo que el usuario eligió al preservar la firma."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+    with factory() as db:
+        session_id = db.get(LabWorkOrder, order_id).signature_session_id
+
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección de datos generales"},
+        headers=headers,
+    )
+    assert reopened.status_code == 200, reopened.text
+    reopened_body = reopened.json()
+    assert reopened_body["reopen_ticket_id"] is None
+    assert reopened_body["signature_preserved"] is True
+
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
+        json={"client_name": "Cliente corregido", "expected_edit_version": reopened_body["edit_version"]},
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    body = edited.json()
+    assert body["client_name"] == "Cliente corregido"
+    assert body["signature_session_id"] == session_id
+    assert body["signature_required"] is False
+
+    equipment_edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}",
+        json={**equipment_payload(1, model="Modelo corregido"), "expected_edit_version": body["edit_version"]},
+        headers=headers,
+    )
+    assert equipment_edited.status_code == 200, equipment_edited.text
+    assert equipment_edited.json()["equipment"][0]["model"] == "Modelo corregido"
+    assert equipment_edited.json()["signature_session_id"] == session_id
+    assert equipment_edited.json()["signature_required"] is False
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.signature_preserved is True
+        assert order.signature_session_id == session_id
+
+
 def test_admin_reopens_directly_with_invalidate_policy_requires_new_signature(phase5_context):
     """19b (cierre UX 2026-09): la política 'invalidate' del reopen directo
     -- no sólo 'preserve' -- limpia signature_session_id y exige firma
