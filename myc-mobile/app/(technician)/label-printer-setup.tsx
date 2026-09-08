@@ -21,6 +21,8 @@ import {
 import { colors, spacing } from '@/src/design/tokens';
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import {
+  BluetoothDisabledError,
+  BluetoothPermissionDeniedError,
   buildTestPrintPayload,
   printLabel,
   printerManager,
@@ -83,7 +85,18 @@ export default function LabelPrinterSetupScreen() {
         setDevices((current) => [...current, classification]);
       }, SCAN_TIMEOUT_MS);
     } catch (scanError) {
-      setError(scanError instanceof Error ? scanError.message : 'No fue posible buscar impresoras.');
+      // AUDITORÍA 2026-09-08 (seguimiento): PrinterManager.scan() ya exige
+      // permiso y Bluetooth encendido antes de arrancar el escaneo nativo
+      // -- distinguir explícitamente estos dos casos evita que la UI
+      // reciba un fallo genérico del SDK, y nunca deja un "Buscando…"
+      // colgado (el finally de abajo siempre corre).
+      if (scanError instanceof BluetoothPermissionDeniedError) {
+        setError('MYC necesita permiso de Bluetooth para buscar la impresora.');
+      } else if (scanError instanceof BluetoothDisabledError) {
+        setError('Enciende Bluetooth para buscar la impresora.');
+      } else {
+        setError(scanError instanceof Error ? scanError.message : 'No fue posible buscar impresoras.');
+      }
     } finally {
       setScanning(false);
     }

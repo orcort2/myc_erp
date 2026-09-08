@@ -41,6 +41,16 @@ export class PrinterNotReadyError extends Error {}
 export class PrinterBusyError extends Error {}
 export class UnknownPrinterAdapterError extends Error {}
 
+/** AUDITORÍA 2026-09-08 (seguimiento): BleTransport ya implementaba
+ * requestPermissions()/isBluetoothOn(), pero scan() nunca los llamaba --
+ * el permiso de runtime de Android podía nunca llegar a pedirse antes del
+ * primer escaneo. Estos dos errores tipados dejan explícito por qué un
+ * scan no arrancó, en vez de que la UI reciba un fallo genérico del SDK
+ * nativo (o, peor, un scan que nunca encuentra nada porque el permiso
+ * jamás se concedió). */
+export class BluetoothPermissionDeniedError extends Error {}
+export class BluetoothDisabledError extends Error {}
+
 export class PrinterManager {
   private readonly ble: BleTransport;
   private readonly adapters: Map<PrinterAdapterId, LabelPrinterAdapter>;
@@ -62,8 +72,26 @@ export class PrinterManager {
   /** Escanea dispositivos BLE cercanos, clasificándolos vía PrinterRegistry
    * a medida que aparecen. La UI decide qué hacer con `unknown` (nunca
    * ofrecerlo como impresora) y con `protocol_pending` (ofrecer sólo
-   * diagnóstico, nunca "Conectar" -- ver mission section 15/16). */
+   * diagnóstico, nunca "Conectar" -- ver mission section 15/16).
+   *
+   * AUDITORÍA 2026-09-08 (seguimiento): antes de arrancar el descubrimiento
+   * nativo, PrinterManager es quien exige permisos y estado de Bluetooth --
+   * nunca cada pantalla por su cuenta (evita permission-checks duplicados
+   * en React, y garantiza que ninguna pantalla pueda saltarse el chequeo).
+   * Orden exacto: 1) pedir permisos, 2) si se niegan, no arrancar el scan
+   * nativo; 3) verificar Bluetooth encendido, 4) si está apagado, tampoco
+   * arrancar; 5) recién entonces this.ble.startScan(...). Ninguno de los
+   * dos estados se ignora en silencio: cada uno lanza un error tipado y
+   * accionable, sin dejar nunca un "cargando" infinito en la UI. */
   async scan(onDeviceFound: (classification: DeviceClassification) => void, timeoutMs = DEFAULT_SCAN_TIMEOUT_MS): Promise<void> {
+    const permitted = await this.ble.requestPermissions();
+    if (!permitted) {
+      throw new BluetoothPermissionDeniedError('MYC necesita permiso de Bluetooth para buscar la impresora.');
+    }
+    const bluetoothOn = await this.ble.isBluetoothOn();
+    if (!bluetoothOn) {
+      throw new BluetoothDisabledError('Enciende Bluetooth para buscar la impresora.');
+    }
     const seen = new Set<string>();
     await this.ble.startScan((device) => {
       if (seen.has(device.id)) return;

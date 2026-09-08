@@ -81,7 +81,13 @@ class MockBleTransport implements BleTransport {
     return this.connectedDevices.has(deviceId);
   }
 
-  async discoverServices(): Promise<void> {}
+  failDiscoverServices = false;
+  failSubscribeNotifications = false;
+  subscribeNotificationsCalls = 0;
+
+  async discoverServices(): Promise<void> {
+    if (this.failDiscoverServices) throw new Error('fallo simulado en discoverServices');
+  }
 
   async subscribeNotifications(
     _deviceId: string,
@@ -89,6 +95,8 @@ class MockBleTransport implements BleTransport {
     _characteristicUUID: string,
     onData: BleNotificationHandler,
   ): Promise<Unsubscribe> {
+    this.subscribeNotificationsCalls += 1;
+    if (this.failSubscribeNotifications) throw new Error('fallo simulado en subscribeNotifications');
     this.notificationHandler = onData;
     return () => {
       this.notificationHandler = null;
@@ -227,6 +235,73 @@ test('AUDITORÍA: una respuesta que llega después de que el handshake ya expir�
   transport.respondTo(NIIMBOT_REQUEST.PrintEnd, NIIMBOT_REQUEST.PrintEndResult);
   const raster = renderLabel(PAYLOAD, MYC_50X30, 203);
   await assert.doesNotReject(adapter.print(raster));
+});
+
+// AUDITORÍA 2026-09-08 (seguimiento): antes, sólo el try/catch del
+// handshake (Connect/ConnectResult) limpiaba y desconectaba físicamente.
+// Si ble.connect() tenía éxito pero discoverServices() o
+// subscribeNotifications() fallaban -- pasos que ocurrían ANTES de ese
+// try/catch -- la conexión BLE física quedaba viva sin que nada la
+// cerrara. Corregido: toda la configuración posterior a un ble.connect()
+// exitoso vive dentro de un único try/catch.
+
+test('AUDITORÍA: si discoverServices() falla tras un ble.connect() exitoso, desconecta físicamente exactamente una vez y permite reintentar', async () => {
+  const transport = new MockBleTransport();
+  transport.failDiscoverServices = true;
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), /fallo simulado en discoverServices/);
+
+  assert.deepEqual(transport.disconnectCalls, [DEVICE.id], 'debe desconectar físicamente exactamente una vez');
+  assert.equal(adapter.isConnected(), false);
+
+  // Reintento inmediato con estado fresco.
+  transport.failDiscoverServices = false;
+  transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
+  await adapter.connect(DEVICE);
+  assert.equal(adapter.isConnected(), true);
+});
+
+test('AUDITORÍA: si subscribeNotifications() falla tras discoverServices() exitoso, desconecta físicamente exactamente una vez, limpia suscripciones y permite reintentar', async () => {
+  const transport = new MockBleTransport();
+  transport.failSubscribeNotifications = true;
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), /fallo simulado en subscribeNotifications/);
+
+  assert.deepEqual(transport.disconnectCalls, [DEVICE.id], 'debe desconectar físicamente exactamente una vez');
+  assert.equal(adapter.isConnected(), false);
+  assert.equal(transport.subscribeNotificationsCalls, 1, 'el intento fallido no debe reintentarse por su cuenta');
+
+  // Reintento inmediato: nuevas suscripciones desde cero, sin arrastrar nada del intento anterior.
+  transport.failSubscribeNotifications = false;
+  transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
+  await adapter.connect(DEVICE);
+  assert.equal(adapter.isConnected(), true);
+  assert.equal(transport.subscribeNotificationsCalls, 2);
+});
+
+test('AUDITORÍA: ble.connect() que nunca tiene éxito no intenta desconectar (nada que desconectar)', async () => {
+  const transport = new MockBleTransport();
+  transport.connect = async () => {
+    throw new Error('fallo simulado de conexión BLE');
+  };
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), /fallo simulado de conexión BLE/);
+
+  assert.deepEqual(transport.disconnectCalls, [], 'nunca hubo conexión física que cerrar');
+  assert.equal(adapter.isConnected(), false);
+});
+
+test('AUDITORÍA: una conexión exitosa nunca dispara una desconexión física', async () => {
+  const transport = fullyResponsiveTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await adapter.connect(DEVICE);
+
+  assert.equal(adapter.isConnected(), true);
+  assert.deepEqual(transport.disconnectCalls, [], 'una conexión exitosa nunca debe desconectar por su cuenta');
 });
 
 test('connect() no bloquea si la identificación (PrinterStatusData) no responde a tiempo -- es best-effort', async () => {

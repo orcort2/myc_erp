@@ -25,6 +25,8 @@ export { LabelRenderError } from './labels/label-renderer';
 export type { LabelRenderErrorCode } from './labels/label-renderer';
 export { MYC_50X30 } from './labels/label-profile';
 export {
+  BluetoothDisabledError,
+  BluetoothPermissionDeniedError,
   PrinterBusyError,
   PrinterNotReadyError,
   UnknownPrinterAdapterError,

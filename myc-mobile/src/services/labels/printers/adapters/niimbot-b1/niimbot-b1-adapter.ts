@@ -95,31 +95,51 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
     return this.connected;
   }
 
+  /**
+   * AUDITORÍA 2026-09-08 (seguimiento): antes, sólo el handshake
+   * (Connect/ConnectResult) estaba protegido por un try/catch con
+   * limpieza. Si ble.connect() tenía éxito pero discoverServices() o
+   * subscribeNotifications() fallaban -- ANTES de llegar a ese try/catch --
+   * la conexión BLE física quedaba viva mientras el adaptador nunca
+   * terminaba de inicializarse, sin ningún camino de limpieza. Ahora TODA
+   * la configuración posterior a un ble.connect() exitoso (discover,
+   * suscripciones, handshake) vive dentro de un único try/catch: cualquier
+   * fallo en cualquiera de esos pasos limpia todo lo que ya se haya creado
+   * y desconecta físicamente -- invariante: después de un ble.connect()
+   * exitoso, ningún camino de error de connect() puede dejar el periférico
+   * físicamente conectado sin que el adaptador lo sepa.
+   *
+   * physicalConnectionEstablished distingue "ble.connect() nunca llegó a
+   * tener éxito" (nada que desconectar) de "sí tuvo éxito, algo después
+   * falló" (desconectar de verdad) -- teardownConnection ya tolera estado
+   * parcial (suscripciones ausentes, deviceId nulo, etc.), así que es
+   * seguro llamarla sin importar en qué paso exacto falló.
+   */
   async connect(device: PrinterDevice): Promise<void> {
-    await this.ble.connect(device.id);
-    await this.ble.discoverServices(device.id);
-    this.deviceId = device.id;
-    this.frameAssembler.reset();
-    this.unsubscribeNotifications = await this.ble.subscribeNotifications(
-      device.id,
-      NIIMBOT_BLE_SERVICE_UUID,
-      NIIMBOT_BLE_CHARACTERISTIC_UUID,
-      (chunk) => this.handleIncoming(chunk),
-    );
-    this.unsubscribeDisconnect = this.ble.onDisconnected(device.id, () => this.handleUnexpectedDisconnect());
-    this.connected = true;
-
+    let physicalConnectionEstablished = false;
     try {
+      await this.ble.connect(device.id);
+      physicalConnectionEstablished = true;
+      // Se fija deviceId de inmediato (antes de discoverServices) -- si
+      // algo falla más abajo, teardownConnection necesita saber a qué
+      // dispositivo desconectar.
+      this.deviceId = device.id;
+      this.frameAssembler.reset();
+
+      await this.ble.discoverServices(device.id);
+
+      this.unsubscribeNotifications = await this.ble.subscribeNotifications(
+        device.id,
+        NIIMBOT_BLE_SERVICE_UUID,
+        NIIMBOT_BLE_CHARACTERISTIC_UUID,
+        (chunk) => this.handleIncoming(chunk),
+      );
+      this.unsubscribeDisconnect = this.ble.onDisconnected(device.id, () => this.handleUnexpectedDisconnect());
+      this.connected = true;
+
       await this.sendAndWait(buildConnectPacket(), NIIMBOT_REQUEST.ConnectResult, this.timeouts.connectTimeoutMs);
     } catch (error) {
-      // AUDITORÍA 2026-09-08: la conexión BLE ya se estableció con éxito
-      // (this.ble.connect() de arriba no lanzó) antes de que el handshake
-      // fallara -- si sólo se limpia el estado local del adaptador, el SO
-      // puede seguir físicamente conectado mientras el adaptador se cree
-      // desconectado, dejando el dispositivo inalcanzable para un
-      // reintento inmediato. physicallyDisconnect: true fuerza el
-      // desconectado real, no sólo el estado en memoria.
-      await this.teardownConnection({ physicallyDisconnect: true });
+      await this.teardownConnection({ physicallyDisconnect: physicalConnectionEstablished });
       throw error;
     }
 

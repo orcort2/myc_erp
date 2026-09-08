@@ -5,7 +5,14 @@ import { MYC_50X30 } from '../label-profile';
 import { renderLabel } from '../label-renderer';
 import type { LabLabelPayload } from '../label-types';
 import type { BleTransport, BleTransportDevice } from './ble-transport';
-import { PrinterBusyError, PrinterManager, PrinterNotReadyError, UnknownPrinterAdapterError } from './printer-manager';
+import {
+  BluetoothDisabledError,
+  BluetoothPermissionDeniedError,
+  PrinterBusyError,
+  PrinterManager,
+  PrinterNotReadyError,
+  UnknownPrinterAdapterError,
+} from './printer-manager';
 import type { PreferredPrinterStore } from './printer-manager';
 import type { LabelPrinterAdapter, PreferredPrinter, PrinterDevice } from './types';
 
@@ -51,11 +58,26 @@ class FakeAdapter implements LabelPrinterAdapter {
   }
 }
 
-function fakeBleTransport(devicesToDiscover: BleTransportDevice[] = []): BleTransport {
+type FakeTransportOptions = {
+  devicesToDiscover?: BleTransportDevice[];
+  permissionsGranted?: boolean | (() => Promise<boolean>);
+  bluetoothOn?: boolean;
+};
+
+function fakeBleTransport(devicesToDiscoverOrOptions: BleTransportDevice[] | FakeTransportOptions = []): BleTransport & { startScanCalls: number } {
+  const options: FakeTransportOptions = Array.isArray(devicesToDiscoverOrOptions)
+    ? { devicesToDiscover: devicesToDiscoverOrOptions }
+    : devicesToDiscoverOrOptions;
+  const devicesToDiscover = options.devicesToDiscover ?? [];
+  const permissionsGranted = options.permissionsGranted ?? true;
+  const bluetoothOn = options.bluetoothOn ?? true;
+
   return {
-    isBluetoothOn: async () => true,
-    requestPermissions: async () => true,
-    startScan: async (onFound) => {
+    startScanCalls: 0,
+    isBluetoothOn: async () => bluetoothOn,
+    requestPermissions: async () => (typeof permissionsGranted === 'function' ? permissionsGranted() : permissionsGranted),
+    async startScan(onFound) {
+      this.startScanCalls += 1;
       devicesToDiscover.forEach((device) => onFound(device));
     },
     stopScan: async () => {},
@@ -107,6 +129,58 @@ test('scan() nunca reporta el mismo dispositivo dos veces (deduplicación por id
     count += 1;
   });
   assert.equal(count, 1);
+});
+
+/**
+ * AUDITORÍA 2026-09-08 (seguimiento): BleTransport ya implementaba
+ * requestPermissions()/isBluetoothOn(), pero scan() nunca los llamaba --
+ * el permiso de runtime de Android podía nunca pedirse antes del primer
+ * escaneo. Estos tests fijan el orden exacto: permiso -> Bluetooth ->
+ * recién entonces startScan() nativo.
+ */
+
+test('AUDITORÍA: con permiso concedido y Bluetooth encendido, el scan nativo arranca con normalidad', async () => {
+  const transport = fakeBleTransport({ devicesToDiscover: [{ id: '1', name: 'B1-AAAA' }] });
+  const manager = new PrinterManager(transport, {}, inMemoryStore());
+  const found: string[] = [];
+  await manager.scan((classification) => found.push(classification.device.id));
+  assert.equal(transport.startScanCalls, 1);
+  assert.deepEqual(found, ['1']);
+});
+
+test('AUDITORÍA: permiso de Bluetooth denegado -> startScan nativo NUNCA se llama, error tipado y accionable', async () => {
+  const transport = fakeBleTransport({ permissionsGranted: false });
+  const manager = new PrinterManager(transport, {}, inMemoryStore());
+  await assert.rejects(manager.scan(() => {}), BluetoothPermissionDeniedError);
+  assert.equal(transport.startScanCalls, 0, 'nunca debe arrancar el scan nativo sin permiso');
+});
+
+test('AUDITORÍA: Bluetooth apagado -> startScan nativo NUNCA se llama, error tipado y accionable', async () => {
+  const transport = fakeBleTransport({ bluetoothOn: false });
+  const manager = new PrinterManager(transport, {}, inMemoryStore());
+  await assert.rejects(manager.scan(() => {}), BluetoothDisabledError);
+  assert.equal(transport.startScanCalls, 0, 'nunca debe arrancar el scan nativo con Bluetooth apagado');
+});
+
+test('AUDITORÍA: un error al pedir permisos se propaga limpio -- nunca arranca el scan ni lo esconde', async () => {
+  const transport = fakeBleTransport({
+    permissionsGranted: async () => {
+      throw new Error('fallo nativo simulado al pedir permisos');
+    },
+  });
+  const manager = new PrinterManager(transport, {}, inMemoryStore());
+  await assert.rejects(manager.scan(() => {}), /fallo nativo simulado al pedir permisos/);
+  assert.equal(transport.startScanCalls, 0);
+});
+
+test('AUDITORÍA: un scan repetido vuelve a validar permiso/Bluetooth cada vez y sigue limpiando correctamente', async () => {
+  const transport = fakeBleTransport({ devicesToDiscover: [{ id: '1', name: 'B1-AAAA' }] });
+  const manager = new PrinterManager(transport, {}, inMemoryStore());
+
+  await manager.scan(() => {});
+  await manager.scan(() => {});
+
+  assert.equal(transport.startScanCalls, 2, 'cada scan debe volver a pasar por el chequeo y arrancar de nuevo');
 });
 
 test('connectAndRemember conecta el adaptador correcto y persiste la impresora preferida', async () => {
