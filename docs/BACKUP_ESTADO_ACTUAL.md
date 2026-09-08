@@ -19,10 +19,10 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Corte operativo
 
 - Rama verificada: `wip/lab-admin-void-delivery`.
-- Base del hotfix: `d9d6ccd` (`fix(lab): complete observation snapshot and mobile test coverage`).
+- HEAD inicial de este endurecimiento: `43f9bb9f4566c3444c9762fb9656bf1fe60b79e1`.
 - Hotfix preparado en worktree separado `/private/tmp/myc-erp-lab-hotfix`;
   el checkout original conserva su rama Mobile y sus cambios locales.
-- No se ejecutó commit, push, merge ni intervención en producción.
+- Trabajo exclusivo de `wip/lab-admin-void-delivery`, sin merge, rebase ni intervención en producción.
 - Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**; este hotfix no cambia
   el estado general del proyecto ni sustituye la auditoría independiente.
 - Único módulo `SELLADO`: Control Documental V1 dentro de su alcance
@@ -30,6 +30,31 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 - Fase 3 LAB implementa recepción técnico+cliente previa a FieldSheets:
   `draft → received_signed → in_progress → ready_to_close → completed`.
   `ready_for_signatures` queda sólo como compatibilidad histórica.
+
+## Endurecimiento de reconciliación LAB — 2026-09-08
+
+- Backend decide correction/replacement para serie e identificación interna;
+  Mobile sólo expresa intención. Normalización y una edición mínima acotada,
+  según [contrato LAB](architecture/LAB_WORK_ORDERS.md). Cambios sustanciales
+  limpian la sesión actual, exigen nueva firma y bloquean cierre con la antigua.
+- AuditLog conserva identidad anterior/nueva, intención, clasificación efectiva,
+  razón e invalidación. Se reutiliza el núcleo de edición simple/integrada.
+- `initial_condition`, `equipment_general_condition` y `observations` son
+  prefills editables: únicamente propagan si siguen coincidiendo con la
+  herencia anterior, incluido cualquier duplicado declarativo. Sin procedencia
+  verificable, se conserva captura. Metadata de cliente/equipo sigue su autoridad.
+- Revisiones nuevas conservan captura, ambientales, notas, resultados, firmas
+  propias y referencias; la revisión previa sólo cambia su condición de vigente.
+  Sus datos documentales y bytes PDF no se reinterpretan. Se mantienen selección
+  dos de diez, domicilio global con cliente independiente, no-op y rollback.
+- `build_endpoint_inventory(app)` arroja 519 operaciones; CSV regenerado con
+  `field_sheets.review` en regeneración administrativa, igual a ruta/servicio.
+- No se modificaron Mobile, migraciones, dependencias ni datos locales. El
+  enlace preexistente `myc-mobile/node_modules` queda fuera del commit.
+- Validación focalizada: 78 passed, 0 failed, 2 warnings (Starlette/httpx y
+  deprecación de crypt). Validaciones completas aún en ejecución en este corte.
+- Pendientes de alcance: QA físico Mobile y pruebas opcionales PostgreSQL;
+  la compensación síncrona conserva su límite ante terminación abrupta.
 
 ## Hotfix acotado LAB — 2026-09-08
 

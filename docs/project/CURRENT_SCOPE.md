@@ -480,4 +480,4 @@ Se incorpora regeneración administrativa explícita del PDF final FieldSheet vi
 
 ## Consolidación documental de reapertura — 2026-09-08
 
-«Completar cambios» consolida automáticamente documentos LAB: versionado selectivo de FieldSheets finales afectadas, copia de captura sin recaptura documental manual, PDFs nuevos, auditoría y rollback conjunto. Incluye clasificación explícita correction/replacement de identidad. No reemite certificados ni sustituye una recaptura técnicamente invalidada.
+«Completar cambios» consolida automáticamente documentos LAB: versionado selectivo de FieldSheets finales afectadas, copia de captura sin recaptura documental manual, PDFs nuevos, auditoría y rollback conjunto. Incluye intención correction/replacement con clasificación final backend de identidad y protección de overrides en prefills editables. No reemite certificados ni sustituye una recaptura técnicamente invalidada.

@@ -575,8 +575,11 @@ revertido o ya sincronizado no produce otra revisión. Un cliente documental
 
 Se propagan empresa, domicilio, atención, recepción, orden de compra, identidad
 (instrumento/marca/modelo/identificación/serie), condición heredada y folio
-conocido. La observación sólo se propaga si aún coincidía con el valor heredado;
-una observación técnica propia no se sobrescribe. No se copia ningún resultado
+conocido. Los prefills editables `initial_condition`,
+`equipment_general_condition` y `observations` sólo se propagan si el valor
+actual y cualquier duplicado en `capture_values` aún coinciden con el valor
+heredado anterior. Un override técnico se conserva; sin procedencia legacy
+comprobable tampoco se sobrescribe. No se copia ningún resultado
 nuevo desde Equipment ni se recalculan mediciones por una corrección documental.
 
 Una hoja final afectada conserva sus datos/PDF y pasa a `is_current=false`;
@@ -611,10 +614,22 @@ los permisos documentales existentes.
 La edición integrada y simple de equipo acepta `identity_change_kind`:
 `correction` (default compatible con clientes anteriores) o `replacement`.
 Mobile permite elegir «Corrección de datos» o «Sustitución / serie distinta».
-No se infiere sustitución por distancia textual entre series. Una corrección
-puede preservar sesión según la política de reapertura; una sustitución real,
-incluido cambio sustancial de serie, debe clasificarse `replacement` y anula
+El cliente expresa intención; `_classify_identity_change` en el backend decide
+la clasificación efectiva de serie e identificación interna. Normaliza a
+mayúsculas y elimina caracteres no alfanuméricos. Acepta igualdad normalizada
+no vacía; una sola sustitución O/0 o I/1/L con longitud mínima cinco; o, con
+longitud mínima ocho y prefijo de tres caracteres intacto, una inserción,
+eliminación o sustitución de una letra por otra. No admite sustituciones
+numéricas ordinarias, múltiples confusiones ni identidad ausente/no verificable.
+Marca/modelo/instrumento son metadata descriptiva; no demuestran por sí solos
+una sustitución física. `replacement` explícito siempre es conservador.
+Una corrección verificada puede preservar sesión según la reapertura; un
+cambio sustancial se eleva a `replacement` aunque Mobile diga `correction` y anula
 la sesión aunque hubiera `preserve`, retirando la hoja final para recaptura.
 Agregar/quitar equipos continúa invalidando. Con firma requerida, cerrar
 responde conflicto sin consolidar/cerrar nada: se firma y se satisfacen los
 requisitos técnicos antes del cierre. No existe un bypass documental de firmas.
+
+El AuditLog de edición registra `previous_values`, identidad nueva, intención
+solicitada, clasificación efectiva, razón y `signature_invalidated`. La misma
+autoridad se reutiliza en edición simple e integrada.

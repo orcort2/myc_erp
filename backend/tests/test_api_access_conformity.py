@@ -21,9 +21,8 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    # 518 = 517 (corte 2026-08-03) + GET /api/communications/work-order-mentions/search
-    # (@OT, checkpoint c7a7adb) -- ver _communications_policy en api_access.py.
-    assert len(operations) == 518
+    # Runtime inventory includes administrative FieldSheet PDF regeneration.
+    assert len(operations) == 519
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 
@@ -62,3 +61,11 @@ def test_committed_inventory_matches_runtime():
     with INVENTORY_PATH.open(newline="", encoding="utf-8") as handle:
         committed = list(csv.DictReader(handle))
     assert committed == build_endpoint_inventory(app)
+
+
+def test_administrative_pdf_regeneration_requires_review_permission():
+    rows = build_endpoint_inventory(app)
+    row = next(row for row in rows if row["method"] == "POST" and row["path"] == "/api/field-sheets/{field_sheet_id}/pdf/regenerate")
+    assert row["permission"] == "field_sheets.review"
+    assert row["access_type"] == "authenticated_permission"
+    assert row["actor"] == "internal_user"

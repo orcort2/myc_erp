@@ -73,8 +73,9 @@ Una reapertura `preserve`, directa o mediada por ticket, conserva firmas ante
 ediciones ordinarias de datos existentes, incluidos domicilio/cliente y campos
 del equipo. Agregar/quitar equipos o crear una OT adicional invalida la sesión
 activa y exige nueva firma. Una edición `identity_change_kind=replacement`
-también invalida aunque la reapertura fuera preserve, sin clasificar la serie
-por heurística textual. `invalidate` retira la sesión activa desde el inicio.
+también invalida aunque la reapertura fuera preserve. La intención `correction`
+se verifica en backend: serie e identificación sustancialmente distintas se
+elevan a `replacement` conforme a [LAB_WORK_ORDERS](LAB_WORK_ORDERS.md). `invalidate` retira la sesión activa desde el inicio.
 
 La autoridad de preservación es `signature_session_id != NULL`,
 `signature_preserved=true` y `signature_required=false`. `reopen_ticket_id`

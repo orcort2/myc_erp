@@ -280,7 +280,7 @@ def create_field_sheet(client: TestClient, headers: dict[str, str], order_id: in
     )
 
 
-def complete_field_sheet_fully(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int) -> int:
+def complete_field_sheet_fully(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int, *, capture_overrides=None) -> int:
     created = create_field_sheet(client, headers, order_id, equipment_id)
     assert created.status_code == 201, created.text
     sheet_json = created.json()
@@ -296,7 +296,7 @@ def complete_field_sheet_fully(client: TestClient, headers: dict[str, str], orde
     ]
     updated = client.patch(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows},
+        json={"final_condition": "BUENA", "observations": "Sin observaciones", "results_rows": rows, **(capture_overrides or {})},
         headers=headers,
     )
     assert updated.status_code == 200, updated.text

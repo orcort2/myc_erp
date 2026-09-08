@@ -1489,6 +1489,51 @@ def _sync_field_sheet_identity_snapshot(equipment: LabWorkOrderEquipment) -> Non
     sheet.capture_values = capture_values
 
 
+def _normalize_equipment_identifier(value):
+    return "".join(c for c in (value or "").upper() if c.isalnum())
+
+
+def _classify_identity_change(equipment, values, requested):
+    """Client intent can make policy stricter, never override identity evidence.
+
+    One visual substitution is allowed from length five. One insertion/deletion
+    or nonnumeric substitution requires length eight and an unchanged prefix.
+    Numeric substitutions are conservative: consecutive serials identify units.
+    Brand/model descriptions are metadata; serial/internal ID identify the unit.
+    """
+    if requested == "replacement":
+        return "replacement", "client_requested_replacement"
+    reasons = []
+    for key in ("serial_number", "identification"):
+        old = getattr(equipment, key)
+        if key not in values or values[key] == old:
+            continue
+        before, after = (_normalize_equipment_identifier(value) for value in (old, values[key]))
+        if before and before == after:
+            reasons.append(f"{key}:normalized_equal")
+            continue
+        reason = None
+        if min(len(before), len(after)) >= 5 and len(before) == len(after):
+            differences = [(a, b) for a, b in zip(before, after) if a != b]
+            if len(differences) == 1 and any(
+                set(differences[0]) <= group for group in ({"O", "0"}, {"I", "1", "L"})
+            ):
+                reason = "single_visual_substitution"
+        if reason is None and min(len(before), len(after)) >= 8 and before[:3] == after[:3]:
+            if len(before) == len(after):
+                differences = [(a, b) for a, b in zip(before, after) if a != b]
+                if len(differences) == 1 and all(c.isalpha() for c in differences[0]):
+                    reason = "single_letter_substitution"
+            elif abs(len(before) - len(after)) == 1:
+                shorter, longer = sorted((before, after), key=len)
+                if any(longer[:i] + longer[i + 1:] == shorter for i in range(3, len(longer))):
+                    reason = "single_insertion_or_deletion"
+        if reason is None:
+            return "replacement", f"{key}:substantial_or_unverifiable_change"
+        reasons.append(f"{key}:{reason}")
+    return "correction", ";".join(reasons) or "descriptive_metadata_only"
+
+
 def _update_equipment_core(
     db: Session,
     work_order: LabWorkOrder,
@@ -1502,14 +1547,19 @@ def _update_equipment_core(
     equipo y hace flush, sin confirmar la transacción -- para que el endpoint
     público y update_configured_equipment (Fase 2 hardening) puedan decidir
     cuándo confirmar/revertir."""
-    identity_change_kind = values.pop("identity_change_kind", "correction")
+    requested_identity_change_kind = values.pop("identity_change_kind", "correction")
+    identity_change_kind, identity_change_reason = _classify_identity_change(
+        equipment, values, requested_identity_change_kind
+    )
     changed_fields = sorted(
         key for key, value in values.items() if getattr(equipment, key) != value
     )
     affected_signature_members = _affected_signature_members(group, work_order)
-    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields) and (
+    old_identity = {key: getattr(equipment, key) for key in changed_fields if key in CRITICAL_EQUIPMENT_FIELDS}
+    signature_invalidated = bool(CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields)) and (
         identity_change_kind == "replacement" or not _member_signatures_preserved(affected_signature_members)
-    ):
+    )
+    if signature_invalidated:
         invalidate_member_signatures(
             db, affected_signature_members, user, fields=changed_fields
         )
@@ -1525,7 +1575,13 @@ def _update_equipment_core(
         entity="lab_work_order_equipment",
         entity_id=equipment.id,
         user_id=user.id,
-        new_values={"work_order_id": work_order.id, "fields": changed_fields, "identity_change_kind": identity_change_kind},
+        previous_values=old_identity,
+        new_values={"work_order_id": work_order.id, "fields": changed_fields,
+                    "identity_values": {key: getattr(equipment, key) for key in old_identity},
+                    "requested_identity_change_kind": requested_identity_change_kind,
+                    "effective_identity_change_kind": identity_change_kind,
+                    "identity_change_kind": identity_change_kind,
+                    "signature_invalidated": signature_invalidated, "identity_change_reason": identity_change_reason},
     )
     return equipment
 

@@ -20,7 +20,7 @@ def reopened_documents(phase5_context, monkeypatch, tmp_path):
     client, factory, tokens, _ = phase5_context
     headers = auth(tokens["admin"])
 
-    def create(count=3, policy="preserve", independent_last=False):
+    def create(count=3, policy="preserve", independent_last=False, serial=None, capture_overrides=None):
         order_id = create_order(client, headers, lab_client_id=make_lab_client_id(factory))
         ids = []
         for index in range(count):
@@ -36,8 +36,10 @@ def reopened_documents(phase5_context, monkeypatch, tmp_path):
                 equipment.final_client_address_snapshot = "Domicilio independiente"
                 equipment.final_client_attention_snapshot = "Atención independiente"
                 db.commit()
+        if serial is not None:
+            edit_equipment(client, headers, order_id, ids[0], serial_number=serial)
         assert sign(client, headers, order_id).status_code == 200
-        sheets = [complete_field_sheet_fully(client, headers, order_id, equipment_id) for equipment_id in ids]
+        sheets = [complete_field_sheet_fully(client, headers, order_id, equipment_id, capture_overrides=capture_overrides) for equipment_id in ids]
         assert close_individual(client, headers, order_id).status_code == 200
         with factory() as db:
             previous = {}
@@ -49,6 +51,8 @@ def reopened_documents(phase5_context, monkeypatch, tmp_path):
                     "hash": sheet.final_pdf_sha256, "capture": deepcopy(sheet.capture_values),
                     "rows": [deepcopy(row.row_data) for row in sheet.results_rows],
                     "session": sheet.lab_signature_session_id,
+                    "columns": {c.key: deepcopy(getattr(sheet, c.key)) for c in sheet.__table__.columns if c.key not in {"is_current", "updated_at"}},
+                    "technical": {key: deepcopy(getattr(sheet, key)) for key in (capture_overrides or {})},
                     "template": deepcopy(sheet.template_definition_json),
                 }
             order = db.get(LabWorkOrder, order_id)
@@ -147,7 +151,7 @@ def test_selective_consolidation_preserves_capture_signatures_and_history(reopen
         assert {sheet.id for sheet in db.scalars(select(FieldSheet)).all()} == sheet_ids
 
 
-@pytest.mark.parametrize("failure", ["second_pdf", "flush", "commit", "order_pdf"])
+@pytest.mark.parametrize("failure", ["first_pdf", "second_pdf", "flush", "commit", "order_pdf"])
 def test_consolidation_rolls_back_every_revision_and_pdf(reopened_documents, monkeypatch, failure):
     from app.services import field_sheet_pdfs, lab_work_orders
     client, factory, headers, root, create = reopened_documents
@@ -161,6 +165,8 @@ def test_consolidation_rolls_back_every_revision_and_pdf(reopened_documents, mon
         def render(db, sheet):
             nonlocal count
             count += 1
+            if failure == "first_pdf" and count == 1:
+                raise RuntimeError("first PDF failed")
             if count == 2:
                 if failure == "second_pdf":
                     raise RuntimeError("second PDF failed")
@@ -215,30 +221,114 @@ def test_structural_addition_blocks_close_until_new_signatures(reopened_document
         assert db.get(FieldSheet, previous[equipment_ids[0]]["id"]).lab_signature_session_id == old_session
 
 
-@pytest.mark.parametrize("kind", ["correction", "replacement"])
-def test_serial_change_classification_is_independent_of_document_sync(reopened_documents, kind):
+@pytest.mark.parametrize("old_serial,new_serial,kind,preserved", [
+    ("ABC-1234", "ABC1234", "correction", True),
+    ("abc1234", "ABC1234", "correction", True),
+    ("ABO123", "AB0123", "correction", True),
+    ("I12345", "112345", "correction", True),
+    ("ABC 123", "ABC-123", "correction", True),
+    ("ABC12345", "XYZ98765", "correction", False),
+    ("ABC12345", "ABC12346", "correction", False),
+    ("ABC12345", "ABC12345X", "correction", True),
+    ("ABC12345", "XYZ98765", "replacement", False),
+    ("ABC-1234", "ABC1234", "replacement", False),
+    ("O1", "01", "correction", False),
+    ("ABOO1234", "AB001234", "correction", False),
+    ("---", "ABC12345", "correction", False),
+])
+def test_serial_change_classification_is_backend_authority(reopened_documents, old_serial, new_serial, kind, preserved):
     client, factory, headers, root, create = reopened_documents
-    order_id, equipment_ids, previous, session_id, _ = create()
+    order_id, equipment_ids, previous, session_id, _ = create(1, serial=old_serial or "")
     updated = edit_equipment(client, headers, order_id, equipment_ids[0],
-                             serial_number="SERIE-CORREGIDA", identity_change_kind=kind)
-    if kind == "replacement":
-        assert updated["signature_session_id"] is None and updated["signature_required"]
-        assert close_individual(client, headers, order_id).status_code == 409
-        with factory() as db:
-            order = db.get(LabWorkOrder, order_id)
+                             serial_number=new_serial, identity_change_kind=kind)
+    assert updated["signature_preserved"] is preserved
+    assert updated["signature_required"] is not preserved
+    assert updated["signature_session_id"] == (session_id if preserved else None)
+    with factory() as db:
+        audit = db.scalars(select(AuditLog).where(
+            AuditLog.action == "lab_work_order.equipment_updated",
+            AuditLog.entity_id == equipment_ids[0],
+        ).order_by(AuditLog.id.desc())).first()
+        assert audit.previous_values["serial_number"] == (old_serial or None)
+        assert audit.new_values["identity_values"]["serial_number"] == new_serial
+        assert audit.new_values["requested_identity_change_kind"] == kind
+        assert audit.new_values["effective_identity_change_kind"] == ("correction" if preserved else "replacement")
+        assert audit.new_values["signature_invalidated"] is not preserved
+        assert audit.new_values["identity_change_reason"]
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == (200 if preserved else 409), closed.text
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        old = db.get(FieldSheet, previous[equipment_ids[0]]["id"])
+        assert old.status == "completed" and not old.is_current
+        assert old.lab_signature_session_id == session_id
+        assert (root / old.final_pdf_path).read_bytes() == previous[equipment_ids[0]]["bytes"]
+        if preserved:
+            assert order.signature_session_id == session_id
+            assert order.reopen_ticket_id is None
+            assert order.active_equipment[0].field_sheet.revision_number == 2
+            assert order.active_equipment[0].field_sheet.capture_values["serial_number"] == new_serial
+        else:
+            assert order.signature_session_id is None
             assert order.active_equipment[0].field_sheet is None
-            old = db.get(FieldSheet, previous[equipment_ids[0]]["id"])
-            assert old.status == "completed" and not old.is_current
-            assert old.lab_signature_session_id == session_id
-            assert (root / old.final_pdf_path).read_bytes() == previous[equipment_ids[0]]["bytes"]
-    else:
-        assert updated["signature_session_id"] == session_id and not updated["signature_required"]
-        closed = close_individual(client, headers, order_id)
-        assert closed.status_code == 200, closed.text
-        with factory() as db:
-            sheet = db.get(LabWorkOrder, order_id).active_equipment[0].field_sheet
-            assert sheet.revision_number == 2
-            assert sheet.capture_values["serial_number"] == "SERIE-CORREGIDA"
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_revision_preserves_editable_prefill_overrides(reopened_documents, monkeypatch, override):
+    client, factory, headers, root, create = reopened_documents
+    from app.models.field_sheet import FieldSheetSignature
+    from app.models.reference_standard import FieldSheetReferenceStandard, ReferenceStandard
+    from app.services import lab_field_sheets
+    original_complete = lab_field_sheets._complete_lab_field_sheet_uncommitted
+
+    def complete_with_technical_relations(db, equipment, sheet, user):
+        if sheet.revision_number == 1:
+            standard = ReferenceStandard(internal_code="REF-TEST", name="Patrón de prueba", magnitude="pressure")
+            db.add(standard)
+            db.flush()
+            sheet.reference_standard_links.append(FieldSheetReferenceStandard(
+                reference_standard_id=standard.id, usage_role="auxiliary", notes="Referencia técnica",
+                validation_snapshot={"verified": True},
+            ))
+            sheet.signatures.append(FieldSheetSignature(
+                role="technical_review", display_label="Revisión técnica", name="Revisor",
+                user_id=user.id, signature_data=None,
+            ))
+            sheet.capture_values = {**sheet.capture_values, "technical_custom": {"measurement": [1, 2, 3]}}
+        original_complete(db, equipment, sheet, user)
+
+    monkeypatch.setattr(lab_field_sheets, "_complete_lab_field_sheet_uncommitted", complete_with_technical_relations)
+    capture = {"initial_condition": "Equipo presenta desgaste superficial en carcasa",
+               "equipment_general_condition": None, "observations": "Nota técnica manual",
+               "environment_temperature_start": "23", "environment_humidity_start": "45",
+               "technician_notes": "Captura técnica", "results": "Resultados válidos"} if override else {}
+    order_id, ids, previous, session, _ = create(1, capture_overrides=capture)
+    edit_equipment(client, headers, order_id, ids[0], model="Metadata corregida",
+                   is_good_condition=False, observations="Nueva observación heredada")
+    response = close_individual(client, headers, order_id)
+    assert response.status_code == 200, response.text
+    with factory() as db:
+        current = db.get(LabWorkOrder, order_id).active_equipment[0].field_sheet
+        historical = db.get(FieldSheet, previous[ids[0]]["id"])
+        assert {key: getattr(historical, key) for key in previous[ids[0]]["columns"]} == previous[ids[0]]["columns"]
+        assert (root / historical.final_pdf_path).read_bytes() == previous[ids[0]]["bytes"]
+        assert current.is_current and current.revision_number == 2
+        assert current.supersedes_field_sheet_id == historical.id
+        assert current.capture_values["model"] == "Metadata corregida"
+        assert [row.row_data for row in current.results_rows] == previous[ids[0]]["rows"]
+        assert current.capture_values["technical_custom"] == {"measurement": [1, 2, 3]}
+        for relationship in ("results_rows", "signatures", "reference_standard_links", "uncertainty_calculations"):
+            def data(row):
+                return {c.key: getattr(row, c.key) for c in row.__table__.columns
+                        if c.key not in {"id", "created_at", "updated_at", "field_sheet_id"}}
+            assert [data(row) for row in getattr(current, relationship)] == [data(row) for row in getattr(historical, relationship)]
+        assert current.signatures and current.reference_standard_links
+        if override:
+            assert {key: getattr(current, key) for key in capture} == capture
+        else:
+            assert current.initial_condition == "REQUIERE REVISIÓN"
+            assert current.equipment_general_condition is False
+        assert current.observations == (capture.get("observations") or "Sin observaciones")
 
 
 def test_affected_sheet_with_missing_original_pdf_blocks_without_reinterpreting_history(reopened_documents):

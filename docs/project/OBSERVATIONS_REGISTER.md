@@ -61,3 +61,15 @@ técnico, se registra sólo en `TECHNICAL_DEBT.md`; no se copia aquí.
 ## Consolidación documental de reapertura — 2026-09-08
 
 ✅ Resuelta: la reapertura podía cerrar con FieldSheets documentales desactualizadas. El cierre compara, copia captura y crea sólo sucesoras afectadas, conservando originales. La confirmación Mobile anticipa la propagación y no exige desbloqueo por hoja. Regresiones A–G y límites de validación se registran en ../BACKUP_ESTADO_ACTUAL.md. Pendiente de operación: QA físico Mobile y despliegue autorizado.
+
+## Correcciones acotadas de reapertura LAB — 2026-09-08
+
+- ✅ Resuelta: el payload `correction` ya no gobierna la firma; el backend
+  verifica serie/identificación y audita elevaciones a replacement.
+- ✅ Resuelta: `initial_condition`, `equipment_general_condition` y
+  `observations` conservan overrides técnicos al evolucionar N → N+1.
+- ✅ Resuelta: inventario runtime de 519 operaciones, incluyendo regeneración
+  PDF con `field_sheets.review`; igualdad exacta con el CSV comprometido.
+- Evidencia: `backend/tests/test_lab_document_reconciliation.py`,
+  `backend/tests/test_api_access_conformity.py` y validaciones del
+  [corte operativo](../BACKUP_ESTADO_ACTUAL.md). El QA físico sigue pendiente.

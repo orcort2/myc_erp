@@ -11,6 +11,10 @@ from app.services.audit_logs import write_audit_log
 from app.services.field_sheets import EDITABLE_STATUSES, _validate_ready_to_complete
 
 
+# Editable prefills become technical capture once the technician overrides them.
+EDITABLE_PREFILL_FIELDS = frozenset({"observations", "initial_condition", "equipment_general_condition"})
+
+
 def inherited_document_values(equipment, order) -> dict:
     from app.services.lab_work_orders import resolve_equipment_certificate_client
 
@@ -115,9 +119,12 @@ def reconcile_reopened_field_sheets(db, members, user) -> list[dict]:
             changed = {key: value for key, value in target.items()
                        if (before is None or before.get(key) != value)
                        and _sheet_value(sheet, key) != value
-                       # Observation capture is editable: only propagate when it
-                       # still inherited the equipment value at the last close.
-                       and (key != "observations" or (before is not None and _sheet_value(sheet, key) == before.get(key)))
+                       # Unknown legacy provenance must also preserve editable capture.
+                       and (key not in EDITABLE_PREFILL_FIELDS or (
+                           before is not None and key in before and _sheet_value(sheet, key) == before[key]
+                           and (key not in (sheet.capture_values or {})
+                                or sheet.capture_values[key] == before[key])
+                       ))
                        and (before is not None or key != "capture_values.reserved_certificate_folio")}
             if not changed:
                 continue
