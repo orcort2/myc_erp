@@ -136,3 +136,38 @@ vertical que podía cruzar texto al crecer una línea, mantiene continuidad y
 evita bordes dobles. WeasyPrint renderiza el radio mediante wrappers con
 `overflow: hidden`; no se redondea cada celda. Temperatura y Presión conservan
 una página Letter portrait y su composición declarativa aprobada.
+
+
+## Excepción administrativa explícita — 2026-09-08
+
+`POST /api/field-sheets/{id}/pdf/regenerate` recibe `{"reason": "motivo"}` y
+reutiliza `regenerate_current_field_sheet_final_pdf`. Sólo acepta actor interno
+con `field_sheets.review`, motivo no vacío, hoja activa, `is_current=true` y
+estado documental final. No corrige metadata por sí mismo: renderiza los datos
+vigentes ya corregidos. No cambia identidad, revisión, datos técnicos, firmas,
+snapshot ni versión de plantilla; no actúa sobre revisiones retiradas.
+
+El servicio bloquea la fila, usa el freezer/renderer canónico y publica una ruta
+única nueva. Recalcula SHA-256, fecha y versión de definición; el AuditLog
+`field_sheet.final_pdf_regenerated` conserva actor, motivo, revisión y valores
+anteriores/nuevos. Storage elimina el archivo anterior sólo si no tiene otras
+referencias; incluye protección explícita de FieldSheets históricas inactivas.
+`guard_final_pdf_write` conoce la ruta nueva incluso si falla el flush y expira
+el objeto ORM. Ante fallo de render, flush, auditoría, eliminación o commit,
+se revierte la transacción, se elimina el reemplazo y se restauran los bytes
+anteriores si llegaron a eliminarse. Es compensación síncrona, no una transacción
+distribuida resistente a terminación abrupta del proceso.
+
+Las descargas ordinarias siguen devolviendo el PDF congelado. Esta excepción
+no permite recaptura técnica ni reinterpretación de revisiones anteriores.
+
+
+## Cierre LAB con evolución de revisiones
+
+La operación normal «Completar cambios» no usa la excepción administrativa
+anterior ni regenera la misma fila. Delega en `lab_document_reconciliation.py`
+la creación selectiva de sucesoras y en el freezer canónico la congelación de
+cada nueva revisión. `guard_final_pdf_batch` registra los archivos antes del
+write y compensa el conjunto hasta el commit de la OT; un `after_commit`
+impide borrar PDFs ya confirmados ante un fallo posterior. El contrato
+funcional y el detalle de captura preservada están en `LAB_WORK_ORDERS.md`.

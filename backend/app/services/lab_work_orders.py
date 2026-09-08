@@ -196,7 +196,7 @@ def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
         )
     if any(
         item.signature_session_id is not None
-        and not (item.reopen_ticket_id and item.signature_preserved)
+        and not _member_signatures_preserved([item])
         for item in members
     ):
         raise HTTPException(
@@ -206,7 +206,7 @@ def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
 
 
 def _check_edit_version(group: list[LabWorkOrder], expected: int | None) -> None:
-    if not any(item.reopen_ticket_id for item in group):
+    if not any(item.reopened_at or item.reopen_ticket_id for item in group):
         return
     current = max(item.edit_version for item in group)
     if expected is None or expected != current:
@@ -223,21 +223,15 @@ def _bump_edit_version(group: list[LabWorkOrder]) -> None:
 
 
 def _member_signatures_preserved(members: list[LabWorkOrder]) -> bool:
-    """True when the members' current signature comes from a preserved reopening
-    approved with requested_signature_policy = "preserve".
+    """Recognize preserved sessions for both direct and ticket reopenings.
 
-    ``_ensure_members_editable`` already guarantees that, once a member is
-    editable, any item that still carries a ``signature_session_id`` must
-    have ``reopen_ticket_id`` and ``signature_preserved`` set (otherwise the
-    group would have been rejected as "ya fue firmado"). So the presence of
-    a live signature session on an editable group means that session was
-    explicitly preserved through a reopening and must not be invalidated by
-    ordinary edits to already-existing data (general fields or equipment).
+    Ordinary edits preserve this session; structural edits still invalidate it.
+    A ticket is optional administrative provenance, never signature authority.
     """
     return any(
         item.signature_session_id is not None
-        and item.reopen_ticket_id is not None
         and item.signature_preserved
+        and not item.signature_required
         for item in members
     )
 
@@ -1389,7 +1383,8 @@ def _add_equipment_core(
     """Núcleo sin commit de add_equipment: crea la fila y hace flush, pero deja
     la transacción abierta para que un caller (el endpoint público, o Fase 2
     create_configured_equipment) decida cuándo confirmar/hacer rollback."""
-    if work_order.reopen_ticket_id:
+    values.pop("identity_change_kind", None)
+    if work_order.signature_session_id is not None:
         invalidate_member_signatures(
             db,
             _affected_signature_members(group, work_order),
@@ -1507,12 +1502,13 @@ def _update_equipment_core(
     equipo y hace flush, sin confirmar la transacción -- para que el endpoint
     público y update_configured_equipment (Fase 2 hardening) puedan decidir
     cuándo confirmar/revertir."""
+    identity_change_kind = values.pop("identity_change_kind", "correction")
     changed_fields = sorted(
         key for key, value in values.items() if getattr(equipment, key) != value
     )
     affected_signature_members = _affected_signature_members(group, work_order)
-    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields) and not _member_signatures_preserved(
-        affected_signature_members
+    if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields) and (
+        identity_change_kind == "replacement" or not _member_signatures_preserved(affected_signature_members)
     ):
         invalidate_member_signatures(
             db, affected_signature_members, user, fields=changed_fields
@@ -1529,7 +1525,7 @@ def _update_equipment_core(
         entity="lab_work_order_equipment",
         entity_id=equipment.id,
         user_id=user.id,
-        new_values={"work_order_id": work_order.id},
+        new_values={"work_order_id": work_order.id, "fields": changed_fields, "identity_change_kind": identity_change_kind},
     )
     return equipment
 
@@ -2041,7 +2037,7 @@ def delete_equipment(
     )
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
-    if work_order.reopen_ticket_id:
+    if work_order.signature_session_id is not None:
         invalidate_member_signatures(
             db,
             _affected_signature_members(group, work_order),
@@ -2093,7 +2089,7 @@ def create_additional_work_order(db: Session, work_order_id: int, user: User) ->
     group = _group(db, source, lock=True)
     _ensure_members_editable([source])
     editable_members = _editable_group_members(group)
-    if source.reopen_ticket_id:
+    if source.signature_session_id is not None:
         invalidate_member_signatures(
             db,
             _affected_signature_members(group, source),
@@ -2436,7 +2432,7 @@ def _closable_status(item: LabWorkOrder) -> bool:
         return True
     if item.lab_client_id is None and item.status in {"received_signed", "in_progress"}:
         return True
-    return item.status == "draft" and bool(item.reopen_ticket_id) and item.signature_preserved
+    return item.status == "draft" and _member_signatures_preserved([item])
 
 
 def sign_group(
@@ -2490,6 +2486,30 @@ def sign_individual(
 
 
 def _complete_members(
+    db: Session, *, work_order: LabWorkOrder, members: list[LabWorkOrder],
+    user: User, scope: str, require_completed_sheets: bool = True,
+    confirm_draft_completion: bool = False,
+) -> LabWorkOrderRead:
+    from app.services.field_sheet_pdfs import guard_final_pdf_batch
+    from app.services.lab_document_reconciliation import audit_consolidated_documents, reconcile_reopened_field_sheets
+
+    # A structural invalidation remains a hard gate; no document operation
+    # substitutes for the new reception signatures.
+    if not members or any(item.signature_session_id is None or item.signature_required for item in members):
+        raise HTTPException(status_code=409, detail="La cohorte requiere las firmas de técnico y cliente")
+    with guard_final_pdf_batch(db):
+        reports = reconcile_reopened_field_sheets(db, members, user)
+        _complete_members_uncommitted(
+            db, work_order=work_order, members=members, user=user, scope=scope,
+            require_completed_sheets=require_completed_sheets,
+            confirm_draft_completion=confirm_draft_completion,
+        )
+        audit_consolidated_documents(db, reports, user)
+        commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
+
+
+def _complete_members_uncommitted(
     db: Session,
     *,
     work_order: LabWorkOrder,
@@ -2498,7 +2518,7 @@ def _complete_members(
     scope: str,
     require_completed_sheets: bool = True,
     confirm_draft_completion: bool = False,
-) -> LabWorkOrderRead:
+) -> None:
     if not members or any(
         item.signature_session_id is None or item.signature_required for item in members
     ):
@@ -2530,41 +2550,14 @@ def _complete_members(
                     detail={"code": "LAB_DRAFT_SHEETS_INVALID", "items": blockers},
                 )
             from app.services.lab_field_sheets import _complete_lab_field_sheet_uncommitted
-            from app.services.storage_service import resolve_storage_path
-
-            # Cierre UX 2026-09 (bug encontrado por test_close_with_confirm_draft_completion_rolls_back_atomically_if_a_pdf_write_fails,
-            # no pedido explícitamente): un guard_final_pdf_write POR hoja
-            # compuesto vía ExitStack rompe con >1 hoja -- cada guard llama a
-            # su propio db.rollback() al desenredarse, y ese rollback expira
-            # TODOS los objetos de la sesión (no sólo el suyo), así que para
-            # cuando el segundo guard corre, el final_pdf_path de la primera
-            # hoja ya volvió a su valor previo en memoria y su archivo recién
-            # escrito queda huérfano en disco sin que nada lo detecte. Aquí
-            # se limpia cada PDF ya escrito ANTES de un único rollback final,
-            # cubriendo el mismo span (loop de completar + reverificación +
-            # _finish_complete_members) que antes cubría el ExitStack.
-            pre_existing_paths = {equipment.id: equipment.field_sheet.final_pdf_path for _item, equipment in draft_targets}
-            try:
-                for _item, equipment in draft_targets:
-                    _complete_lab_field_sheet_uncommitted(db, equipment, equipment.field_sheet, user)
-                # Re-verificar con la autoridad normal (ahora sin drafts
-                # pendientes) en vez de asumir que completar alcanzó -- misma
-                # regla, no una segunda política.
-                _ensure_staff_sheet_prerequisites(members)
-                if any(not _closable_status(item) for item in members):
-                    raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
-                return _finish_complete_members(
-                    db, work_order=work_order, members=members, user=user, scope=scope,
-                )
-            except BaseException:
-                for _item, equipment in draft_targets:
-                    written_path = equipment.field_sheet.final_pdf_path
-                    if written_path and written_path != pre_existing_paths.get(equipment.id):
-                        resolved = resolve_storage_path(written_path)
-                        if resolved is not None and resolved.is_file():
-                            resolved.unlink(missing_ok=True)
-                db.rollback()
-                raise
+            for _item, equipment in draft_targets:
+                _complete_lab_field_sheet_uncommitted(db, equipment, equipment.field_sheet, user)
+            _ensure_staff_sheet_prerequisites(members)
+            if any(not _closable_status(item) for item in members):
+                raise HTTPException(status_code=409, detail="INVALID_STATE_TRANSITION")
+            return _finish_complete_members(
+                db, work_order=work_order, members=members, user=user, scope=scope,
+            )
         # El detalle de hojas faltantes (por equipo) es más informativo que un
         # simple INVALID_STATE_TRANSITION, así que se revisa primero -- para
         # cualquier miembro no exento, si ya está ready_to_close no puede
@@ -2595,7 +2588,7 @@ def _finish_complete_members(
     members: list[LabWorkOrder],
     user: User,
     scope: str,
-) -> LabWorkOrderRead:
+) -> None:
     session_ids = {item.signature_session_id for item in members}
     if len(session_ids) != 1:
         raise HTTPException(
@@ -2613,7 +2606,7 @@ def _finish_complete_members(
         item.status = "partially_closed" if item.partial_close_ticket_id else "completed"
         if item.partial_close_ticket_id:
             item.partially_closed_at = completed_at
-        item.signature_preserved = bool(item.reopen_ticket_id and item.signature_preserved)
+        item.signature_preserved = _member_signatures_preserved([item])
         _notify_capture_work_order_completed(db, item, user)
     ticket_ids = {item.reopen_ticket_id for item in members if item.reopen_ticket_id}
     if ticket_ids:
@@ -2648,8 +2641,6 @@ def _finish_complete_members(
             "completed_at": completed_at.isoformat(),
         },
     )
-    commit_and_dispatch_notifications(db)
-    return _read(db, _get(db, work_order.id))
 
 
 def complete_group(

@@ -16,7 +16,7 @@ OT completed
   → snapshot inmutable de cada OT de la cohorte de firma y PDF anterior
   → cohorte draft, revisión N+1, ticket in_progress
   → edición con edit_version
-  → cambio crítico invalida automáticamente la firma activa
+  → cambio estructural invalida automáticamente la firma activa
   → nueva recepción técnico+cliente si la sesión fue invalidada
   → captura técnica vuelve a satisfacer FieldSheets cuando aplique
   → cierre genera PDF nuevo y resuelve el ticket
@@ -69,15 +69,25 @@ versión continúa siendo única por `(root_work_order_id, version)`.
 
 ## Clasificación determinista de cambios
 
-Pueden preservar firma: contacto, teléfono, correo, código postal, ciudad,
-estado, orden de compra, observaciones y `report_number` de equipo.
+Una reapertura `preserve`, directa o mediada por ticket, conserva firmas ante
+ediciones ordinarias de datos existentes, incluidos domicilio/cliente y campos
+del equipo. Agregar/quitar equipos o crear una OT adicional invalida la sesión
+activa y exige nueva firma. Una edición `identity_change_kind=replacement`
+también invalida aunque la reapertura fuera preserve, sin clasificar la serie
+por heurística textual. `invalidate` retira la sesión activa desde el inicio.
 
-Invalidan automáticamente la firma activa de los miembros abiertos afectados:
-cliente, fechas,
-domicilio, agregar/eliminar OT o equipo, instrumento, marca, identificación,
-serie y condición física. La autorización `preserve` no puede evitar esta
-regla backend. La autorización `invalidate` exige nuevas firmas desde el
-inicio.
+La autoridad de preservación es `signature_session_id != NULL`,
+`signature_preserved=true` y `signature_required=false`. `reopen_ticket_id`
+sólo identifica procedencia: `NULL` es válido en reapertura directa. Con esos
+flags, `draft` admite «Completar cambios», genera un nuevo PDF de OT y conserva
+la sesión y ambas firmas originales. Las FieldSheets finales afectadas evolucionan
+a una nueva revisión documental dentro del mismo cierre; la captura y todas
+las revisiones anteriores permanecen intactas (ver `LAB_WORK_ORDERS.md`).
+
+La reapertura directa reutiliza `_reopen_closed_cohort` con ticket nulo,
+registra `reopened_at`/actor/revisión y aplica los permisos administrativos
+existentes. El control `expected_edit_version` cubre ambas vías. La nota del PDF
+identifica reapertura directa cuando no existe ticket.
 
 Toda edición de una revisión reabierta debe enviar `expected_edit_version`.
 Una versión ausente u obsoleta responde `409 REVISION_CONFLICT`.

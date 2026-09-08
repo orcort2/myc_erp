@@ -231,3 +231,7 @@ class FieldSheetRead(FieldSheetBase):
     calibration_procedure: CalibrationProcedureRead | None = None
     reference_standards: list[FieldSheetReferenceStandardRead] = Field(default_factory=list)
     signatures: list[FieldSheetSignatureRead] = Field(default_factory=list)
+
+
+class FieldSheetFinalPdfRegenerate(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)

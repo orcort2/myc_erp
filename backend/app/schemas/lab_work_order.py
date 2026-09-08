@@ -110,6 +110,7 @@ class LabEquipmentBase(BaseModel):
 
 
 class LabEquipmentWrite(LabEquipmentBase):
+    identity_change_kind: Literal["correction", "replacement"] = "correction"
     expected_edit_version: int | None = Field(default=None, ge=1)
 
 

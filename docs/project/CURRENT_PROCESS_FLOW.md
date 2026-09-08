@@ -577,13 +577,13 @@ compacta `sequence_number`. `204`/`404` cierran el detalle y refrescan desde el
 backend; `403`, `409` o red mantienen la OT local. Ninguna llamada usa
 `/api/service-orders/...`.
 
-Desde 2026-08-27, una OT `completed` sólo vuelve a edición mediante Ticket. El
-técnico solicita; la OT sigue cerrada; Calidad/autoridad rechaza o aprueba una
+Una OT `completed` vuelve a edición por Ticket aprobado o por reapertura
+administrativa directa autorizada. En la vía Ticket, el técnico solicita; la OT sigue cerrada; Calidad/autoridad rechaza o aprueba una
 política de firma; el backend crea snapshots de la cohorte de sesión y abre
 revisión N+1 sólo para ella;
 cada edición valida `edit_version`; los cambios estructurales invalidan la
 firma activa; el cierre exige firma válida, genera PDF nuevo y resuelve el
-Ticket. El PDF y firma anteriores permanecen consultables.
+Ticket cuando existe. La vía directa deja `reopen_ticket_id=NULL`. El PDF y firma anteriores permanecen consultables.
 Cuando la reapertura conserva una sesión histórica válida
 (`canSkipSignaturesAfterReopen=true`), el CTA de equipos continúa directamente
 a captura técnica y `openExisting`/`selectRelated`/realtime no interpretan la
@@ -713,3 +713,8 @@ primera y reparenta solicitud/cadena/recursos compartidos; sin sobrevivientes
 deja la raíz de la solicitud en `NULL` y conserva `approved`, decisión,
 participantes y conversación. Todo ocurre antes del `DELETE` y dentro del mismo
 commit. El secuenciador no se reduce ni reutiliza folios eliminados.
+
+
+## Hotfix LAB — 2026-09-08
+
+Reapertura directa o por ticket preserve → draft con sesión original → correcciones ordinarias con edit_version → «Completar cambios» → completed y nuevo PDF OT. El cierre sincroniza automáticamente los datos heredados y crea/congela sólo las revisiones FieldSheet afectadas, en el mismo commit. No requiere una acción por hoja. La regeneración administrativa explícita sigue disponible como excepción separada, pero no participa en este flujo.

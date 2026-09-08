@@ -248,7 +248,8 @@ alta o edición de OT/equipo, firma, folios, cierre, cancelación ni revisión d
 Tickets. Los actores externos no reciben ese permiso interno y conservan
 tenant scope y la excepción histórica de cierre sin hojas.
 
-La reapertura sólo ocurre al aprobar un Ticket y afecta a la cohorte histórica
+La reapertura ocurre por aprobación de Ticket o por acción administrativa directa
+(`reopen_work_order_directly`, sin ticket artificial), y afecta a la cohorte histórica
 identificada por la `signature_session_id` de la OT solicitada. Una sesión
 individual reabre sólo esa OT; una sesión compartida reabre sólo sus
 participantes, nunca hermanas de otra cohorte.
@@ -269,9 +270,10 @@ esa revisión se retira (`is_current=False`) sin tocar su
 `status`/`final_pdf_path`/`final_pdf_sha256`; `create_lab_field_sheet` abre
 la siguiente (`revision_number` incremental, `supersedes_field_sheet_id`
 apuntando a la anterior) con normalidad en cuanto la OT vuelve a estar
-firmada. Una reapertura `preserve` nunca retira ni versiona nada -- el
-trabajo técnico se conserva tal cual. Ningún documento histórico se
-sobrescribe ni se reinterpreta.
+firmada. Una reapertura `preserve` mantiene la captura técnica: al ejecutar
+«Completar cambios», las hojas finales con datos heredados modificados crean
+la revisión siguiente copiando esa captura. Las hojas no afectadas no se
+versionan. Ningún documento histórico se sobrescribe ni se reinterpreta.
 
 ## PDF y app móvil
 
@@ -284,7 +286,9 @@ Los PDFs propios de FieldSheet no se generan en Mobile: reutilizan
 `field_sheet_pdfs.py`. Las hojas nuevas fijan `field_sheet_engine` versión 1 y
 al completar congelan ruta, SHA-256, versión de renderer/definición y fecha en
 el storage institucional. Las descargas posteriores verifican y devuelven el
-mismo archivo. Los tres HTML anteriores permanecen sólo para snapshots legacy;
+mismo archivo. La regeneración administrativa explícita de la revisión vigente
+es la excepción documentada en `FIELD_SHEET_PDF_RENDERER.md`; las revisiones
+retiradas conservan sus bytes. Los tres HTML anteriores permanecen sólo para snapshots legacy;
 el contrato completo está en `FIELD_SHEET_PDF_RENDERER.md`.
 
 El adaptador LAB conserva separados los campos institucionales: `address` se
@@ -551,3 +555,66 @@ Los sprints posteriores —incluida la reparación de firma/orientación del
 2026-08-24— requieren repetir el recorrido completo en Android e iPhone antes
 de distribuirse. Hasta esa evidencia nueva el módulo se mantiene `EN
 DESARROLLO`, no `SELLADO`.
+
+
+## Consolidación automática de reapertura — 2026-09-08
+
+«Completar cambios» es la frontera transaccional de la reapertura LAB, por las
+rutas de cierre grupal/individual existentes. Mobile muestra antes de enviar:
+«Al completar los cambios, la información actualizada se aplicará automáticamente
+a los equipos y documentos involucrados. Las versiones anteriores permanecerán
+disponibles para consulta y trazabilidad». No exige desbloqueo ni sincronización
+manual de cada FieldSheet.
+
+`lab_document_reconciliation.py` compara los datos heredados vigentes con los
+registrados en la revisión cerrada de la OT, por ID de equipo. Los snapshots
+nuevos guardan `inherited_document_values`; los legacy usan los valores
+congelados de la hoja como fallback, nunca su posición mutable. Un cambio
+revertido o ya sincronizado no produce otra revisión. Un cliente documental
+`different` no hereda los cambios del cliente global de la OT.
+
+Se propagan empresa, domicilio, atención, recepción, orden de compra, identidad
+(instrumento/marca/modelo/identificación/serie), condición heredada y folio
+conocido. La observación sólo se propaga si aún coincidía con el valor heredado;
+una observación técnica propia no se sobrescribe. No se copia ningún resultado
+nuevo desde Equipment ni se recalculan mediciones por una corrección documental.
+
+Una hoja final afectada conserva sus datos/PDF y pasa a `is_current=false`;
+se crea la siguiente con `supersedes_field_sheet_id`, mismo snapshot/renderer,
+captura profunda independiente, resultados, firmas de hoja, referencias y
+cálculos de incertidumbre existentes. La nueva hoja toma la sesión de recepción
+válida y sólo cambia los campos heredados detectados. Se valida con la autoridad
+normal y se completa/congela dentro de la transacción. Si existe un requisito
+pendiente, se bloquea y revierte el cierre con detalle; no se fuerza completitud.
+Una hoja retirada previamente por invalidación técnica no se resucita ni se
+clona automáticamente. Los certificados ya emitidos permanecen ligados a su
+fuente histórica y no se reemiten por este flujo.
+
+El freezer usa nombres únicos y `guard_final_pdf_batch` registra cada ruta antes
+de escribirla. El único commit ocurre después de las hojas, sus PDFs, el PDF OT
+y la auditoría. Un fallo en cualquiera de esos pasos revierte todas las filas
+y elimina únicamente los archivos nuevos, incluso si un flush expiró el ORM.
+Los archivos históricos nunca se borran ni sobrescriben. Después del commit
+un fallo de entrega de respuesta no elimina documentos confirmados; el retry
+normal de cerrar una OT ya completed es idempotente. La compensación es síncrona,
+no una garantía frente a terminación abrupta del proceso.
+
+`lab_work_order.changes_consolidated` registra OT/actor, campos globales,
+equipos afectados (incluidas altas/bajas identificables), hojas y revisiones
+anterior/nueva, rutas y hashes anterior/nuevo y política/sesión resultante.
+La consulta operativa resuelve exclusivamente `current_field_sheet`; IDs
+históricos quedan en el AuditLog y sus PDFs siguen disponibles por ID con
+los permisos documentales existentes.
+
+### Clasificación explícita de identidad
+
+La edición integrada y simple de equipo acepta `identity_change_kind`:
+`correction` (default compatible con clientes anteriores) o `replacement`.
+Mobile permite elegir «Corrección de datos» o «Sustitución / serie distinta».
+No se infiere sustitución por distancia textual entre series. Una corrección
+puede preservar sesión según la política de reapertura; una sustitución real,
+incluido cambio sustancial de serie, debe clasificarse `replacement` y anula
+la sesión aunque hubiera `preserve`, retirando la hoja final para recaptura.
+Agregar/quitar equipos continúa invalidando. Con firma requerida, cerrar
+responde conflicto sin consolidar/cerrar nada: se firma y se satisfacen los
+requisitos técnicos antes del cierre. No existe un bypass documental de firmas.

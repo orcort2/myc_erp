@@ -1,6 +1,7 @@
 import type { LabEquipment } from '@/src/types/lab-work-order';
 
 export type EquipmentBasicData = {
+  identity_change_kind?: 'correction' | 'replacement';
   instrument: string;
   brand: string;
   // Fase 6: identidad del equipo (mismo criterio que Equipment productivo) --

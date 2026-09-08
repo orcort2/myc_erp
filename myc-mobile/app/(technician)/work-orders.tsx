@@ -1004,8 +1004,19 @@ export default function WorkOrdersScreen() {
   // atómica (confirm_draft_completion=true). Si alguna no pasa validación
   // (LAB_DRAFT_SHEETS_INVALID), no se completa ni se cierra nada -- se
   // muestran los blockers exactos y la OT sigue abierta.
-  async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false) {
+  async function completeClosure(scope: LabClosureScope = closureScope, confirmDraftCompletion = false, confirmReopenedChanges = false) {
     if (!workOrder) return;
+    if (workOrder.revision_number > 1 && !confirmReopenedChanges && !confirmDraftCompletion) {
+      Alert.alert(
+        'Completar cambios',
+        'Al completar los cambios, la información actualizada se aplicará automáticamente a los equipos y documentos involucrados. Las versiones anteriores permanecerán disponibles para consulta y trazabilidad.',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Completar cambios', onPress: () => { void completeClosure(scope, false, true); } },
+        ],
+      );
+      return;
+    }
     setBusy(true);
     try {
       const detail = await postLabCompletion({ confirmDraftCompletion, request, scope, workOrder });
@@ -1398,7 +1409,7 @@ export default function WorkOrdersScreen() {
 
               {workOrder && step === 'capture' && (
                 <FadeIn transitionKey={step}>
-                  {!!workOrder.reopen_ticket_id && editable && (
+                  {workOrder.revision_number > 1 && editable && (
                     <SecondaryButton icon="pencil-outline" label="Editar datos generales" onPress={() => setStep('general')} />
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
@@ -1469,7 +1480,7 @@ export default function WorkOrdersScreen() {
                     <SecondaryButton icon="clipboard-edit-outline" label="Revisar captura técnica" onPress={() => setStep('technical')} />
                     {canCreateTickets && closureOptions?.hasEligiblePartialCloseCohort && <AdministrativeButton icon="send" label="Solicitar excepción de cierre parcial" onPress={() => { setTicketDialogMode('partial'); setTicketOpen(true); }} />}
                     {canCloseWorkOrders && canSkipSignaturesAfterReopen(workOrder) ? (
-                      <PrimaryButton icon="check-circle" label="Cerrar OT individual reabierta" onPress={() => completeClosure(closureScope)} />
+                      <PrimaryButton icon="check-circle" label="Completar cambios" onPress={() => completeClosure(closureScope)} />
                     ) : canCloseWorkOrders ? (
                       <PrimaryButton
                         icon="check-circle"
@@ -1487,7 +1498,7 @@ export default function WorkOrdersScreen() {
                   captura técnica. La firma representa que MYC y el cliente
                   aceptan los equipos y condiciones recibidos, no que el
                   trabajo técnico terminó. */}
-              {workOrder && step === 'signatures' && workOrder.status === 'draft' && (
+              {workOrder && step === 'signatures' && workOrder.status === 'draft' && !canSkipSignaturesAfterReopen(workOrder) && (
                 <FadeIn transitionKey={step}>
                 {signatureFlowState == null ? (
                   <>

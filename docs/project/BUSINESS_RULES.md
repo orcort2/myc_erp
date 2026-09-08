@@ -158,7 +158,7 @@ Una regla nueva debe registrar evidencia y fecha. Si sólo existe en Diseño fut
 
 ## Reglas de Tickets y reapertura móvil — 2026-08-14
 
-1. Una OT LAB cerrada no es editable ni cambia a borrador sin Ticket aprobado.
+1. Una OT LAB cerrada sólo vuelve a borrador por Ticket aprobado o reapertura administrativa directa autorizada, sin ticket artificial.
 2. Aprobar crea revisión nueva del grupo sin cambiar folios ni sobrescribir PDF.
 3. `preserve` sólo conserva firma mientras no cambien cliente, fechas,
    domicilio, composición o identidad/condición del equipo; el backend invalida
@@ -246,3 +246,19 @@ fecha. Toda descarga posterior devuelve y verifica ese mismo artefacto; una
 ausencia o diferencia de hash bloquea la entrega y no autoriza regeneración
 silenciosa. Los estados editables pueden generar preview dinámico y los
 snapshots históricos conservan su renderer legacy explícito.
+
+
+## Hotfix documental LAB — 2026-09-08
+
+La preservación de firma depende de sesión y flags, nunca del ticket. Ediciones
+ordinarias conservan la firma con `preserve`; altas/bajas de equipo y OT
+adicional la invalidan. Ambas reaperturas aplican control de versión.
+Regenerar el PDF final FieldSheet exige actor interno con `field_sheets.review`,
+motivo y revisión vigente final; no cambia la revisión ni sus datos técnicos.
+Contratos: `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md` y
+`FIELD_SHEET_PDF_RENDERER.md` en `docs/architecture/`.
+
+
+## Consolidación documental de reapertura — 2026-09-08
+
+El cierre de una reapertura es una transacción única para sincronización documental, nuevas revisiones FieldSheet, PDFs y OT. Sólo se versionan hojas afectadas; se conserva la captura no invalidada y el histórico. `identity_change_kind=replacement` invalida firma aunque exista preserve; una corrección permite conservarla. Una firma requerida o validación técnica pendiente bloquea el cierre sin cambios parciales. El contrato completo está en ../architecture/LAB_WORK_ORDERS.md.

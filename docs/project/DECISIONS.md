@@ -373,3 +373,13 @@ posición usa un índice único parcial (`WHERE is_active IS TRUE`) en vez de un
 mover el equipo retirado. Retirar equipo sobre una OT ya reabierta es un
 cambio estructural: invalida la firma vigente igual que agregar equipo, bajo
 cualquier política de reapertura.
+
+
+## Hotfix LAB — 2026-09-08
+
+El ticket es procedencia opcional, no autoridad de firma. Se reutilizan los flags/sesión existentes y el freezer canónico; la regeneración administrativa conserva la revisión FieldSheet vigente, escribe una ruta única y compensa fallos de transacción. No se agrega una autoridad documental paralela ni una migración.
+
+
+## Consolidación documental de reapertura — 2026-09-08
+
+Se reutiliza FieldSheet como entidad de revisión y el snapshot de reapertura como comparación por ID de equipo, con fallback a la hoja congelada para legacy. No hay flags dirty, tablas ni motor paralelo. La consolidación vive en lab_document_reconciliation.py; la transacción de cierre y guard_final_pdf_batch gobiernan todos los writes. La excepción administrativa de regeneración in-place no se usa para consolidar una reapertura. Sustitución real de identidad se declara explícitamente; no se infiere por heurísticas de serie.

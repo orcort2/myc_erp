@@ -8,6 +8,9 @@ from pathlib import Path
 from re import sub
 from types import SimpleNamespace
 from unicodedata import normalize
+from uuid import uuid4
+
+from sqlalchemy import event, select
 
 from fastapi import HTTPException
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -36,6 +39,8 @@ from app.services.institutional_configurations import (
     resolve_logo_path,
 )
 from app.services.storage_service import (
+    atomic_write,
+    delete_if_unreferenced,
     require_deliverable_file,
     resolve_storage_path,
     save_validated_content,
@@ -619,7 +624,7 @@ def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
 
 
 @contextmanager
-def guard_final_pdf_write(db, field_sheet: FieldSheet):
+def guard_final_pdf_write(db, field_sheet: FieldSheet, *, pending_path: str | None = None):
     """Compensate a just-written final PDF artifact if the rest of this unit
     of work fails before its own db.commit() succeeds.
 
@@ -640,7 +645,8 @@ def guard_final_pdf_write(db, field_sheet: FieldSheet):
     try:
         yield
     except BaseException:
-        written_path = field_sheet.final_pdf_path
+        # A failed flush expires ORM state; do not trigger a lazy load before rollback.
+        written_path = pending_path or field_sheet.__dict__.get("final_pdf_path")
         if written_path and written_path != pre_existing_path:
             resolved = resolve_storage_path(written_path)
             if resolved is not None and resolved.is_file():
@@ -649,7 +655,40 @@ def guard_final_pdf_write(db, field_sheet: FieldSheet):
         raise
 
 
-def freeze_final_field_sheet_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
+@contextmanager
+def guard_final_pdf_batch(db):
+    """Compensate every new document in one closing transaction, even when
+    a failed flush expires ORM instances. Never remove committed files.
+    """
+    paths = []
+    committed = False
+
+    def after_commit(_session):
+        nonlocal committed
+        committed = True
+
+    if "field_sheet_final_pdf_batch" in db.info:
+        raise RuntimeError("Nested document closing transactions are not supported")
+    db.info["field_sheet_final_pdf_batch"] = paths
+    event.listen(db, "after_commit", after_commit)
+    try:
+        yield
+    except BaseException:
+        if not committed:
+            db.rollback()
+            for path in paths:
+                resolved = resolve_storage_path(path)
+                if resolved is not None:
+                    resolved.unlink(missing_ok=True)
+        raise
+    finally:
+        event.remove(db, "after_commit", after_commit)
+        db.info.pop("field_sheet_final_pdf_batch", None)
+
+
+def freeze_final_field_sheet_pdf(
+    db, field_sheet: FieldSheet, *, storage_filename: str | None = None,
+) -> tuple[bytes, str]:
     if field_sheet.final_pdf_path:
         stored = require_deliverable_file(
             field_sheet.final_pdf_path,
@@ -665,9 +704,13 @@ def freeze_final_field_sheet_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, st
         field_sheet.template_definition_json or {},
     )
     content, filename = _render_pdf(db, field_sheet)
+    batch_paths = db.info.get("field_sheet_final_pdf_batch")
+    if batch_paths is not None:
+        storage_filename = f"closure-{uuid4().hex}.pdf"
+        batch_paths.append(f"field-sheets/{field_sheet.id}/final/{storage_filename}")
     stored = save_validated_content(
         directory=Path("field-sheets") / str(field_sheet.id) / "final",
-        filename=f"renderer-{renderer_version}.pdf",
+        filename=storage_filename or f"renderer-{renderer_version}.pdf",
         content=content,
         original_filename=filename,
     )
@@ -695,3 +738,71 @@ def generate_field_sheet_pdf(db, field_sheet_id: int) -> tuple[bytes, str]:
                 db.commit()
         return content, filename
     return _render_pdf(db, field_sheet)
+
+
+def regenerate_current_field_sheet_final_pdf(db, field_sheet_id: int, user, *, reason: str) -> tuple[bytes, str]:
+    """Explicit documentary correction of the current final revision only.
+
+    Keep the old bytes until the replacement is flushed. Restore them on any
+    pre-commit failure; the guard removes the uniquely named replacement.
+    """
+    from app.services.audit_logs import write_audit_log
+    from app.services.auth import user_has_permission
+    from app.services.field_sheets import get_field_sheet
+
+    if user.account_type != "internal" or not user_has_permission(user, "field_sheets.review"):
+        raise HTTPException(status_code=403, detail="Permiso administrativo insuficiente")
+    reason = reason.strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="Se requiere motivo de regeneración")
+    sheet = db.scalar(
+        select(FieldSheet).where(FieldSheet.id == field_sheet_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+    if sheet is None or not sheet.is_active:
+        raise HTTPException(status_code=404, detail="Hoja de campo no encontrada")
+    if not sheet.is_current or sheet.status not in FINAL_DOCUMENT_STATUSES:
+        raise HTTPException(status_code=409, detail="Sólo se regenera el PDF final de la revisión vigente")
+    sheet = get_field_sheet(db, field_sheet_id)
+    previous = {
+        "final_pdf_path": sheet.final_pdf_path,
+        "final_pdf_sha256": sheet.final_pdf_sha256,
+        "final_pdf_generated_at": sheet.final_pdf_generated_at.isoformat() if sheet.final_pdf_generated_at else None,
+        "final_pdf_template_definition_version": sheet.final_pdf_template_definition_version,
+    }
+    old_file = resolve_storage_path(sheet.final_pdf_path) if sheet.final_pdf_path else None
+    old_bytes = old_file.read_bytes() if old_file is not None and old_file.is_file() else None
+    storage_filename = f"administrative-{uuid4().hex}.pdf"
+    pending_path = f"field-sheets/{sheet.id}/final/{storage_filename}"
+    try:
+        with guard_final_pdf_write(db, sheet, pending_path=pending_path):
+            sheet.final_pdf_path = None
+            content, filename = freeze_final_field_sheet_pdf(db, sheet, storage_filename=storage_filename)
+            write_audit_log(
+                db, action="field_sheet.final_pdf_regenerated", entity="field_sheet",
+                entity_id=sheet.id, user_id=user.id, previous_values=previous,
+                new_values={
+                    "final_pdf_path": sheet.final_pdf_path,
+                    "final_pdf_sha256": sheet.final_pdf_sha256,
+                    "final_pdf_generated_at": sheet.final_pdf_generated_at.isoformat(),
+                    "final_pdf_template_definition_version": sheet.final_pdf_template_definition_version,
+                    "revision_number": sheet.revision_number,
+                }, comment=reason,
+            )
+            # Include inactive historical sheets: generic storage reference counting
+            # intentionally considers active owners only.
+            shared_sheet = db.scalar(select(FieldSheet.id).where(
+                FieldSheet.id != sheet.id,
+                FieldSheet.final_pdf_path.in_({previous["final_pdf_path"], str(old_file)}),
+            ).limit(1)) if previous["final_pdf_path"] else None
+            if old_bytes is not None and shared_sheet is None:
+                delete_if_unreferenced(
+                    db, previous["final_pdf_path"], user_id=user.id, module="field_sheets",
+                    entity="field_sheet", entity_id=sheet.id, reason=reason,
+                )
+            db.commit()
+    except BaseException:
+        if old_bytes is not None and old_file is not None and not old_file.exists():
+            atomic_write(old_file, old_bytes)
+        raise
+    return content, filename

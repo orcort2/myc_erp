@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no define alcance, flujo, reglas, decisiones ni estado de módulos
 >
-> Corte actualizado: 2026-09-04
+> Corte actualizado: 2026-09-08
 
 # Estado operativo actual del ERP MYC
 
@@ -19,22 +19,114 @@ y [`project/TECHNICAL_DEBT.md`](project/TECHNICAL_DEBT.md).
 ## Corte operativo
 
 - Rama verificada: `wip/lab-admin-void-delivery`.
-- Working tree previo a este cierre: `6fb8e2c1e3ba60215e0cdcd1a949adbb5afa6a06`
-  (`fix(lab): preserve equipment history across reopened order edits`, que a
-  su vez partió de `213dcb042db143df39713f6419de0b6bcfe7a55c`).
-- Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**. El push de este cierre
-  no es aprobación de merge a `main`; queda pendiente una auditoría
-  independiente del SHA resultante.
+- Base del hotfix: `d9d6ccd` (`fix(lab): complete observation snapshot and mobile test coverage`).
+- Hotfix preparado en worktree separado `/private/tmp/myc-erp-lab-hotfix`;
+  el checkout original conserva su rama Mobile y sus cambios locales.
+- No se ejecutó commit, push, merge ni intervención en producción.
+- Dictamen global vigente: **NO APTO PARA PRODUCCIÓN**; este hotfix no cambia
+  el estado general del proyecto ni sustituye la auditoría independiente.
 - Único módulo `SELLADO`: Control Documental V1 dentro de su alcance
   congelado. OT LAB temporal permanece `EN DESARROLLO` hasta QA físico.
 - Fase 3 LAB implementa recepción técnico+cliente previa a FieldSheets:
   `draft → received_signed → in_progress → ready_to_close → completed`.
   `ready_for_signatures` queda sólo como compatibilidad histórica.
 
+## Hotfix acotado LAB — 2026-09-08
+
+- Firma preservada reconocida por sesión existente, `signature_preserved=true`
+  y `signature_required=false`, sin exigir ticket. Edición, cierre desde draft,
+  persistencia del flag al completar y Mobile consumen ese contrato.
+- Altas/bajas de equipo y OT adicional siguen invalidando la sesión, también
+  en reapertura directa. `expected_edit_version` cubre reaperturas directas.
+- Mobile muestra «Completar cambios», evita recaptura de firma preservada y
+  permite editar datos generales por revisión. El PDF OT identifica reapertura
+  directa y conserva el historial anterior.
+- Nueva acción `POST /api/field-sheets/{id}/pdf/regenerate`, body
+  `{"reason":"motivo administrativo"}`: sólo staff interno con
+  `field_sheets.review`, hoja activa/final/vigente. Renderiza metadata ya
+  corregida, conserva revisión/snapshot/firmas y audita path/hash anteriores y
+  nuevos. Archivo nuevo único, borrado protegido del anterior y compensación
+  síncrona en fallos; no reinterpreta revisiones retiradas.
+- Sin migraciones ni modificaciones a la BD local productiva: no procede
+  regenerar el respaldo SQL. Head de código comprobado: `7088fa142cc2`.
+  No se consultó ni se reparó OT 6443 en producción.
+
+### Archivos del parche
+
+Código y pruebas: `backend/app/services/lab_work_orders.py`,
+`backend/app/services/lab_work_order_pdfs.py`,
+`backend/app/services/field_sheet_pdfs.py`,
+`backend/app/routers/field_sheets.py`, `backend/app/schemas/field_sheet.py`,
+`backend/tests/test_lab_phase5_operational_closure.py`,
+`myc-mobile/app/(technician)/work-orders.tsx`,
+`myc-mobile/src/services/lab-work-order-signature-policy.ts` y su `.test.ts`.
+Se ajusta `scripts/generate_project_file_registry.py` para registrar las
+responsabilidades modificadas de API, schema, renderer y suite.
+
+Documentación: este corte, `PROJECT_FILE_REGISTRY.md`,
+`project/DOCUMENTATION_INDEX.md`, `project/CURRENT_SCOPE.md`,
+`project/CURRENT_PROCESS_FLOW.md`, `project/BUSINESS_RULES.md`,
+`project/DECISIONS.md`, `project/OBSERVATIONS_REGISTER.md`,
+`architecture/LAB_WORK_ORDERS.md`,
+`architecture/OPERATIONAL_TICKETS_AND_LAB_REOPENING.md` y
+`architecture/FIELD_SHEET_PDF_RENDERER.md`.
+Revisados sin cambios: `project/PROJECT_STATUS.md`, `project/TECHNICAL_DEBT.md`
+y `architecture/files/INSTITUTIONAL_FILE_STORAGE.md`: no cambia el estado
+modular ni la deuda previa; se reutilizan las utilidades vigentes de storage.
+No hay archivos funcionales nuevos, movimientos, fusiones ni archivado.
+
+### Validación del hotfix
+
+Dependencias del venv local estaban `dataless` (descargadas del disco por macOS),
+y bloquearon la importación de tinycss2/WeasyPrint. Se interrumpieron esos
+intentos y se instaló una copia temporal con versiones de `requirements.txt`
+en `/private/tmp/myc-lab-hotfix-deps`, sin cambiar dependencias del repositorio
+ni el venv original. Se omitió docopt de esa copia (no tiene wheel y no lo
+requieren estas pruebas). Se usa Python 3.12 del venv existente.
+
+Comandos backend desde la raíz del worktree, con
+`XDG_CACHE_HOME=/private/tmp/myc-lab-font-cache` y
+`PYTHONPATH=/private/tmp/myc-lab-hotfix-deps:backend`, mediante
+`/Users/saulcortes/Desktop/myc_erp/venv/bin/python -m pytest`:
+
+- Focalizados: `-q backend/tests/test_lab_phase5_operational_closure.py backend/tests/test_lab_work_orders.py -k 'directly_without or directly_with_invalidate or direct_preserve_structural or regenerate or ticket_preserves_minor_change'`: **18 passed**.
+- Suite relevante: `-q backend/tests/test_lab*.py backend/tests/test_field_sheet*.py`:
+  **519 passed, 12 skipped**, y un fallo de cwd en
+  `test_delivery_endpoints_are_gated_to_internal_actors`. Repetido desde
+  `backend` con `PYTHONPATH=/private/tmp/myc-lab-hotfix-deps:.` y
+  `-q tests/test_lab_work_order_deliveries.py::test_delivery_endpoints_are_gated_to_internal_actors`:
+  **1 passed**. Total de la selección: **520 aprobados, 12 omitidos**;
+  los omitidos requieren `LAB_POSTGRES_TEST_URL`.
+- Storage: `-q backend/tests/test_institutional_file_security.py`: **14 passed**.
+- Repetición final de `-q backend/tests/test_lab_phase5_operational_closure.py -k regenerate`,
+  incluyendo histórico inactivo que comparte archivo: **12 passed**.
+- Mobile desde `myc-mobile`: `tsx --test src/services/lab-work-order-signature-policy.test.ts`:
+  **6 passed**; `npm test`: **376 passed**.
+- `tsc --noEmit`: dos TS2322 en `src/realtime/realtime-client.ts:205,231`,
+  archivo no modificado por el hotfix. Los mismos dos errores se reprodujeron
+  con `tsc --noEmit` en una extracción limpia de `HEAD=d9d6ccd` y las mismas
+  dependencias Mobile; son previos al parche.
+- Desde `backend`, `python -m alembic heads` con el mismo PYTHONPATH:
+  **7088fa142cc2 (head)**. Sólo lectura del grafo, sin aplicar migraciones.
+- `python3 scripts/generate_project_file_registry.py` y `git diff --check`:
+  correctos; filas afectadas revisadas y todas las rutas del inventario existentes.
+
+Las nuevas regresiones cubren reapertura preserve con/sin edición ordinaria,
+misma sesión y ambas firmas, revisión previa/PDF intactos, invalidación
+estructural, regeneración auditada, descarga congelada habitual, históricos
+compartidos, permisos/estado/motivo y fallos de render/flush/audit/delete/commit
+sin archivos huérfanos. `invalidate` y ticket preserve conservan sus pruebas.
+Pendientes de despliegue: QA físico Mobile, pruebas PostgreSQL opcionales y
+aplicación administrativa autorizada en producción. La compensación de archivos
+es síncrona; no garantiza recuperación frente a terminación abrupta del proceso.
+
+Commit sugerido: `fix(lab): preserve direct reopen signatures and regenerate current field sheet PDF`.
+
 ## Persistencia y migraciones
 
 - Persistencia principal: PostgreSQL, SQLAlchemy y Alembic.
-- Head único del código y base local verificado: `7088fa142cc2`
+- Head de código verificado en este hotfix (la coincidencia con la base local
+  corresponde al corte previo y no se volvió a comprobar): `7088fa142cc2`
   (`soft-delete LabWorkOrderEquipment (tombstone), partial unique position`),
   con `down_revision = c91f47a8b2d0`.
 - La migración agrega `is_active`/`deleted_at`/`deleted_by` (SoftDeleteMixin) a

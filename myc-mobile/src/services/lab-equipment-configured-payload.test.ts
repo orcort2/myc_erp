@@ -315,3 +315,15 @@ test('observations: editar únicamente la observación se detecta como cambio re
   const edited = { ...initial, equipment: { ...initial.equipment, observations: 'No tiene empaque' } };
   assert.equal(hasEquipmentEditChanges(diffEquipmentEdit(initial, edited)), true);
 });
+
+
+test('la clasificación de sustitución se transporta en la única edición atómica', () => {
+  const initial = hydrateEquipmentFormValues(savedEquipment());
+  const edited = { ...initial, equipment: {
+    ...initial.equipment, serial_number: 'SERIE-DISTINTA', identity_change_kind: 'replacement' as const,
+  } };
+  const body = buildEquipmentEditRequestBody(edited, 4);
+  assert.equal(body.equipment.identity_change_kind, 'replacement');
+  assert.equal(body.equipment.expected_edit_version, 4);
+  assert.equal(hasEquipmentEditChanges(diffEquipmentEdit(initial, edited)), true);
+});

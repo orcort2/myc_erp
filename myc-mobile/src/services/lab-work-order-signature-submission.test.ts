@@ -169,3 +169,15 @@ test('cierre UX 2026-09: restaurar OT usa el endpoint /restore, no reabre a draf
   assert.match(screenSource, /lab-work-orders\/\$\{target\.id\}\/restore/);
   assert.match(screenSource, /Restaurar OT/);
 });
+
+
+test('Completar cambios confirma la propagación y conserva un único POST de cierre', () => {
+  const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/work-orders.tsx'), 'utf8');
+  const closing = source.slice(source.indexOf('async function completeClosure('), source.indexOf('async function downloadPdf('));
+  assert.ok(closing.includes('workOrder.revision_number > 1 && !confirmReopenedChanges'));
+  assert.ok(closing.includes('Las versiones anteriores permanecerán disponibles para consulta y trazabilidad.'));
+  assert.ok(closing.indexOf('Alert.alert(') < closing.indexOf('await postLabCompletion('));
+  assert.ok(closing.includes('completeClosure(scope, false, true)'));
+  assert.equal((closing.match(/await postLabCompletion\(/g) ?? []).length, 1);
+  assert.equal(closing.includes('/field-sheet'), false);
+});

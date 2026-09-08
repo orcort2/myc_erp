@@ -8,6 +8,7 @@ from app.core.db import get_db
 from app.models.user import User
 from app.schemas.field_sheet import (
     FieldSheetCreate,
+    FieldSheetFinalPdfRegenerate,
     FieldSheetRead,
     FieldSheetStatusChange,
     FieldSheetUpdate,
@@ -21,7 +22,7 @@ from app.services.field_sheets import (
     review_field_sheet,
     update_field_sheet,
 )
-from app.services.field_sheet_pdfs import generate_field_sheet_pdf
+from app.services.field_sheet_pdfs import generate_field_sheet_pdf, regenerate_current_field_sheet_final_pdf
 from app.services.auth import require_permission, user_has_permission
 
 
@@ -123,3 +124,19 @@ def delete_field_sheet(
         )
     deactivate_field_sheet(db, field_sheet_id, user_id=current_user.id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{field_sheet_id}/pdf/regenerate")
+def regenerate_field_sheet_pdf_route(
+    field_sheet_id: int,
+    payload: FieldSheetFinalPdfRegenerate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("field_sheets.review")),
+) -> StreamingResponse:
+    pdf_bytes, filename = regenerate_current_field_sheet_final_pdf(
+        db, field_sheet_id, current_user, reason=payload.reason,
+    )
+    return StreamingResponse(
+        BytesIO(pdf_bytes), media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )

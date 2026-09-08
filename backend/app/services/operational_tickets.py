@@ -693,6 +693,8 @@ def get_ticket(
 
 
 def _snapshot(item: LabWorkOrder) -> dict:
+    from app.services.lab_document_reconciliation import inherited_document_values
+
     return {
         "folio": item.folio,
         "status": item.status,
@@ -711,6 +713,9 @@ def _snapshot(item: LabWorkOrder) -> dict:
         "notes": item.notes,
         "equipment": [
             {
+                "id": equipment.id,
+                "is_active": equipment.is_active,
+                "inherited_document_values": inherited_document_values(equipment, item),
                 "position": equipment.position,
                 "instrument": equipment.instrument,
                 "brand": equipment.brand,

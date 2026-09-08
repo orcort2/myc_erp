@@ -984,7 +984,8 @@ def test_user_without_permission_cannot_cancel_or_restore(phase5_context):
     assert denied_restore.status_code == 403, denied_restore.text
 
 
-def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_context):
+@pytest.mark.parametrize("ordinary_edit", [False, True])
+def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_context, ordinary_edit):
     """19. Admin con work_orders.reopen ejecuta la reapertura directamente
     -- una sola llamada, sin crear ni pasar por un ticket."""
     client, factory, tokens, _tenants = phase5_context
@@ -997,6 +998,13 @@ def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_cont
 
     from app.models.operational_ticket import OperationalTicket
     with factory() as db:
+        original = db.get(LabWorkOrder, order_id)
+        original_session_id = original.signature_session_id
+        signatures_before = [(s.id, s.signature_type, s.signature_data_url) for s in original.signature_session.signatures]
+        original_pdf = original.final_pdf
+        original_hash = original.final_pdf_sha256
+        from app.models.lab_work_order import LabWorkOrderSignatureSession
+        sessions_before = db.scalar(select(func.count()).select_from(LabWorkOrderSignatureSession))
         tickets_before = db.scalar(select(func.count()).select_from(OperationalTicket))
 
     response = client.post(
@@ -1009,6 +1017,11 @@ def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_cont
     assert body["status"] == "draft"
     with factory() as db:
         order = db.get(LabWorkOrder, order_id)
+        from app.services.lab_work_orders import _closable_status
+        assert _closable_status(order)
+        assert order.signature_session_id == original_session_id
+        assert order.signature_preserved is True
+        assert order.signature_required is False
         assert order.reopen_ticket_id is None
         assert order.reopened_by_user_id is not None
         assert len(order.revisions) == 1
@@ -1017,6 +1030,34 @@ def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_cont
     assert tickets_after == tickets_before
     audit = _latest_audit(factory, "lab_work_order.reopened_directly", order_id)
     assert audit.user_id is not None
+
+
+    if ordinary_edit:
+        edited = client.patch(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
+            json={"address": "Domicilio corregido", "expected_edit_version": body["edit_version"]},
+            headers=headers,
+        )
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["signature_session_id"] == original_session_id
+        assert edited.json()["signature_preserved"] is True
+        assert edited.json()["signature_required"] is False
+    completed = close_individual(client, headers, order_id)
+    assert completed.status_code == 200, completed.text
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.status == "completed"
+        assert order.signature_session_id == original_session_id
+        assert order.signature_preserved is True
+        assert order.signature_required is False
+        assert [(s.id, s.signature_type, s.signature_data_url) for s in order.signature_session.signatures] == signatures_before
+        assert db.scalar(select(func.count()).select_from(LabWorkOrderSignatureSession)) == sessions_before
+        assert order.final_pdf and order.final_pdf_generated_at
+        if ordinary_edit:
+            assert order.final_pdf_sha256 != original_hash
+        assert order.revisions[0].final_pdf == original_pdf
+        assert order.revisions[0].final_pdf_sha256 == original_hash
+        assert order.revisions[0].signature_session_id == original_session_id
 
 
 def test_admin_reopens_directly_with_invalidate_policy_requires_new_signature(phase5_context):
@@ -1183,3 +1224,171 @@ def test_reopen_directly_notifies_the_work_order_creator(phase5_context):
     assert notification.recipient_user_id == tech_id
 
 
+
+
+@pytest.mark.parametrize("change", ["add", "delete"])
+def test_direct_preserve_structural_change_still_invalidates(phase5_context, change):
+    client, factory, tokens, _ = phase5_context
+    headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    assert close_individual(client, headers, order_id).status_code == 200
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Ajuste estructural"}, headers=headers,
+    )
+    assert reopened.status_code == 200, reopened.text
+    version = reopened.json()["edit_version"]
+    if change == "add":
+        response = client.post(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+            json={**equipment_payload(2), "expected_edit_version": version}, headers=headers,
+        )
+        assert response.status_code == 201, response.text
+    else:
+        response = client.delete(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}?expected_edit_version={version}",
+            headers=headers,
+        )
+        assert response.status_code == 200, response.text
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.signature_session_id is None
+        assert order.signature_required is True
+        assert order.signature_preserved is False
+
+
+@pytest.fixture
+def final_pdf_context(phase5_context, monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "storage_root", str(tmp_path))
+    client, factory, tokens, _ = phase5_context
+    headers = auth(tokens["admin"])
+    order_id, equipment_id = create_and_sign_ready_order(client, headers)
+    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        sheet.revision_number = 2
+        db.commit()
+        previous = (sheet.final_pdf_path, sheet.final_pdf_sha256, sheet.final_pdf_generated_at, sheet.revision_number)
+    return client, factory, tokens, sheet_id, previous, tmp_path
+
+
+@pytest.mark.parametrize("historical_shared_path", [False, True])
+def test_regenerate_current_final_pdf_audits_and_preserves_history(final_pdf_context, historical_shared_path):
+    from hashlib import sha256
+    from app.services.field_sheet_pdfs import generate_field_sheet_pdf
+    client, factory, tokens, sheet_id, previous, root = final_pdf_context
+    old_bytes = (root / previous[0]).read_bytes()
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        # Model an earlier retired revision, including legacy shared storage.
+        values = {column.key: getattr(sheet, column.key) for column in FieldSheet.__table__.columns
+                  if column.key not in {"id", "created_at", "updated_at"}}
+        values.update(is_current=False, is_active=not historical_shared_path, revision_number=1)
+        if not historical_shared_path:
+            from app.services.storage_service import atomic_write
+            historical_path = f"field-sheets/{sheet_id}/historical.pdf"
+            atomic_write(root / historical_path, old_bytes)
+            values["final_pdf_path"] = historical_path
+        historical = FieldSheet(**values)
+        db.add(historical)
+        sheet.address = "Domicilio administrativo corregido"
+        sheet.company = "Empresa corregida"
+        db.commit()
+        historical_id = historical.id
+        historical_path = historical.final_pdf_path
+        # Ordinary download remains frozen even after metadata correction.
+        assert generate_field_sheet_pdf(db, sheet_id)[0] == old_bytes
+    response = client.post(
+        f"/api/field-sheets/{sheet_id}/pdf/regenerate",
+        json={"reason": "Corrección administrativa de domicilio y empresa"}, headers=auth(tokens["admin"]),
+    )
+    assert response.status_code == 200, response.text
+    assert response.content.startswith(b"%PDF")
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert sheet.revision_number == previous[3]
+        assert sheet.status == "completed" and sheet.is_current
+        assert sheet.final_pdf_path != previous[0]
+        assert sheet.final_pdf_sha256 == sha256(response.content).hexdigest()
+        assert sheet.final_pdf_sha256 != previous[1]
+        assert sheet.final_pdf_generated_at > previous[2]
+        assert sheet.final_pdf_template_definition_version == sheet.template_definition_version
+        assert generate_field_sheet_pdf(db, sheet_id)[0] == response.content
+        historical = db.get(FieldSheet, historical_id)
+        assert historical.final_pdf_path == historical_path
+        assert historical.final_pdf_sha256 == previous[1]
+        assert (root / historical_path).read_bytes() == old_bytes
+        assert (root / previous[0]).exists() is historical_shared_path
+        audit = db.scalar(select(AuditLog).where(AuditLog.action == "field_sheet.final_pdf_regenerated"))
+        assert audit.previous_values["final_pdf_path"] == previous[0]
+        assert audit.previous_values["final_pdf_sha256"] == previous[1]
+        assert audit.new_values["final_pdf_path"] == sheet.final_pdf_path
+        assert audit.new_values["final_pdf_sha256"] == sheet.final_pdf_sha256
+        assert audit.user_id and audit.comment
+
+
+@pytest.mark.parametrize("denial", ["permission", "external", "historical", "draft", "reason"])
+def test_regenerate_final_pdf_rejects_invalid_admin_action(final_pdf_context, denial):
+    from fastapi import HTTPException
+    from app.services.field_sheet_pdfs import regenerate_current_field_sheet_final_pdf
+    client, factory, tokens, sheet_id, previous, root = final_pdf_context
+    files_before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*.pdf")}
+    if denial == "permission":
+        response = client.post(f"/api/field-sheets/{sheet_id}/pdf/regenerate", json={"reason": "Corrección"}, headers=auth(tokens["capture"]))
+        assert response.status_code == 403, response.text
+    else:
+        with factory() as db:
+            sheet = db.get(FieldSheet, sheet_id)
+            user = db.scalar(select(User).where(User.username == "lab-admin"))
+            if denial == "external":
+                user.account_type = "client"
+            elif denial == "historical":
+                sheet.is_current = False
+            elif denial == "draft":
+                sheet.status = "draft"
+            db.commit()
+            with pytest.raises(HTTPException) as error:
+                regenerate_current_field_sheet_final_pdf(db, sheet_id, user, reason=" " if denial == "reason" else "Corrección")
+            assert error.value.status_code == {"external": 403, "reason": 422}.get(denial, 409)
+    assert {p.relative_to(root): p.read_bytes() for p in root.rglob("*.pdf")} == files_before
+
+
+@pytest.mark.parametrize("failure", ["render", "flush", "audit", "delete", "commit"])
+def test_regenerate_final_pdf_compensates_failure_without_orphans(final_pdf_context, monkeypatch, failure):
+    from sqlalchemy.exc import IntegrityError
+    from app.services import audit_logs, field_sheet_pdfs
+    client, factory, tokens, sheet_id, previous, root = final_pdf_context
+    files_before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*.pdf")}
+
+    def fail(*args, **kwargs):
+        raise RuntimeError("injected regeneration failure")
+
+    with factory() as db:
+        user = db.scalar(select(User).where(User.username == "lab-admin"))
+        if failure == "render":
+            monkeypatch.setattr(field_sheet_pdfs, "_render_pdf", fail)
+        elif failure == "audit":
+            monkeypatch.setattr(audit_logs, "write_audit_log", fail)
+        elif failure == "delete":
+            original_delete = field_sheet_pdfs.delete_if_unreferenced
+            def delete_then_fail(*args, **kwargs):
+                original_delete(*args, **kwargs)
+                fail()
+            monkeypatch.setattr(field_sheet_pdfs, "delete_if_unreferenced", delete_then_fail)
+        elif failure == "commit":
+            monkeypatch.setattr(db, "commit", fail)
+        else:
+            original_freeze = field_sheet_pdfs.freeze_final_field_sheet_pdf
+            def freeze_with_bad_flush(*args, **kwargs):
+                # Invalid owner causes a real failed flush, expiring ORM state.
+                with db.no_autoflush:
+                    db.add(FieldSheet(equipment_id=None, lab_equipment_id=None))
+                    return original_freeze(*args, **kwargs)
+            monkeypatch.setattr(field_sheet_pdfs, "freeze_final_field_sheet_pdf", freeze_with_bad_flush)
+        with pytest.raises((RuntimeError, IntegrityError)):
+            field_sheet_pdfs.regenerate_current_field_sheet_final_pdf(db, sheet_id, user, reason="Prueba de compensación")
+    with factory() as db:
+        sheet = db.get(FieldSheet, sheet_id)
+        assert (sheet.final_pdf_path, sheet.final_pdf_sha256, sheet.final_pdf_generated_at, sheet.revision_number) == previous
+        assert db.scalar(select(func.count()).select_from(AuditLog).where(AuditLog.action == "field_sheet.final_pdf_regenerated")) == 0
+    assert {p.relative_to(root): p.read_bytes() for p in root.rglob("*.pdf")} == files_before
