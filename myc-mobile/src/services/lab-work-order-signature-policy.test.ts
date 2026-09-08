@@ -5,7 +5,6 @@ import { canSkipSignaturesAfterReopen } from './lab-work-order-signature-policy'
 
 function base() {
   return {
-    reopen_ticket_id: 9,
     signature_preserved: true,
     signature_required: false,
     signature_session_id: 5,
@@ -16,8 +15,15 @@ test('a preserved reopening with its valid historical session skips signature ca
   assert.equal(canSkipSignaturesAfterReopen(base()), true);
 });
 
-test('a brand-new (non-reopened) work order always needs signatures', () => {
-  assert.equal(canSkipSignaturesAfterReopen({ ...base(), reopen_ticket_id: null }), false);
+// Corrección 2026-09-08: la reapertura directa de Admin (reopen_work_order_directly,
+// sin ticket) deja reopen_ticket_id en null a propósito -- este predicado ya
+// no depende de ese campo, así que el mismo estado que produce una
+// reapertura directa (signature_preserved/required/session_id idénticos a
+// una mediada por ticket, pero sin ticket) debe poder saltar la captura
+// igual de bien.
+test('a directly-reopened work order (no ticket) with a preserved signature also skips signature capture', () => {
+  const directlyReopened: { reopen_ticket_id: number | null } & ReturnType<typeof base> = { ...base(), reopen_ticket_id: null };
+  assert.equal(canSkipSignaturesAfterReopen(directlyReopened), true);
 });
 
 test('a later backend invalidation restores the normal signature flow automatically', () => {

@@ -93,6 +93,7 @@ import {
   isReceptionEditable,
   resolveStepAfterStatusUpdate,
   statusPresentation,
+  wasReopened,
   type Step,
 } from '@/src/services/lab-work-order-step';
 import {
@@ -131,6 +132,26 @@ const emptyGeneral = (): GeneralData => ({
   state_name: '',
   purchase_order: '',
   notes: '',
+});
+// Corrección 2026-09-08: única función que traduce un LabWorkOrder recién
+// llegado de backend a GeneralData -- antes sólo openExisting hidrataba
+// generales desde una respuesta fresca (inline); reopenDirectly() nunca lo
+// hacía, dejando el formulario de "Corregir datos de la orden" con el
+// estado local previo a la reapertura (potencialmente obsoleto) en vez de
+// lo que backend acaba de confirmar.
+const generalFromDetail = (detail: LabWorkOrder): GeneralData => ({
+  lab_client_id: detail.lab_client_id,
+  reception_date: detail.reception_date,
+  client_name: detail.client_name,
+  address: detail.address,
+  contact_name: detail.contact_name ?? '',
+  contact_phone: detail.contact_phone ?? '',
+  contact_email: detail.contact_email ?? '',
+  postal_code: detail.postal_code ?? '',
+  city: detail.city ?? '',
+  state_name: detail.state_name ?? '',
+  purchase_order: detail.purchase_order ?? '',
+  notes: detail.notes ?? '',
 });
 type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery' | 'change_workflow_mode';
 type DeliveryPanelMode = 'closed' | 'full' | 'partial_execute' | 'partial_request';
@@ -561,7 +582,17 @@ export default function WorkOrdersScreen() {
       setTicketOpen(false);
       setTicketReason('');
       setTicketDescription('');
+      // Corrección 2026-09-08: backend ya regresó status='draft' aquí --
+      // antes sólo se actualizaba workOrder, dejando step congelado en
+      // 'completed' (la pantalla de OT cerrada) aunque el status real ya
+      // permitiera editar. inferStepForStatus es la misma autoridad que ya
+      // usa selectRelated() para este mismo caso (fetch fresco, sin un paso
+      // de firma en curso que preservar). generalFromDetail evita que
+      // "Corregir datos de la orden" abra con datos locales obsoletos de
+      // antes de la reapertura.
       setWorkOrder(detail);
+      setGeneral(generalFromDetail(detail));
+      setStep(inferStepForStatus(detail.status));
       publishLocalChange({ event_type: 'work_order.reopened', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
       Alert.alert('OT reabierta', `La OT ${detail.folio} volvió a draft y puede editarse.`);
       await refresh(true);
@@ -670,20 +701,7 @@ export default function WorkOrdersScreen() {
       setDeliveryPanel('closed');
       setDeliveryHistoryOpen(false);
       setWorkOrder(detail);
-      setGeneral({
-        lab_client_id: detail.lab_client_id,
-        reception_date: detail.reception_date,
-        client_name: detail.client_name,
-        address: detail.address,
-        contact_name: detail.contact_name ?? '',
-        contact_phone: detail.contact_phone ?? '',
-        contact_email: detail.contact_email ?? '',
-        postal_code: detail.postal_code ?? '',
-        city: detail.city ?? '',
-        state_name: detail.state_name ?? '',
-        purchase_order: detail.purchase_order ?? '',
-        notes: detail.notes ?? '',
-      });
+      setGeneral(generalFromDetail(detail));
       setStep((current) => resolveStepAfterStatusUpdate(current, sameSignatureCohort, detail.status));
       setOpen(true);
     } catch (error) {
@@ -1450,12 +1468,19 @@ export default function WorkOrdersScreen() {
             />
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
+          {/* Corrección 2026-09-08: KeyboardAvoidingView es la única
+              autoridad de ajuste de teclado en este archivo -- combinarlo
+              con ScrollView.automaticallyAdjustKeyboardInsets duplicaba la
+              compensación en iOS (ambos empujan el contenido hacia arriba a
+              la vez), haciendo que el sheet subiera de más y tapara
+              encabezado/campos. Ver también las 3 hojas administrativas más
+              abajo (editar equipo, ticket compartido, distribución de
+              folios) -- mismo patrón, misma corrección. */}
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.flex}
           >
             <ScrollView
-              automaticallyAdjustKeyboardInsets
               contentContainerStyle={styles.modalContent}
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled
@@ -1466,7 +1491,7 @@ export default function WorkOrdersScreen() {
                 <FadeIn transitionKey={step}>
                   <View style={styles.sectionIntro}>
                     <Text style={styles.sectionEyebrow}>{workOrder ? `REVISIÓN ${workOrder.revision_number}` : 'NUEVA ORDEN'}</Text>
-                    <Text style={styles.sectionTitle}>{workOrder ? 'Editar datos generales' : 'Datos generales'}</Text>
+                    <Text style={styles.sectionTitle}>{workOrder ? 'Corregir datos de la orden' : 'Datos generales'}</Text>
                     <Text style={styles.sectionDescription}>Captura esta información una sola vez. Las OT adicionales la heredarán automáticamente.</Text>
                   </View>
                   {Object.values(generalErrors).some(Boolean) && (
@@ -1571,8 +1596,15 @@ export default function WorkOrdersScreen() {
 
               {workOrder && step === 'capture' && (
                 <FadeIn transitionKey={step}>
-                  {!!workOrder.reopen_ticket_id && editable && (
-                    <SecondaryButton icon="pencil-outline" label="Editar datos generales" onPress={() => setStep('general')} />
+                  {/* Corrección 2026-09-08: reopen_ticket_id queda null a
+                      propósito en una reapertura directa de Admin (sin
+                      ticket, ver reopen_work_order_directly) -- usar ese
+                      campo aquí ocultaba este botón exactamente en el caso
+                      que más lo necesita. wasReopened() usa revision_number,
+                      la misma señal que backend incrementa igual para
+                      ambos caminos de reapertura. */}
+                  {wasReopened(workOrder) && editable && (
+                    <SecondaryButton icon="pencil-outline" label="Corregir datos de la orden" onPress={() => setStep('general')} />
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
@@ -2090,7 +2122,6 @@ export default function WorkOrdersScreen() {
                 style={styles.overlayCard}
               >
                 <ScrollView
-                  automaticallyAdjustKeyboardInsets
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -2158,7 +2189,6 @@ export default function WorkOrdersScreen() {
                 style={styles.overlayCard}
               >
                 <ScrollView
-                  automaticallyAdjustKeyboardInsets
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -2278,7 +2308,6 @@ export default function WorkOrdersScreen() {
                 style={styles.overlayCard}
               >
                 <ScrollView
-                  automaticallyAdjustKeyboardInsets
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >
