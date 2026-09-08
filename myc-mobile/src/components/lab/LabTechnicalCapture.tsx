@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -9,7 +10,7 @@ import type {
   LabFieldSheet,
   LabWorkOrder,
 } from '@/src/types/lab-work-order';
-import { labelPrintService } from '@/src/services/label-print-service';
+import { LabelRenderError, PrinterNotReadyError, printLabel } from '@/src/services/label-print-service';
 import { FIELD_LABELS } from '@/src/services/field-labels';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
@@ -134,6 +135,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [printingLabel, setPrintingLabel] = useState(false);
   const [changingTemplate, setChangingTemplate] = useState(false);
   const [changingTemplateTo, setChangingTemplateTo] = useState('');
   const [changingTemplateSearch, setChangingTemplateSearch] = useState('');
@@ -616,6 +618,47 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     } finally { setDownloadingPdf(false); }
   }
 
+  // Etiqueta térmica 50x30 -- ver src/services/labels/. equipmentCode viene
+  // de identification (el "ID interno"/"CODIGO" que ya usa el resto de la
+  // app, ver field-sheet-canonical-contract.ts internal_id), nunca de
+  // serial_number. INFORME = certificateFolio (LabEquipment.certificate_folio,
+  // puede ser null/pendiente -- el renderer lo imprime como "PENDIENTE", no
+  // bloquea). calibrationKind ya no forma parte del contrato impreso.
+  async function printFieldSheetLabel() {
+    if (!activeEquipment || !sheet) return;
+    if (printingLabel) return; // evita un segundo trabajo por doble tap mientras el primero sigue en curso
+    setPrintingLabel(true);
+    try {
+      await printLabel({
+        calibrationDate: sheet.calibration_date ?? '',
+        nextCalibrationDate: sheet.next_calibration_date,
+        equipmentCode: activeEquipment.identification,
+        workOrderFolio: String(workOrder.folio),
+        certificateFolio: activeEquipment.certificate_folio,
+      });
+      Alert.alert('Etiqueta enviada', 'Revisa la impresora física para confirmar el resultado.');
+    } catch (error) {
+      if (error instanceof PrinterNotReadyError) {
+        Alert.alert(
+          'No hay impresora configurada',
+          'Configura tu impresora de etiquetas antes de imprimir.',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Configurar', onPress: () => router.push('/(technician)/label-printer-setup') },
+          ],
+        );
+        return;
+      }
+      if (error instanceof LabelRenderError) {
+        Alert.alert('No fue posible imprimir', error.message);
+        return;
+      }
+      Alert.alert('No fue posible imprimir', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setPrintingLabel(false);
+    }
+  }
+
   if (activeEquipment) {
     if (ticketMode === 'field_sheet_template') return (
       <ScrollView contentContainerStyle={styles.panel}>
@@ -883,6 +926,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           {sheet.status === 'completed' && (
             <OperationalActionStack>
               <SecondaryButton disabled={downloadingPdf} icon="download" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
+              <SecondaryButton disabled={printingLabel} loading={printingLabel} icon="printer" label="Imprimir etiqueta 50×30" onPress={printFieldSheetLabel} />
               {!['completed', 'partially_closed'].includes(workOrder.status) && (
                 canReopenFieldSheetDirectly ? (
                   <AdministrativeButton icon="lock-open-outline" label="Desbloquear hoja" onPress={() => setTicketMode('field_sheet_reopen')} />
@@ -892,15 +936,6 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
               )}
             </OperationalActionStack>
           )}
-
-          <OperationalActionStack>
-            <SecondaryButton
-              disabled={!labelPrintService.available}
-              icon="printer"
-              label="Imprimir etiqueta 50×30 · Próxima fase"
-              onPress={() => undefined}
-            />
-          </OperationalActionStack>
 
           {definition && (
             <FieldSheetResultsWorkspace

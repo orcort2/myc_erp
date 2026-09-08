@@ -177,3 +177,56 @@ test('confirmar cambio de plantilla reemplaza sheet/values completos desde la re
   assert.match(fn, /await refreshWorkOrder\(\)/);
   assert.doesNotMatch(fn, /\{\s*\.\.\.sheet,/);
 });
+
+/**
+ * Arquitectura de impresión de etiquetas (BLE NIIMBOT B1) -- ver
+ * src/services/labels/. Estos tests fijan el contrato de datos exacto que
+ * LabTechnicalCapture le pasa a printLabel: equipmentCode viene de
+ * identification (nunca de serial_number), certificateFolio/
+ * nextCalibrationDate viajan tal cual (pueden ser null, el renderer decide
+ * qué hacer con eso, ver label-renderer.ts), y calibrationKind nunca
+ * reaparece en el payload.
+ */
+test('printFieldSheetLabel construye el payload desde los campos canónicos correctos (identification, no serial_number)', () => {
+  const fn = source.slice(
+    source.indexOf('async function printFieldSheetLabel'),
+    source.indexOf('if (activeEquipment) {'),
+  );
+  assert.match(fn, /await printLabel\(\{/);
+  assert.match(fn, /calibrationDate: sheet\.calibration_date \?\? ''/);
+  assert.match(fn, /nextCalibrationDate: sheet\.next_calibration_date/);
+  assert.match(fn, /equipmentCode: activeEquipment\.identification/);
+  assert.doesNotMatch(fn, /equipmentCode: activeEquipment\.serial_number/);
+  assert.match(fn, /workOrderFolio: String\(workOrder\.folio\)/);
+  assert.match(fn, /certificateFolio: activeEquipment\.certificate_folio/);
+  assert.doesNotMatch(fn, /calibrationKind/);
+});
+
+test('printFieldSheetLabel enruta a la configuración de impresora cuando no hay ninguna lista, y muestra el mensaje del renderer cuando el bloqueo es de datos', () => {
+  const fn = source.slice(
+    source.indexOf('async function printFieldSheetLabel'),
+    source.indexOf('if (activeEquipment) {'),
+  );
+  assert.match(fn, /error instanceof PrinterNotReadyError/);
+  assert.match(fn, /router\.push\('\/\(technician\)\/label-printer-setup'\)/);
+  assert.match(fn, /error instanceof LabelRenderError/);
+});
+
+test('printFieldSheetLabel nunca deja avanzar una segunda impresión mientras la primera sigue en curso', () => {
+  const fn = source.slice(
+    source.indexOf('async function printFieldSheetLabel'),
+    source.indexOf('if (activeEquipment) {'),
+  );
+  assert.match(fn, /if \(printingLabel\) return;/);
+});
+
+test('"Imprimir etiqueta 50×30" sólo vive junto a la hoja completed, con su propio estado de carga', () => {
+  const stackStart = source.indexOf("sheet.status === 'completed' && (");
+  const stack = source.slice(stackStart, source.indexOf('</OperationalActionStack>', stackStart));
+  assert.match(stack, /label="Imprimir etiqueta 50×30"/);
+  assert.match(stack, /disabled=\{printingLabel\}/);
+  assert.match(stack, /loading=\{printingLabel\}/);
+  assert.match(stack, /onPress=\{printFieldSheetLabel\}/);
+  assert.doesNotMatch(source, /Próxima fase/, 'el stub deshabilitado ya no debe existir');
+  assert.doesNotMatch(source, /labelPrintService/, 'el servicio viejo (DisabledLabelPrintService) ya no se usa aquí');
+});

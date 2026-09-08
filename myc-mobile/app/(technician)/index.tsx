@@ -26,6 +26,7 @@ export default function TechnicianHome() {
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
   const capabilities = deriveMobileCapabilities(user);
   const {
+    canCaptureFieldSheets,
     canClaimWorkOrderGroupRequests,
     canCreateWorkOrders,
     canReadLabClients,
@@ -137,6 +138,16 @@ export default function TechnicianHome() {
                     pendingRequests === 1 ? '' : 's'
                   }`}
             </Text>
+          </Pressable>
+        )}
+
+        {canCaptureFieldSheets && (
+          <Pressable
+            style={styles.module}
+            onPress={() => router.push('/(technician)/label-printer-setup')}
+          >
+            <Text style={styles.moduleTitle}>Impresora de etiquetas</Text>
+            <Text style={styles.moduleText}>Configurar y probar la impresora térmica 50×30</Text>
           </Pressable>
         )}
 

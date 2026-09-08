@@ -45,7 +45,15 @@
         }
       ],
       "expo-secure-store",
-      "expo-notifications"
+      "expo-notifications",
+      [
+        "react-native-ble-manager",
+        {
+          "bluetoothAlwaysPermission": "Se usa para conectar con la impresora de etiquetas térmicas MYC.",
+          "neverForLocation": true,
+          "isBleRequired": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
