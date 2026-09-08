@@ -144,11 +144,24 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
     }
 
     // Identificación best-effort: informativa (ver docstring de la clase),
-    // nunca bloquea la conexión si la impresora no responde a tiempo.
+    // nunca bloquea la conexión si la impresora simplemente no responde a
+    // tiempo. AUDITORÍA 2026-09-08 (ronda 2): antes este catch{} tragaba
+    // CUALQUIER error, incluida una desconexión física real ocurrida justo
+    // después del handshake (p.ej. NiimbotDisconnectedError vía
+    // handleUnexpectedDisconnect, o un fallo real de escritura/transporte)
+    // -- eso hacía que connect() resolviera "con éxito" mientras
+    // this.connected ya había vuelto a false por dentro, y el caller
+    // (PrinterManager) terminaba marcando la impresora como conectada sin
+    // estarlo. Ahora sólo se ignora NiimbotTimeoutError; cualquier otro
+    // error limpia (teardownConnection ya es idempotente: tolera un
+    // teardown previo disparado por handleUnexpectedDisconnect) y se
+    // propaga, para que connect() nunca reporte un éxito falso.
     try {
       await this.sendAndWait(buildPrinterStatusDataPacket(), NIIMBOT_REQUEST.PrinterStatusDataResult, this.timeouts.identifyTimeoutMs);
-    } catch {
-      // Ignorado deliberadamente -- ver docstring.
+    } catch (error) {
+      if (error instanceof NiimbotTimeoutError) return;
+      await this.teardownConnection({ physicallyDisconnect: true });
+      throw error;
     }
   }
 

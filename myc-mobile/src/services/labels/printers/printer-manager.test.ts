@@ -183,6 +183,103 @@ test('AUDITORÍA: un scan repetido vuelve a validar permiso/Bluetooth cada vez y
   assert.equal(transport.startScanCalls, 2, 'cada scan debe volver a pasar por el chequeo y arrancar de nuevo');
 });
 
+/**
+ * AUDITORÍA 2026-09-08 (ronda 2): connectAndRemember() y connectPreferred()
+ * llamaban adapter.connect() directo, sin el mismo chequeo de permiso/
+ * Bluetooth que ya exige scan() -- si Android revocaba el permiso entre
+ * sesiones, el fallo llegaba como error nativo genérico en vez de
+ * BluetoothPermissionDeniedError/BluetoothDisabledError.
+ */
+
+test('AUDITORÍA (ronda 2): connectAndRemember() exige permiso de Bluetooth -- denegado nunca llega a adapter.connect()', async () => {
+  const adapter = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  const transport = fakeBleTransport({ permissionsGranted: false });
+  const manager = new PrinterManager(transport, { 'niimbot-b1': () => adapter }, inMemoryStore());
+  await assert.rejects(manager.connectAndRemember('niimbot-b1', { id: 'd', name: 'B1' }), BluetoothPermissionDeniedError);
+  assert.equal(adapter.connectCalls.length, 0);
+});
+
+test('AUDITORÍA (ronda 2): connectAndRemember() exige Bluetooth encendido -- apagado nunca llega a adapter.connect()', async () => {
+  const adapter = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  const transport = fakeBleTransport({ bluetoothOn: false });
+  const manager = new PrinterManager(transport, { 'niimbot-b1': () => adapter }, inMemoryStore());
+  await assert.rejects(manager.connectAndRemember('niimbot-b1', { id: 'd', name: 'B1' }), BluetoothDisabledError);
+  assert.equal(adapter.connectCalls.length, 0);
+});
+
+test('AUDITORÍA (ronda 2): connectPreferred() exige permiso de Bluetooth -- denegado nunca llega a adapter.connect()', async () => {
+  const adapter = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  const store = inMemoryStore();
+  await store.write({ adapterId: 'niimbot-b1', deviceId: 'saved-device', deviceName: 'B1-9999', savedAt: 'x' });
+  const transport = fakeBleTransport({ permissionsGranted: false });
+  const manager = new PrinterManager(transport, { 'niimbot-b1': () => adapter }, store);
+  await assert.rejects(manager.connectPreferred(), BluetoothPermissionDeniedError);
+  assert.equal(adapter.connectCalls.length, 0);
+});
+
+test('AUDITORÍA (ronda 2): connectPreferred() exige Bluetooth encendido -- apagado nunca llega a adapter.connect()', async () => {
+  const adapter = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  const store = inMemoryStore();
+  await store.write({ adapterId: 'niimbot-b1', deviceId: 'saved-device', deviceName: 'B1-9999', savedAt: 'x' });
+  const transport = fakeBleTransport({ bluetoothOn: false });
+  const manager = new PrinterManager(transport, { 'niimbot-b1': () => adapter }, store);
+  await assert.rejects(manager.connectPreferred(), BluetoothDisabledError);
+  assert.equal(adapter.connectCalls.length, 0);
+});
+
+test('AUDITORÍA (ronda 2): connectPreferred() sin impresora guardada nunca pide permiso/Bluetooth -- sigue devolviendo false sin más', async () => {
+  const transport = fakeBleTransport({ permissionsGranted: false, bluetoothOn: false });
+  const manager = new PrinterManager(transport, {}, inMemoryStore());
+  assert.equal(await manager.connectPreferred(), false);
+});
+
+/**
+ * AUDITORÍA 2026-09-08 (ronda 2): cambiar de una B1 conectada a otra no
+ * tenía frontera explícita -- connectAndRemember() podía llamar
+ * adapter.connect(device) aunque ya existiera un adaptador activo,
+ * dejando la impresora vieja físicamente conectada mientras deviceId
+ * pasaba a representar la nueva.
+ */
+
+test('AUDITORÍA (ronda 2): conectar una impresora nueva desconecta la activa antes de conectar la nueva -- nunca deja dos físicamente vivas', async () => {
+  const adapterA = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  const adapterB = new FakeAdapter('nelko-pm220', 'NELKO PM220');
+  const manager = new PrinterManager(
+    fakeBleTransport(),
+    { 'niimbot-b1': () => adapterA, 'nelko-pm220': () => adapterB },
+    inMemoryStore(),
+  );
+
+  await manager.connectAndRemember('niimbot-b1', { id: 'device-a', name: 'B1-A' });
+  assert.equal(adapterA.isConnected(), true);
+
+  await manager.connectAndRemember('nelko-pm220', { id: 'device-b', name: 'PM220-B' });
+
+  assert.equal(adapterA.isConnected(), false, 'la impresora anterior debe quedar desconectada antes de conectar la nueva');
+  assert.equal(adapterB.isConnected(), true);
+});
+
+test('AUDITORÍA (ronda 2): no se puede cambiar de impresora mientras hay una impresión en curso -- PrinterBusyError, la activa sigue conectada', async () => {
+  const adapterA = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  let resolvePrint: () => void = () => {};
+  adapterA.print = () => new Promise((resolve) => { resolvePrint = resolve; });
+  const adapterB = new FakeAdapter('nelko-pm220', 'NELKO PM220');
+  const manager = new PrinterManager(
+    fakeBleTransport(),
+    { 'niimbot-b1': () => adapterA, 'nelko-pm220': () => adapterB },
+    inMemoryStore(),
+  );
+  await manager.connectAndRemember('niimbot-b1', { id: 'device-a', name: 'B1-A' });
+
+  const printing = manager.print(RASTER);
+  await assert.rejects(manager.connectAndRemember('nelko-pm220', { id: 'device-b', name: 'PM220-B' }), PrinterBusyError);
+
+  assert.equal(adapterA.isConnected(), true, 'la impresora en uso nunca debe desconectarse a mitad de una impresión');
+  assert.equal(adapterB.isConnected(), false);
+  resolvePrint();
+  await printing;
+});
+
 test('connectAndRemember conecta el adaptador correcto y persiste la impresora preferida', async () => {
   const adapter = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
   const store = inMemoryStore();

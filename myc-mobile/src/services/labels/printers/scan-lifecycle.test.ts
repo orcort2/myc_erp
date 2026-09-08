@@ -116,12 +116,62 @@ test('los dispositivos que llegan durante la ventana de escaneo se emiten al cal
   const found: string[] = [];
 
   const scanPromise = manager.scan((classification) => found.push(classification.device.id));
+  // AUDITORÍA 2026-09-08 (ronda 2): scan() ahora espera requestPermissions()
+  // + isBluetoothOn() (ver PrinterManager.scan()) antes de llegar a
+  // startScan() -- sin este flush, emitDevice() se dispararía ANTES de que
+  // el transporte de prueba tuviera siquiera un onDeviceFound registrado
+  // (se perdería en silencio). flushMicrotasks() drena toda la cadena de
+  // promesas pendientes de forma determinista (no es un delay arbitrario:
+  // un macrotask sólo corre después de vaciar por completo la cola de
+  // microtareas), dejando el scan nativo ya arrancado antes de emitir.
+  await flushMicrotasks();
   transport.emitDevice({ id: 'device-1', name: 'B1-AAAA' });
   transport.emitDevice({ id: 'device-2', name: 'PM220-BBBB' });
   await manager.stopScan();
   await scanPromise;
 
   assert.deepEqual(found, ['device-1', 'device-2']);
+});
+
+// AUDITORÍA 2026-09-08 (ronda 2): antes, stopScan() llamaba
+// this.ble.stopScan() incondicionalmente. Si la pantalla se desmontaba (o
+// el usuario cancelaba) MIENTRAS scan() todavía esperaba el readiness de
+// permiso/Bluetooth -- una espera que puede tardar tiempo real, un diálogo
+// nativo de Android no resuelve al instante -- no había ningún scan nativo
+// corriendo todavía que detener: la cancelación se perdía y, en cuanto el
+// readiness finalmente resolvía, scan() arrancaba igual el escaneo nativo
+// que quien lo pidió ya había cancelado. Corregido con una sesión de scan
+// que stopScan() puede marcar como cancelada antes de que exista algo que
+// detener nativamente (ver PrinterManager.scan()/stopScan()).
+
+test('AUDITORÍA (ronda 2): stopScan() durante la ventana de readiness (permiso/Bluetooth aún pendiente) cancela limpiamente -- nunca arranca el scan nativo ni deja la promesa colgada', async () => {
+  const transport = new LifecycleAwareFakeTransport();
+  let resolvePermission: (granted: boolean) => void = () => {};
+  transport.requestPermissions = () => new Promise((resolve) => {
+    resolvePermission = resolve;
+  });
+  const manager = new PrinterManager(transport, {}, inMemoryStore());
+
+  const scanPromise = manager.scan(() => {});
+  // requestPermissions() (el primer paso del readiness) todavía no
+  // resolvió -- stopScan() llega antes de que exista siquiera un scan
+  // nativo que detener.
+  await manager.stopScan();
+  resolvePermission(true);
+
+  await scanPromise; // nunca debe quedar colgada
+  assert.equal(transport.startScanCalls, 0, 'cancelar durante el readiness nunca debe llegar a arrancar el scan nativo');
+  assert.equal(transport.listenerCount, 0, 'no debe quedar ningún listener nativo activo tras la cancelación');
+
+  // Un scan posterior debe funcionar con total normalidad -- cancelar
+  // durante el readiness no debe dejar al manager en un estado inconsistente.
+  transport.requestPermissions = async () => true;
+  const secondScan = manager.scan(() => {});
+  await flushMicrotasks();
+  assert.equal(transport.listenerCount, 1, 'el scan posterior a una cancelación durante readiness debe arrancar con normalidad');
+  await manager.stopScan();
+  await secondScan;
+  assert.equal(transport.listenerCount, 0);
 });
 
 test('stopScan() cancela el scan nativo y limpia exactamente una vez -- sin listeners colgados', async () => {

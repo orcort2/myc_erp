@@ -45,6 +45,65 @@ poder establecerse desde las fuentes auditadas, así que se mantiene
 deliberadamente como punto de control de QA física, no se fabricó una
 interpretación de bytes.
 
+## Correcciones de auditoría de seguimiento (2026-09-08, integración BLE real)
+
+Dos rondas de seguimiento adicionales, ya sobre integración BLE real (no
+sólo reglas de negocio/protocolo), corrigieron 5 problemas más:
+
+**Ronda 1** -- `BleManagerTransport` ya implementaba `requestPermissions()`
+e `isBluetoothOn()`, pero nada los invocaba, y un handshake NIIMBOT exitoso
+podía quedar a medio inicializar:
+
+1. `PrinterManager.scan()` llamaba `ble.startScan()` directo -- el permiso
+   de runtime de Android podía nunca pedirse. Corregido: pide permiso,
+   verifica Bluetooth, y sólo entonces escanea, lanzando
+   `BluetoothPermissionDeniedError`/`BluetoothDisabledError` si alguno
+   falla (ver "Permisos" más abajo en esta sección).
+2. `NiimbotB1Adapter.connect()` sólo envolvía el handshake en try/catch. Si
+   `ble.connect()` tenía éxito pero `discoverServices()`/
+   `subscribeNotifications()` fallaban antes de ese try/catch, la conexión
+   BLE física quedaba viva sin que el adaptador la conociera. Corregido:
+   toda la configuración posterior a un `ble.connect()` exitoso vive en un
+   único try/catch, con un flag `physicalConnectionEstablished` que decide
+   si `teardownConnection()` debe desconectar físicamente.
+
+**Ronda 2** -- una auditoría posterior encontró que ese mismo readiness no
+se reutilizaba en todos los caminos de conexión, que la identificación
+best-effort del B1 tragaba errores reales (no sólo timeouts), y que
+cambiar de impresora no tenía una frontera explícita:
+
+3. `connectAndRemember()`/`connectPreferred()` llamaban `adapter.connect()`
+   directo, sin el mismo chequeo de permiso/Bluetooth que ya exigía
+   `scan()` -- si Android revocaba el permiso entre sesiones, el fallo
+   llegaba como error nativo genérico en vez de uno accionable. Corregido:
+   `PrinterManager` centraliza el chequeo en `ensureBleReady()`, usado por
+   los tres caminos.
+4. La identificación post-handshake (`PrinterStatusData`, ver "Protocolo
+   NIIMBOT B1") ignoraba **cualquier** error en un `catch {}` mudo -- un
+   timeout de esa respuesta debe ignorarse (es informativa), pero una
+   desconexión física real o un fallo de transporte en esa ventana hacía
+   que `connect()` resolviera "con éxito" mientras el estado interno ya
+   había vuelto a "no conectado". Corregido: sólo se ignora
+   `NiimbotTimeoutError`; cualquier otro error limpia (`teardownConnection`,
+   ya idempotente) y se propaga.
+5. `connectAndRemember()` podía conectar una impresora nueva mientras otra
+   seguía físicamente conectada -- `deviceId` pasaba a representar la
+   nueva sin que la anterior se soltara nunca. Corregido: `PrinterManager`
+   desconecta la impresora activa antes de establecer la nueva (después de
+   confirmar que el intento puede proceder, para no soltar la impresora en
+   uso si el intento nuevo va a fallar de todas formas), y rechaza el
+   cambio con `PrinterBusyError` si hay una impresión en curso.
+
+Efecto colateral de la corrección 3: como `scan()` ahora espera
+`requestPermissions()`/`isBluetoothOn()` (dos saltos de microtarea) antes
+de llegar a `startScan()`, si la pantalla se desmonta (`stopScan()` vía
+cleanup) mientras ese readiness sigue pendiente -- un diálogo nativo de
+Android no resuelve al instante -- antes no había nada que cancelar: el
+scan nativo arrancaba igual en cuanto el permiso se resolvía, aunque quien
+lo pidió ya se hubiera ido. Corregido con una sesión de scan interna que
+`stopScan()` puede marcar como cancelada antes de que exista un scan
+nativo real que detener (ver `scan-lifecycle.test.ts`).
+
 ## Contrato v1
 
 La etiqueta física MYC es **50x30 mm** (tamaño físico del medio -- nunca

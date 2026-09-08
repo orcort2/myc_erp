@@ -313,6 +313,56 @@ test('connect() no bloquea si la identificación (PrinterStatusData) no responde
   assert.equal(adapter.isConnected(), true);
 });
 
+// AUDITORÍA 2026-09-08 (ronda 2): la identificación best-effort
+// (PrinterStatusData) ignoraba CUALQUIER error, no sólo un timeout -- un
+// fallo real de transporte o una desconexión física durante esa ventana
+// dejaba connect() resolviendo "con éxito" mientras this.connected ya
+// había vuelto a false por dentro. Ahora sólo un NiimbotTimeoutError se
+// ignora; cualquier otro error debe limpiar y propagarse.
+
+test('AUDITORÍA (ronda 2): un error real de transporte (no timeout) durante la identificación best-effort limpia y propaga -- nunca reporta éxito con connected en false por dentro', async () => {
+  const transport = new MockBleTransport();
+  transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
+  transport.failWriteForCommand = NIIMBOT_REQUEST.PrinterStatusData;
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  await assert.rejects(adapter.connect(DEVICE), /fallo simulado de transporte\/protocolo al escribir/);
+
+  assert.equal(adapter.isConnected(), false);
+  assert.deepEqual(transport.disconnectCalls, [DEVICE.id], 'la conexión BLE ya se había establecido -- debe desconectarse físicamente');
+
+  // Reintento inmediato debe funcionar con estado fresco.
+  transport.failWriteForCommand = null;
+  transport.respondTo(NIIMBOT_REQUEST.PrinterStatusData, NIIMBOT_REQUEST.PrinterStatusDataResult);
+  await adapter.connect(DEVICE);
+  assert.equal(adapter.isConnected(), true);
+});
+
+test('AUDITORÍA (ronda 2): una desconexión física real durante la identificación best-effort rechaza connect(), nunca resuelve "conectado" con el estado ya en false', async () => {
+  const transport = new MockBleTransport();
+  transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
+  // Deliberadamente sin auto-respuesta a PrinterStatusData: la
+  // identificación se queda esperando hasta que simulemos la desconexión.
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+
+  const connectPromise = adapter.connect(DEVICE);
+  connectPromise.catch(() => undefined);
+  // Deja que el handshake (Connect/ConnectResult) termine y el adaptador
+  // entre a la ventana de identificación antes de desconectar -- si
+  // desconectamos demasiado pronto no habría todavía ningún waiter para
+  // PrinterStatusDataResult que rechazar.
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  transport.simulateDisconnect(DEVICE.id);
+
+  await assert.rejects(connectPromise, NiimbotDisconnectedError);
+  assert.equal(adapter.isConnected(), false);
+
+  // Reintento inmediato debe funcionar con estado fresco.
+  transport.respondTo(NIIMBOT_REQUEST.PrinterStatusData, NIIMBOT_REQUEST.PrinterStatusDataResult);
+  await adapter.connect(DEVICE);
+  assert.equal(adapter.isConnected(), true);
+});
+
 test('print() sin conexión previa lanza NiimbotNotConnectedError y no escribe nada', async () => {
   const transport = fullyResponsiveTransport();
   const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
