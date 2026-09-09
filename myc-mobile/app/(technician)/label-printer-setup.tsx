@@ -23,13 +23,9 @@ import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities'
 import {
   BluetoothDisabledError,
   BluetoothPermissionDeniedError,
-  buildQaDiagnosticRaster,
-  buildQaPrintJobPackets,
   buildTestPrintPayload,
   printLabel,
   printerManager,
-  runNelkoDiagnostics,
-  type RowHeaderVariant,
 } from '@/src/services/label-print-service';
 import { readPreferredPrinter } from '@/src/services/labels/printers/preferred-printer-storage';
 import type { DeviceClassification, PreferredPrinter } from '@/src/services/labels/printers/types';
@@ -59,7 +55,6 @@ export default function LabelPrinterSetupScreen() {
   const [devices, setDevices] = useState<RecognizedDevice[]>([]);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [testPrinting, setTestPrinting] = useState(false);
-  const [qaTesting, setQaTesting] = useState<RowHeaderVariant | null>(null);
   const [error, setError] = useState('');
   const seenDeviceIds = useRef(new Set<string>());
 
@@ -132,35 +127,6 @@ export default function LabelPrinterSetupScreen() {
     }
   }, []);
 
-  const runDiagnostics = useCallback(async (classification: RecognizedDevice) => {
-    setBusyDeviceId(classification.device.id);
-    setError('');
-
-    try {
-      const bleModule = await import(
-        '@/src/services/labels/printers/ble-manager-transport'
-      );
-
-      const report = await runNelkoDiagnostics(
-        new bleModule.BleManagerTransport(),
-        classification.device,
-      );
-
-      Alert.alert(
-        `Diagnóstico ${classification.device.name ?? classification.device.id}`,
-        JSON.stringify(report, null, 2).slice(0, 3000),
-      );
-    } catch (diagnosticError) {
-      setError(
-        diagnosticError instanceof Error
-          ? diagnosticError.message
-          : 'No fue posible diagnosticar el dispositivo.',
-      );
-    } finally {
-      setBusyDeviceId(null);
-    }
-  }, []);
-
   const testPrint = useCallback(async () => {
     setTestPrinting(true);
     setError('');
@@ -190,79 +156,6 @@ export default function LabelPrinterSetupScreen() {
     setPreferred(null);
   }, []);
 
-  /**
-   * SOLO QA/desarrollo.
-   *
-   * La prueba física anterior usaba únicamente una barra negra sólida.
-   * Después de inspeccionar el SDK oficial V3 sabemos que esa prueba no
-   * distingue correctamente:
-   *
-   *   zero_count
-   *
-   * de:
-   *
-   *   official_v3_white_counts
-   *
-   * porque una fila completamente negra produce contadores 00 00 00 en
-   * ambos casos.
-   *
-   * Ahora usamos un raster diagnóstico de 384x64 que contiene:
-   *
-   * - negro completo;
-   * - blanco completo;
-   * - izquierda negra / derecha blanca;
-   * - izquierda blanca / derecha negra.
-   *
-   * De esta forma la variante oficial genera contadores distintos de cero
-   * y la comparación física sí puede discriminar el header.
-   *
-   * NUNCA pasa por printLabel()/printerManager.print().
-   */
-  const runQaRowHeaderTest = useCallback(
-    async (variant: RowHeaderVariant) => {
-      setQaTesting(variant);
-      setError('');
-
-      try {
-        const raster = buildQaDiagnosticRaster();
-
-        const packets = buildQaPrintJobPackets(
-          raster,
-          variant,
-          { density: 3 },
-        );
-
-        await printerManager.printQaPacketSequence(packets);
-
-        const variantDescription =
-          variant === 'official_v3_white_counts'
-            ? 'header oficial V3: conteos blancos por segmentos 192/192'
-            : 'header legado: tres conteos en cero';
-
-        Alert.alert(
-          'Prueba de QA enviada',
-          `Variante: ${variantDescription}.\n\n` +
-            'Patrón esperado: cuatro bandas horizontales de 16 px cada una:\n\n' +
-            '1. negra completa\n' +
-            '2. blanca completa\n' +
-            '3. izquierda negra / derecha blanca\n' +
-            '4. izquierda blanca / derecha negra\n\n' +
-            'Observa si aparece tinta y si las mitades se imprimen correctamente.',
-        );
-      } catch (qaError) {
-        Alert.alert(
-          'No fue posible enviar la prueba de QA',
-          qaError instanceof Error
-            ? qaError.message
-            : 'Intenta nuevamente',
-        );
-      } finally {
-        setQaTesting(null);
-      }
-    },
-    [],
-  );
-
   if (isLoading) return <LoadingState label="Cargando…" />;
   if (!user) return <Redirect href="/(auth)/login" />;
   if (!capabilities.canCaptureFieldSheets) {
@@ -275,7 +168,7 @@ export default function LabelPrinterSetupScreen() {
         <BackButton />
 
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>Impresora de etiquetas</Text>
+          <Text style={styles.title}>Centro de etiquetado</Text>
 
           <Text style={styles.subtitle}>
             Etiqueta térmica 50×30 mm -- NIIMBOT B1 (soportada) y NELKO PM220
@@ -347,37 +240,6 @@ export default function LabelPrinterSetupScreen() {
                     />
                   )}
 
-                  {connected &&
-                    preferred.adapterId === 'niimbot-b1' &&
-                    user.actor_type === 'internal' && (
-                      <>
-                        <SecondaryButton
-                          label="QA V3: header legado (dev)"
-                          icon="flask-outline"
-                          loading={qaTesting === 'zero_count'}
-                          disabled={qaTesting !== null}
-                          onPress={() =>
-                            runQaRowHeaderTest('zero_count')
-                          }
-                        />
-
-                        <SecondaryButton
-                          label="QA V3: header oficial (dev)"
-                          icon="flask-outline"
-                          loading={
-                            qaTesting ===
-                            'official_v3_white_counts'
-                          }
-                          disabled={qaTesting !== null}
-                          onPress={() =>
-                            runQaRowHeaderTest(
-                              'official_v3_white_counts',
-                            )
-                          }
-                        />
-                      </>
-                    )}
-
                   <AdministrativeButton
                     label="Olvidar impresora"
                     icon="delete-outline"
@@ -441,21 +303,6 @@ export default function LabelPrinterSetupScreen() {
                       }
                     />
                   )}
-
-                  {classification.family.supportStatus ===
-                    'protocol_pending' &&
-                    user.actor_type === 'internal' && (
-                      <SecondaryButton
-                        label="Diagnóstico (dev)"
-                        icon="stethoscope"
-                        loading={
-                          busyDeviceId === classification.device.id
-                        }
-                        onPress={() =>
-                          runDiagnostics(classification)
-                        }
-                      />
-                    )}
                 </OperationalActionStack>
               </Card>
             ))}

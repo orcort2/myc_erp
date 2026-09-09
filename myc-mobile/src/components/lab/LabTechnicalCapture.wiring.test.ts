@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import ts from 'typescript';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
@@ -192,7 +193,7 @@ test('printFieldSheetLabel construye el payload desde los campos canónicos corr
     source.indexOf('async function printFieldSheetLabel'),
     source.indexOf('if (activeEquipment) {'),
   );
-  assert.match(fn, /await printLabel\(\{/);
+  assert.match(fn, /await printLabel\(payload\)/);
   assert.match(fn, /calibrationDate: sheet\.calibration_date \?\? ''/);
   assert.match(fn, /nextCalibrationDate: sheet\.next_calibration_date/);
   assert.match(fn, /equipmentCode: activeEquipment\.identification/);
@@ -217,7 +218,7 @@ test('printFieldSheetLabel nunca deja avanzar una segunda impresión mientras la
     source.indexOf('async function printFieldSheetLabel'),
     source.indexOf('if (activeEquipment) {'),
   );
-  assert.match(fn, /if \(printingLabel\) return;/);
+  assert.match(fn, /if \(printingLabelRef\.current \|\| busy\) return;/);
 });
 
 test('"Imprimir etiqueta 50×30" sólo vive junto a la hoja completed, con su propio estado de carga', () => {
@@ -226,7 +227,83 @@ test('"Imprimir etiqueta 50×30" sólo vive junto a la hoja completed, con su pr
   assert.match(stack, /label="Imprimir etiqueta 50×30"/);
   assert.match(stack, /disabled=\{printingLabel\}/);
   assert.match(stack, /loading=\{printingLabel\}/);
-  assert.match(stack, /onPress=\{printFieldSheetLabel\}/);
+  assert.match(stack, /onPress=\{\(\) => printFieldSheetLabel\(\)\}/);
   assert.doesNotMatch(source, /Próxima fase/, 'el stub deshabilitado ya no debe existir');
   assert.doesNotMatch(source, /labelPrintService/, 'el servicio viejo (DisabledLabelPrintService) ya no se usa aquí');
+});
+
+// Ejecuta el manejador real con puertos de UI/impresión simulados; no carga
+// React Native ni replica su implementación en un segundo controlador.
+function printHarness(print: (payload: unknown) => Promise<void>) {
+  const fn = source.slice(source.indexOf('async function printFieldSheetLabel'), source.indexOf('if (activeEquipment) {'));
+  const javascript = ts.transpileModule(fn, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  const state = { printed: null as unknown, busy: false, errors: [] as unknown[] };
+  const context = {
+    activeEquipment: { identification: 'EQ-1', certificate_folio: 'MYCA-1' },
+    sheet: { calibration_date: '2026-09-09', next_calibration_date: null },
+    workOrder: { folio: 6400 },
+    printingLabelRef: { current: false },
+    busy: false,
+    setPrintedLabel: (payload: unknown) => { state.printed = payload; },
+    setPrintingLabel: (busy: boolean) => { state.busy = busy; },
+    printLabel: print,
+    PrinterNotReadyError: class extends Error {},
+    LabelRenderError: class extends Error {},
+    Alert: { alert: (...args: unknown[]) => { state.errors.push(args); } },
+    router: { push: () => {} },
+  };
+  const run = new Function(...Object.keys(context), `${javascript}; return printFieldSheetLabel;`)(...Object.values(context)) as (payload?: unknown) => Promise<void>;
+  return { run, state, context };
+}
+
+test('impresión mantiene exclusión inmediata hasta resolver y reimprime el mismo payload', async () => {
+  let finish!: () => void;
+  const payloads: unknown[] = [];
+  const harness = printHarness((payload) => {
+    payloads.push(payload);
+    return new Promise<void>((resolve) => { finish = resolve; });
+  });
+  const first = harness.run();
+  await harness.run();
+  assert.equal(payloads.length, 1);
+  assert.equal(harness.state.printed, null);
+  assert.equal(harness.state.busy, true);
+  finish();
+  await first;
+  assert.equal(harness.state.printed, payloads[0]);
+  assert.equal(harness.state.busy, false);
+  const reprint = harness.run(harness.state.printed);
+  assert.equal(harness.state.printed, null);
+  assert.equal(payloads[1], payloads[0]);
+  finish();
+  await reprint;
+});
+
+test('reimpresión fallida elimina el éxito previo y libera el bloqueo para reintentar', async () => {
+  let fail = false;
+  const harness = printHarness(async () => { if (fail) throw new Error('Impresora desconectada'); });
+  await harness.run();
+  const payload = harness.state.printed;
+  assert.ok(payload);
+  fail = true;
+  await harness.run(payload);
+  assert.equal(harness.state.printed, null);
+  assert.equal(harness.state.busy, false);
+  assert.deepEqual(harness.state.errors, [['No fue posible imprimir', 'Impresora desconectada']]);
+  fail = false;
+  await harness.run(payload);
+  assert.equal(harness.state.printed, payload);
+});
+
+test('impresora no disponible ofrece la misma ruta del Home y permite cancelar sin navegar', async () => {
+  const harness = printHarness(async () => { throw new harness.context.PrinterNotReadyError(); });
+  const destinations: string[] = [];
+  harness.context.router.push = (destination?: string) => { if (destination) destinations.push(destination); };
+  await harness.run();
+  const [, , actions] = harness.state.errors[0] as [string, string, { style?: string; onPress?: () => void }[]];
+  assert.equal(actions[0].style, 'cancel');
+  assert.equal(destinations.length, 0);
+  actions[1].onPress?.();
+  assert.deepEqual(destinations, ['/(technician)/label-printer-setup']);
+  assert.equal(harness.state.printed, null);
 });
