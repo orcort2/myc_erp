@@ -23,7 +23,7 @@ import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities'
 import {
   BluetoothDisabledError,
   BluetoothPermissionDeniedError,
-  buildQaBlackBarRaster,
+  buildQaDiagnosticRaster,
   buildQaPrintJobPackets,
   buildTestPrintPayload,
   printLabel,
@@ -81,25 +81,26 @@ export default function LabelPrinterSetupScreen() {
     setDevices([]);
     seenDeviceIds.current = new Set();
     setScanning(true);
+
     try {
       await printerManager.scan((classification) => {
-        if (classification.kind === 'unknown') return; // nunca se ofrece un dispositivo ajeno como impresora
+        if (classification.kind === 'unknown') return;
         if (seenDeviceIds.current.has(classification.device.id)) return;
+
         seenDeviceIds.current.add(classification.device.id);
         setDevices((current) => [...current, classification]);
       }, SCAN_TIMEOUT_MS);
     } catch (scanError) {
-      // AUDITORÍA 2026-09-08 (seguimiento): PrinterManager.scan() ya exige
-      // permiso y Bluetooth encendido antes de arrancar el escaneo nativo
-      // -- distinguir explícitamente estos dos casos evita que la UI
-      // reciba un fallo genérico del SDK, y nunca deja un "Buscando…"
-      // colgado (el finally de abajo siempre corre).
       if (scanError instanceof BluetoothPermissionDeniedError) {
         setError('MYC necesita permiso de Bluetooth para buscar la impresora.');
       } else if (scanError instanceof BluetoothDisabledError) {
         setError('Enciende Bluetooth para buscar la impresora.');
       } else {
-        setError(scanError instanceof Error ? scanError.message : 'No fue posible buscar impresoras.');
+        setError(
+          scanError instanceof Error
+            ? scanError.message
+            : 'No fue posible buscar impresoras.',
+        );
       }
     } finally {
       setScanning(false);
@@ -108,14 +109,24 @@ export default function LabelPrinterSetupScreen() {
 
   const connectTo = useCallback(async (classification: RecognizedDevice) => {
     if (classification.family.supportStatus !== 'supported') return;
+
     setBusyDeviceId(classification.device.id);
     setError('');
+
     try {
-      await printerManager.connectAndRemember(classification.family.adapterId, classification.device);
+      await printerManager.connectAndRemember(
+        classification.family.adapterId,
+        classification.device,
+      );
+
       setConnected(true);
       setPreferred(await readPreferredPrinter());
     } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : 'No fue posible conectar la impresora.');
+      setError(
+        connectError instanceof Error
+          ? connectError.message
+          : 'No fue posible conectar la impresora.',
+      );
     } finally {
       setBusyDeviceId(null);
     }
@@ -124,15 +135,27 @@ export default function LabelPrinterSetupScreen() {
   const runDiagnostics = useCallback(async (classification: RecognizedDevice) => {
     setBusyDeviceId(classification.device.id);
     setError('');
+
     try {
-      const bleModule = await import('@/src/services/labels/printers/ble-manager-transport');
-      const report = await runNelkoDiagnostics(new bleModule.BleManagerTransport(), classification.device);
+      const bleModule = await import(
+        '@/src/services/labels/printers/ble-manager-transport'
+      );
+
+      const report = await runNelkoDiagnostics(
+        new bleModule.BleManagerTransport(),
+        classification.device,
+      );
+
       Alert.alert(
         `Diagnóstico ${classification.device.name ?? classification.device.id}`,
         JSON.stringify(report, null, 2).slice(0, 3000),
       );
     } catch (diagnosticError) {
-      setError(diagnosticError instanceof Error ? diagnosticError.message : 'No fue posible diagnosticar el dispositivo.');
+      setError(
+        diagnosticError instanceof Error
+          ? diagnosticError.message
+          : 'No fue posible diagnosticar el dispositivo.',
+      );
     } finally {
       setBusyDeviceId(null);
     }
@@ -141,11 +164,21 @@ export default function LabelPrinterSetupScreen() {
   const testPrint = useCallback(async () => {
     setTestPrinting(true);
     setError('');
+
     try {
       await printLabel(buildTestPrintPayload());
-      Alert.alert('Prueba enviada', 'Revisa la impresora física para confirmar el resultado.');
+
+      Alert.alert(
+        'Prueba enviada',
+        'Revisa la impresora física para confirmar el resultado.',
+      );
     } catch (printError) {
-      Alert.alert('No fue posible imprimir', printError instanceof Error ? printError.message : 'Intenta nuevamente');
+      Alert.alert(
+        'No fue posible imprimir',
+        printError instanceof Error
+          ? printError.message
+          : 'Intenta nuevamente',
+      );
     } finally {
       setTestPrinting(false);
     }
@@ -157,51 +190,124 @@ export default function LabelPrinterSetupScreen() {
     setPreferred(null);
   }, []);
 
-  // SOLO QA/desarrollo -- ver qa-row-header-variant.ts. La primera prueba
-  // física del B1 confirmó conexión/aceptación/ejecución del trabajo pero
-  // SIN contenido impreso; esto compara, contra hardware real, las dos
-  // variantes documentadas del header de PrintBitmapRow (conteo en cero,
-  // el actual de producción, vs. conteo real de píxeles negros de 16 bits
-  // que documenta niim.blue) usando un bloque negro sólido, nunca una
-  // etiqueta real, para que el resultado nunca se confunda con un problema
-  // de renderer/fuente. NUNCA pasa por printLabel()/printerManager.print().
-  const runQaRowHeaderTest = useCallback(async (variant: RowHeaderVariant) => {
-    setQaTesting(variant);
-    setError('');
-    try {
-      const raster = buildQaBlackBarRaster();
-      const packets = buildQaPrintJobPackets(raster, variant);
-      await printerManager.printQaPacketSequence(packets);
-      Alert.alert(
-        'Prueba de QA enviada',
-        `Variante: ${variant === 'zero_count' ? 'conteo en cero (actual)' : 'conteo real de píxeles negros (documentado)'}.\n\nRevisa la impresora física: ¿salió un bloque negro sólido de 384×64 px?`,
-      );
-    } catch (qaError) {
-      Alert.alert('No fue posible enviar la prueba de QA', qaError instanceof Error ? qaError.message : 'Intenta nuevamente');
-    } finally {
-      setQaTesting(null);
-    }
-  }, []);
+  /**
+   * SOLO QA/desarrollo.
+   *
+   * La prueba física anterior usaba únicamente una barra negra sólida.
+   * Después de inspeccionar el SDK oficial V3 sabemos que esa prueba no
+   * distingue correctamente:
+   *
+   *   zero_count
+   *
+   * de:
+   *
+   *   official_v3_white_counts
+   *
+   * porque una fila completamente negra produce contadores 00 00 00 en
+   * ambos casos.
+   *
+   * Ahora usamos un raster diagnóstico de 384x64 que contiene:
+   *
+   * - negro completo;
+   * - blanco completo;
+   * - izquierda negra / derecha blanca;
+   * - izquierda blanca / derecha negra.
+   *
+   * De esta forma la variante oficial genera contadores distintos de cero
+   * y la comparación física sí puede discriminar el header.
+   *
+   * NUNCA pasa por printLabel()/printerManager.print().
+   */
+  const runQaRowHeaderTest = useCallback(
+    async (variant: RowHeaderVariant) => {
+      setQaTesting(variant);
+      setError('');
+
+      try {
+        const raster = buildQaDiagnosticRaster();
+
+        const packets = buildQaPrintJobPackets(
+          raster,
+          variant,
+          { density: 3 },
+        );
+
+        await printerManager.printQaPacketSequence(packets);
+
+        const variantDescription =
+          variant === 'official_v3_white_counts'
+            ? 'header oficial V3: conteos blancos por segmentos 192/192'
+            : 'header legado: tres conteos en cero';
+
+        Alert.alert(
+          'Prueba de QA enviada',
+          `Variante: ${variantDescription}.\n\n` +
+            'Patrón esperado: cuatro bandas horizontales de 16 px cada una:\n\n' +
+            '1. negra completa\n' +
+            '2. blanca completa\n' +
+            '3. izquierda negra / derecha blanca\n' +
+            '4. izquierda blanca / derecha negra\n\n' +
+            'Observa si aparece tinta y si las mitades se imprimen correctamente.',
+        );
+      } catch (qaError) {
+        Alert.alert(
+          'No fue posible enviar la prueba de QA',
+          qaError instanceof Error
+            ? qaError.message
+            : 'Intenta nuevamente',
+        );
+      } finally {
+        setQaTesting(null);
+      }
+    },
+    [],
+  );
 
   if (isLoading) return <LoadingState label="Cargando…" />;
   if (!user) return <Redirect href="/(auth)/login" />;
-  if (!capabilities.canCaptureFieldSheets) return <Redirect href="/(technician)" />;
+  if (!capabilities.canCaptureFieldSheets) {
+    return <Redirect href="/(technician)" />;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <Screen>
         <BackButton />
+
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>Impresora de etiquetas</Text>
-          <Text style={styles.subtitle}>Etiqueta térmica 50×30 mm -- NIIMBOT B1 (soportada) y NELKO PM220 (en validación).</Text>
 
-          {!!error && <AlertBanner tone="danger">{error}</AlertBanner>}
+          <Text style={styles.subtitle}>
+            Etiqueta térmica 50×30 mm -- NIIMBOT B1 (soportada) y NELKO PM220
+            (en validación).
+          </Text>
+
+          {!!error && (
+            <AlertBanner tone="danger">
+              {error}
+            </AlertBanner>
+          )}
 
           <Section title="Impresora guardada">
             {preferred ? (
               <Card>
-                <Text style={styles.deviceName}>{preferred.deviceName ?? preferred.deviceId}</Text>
-                <StatusBadge label={connected ? 'Conectada' : 'Guardada, sin conectar'} tone={connected ? 'success' : 'neutral'} />
+                <Text style={styles.deviceName}>
+                  {preferred.deviceName ?? preferred.deviceId}
+                </Text>
+
+                <StatusBadge
+                  label={
+                    connected
+                      ? 'Conectada'
+                      : 'Guardada, sin conectar'
+                  }
+                  tone={
+                    connected
+                      ? 'success'
+                      : 'neutral'
+                  }
+                />
+
                 <OperationalActionStack>
                   {!connected && (
                     <SecondaryButton
@@ -209,54 +315,92 @@ export default function LabelPrinterSetupScreen() {
                       icon="bluetooth-connect"
                       onPress={async () => {
                         setError('');
+
                         try {
-                          const reconnected = await printerManager.connectPreferred();
+                          const reconnected =
+                            await printerManager.connectPreferred();
+
                           setConnected(reconnected);
-                          if (!reconnected) setError('No fue posible reconectar la impresora guardada.');
+
+                          if (!reconnected) {
+                            setError(
+                              'No fue posible reconectar la impresora guardada.',
+                            );
+                          }
                         } catch (reconnectError) {
-                          setError(reconnectError instanceof Error ? reconnectError.message : 'No fue posible reconectar.');
+                          setError(
+                            reconnectError instanceof Error
+                              ? reconnectError.message
+                              : 'No fue posible reconectar.',
+                          );
                         }
                       }}
                     />
                   )}
+
                   {connected && (
-                    <PrimaryButton label="Prueba de impresión" icon="printer-check" loading={testPrinting} onPress={testPrint} />
+                    <PrimaryButton
+                      label="Prueba de impresión"
+                      icon="printer-check"
+                      loading={testPrinting}
+                      onPress={testPrint}
+                    />
                   )}
-                  {/* SOLO QA/desarrollo -- ver runQaRowHeaderTest. Gate 2026-09-08:
-                      igual que "Diagnóstico (dev)" de NELKO más abajo, sólo
-                      visible para actor_type interno; nunca aparece para un
-                      técnico operativo ni sustituye "Prueba de impresión"
-                      (que sí usa el camino real de printLabel()). */}
-                  {connected && preferred.adapterId === 'niimbot-b1' && user.actor_type === 'internal' && (
-                    <>
-                      <SecondaryButton
-                        label="QA fila: conteo cero (dev)"
-                        icon="flask-outline"
-                        loading={qaTesting === 'zero_count'}
-                        disabled={qaTesting !== null}
-                        onPress={() => runQaRowHeaderTest('zero_count')}
-                      />
-                      <SecondaryButton
-                        label="QA fila: conteo real (dev)"
-                        icon="flask-outline"
-                        loading={qaTesting === 'documented_black_pixel_count'}
-                        disabled={qaTesting !== null}
-                        onPress={() => runQaRowHeaderTest('documented_black_pixel_count')}
-                      />
-                    </>
-                  )}
-                  <AdministrativeButton label="Olvidar impresora" icon="delete-outline" onPress={forget} />
+
+                  {connected &&
+                    preferred.adapterId === 'niimbot-b1' &&
+                    user.actor_type === 'internal' && (
+                      <>
+                        <SecondaryButton
+                          label="QA V3: header legado (dev)"
+                          icon="flask-outline"
+                          loading={qaTesting === 'zero_count'}
+                          disabled={qaTesting !== null}
+                          onPress={() =>
+                            runQaRowHeaderTest('zero_count')
+                          }
+                        />
+
+                        <SecondaryButton
+                          label="QA V3: header oficial (dev)"
+                          icon="flask-outline"
+                          loading={
+                            qaTesting ===
+                            'official_v3_white_counts'
+                          }
+                          disabled={qaTesting !== null}
+                          onPress={() =>
+                            runQaRowHeaderTest(
+                              'official_v3_white_counts',
+                            )
+                          }
+                        />
+                      </>
+                    )}
+
+                  <AdministrativeButton
+                    label="Olvidar impresora"
+                    icon="delete-outline"
+                    onPress={forget}
+                  />
                 </OperationalActionStack>
               </Card>
             ) : (
-              <EmptyState title="Sin impresora guardada" description="Busca y conecta una impresora para empezar a imprimir etiquetas." />
+              <EmptyState
+                title="Sin impresora guardada"
+                description="Busca y conecta una impresora para empezar a imprimir etiquetas."
+              />
             )}
           </Section>
 
           <Section title="Buscar impresoras">
             <OperationalActionStack>
               <PrimaryButton
-                label={scanning ? 'Buscando…' : 'Buscar impresoras'}
+                label={
+                  scanning
+                    ? 'Buscando…'
+                    : 'Buscar impresoras'
+                }
                 icon="magnify"
                 loading={scanning}
                 disabled={scanning}
@@ -266,33 +410,61 @@ export default function LabelPrinterSetupScreen() {
 
             {devices.map((classification) => (
               <Card key={classification.device.id}>
-                <Text style={styles.deviceName}>{classification.device.name ?? classification.device.id}</Text>
+                <Text style={styles.deviceName}>
+                  {classification.device.name ??
+                    classification.device.id}
+                </Text>
+
                 <StatusBadge
-                  label={classification.family.supportStatus === 'supported' ? classification.family.displayName + ' · Soportada' : classification.family.displayName + ' · Driver pendiente'}
-                  tone={classification.family.supportStatus === 'supported' ? 'success' : 'warning'}
+                  label={
+                    classification.family.supportStatus === 'supported'
+                      ? `${classification.family.displayName} · Soportada`
+                      : `${classification.family.displayName} · Driver pendiente`
+                  }
+                  tone={
+                    classification.family.supportStatus === 'supported'
+                      ? 'success'
+                      : 'warning'
+                  }
                 />
+
                 <OperationalActionStack>
                   {classification.family.supportStatus === 'supported' && (
                     <PrimaryButton
                       label="Conectar"
                       icon="bluetooth-connect"
-                      loading={busyDeviceId === classification.device.id}
-                      onPress={() => connectTo(classification)}
+                      loading={
+                        busyDeviceId === classification.device.id
+                      }
+                      onPress={() =>
+                        connectTo(classification)
+                      }
                     />
                   )}
-                  {classification.family.supportStatus === 'protocol_pending' && user.actor_type === 'internal' && (
-                    <SecondaryButton
-                      label="Diagnóstico (dev)"
-                      icon="stethoscope"
-                      loading={busyDeviceId === classification.device.id}
-                      onPress={() => runDiagnostics(classification)}
-                    />
-                  )}
+
+                  {classification.family.supportStatus ===
+                    'protocol_pending' &&
+                    user.actor_type === 'internal' && (
+                      <SecondaryButton
+                        label="Diagnóstico (dev)"
+                        icon="stethoscope"
+                        loading={
+                          busyDeviceId === classification.device.id
+                        }
+                        onPress={() =>
+                          runDiagnostics(classification)
+                        }
+                      />
+                    )}
                 </OperationalActionStack>
               </Card>
             ))}
+
             {!scanning && devices.length === 0 && (
-              <EmptyState title="Sin resultados todavía" description="Enciende la impresora y mantenla cerca antes de buscar." />
+              <EmptyState
+                title="Sin resultados todavía"
+                description="Enciende la impresora y mantenla cerca antes de buscar."
+              />
             )}
           </Section>
         </ScrollView>
@@ -302,9 +474,25 @@ export default function LabelPrinterSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, gap: spacing.md },
-  title: { color: colors.text, fontSize: 22, fontWeight: '800' },
-  subtitle: { color: colors.textSubtle },
-  deviceName: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  subtitle: {
+    color: colors.textSubtle,
+  },
+  deviceName: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
