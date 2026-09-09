@@ -463,3 +463,66 @@ test('capabilities declara 203 dpi y 384px de ancho imprimible -- valores públi
   assert.equal(adapter.capabilities.dpi, 203);
   assert.equal(adapter.capabilities.printableWidthPx, 384);
 });
+
+// AUDITORÍA 2026-09-08 (herramienta de QA para la divergencia documentada del
+// header de PrintBitmapRow): printPacketSequenceForQa() es SOLO para QA/
+// desarrollo -- nunca la usa print()/printLabel(). Reutiliza los mismos
+// guards y el mismo sondeo de estado que print(), sobre una secuencia de
+// paquetes ya construida por el caller (ver qa-row-header-variant.ts).
+
+test('printPacketSequenceForQa() sin conexión previa lanza NiimbotNotConnectedError y no escribe nada', async () => {
+  const transport = fullyResponsiveTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+  await assert.rejects(
+    adapter.printPacketSequenceForQa([{ command: 0x01, data: Uint8Array.of(1) }]),
+    NiimbotNotConnectedError,
+  );
+  assert.equal(transport.writes.length, 0);
+});
+
+test('printPacketSequenceForQa() nunca deja avanzar una segunda llamada mientras la primera sigue en curso', async () => {
+  const transport = fullyResponsiveTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+  await adapter.connect(DEVICE);
+  const packets = [{ command: NIIMBOT_REQUEST.PrintBitmapRow, data: new Uint8Array(6) }];
+
+  const first = adapter.printPacketSequenceForQa(packets);
+  await assert.rejects(adapter.printPacketSequenceForQa(packets), NiimbotPrintInProgressError);
+  await first;
+});
+
+test('printPacketSequenceForQa() envía la secuencia dada tal cual (sin recortar ni anteponer SetDensity/SetLabelType por su cuenta), sondea estado y cierra con PrintEnd', async () => {
+  const transport = fullyResponsiveTransport();
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+  await adapter.connect(DEVICE);
+  transport.writes = []; // descarta Connect/identify previos para esta aserción
+
+  const custom = [
+    { command: NIIMBOT_REQUEST.PageStart, data: Uint8Array.of(1) },
+    { command: NIIMBOT_REQUEST.PrintBitmapRow, data: new Uint8Array(6) },
+  ];
+  await adapter.printPacketSequenceForQa(custom);
+
+  const commands = transport.writes.map((packet) => packet.command);
+  // Exactamente lo que se pasó, en el mismo orden -- ni SetDensity/
+  // SetLabelType antepuestos, ni recorte de ancho, ni ningún paquete extra
+  // salvo el sondeo de estado y PrintEnd que ya hace print().
+  assert.deepEqual(commands.slice(0, 2), [NIIMBOT_REQUEST.PageStart, NIIMBOT_REQUEST.PrintBitmapRow]);
+  assert.ok(commands.includes(NIIMBOT_REQUEST.PrintStatus), 'debe sondear el estado igual que print()');
+  assert.equal(commands[commands.length - 1], NIIMBOT_REQUEST.PrintEnd, 'PrintEnd debe seguir siendo el último comando');
+});
+
+test('una desconexión a mitad de printPacketSequenceForQa() rechaza la llamada, nunca la deja colgada', async () => {
+  const transport = new MockBleTransport();
+  transport.respondTo(NIIMBOT_REQUEST.Connect, NIIMBOT_REQUEST.ConnectResult);
+  transport.respondTo(NIIMBOT_REQUEST.PrinterStatusData, NIIMBOT_REQUEST.PrinterStatusDataResult);
+  // Deliberadamente SIN auto-respuesta a PrintStatus: la llamada se queda
+  // esperando el sondeo hasta que simulemos la desconexión.
+  const adapter = new NiimbotB1Adapter(transport, TEST_TIMEOUTS);
+  await adapter.connect(DEVICE);
+
+  const call = adapter.printPacketSequenceForQa([{ command: NIIMBOT_REQUEST.PrintBitmapRow, data: new Uint8Array(6) }]);
+  queueMicrotask(() => transport.simulateDisconnect(DEVICE.id));
+  await assert.rejects(call, NiimbotDisconnectedError);
+  assert.equal(adapter.isConnected(), false);
+});

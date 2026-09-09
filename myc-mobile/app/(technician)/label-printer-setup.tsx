@@ -23,10 +23,13 @@ import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities'
 import {
   BluetoothDisabledError,
   BluetoothPermissionDeniedError,
+  buildQaBlackBarRaster,
+  buildQaPrintJobPackets,
   buildTestPrintPayload,
   printLabel,
   printerManager,
   runNelkoDiagnostics,
+  type RowHeaderVariant,
 } from '@/src/services/label-print-service';
 import { readPreferredPrinter } from '@/src/services/labels/printers/preferred-printer-storage';
 import type { DeviceClassification, PreferredPrinter } from '@/src/services/labels/printers/types';
@@ -56,6 +59,7 @@ export default function LabelPrinterSetupScreen() {
   const [devices, setDevices] = useState<RecognizedDevice[]>([]);
   const [busyDeviceId, setBusyDeviceId] = useState<string | null>(null);
   const [testPrinting, setTestPrinting] = useState(false);
+  const [qaTesting, setQaTesting] = useState<RowHeaderVariant | null>(null);
   const [error, setError] = useState('');
   const seenDeviceIds = useRef(new Set<string>());
 
@@ -153,6 +157,32 @@ export default function LabelPrinterSetupScreen() {
     setPreferred(null);
   }, []);
 
+  // SOLO QA/desarrollo -- ver qa-row-header-variant.ts. La primera prueba
+  // física del B1 confirmó conexión/aceptación/ejecución del trabajo pero
+  // SIN contenido impreso; esto compara, contra hardware real, las dos
+  // variantes documentadas del header de PrintBitmapRow (conteo en cero,
+  // el actual de producción, vs. conteo real de píxeles negros de 16 bits
+  // que documenta niim.blue) usando un bloque negro sólido, nunca una
+  // etiqueta real, para que el resultado nunca se confunda con un problema
+  // de renderer/fuente. NUNCA pasa por printLabel()/printerManager.print().
+  const runQaRowHeaderTest = useCallback(async (variant: RowHeaderVariant) => {
+    setQaTesting(variant);
+    setError('');
+    try {
+      const raster = buildQaBlackBarRaster();
+      const packets = buildQaPrintJobPackets(raster, variant);
+      await printerManager.printQaPacketSequence(packets);
+      Alert.alert(
+        'Prueba de QA enviada',
+        `Variante: ${variant === 'zero_count' ? 'conteo en cero (actual)' : 'conteo real de píxeles negros (documentado)'}.\n\nRevisa la impresora física: ¿salió un bloque negro sólido de 384×64 px?`,
+      );
+    } catch (qaError) {
+      Alert.alert('No fue posible enviar la prueba de QA', qaError instanceof Error ? qaError.message : 'Intenta nuevamente');
+    } finally {
+      setQaTesting(null);
+    }
+  }, []);
+
   if (isLoading) return <LoadingState label="Cargando…" />;
   if (!user) return <Redirect href="/(auth)/login" />;
   if (!capabilities.canCaptureFieldSheets) return <Redirect href="/(technician)" />;
@@ -191,6 +221,29 @@ export default function LabelPrinterSetupScreen() {
                   )}
                   {connected && (
                     <PrimaryButton label="Prueba de impresión" icon="printer-check" loading={testPrinting} onPress={testPrint} />
+                  )}
+                  {/* SOLO QA/desarrollo -- ver runQaRowHeaderTest. Gate 2026-09-08:
+                      igual que "Diagnóstico (dev)" de NELKO más abajo, sólo
+                      visible para actor_type interno; nunca aparece para un
+                      técnico operativo ni sustituye "Prueba de impresión"
+                      (que sí usa el camino real de printLabel()). */}
+                  {connected && preferred.adapterId === 'niimbot-b1' && user.actor_type === 'internal' && (
+                    <>
+                      <SecondaryButton
+                        label="QA fila: conteo cero (dev)"
+                        icon="flask-outline"
+                        loading={qaTesting === 'zero_count'}
+                        disabled={qaTesting !== null}
+                        onPress={() => runQaRowHeaderTest('zero_count')}
+                      />
+                      <SecondaryButton
+                        label="QA fila: conteo real (dev)"
+                        icon="flask-outline"
+                        loading={qaTesting === 'documented_black_pixel_count'}
+                        disabled={qaTesting !== null}
+                        onPress={() => runQaRowHeaderTest('documented_black_pixel_count')}
+                      />
+                    </>
                   )}
                   <AdministrativeButton label="Olvidar impresora" icon="delete-outline" onPress={forget} />
                 </OperationalActionStack>

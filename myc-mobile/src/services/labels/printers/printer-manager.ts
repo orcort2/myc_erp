@@ -51,6 +51,11 @@ export class UnknownPrinterAdapterError extends Error {}
 export class BluetoothPermissionDeniedError extends Error {}
 export class BluetoothDisabledError extends Error {}
 
+/** SOLO QA/desarrollo -- ver printQaPacketSequence(). El adaptador activo
+ * no implementa printPacketSequenceForQa (ningún adaptador de producción
+ * está obligado a hacerlo). */
+export class PrinterQaUnsupportedError extends Error {}
+
 export class PrinterManager {
   private readonly ble: BleTransport;
   private readonly adapters: Map<PrinterAdapterId, LabelPrinterAdapter>;
@@ -221,6 +226,34 @@ export class PrinterManager {
     this.printing = true;
     try {
       await this.activeAdapter.print(label, options);
+    } finally {
+      this.printing = false;
+    }
+  }
+
+  /**
+   * SOLO QA/desarrollo -- nunca la usa printLabel()/print(). Envía una
+   * secuencia de paquetes ya construida externamente (ver
+   * niimbot-b1/qa-row-header-variant.ts) directamente a través del
+   * adaptador activo, si ese adaptador implementa
+   * printPacketSequenceForQa (opcional en LabelPrinterAdapter -- hoy sólo
+   * NiimbotB1Adapter lo hace). Reutiliza el mismo guard de "impresión en
+   * curso" que print() para que una prueba de QA nunca pueda intercalarse
+   * con una impresión real de producción.
+   */
+  async printQaPacketSequence(packets: { command: number; data: Uint8Array }[]): Promise<void> {
+    if (!this.activeAdapter || !this.activeAdapter.isConnected()) {
+      throw new PrinterNotReadyError('No hay una impresora conectada.');
+    }
+    if (!this.activeAdapter.printPacketSequenceForQa) {
+      throw new PrinterQaUnsupportedError('La impresora activa no soporta el envío de paquetes de QA.');
+    }
+    if (this.printing) {
+      throw new PrinterBusyError('Ya hay una impresión en curso; espera a que termine.');
+    }
+    this.printing = true;
+    try {
+      await this.activeAdapter.printPacketSequenceForQa(packets);
     } finally {
       this.printing = false;
     }

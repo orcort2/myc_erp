@@ -29,6 +29,7 @@ export {
   BluetoothPermissionDeniedError,
   PrinterBusyError,
   PrinterNotReadyError,
+  PrinterQaUnsupportedError,
   UnknownPrinterAdapterError,
 } from './labels/printers/printer-manager';
 export { classifyDevice, listKnownPrinterFamilies } from './labels/printers/printer-registry';
@@ -39,6 +40,14 @@ export type {
   PrinterDevice,
 } from './labels/printers/types';
 export { runNelkoDiagnostics } from './labels/printers/adapters/nelko-pm220/nelko-diagnostics';
+// SOLO QA/desarrollo -- ver qa-row-header-variant.ts. Herramienta para la
+// próxima sesión de QA física del B1, nunca usada por printLabel().
+export {
+  buildQaBlackBarRaster,
+  buildQaPrintJobPackets,
+  countBlackPixels,
+  type RowHeaderVariant,
+} from './labels/printers/adapters/niimbot-b1/qa-row-header-variant';
 
 const bleTransport = new BleManagerTransport();
 

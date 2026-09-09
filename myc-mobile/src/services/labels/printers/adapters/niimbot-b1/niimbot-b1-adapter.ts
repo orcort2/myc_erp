@@ -199,6 +199,39 @@ export class NiimbotB1Adapter implements LabelPrinterAdapter {
     }
   }
 
+  /**
+   * SOLO QA/desarrollo -- NUNCA usado por print() ni por printLabel(). Envía
+   * una secuencia de paquetes ya construida externamente (ver
+   * qa-row-header-variant.ts, buildQaPrintJobPackets) tal cual, en vez de
+   * derivarla de un RasterLabel real -- así una comparación A/B de la
+   * divergencia documentada del header de PrintBitmapRow (conteo en cero
+   * actual vs. conteo real de píxeles negros documentado) pasa por el MISMO
+   * transporte/espera de estado real que cualquier impresión de producción,
+   * sin inventar un segundo mecanismo de envío ni tocar print() para nada.
+   * Reutiliza los mismos guards (connected/printing) y el mismo sondeo de
+   * PrintStatus/PrintEnd que print(); nunca recorta a printableWidthPx ni
+   * antepone SetDensity/SetLabelType por su cuenta -- eso ya viene incluido
+   * en la secuencia que el caller construyó.
+   */
+  async printPacketSequenceForQa(packets: { command: number; data: Uint8Array }[]): Promise<void> {
+    if (!this.connected || !this.deviceId) {
+      throw new NiimbotNotConnectedError('No hay conexión activa con la impresora NIIMBOT B1.');
+    }
+    if (this.printing) {
+      throw new NiimbotPrintInProgressError('Ya hay una impresión en curso; espera a que termine.');
+    }
+    this.printing = true;
+    try {
+      for (const packet of packets) {
+        await this.write(packet);
+      }
+      await this.waitForPrintComplete();
+      await this.sendAndWait(buildPrintEndPacket(), NIIMBOT_REQUEST.PrintEndResult, this.timeouts.printEndTimeoutMs);
+    } finally {
+      this.printing = false;
+    }
+  }
+
   private async waitForPrintComplete(): Promise<void> {
     const deadline = Date.now() + this.timeouts.printStatusTimeoutMs;
     for (;;) {

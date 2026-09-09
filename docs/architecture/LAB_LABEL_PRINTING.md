@@ -382,3 +382,47 @@ la impresora, comportamiento con Bluetooth apagado/permiso denegado/fuera de
 rango, recuperación background/foreground. NELKO PM220 no se reporta
 soportado hasta tener protocolo confiable + su propia matriz de QA física
 equivalente.
+
+### Primera prueba física del B1 (2026-09-08) -- sin contenido impreso
+
+La primera prueba con hardware real conectó correctamente, aceptó y ejecutó
+el trabajo (la impresora acciona), pero **no imprimió contenido**. Sospecha
+principal: la "Divergencia NO resuelta" ya documentada en
+`protocol.ts` sobre el header de `PrintBitmapRow` -- niim.blue documenta un
+conteo real de píxeles negros de 16 bits ahí; niimprint (única fuente
+confirmada contra hardware B1 real) siempre manda ceros y funciona según su
+propio README. `encodeRowPacket()` sigue la variante de niimprint sin
+cambios -- **no se tocó el protocolo de producción a ciegas**.
+
+Herramienta de QA preparada para la siguiente sesión física (nunca usada por
+`printLabel()`/`print()`, ver `qa-row-header-variant.ts` y
+`NiimbotB1Adapter.printPacketSequenceForQa()`):
+
+- `buildQaBlackBarRaster()` -- bloque negro sólido de 384×64 px (ancho
+  imprimible máximo del B1, alto moderado con margen blanco visible arriba/
+  abajo), sin texto ni layout, para que el resultado nunca se confunda con
+  un problema de `LabelRenderer`/fuentes.
+- `buildQaPrintJobPackets(raster, variant)` -- misma secuencia de comandos
+  que `buildPrintJobPackets()` (SetDensity/SetLabelType/PrintStart/
+  PageStart/SetPageSize/PageEnd, importados sin cambios), sólo con el header
+  de cada `PrintBitmapRow` construido según `variant`:
+  `'zero_count'` (idéntico byte a byte a producción hoy, verificado por
+  test) o `'documented_black_pixel_count'` (conteo real de 16 bits vía
+  `countBlackPixels()`, bytes reservado/repetición sin cambios).
+- `printerManager.printQaPacketSequence(packets)` -- envía la secuencia ya
+  construida a través del adaptador activo, reutilizando el mismo
+  transporte/sondeo de estado real que una impresión de producción.
+- Mobile: en la pantalla de configuración de impresora, dos botones "QA
+  fila: conteo cero (dev)" / "QA fila: conteo real (dev)" -- visibles sólo
+  para `actor_type === 'internal'` con un B1 conectado, igual gate que
+  "Diagnóstico (dev)" de NELKO.
+
+**Siguiente prueba física concreta:** con el B1 conectado, enviar primero
+"conteo cero" (reproduce la prueba ya hecha, debe seguir sin imprimir
+contenido si la sospecha es correcta) y después "conteo real" (si ESTA
+variante sí imprime el bloque negro, confirma la divergencia y que
+`encodeRowPacket()` de producción debe migrar a ella). Si NINGUNA de las dos
+imprime contenido, el problema no es el header de fila y hay que revisar
+otra parte de la secuencia (SetPageSize, densidad, u otra cosa) antes de
+seguir. Esto NO declara al B1 listo para producción -- sigue pendiente de
+QA física completa (ver arriba) independientemente del resultado.
