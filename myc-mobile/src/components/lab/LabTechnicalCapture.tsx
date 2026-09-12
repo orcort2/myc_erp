@@ -1,8 +1,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { router } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Alert, Animated, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import type {
   FieldSheetTemplate,
@@ -10,7 +10,7 @@ import type {
   LabFieldSheet,
   LabWorkOrder,
 } from '@/src/types/lab-work-order';
-import { LabelRenderError, PrinterNotReadyError, printLabel } from '@/src/services/label-print-service';
+import { LabelRenderError, PrinterNotReadyError, printLabel, type LabLabelPayload } from '@/src/services/label-print-service';
 import { FIELD_LABELS } from '@/src/services/field-labels';
 import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-sheet-payload';
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
@@ -136,6 +136,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const [busy, setBusy] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [printingLabel, setPrintingLabel] = useState(false);
+  const printingLabelRef = useRef(false);
+  const [printedLabel, setPrintedLabel] = useState<LabLabelPayload | null>(null);
   const [changingTemplate, setChangingTemplate] = useState(false);
   const [changingTemplateTo, setChangingTemplateTo] = useState('');
   const [changingTemplateSearch, setChangingTemplateSearch] = useState('');
@@ -627,27 +629,30 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   // bloquean con LabelRenderError('missing_certificate_folio') -- nunca se
   // imprime "PENDIENTE" ni se genera un raster/trabajo BLE sin folio real.
   // calibrationKind ya no forma parte del contrato impreso.
-  async function printFieldSheetLabel() {
+  async function printFieldSheetLabel(reprintPayload?: LabLabelPayload) {
     if (!activeEquipment || !sheet) return;
-    if (printingLabel) return; // evita un segundo trabajo por doble tap mientras el primero sigue en curso
+    if (printingLabelRef.current || busy) return;
+    printingLabelRef.current = true;
+    setPrintedLabel(null);
     setPrintingLabel(true);
     try {
-      await printLabel({
+      const payload = reprintPayload ?? {
         calibrationDate: sheet.calibration_date ?? '',
         nextCalibrationDate: sheet.next_calibration_date,
         equipmentCode: activeEquipment.identification,
         workOrderFolio: String(workOrder.folio),
         certificateFolio: activeEquipment.certificate_folio,
-      });
-      Alert.alert('Etiqueta enviada', 'Revisa la impresora física para confirmar el resultado.');
+      };
+      await printLabel(payload);
+      setPrintedLabel(payload);
     } catch (error) {
       if (error instanceof PrinterNotReadyError) {
         Alert.alert(
-          'No hay impresora configurada',
-          'Configura tu impresora de etiquetas antes de imprimir.',
+          'No hay impresora disponible',
+          'No fue posible usar una impresora de etiquetas. Puedes conectarla o configurar otra desde el Centro de etiquetado.',
           [
             { text: 'Cancelar', style: 'cancel' },
-            { text: 'Configurar', onPress: () => router.push('/(technician)/label-printer-setup') },
+            { text: 'Ir al Centro de etiquetado', onPress: () => router.push('/(technician)/label-printer-setup') },
           ],
         );
         return;
@@ -658,6 +663,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
       }
       Alert.alert('No fue posible imprimir', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
+      printingLabelRef.current = false;
       setPrintingLabel(false);
     }
   }
@@ -729,6 +735,13 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     const documentaryClientLabel = resolveDocumentaryClientLabel(activeEquipment, workOrder);
     return (
       <ScrollView contentContainerStyle={styles.panel}>
+        {printedLabel && (
+          <PrintSuccessModal
+            busy={printingLabel || busy}
+            onContinue={() => setPrintedLabel(null)}
+            onReprint={() => printFieldSheetLabel(printedLabel)}
+          />
+        )}
         <FadeIn transitionKey={`${activeEquipment.id}:${sheet?.id ?? 'selector'}`}>
         <Text style={styles.eyebrow}>OT {workOrder.folio} · EQUIPO {activeEquipment.position}</Text>
         <Text style={styles.title}>{activeEquipment.instrument}</Text>
@@ -929,7 +942,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           {sheet.status === 'completed' && (
             <OperationalActionStack>
               <SecondaryButton disabled={downloadingPdf} icon="download" label="Ver / descargar PDF" onPress={downloadFieldSheetPdf} />
-              <SecondaryButton disabled={printingLabel} loading={printingLabel} icon="printer" label="Imprimir etiqueta 50×30" onPress={printFieldSheetLabel} />
+              <SecondaryButton disabled={printingLabel} loading={printingLabel} icon="printer" label="Imprimir etiqueta 50×30" onPress={() => printFieldSheetLabel()} />
               {!['completed', 'partially_closed'].includes(workOrder.status) && (
                 canReopenFieldSheetDirectly ? (
                   <AdministrativeButton icon="lock-open-outline" label="Desbloquear hoja" onPress={() => setTicketMode('field_sheet_reopen')} />
@@ -988,7 +1001,47 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   </View>;
 }
 
+function PrintSuccessModal({ busy, onContinue, onReprint }: {
+  busy: boolean;
+  onContinue: () => void;
+  onReprint: () => void;
+}) {
+  const appearance = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const animation = Animated.timing(appearance, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [appearance]);
+
+  return (
+    <Modal transparent visible animationType="fade" onRequestClose={onContinue}>
+      <View style={styles.printOverlay}>
+        <View style={styles.printDialog} accessibilityViewIsModal>
+          <Animated.View style={[styles.printCheckCircle, {
+            opacity: appearance,
+            transform: [{ scale: appearance.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }],
+          }]}>
+            <Text style={styles.printCheck} accessibilityElementsHidden importantForAccessibility="no">✓</Text>
+          </Animated.View>
+          <Text style={styles.printTitle} accessibilityRole="header">Etiqueta impresa</Text>
+          <PrimaryButton label="Continuar" onPress={onContinue} />
+          <SecondaryButton label="Imprimir nuevamente" icon="printer" disabled={busy} onPress={onReprint} />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
+  printOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.lg, backgroundColor: 'rgba(0, 0, 0, 0.35)' },
+  printDialog: { width: '100%', maxWidth: 360, padding: spacing.lg, gap: spacing.md, borderRadius: 16, backgroundColor: '#fff' },
+  printCheckCircle: { alignSelf: 'center', alignItems: 'center', justifyContent: 'center', width: 56, height: 56, borderRadius: 28, backgroundColor: '#e6f4ea' },
+  printCheck: { color: '#187640', fontSize: 32, fontWeight: '700' },
+  printTitle: { color: colors.text, fontSize: 22, fontWeight: '800', textAlign: 'center' },
   list: { gap: spacing.md }, panel: { gap: spacing.md, paddingBottom: spacing.xl },
   flex: { flex: 1 },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },

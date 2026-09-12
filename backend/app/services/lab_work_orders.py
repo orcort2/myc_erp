@@ -52,6 +52,7 @@ from app.schemas.lab_work_order import (
     LabWorkOrderCreate,
     LabWorkOrderGroupCreate,
     LabWorkOrderGroupRequestRead,
+    LabPendingSignatureReviewRead,
     LabWorkOrderListItem,
     LabWorkOrderRead,
     LabWorkOrderWorkflowModeChange,
@@ -201,7 +202,7 @@ def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
         )
     if any(
         item.signature_session_id is not None
-        and not (item.reopen_ticket_id and item.signature_preserved)
+        and not _member_signatures_preserved([item])
         for item in members
     ):
         raise HTTPException(
@@ -211,7 +212,7 @@ def _ensure_members_editable(members: list[LabWorkOrder]) -> None:
 
 
 def _check_edit_version(group: list[LabWorkOrder], expected: int | None) -> None:
-    if not any(item.reopen_ticket_id for item in group):
+    if not any(item.reopened_at or item.reopen_ticket_id for item in group):
         return
     current = max(item.edit_version for item in group)
     if expected is None or expected != current:
@@ -228,21 +229,30 @@ def _bump_edit_version(group: list[LabWorkOrder]) -> None:
 
 
 def _member_signatures_preserved(members: list[LabWorkOrder]) -> bool:
-    """True when the members' current signature comes from a preserved reopening
-    approved with requested_signature_policy = "preserve".
+    """True when the members' current signature comes from a preserved reopening.
 
-    ``_ensure_members_editable`` already guarantees that, once a member is
-    editable, any item that still carries a ``signature_session_id`` must
-    have ``reopen_ticket_id`` and ``signature_preserved`` set (otherwise the
-    group would have been rejected as "ya fue firmado"). So the presence of
-    a live signature session on an editable group means that session was
-    explicitly preserved through a reopening and must not be invalidated by
-    ordinary edits to already-existing data (general fields or equipment).
+    Corrección 2026-09-08: antes exigía además ``item.reopen_ticket_id is not
+    None``, asumiendo que TODA reapertura pasa por un ticket administrativo.
+    ``reopen_work_order_directly`` (autoridad directa de Admin, sin ticket
+    artificial -- ver operational_tickets.py) deja ``reopen_ticket_id`` en
+    None a propósito incluso cuando SÍ preservó la firma
+    (``_reopen_closed_cohort`` fija ``signature_preserved``/
+    ``signature_required``/``signature_session_id`` de forma idéntica para
+    ambos caminos). Con la condición vieja, cualquier edición ordinaria
+    después de una reapertura directa con "Conservar firma" quedaba
+    bloqueada de entrada por ``_ensure_members_editable`` (409 "la cohorte
+    ya fue firmada"), o si de algún modo pasaba ese guard, invalidaba la
+    firma en la primera edición -- exactamente lo contrario de lo que el
+    usuario eligió. Los otros tres campos ya bastan: ``signature_preserved``
+    sólo puede volverse True dentro de ``_reopen_closed_cohort``, así que
+    por sí solos ya implican una reapertura con firma preservada, sea
+    mediada por ticket o directa. Un ticket es procedencia administrativa
+    opcional, nunca autoridad de firma.
     """
     return any(
         item.signature_session_id is not None
-        and item.reopen_ticket_id is not None
         and item.signature_preserved
+        and not item.signature_required
         for item in members
     )
 
@@ -341,6 +351,11 @@ def _read(db: Session, work_order: LabWorkOrder) -> LabWorkOrderRead:
     result.signature_scope = _recorded_signature_scope(
         db, work_order.signature_session_id
     )
+    # Sección 6/8 del encargo de corrección LAB: Mobile necesita saber ANTES
+    # de que el usuario toque "Completar cambios" si hay algo sensible
+    # pendiente -- así el warning aparece antes de completar, no después.
+    impact = _pending_signature_impact_since_last_close(db, work_order)
+    result.pending_signature_review = LabPendingSignatureReviewRead(**impact)
     result.related_work_orders = [
         LabRelatedWorkOrderRead(**{
             "id": item.id,
@@ -1321,9 +1336,8 @@ def update_work_order(
         updates["address"] = client.address or updates.get("address", work_order.address)
         updates["contact_name"] = client.attention or updates.get("contact_name", work_order.contact_name)
     _check_edit_version(editable_members, expected_edit_version)
-    changed_fields = sorted(
-        key for key, value in updates.items() if getattr(work_order, key) != value
-    )
+    before_values = {key: getattr(work_order, key) for key in updates}
+    changed_fields = sorted(key for key, value in updates.items() if before_values[key] != value)
     if CRITICAL_GENERAL_FIELDS.intersection(changed_fields) and not _member_signatures_preserved(
         editable_members
     ):
@@ -1331,6 +1345,19 @@ def update_work_order(
     for item in editable_members:
         for key, value in updates.items():
             setattr(item, key, value)
+    # Corrección 2026-09-09 (sección 5/17 del encargo de corrección LAB):
+    # los 4 campos documentales heredados (company/address/attention/
+    # reception_date) dependen de datos de la OT (client_name/address/
+    # reception_date/lab_client_id), no sólo del equipo -- si alguno de
+    # ellos cambió, cada equipo ACTIVO de este miembro puede tener una
+    # FieldSheet vigente que quedó desactualizada, sin importar si el
+    # cambio también invalidó la firma. Nunca se propaga a otras OT del
+    # grupo (sección 17): sólo se refresca dentro de cada item de
+    # editable_members, nunca fuera de esa lista.
+    if CRITICAL_GENERAL_FIELDS.intersection(changed_fields):
+        for item in editable_members:
+            for equipment in item.active_equipment:
+                _refresh_current_field_sheet_projection(db, equipment, user)
     if changed_fields:
         _bump_edit_version(editable_members)
     write_audit_log(
@@ -1339,8 +1366,10 @@ def update_work_order(
         entity="lab_work_orders",
         entity_id=_root_id(work_order),
         user_id=user.id,
+        previous_values={key: before_values[key] for key in changed_fields},
         new_values={
-            "fields": sorted(updates),
+            "fields": changed_fields,
+            "values": {key: getattr(work_order, key) for key in changed_fields},
             "work_order_ids": [item.id for item in editable_members],
         },
     )
@@ -1410,8 +1439,8 @@ def _add_equipment_core(
         )
     # Cuenta sólo equipo ACTIVO: un equipo retirado (tombstone) no debe
     # bloquear el máximo de 10 ni desplazar la position del nuevo equipo --
-    # delete_equipment ya deja las positions activas compactadas 1..N sin
-    # huecos, así que active_count + 1 es siempre la siguiente position
+    # void_equipment_entry ya deja las positions activas compactadas 1..N
+    # sin huecos, así que active_count + 1 es siempre la siguiente position
     # válida.
     active_count = db.scalar(
         select(func.count(LabWorkOrderEquipment.id)).where(
@@ -1506,6 +1535,85 @@ def _sync_field_sheet_identity_snapshot(equipment: LabWorkOrderEquipment) -> Non
     sheet.capture_values = capture_values
 
 
+def _current_inherited_field_sheet_values(equipment: LabWorkOrderEquipment) -> dict:
+    """Corrección 2026-09-09 (coherencia equipo<->FieldSheet vigente, sección
+    5 del encargo de corrección LAB): recalcula, desde el equipo/OT VIVOS,
+    los mismos 4 campos que create_lab_field_sheet ya congela como snapshot
+    documental al crear la hoja (company/address/attention/reception_date
+    -- _READONLY_DIRECT_IDENTITY_FIELDS en lab_field_sheets.py, nunca
+    editables directamente vía update_lab_field_sheet). Refrescarlos desde
+    aquí nunca puede pisar una corrección propia del técnico porque el
+    técnico no puede tocarlos por ningún otro camino. Única fórmula
+    compartida entre create_lab_field_sheet y este archivo -- si diverge de
+    esa, un equipo/OT recién corregido y una hoja recién creada mostrarían
+    datos distintos para el mismo equipo."""
+    order = equipment.work_order
+    documentary_client = resolve_equipment_certificate_client(equipment, order)
+    return {
+        "company": documentary_client["company"],
+        "address": documentary_client["address"],
+        "attention": documentary_client["attention"],
+        "reception_date": order.reception_date,
+    }
+
+
+def _refresh_current_field_sheet_projection(
+    db: Session, equipment: LabWorkOrderEquipment, user: User
+) -> None:
+    """Corrección 2026-09-09 (sección 5 del encargo de corrección LAB):
+    única autoridad backend que mantiene la FieldSheet VIGENTE de un equipo
+    coherente con el equipo/OT que la alimentan, sin importar si el cambio
+    que la volvió obsoleta también invalidó una firma o no -- antes, una
+    reapertura 'preserve' (o cualquier corrección sin firma que proteger)
+    podía dejar una hoja completed vigente mostrando el snapshot heredado
+    ANTERIOR a la corrección indefinidamente, porque nada volvía a tocarla
+    fuera del camino de invalidación.
+
+    - Hoja editable (draft/in_progress): sincroniza capture_values (ya
+      existente, _sync_field_sheet_identity_snapshot) y los 4 campos
+      documentales heredados directamente en sus columnas -- ambos son
+      snapshot al crear la hoja, nunca lectura viva de equipo/OT.
+    - Hoja completed y vigente: si la identidad de equipo (capture_values)
+      o los 4 campos documentales de verdad difieren de lo que el equipo/OT
+      actuales producirían, retira N (histórico intacto: status/PDF sin
+      tocar, is_current=False) y clona N+1 editable con
+      _clone_field_sheet_for_correction -- el técnico conserva TODO su
+      trabajo ya capturado (sección 4, CASO B/C: "completed" no implica
+      inmutabilidad absoluta) y la revisión vigente nace ya coherente. Si
+      nada relevante cambió, no crea una revisión nueva -- evita ruido
+      histórico por ediciones que no tocaron nada documental.
+    - Hoja retirada/no vigente: nunca se toca (histórico congelado para
+      siempre) -- incluye el caso en que ESTA MISMA llamada ya la retiró
+      un momento antes (idempotente por diseño: sheet.is_current ya en
+      False hace que el segundo chequeo de abajo se salte sin duplicar
+      nada)."""
+    sheet = equipment.field_sheet
+    if sheet is None:
+        return
+    if sheet.status in EDITABLE_STATUSES:
+        _sync_field_sheet_identity_snapshot(equipment)
+        for key, value in _current_inherited_field_sheet_values(equipment).items():
+            setattr(sheet, key, value)
+        return
+    if sheet.status != "completed" or not sheet.is_current:
+        return
+    documentary_changed = {
+        key: value
+        for key, value in _current_inherited_field_sheet_values(equipment).items()
+        if getattr(sheet, key) != value
+    }
+    identity_changed = any(
+        (sheet.capture_values or {}).get(capture_key) != getattr(equipment, equipment_key)
+        for equipment_key, capture_key in _EQUIPMENT_TO_FIELD_SHEET_IDENTITY_KEYS.items()
+    )
+    if not documentary_changed and not identity_changed:
+        return
+    from app.services.lab_field_sheets import _clone_field_sheet_for_correction
+
+    _retire_current_field_sheet_revision(equipment)
+    _clone_field_sheet_for_correction(db, equipment, sheet, user, overrides=documentary_changed)
+
+
 def _update_equipment_core(
     db: Session,
     work_order: LabWorkOrder,
@@ -1518,10 +1626,22 @@ def _update_equipment_core(
     """Núcleo sin commit de update_equipment: actualiza los datos básicos del
     equipo y hace flush, sin confirmar la transacción -- para que el endpoint
     público y update_configured_equipment (Fase 2 hardening) puedan decidir
-    cuándo confirmar/revertir."""
-    changed_fields = sorted(
-        key for key, value in values.items() if getattr(equipment, key) != value
-    )
+    cuándo confirmar/revertir.
+
+    Corrección 2026-09-09 (sección 1/7 del encargo de corrección LAB): toda
+    edición -- sensible o no -- debe quedar trazada con valor anterior y
+    valor nuevo, no sólo "algo cambió" (antes new_values sólo llevaba
+    work_order_id). La decisión de invalidar firma sigue exactamente igual
+    que antes (CRITICAL_EQUIPMENT_FIELDS + _member_signatures_preserved, sin
+    cambios de semántica); lo que cambia es que _refresh_current_field_sheet_projection
+    -- no un _retire_current_field_sheet_revision suelto -- es ahora la
+    única autoridad que decide si la FieldSheet vigente necesita
+    retirarse+clonarse hacia adelante, y corre SIEMPRE (con o sin
+    invalidación) para que una reapertura 'preserve' también refresque una
+    hoja completed vigente que quedó desactualizada (antes, ese caso no
+    tocaba la hoja en absoluto -- ver docstring de esa función)."""
+    before_values = {key: getattr(equipment, key) for key in values}
+    changed_fields = sorted(key for key, value in values.items() if before_values[key] != value)
     affected_signature_members = _affected_signature_members(group, work_order)
     if CRITICAL_EQUIPMENT_FIELDS.intersection(changed_fields) and not _member_signatures_preserved(
         affected_signature_members
@@ -1529,10 +1649,9 @@ def _update_equipment_core(
         invalidate_member_signatures(
             db, affected_signature_members, user, fields=changed_fields
         )
-        _retire_current_field_sheet_revision(equipment)
     for key, value in values.items():
         setattr(equipment, key, value)
-    _sync_field_sheet_identity_snapshot(equipment)
+    _refresh_current_field_sheet_projection(db, equipment, user)
     if changed_fields:
         _bump_edit_version(editable_members)
     write_audit_log(
@@ -1541,7 +1660,12 @@ def _update_equipment_core(
         entity="lab_work_order_equipment",
         entity_id=equipment.id,
         user_id=user.id,
-        new_values={"work_order_id": work_order.id},
+        previous_values={key: before_values[key] for key in changed_fields},
+        new_values={
+            "work_order_id": work_order.id,
+            "fields": changed_fields,
+            "values": {key: getattr(equipment, key) for key in changed_fields},
+        },
     )
     return equipment
 
@@ -2072,20 +2196,44 @@ def update_configured_equipment(
     return _read(db, _get(db, work_order.id))
 
 
-def delete_equipment(
+def void_equipment_entry(
     db: Session,
     work_order_id: int,
     equipment_id: int,
     user: User,
     *,
+    reason: str,
     expected_edit_version: int | None = None,
 ) -> LabWorkOrderRead:
-    """Retira un equipo de la composición operativa vigente. NUNCA es un
-    DELETE físico: es un tombstone (is_active=False) -- ver
+    """"Anular ingreso" (sección 11-14 del encargo de corrección LAB):
+    "este equipo no debió formar parte de esta recepción" -- una operación
+    distinta de corregir un dato (Editar datos/_update_equipment_core).
+    NUNCA es un DELETE físico: es un tombstone (is_active=False) -- ver
     LabWorkOrderEquipment.__doc__. Una FieldSheet completed/histórica de este
     equipo sigue existiendo y sigue resolviendo lab_equipment_id sin tocarse;
-    retirar el equipo sólo lo saca de la composición activa (Mobile, máximo
-    10, firma, cierre, PDF)."""
+    anular el equipo sólo lo saca de la composición activa (Mobile, máximo
+    10, firma, cierre, PDF).
+
+    Reutiliza lab_work_orders.cancel -- la misma autoridad administrativa
+    interna que ya exige void_lab_delivery/cambiar modalidad/distribuir
+    folios (sección 15: ninguna autoridad nueva, la más específica que ya
+    representa "acción administrativa de anulación" en este dominio).
+    "reason" es obligatorio y se audita, mismo patrón que
+    LabWorkOrderDelivery.void_reason.
+
+    Corrección 2026-09-09: antes sólo invalidaba la firma si
+    work_order.reopen_ticket_id (reapertura mediada por ticket) -- una
+    reapertura DIRECTA de Admin (reopen_work_order_directly, sin ticket a
+    propósito) nunca invalidaba, aunque anular un equipo sea un cambio
+    ESTRUCTURAL que ninguna política 'preserve' debe poder proteger en
+    silencio (a diferencia de una corrección ordinaria de dato, ver
+    _member_signatures_preserved). invalidate_member_signatures ya es un
+    no-op seguro sin sesión activa, así que se llama sin condición."""
+    if not user_has_permission(user, "lab_work_orders.cancel") or user.account_type != "internal":
+        raise HTTPException(status_code=403, detail="Anular el ingreso de un equipo está reservado a staff MYC")
+    reason = reason.strip()
+    if not reason:
+        raise HTTPException(status_code=422, detail="El motivo de anulación es obligatorio")
     work_order = _get(db, work_order_id, lock=True)
     group = _group(db, work_order, lock=True)
     _ensure_members_editable([work_order])
@@ -2100,13 +2248,15 @@ def delete_equipment(
     )
     if equipment is None:
         raise HTTPException(status_code=404, detail="Equipo LAB no encontrado")
-    if work_order.reopen_ticket_id:
-        invalidate_member_signatures(
-            db,
-            _affected_signature_members(group, work_order),
-            user,
-            fields=["equipment.deleted"],
-        )
+    # Anular es siempre un cambio estructural -- nunca respetado por
+    # 'preserve' (a diferencia de _update_equipment_core/update_work_order,
+    # que sí lo respetan para correcciones ordinarias de dato).
+    invalidate_member_signatures(
+        db,
+        _affected_signature_members(group, work_order),
+        user,
+        fields=["equipment.voided"],
+    )
     removed_position = equipment.position
     now = datetime.now(timezone.utc)
     equipment.is_active = False
@@ -2126,18 +2276,19 @@ def delete_equipment(
     _bump_edit_version(editable_members)
     write_audit_log(
         db,
-        action="lab_work_order.equipment_deleted",
+        action="lab_work_order.equipment_voided",
         entity="lab_work_order_equipment",
         entity_id=equipment_id,
         user_id=user.id,
-        previous_values={"work_order_id": work_order.id, "position": removed_position},
+        previous_values={"work_order_id": work_order.id, "position": removed_position, "is_active": True},
+        new_values={"is_active": False, "reason": reason},
     )
     try:
         commit_and_dispatch_notifications(db)
     except IntegrityError as exc:
         db.rollback()
         logger.exception(
-            "delete_equipment: IntegrityError inesperado al retirar equipment_id=%s de work_order_id=%s",
+            "void_equipment_entry: IntegrityError inesperado al retirar equipment_id=%s de work_order_id=%s",
             equipment_id, work_order_id,
         )
         raise HTTPException(
@@ -2359,7 +2510,21 @@ def _sign_members_uncommitted(
     )
     for item in members:
         item.signature_session_id = session.id
-        item.status = "received_signed"
+        # Corrección 2026-09-09 (sección 4/5 del encargo de corrección LAB):
+        # si una edición sensible durante 'preserve' ya clonó una revisión
+        # corregida ANTES de que esta firma se pidiera
+        # (_refresh_current_field_sheet_projection, mientras la OT todavía
+        # estaba draft), la "primera mutación técnica real" ya ocurrió --
+        # firmar no debe regresar el reloj a received_signed (que dejaría
+        # la OT varada ahí para siempre: nada más dispara received_signed
+        # -> in_progress si ningún equipo pasa de nuevo por
+        # create_lab_field_sheet). Mismo criterio que ya usa
+        # create_lab_field_sheet, aplicado retroactivamente aquí.
+        has_technical_capture_in_progress = any(
+            equipment.field_sheet is not None and equipment.field_sheet.status != "completed"
+            for equipment in item.active_equipment
+        )
+        item.status = "in_progress" if has_technical_capture_in_progress else "received_signed"
         item.signature_required = False
         item.signature_preserved = False
     write_audit_log(
@@ -2520,6 +2685,73 @@ def _ensure_staff_sheet_prerequisites(members: list[LabWorkOrder]) -> None:
         )
 
 
+def _pending_signature_impact_since_last_close(db: Session, work_order: LabWorkOrder) -> dict:
+    """Corrección 2026-09-09 (sección 6/8 del encargo de corrección LAB):
+    "Completar cambios" es el punto donde una sesión de reapertura
+    'preserve' se re-evalúa contra lo que la firma vigente REALMENTE
+    atestiguó -- no basta con que 'preserve' se haya elegido al reabrir
+    (eso protege ediciones ordinarias campo por campo,
+    _member_signatures_preserved sin cambios); si algo que el dominio
+    considera sensible (CRITICAL_GENERAL_FIELDS/CRITICAL_EQUIPMENT_FIELDS
+    -- misma autoridad ya existente, sin inventar una segunda lista) quedó
+    distinto de lo que se firmó, esa firma ya no puede respaldarlo en
+    silencio.
+
+    Compara contra LabWorkOrderRevision (revision_number - 1): el snapshot
+    congelado en el momento del ÚLTIMO cierre formalizado -- exactamente lo
+    que la firma vigente certificó. Nunca compara contra "lo que Mobile
+    tenía cargado": eso sería estado local, no backend-authoritative.
+
+    Un equipo/campo ausente en un snapshot histórico (persistido antes de
+    que estas claves existieran) se trata como "no comparable" -- nunca se
+    asume igual ni distinto -- para no fabricar falsos positivos ni
+    negativos sobre datos que ese snapshot nunca capturó."""
+    trivial = {"sensitive_fields": [], "requires_new_signature": False}
+    if work_order.status != "draft" or work_order.revision_number <= 1:
+        return trivial
+    if not _member_signatures_preserved([work_order]):
+        # Ya no hay nada "preservado" que proteger -- la firma ya está
+        # invalidada/pendiente por otro camino (estructural, o una
+        # corrección sensible ya completada antes).
+        return trivial
+    closed = db.scalar(
+        select(LabWorkOrderRevision).where(
+            LabWorkOrderRevision.work_order_id == work_order.id,
+            LabWorkOrderRevision.revision_number == work_order.revision_number - 1,
+        )
+    )
+    if closed is None or not isinstance(closed.snapshot, dict):
+        return trivial
+    snapshot = closed.snapshot
+    sensitive_fields: list[str] = []
+    for key in sorted(CRITICAL_GENERAL_FIELDS):
+        if key not in snapshot:
+            continue
+        current = getattr(work_order, key)
+        current = current.isoformat() if isinstance(current, date) else current
+        if snapshot[key] != current:
+            sensitive_fields.append(key)
+    snapshot_equipment_by_id = {
+        item["id"]: item for item in snapshot.get("equipment", []) if isinstance(item, dict) and "id" in item
+    }
+    for equipment in work_order.active_equipment:
+        before = snapshot_equipment_by_id.get(equipment.id)
+        if before is None:
+            # Equipo agregado después del último cierre -- ya es un cambio
+            # estructural, gobernado aparte (create_configured_equipment ya
+            # invalida sin depender de 'preserve').
+            continue
+        for key in sorted(CRITICAL_EQUIPMENT_FIELDS):
+            if key not in before:
+                continue
+            if before[key] != getattr(equipment, key):
+                sensitive_fields.append(f"equipment:{equipment.id}:{key}")
+    return {
+        "sensitive_fields": sensitive_fields,
+        "requires_new_signature": bool(sensitive_fields),
+    }
+
+
 def _closable_status(item: LabWorkOrder) -> bool:
     """Fase 3: el cierre normal exige ready_to_close (trabajo técnico
     completo, ver complete_lab_field_sheet). 'ready_for_signatures' se
@@ -2538,7 +2770,7 @@ def _closable_status(item: LabWorkOrder) -> bool:
         return True
     if item.lab_client_id is None and item.status in {"received_signed", "in_progress"}:
         return True
-    return item.status == "draft" and bool(item.reopen_ticket_id) and item.signature_preserved
+    return item.status == "draft" and _member_signatures_preserved([item])
 
 
 def sign_group(
@@ -2739,7 +2971,7 @@ def _finish_complete_members_uncommitted(
         item.status = "partially_closed" if item.partial_close_ticket_id else "completed"
         if item.partial_close_ticket_id:
             item.partially_closed_at = completed_at
-        item.signature_preserved = bool(item.reopen_ticket_id and item.signature_preserved)
+        item.signature_preserved = _member_signatures_preserved([item])
         _notify_capture_work_order_completed(db, item, user)
     ticket_ids = {item.reopen_ticket_id for item in members if item.reopen_ticket_id}
     if ticket_ids:
@@ -2842,6 +3074,61 @@ def complete_individual(
         require_completed_sheets=require_completed_sheets,
         confirm_draft_completion=confirm_draft_completion,
     )
+
+
+def complete_corrections(db: Session, work_order_id: int, user: User) -> LabWorkOrderRead:
+    """"Completar cambios" (sección 6/8/9/10 del encargo de corrección LAB):
+    cierra la SESIÓN de corrección de una OT reabierta -- nunca la propia
+    OT (eso sigue siendo complete_individual/complete_group, sin cambios,
+    reutilizado tal cual una vez que esta función resuelve si la firma
+    vigente sigue pudiendo respaldar el estado actual).
+
+    No persiste "cambios en batch": cada PATCH de equipo/OT durante la
+    corrección ya se persistió y auditó al momento
+    (_update_equipment_core/update_work_order, sección 7). Lo que esta
+    función SÍ hace es la evaluación de firmas que ninguna de esas
+    ediciones individuales puede hacer por sí sola -- ver
+    _pending_signature_impact_since_last_close: si algo sensible quedó
+    distinto de lo que la firma vigente certificó, la invalida ahora
+    (evidencia histórica intacta, ver invalidate_member_signatures) en vez
+    de dejar que 'preserve' la respalde en silencio para siempre. Si nada
+    sensible cambió, no hace nada más que registrar que la sesión de
+    corrección se cerró limpiamente -- la OT sigue draft+preservada, lista
+    para el flujo de cierre existente.
+
+    Tras invalidar, _closable_status ya vuelve a exigir firma nueva
+    (signature_required=True) -- Mobile reconstruye su step desde la
+    respuesta fresca (resolveStepAfterStatusUpdate/canSkipSignaturesAfterReopen,
+    sin cambios) y el técnico entra al MISMO flujo de firma ya existente,
+    nunca uno nuevo (sección 10)."""
+    work_order, group = _lock_historical_group(db, work_order_id)
+    _ensure_members_editable([work_order])
+    if work_order.revision_number <= 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta operación es exclusiva de una sesión de corrección tras una reapertura",
+        )
+    impact = _pending_signature_impact_since_last_close(db, work_order)
+    if impact["requires_new_signature"]:
+        invalidate_member_signatures(
+            db,
+            _affected_signature_members(group, work_order),
+            user,
+            fields=impact["sensitive_fields"],
+        )
+    write_audit_log(
+        db,
+        action="lab_work_order.corrections_completed",
+        entity="lab_work_orders",
+        entity_id=work_order.id,
+        user_id=user.id,
+        new_values={
+            "requires_new_signature": impact["requires_new_signature"],
+            "sensitive_fields": impact["sensitive_fields"],
+        },
+    )
+    commit_and_dispatch_notifications(db)
+    return _read(db, _get(db, work_order.id))
 
 
 def _equipment_by_equipment_finalize_blockers(work_order: LabWorkOrder) -> list[dict]:

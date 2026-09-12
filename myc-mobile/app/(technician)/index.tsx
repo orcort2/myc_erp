@@ -3,11 +3,13 @@ import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useCommunications } from '@/src/communications/CommunicationsProvider';
@@ -71,7 +73,7 @@ export default function TechnicianHome() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>
           {user.actor_type === 'client' ? 'MYC · Organización vinculada' : 'MYC · Área técnica'}
         </Text>
@@ -146,8 +148,8 @@ export default function TechnicianHome() {
             style={styles.module}
             onPress={() => router.push('/(technician)/label-printer-setup')}
           >
-            <Text style={styles.moduleTitle}>Impresora de etiquetas</Text>
-            <Text style={styles.moduleText}>Configurar y probar la impresora térmica 50×30</Text>
+            <Text style={styles.moduleTitle}>Centro de etiquetado</Text>
+            <Text style={styles.moduleText}>Configurar, emparejar y probar impresoras térmicas 50×30</Text>
           </Pressable>
         )}
 
@@ -159,7 +161,7 @@ export default function TechnicianHome() {
         >
           <Text style={styles.logout}>Cerrar sesión</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -177,21 +179,23 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    flex: 1,
-    padding: 24,
+    flexGrow: 1,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 32,
   },
 
   eyebrow: {
     color: '#0067a8',
     fontSize: 14,
     fontWeight: '700',
-    marginTop: 20,
+    marginTop: 8,
   },
 
   title: {
     fontSize: 30,
     fontWeight: '800',
-    marginBottom: 28,
+    marginBottom: 20,
     marginTop: 8,
   },
 
@@ -209,8 +213,8 @@ const styles = StyleSheet.create({
   module: {
     backgroundColor: '#fff',
     borderRadius: 14,
-    marginBottom: 14,
-    padding: 20,
+    marginBottom: 10,
+    padding: 16,
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowRadius: 8,
@@ -218,7 +222,7 @@ const styles = StyleSheet.create({
 
   moduleTitle: {
     color: '#0067a8',
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
   },
 
@@ -232,6 +236,6 @@ const styles = StyleSheet.create({
     color: '#9b1c1c',
     fontSize: 16,
     fontWeight: '600',
-    marginTop: 32,
+    marginTop: 20,
   },
 });

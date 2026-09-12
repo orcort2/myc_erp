@@ -80,6 +80,21 @@ export function isReceptionEditable(status: LabWorkOrderStatus | string): boolea
 }
 
 /**
+ * Corrección 2026-09-08: `revision_number` empieza en 1 y SÓLO se
+ * incrementa dentro de `_reopen_closed_cohort` (backend), exactamente igual
+ * para una reapertura mediada por ticket que para la reapertura directa de
+ * Admin (`reopen_work_order_directly`, sin ticket) -- a diferencia de
+ * `reopen_ticket_id`, que la reapertura directa deja en null a propósito
+ * (no crea un ticket artificial). Por eso `revision_number > 1` es la única
+ * señal confiable de "esta OT ya fue reabierta al menos una vez",
+ * disponible en el mismo payload que ya llega al móvil, sin tocar el
+ * contrato backend.
+ */
+export function wasReopened(workOrder: { revision_number: number }): boolean {
+  return workOrder.revision_number > 1;
+}
+
+/**
  * Contexto breve del modal. Durante la firma inicial el lenguaje debe ser de
  * recepción: en Fase 3 todavía no existe un cierre técnico que confirmar.
  */

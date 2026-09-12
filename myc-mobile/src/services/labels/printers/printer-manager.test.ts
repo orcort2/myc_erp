@@ -11,6 +11,7 @@ import {
   PrinterBusyError,
   PrinterManager,
   PrinterNotReadyError,
+  PrinterQaUnsupportedError,
   UnknownPrinterAdapterError,
 } from './printer-manager';
 import type { PreferredPrinterStore } from './printer-manager';
@@ -30,6 +31,10 @@ class FakeAdapter implements LabelPrinterAdapter {
   printCalls: unknown[] = [];
   connectCalls: PrinterDevice[] = [];
   failPrintWith: Error | null = null;
+  // Opcional a propósito, igual que en LabelPrinterAdapter -- ningún test
+  // existente lo asigna, así que FakeAdapter sigue modelando un adaptador
+  // que NO soporta QA salvo que un test lo asigne explícitamente.
+  printPacketSequenceForQa?: (packets: { command: number; data: Uint8Array }[]) => Promise<void>;
 
   constructor(
     readonly id: 'niimbot-b1' | 'nelko-pm220',
@@ -337,6 +342,49 @@ test('print() nunca deja avanzar una segunda impresión mientras la primera sigu
 
   const firstPrint = manager.print(RASTER);
   await assert.rejects(manager.print(RASTER), PrinterBusyError);
+  resolveFirstPrint();
+  await firstPrint;
+});
+
+// AUDITORÍA 2026-09-08 (herramienta de QA para la divergencia documentada del
+// header de PrintBitmapRow del B1): printQaPacketSequence() es SOLO para
+// QA/desarrollo -- nunca la usa print()/printLabel().
+
+test('printQaPacketSequence() sin impresora conectada lanza PrinterNotReadyError', async () => {
+  const manager = new PrinterManager(fakeBleTransport(), {}, inMemoryStore());
+  await assert.rejects(manager.printQaPacketSequence([]), PrinterNotReadyError);
+});
+
+test('printQaPacketSequence() con un adaptador que no implementa printPacketSequenceForQa lanza PrinterQaUnsupportedError', async () => {
+  const adapter = new FakeAdapter('nelko-pm220', 'NELKO PM220'); // FakeAdapter nunca implementa el método opcional
+  const manager = new PrinterManager(fakeBleTransport(), { 'nelko-pm220': () => adapter }, inMemoryStore());
+  await manager.connectAndRemember('nelko-pm220', { id: 'd', name: 'PM220' });
+  await assert.rejects(manager.printQaPacketSequence([]), PrinterQaUnsupportedError);
+});
+
+test('printQaPacketSequence() delega en el adaptador activo cuando SÍ implementa printPacketSequenceForQa', async () => {
+  const adapter = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  const qaCalls: unknown[] = [];
+  adapter.printPacketSequenceForQa = async (packets) => { qaCalls.push(packets); };
+  const manager = new PrinterManager(fakeBleTransport(), { 'niimbot-b1': () => adapter }, inMemoryStore());
+  await manager.connectAndRemember('niimbot-b1', { id: 'd', name: 'B1' });
+
+  const packets = [{ command: 0x85, data: new Uint8Array(6) }];
+  await manager.printQaPacketSequence(packets);
+
+  assert.deepEqual(qaCalls, [packets]);
+});
+
+test('printQaPacketSequence() nunca se intercala con una impresión de producción en curso', async () => {
+  const adapter = new FakeAdapter('niimbot-b1', 'NIIMBOT B1');
+  let resolveFirstPrint: () => void = () => {};
+  adapter.print = () => new Promise((resolve) => { resolveFirstPrint = resolve; });
+  adapter.printPacketSequenceForQa = async () => undefined;
+  const manager = new PrinterManager(fakeBleTransport(), { 'niimbot-b1': () => adapter }, inMemoryStore());
+  await manager.connectAndRemember('niimbot-b1', { id: 'd', name: 'B1' });
+
+  const firstPrint = manager.print(RASTER);
+  await assert.rejects(manager.printQaPacketSequence([]), PrinterBusyError);
   resolveFirstPrint();
   await firstPrint;
 });

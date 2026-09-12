@@ -1,14 +1,34 @@
-> Estado: WIP (rama `wip/mobile-label-printers`, no mezclada a `main`)
+> Estado: En revisión, rama `fix/lab-reopen-edit-keyboard-niimbot-qa`
 >
 > Tipo: Arquitectura de MYC Mobile
 >
-> Corte verificado: 2026-09-08 (auditoría de seguimiento, ver "Correcciones
-> de auditoría" abajo)
+> Corte UX verificado: 2026-09-09, base `f23e65726b9a60f69d053fceed61ed615e1ee445`
 >
 > QA física pendiente -- ver "Estado de soporte" y "Gate de QA física" antes
 > de considerar esto listo para producción.
 
 # Impresión de etiquetas térmicas LAB (BLE)
+
+## Contrato de UX vigente — 2026-09-09
+
+El usuario reportó validación física NIIMBOT B1 previa a esta ronda. Según el
+contrato de HEAD, la resolución exitosa de `printLabel` permite presentar
+«Etiqueta impresa»; esta tarea no reabre ni modifica el protocolo. El modal
+local `PrintSuccessModal` usa Animated (180 ms), Continuar y Reimprimir. El
+manejador conserva el payload exitoso y bloquea concurrencia antes del primer
+await. Una reimpresión fallida cierra el éxito y conserva la gestión de errores.
+
+El Centro de etiquetado conserva `label-printer-setup.tsx` y la misma ruta de
+Expo Router desde Home y hoja LAB. `PrinterNotReadyError` se presenta como
+«No hay impresora disponible», conservando la reconexión automática del
+servicio. No se encontró evidencia que justifique un workaround del Alert
+nativo; su callback se verifica con router simulado, no con hardware en esta
+sesión. El Centro ya no importa ni muestra QA V3/diagnóstico NELKO. Se conservan
+helpers QA, `printPacketSequenceForQa`, PrinterManager y sus pruebas.
+
+Los apartados de auditoría 2026-09-08 siguientes son antecedentes, no una
+orden de repetir QA de protocolo. El gate físico completo no se declara
+validado por esta ronda de UX.
 
 ## Correcciones de auditoría (2026-09-08)
 
@@ -39,11 +59,8 @@ reales, corregidos en esta revisión:
    corresponde, usado tanto por `disconnect()` normal como por un handshake
    fallido.
 
-También se revisó de nuevo (sin cambios de comportamiento, ver "Protocolo
-NIIMBOT B1" abajo) la semántica exacta de `PrintStatusResult`: sigue sin
-poder establecerse desde las fuentes auditadas, así que se mantiene
-deliberadamente como punto de control de QA física, no se fabricó una
-interpretación de bytes.
+La observación histórica de esta auditoría sobre `PrintStatusResult` fue
+superada por HEAD `f23e657`; ver el contrato UX vigente de este documento.
 
 ## Correcciones de auditoría de seguimiento (2026-09-08, integración BLE real)
 
@@ -233,7 +250,7 @@ sólo el valor.
 
 | Impresora | `PrinterAdapterId` | `supportStatus` | Notas |
 |---|---|---|---|
-| NIIMBOT B1 | `niimbot-b1` | `supported` | Protocolo implementado y probado con dobles de prueba (ver abajo). **Sin validar contra hardware físico todavía.** |
+| NIIMBOT B1 | `niimbot-b1` | `supported` | Protocolo implementado y probado con dobles de prueba (ver abajo). Validación física previa reportada por el usuario; esta ronda no repite ni certifica la matriz física completa. |
 | NELKO PM220 | `nelko-pm220` | `protocol_pending` | Sin SDK/protocolo BLE público confiable. `connect()`/`print()` rechazan explícitamente (`NelkoProtocolPendingError`) -- nunca reutilizan comandos NIIMBOT ni inventan un protocolo. |
 | Cualquier otro BLE | -- | (no clasificado) | `PrinterRegistry.classifyDevice` lo reporta `unknown`; la UI nunca lo ofrece como impresora. |
 
@@ -244,8 +261,7 @@ dispositivo ya anuncia/expone (nombre, datos de fabricante, servicios,
 características y sus propiedades vía `BleTransport.inspect`) y se
 desconecta -- **nunca envía un comando propio del protocolo**. Uso exclusivo
 de desarrollo durante QA física para caracterizar el PM220 real y poder
-construir `NelkoPm220Adapter` con evidencia, no con suposiciones. Expuesto en
-la pantalla de configuración sólo para `actor_type === 'internal'`.
+construir `NelkoPm220Adapter` con evidencia, no con suposiciones. Conservado como herramienta técnica, sin exposición en el Centro de etiquetado.
 
 ## Protocolo NIIMBOT B1 (`adapters/niimbot-b1/protocol.ts`)
 
@@ -259,23 +275,10 @@ datos` -- confirmado byte a byte contra un vector documentado
 (`encodeNiimbotPacket(Connect)` produce exactamente `55 55 C1 01 01 C1 AA
 AA`, ver `protocol.test.ts`).
 
-**Divergencia NO resuelta entre fuentes, documentada explícitamente (no
-silenciada)**: niim.blue documenta un conteo real de píxeles negros de 16
-bits en el header de cada fila; niimprint (la única librería confirmada
-contra hardware B1 real) siempre manda ceros ahí y funciona. Se adoptó la
-variante de niimprint por ser la única validada contra hardware real --
-validar durante QA física.
-
-**`PrintStatusResult` (0xB3), semántica de bytes no verificable (revisado
-2026-09-08, sin cambios de comportamiento):** niim.blue documenta un poll
-"hasta page >= 1" pero nunca especifica en qué byte/offset del payload vive
-ese contador; niimprint ni siquiera hace ese poll (reintenta `PrintEnd`
-directamente). Ninguna de las 3 fuentes auditadas da un layout de bytes
-verificable. `waitForPrintComplete()` (`niimbot-b1-adapter.ts`) acepta
-deliberadamente cualquier `PrintStatusResult` válido como señal de avance,
-sin parsear ningún byte -- parsear un offset no confirmado sería fabricar
-certeza inexistente. Se mantiene como punto de control obligatorio de QA
-física.
+El detalle vigente de paquetes y sondeo de estado es el implementado en
+`protocol.ts` y `niimbot-b1-adapter.ts` de HEAD `f23e657`. Las notas anteriores
+sobre divergencias de header y aceptación de cualquier respuesta B3 quedaron
+superadas por ese HEAD. Esta ronda conserva íntegramente esa implementación.
 
 `NiimbotFrameAssembler` reensambla notificaciones BLE fragmentadas
 (confirmado como riesgo real por la propia wiki de NIIMBOT: "Fragmentation
@@ -382,3 +385,14 @@ la impresora, comportamiento con Bluetooth apagado/permiso denegado/fuera de
 rango, recuperación background/foreground. NELKO PM220 no se reporta
 soportado hasta tener protocolo confiable + su propia matriz de QA física
 equivalente.
+
+### Antecedente físico 2026-09-08
+
+La primera prueba accionó el B1 sin contenido visible. Esa observación motivó
+herramientas comparativas y el trabajo de protocolo previo a `f23e657`.
+El usuario reporta impresión física validada antes de la ronda UX 2026-09-09;
+no se mantiene como pendiente actual repetir los botones QA de aquella etapa.
+`qa-row-header-variant.ts`, su test, `protocol.test.ts`,
+`niimbot-b1-adapter.test.ts`, `printPacketSequenceForQa()` y
+`printerManager.printQaPacketSequence()` permanecen intactos. La retirada de
+sus controles visuales no elimina infraestructura técnica.

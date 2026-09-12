@@ -65,6 +65,13 @@ export interface LabelPrinterAdapter {
   disconnect(): Promise<void>;
   isConnected(): boolean;
   print(label: RasterLabel, options?: PrintOptions): Promise<void>;
+  /** SOLO QA/desarrollo -- opcional a propósito, ningún adaptador de
+   * producción está obligado a implementarlo. Envía una secuencia de
+   * paquetes ya construida externamente tal cual (ver
+   * niimbot-b1/qa-row-header-variant.ts para el único caso de uso real hoy:
+   * comparar variantes documentadas del header de PrintBitmapRow contra
+   * hardware físico). Nunca lo usa printLabel() ni print(). */
+  printPacketSequenceForQa?(packets: { command: number; data: Uint8Array }[]): Promise<void>;
 }
 
 /** Estado de soporte declarado por el registro para un adaptador/familia --

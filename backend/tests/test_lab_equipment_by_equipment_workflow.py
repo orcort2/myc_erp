@@ -788,9 +788,14 @@ def test_finalize_ignores_retired_equipment(lab_context, monkeypatch, tmp_path):
     kept_id = order["equipment"][1]["id"]
     _capture_field_sheet_ready(client, headers, order_id, kept_id)
 
-    deleted = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{retired_id}",
-        headers=headers,
+    # "Anular ingreso" (sección 11-15 del encargo de corrección LAB) es
+    # POST .../void con lab_work_orders.cancel -- ya no DELETE con
+    # equipment.write.
+    admin_headers = auth(tokens["admin"])
+    deleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{retired_id}/void",
+        json={"reason": "Prueba de anulación"},
+        headers=admin_headers,
     )
     assert deleted.status_code == 200, deleted.text
 

@@ -14,6 +14,7 @@ from app.schemas.lab_work_order import (
     LabEquipmentConfiguredCreate,
     LabEquipmentWrite,
     LabEquipmentServiceWrite,
+    LabEquipmentVoid,
     LabCancellationWrite,
     LabDeliveryCreate,
     LabDeliveryGroupStatusRead,
@@ -42,6 +43,7 @@ from app.services.lab_work_orders import (
     assign_equipment_service,
     cancel_work_order,
     restore_work_order,
+    complete_corrections,
     complete_group,
     complete_individual,
     create_additional_work_order,
@@ -55,7 +57,6 @@ from app.services.lab_work_orders import (
     reject_group_request,
     change_lab_work_order_workflow_mode,
     delete_work_order,
-    delete_equipment,
     distribute_pending_certificate_folios,
     export_all,
     finalize_equipment_by_equipment_work_order,
@@ -73,6 +74,7 @@ from app.services.lab_work_orders import (
     update_equipment,
     update_work_order,
     update_reception_date,
+    void_equipment_entry,
 )
 from app.services.field_sheet_pdfs import generate_field_sheet_pdf
 from app.services.field_sheet_templates import list_field_sheet_templates
@@ -784,23 +786,31 @@ def patch_lab_equipment(
     return update_equipment(db, work_order_id, equipment_id, payload, context.user)
 
 
-@router.delete("/{work_order_id}/equipment/{equipment_id}", response_model=LabWorkOrderRead)
-def remove_lab_equipment(
+@router.post("/{work_order_id}/equipment/{equipment_id}/void", response_model=LabWorkOrderRead)
+def post_void_lab_equipment_entry(
     work_order_id: int,
     equipment_id: int,
-    expected_edit_version: int | None = Query(default=None, ge=1),
+    payload: LabEquipmentVoid,
     db: Session = Depends(get_db),
+    # "Anular ingreso" (sección 11-15 del encargo de corrección LAB) es
+    # administrativamente más sensible que "Editar datos" -- reutiliza
+    # lab_work_orders.cancel, la misma autoridad que ya exige
+    # post_void_lab_delivery/cambiar modalidad/distribuir folios, en vez de
+    # equipment.write (autoridad de edición ordinaria de Captura/Técnico).
     context: MobileSecurityContext = Depends(
-        require_mobile_permission("equipment.write", "lab_work_orders.use")
+        require_mobile_permission("lab_work_orders.cancel")
     ),
 ) -> LabWorkOrderRead:
+    if context.actor_type != "internal":
+        raise HTTPException(status_code=403, detail="Anular el ingreso de un equipo está reservado a staff MYC")
     ensure_lab_work_order_scope(db, work_order_id, context)
-    return delete_equipment(
+    return void_equipment_entry(
         db,
         work_order_id,
         equipment_id,
         context.user,
-        expected_edit_version=expected_edit_version,
+        reason=payload.reason,
+        expected_edit_version=payload.expected_edit_version,
     )
 
 
@@ -1127,6 +1137,21 @@ def post_reopen_lab_work_order_directly(
         signature_policy=payload.requested_signature_policy,
         reason=payload.reason,
     )
+
+
+@router.post("/{work_order_id}/complete-corrections", response_model=LabWorkOrderRead)
+def post_complete_lab_work_order_corrections(
+    work_order_id: int,
+    db: Session = Depends(get_db),
+    # Misma autoridad que ya edita datos generales durante una corrección
+    # (patch_lab_work_order) -- "Completar cambios" evalúa/cierra esa MISMA
+    # sesión de edición, no una operación administrativa distinta.
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission("work_orders.execute", "lab_work_orders.use")
+    ),
+) -> LabWorkOrderRead:
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return complete_corrections(db, work_order_id, context.user)
 
 
 @router.get("/{work_order_id}/revisions", response_model=list[LabRevisionRead])

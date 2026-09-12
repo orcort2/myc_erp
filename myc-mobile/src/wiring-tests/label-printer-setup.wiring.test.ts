@@ -17,7 +17,7 @@ const source = readFileSync(
 );
 
 test('la pantalla exige canCaptureFieldSheets -- misma autoridad que ya gatea el botón de impresión en LabTechnicalCapture, sin permiso nuevo inventado', () => {
-  assert.match(source, /if \(!capabilities\.canCaptureFieldSheets\) return <Redirect href="\/\(technician\)" \/>;/);
+  assert.match(source, /if \(!capabilities\.canCaptureFieldSheets\)\s*\{?\s*return <Redirect href="\/\(technician\)" \/>;/);
 });
 
 test('el escaneo nunca ofrece un dispositivo BLE desconocido como impresora', () => {
@@ -35,9 +35,8 @@ test('sólo un dispositivo con supportStatus "supported" ofrece "Conectar" -- pr
   assert.doesNotMatch(source, /supportStatus === 'protocol_pending'[\s\S]{0,80}label="Conectar"/);
 });
 
-test('el diagnóstico NELKO es exclusivo de actor interno y nunca aparece para un dispositivo ya soportado', () => {
-  const gateIndex = source.indexOf("classification.family.supportStatus === 'protocol_pending' && user.actor_type === 'internal'");
-  assert.notEqual(gateIndex, -1);
+test('la pantalla operativa no importa ni ejecuta herramientas internas de QA o diagnóstico', () => {
+  assert.doesNotMatch(source, /buildQaDiagnosticRaster|buildQaPrintJobPackets|RowHeaderVariant|runQaRowHeaderTest|qaTesting|runNelkoDiagnostics|runDiagnostics|printQaPacketSequence/);
 });
 
 test('connectAndRemember sólo se llama para un dispositivo reconocido y soportado -- nunca para protocol_pending/unknown', () => {
@@ -45,9 +44,9 @@ test('connectAndRemember sólo se llama para un dispositivo reconocido y soporta
   // tiempo de compilación (ver startScan: un unknown nunca llega a
   // guardarse) -- lo único que queda por gatear en runtime es supportStatus.
   assert.match(source, /type RecognizedDevice = Extract<DeviceClassification, \{ kind: 'recognized' \}>;/);
-  const fn = source.slice(source.indexOf('const connectTo'), source.indexOf('const runDiagnostics'));
+  const fn = source.slice(source.indexOf('const connectTo'), source.indexOf('const testPrint'));
   assert.match(fn, /if \(classification\.family\.supportStatus !== 'supported'\) return;/);
-  assert.match(fn, /printerManager\.connectAndRemember\(classification\.family\.adapterId, classification\.device\)/);
+  assert.match(fn, /printerManager\.connectAndRemember\(\s*classification\.family\.adapterId,\s*classification\.device,?\s*\)/);
 });
 
 test('la prueba de impresión usa buildTestPrintPayload -- nunca inventa un folio de certificado real', () => {

@@ -677,6 +677,7 @@ def test_completed_order_rejects_ordinary_mutations(phase5_context):
     servicio y re-firma."""
     client, factory, tokens, _tenants = phase5_context
     headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
     order_id, equipment_id = create_and_sign_ready_order(client, headers)
     complete_field_sheet_fully(client, headers, order_id, equipment_id)
     completed = close_individual(client, headers, order_id)
@@ -686,9 +687,13 @@ def test_completed_order_rejects_ordinary_mutations(phase5_context):
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
         json=equipment_payload(2), headers=headers,
     ).status_code == 409
-    assert client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}",
-        headers=headers,
+    # "Anular ingreso" (sección 11-15 del encargo de corrección LAB) ahora
+    # es POST .../void con lab_work_orders.cancel, no DELETE con
+    # equipment.write -- se usa admin_headers para probar el guard de
+    # ESTADO (409), no el de permiso.
+    assert client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de guard de estado"}, headers=admin_headers,
     ).status_code == 409
     assert client.patch(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
@@ -1019,6 +1024,250 @@ def test_admin_reopens_a_closed_work_order_directly_without_a_ticket(phase5_cont
     assert audit.user_id is not None
 
 
+def test_admin_reopens_directly_with_preserve_and_can_actually_edit_afterward(phase5_context):
+    """Corrección 2026-09-08: _ensure_members_editable()/_member_signatures_preserved()
+    exigían además item.reopen_ticket_id is not None -- reopen_work_order_directly
+    (autoridad directa de Admin, sin ticket) deja ese campo en None a propósito
+    incluso cuando SÍ preservó la firma (signature_preserved/signature_required/
+    signature_session_id quedan idénticos a una reapertura mediada por ticket).
+    Con la condición vieja, la PRIMERA edición ordinaria tras una reapertura
+    directa con "Conservar firma" quedaba bloqueada de entrada con 409 "la
+    cohorte ya fue firmada y no admite cambios ordinarios" -- exactamente lo
+    contrario de lo que el usuario eligió al preservar la firma."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+    with factory() as db:
+        session_id = db.get(LabWorkOrder, order_id).signature_session_id
+
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección de datos generales"},
+        headers=headers,
+    )
+    assert reopened.status_code == 200, reopened.text
+    reopened_body = reopened.json()
+    assert reopened_body["reopen_ticket_id"] is None
+    assert reopened_body["signature_preserved"] is True
+
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
+        json={"client_name": "Cliente corregido", "expected_edit_version": reopened_body["edit_version"]},
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    body = edited.json()
+    assert body["client_name"] == "Cliente corregido"
+    assert body["signature_session_id"] == session_id
+    assert body["signature_required"] is False
+
+    equipment_edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}",
+        json={**equipment_payload(1, model="Modelo corregido"), "expected_edit_version": body["edit_version"]},
+        headers=headers,
+    )
+    assert equipment_edited.status_code == 200, equipment_edited.text
+    assert equipment_edited.json()["equipment"][0]["model"] == "Modelo corregido"
+    assert equipment_edited.json()["signature_session_id"] == session_id
+    assert equipment_edited.json()["signature_required"] is False
+    with factory() as db:
+        order = db.get(LabWorkOrder, order_id)
+        assert order.signature_preserved is True
+        assert order.signature_session_id == session_id
+
+
+def test_complete_corrections_with_no_sensitive_change_keeps_preserved_signature(phase5_context):
+    """"Completar cambios" (sección 6/8 del encargo de corrección LAB): un
+    campo NO sensible (aquí, notes -- no está en CRITICAL_GENERAL_FIELDS)
+    nunca invalida una firma preservada, ni siquiera al completar
+    explícitamente la sesión de corrección."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    assert close_individual(client, headers, order_id).status_code == 200
+    with factory() as db:
+        session_id = db.get(LabWorkOrder, order_id).signature_session_id
+
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección de notas"},
+        headers=headers,
+    ).json()
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
+        json={"notes": "Nota corregida", "expected_edit_version": reopened["edit_version"]},
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["pending_signature_review"]["requires_new_signature"] is False
+    assert edited.json()["pending_signature_review"]["sensitive_fields"] == []
+
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete-corrections", headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    body = completed.json()
+    assert body["signature_session_id"] == session_id
+    assert body["signature_required"] is False
+    assert body["signature_preserved"] is True
+    assert body["pending_signature_review"]["requires_new_signature"] is False
+
+    with factory() as db:
+        audit = db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "lab_work_order.corrections_completed",
+                AuditLog.entity_id == order_id,
+            ).order_by(AuditLog.id.desc())
+        ).first()
+        assert audit.new_values["requires_new_signature"] is False
+
+
+def test_complete_corrections_with_sensitive_change_invalidates_a_preserved_signature(phase5_context):
+    """"Completar cambios" con un cambio sensible (sección 8): la firma
+    preservada ya no puede respaldar en silencio un dato distinto de lo que
+    certificó -- se invalida AL COMPLETAR, no en cada PATCH intermedio
+    (sección 8: ediciones ordinarias siguen sin invalidar por sí solas,
+    confirmado por test_reopen_preserve_edit_existing_equipment_keeps_signature)."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    assert close_individual(client, headers, order_id).status_code == 200
+    with factory() as db:
+        session_id = db.get(LabWorkOrder, order_id).signature_session_id
+
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección de cliente"},
+        headers=headers,
+    ).json()
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
+        json={"client_name": "Cliente completamente distinto", "expected_edit_version": reopened["edit_version"]},
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    # La edición ordinaria en sí NUNCA invalida bajo preserve -- eso sigue
+    # exactamente igual que antes de esta corrección.
+    assert edited.json()["signature_session_id"] == session_id
+    assert edited.json()["signature_required"] is False
+    # Pero Mobile ya puede ver, ANTES de completar, que esto sí es sensible.
+    review = edited.json()["pending_signature_review"]
+    assert review["requires_new_signature"] is True
+    assert "client_name" in review["sensitive_fields"]
+
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete-corrections", headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    body = completed.json()
+    assert body["signature_session_id"] is None
+    assert body["signature_required"] is True
+    assert body["signature_preserved"] is False
+    assert body["pending_signature_review"]["requires_new_signature"] is False, (
+        "una vez invalidada, ya no hay nada más 'pendiente' -- el estado normal de firma requerida se hace cargo"
+    )
+
+    # Sección 9: la evidencia de la firma anterior sigue siendo recuperable
+    # -- nunca se pierde, sólo deja de ser vigente.
+    with factory() as db:
+        invalidation_audit = db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "lab_work_order.signatures_invalidated",
+                AuditLog.entity_id == order_id,
+            ).order_by(AuditLog.id.desc())
+        ).first()
+        assert session_id in invalidation_audit.previous_values["signature_session_ids"]
+        assert "client_name" in invalidation_audit.new_values["critical_fields"]
+        completion_audit = db.scalars(
+            select(AuditLog).where(
+                AuditLog.action == "lab_work_order.corrections_completed",
+                AuditLog.entity_id == order_id,
+            ).order_by(AuditLog.id.desc())
+        ).first()
+        assert completion_audit.new_values["requires_new_signature"] is True
+        assert "client_name" in completion_audit.new_values["sensitive_fields"]
+
+    # Sección 10: refirma -- reutiliza el flujo de firma existente tal cual,
+    # y la nueva versión queda formalizada.
+    resigned = sign(client, headers, order_id)
+    assert resigned.status_code == 200, resigned.text
+    assert resigned.json()["signature_required"] is False
+    new_session_id = resigned.json()["signature_session_id"]
+    assert new_session_id != session_id
+    reclosed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual"
+        "?confirm_draft_completion=true",
+        headers=headers,
+    )
+    assert reclosed.status_code == 200, reclosed.text
+    assert reclosed.json()["signature_session_id"] == new_session_id
+
+
+def test_complete_corrections_requires_a_reopened_session(phase5_context):
+    """"Completar cambios" es exclusiva de una sesión de corrección tras
+    una reapertura -- una OT recién creada (revision_number=1) nunca pasó
+    por _reopen_closed_cohort, así que no hay nada que "completar"."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete-corrections", headers=headers,
+    )
+    assert response.status_code == 409, response.text
+
+
+def test_general_field_correction_refreshes_every_active_equipment_completed_field_sheet(phase5_context):
+    """Sección 5/17 del encargo de corrección LAB: corregir un dato general
+    de la OT (aquí, address) refresca la proyección documental de CADA
+    equipo activo con una FieldSheet completed vigente -- nunca sólo la
+    del primero."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id = create_order(client, headers, lab_client_id=lab_client_id)
+    first_id = add_equipment(client, headers, order_id, 1)
+    second_id = add_equipment(client, headers, order_id, 2)
+    set_service(client, headers, order_id, first_id, "traceable")
+    set_service(client, headers, order_id, second_id, "traceable")
+    assert sign(client, headers, order_id).status_code == 200
+    first_sheet_id = complete_field_sheet_fully(client, headers, order_id, first_id)
+    second_sheet_id = complete_field_sheet_fully(client, headers, order_id, second_id)
+    assert close_individual(client, headers, order_id).status_code == 200
+
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "preserve", "reason": "Corrección de domicilio"},
+        headers=headers,
+    ).json()
+    edited = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}",
+        json={"address": "Domicilio corregido 456", "expected_edit_version": reopened["edit_version"]},
+        headers=headers,
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["signature_session_id"] == reopened["signature_session_id"]
+    assert edited.json()["signature_required"] is False
+
+    with factory() as db:
+        for original_id, equipment_id in ((first_sheet_id, first_id), (second_sheet_id, second_id)):
+            original = db.get(FieldSheet, original_id)
+            assert original.is_current is False
+            assert original.status == "completed"
+            assert original.address != "Domicilio corregido 456"
+            equipment = db.get(LabWorkOrderEquipment, equipment_id)
+            current = equipment.field_sheet
+            assert current.id != original_id
+            assert current.status == "draft"
+            assert current.address == "Domicilio corregido 456"
 def test_admin_reopens_directly_with_invalidate_policy_requires_new_signature(phase5_context):
     """19b (cierre UX 2026-09): la política 'invalidate' del reopen directo
     -- no sólo 'preserve' -- limpia signature_session_id y exige firma

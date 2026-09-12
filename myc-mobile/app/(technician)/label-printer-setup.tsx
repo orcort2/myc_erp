@@ -26,7 +26,6 @@ import {
   buildTestPrintPayload,
   printLabel,
   printerManager,
-  runNelkoDiagnostics,
 } from '@/src/services/label-print-service';
 import { readPreferredPrinter } from '@/src/services/labels/printers/preferred-printer-storage';
 import type { DeviceClassification, PreferredPrinter } from '@/src/services/labels/printers/types';
@@ -77,25 +76,26 @@ export default function LabelPrinterSetupScreen() {
     setDevices([]);
     seenDeviceIds.current = new Set();
     setScanning(true);
+
     try {
       await printerManager.scan((classification) => {
-        if (classification.kind === 'unknown') return; // nunca se ofrece un dispositivo ajeno como impresora
+        if (classification.kind === 'unknown') return;
         if (seenDeviceIds.current.has(classification.device.id)) return;
+
         seenDeviceIds.current.add(classification.device.id);
         setDevices((current) => [...current, classification]);
       }, SCAN_TIMEOUT_MS);
     } catch (scanError) {
-      // AUDITORÍA 2026-09-08 (seguimiento): PrinterManager.scan() ya exige
-      // permiso y Bluetooth encendido antes de arrancar el escaneo nativo
-      // -- distinguir explícitamente estos dos casos evita que la UI
-      // reciba un fallo genérico del SDK, y nunca deja un "Buscando…"
-      // colgado (el finally de abajo siempre corre).
       if (scanError instanceof BluetoothPermissionDeniedError) {
         setError('MYC necesita permiso de Bluetooth para buscar la impresora.');
       } else if (scanError instanceof BluetoothDisabledError) {
         setError('Enciende Bluetooth para buscar la impresora.');
       } else {
-        setError(scanError instanceof Error ? scanError.message : 'No fue posible buscar impresoras.');
+        setError(
+          scanError instanceof Error
+            ? scanError.message
+            : 'No fue posible buscar impresoras.',
+        );
       }
     } finally {
       setScanning(false);
@@ -104,31 +104,24 @@ export default function LabelPrinterSetupScreen() {
 
   const connectTo = useCallback(async (classification: RecognizedDevice) => {
     if (classification.family.supportStatus !== 'supported') return;
+
     setBusyDeviceId(classification.device.id);
     setError('');
+
     try {
-      await printerManager.connectAndRemember(classification.family.adapterId, classification.device);
+      await printerManager.connectAndRemember(
+        classification.family.adapterId,
+        classification.device,
+      );
+
       setConnected(true);
       setPreferred(await readPreferredPrinter());
     } catch (connectError) {
-      setError(connectError instanceof Error ? connectError.message : 'No fue posible conectar la impresora.');
-    } finally {
-      setBusyDeviceId(null);
-    }
-  }, []);
-
-  const runDiagnostics = useCallback(async (classification: RecognizedDevice) => {
-    setBusyDeviceId(classification.device.id);
-    setError('');
-    try {
-      const bleModule = await import('@/src/services/labels/printers/ble-manager-transport');
-      const report = await runNelkoDiagnostics(new bleModule.BleManagerTransport(), classification.device);
-      Alert.alert(
-        `Diagnóstico ${classification.device.name ?? classification.device.id}`,
-        JSON.stringify(report, null, 2).slice(0, 3000),
+      setError(
+        connectError instanceof Error
+          ? connectError.message
+          : 'No fue posible conectar la impresora.',
       );
-    } catch (diagnosticError) {
-      setError(diagnosticError instanceof Error ? diagnosticError.message : 'No fue posible diagnosticar el dispositivo.');
     } finally {
       setBusyDeviceId(null);
     }
@@ -137,11 +130,21 @@ export default function LabelPrinterSetupScreen() {
   const testPrint = useCallback(async () => {
     setTestPrinting(true);
     setError('');
+
     try {
       await printLabel(buildTestPrintPayload());
-      Alert.alert('Prueba enviada', 'Revisa la impresora física para confirmar el resultado.');
+
+      Alert.alert(
+        'Prueba enviada',
+        'Revisa la impresora física para confirmar el resultado.',
+      );
     } catch (printError) {
-      Alert.alert('No fue posible imprimir', printError instanceof Error ? printError.message : 'Intenta nuevamente');
+      Alert.alert(
+        'No fue posible imprimir',
+        printError instanceof Error
+          ? printError.message
+          : 'Intenta nuevamente',
+      );
     } finally {
       setTestPrinting(false);
     }
@@ -155,23 +158,49 @@ export default function LabelPrinterSetupScreen() {
 
   if (isLoading) return <LoadingState label="Cargando…" />;
   if (!user) return <Redirect href="/(auth)/login" />;
-  if (!capabilities.canCaptureFieldSheets) return <Redirect href="/(technician)" />;
+  if (!capabilities.canCaptureFieldSheets) {
+    return <Redirect href="/(technician)" />;
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <Screen>
         <BackButton />
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.title}>Impresora de etiquetas</Text>
-          <Text style={styles.subtitle}>Etiqueta térmica 50×30 mm -- NIIMBOT B1 (soportada) y NELKO PM220 (en validación).</Text>
 
-          {!!error && <AlertBanner tone="danger">{error}</AlertBanner>}
+        <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.title}>Centro de etiquetado</Text>
+
+          <Text style={styles.subtitle}>
+            Etiqueta térmica 50×30 mm -- NIIMBOT B1 (soportada) y NELKO PM220
+            (en validación).
+          </Text>
+
+          {!!error && (
+            <AlertBanner tone="danger">
+              {error}
+            </AlertBanner>
+          )}
 
           <Section title="Impresora guardada">
             {preferred ? (
               <Card>
-                <Text style={styles.deviceName}>{preferred.deviceName ?? preferred.deviceId}</Text>
-                <StatusBadge label={connected ? 'Conectada' : 'Guardada, sin conectar'} tone={connected ? 'success' : 'neutral'} />
+                <Text style={styles.deviceName}>
+                  {preferred.deviceName ?? preferred.deviceId}
+                </Text>
+
+                <StatusBadge
+                  label={
+                    connected
+                      ? 'Conectada'
+                      : 'Guardada, sin conectar'
+                  }
+                  tone={
+                    connected
+                      ? 'success'
+                      : 'neutral'
+                  }
+                />
+
                 <OperationalActionStack>
                   {!connected && (
                     <SecondaryButton
@@ -179,31 +208,61 @@ export default function LabelPrinterSetupScreen() {
                       icon="bluetooth-connect"
                       onPress={async () => {
                         setError('');
+
                         try {
-                          const reconnected = await printerManager.connectPreferred();
+                          const reconnected =
+                            await printerManager.connectPreferred();
+
                           setConnected(reconnected);
-                          if (!reconnected) setError('No fue posible reconectar la impresora guardada.');
+
+                          if (!reconnected) {
+                            setError(
+                              'No fue posible reconectar la impresora guardada.',
+                            );
+                          }
                         } catch (reconnectError) {
-                          setError(reconnectError instanceof Error ? reconnectError.message : 'No fue posible reconectar.');
+                          setError(
+                            reconnectError instanceof Error
+                              ? reconnectError.message
+                              : 'No fue posible reconectar.',
+                          );
                         }
                       }}
                     />
                   )}
+
                   {connected && (
-                    <PrimaryButton label="Prueba de impresión" icon="printer-check" loading={testPrinting} onPress={testPrint} />
+                    <PrimaryButton
+                      label="Prueba de impresión"
+                      icon="printer-check"
+                      loading={testPrinting}
+                      onPress={testPrint}
+                    />
                   )}
-                  <AdministrativeButton label="Olvidar impresora" icon="delete-outline" onPress={forget} />
+
+                  <AdministrativeButton
+                    label="Olvidar impresora"
+                    icon="delete-outline"
+                    onPress={forget}
+                  />
                 </OperationalActionStack>
               </Card>
             ) : (
-              <EmptyState title="Sin impresora guardada" description="Busca y conecta una impresora para empezar a imprimir etiquetas." />
+              <EmptyState
+                title="Sin impresora guardada"
+                description="Busca y conecta una impresora para empezar a imprimir etiquetas."
+              />
             )}
           </Section>
 
           <Section title="Buscar impresoras">
             <OperationalActionStack>
               <PrimaryButton
-                label={scanning ? 'Buscando…' : 'Buscar impresoras'}
+                label={
+                  scanning
+                    ? 'Buscando…'
+                    : 'Buscar impresoras'
+                }
                 icon="magnify"
                 loading={scanning}
                 disabled={scanning}
@@ -213,33 +272,46 @@ export default function LabelPrinterSetupScreen() {
 
             {devices.map((classification) => (
               <Card key={classification.device.id}>
-                <Text style={styles.deviceName}>{classification.device.name ?? classification.device.id}</Text>
+                <Text style={styles.deviceName}>
+                  {classification.device.name ??
+                    classification.device.id}
+                </Text>
+
                 <StatusBadge
-                  label={classification.family.supportStatus === 'supported' ? classification.family.displayName + ' · Soportada' : classification.family.displayName + ' · Driver pendiente'}
-                  tone={classification.family.supportStatus === 'supported' ? 'success' : 'warning'}
+                  label={
+                    classification.family.supportStatus === 'supported'
+                      ? `${classification.family.displayName} · Soportada`
+                      : `${classification.family.displayName} · Driver pendiente`
+                  }
+                  tone={
+                    classification.family.supportStatus === 'supported'
+                      ? 'success'
+                      : 'warning'
+                  }
                 />
+
                 <OperationalActionStack>
                   {classification.family.supportStatus === 'supported' && (
                     <PrimaryButton
                       label="Conectar"
                       icon="bluetooth-connect"
-                      loading={busyDeviceId === classification.device.id}
-                      onPress={() => connectTo(classification)}
-                    />
-                  )}
-                  {classification.family.supportStatus === 'protocol_pending' && user.actor_type === 'internal' && (
-                    <SecondaryButton
-                      label="Diagnóstico (dev)"
-                      icon="stethoscope"
-                      loading={busyDeviceId === classification.device.id}
-                      onPress={() => runDiagnostics(classification)}
+                      loading={
+                        busyDeviceId === classification.device.id
+                      }
+                      onPress={() =>
+                        connectTo(classification)
+                      }
                     />
                   )}
                 </OperationalActionStack>
               </Card>
             ))}
+
             {!scanning && devices.length === 0 && (
-              <EmptyState title="Sin resultados todavía" description="Enciende la impresora y mantenla cerca antes de buscar." />
+              <EmptyState
+                title="Sin resultados todavía"
+                description="Enciende la impresora y mantenla cerca antes de buscar."
+              />
             )}
           </Section>
         </ScrollView>
@@ -249,9 +321,25 @@ export default function LabelPrinterSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.lg, gap: spacing.md },
-  title: { color: colors.text, fontSize: 22, fontWeight: '800' },
-  subtitle: { color: colors.textSubtle },
-  deviceName: { color: colors.text, fontSize: 16, fontWeight: '700' },
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  content: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 22,
+    fontWeight: '800',
+  },
+  subtitle: {
+    color: colors.textSubtle,
+  },
+  deviceName: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });

@@ -10,6 +10,7 @@ import {
   isReceptionEditable,
   resolveStepAfterStatusUpdate,
   statusPresentation,
+  wasReopened,
 } from './lab-work-order-step';
 
 function screenSource(): string {
@@ -226,6 +227,41 @@ test('7. vinculado pendiente en la revisión de recepción reutiliza el mismo "P
     source.indexOf("step === 'signatures' && workOrder.status === 'ready_for_signatures'"),
   );
   assert.match(signaturesBlock, /describeEquipmentSummary/);
+});
+
+// Corrección 2026-09-08: reopenDirectly() actualizaba workOrder pero nunca
+// reconstruía step -- status pasaba a 'draft' en backend mientras la UI
+// seguía mostrando la pantalla de OT cerrada (step='completed'). Ver
+// AGENTS/reporte: causa raíz + fix en reopenDirectly().
+
+test('wasReopened() usa revision_number -- la misma señal que backend incrementa igual para reapertura directa (sin ticket) y mediada por ticket', () => {
+  assert.equal(wasReopened({ revision_number: 1 }), false);
+  assert.equal(wasReopened({ revision_number: 2 }), true);
+  assert.equal(wasReopened({ revision_number: 3 }), true);
+});
+
+test('reopenDirectly() reconstruye step con inferStepForStatus tras actualizar workOrder, igual que selectRelated() para un fetch fresco sin firma en curso que preservar', () => {
+  const source = screenSource();
+  const fn = source.slice(source.indexOf('async function reopenDirectly'), source.indexOf('async function restoreWorkOrder'));
+  assert.match(fn, /setWorkOrder\(detail\);\s*\n\s*setGeneral\(generalFromDetail\(detail\)\);\s*\n\s*setStep\(inferStepForStatus\(detail\.status\)\);/);
+});
+
+test('reopenDirectly() hidrata generales desde la respuesta backend -- "Corregir datos de la orden" nunca abre con estado local previo a la reapertura', () => {
+  const source = screenSource();
+  const fn = source.slice(source.indexOf('async function reopenDirectly'), source.indexOf('async function restoreWorkOrder'));
+  assert.match(fn, /setGeneral\(generalFromDetail\(detail\)\)/);
+});
+
+test('"Corregir datos de la orden" (antes "Editar datos generales") sigue gateada por editable, ahora con wasReopened() en vez de reopen_ticket_id (null a propósito en una reapertura directa)', () => {
+  const source = screenSource();
+  assert.match(source, /wasReopened\(workOrder\) && editable/);
+  assert.match(source, /label="Corregir datos de la orden" onPress=\{\(\) => setStep\('general'\)\}/);
+  assert.equal(source.includes('!!workOrder.reopen_ticket_id && editable'), false);
+});
+
+test('el título de la pantalla de generales al corregir una OT existente coincide con el botón que lleva a ella', () => {
+  const source = screenSource();
+  assert.match(source, /workOrder \? 'Corregir datos de la orden' : 'Datos generales'/);
 });
 
 test('19. un conflicto de versión (REVISION_CONFLICT) se presenta con el mensaje del backend, sin sustituirlo', () => {
