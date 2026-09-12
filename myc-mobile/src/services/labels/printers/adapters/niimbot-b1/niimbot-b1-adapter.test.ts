@@ -379,7 +379,7 @@ function fullyResponsiveTransport():
     NIIMBOT_REQUEST.PrintStatus,
     NIIMBOT_REQUEST.PrintStatusResult,
     Uint8Array.of(
-      0x00, 0x01, 0x01, 0x00,
+      0x00, 0x01, 0x64, 0x64,
       0x00, 0x01, 0x00, 0x00,
     ),
   );
@@ -610,7 +610,7 @@ test('waiters de una sesión fallida no contaminan una sesión nueva', async () 
     NIIMBOT_REQUEST.PrintStatus,
     NIIMBOT_REQUEST.PrintStatusResult,
     Uint8Array.of(
-      0x00, 0x01, 0x01, 0x00,
+      0x00, 0x01, 0x64, 0x64,
       0x00, 0x01, 0x00, 0x00,
     ),
   );
@@ -2164,8 +2164,8 @@ test('printPacketSequenceForQa() bloquea una segunda llamada concurrente', async
     Uint8Array.of(
       0x00,
       0x01,
-      0x01,
-      0x00,
+      0x64,
+      0x64,
       0x00,
       0x01,
       0x00,

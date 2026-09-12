@@ -153,7 +153,14 @@ const generalFromDetail = (detail: LabWorkOrder): GeneralData => ({
   purchase_order: detail.purchase_order ?? '',
   notes: detail.notes ?? '',
 });
-type TicketDialogMode = 'reopen' | 'partial' | 'cancel' | 'reopen_direct' | 'void_delivery' | 'change_workflow_mode';
+type TicketDialogMode =
+  | 'reopen'
+  | 'partial'
+  | 'cancel'
+  | 'reopen_direct'
+  | 'void_delivery'
+  | 'void_equipment'
+  | 'change_workflow_mode';
 type DeliveryPanelMode = 'closed' | 'full' | 'partial_execute' | 'partial_request';
 
 function inferClosureScope(workOrder: LabWorkOrder): LabClosureScope {
@@ -268,6 +275,7 @@ export default function WorkOrdersScreen() {
   const [deliveryStatus, setDeliveryStatus] = useState<LabDeliveryGroupStatus | null>(null);
   const [deliveryHistoryOpen, setDeliveryHistoryOpen] = useState(false);
   const [voidingDelivery, setVoidingDelivery] = useState<LabDelivery | null>(null);
+  const [voidingEquipment, setVoidingEquipment] = useState<LabEquipment | null>(null);
   const itemCount = useRef(0);
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
@@ -631,55 +639,141 @@ export default function WorkOrdersScreen() {
   }
 
   async function submitOperationalAction() {
-    if (!workOrder || !ticketReason.trim() || (!ticketDescription.trim() && ticketDialogMode !== 'void_delivery' && ticketDialogMode !== 'change_workflow_mode')) return;
-    if (ticketDialogMode === 'reopen') return requestReopening();
-    if (ticketDialogMode === 'reopen_direct') return reopenDirectly();
+    const reason = ticketReason.trim();
+    const description = ticketDescription.trim();
+
+    const reasonOnlyAction =
+      ticketDialogMode === 'void_delivery'
+      || ticketDialogMode === 'void_equipment'
+      || ticketDialogMode === 'change_workflow_mode';
+
+    if (
+      !workOrder
+      || !reason
+      || (!description && !reasonOnlyAction)
+    ) {
+      return;
+    }
+
+    if (ticketDialogMode === 'reopen') {
+      return requestReopening();
+    }
+
+    if (ticketDialogMode === 'reopen_direct') {
+      return reopenDirectly();
+    }
+
     setBusy(true);
+
     try {
-      if (ticketDialogMode === 'void_delivery') {
+      if (ticketDialogMode === 'void_equipment') {
+        if (!voidingEquipment) return;
+
+        const detail = await request<LabWorkOrder>(
+          `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${voidingEquipment.id}/void`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              reason,
+              expected_edit_version: workOrder.edit_version,
+            }),
+          },
+        );
+
+        setWorkOrder(detail);
+        setVoidingEquipment(null);
+        setEquipmentEditor(null);
+
+        publishLocalChange({
+          event_type: detail.signature_required
+            ? 'ticket.signature_required'
+            : 'work_order.updated',
+          entity_type: 'work_order',
+          entity_id: detail.id,
+          work_order_id: detail.id,
+        });
+
+        Alert.alert(
+          'Ingreso anulado',
+          'El equipo dejó de formar parte activa de la OT y permanece conservado para auditoría.',
+        );
+      } else if (ticketDialogMode === 'void_delivery') {
         if (!voidingDelivery) return;
-        await voidDelivery(voidingDelivery.id, ticketReason.trim());
+
+        await voidDelivery(voidingDelivery.id, reason);
         setVoidingDelivery(null);
       } else if (ticketDialogMode === 'change_workflow_mode') {
-        // Cierre "grupos mixtos": backend es la única autoridad -- tras
-        // éxito se reconstruye TODO desde su respuesta (workflow_mode +
-        // equipment + FieldSheets + status), nunca un parche local del
-        // estado anterior.
         const detail = await postLabWorkOrderWorkflowModeChange({
-          newWorkflowMode: newWorkflowMode,
+          newWorkflowMode,
           reason: ticketReason.trim(),
           request,
           workOrder,
         });
+
         setWorkOrder(detail);
-        publishLocalChange({ event_type: 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
-        Alert.alert('Modalidad actualizada', `La OT ${detail.folio} ahora usa la modalidad "${WORKFLOW_MODE_OPTIONS.find((option) => option.value === detail.workflow_mode)?.title ?? detail.workflow_mode}".`);
+
+        publishLocalChange({
+          event_type: 'work_order.updated',
+          entity_type: 'work_order',
+          entity_id: detail.id,
+          work_order_id: detail.id,
+        });
+
+        Alert.alert(
+          'Modalidad actualizada',
+          `La OT ${detail.folio} ahora usa la modalidad "${
+            WORKFLOW_MODE_OPTIONS.find(
+              (option) => option.value === detail.workflow_mode,
+            )?.title ?? detail.workflow_mode
+          }".`,
+        );
       } else if (ticketDialogMode === 'cancel') {
         const detail = await request<LabWorkOrder>(
           `/mobile/v1/technician/lab-work-orders/${workOrder.id}/cancel`,
-          { method: 'POST', body: JSON.stringify({ reason: `${ticketReason.trim()}: ${ticketDescription.trim()}` }) },
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              reason: `${reason}: ${description}`,
+            }),
+          },
         );
+
         setWorkOrder(detail);
         setStep('completed');
-        Alert.alert('OT cancelada', `La OT ${detail.folio} permanece disponible para auditoría.`);
+
+        Alert.alert(
+          'OT cancelada',
+          `La OT ${detail.folio} permanece disponible para auditoría.`,
+        );
       } else {
         await request('/mobile/v1/technician/tickets/partial-close', {
           method: 'POST',
           body: JSON.stringify({
             work_order_id: workOrder.id,
-            reason: ticketReason.trim(),
-            description: ticketDescription.trim(),
+            reason,
+            description,
           }),
         });
-        Alert.alert('Excepción solicitada', 'Admin debe aprobarla antes del cierre parcial.');
+
+        Alert.alert(
+          'Excepción solicitada',
+          'Admin debe aprobarla antes del cierre parcial.',
+        );
       }
+
       setTicketOpen(false);
       setTicketReason('');
       setTicketDescription('');
+
       await refresh(true);
     } catch (error) {
-      Alert.alert('No fue posible completar la acción', error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally { setBusy(false); }
+      Alert.alert(
+        'No fue posible completar la acción',
+        error instanceof Error ? error.message : 'Intenta nuevamente',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function openExisting(id: number) {
@@ -1019,22 +1113,15 @@ export default function WorkOrdersScreen() {
     }
   }
 
-  async function removeEquipment() {
-    if (!workOrder || !equipmentEditor || equipmentEditor === 'new') return;
-    setBusy(true);
-    try {
-      const detail = await request<LabWorkOrder>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipmentEditor.id}?expected_edit_version=${workOrder.edit_version}`,
-        { method: 'DELETE' },
-      );
-      setWorkOrder(detail);
-      setEquipmentEditor(null);
-      publishLocalChange({ event_type: detail.signature_required ? 'ticket.signature_required' : 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
-    } catch (error) {
-      Alert.alert('No fue posible eliminar el equipo', error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally {
-      setBusy(false);
-    }
+  function openVoidEquipmentDialog(equipment: LabEquipment) {
+    if (!canCancel) return;
+
+    setVoidingEquipment(equipment);
+    setEquipmentEditor(null);
+    setTicketReason('');
+    setTicketDescription('');
+    setTicketDialogMode('void_equipment');
+    setTicketOpen(true);
   }
 
   async function addAdditional(additionalWorkflowMode: LabWorkOrderWorkflowMode) {
@@ -2164,17 +2251,19 @@ export default function WorkOrdersScreen() {
                         request={request}
                         workOrderClientName={workOrder?.client_name ?? ''}
                       />
-                      <OperationalActionStack>
-                        <DangerButton
-                          disabled={busy}
-                          icon="trash-can-outline"
-                          label="Eliminar equipo"
-                          loading={busy}
-                          onPress={() => {
-                            void removeEquipment();
-                          }}
-                        />
-                      </OperationalActionStack>
+                      {canCancel && (
+                        <OperationalActionStack>
+                          <DangerButton
+                            disabled={busy}
+                            icon="cancel"
+                            label="Anular ingreso del equipo"
+                            loading={busy}
+                            onPress={() => {
+                              openVoidEquipmentDialog(equipmentEditor);
+                            }}
+                          />
+                        </OperationalActionStack>
+                      )}
                     </>
                   ) : null}
                   </FadeIn>
@@ -2182,7 +2271,14 @@ export default function WorkOrdersScreen() {
               </KeyboardAvoidingView>
             </View>
           )}
-          {ticketOpen && (canCreateTickets || (ticketDialogMode === 'cancel' && canCancel) || (ticketDialogMode === 'reopen_direct' && canReopenDirectly) || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery) || (ticketDialogMode === 'change_workflow_mode' && canCancel)) && (
+          {ticketOpen && (
+            canCreateTickets
+            || (ticketDialogMode === 'cancel' && canCancel)
+            || (ticketDialogMode === 'reopen_direct' && canReopenDirectly)
+            || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery)
+            || (ticketDialogMode === 'void_equipment' && canCancel)
+            || (ticketDialogMode === 'change_workflow_mode' && canCancel)
+          ) && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -2193,9 +2289,54 @@ export default function WorkOrdersScreen() {
                   keyboardShouldPersistTaps="handled"
                 >
                   <View style={styles.overlayHandle} />
-                  <Text style={styles.sectionEyebrow}>{ticketDialogMode === 'void_delivery' ? 'ANULACIÓN DE ACUSE' : ticketDialogMode === 'cancel' ? 'CANCELACIÓN ADMINISTRATIVA' : ticketDialogMode === 'partial' ? 'EXCEPCIÓN DE CIERRE' : ticketDialogMode === 'reopen_direct' ? 'REAPERTURA ADMINISTRATIVA' : ticketDialogMode === 'change_workflow_mode' ? 'CAMBIO DE MODALIDAD' : 'TICKET DE REAPERTURA'}</Text>
-                  <Text style={styles.sectionTitle}>{ticketDialogMode === 'void_delivery' ? 'Anular entrega registrada' : ticketDialogMode === 'cancel' ? 'Cancelar sin borrar la orden' : ticketDialogMode === 'partial' ? 'Solicitar cierre parcial' : ticketDialogMode === 'reopen_direct' ? 'Reabrir esta OT' : ticketDialogMode === 'change_workflow_mode' ? 'Cambiar modalidad de trabajo' : '¿Por qué necesitas modificar esta orden?'}</Text>
-                  <Text style={styles.sectionDescription}>{ticketDialogMode === 'void_delivery' ? 'La firma y el PDF se conservarán en el historial.' : ticketDialogMode === 'cancel' ? 'El folio no se reutiliza y la OT permanece auditable.' : ticketDialogMode === 'reopen_direct' ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.' : ticketDialogMode === 'change_workflow_mode' ? 'Sólo procede antes de firmar la recepción. No afecta a ninguna otra OT del grupo.' : 'La solicitud requiere resolución de Admin.'}</Text>
+                  <Text style={styles.sectionEyebrow}>
+                    {ticketDialogMode === 'void_delivery'
+                      ? 'ANULACIÓN DE ACUSE'
+                      : ticketDialogMode === 'void_equipment'
+                        ? 'ANULACIÓN DE INGRESO'
+                        : ticketDialogMode === 'cancel'
+                          ? 'CANCELACIÓN ADMINISTRATIVA'
+                          : ticketDialogMode === 'partial'
+                            ? 'EXCEPCIÓN DE CIERRE'
+                            : ticketDialogMode === 'reopen_direct'
+                              ? 'REAPERTURA ADMINISTRATIVA'
+                              : ticketDialogMode === 'change_workflow_mode'
+                                ? 'CAMBIO DE MODALIDAD'
+                                : 'TICKET DE REAPERTURA'}
+                  </Text>
+                  <Text style={styles.sectionTitle}>
+                    {ticketDialogMode === 'void_delivery'
+                      ? 'Anular entrega registrada'
+                      : ticketDialogMode === 'void_equipment'
+                        ? 'Anular ingreso del equipo'
+                        : ticketDialogMode === 'cancel'
+                          ? 'Cancelar sin borrar la orden'
+                          : ticketDialogMode === 'partial'
+                            ? 'Solicitar cierre parcial'
+                            : ticketDialogMode === 'reopen_direct'
+                              ? 'Reabrir esta OT'
+                              : ticketDialogMode === 'change_workflow_mode'
+                                ? 'Cambiar modalidad de trabajo'
+                                : '¿Por qué necesitas modificar esta orden?'}
+                  </Text>
+                  <Text style={styles.sectionDescription}>
+                    {ticketDialogMode === 'void_delivery'
+                      ? 'La firma y el PDF se conservarán en el historial.'
+                      : ticketDialogMode === 'void_equipment'
+                        ? 'El equipo dejará de formar parte activa de esta recepción, pero su registro histórico se conservará. Esta operación es estructural y puede requerir una nueva firma de recepción.'
+                        : ticketDialogMode === 'cancel'
+                          ? 'El folio no se reutiliza y la OT permanece auditable.'
+                          : ticketDialogMode === 'reopen_direct'
+                            ? 'Tienes autoridad directa: se reabre de inmediato, sin ticket.'
+                            : ticketDialogMode === 'change_workflow_mode'
+                              ? 'Sólo procede antes de firmar la recepción. No afecta a ninguna otra OT del grupo.'
+                              : 'La solicitud requiere resolución de Admin.'}
+                  </Text>
+                  {ticketDialogMode === 'void_equipment' && voidingEquipment && (
+                    <AlertBanner tone="warning">
+                      {`Se anulará el ingreso del equipo ${voidingEquipment.position}. ${voidingEquipment.instrument} · ${voidingEquipment.identification} · ${voidingEquipment.serial_number}.`}
+                    </AlertBanner>
+                  )}
                   {ticketDialogMode === 'void_delivery' && voidingDelivery && (() => {
                     // La entrega es un evento atómico -- si esta exhibición
                     // también trae equipos de OT hermanas, anularla las
@@ -2235,13 +2376,29 @@ export default function WorkOrdersScreen() {
                     </FormSection>
                   )}
                   <Field label="Motivo" required value={ticketReason} onChangeText={setTicketReason} />
-                  {ticketDialogMode !== 'void_delivery' && ticketDialogMode !== 'change_workflow_mode' && <Field label="Descripción" required multiline value={ticketDescription} onChangeText={setTicketDescription} />}
+                  {ticketDialogMode !== 'void_delivery'
+                    && ticketDialogMode !== 'void_equipment'
+                    && ticketDialogMode !== 'change_workflow_mode' && (
+                      <Field
+                        label="Descripción"
+                        required
+                        multiline
+                        value={ticketDescription}
+                        onChangeText={setTicketDescription}
+                      />
+                    )}
                   <ActionRow>
                     <SecondaryButton
                       disabled={busy}
                       icon="close"
                       label="Cancelar"
-                      onPress={() => { setTicketOpen(false); setVoidingDelivery(null); }}
+                      onPress={() => {
+                        setTicketOpen(false);
+                        setVoidingDelivery(null);
+                        setVoidingEquipment(null);
+                        setTicketReason('');
+                        setTicketDescription('');
+                      }}
                     />
 
                     {ticketDialogMode === 'cancel' ? (
@@ -2260,10 +2417,15 @@ export default function WorkOrdersScreen() {
                     ) : (
                       <AdministrativeButton
                         disabled={
-                          !ticketReason.trim()
+                          (
+                            ticketDialogMode === 'void_equipment'
+                              ? ticketReason.trim().length < 3
+                              : !ticketReason.trim()
+                          )
                           || (
                             !ticketDescription.trim()
                             && ticketDialogMode !== 'void_delivery'
+                            && ticketDialogMode !== 'void_equipment'
                             && ticketDialogMode !== 'change_workflow_mode'
                           )
                           || (
@@ -2274,20 +2436,24 @@ export default function WorkOrdersScreen() {
                         icon={
                           ticketDialogMode === 'void_delivery'
                             ? 'undo'
-                            : ticketDialogMode === 'reopen_direct'
-                              ? 'lock-open-outline'
-                              : ticketDialogMode === 'change_workflow_mode'
-                                ? 'swap-horizontal'
-                                : 'send'
+                            : ticketDialogMode === 'void_equipment'
+                              ? 'cancel'
+                              : ticketDialogMode === 'reopen_direct'
+                                ? 'lock-open-outline'
+                                : ticketDialogMode === 'change_workflow_mode'
+                                  ? 'swap-horizontal'
+                                  : 'send'
                         }
                         label={
                           ticketDialogMode === 'void_delivery'
                             ? 'Anular acuse'
-                            : ticketDialogMode === 'reopen_direct'
-                              ? 'Reabrir orden'
-                              : ticketDialogMode === 'change_workflow_mode'
-                                ? 'Cambiar modalidad'
-                                : 'Enviar solicitud'
+                            : ticketDialogMode === 'void_equipment'
+                              ? 'Anular ingreso'
+                              : ticketDialogMode === 'reopen_direct'
+                                ? 'Reabrir orden'
+                                : ticketDialogMode === 'change_workflow_mode'
+                                  ? 'Cambiar modalidad'
+                                  : 'Enviar solicitud'
                         }
                         loading={busy}
                         onPress={() => {
