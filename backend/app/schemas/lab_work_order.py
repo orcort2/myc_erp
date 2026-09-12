@@ -118,6 +118,30 @@ class LabEquipmentWrite(LabEquipmentBase):
     expected_edit_version: int | None = Field(default=None, ge=1)
 
 
+class LabPendingSignatureReviewRead(BaseModel):
+    """Sección 6/8 del encargo de corrección LAB: evaluación en vivo (no
+    persistida hasta "Completar cambios") de si algo sensible cambió desde
+    el último cierre formalizado -- ver
+    _pending_signature_impact_since_last_close. Mobile la usa para mostrar
+    el warning ANTES de completar, con datos ya frescos de la respuesta que
+    disparó cada edición, sin una llamada aparte."""
+
+    sensitive_fields: list[str] = Field(default_factory=list)
+    requires_new_signature: bool = False
+
+
+class LabEquipmentVoid(BaseModel):
+    """"Anular ingreso" (sección 11-14 del encargo de corrección LAB) --
+    distinto de editar (LabEquipmentWrite): "este equipo no debió formar
+    parte de esta recepción". Mismo contrato que LabDeliveryVoid (reason
+    obligatorio, mismo min_length)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=2000)
+    expected_edit_version: int | None = Field(default=None, ge=1)
+
+
 class LabEquipmentRead(LabEquipmentBase):
     model_config = ConfigDict(from_attributes=True)
 
@@ -502,6 +526,9 @@ class LabWorkOrderRead(BaseModel):
     equipment: list[LabEquipmentRead]
     signature_session: LabSignatureSessionRead | None
     related_work_orders: list[LabRelatedWorkOrderRead] = Field(default_factory=list)
+    pending_signature_review: LabPendingSignatureReviewRead = Field(
+        default_factory=LabPendingSignatureReviewRead
+    )
 
 
 class LabWorkOrderListItem(BaseModel):

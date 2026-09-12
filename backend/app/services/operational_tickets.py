@@ -712,6 +712,18 @@ def _snapshot(item: LabWorkOrder) -> dict:
         "notes": item.notes,
         "equipment": [
             {
+                # "id"/"model" -- corrección 2026-09-09 (sección 8 del
+                # encargo de corrección LAB): sin "id" no había forma
+                # confiable de volver a emparejar una entrada del snapshot
+                # con su LabWorkOrderEquipment vivo (position se recicla al
+                # compactar tras anular un equipo); sin "model" faltaba uno
+                # de los campos de CRITICAL_EQUIPMENT_FIELDS. Adición
+                # puramente aditiva -- un snapshot histórico ya persistido
+                # sin estas claves se trata como "no comparable" para ese
+                # equipo/campo (ver _pending_signature_impact_since_last_close),
+                # nunca como que valen None.
+                "id": equipment.id,
+                "model": equipment.model,
                 "position": equipment.position,
                 "instrument": equipment.instrument,
                 "brand": equipment.brand,

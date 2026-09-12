@@ -8,12 +8,18 @@ Cubre exclusivamente lo que Fase 6 introduce:
 - Una reapertura "invalidate" que además edita un campo crítico del equipo
   (CRITICAL_EQUIPMENT_FIELDS) retira la revisión vigente ya completed
   (is_current=False) sin tocar su status/final_pdf_path/final_pdf_sha256 --
-  el documento histórico queda intacto para siempre. create_lab_field_sheet
-  abre la revisión siguiente con normalidad (revision_number+1,
-  supersedes_field_sheet_id) en cuanto la OT vuelve a estar
-  received_signed/in_progress.
-- Una reapertura "preserve" nunca retira ni versiona nada: el trabajo
-  técnico se conserva tal cual, sin nueva FieldSheet.
+  el documento histórico queda intacto para siempre.
+- Corrección 2026-09-09 (sección 4/5 del encargo de corrección LAB): ya no
+  se deja un hueco esperando que create_lab_field_sheet abra la siguiente
+  revisión desde cero -- _refresh_current_field_sheet_projection clona N+1
+  editable en la MISMA transacción de la edición
+  (_clone_field_sheet_for_correction), con el trabajo técnico ya capturado
+  (resultados, referencias) preservado y la identidad ya corregida.
+  "completed" nunca implicó inmutabilidad absoluta (sección 4, CASO B/C).
+- Una reapertura "preserve" YA NO deja intacta una hoja completed vigente
+  cuya identidad quedó desactualizada por la corrección: también se
+  retira+clona (mismo mecanismo), sin invalidar la firma preservada ni
+  exigir nueva firma -- sólo la proyección documental se refresca.
 - equipment.field_sheet sigue resolviendo exactamente a la revisión vigente
   (is_current=True) -- ningún caller preexistente cambia.
 
@@ -220,6 +226,44 @@ def complete_field_sheet_fully(
     return sheet_id
 
 
+def continue_field_sheet_capture_and_complete(
+    client, headers, order_id, equipment_id, *, observations="Sin observaciones"
+) -> int:
+    """Corrección 2026-09-09 (sección 4/5 del encargo de corrección LAB):
+    a diferencia de complete_field_sheet_fully (crea una hoja desde cero),
+    esto continúa capturando sobre una revisión N+1 YA clonada por
+    _refresh_current_field_sheet_projection (ver lab_work_orders.py) --
+    create_lab_field_sheet ya rechazaría con 409 "El equipo ya tiene una
+    hoja de campo" si se intentara crear otra."""
+    existing = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    )
+    assert existing.status_code == 200, existing.text
+    sheet_json = existing.json()
+    rows = [
+        {
+            "id": row["id"],
+            "section_key": row["section_key"],
+            "row_number": row["row_number"],
+            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+        }
+        for index, row in enumerate(sheet_json["results_rows"])
+    ]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"final_condition": "BUENA", "observations": observations, "results_rows": rows},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    return sheet_json["id"]
+
+
 def close_order(client, headers, order_id) -> None:
     completed = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=headers,
@@ -250,9 +294,12 @@ def reopen_order(client, headers, admin_headers, order_id, *, policy: str) -> No
 
 def test_reopen_invalidate_with_critical_change_retires_old_revision_and_opens_a_new_one(lab_context):
     """1. reopen invalidate + edición de campo crítico -> la revisión vieja
-    (completed) se retira (is_current=False) sin tocar su PDF/SHA; la nueva
-    FieldSheet nace como revision_number=2, supersedes_field_sheet_id
-    apuntando a la vieja, is_current=True."""
+    (completed) se retira (is_current=False) sin tocar su PDF/SHA. Corrección
+    2026-09-09 (sección 4/5 del encargo de corrección LAB): la revisión
+    nueva ya NO espera a que el técnico la cree desde cero tras re-firmar --
+    nace clonada (revision_number=2, supersedes_field_sheet_id, is_current
+    =True, status='draft') en la MISMA edición, con la identidad ya
+    corregida y el trabajo técnico previo preservado."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
@@ -291,7 +338,13 @@ def test_reopen_invalidate_with_critical_change_retires_old_revision_and_opens_a
         # aplica a hojas vigentes editables, no a esta).
         assert first.capture_values.get("serial_number") == "SER-1"
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
-        assert equipment.field_sheet is None
+        second_sheet_id = equipment.field_sheet.id
+        assert second_sheet_id != first_sheet_id
+        assert equipment.field_sheet.revision_number == 2
+        assert equipment.field_sheet.supersedes_field_sheet_id == first_sheet_id
+        assert equipment.field_sheet.is_current is True
+        assert equipment.field_sheet.status == "draft"
+        assert equipment.field_sheet.capture_values.get("serial_number") == "SER-1-CORREGIDO"
 
     resigned = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
@@ -299,10 +352,16 @@ def test_reopen_invalidate_with_critical_change_retires_old_revision_and_opens_a
         headers=headers,
     )
     assert resigned.status_code == 200, resigned.text
-    assert resigned.json()["status"] == "received_signed"
+    # Corrección 2026-09-09: la revisión corregida ya existía (clonada) ANTES
+    # de firmar -- esa fue la "primera mutación técnica real" -- así que
+    # firmar salta directo a in_progress, igual que ya hace
+    # create_lab_field_sheet para el caso sin corrección previa. Sin esto,
+    # la OT quedaría varada en received_signed para siempre (nada más
+    # dispara esa transición si ningún equipo vuelve a pasar por
+    # create_lab_field_sheet).
+    assert resigned.json()["status"] == "in_progress"
 
-    second_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
-    assert second_sheet_id != first_sheet_id
+    continue_field_sheet_capture_and_complete(client, headers, order_id, equipment_id)
     with factory() as db:
         second = db.get(FieldSheet, second_sheet_id)
         assert second.revision_number == 2
@@ -318,10 +377,15 @@ def test_reopen_invalidate_with_critical_change_retires_old_revision_and_opens_a
         assert equipment.field_sheet.id == second_sheet_id
 
 
-def test_reopen_preserve_never_retires_or_versions_the_field_sheet(lab_context):
-    """2. reopen preserve -- aunque se edite un campo crítico -- nunca
-    retira ni versiona la FieldSheet: el trabajo técnico se conserva tal
-    cual (sin nueva FieldSheet), coherente con 'preserva trabajo técnico'."""
+def test_reopen_preserve_refreshes_the_completed_field_sheet_without_touching_the_signature(lab_context):
+    """2. Corrección 2026-09-09 (sección 5 del encargo de corrección LAB):
+    reopen preserve + edición de campo crítico SÍ retira+clona la hoja
+    completed vigente que quedó desactualizada -- antes esto se dejaba
+    intacto indefinidamente (el bug exacto que la sección 5 pidió cerrar).
+    La firma preservada nunca se toca: _update_equipment_core sigue sin
+    invalidar bajo 'preserve' (misma decisión de siempre, sección 8:
+    ediciones ordinarias no requieren re-firma), y sólo la PROYECCIÓN
+    documental de la hoja se refresca."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
@@ -333,6 +397,7 @@ def test_reopen_preserve_never_retires_or_versions_the_field_sheet(lab_context):
     reopened = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers).json()
     assert reopened["status"] == "draft"
     assert reopened["signature_preserved"] is True
+    session_id = reopened["signature_session_id"]
 
     edited = client.patch(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}",
@@ -340,26 +405,40 @@ def test_reopen_preserve_never_retires_or_versions_the_field_sheet(lab_context):
         headers=headers,
     )
     assert edited.status_code == 200, edited.text
+    # La firma preservada nunca se toca por una corrección ordinaria, con o
+    # sin identidad afectada -- misma garantía que ya existía.
+    assert edited.json()["signature_preserved"] is True
+    assert edited.json()["signature_required"] is False
+    assert edited.json()["signature_session_id"] == session_id
 
     with factory() as db:
-        sheet = db.get(FieldSheet, sheet_id)
-        assert sheet.is_current is True
-        assert sheet.revision_number == 1
-        assert sheet.supersedes_field_sheet_id is None
-        assert sheet.status == "completed"
-        # Fase 1 del contrato canonico LAB (2026-09, item 1.2/4): completed +
-        # preserve deja la hoja vigente y "completed" a la vez -- el guard de
-        # sincronizacion es por status (EDITABLE_STATUSES), no por is_current,
-        # asi que el snapshot congelado tampoco cambia aqui.
-        assert sheet.capture_values.get("serial_number") == "SER-1"
+        old = db.get(FieldSheet, sheet_id)
+        assert old.is_current is False
+        assert old.revision_number == 1
+        assert old.status == "completed"
+        # El histórico jamás se reescribe -- sigue mostrando lo que
+        # realmente se capturó y firmó en su momento.
+        assert old.capture_values.get("serial_number") == "SER-1"
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
-        assert equipment.field_sheet.id == sheet_id
+        current = equipment.field_sheet
+        assert current.id != sheet_id
+        assert current.revision_number == 2
+        assert current.supersedes_field_sheet_id == sheet_id
+        assert current.is_current is True
+        assert current.status == "draft"
+        assert current.capture_values.get("serial_number") == "SER-1-CORREGIDO"
+        assert current.lab_signature_session_id == session_id
 
-    # Preserve nunca exige re-firma: reclosable directo.
+    # Preserve nunca exige re-firma: reclosable directo, autocompletando el
+    # draft recién clonado en la misma transacción de cierre (Cierre UX
+    # 2026-09, sección "El botón único 'Guardar'").
     reclosed = client.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual", headers=headers,
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/complete/individual"
+        "?confirm_draft_completion=true",
+        headers=headers,
     )
     assert reclosed.status_code == 200, reclosed.text
+    assert reclosed.json()["signature_session_id"] == session_id
 
 
 def test_discard_first_draft_restores_received_signed(lab_context):
@@ -416,6 +495,15 @@ def test_completed_sheet_cannot_be_discarded(lab_context):
 
 
 def test_discard_recapture_restores_completed_predecessor(lab_context):
+    """"Eliminar borrador" (discard_lab_field_sheet) NO cambia en esta
+    corrección -- sólo se adapta cómo este test llega a tener una revisión
+    N+1 en draft: antes la creaba desde cero vía POST .../field-sheet
+    después de re-firmar; ahora _refresh_current_field_sheet_projection ya
+    la clona en la MISMA edición del equipo (sección 4/5 del encargo de
+    corrección LAB), así que POST .../field-sheet ya respondería 409 "El
+    equipo ya tiene una hoja de campo". El comportamiento de discard en sí
+    -- restaurar exactamente el predecesor completed -- se verifica igual
+    que siempre, sin tocar discard_lab_field_sheet."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
@@ -424,19 +512,20 @@ def test_discard_recapture_restores_completed_predecessor(lab_context):
     close_order(client, headers, order_id)
     reopen_order(client, headers, admin_headers, order_id, policy="invalidate")
     reopened = client.get(f"/api/mobile/v1/technician/lab-work-orders/{order_id}", headers=headers).json()
-    client.patch(
+    edited = client.patch(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}",
         json=equipment_payload(1, serial_number="REC-2", expected_edit_version=reopened["edit_version"]),
         headers=headers,
     )
+    second = next(item for item in edited.json()["equipment"] if item["id"] == equipment_id)
+    assert second["field_sheet_id"] is not None
     client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
         json=signatures_payload(), headers=headers,
     )
-    second = client.post(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"template_key": "general"}, headers=headers,
-    ).json()
+    with factory() as db:
+        cloned = db.get(FieldSheet, second["field_sheet_id"])
+        second = {"id": cloned.id, "supersedes_field_sheet_id": cloned.supersedes_field_sheet_id}
     assert second["supersedes_field_sheet_id"] == first_id
     assert client.delete(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
@@ -446,6 +535,17 @@ def test_discard_recapture_restores_completed_predecessor(lab_context):
         first = db.get(FieldSheet, first_id)
         assert db.get(FieldSheet, second["id"]) is None
         assert first.is_current is True and first.status == "completed"
+        # Corrección 2026-09-09: la clonada N+1 ya existía ANTES de
+        # re-firmar (creada por _refresh_current_field_sheet_projection en
+        # el mismo PATCH del equipo, mientras la OT todavía estaba draft) --
+        # esa clonación YA fue la "primera mutación técnica real", así que
+        # firmar salta directo a in_progress (mismo criterio que
+        # create_lab_field_sheet, aplicado en _sign_members_uncommitted).
+        # discard_lab_field_sheet no cambia su semántica: al descartar el
+        # draft y restaurar el predecesor completed, único equipo de la OT,
+        # ya no falta nada por capturar -- progresa a ready_to_close, igual
+        # que ya hacía antes de esta corrección (sólo que antes nunca
+        # llegaba a in_progress primero).
         assert db.get(LabWorkOrder, order_id).status == "ready_to_close"
 
 
@@ -474,9 +574,19 @@ def test_work_order_with_only_drafts_can_delete_but_history_cannot(lab_context):
 
 
 def test_field_sheet_new_revision_freezes_a_fresh_snapshot_not_the_old_one(lab_context):
-    """3. La revisión nueva congela snapshot/renderer propios (no reutiliza
-    los de la revisión vieja) -- misma disciplina de congelado ya cerrada en
-    Fase 4/078f5fe, ahora también entre revisiones."""
+    """3. Corrección 2026-09-09 (sección 4/5 del encargo de corrección LAB):
+    a diferencia de un recapturado desde cero (create_lab_field_sheet,
+    siempre snapshot/renderer frescos vía get_template_snapshot),
+    _clone_field_sheet_for_correction clona DELIBERADAMENTE el mismo
+    template_definition_json/institutional_snapshot_json/pdf_renderer_* de
+    la revisión que corrige (documentado en su propio docstring: "N y N+1
+    documentalmente independientes" se refiere a que son copias propias en
+    memoria -- copy.deepcopy -- nunca a que N+1 recalcule una plantilla
+    distinta). Esto ya era así para reopen_lab_field_sheet_directly antes
+    de esta corrección; ahora también se ejerce desde una edición de
+    equipo. Lo que este test verifica ahora es identidad corregida +
+    independencia real de las copias JSON (mutar una no debe alcanzar a la
+    otra)."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     admin_headers = auth(tokens["admin"])
@@ -498,12 +608,12 @@ def test_field_sheet_new_revision_freezes_a_fresh_snapshot_not_the_old_one(lab_c
         headers=headers,
     )
     assert resigned.status_code == 200, resigned.text
-    second_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    second_sheet_id = continue_field_sheet_capture_and_complete(client, headers, order_id, equipment_id)
 
     with factory() as db:
         first = db.get(FieldSheet, first_sheet_id)
         second = db.get(FieldSheet, second_sheet_id)
-        assert second.lab_signature_session_id != first.lab_signature_session_id
+        assert second.id != first.id
         assert second.institutional_snapshot_json is not None
         assert second.template_definition_json is not None
         assert second.pdf_renderer_key == first.pdf_renderer_key
@@ -550,16 +660,23 @@ def test_equipment_field_sheet_property_resolves_only_the_current_revision(lab_c
     )
     assert edited.status_code == 200, edited.text
     with factory() as db:
+        # Corrección 2026-09-09 (sección 4/5 del encargo de corrección LAB):
+        # ya existen 2 revisiones desde esta misma edición --
+        # _refresh_current_field_sheet_projection clona N+1 de inmediato en
+        # vez de dejar equipment.field_sheet en None hasta un recapturado
+        # posterior desde cero.
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
-        assert len(equipment.field_sheets) == 1
-        assert equipment.field_sheet is None
+        assert len(equipment.field_sheets) == 2
+        assert equipment.field_sheet is not None
+        assert equipment.field_sheet.id != first_sheet_id
+        second_sheet_id = equipment.field_sheet.id
     resigned = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures/individual",
         json=signatures_payload(technician_name="Técnico LAB nuevo"),
         headers=headers,
     )
     assert resigned.status_code == 200, resigned.text
-    second_sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    continue_field_sheet_capture_and_complete(client, headers, order_id, equipment_id)
     with factory() as db:
         equipment = db.get(LabWorkOrderEquipment, equipment_id)
         assert len(equipment.field_sheets) == 2

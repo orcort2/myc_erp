@@ -13,6 +13,13 @@ app/models/lab_work_order.py. Estos tests cubren ese tombstone de extremo a
 extremo: la fila nunca se borra, el historial documental sobrevive, la
 composición operativa vigente (Mobile, máximo 10, positions, cierre, PDF) lo
 ignora, y el historial de Delivery no se ve afectado.
+
+Corrección 2026-09-09 (sección 11-15 del encargo de corrección LAB): esta
+operación es ahora "Anular ingreso" -- POST .../equipment/{id}/void con
+reason obligatorio y permiso lab_work_orders.cancel (reservado a staff
+interno), en vez de DELETE .../equipment/{id} con equipment.write. El
+tombstone/comportamiento de fondo (is_active/deleted_at/deleted_by, nunca
+DELETE físico) no cambia -- sólo el contrato del endpoint.
 """
 
 from __future__ import annotations
@@ -276,13 +283,17 @@ def _reopen_via_ticket(client, tech_headers, admin_headers, work_order_id: int, 
 def test_delete_draft_equipment_without_field_sheet_still_succeeds(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
     order = _create_order_with_equipment(client, headers, count=2)
     equipment_id = order["equipment"][0]["id"]
 
-    response = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order['id']}/equipment/{equipment_id}"
-        f"?expected_edit_version={order['edit_version']}",
-        headers=headers,
+    # "Anular ingreso" (sección 11-15 del encargo de corrección LAB) es
+    # POST .../void con lab_work_orders.cancel -- ya no DELETE con
+    # equipment.write.
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order['id']}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": order["edit_version"]},
+        headers=admin_headers,
     )
     assert response.status_code == 200, response.text
     assert [item["id"] for item in response.json()["equipment"]] == [
@@ -324,10 +335,10 @@ def test_delete_equipment_after_reopen_with_completed_field_sheet_no_longer_500s
         assert final_pdf_path_before
         assert final_pdf_sha256_before
 
-    response = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}"
-        f"?expected_edit_version={reopened['edit_version']}",
-        headers=tech_headers,
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
     )
     assert response.status_code == 200, response.text
     assert equipment_id not in {item["id"] for item in response.json()["equipment"]}
@@ -362,10 +373,10 @@ def test_delete_equipment_after_reopen_works_under_both_signature_policies(lab_c
         client, tech_headers, admin_headers, order_id, signature_policy=signature_policy
     )
 
-    response = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}"
-        f"?expected_edit_version={reopened['edit_version']}",
-        headers=tech_headers,
+    response = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
     )
     assert response.status_code == 200, response.text
 
@@ -384,6 +395,7 @@ def test_delete_equipment_after_reopen_works_under_both_signature_policies(lab_c
 def test_retiring_equipment_frees_a_slot_below_the_active_maximum_of_ten(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
     order = _create_order_with_equipment(client, headers, count=10)
     order_id = order["id"]
     exhausted = client.post(
@@ -394,10 +406,10 @@ def test_retiring_equipment_frees_a_slot_below_the_active_maximum_of_ten(lab_con
     assert exhausted.status_code == 409, exhausted.text
 
     retired_id = order["equipment"][0]["id"]
-    deleted = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{retired_id}"
-        f"?expected_edit_version={order['edit_version']}",
-        headers=headers,
+    deleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{retired_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": order["edit_version"]},
+        headers=admin_headers,
     )
     assert deleted.status_code == 200, deleted.text
     assert len(deleted.json()["equipment"]) == 9
@@ -427,14 +439,15 @@ def test_retiring_equipment_frees_a_slot_below_the_active_maximum_of_ten(lab_con
 def test_retiring_equipment_compacts_active_positions_and_reuses_the_freed_slot(lab_context):
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
     order = _create_order_with_equipment(client, headers, count=3)
     order_id = order["id"]
     first_id = order["equipment"][0]["id"]
 
-    deleted = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{first_id}"
-        f"?expected_edit_version={order['edit_version']}",
-        headers=headers,
+    deleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{first_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": order["edit_version"]},
+        headers=admin_headers,
     )
     assert deleted.status_code == 200, deleted.text
     remaining = sorted(deleted.json()["equipment"], key=lambda item: item["position"])
@@ -477,10 +490,10 @@ def test_delete_equipment_rejects_a_stale_expected_edit_version(lab_context):
     _close_order(client, tech_headers, order_id)
     reopened = _reopen_via_ticket(client, tech_headers, admin_headers, order_id, signature_policy="preserve")
 
-    stale = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}"
-        f"?expected_edit_version={reopened['edit_version'] + 1}",
-        headers=tech_headers,
+    stale = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": reopened["edit_version"] + 1},
+        headers=admin_headers,
     )
     assert stale.status_code == 409, stale.text
     assert stale.json()["detail"]["code"] == "REVISION_CONFLICT"
@@ -490,10 +503,10 @@ def test_delete_equipment_rejects_a_stale_expected_edit_version(lab_context):
     ).json()
     assert equipment_id in {item["id"] for item in with_conflict["equipment"]}
 
-    deleted = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}"
-        f"?expected_edit_version={reopened['edit_version']}",
-        headers=tech_headers,
+    deleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
     )
     assert deleted.status_code == 200, deleted.text
 
@@ -549,10 +562,10 @@ def test_delete_equipment_preserves_delivery_history(lab_context):
 
     reopened = _reopen_via_ticket(client, tech_headers, admin_headers, order_id, signature_policy="preserve")
 
-    deleted = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}"
-        f"?expected_edit_version={reopened['edit_version']}",
-        headers=tech_headers,
+    deleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
     )
     assert deleted.status_code == 200, deleted.text
 
@@ -629,10 +642,10 @@ def test_new_pdf_after_reclosing_excludes_retired_equipment(lab_context):
 
     reopened = _reopen_via_ticket(client, tech_headers, admin_headers, order_id, signature_policy="preserve")
 
-    deleted = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{retired_equipment_id}"
-        f"?expected_edit_version={reopened['edit_version']}",
-        headers=tech_headers,
+    deleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{retired_equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
     )
     assert deleted.status_code == 200, deleted.text
     assert deleted.json()["signature_required"] is True, (
@@ -749,10 +762,10 @@ def test_postgresql_equipment_soft_delete_preserves_constraints_and_history(post
     _close_order(client, tech_headers, order_id)
     reopened = _reopen_via_ticket(client, tech_headers, admin_headers, order_id, signature_policy="preserve")
 
-    deleted = client.delete(
-        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}"
-        f"?expected_edit_version={reopened['edit_version']}",
-        headers=tech_headers,
+    deleted = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
     )
     assert deleted.status_code == 200, deleted.text
     assert equipment_id not in {item["id"] for item in deleted.json()["equipment"]}

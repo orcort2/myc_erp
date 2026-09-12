@@ -443,6 +443,8 @@ def _clone_field_sheet_for_correction(
     equipment: LabWorkOrderEquipment,
     retired: FieldSheet,
     user: User,
+    *,
+    overrides: dict | None = None,
 ) -> FieldSheet:
     """Reapertura sin hueco operativo: cuando una reapertura retira
     (is_current=False) una FieldSheet ya completed sin que ningún campo
@@ -480,7 +482,23 @@ def _clone_field_sheet_for_correction(
     propia de su propia revisión); results_rows y reference_standard_links sí
     se clonan fila por fila porque son el contenido técnico que el técnico va
     a corregir -- compartir las filas con N las expondría a mutación cuando
-    el técnico edite N+1, corrompiendo el histórico congelado."""
+    el técnico edite N+1, corrompiendo el histórico congelado.
+
+    `overrides` (corrección 2026-09-09, coherencia equipo<->FieldSheet
+    vigente): a diferencia de `capture_values` (siempre refrescado desde el
+    equipo VIVO más abajo, sin necesitar overrides) y de `observations`
+    (nunca refrescado, ver arriba), los campos documentales heredados de la
+    OT/cliente documental -- `company`/`address`/`attention`/
+    `reception_date`/`purchase_order_or_quotation`, todos en
+    `_CLONED_FIELD_SHEET_ATTRS` -- se copiarían de `retired` TAL CUAL sin
+    este parámetro, dejando la revisión N+1 con el mismo dato heredado
+    obsoleto que motivó la corrección. El caller (ver
+    `_refresh_current_field_sheet_projection` en lab_work_orders.py) ya
+    decidió qué valores están realmente desactualizados antes de llamar
+    aquí; estos SIEMPRE ganan sobre la copia de `retired` para esas claves
+    específicas. Nunca se usa para `capture_values`/`observations`/
+    cualquier otro campo técnico -- esta función sigue siendo la única
+    autoridad para decidir qué se clona técnicamente."""
     capture_values = copy.deepcopy(retired.capture_values) if retired.capture_values else {}
     capture_values.update(
         {
@@ -493,6 +511,9 @@ def _clone_field_sheet_for_correction(
     )
     template_definition_json = copy.deepcopy(retired.template_definition_json) if retired.template_definition_json else None
     institutional_snapshot_json = copy.deepcopy(retired.institutional_snapshot_json) if retired.institutional_snapshot_json else None
+    cloned_attrs = {attr: getattr(retired, attr) for attr in _CLONED_FIELD_SHEET_ATTRS}
+    if overrides:
+        cloned_attrs.update(overrides)
     sheet = FieldSheet(
         equipment_id=None,
         lab_equipment_id=equipment.id,
@@ -505,7 +526,7 @@ def _clone_field_sheet_for_correction(
         template_definition_json=template_definition_json,
         institutional_snapshot_json=institutional_snapshot_json,
         lab_signature_session_id=equipment.work_order.signature_session_id,
-        **{attr: getattr(retired, attr) for attr in _CLONED_FIELD_SHEET_ATTRS},
+        **cloned_attrs,
     )
     sheet.results_rows = [
         FieldSheetResult(
@@ -538,6 +559,16 @@ def _clone_field_sheet_for_correction(
     sheet.signatures = _default_signature_slots(template_definition_json or {}, sheet)
     db.add(sheet)
     db.flush()
+    # Corrección 2026-09-09: mismo criterio que create_lab_field_sheet ("la
+    # primera mutación técnica real... es el punto canónico received_signed
+    # -> in_progress") -- clonar N+1 aquí ES esa mutación técnica, sólo que
+    # vía corrección en vez de alta desde cero. Sin esto, una OT que
+    # firmó recepción pero donde ningún equipo había llegado a
+    # create_lab_field_sheet todavía se quedaba varada en received_signed
+    # para siempre tras una corrección (ready_to_close nunca se alcanzaba,
+    # bloqueando el cierre incluso con todo capturado y completado).
+    if equipment.work_order.status == "received_signed":
+        equipment.work_order.status = "in_progress"
     write_audit_log(
         db,
         action="lab_field_sheet.corrective_revision_created",
@@ -550,6 +581,14 @@ def _clone_field_sheet_for_correction(
             "revision_number": sheet.revision_number,
         },
     )
+    # Corrección 2026-09-09: current_field_sheet es viewonly (filtra por
+    # is_current en el primaryjoin, ver LabWorkOrderEquipment) y venía
+    # cacheada en la instancia -- sin expirarla, un caller sin commit
+    # intermedio (p.ej. _refresh_current_field_sheet_projection, llamado
+    # dentro de _update_equipment_core/update_work_order antes del commit
+    # final) seguiría viendo la revisión recién retirada en
+    # equipment.field_sheet en vez de esta N+1 recién creada.
+    db.expire(equipment, ["current_field_sheet", "field_sheets"])
     return sheet
 
 

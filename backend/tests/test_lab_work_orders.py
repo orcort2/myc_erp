@@ -804,7 +804,15 @@ def test_equipment_crud_limit_and_model_accepted_but_not_range_or_capacity(lab_c
         headers=headers,
     )
     assert updated.status_code == 200
-    deleted = client.delete(f"{base}/equipment/{equipment_id}", headers=headers)
+    # "Anular ingreso" (sección 11-15 del encargo de corrección LAB) es
+    # POST .../void con lab_work_orders.cancel -- ya no DELETE con
+    # equipment.write.
+    admin_headers = auth(tokens["admin"])
+    deleted = client.post(
+        f"{base}/equipment/{equipment_id}/void",
+        json={"reason": "Prueba de anulación"},
+        headers=admin_headers,
+    )
     assert deleted.status_code == 200
     assert [item["position"] for item in deleted.json()["equipment"]] == list(range(1, 10))
 
