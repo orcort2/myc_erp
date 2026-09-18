@@ -90,6 +90,7 @@ STATUS_OVERRIDES = {
     "myc-mobile/src/services/lab-work-order-closure.test.ts": "En revisión",
 }
 FORCE_RECLASSIFY = {
+    "myc-mobile/src/components/lab/LabTechnicalCapture.render.test.ts",
     "AGENTS.md",
     "docs/project/OBSERVATIONS_REGISTER.md",
     "backend/tests/test_lab_certificate_folio_distribution.py",
@@ -638,9 +639,9 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
         )
 
     hotfix_lab_files = {
-        'myc-mobile/src/components/lab/LabTechnicalCapture.tsx': ('Captura común de Hojas LAB', 'Gestiona datos canónicos, captura, estados, revisión, acciones y PDF para hojas internas y LAB EXTERNO; discrimina resultados antes de evaluar result_sections.', 'FieldSheet, contrato canónico, resultados internos/externos, API LAB', 'Técnicos Mobile', 'Crítico'),
+        'myc-mobile/src/components/lab/LabTechnicalCapture.tsx': ('Captura común de Hojas LAB', 'Gestiona datos canónicos, captura, estados, revisión, acciones y PDF para hojas internas y LAB EXTERNO; consume CANONICAL_FIELDS completo para LAB EXTERNO sin blocks y discrimina resultados antes de evaluar result_sections.', 'FieldSheet, contrato canónico, resultados internos/externos, API LAB', 'Técnicos Mobile', 'Crítico'),
         'myc-mobile/src/components/lab/LabExternalFieldSheet.tsx': ('Resultados dinámicos LAB EXTERNO', 'Edita exclusivamente grupos, orientación, tablas, columnas, filas y valores; informa dirty/readOnly y la hoja guardada al controlador común.', 'lab-field-sheet-external, API FieldSheet, primitives', 'LabTechnicalCapture', 'Crítico'),
-        'myc-mobile/src/components/lab/LabTechnicalCapture.render.test.ts': ('Regresión de apertura LAB EXTERNO', 'Ejecuta componente y manejador reales con puertos nativos simulados: linked con groups sin result_sections abre captura común sin excepción.', 'node:test, TypeScript, lógica canónica real', 'Gate Mobile', 'Alto'),
+        'myc-mobile/src/components/lab/LabTechnicalCapture.render.test.ts': ('Regresión de apertura LAB EXTERNO', 'Ejecuta componente y manejador reales con puertos nativos simulados: linked con groups sin blocks/result_sections muestra todos los campos canónicos, respeta edición/readonly y no ejecuta progreso interno.', 'node:test, TypeScript, lógica canónica real', 'Gate Mobile', 'Alto'),
         'myc-mobile/src/components/lab/LabExternalFieldSheet.wiring.test.ts': ('Contrato de composición externa', 'Verifica especialización exclusiva de resultados, endpoints y delegación de completar/reabrir al controlador común.', 'node:test, fuentes Mobile', 'Gate Mobile', 'Alto'),
         'backend/app/services/field_sheet_pdfs.py': ('Renderer versionado de Hojas de Campo', 'Resuelve PDFs e históricos inmutables; LAB EXTERNO reutiliza contexto y bloques de hoja general canónica con resultados dinámicos y sin logo.', 'FieldSheet, plantillas oficiales, Jinja, WeasyPrint', 'ERP y Mobile LAB', 'Crítico'),
         'backend/app/templates/field_sheet_engine_pdf.html': ('Layout PDF común', 'Presenta campos, firmas, pie y resultados; compone parcial externo y flujo paginable para tablas largas.', 'Contexto field_sheet_pdfs, DSL de impresión', 'Renderer canónico y LAB EXTERNO', 'Crítico'),

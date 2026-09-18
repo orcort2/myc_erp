@@ -12,8 +12,10 @@
 
 - Rama: `hotfix/lab-external-ios-crash-and-admin-self-resolve`.
 - Base: `main` en `1083e3ef9863f721882592c7cc68335264d6843b`, inicialmente limpia.
-- Sin merge ni push. Este trabajo modifica captura/PDF de LAB EXTERNO y
-  resolución administrativa de solicitudes propias de folios.
+- Sin merge. La rama ya fue publicada en origin hasta `4fe5ca3`; la
+  corrección de campos canónicos de la auditoría final se entrega localmente.
+  Este trabajo modifica captura/PDF de LAB EXTERNO y resolución administrativa
+  de solicitudes propias de folios.
 - Mobile usa formulario canónico común y especializa únicamente resultados
   dinámicos; discrimina linked/lab_externo antes de acceder a result_sections.
 - El PDF externo comparte renderer, campos y firmas con la hoja general;
@@ -40,8 +42,11 @@
 
 - Reproducción en la base: el test del componente al abrir linked/289, OT 6471,
   con groups y sin result_sections lanza TypeError al evaluar sections.map.
-- Con el hotfix: apertura sin excepción y captura común disponible.
-- TypeScript y lint Mobile sin errores; suite Mobile: 669/669; wiring: 92/92.
+- Auditoría final sobre `4fe5ca3`: corregido el filtro vacío sin blocks;
+  LAB EXTERNO consume directamente los 24 descriptores de CANONICAL_FIELDS.
+  Los tests comprueban presencia real, edición autorizada, snapshots readonly
+  y ausencia de llamadas al progreso interno. Backend no modificado.
+- TypeScript y lint Mobile sin errores; suite Mobile: 671/671; wiring: 92/92.
 - Backend focalizado: 158 passed, 1 skipped (concurrencia opt-in).
 - Suite backend completa: 1235 passed, 16 skipped, 19 subtests passed.
 - Evidencia final: [cierre post-PR #4](closures/LAB_EXTERNAL_POST_PR4_HOTFIX_2026-09-17.md).

@@ -16,6 +16,7 @@ import { directFields, normalizeFieldSheetPayload } from '@/src/services/field-s
 import { resolveDocumentaryClientLabel } from '@/src/services/lab-documentary-client';
 import { keyboardTypeForFieldType } from '@/src/services/field-sheet-contract';
 import {
+  CANONICAL_FIELDS,
   CANONICAL_GROUP_ORDER,
   CANONICAL_GROUP_TITLES,
   canonicalFieldsForDefinition,
@@ -172,7 +173,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   // especializado (specializedFields, abajo).
   const specializedFields = specializedCaptureFields(definition?.blocks, { fallbackLabels: FIELD_LABELS, readOnlyKeys: readOnlyFields })
     .filter((field) => !SIGNATURE_AUTHORITY_KEYS.has(field.key));
-  const canonicalFields = canonicalFieldsForDefinition(definition?.blocks);
+  // LAB EXTERNO no tiene blocks: consume el contrato común completo.
+  const canonicalFields = labExternal ? CANONICAL_FIELDS : canonicalFieldsForDefinition(definition?.blocks);
   const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
   const editable = canCapture && !!sheet && isFieldSheetEditable(sheet.status, viewMode);
   const visibleTemplates = filterFieldSheetTemplates(templates, templateSearch);

@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-17. Rama: `hotfix/lab-external-ios-crash-and-admin-self-resolve`.
 Base verificada: `1083e3ef9863f721882592c7cc68335264d6843b` (main limpio).
-Entrega sin merge ni push. Cierre técnico acotado; no sella MYC Mobile/LAB.
+Entrega inicial sin merge; los tres commits hasta `4fe5ca3` ya fueron publicados en origin. Cierre técnico acotado; no sella MYC Mobile/LAB.
 
 ## Causa y corrección
 
@@ -130,3 +130,30 @@ permanecen en Git. Se crean este cierre y dos tests; no se mueven ni archivan ar
 - `myc-mobile/src/services/lab-field-sheet-external.ts`
 - `myc-mobile/src/types/auth.ts`
 - `scripts/generate_project_file_registry.py`
+
+
+## Corrección de auditoría final sobre 4fe5ca3
+
+La primera regresión sólo comprobaba secciones y apertura: no detectó que
+canonicalFieldsForDefinition(undefined) devolvía cero campos. La auditoría
+identificó ese bloqueo. LabTechnicalCapture ahora selecciona explícitamente
+CANONICAL_FIELDS para LAB EXTERNO, sin copiar arrays ni cambiar el filtro de
+plantillas internas. Se conservan los 24 campos realmente canónicos, incluidos
+condición general/desviaciones y observaciones; initial_condition/final_condition
+siguen clasificados como legacy especializados por la autoridad existente.
+
+El test de render ampliado falla antes de la corrección y pasa después:
+comprueba título, campos representativos y todos los descriptores canónicos,
+edición con permiso, readonly sin permiso y de snapshots, actualización de un
+valor ambiental, renderer externo y cero llamadas a computeOverallProgress.
+Validación de esta corrección: tsc sin errores, lint sin errores, npm test
+671/671, wiring 92/92 y git diff --check limpio. Backend y PDF no se modifican;
+no se requiere repetir sus suites. Se conserva pendiente el QA físico.
+
+Documentos revisados sin cambios adicionales: DOCUMENTATION_INDEX,
+PROJECT_STATUS, CURRENT_SCOPE, CURRENT_PROCESS_FLOW, BUSINESS_RULES, DECISIONS,
+OBSERVATIONS_REGISTER y TECHNICAL_DEBT: esta corrección cumple el contrato ya
+aprobado y no cambia alcance, reglas ni estado del módulo. Se actualizan este
+cierre, LAB_WORK_ORDERS, BACKUP_ESTADO_ACTUAL y el inventario. No se crean,
+mueven, fusionan ni archivan archivos. Se añade un único commit; no se
+reescriben los tres anteriores ni se mergea.

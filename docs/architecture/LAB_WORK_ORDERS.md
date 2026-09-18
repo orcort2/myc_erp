@@ -892,7 +892,12 @@ introdujo ninguna excepción de cierre sin hoja.
 
 Mobile reutiliza `LabTechnicalCapture` y su contrato canónico completo: cliente,
 equipo, calibración, condiciones, ambientales, observaciones, firmas, estados,
-revisión, guardado, completitud, reapertura y descarga. `LabExternalFieldSheet`
+revisión, guardado, completitud, reapertura y descarga. La fuente explícita
+para LAB EXTERNO es `CANONICAL_FIELDS` de `field-sheet-canonical-contract.ts`,
+con sus 24 descriptores y reglas readonly; no se filtra por blocks ausentes.
+Las plantillas internas conservan `canonicalFieldsForDefinition(blocks)`.
+Condición general/desviaciones son canónicas; initial_condition/final_condition
+son legacy especializados y no se incorporan al contrato común. `LabExternalFieldSheet`
 es sólo el editor de resultados dinámicos, recibe `readOnly` e informa cambios
 pendientes y la hoja persistida al padre. No evalúa el motor interno de
 `result_sections`; la selección de contrato sucede antes de calcular progreso.
