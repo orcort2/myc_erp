@@ -33,6 +33,12 @@ FieldSheetTemplateKey = Literal[
     "peso_patron", "sonometro", "termometro", "termohigrometro",
     "transductor_presion", "torquimetro", "volumen", "masa", "balanza",
     "regla", "flexometro", "vernier", "micrometro", "valvula",
+    # PENDIENTE 7 (LAB EXTERNO): hoja de campo para equipo service_type=linked
+    # -- grupos de tablas dinámicas definidas por el técnico en captura, en
+    # vez de un catálogo institucional fijo (ver lab_field_sheets_external.py).
+    # Sólo procede sobre lab_equipment_id (LAB); el FieldSheet productivo
+    # (equipment_id) nunca la usa.
+    "lab_externo",
 ]
 
 

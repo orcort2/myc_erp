@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      /* PENDIENTE 7: sin logo MYC a propósito -- este encabezado nunca
+         referencia institution/logo_uri, sólo el título fijo y los datos
+         de identificación de OT/equipo. */
+      @page { margin: 14mm 12mm 16mm; size: A4; }
+      body { color: #172033; font-family: Arial, sans-serif; font-size: 10px; margin: 0; }
+      .header { border-bottom: 2px solid #172033; margin-bottom: 10px; padding-bottom: 8px; }
+      .header h1 { font-size: 16px; letter-spacing: 0.5px; margin: 0; text-transform: uppercase; }
+      .header p { color: #475467; margin: 3px 0 0; }
+      .grid { display: grid; gap: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 10px; }
+      .card { border: 1px solid #a7b7c7; min-height: 40px; padding: 6px 8px; }
+      .label { color: #667085; display: block; font-size: 9px; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; }
+      .group { margin-top: 14px; }
+      .group-title { color: #0f3d73; font-size: 12px; font-weight: 700; margin: 0 0 2px; text-transform: uppercase; }
+      .group-orientation { color: #475467; font-size: 9px; margin: 0 0 6px; text-transform: uppercase; }
+      .table-title { font-size: 10px; font-weight: 700; margin: 8px 0 4px; }
+      table { border-collapse: collapse; margin-bottom: 6px; width: 100%; }
+      .results th, .results td { border: 1px solid #a7b7c7; padding: 5px 6px; }
+      .results th { background: #eaf1f7; font-size: 9px; text-transform: uppercase; }
+      .results td { height: 20px; }
+      .row-number { color: #667085; text-align: center; width: 26px; }
+      .empty { color: #667085; font-style: italic; }
+      .signatures { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 14px; }
+      .signature { border: 1px solid #a7b7c7; min-height: 74px; padding: 8px 10px; }
+      .footer { color: #475467; font-size: 9px; margin-top: 8px; text-align: right; }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <h1>Hoja de campo "LAB EXTERNO"</h1>
+      <p>Revisión {{ revision_number }} · Estado: {{ status }}</p>
+    </header>
+
+    <section class="grid">
+      <article class="card"><span class="label">Orden de trabajo</span><strong>{{ field_sheet.work_order_number or '-' }}</strong></article>
+      <article class="card"><span class="label">Cliente</span><strong>{{ company or '-' }}</strong></article>
+      <article class="card"><span class="label">Atención</span><strong>{{ attention or '-' }}</strong></article>
+      <article class="card"><span class="label">Domicilio</span><strong>{{ address or '-' }}</strong></article>
+      <article class="card"><span class="label">Instrumento</span><strong>{{ capture_values.instrument or '-' }}</strong></article>
+      <article class="card"><span class="label">Marca / modelo</span><strong>{{ capture_values.brand or '-' }} / {{ capture_values.model or '-' }}</strong></article>
+      <article class="card"><span class="label">Serie</span><strong>{{ capture_values.serial_number or '-' }}</strong></article>
+      <article class="card"><span class="label">Identificación</span><strong>{{ capture_values.internal_id or '-' }}</strong></article>
+      <article class="card"><span class="label">Folio certificado</span><strong>{{ lab_equipment.certificate_folio or '-' }}</strong></article>
+      <article class="card"><span class="label">Recepción</span><strong>{{ reception_date|date }}</strong></article>
+    </section>
+
+    {% if not groups %}
+      <p class="empty">Esta hoja todavía no tiene grupos de tablas definidos.</p>
+    {% endif %}
+
+    {% for group in groups %}
+      <section class="group">
+        <h2 class="group-title">{{ group.title or group.id }}</h2>
+        <p class="group-orientation">Orientación: {{ group.orientation_label }}</p>
+        {% for table in group.tables %}
+          <h3 class="table-title">{{ table.title or table.id }}</h3>
+          <table class="results">
+            <thead>
+              <tr>
+                <th class="row-number">#</th>
+                {% for column in table.columns %}
+                  <th>{{ column.label }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in table.rows %}
+                <tr>
+                  <td class="row-number">{{ row.row_number }}</td>
+                  {% for value in row.cells %}
+                    <td>{{ value or '' }}</td>
+                  {% endfor %}
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endfor %}
+      </section>
+    {% endfor %}
+
+    <section class="signatures">
+      {% for signature in signatures %}
+        <article class="signature">
+          <span class="label">{{ signature.display_label }}</span>
+          <p>{{ signature.name or '-' }}</p>
+          {% if signature.signed_at %}<p>{{ signature.signed_at|date }}</p>{% endif %}
+        </article>
+      {% endfor %}
+    </section>
+
+    <p class="footer">Hoja de campo {{ field_sheet.id }} · Generado {{ field_sheet.final_pdf_generated_at|date }}</p>
+  </body>
+</html>

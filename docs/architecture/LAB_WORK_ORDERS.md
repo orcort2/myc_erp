@@ -845,6 +845,60 @@ equipos; verificar checksums y abrir muestras; custodiar el ZIP; después
 retirar app, rutas, servicios, permisos y modelos; y sólo al final ejecutar una
 migración explícita de drop. La migración actual nunca elimina datos.
 
+## LAB EXTERNO (equipo `service_type=linked`)
+
+Un equipo con servicio Vinculado puede subcontratarse a un laboratorio
+externo cuya estructura de resultados no coincide con ninguna plantilla
+institucional fija — el técnico la define él mismo al capturar: grupos de
+tablas, cada grupo con una sola orientación (Patrón → IBC o IBC → Patrón)
+compartida por todas sus tablas, y cada tabla con sus propias filas/columnas.
+"LAB EXTERNO" (`template_key="lab_externo"`) cubre ese caso reutilizando
+exactamente el mismo `FieldSheet`/`FieldSheetResult` y el mismo ciclo de vida
+(revisiones, `is_current`, auditoría, congelado de PDF, reapertura/corrección)
+que cualquier otra hoja LAB — no es un motor nuevo, sólo una plantilla cuya
+estructura se autoriza en vez de venir de un catálogo institucional. Ver
+`app/services/lab_field_sheets_external.py`.
+
+Estructura vs datos:
+
+- La ESTRUCTURA (grupos → tablas → columnas, orientación por grupo) vive en
+  `FieldSheet.template_definition_json["groups"]` — el mismo campo que ya usa
+  cualquier plantilla, y que ya se clona automáticamente en cada revisión
+  histórica (`_clone_field_sheet_for_correction`) sin cambios adicionales.
+  Se reemplaza de un solo golpe vía
+  `PUT .../equipment/{id}/field-sheet/lab-externo/structure`, sólo mientras la
+  revisión esté en `draft`/`in_progress`.
+- Los DATOS (valores capturados) viven en `FieldSheetResult`: una fila por
+  `(table.id como section_key, row_number)`, con las columnas dinámicas de esa
+  tabla como `row_data = {column_key: value}`. Se editan con el
+  `PATCH .../field-sheet` ya existente — ningún endpoint nuevo para capturar
+  valores.
+
+No se creó ninguna tabla ni migración: los tres campos JSON involucrados
+(`template_definition_json`, `capture_values`, `FieldSheetResult.row_data`) ya
+existían, con integridad referencial/cascada y versionado por revisión
+propios del modelo `FieldSheet`.
+
+Integración con `service_type=linked`: al abrir por primera vez la captura de
+un equipo Vinculado, Mobile crea LAB EXTERNO automáticamente — nunca ofrece un
+selector de plantilla interna para ese equipo. La regla backend
+(`ensure_lab_field_sheet_template_matches_service`) es de un solo sentido:
+`template_key="lab_externo"` sólo puede usarse con `service_type=linked`. Lo
+contrario — un equipo Vinculado con una plantilla LAB interna — sigue siendo
+válido: es un flujo preexistente que ya tenía cobertura antes de esta
+capacidad y esta adición no lo redefine. El cierre exige una FieldSheet
+`completed` por equipo activo (`_missing_completed_sheets`, ya existente y
+agnóstica de `template_key`) — un equipo Vinculado sin LAB EXTERNO completada
+bloquea el cierre igual que cualquier otro equipo sin hoja completa; no se
+introdujo ninguna excepción de cierre sin hoja.
+
+El PDF de LAB EXTERNO tiene su propio encabezado ("Hoja de campo \"LAB
+EXTERNO\"") y nunca referencia el logo institucional — se renderiza con su
+propia plantilla (`app/templates/field_sheet_lab_externo_pdf.html`,
+`_render_lab_externo_html` en `field_sheet_pdfs.py`) en vez de forzar
+`_render_html` (pensada para secciones de columnas fijas Patrón/IBC-1-3, no
+para columnas dinámicas por tabla).
+
 ## Límites verificados
 
 La versión operativa previa fue validada en Android/iPhone físicos y TestFlight.

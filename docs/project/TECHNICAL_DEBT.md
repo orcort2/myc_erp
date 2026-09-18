@@ -66,3 +66,7 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
 - TD-055 (P1): QA físico de solicitud/claim/decisión/realtime con Sr/Jr/Viewer/staff.
 - TD-056 (P2): realtime por rooms de usuario en hub in-memory; la fase multi-worker deberá adoptar transporte compartido sin canal paralelo.
 - TD-057 (P2): una `LabWorkOrderGroupRequest` aprobada cuyo grupo fue eliminado conserva los folios originales en el evento estructurado `lab_work_order.group_materialized` y en la conversación, pero su proyección `LabWorkOrderGroupRequestRead.folios` devuelve `[]` al quedar `root_work_order_id=NULL`. Decidir si la consulta histórica necesita un snapshot estructurado propio y, sólo entonces, diseñar su migración; no reconstruir desde huecos ni reutilizar folios.
+
+## Deuda agregada 2026-09-17
+
+- TD-058 (P2): Optimización de latencia NIIMBOT B1 -- medir transporte BLE, fragmentación de 20 bytes, pacing de 10 ms, reconexión e identificación del dispositivo, y optimizar sin comprometer confiabilidad. `myc-mobile/src/services/labels/printers/adapters/niimbot-b1/` (`niimbot-b1-adapter.ts`, `protocol.ts`) y `myc-mobile/src/services/labels/printers/ble-transport.ts`/`ble-manager-transport.ts`; no tocar el protocolo de impresión, el pacing BLE ni el renderer de etiquetas fuera de una fase dedicada con mediciones físicas antes/después.

@@ -37,6 +37,7 @@ from app.schemas.lab_work_order import (
 )
 from app.schemas.field_sheet import FieldSheetRead, FieldSheetUpdate
 from app.schemas.field_sheet_template import FieldSheetTemplateRead
+from app.schemas.lab_field_sheet_external import LabExternalStructureWrite
 from app.schemas.operational_ticket import LabRevisionRead
 from app.services.lab_work_orders import (
     add_equipment,
@@ -87,6 +88,7 @@ from app.services.lab_field_sheets import (
     reopen_lab_field_sheet_directly,
     update_lab_field_sheet,
 )
+from app.services.lab_field_sheets_external import apply_lab_external_structure
 from app.services.lab_packages import generate_lab_package
 from app.models.linked_company import LinkedCompany
 from sqlalchemy import select
@@ -687,6 +689,32 @@ def patch_lab_field_sheet(
 ) -> FieldSheetRead:
     ensure_lab_work_order_scope(db, work_order_id, context)
     return update_lab_field_sheet(db, work_order_id, equipment_id, payload, context.user)
+
+
+@router.put(
+    "/{work_order_id}/equipment/{equipment_id}/field-sheet/lab-externo/structure",
+    response_model=FieldSheetRead,
+)
+def put_lab_field_sheet_external_structure(
+    work_order_id: int,
+    equipment_id: int,
+    payload: LabExternalStructureWrite,
+    db: Session = Depends(get_db),
+    context: MobileSecurityContext = Depends(
+        require_mobile_permission(
+            "field_sheets.capture", "lab_work_orders.use", "lab_field_sheets.capture"
+        )
+    ),
+) -> FieldSheetRead:
+    """PENDIENTE 7 (encargo de corrección LAB): reemplaza de un solo golpe
+    la estructura (grupos -> tablas -> columnas/orientación) de una hoja
+    LAB EXTERNO -- los valores capturados siguen editándose con el PATCH
+    .../field-sheet ya existente arriba, sin endpoint nuevo para eso."""
+    ensure_lab_work_order_scope(db, work_order_id, context)
+    return apply_lab_external_structure(
+        db, work_order_id, equipment_id, payload, context.user,
+        external=context.actor_type == "client",
+    )
 
 
 @router.delete("/{work_order_id}/equipment/{equipment_id}/field-sheet", status_code=204)

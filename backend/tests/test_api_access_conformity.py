@@ -21,14 +21,13 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    # 528 = 527 (corte previo) - DELETE /{work_order_id}/equipment/{equipment_id}
-    # (removida: "Eliminar equipo" legacy, reemplazada por anulación) + POST
-    # /{work_order_id}/equipment/{equipment_id}/void ("Anular ingreso" del
-    # equipo, con traceability y permiso lab_work_orders.cancel) + POST
-    # /{work_order_id}/complete-corrections ("Completar cambios" de una
-    # sesión de corrección, con re-evaluación de firma) -- ambas caen bajo la
-    # clasificación genérica /api/mobile/v1/ existente, sin override propio.
-    assert len(operations) == 528
+    # 529 = 528 (corte previo) + PUT
+    # /{work_order_id}/equipment/{equipment_id}/field-sheet/lab-externo/structure
+    # (PENDIENTE 7 -- "LAB EXTERNO": reemplaza la estructura de grupos/tablas
+    # dinámicas de una hoja LAB EXTERNO, ver
+    # app/services/lab_field_sheets_external.py) -- cae bajo la clasificación
+    # genérica /api/mobile/v1/ existente, sin override propio.
+    assert len(operations) == 529
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

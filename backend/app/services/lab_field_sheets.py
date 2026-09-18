@@ -32,6 +32,10 @@ from app.services.field_sheets import (
     _serialize_field_sheet,
     _validate_ready_to_complete,
 )
+from app.services.lab_field_sheets_external import (
+    ensure_lab_field_sheet_template_matches_service,
+    resolve_lab_external_definition,
+)
 from app.services.institutional_configurations import (
     get_or_create_institutional_configuration,
     institutional_snapshot,
@@ -295,8 +299,13 @@ def create_lab_field_sheet(
     # vez o una reapertura con recaptura.
     previous_revision = equipment.field_sheets[0] if equipment.field_sheets else None
     revision_number = (previous_revision.revision_number + 1) if previous_revision else 1
-    definition, version = get_template_snapshot(db, payload.template_key)
-    definition = canonicalize_new_field_sheet_snapshot(definition)
+    ensure_lab_field_sheet_template_matches_service(equipment, payload.template_key)
+    lab_external = resolve_lab_external_definition(payload.template_key)
+    if lab_external is not None:
+        definition, version = lab_external
+    else:
+        definition, version = get_template_snapshot(db, payload.template_key)
+        definition = canonicalize_new_field_sheet_snapshot(definition)
     order = equipment.work_order
     institution = get_or_create_institutional_configuration(db)
     # Fase 4: el cliente documental es una autoridad por-equipo, distinta del
@@ -851,8 +860,13 @@ def change_lab_field_sheet_template(
     order = equipment.work_order
     previous_revision = equipment.field_sheets[0] if equipment.field_sheets else None
     revision_number = (previous_revision.revision_number + 1) if previous_revision else 1
-    definition, version = get_template_snapshot(db, payload.template_key)
-    definition = canonicalize_new_field_sheet_snapshot(definition)
+    ensure_lab_field_sheet_template_matches_service(equipment, payload.template_key)
+    lab_external = resolve_lab_external_definition(payload.template_key)
+    if lab_external is not None:
+        definition, version = lab_external
+    else:
+        definition, version = get_template_snapshot(db, payload.template_key)
+        definition = canonicalize_new_field_sheet_snapshot(definition)
     institution = get_or_create_institutional_configuration(db)
     documentary_client = resolve_equipment_certificate_client(equipment, order)
     capture_values = {
