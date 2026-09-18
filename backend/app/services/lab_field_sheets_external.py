@@ -29,7 +29,7 @@ referencial/cascada y ya participan del versionado por revisión.
 
 from __future__ import annotations
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.models.field_sheet import FieldSheet, FieldSheetResult
@@ -71,19 +71,25 @@ def resolve_lab_external_definition(template_key: str) -> tuple[dict, int] | Non
 def ensure_lab_field_sheet_template_matches_service(
     equipment: LabWorkOrderEquipment, template_key: str
 ) -> None:
-    """Sección "INTEGRACIÓN LINKED" del encargo: LAB EXTERNO sólo aplica a
-    equipo con servicio Vinculado -- nunca a acreditado/trazable.
+    """Sección "INTEGRACIÓN LINKED" del encargo -- contrato final,
+    bidireccional (auditoría 2026-09-17, corrige la versión anterior de esta
+    función que sólo exigía un sentido):
 
-    Corrección 2026-09-17: la regla NO aplica en el sentido inverso.
-    Vinculado usando una plantilla LAB interna (p.ej. "general") es un
-    flujo preexistente y probado (ver test_signing_and_field_sheet_allow_
-    linked_without_company, test_external_linked_sheet_can_start_pending_
-    but_close_stays_internal, entre otros) -- forzarlo aquí habría sido
-    redefinir ese contrato sin que el encargo lo pidiera. Lo que el
-    encargo sí pide ("no pedir plantilla de laboratorio interno") es una
-    decisión de UX en Mobile (ofrecer/crear LAB EXTERNO de forma natural
-    para un equipo linked), no una prohibición backend de la combinación
-    contraria."""
+        accredited / traceable -> plantilla LAB interna (nunca LAB EXTERNO)
+        linked                 -> LAB EXTERNO (nunca una plantilla interna)
+
+    La versión previa permitía linked + plantilla interna alegando que era
+    "un flujo preexistente y probado" -- eso describía el estado de los
+    tests, no el contrato acordado. Los tests que de verdad estudiaban
+    linked (test_signing_and_field_sheet_allow_linked_without_company,
+    test_external_linked_sheet_can_start_pending_but_close_stays_internal,
+    test_prevalidation_blocks_missing_sheet_incomplete_sheet_and_
+    unresolved_folio, test_close_rejected_with_unresolved_linked_folio,
+    test_linked_pending_capture_completes_then_blocks_close_until_
+    authorized) ya se migraron a LAB EXTERNO -- ver esos archivos. Mobile ya
+    exige esta misma regla (isLabExternalEquipment/LabTechnicalCapture);
+    esta función sólo hace a backend consistente con lo que Mobile ya
+    hacía."""
     is_linked = equipment.service_type == "linked"
     is_lab_external = template_key == LAB_EXTERNAL_TEMPLATE_KEY
     if is_lab_external and not is_linked:
@@ -91,6 +97,100 @@ def ensure_lab_field_sheet_template_matches_service(
             status_code=409,
             detail="LAB EXTERNO sólo aplica a equipo con servicio Vinculado",
         )
+    if is_linked and not is_lab_external:
+        raise HTTPException(
+            status_code=409,
+            detail="Este equipo es de servicio Vinculado: su hoja de campo debe ser LAB EXTERNO",
+        )
+
+
+def validate_lab_external_ready_to_complete(field_sheet: FieldSheet) -> None:
+    """Sección 2 de la auditoría 2026-09-17: contrato EXPLÍCITO de
+    completitud para LAB EXTERNO -- antes dependía por accidente de que
+    _validate_ready_to_complete (motor genérico, piensa en "blocks"/
+    "result_sections") simplemente no encontrara nada que exigir sobre
+    template_definition_json["groups"], una forma que ese motor no conoce.
+
+    Exige estructura mínima (al menos 1 grupo, cada grupo con al menos 1
+    tabla, cada tabla con al menos 1 columna y row_count >= 1) y reutiliza
+    _validate_results_rows (misma autoridad y mismo criterio ya vigente
+    para cualquier otra plantilla LAB: basta con que ALGUNA celda tenga un
+    valor no vacío en algún lado -- nunca exige llenar todas las celdas,
+    eso no es la regla de negocio acordada)."""
+    definition = field_sheet.template_definition_json or {}
+    groups = definition.get("groups") or []
+    if not groups:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "message": "LAB EXTERNO necesita al menos un grupo de tablas antes de completarse",
+                "missing_fields": ["groups"],
+            },
+        )
+    for group in groups:
+        group_label = group.get("title") or group.get("id") or "?"
+        tables = group.get("tables") or []
+        if not tables:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail={
+                    "message": f'El grupo "{group_label}" necesita al menos una tabla',
+                    "missing_fields": ["tables"],
+                },
+            )
+        for table in tables:
+            table_label = table.get("title") or table.get("id") or "?"
+            if not (table.get("columns") or []):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "message": f'La tabla "{table_label}" necesita al menos una columna',
+                        "missing_fields": ["columns"],
+                    },
+                )
+            if int(table.get("row_count") or 0) < 1:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail={
+                        "message": f'La tabla "{table_label}" necesita al menos una fila',
+                        "missing_fields": ["row_count"],
+                    },
+                )
+
+    from app.services.field_sheets import _validate_results_rows
+
+    _validate_results_rows(field_sheet)
+
+
+def lab_external_field_sheet_progress(sheet: FieldSheet) -> tuple[int, int]:
+    """Sección 3 de la auditoría 2026-09-17: _field_sheet_progress (bandeja
+    LAB, lab_field_sheets.py) recorre template_definition_json
+    ["result_sections"] -- LAB EXTERNO usa ["groups"], una forma distinta,
+    así que sin este cálculo dedicado toda hoja LAB EXTERNO aparecía 0/0 en
+    la bandeja sin importar cuánto tuviera capturado.
+
+    required_total = filas declaradas en todas las tablas de todos los
+    grupos (suma de table.row_count). completed_total = filas con captura
+    significativa: al menos una de las columnas declaradas de ESA tabla
+    con un valor no vacío -- mismo criterio de "algo capturado" que ya usa
+    _has_capture_value/_validate_results_rows, no exige llenar todas las
+    columnas de la fila."""
+    from app.services.lab_field_sheets import _has_capture_value
+
+    rows_by_key = {(row.section_key, row.row_number): row for row in sheet.results_rows}
+    completed_total = 0
+    required_total = 0
+    for group in (sheet.template_definition_json or {}).get("groups") or []:
+        for table in group.get("tables") or []:
+            column_keys = [column.get("key") for column in (table.get("columns") or [])]
+            row_count = int(table.get("row_count") or 0)
+            required_total += row_count
+            for row_number in range(1, row_count + 1):
+                row = rows_by_key.get((table.get("id"), row_number))
+                row_data = row.row_data if row is not None else None
+                if row_data and any(_has_capture_value(row_data.get(key)) for key in column_keys):
+                    completed_total += 1
+    return min(completed_total, required_total), required_total
 
 
 def _reconcile_lab_external_rows(sheet: FieldSheet, groups: list[LabExternalGroupWrite]) -> None:

@@ -426,6 +426,20 @@ def _validate_specialized_template_fields(field_sheet: FieldSheet) -> list[str]:
 
 
 def _validate_ready_to_complete(field_sheet: FieldSheet) -> None:
+    # Auditoría 2026-09-17 (LAB EXTERNO): el motor genérico de abajo lee
+    # "blocks"/"result_sections" -- template_definition_json["groups"] (la
+    # forma de LAB EXTERNO) no encaja ahí, así que _validate_specialized_
+    # template_fields/_validate_canonical_common_fields simplemente no
+    # encuentran nada que exigir para esta plantilla. Eso era permisivo por
+    # accidente (nunca se probó que faltara estructura), no una decisión.
+    # LAB EXTERNO tiene su propio contrato explícito y probado -- ver
+    # validate_lab_external_ready_to_complete.
+    if field_sheet.template_key == "lab_externo":
+        from app.services.lab_field_sheets_external import validate_lab_external_ready_to_complete
+
+        validate_lab_external_ready_to_complete(field_sheet)
+        return
+
     missing_fields = []
     # Fase 1 del contrato canonico LAB (2026-09, item 1.3): initial_condition/
     # final_condition dejan de ser requisito UNIVERSAL para hojas LAB -- no

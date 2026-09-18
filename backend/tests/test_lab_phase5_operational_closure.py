@@ -272,25 +272,42 @@ def create_and_sign_ready_order(
     return order_id, equipment_id
 
 
-def create_field_sheet(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int):
+def create_field_sheet(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int, *, template_key: str = "general"):
     return client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"template_key": "general"},
+        json={"template_key": template_key},
         headers=headers,
     )
 
 
-def complete_field_sheet_fully(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int) -> int:
-    created = create_field_sheet(client, headers, order_id, equipment_id)
+def complete_field_sheet_fully(
+    client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int, *, template_key: str = "general",
+) -> int:
+    """template_key="lab_externo" (equipo linked, ver
+    ensure_lab_field_sheet_template_matches_service) necesita su propia
+    estructura mínima antes de capturar -- ninguna plantilla interna la
+    trae por catálogo."""
+    created = create_field_sheet(client, headers, order_id, equipment_id, template_key=template_key)
     assert created.status_code == 201, created.text
     sheet_json = created.json()
     sheet_id = sheet_json["id"]
+    if template_key == "lab_externo":
+        structured = client.put(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/lab-externo/structure",
+            json={"groups": [{
+                "id": "g1", "title": "Grupo 1", "orientation": "pattern_to_ibc",
+                "tables": [{"id": "g1_t1", "title": "Tabla 1", "columns": [{"key": "c1", "label": "C1"}], "row_count": 1}],
+            }]},
+            headers=headers,
+        )
+        assert structured.status_code == 200, structured.text
+        sheet_json = structured.json()
     rows = [
         {
             "id": row["id"],
             "section_key": row["section_key"],
             "row_number": row["row_number"],
-            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+            "row_data": ({"c1": "1.00"} if template_key == "lab_externo" else {"result": "1.00"}) if index == 0 else row["row_data"],
         }
         for index, row in enumerate(sheet_json["results_rows"])
     ]
@@ -561,7 +578,7 @@ def test_close_rejected_with_unresolved_linked_folio(phase5_context):
     ext_sr_headers = external_headers(client, "external_sr@client.example.com")
     # La captura externa SÍ puede completar la hoja con folio Vinculado
     # pendiente (Fase 3, deliberado) -- eso no es lo que se está probando.
-    completed_sheet = complete_field_sheet_fully(client, ext_sr_headers, order_id, equipment_id)
+    completed_sheet = complete_field_sheet_fully(client, ext_sr_headers, order_id, equipment_id, template_key="lab_externo")
     assert completed_sheet
     with factory() as db:
         assert db.get(LabWorkOrderEquipment, equipment_id).folio_status == "pending"
@@ -607,7 +624,7 @@ def test_linked_pending_capture_completes_then_blocks_close_until_authorized(pha
         assert ticket_id is not None
 
     # A) folio pendiente -> crear/guardar borrador/capturar resultados/completar.
-    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id, template_key="lab_externo")
     assert sheet_id
     with factory() as db:
         assert db.get(LabWorkOrderEquipment, equipment_id).folio_status == "pending"

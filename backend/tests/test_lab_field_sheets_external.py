@@ -238,29 +238,27 @@ def test_linked_equipment_creates_lab_externo_field_sheet(lab_context):
     assert sheet["template_definition"]["groups"] == []
 
 
-def test_linked_equipment_can_still_use_an_internal_template_backend_does_not_force_it(lab_context):
-    """Corrección 2026-09-17: la regla de "INTEGRACIÓN LINKED" sólo aplica
-    en un sentido (lab_externo exige linked, ver
-    test_non_linked_equipment_rejects_lab_externo) -- NO al revés. Un
-    equipo linked usando una plantilla LAB interna es un flujo preexistente
-    y probado en otros suites (test_lab_phase3_reception_signing.py,
-    test_mobile_security_context.py, test_lab_equipment_by_equipment_workflow.py,
-    test_lab_phase5_operational_closure.py); forzarlo aquí habría sido
-    redefinir ese contrato sin que el encargo lo pidiera. Lo que el encargo
-    pide (no pedir plantilla interna para linked) es una decisión de UX en
-    Mobile, no una prohibición backend."""
+def test_linked_equipment_rejects_an_internal_template(lab_context):
+    """Auditoría 2026-09-17 (corrige la versión anterior de este test, que
+    afirmaba lo contrario): el contrato final es bidireccional --
+    accredited/traceable -> plantilla interna, linked -> LAB EXTERNO, sin
+    excepciones. Los suites que antes ejercían linked + "general"
+    (test_lab_phase3_reception_signing.py, test_mobile_security_context.py,
+    test_lab_equipment_by_equipment_workflow.py,
+    test_lab_phase5_operational_closure.py) ya se migraron a LAB EXTERNO."""
     client, factory, tokens = lab_context
     headers = auth(tokens["tech"])
     order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
-    allowed = client.post(
+    rejected = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
         json={"template_key": "general"},
         headers=headers,
     )
-    assert allowed.status_code == 201, allowed.text
+    assert rejected.status_code == 409, rejected.text
 
 
-def test_non_linked_equipment_rejects_lab_externo(lab_context):
+@pytest.mark.parametrize("service_type", ["traceable", "accredited"])
+def test_non_linked_equipment_rejects_lab_externo(lab_context, service_type):
     """La regla también aplica en el sentido inverso: acreditado/trazable
     nunca usa LAB EXTERNO."""
     client, factory, tokens = lab_context
@@ -276,7 +274,7 @@ def test_non_linked_equipment_rejects_lab_externo(lab_context):
     equipment_id = added.json()["equipment"][-1]["id"]
     client.put(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service",
-        json={"service_type": "traceable", "linked_company_id": None}, headers=headers,
+        json={"service_type": service_type, "linked_company_id": None}, headers=headers,
     )
     client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
@@ -466,6 +464,103 @@ def test_completing_requires_at_least_one_captured_value(lab_context):
 
 
 # ---------------------------------------------------------------------------
+# PENDIENTE 7, auditoría 2026-09-17, sección 2: contrato explícito de
+# completitud (validate_lab_external_ready_to_complete) -- antes dependía
+# accidentalmente de que el motor genérico (piensa en "blocks"/
+# "result_sections") no encontrara nada que exigir sobre
+# template_definition_json["groups"].
+# ---------------------------------------------------------------------------
+def test_completing_with_zero_groups_is_rejected(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
+    create_lab_external_sheet(client, headers, order_id, equipment_id)
+    # Nunca se definió ningún grupo -- template_definition_json["groups"] == [].
+
+    rejected = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["detail"]["missing_fields"] == ["groups"]
+
+
+def test_completing_with_structure_and_real_capture_succeeds(lab_context):
+    """Estructura válida + al menos un valor capturado -> completa. No
+    exige llenar TODAS las celdas -- basta una captura real, mismo
+    criterio ya vigente para cualquier otra plantilla LAB
+    (_validate_results_rows, reutilizado tal cual)."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
+    create_lab_external_sheet(client, headers, order_id, equipment_id)
+    put_structure(client, headers, order_id, equipment_id, ONE_GROUP_TWO_TABLES_STRUCTURE)
+    sheet = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).json()
+    only_first_row = sheet["results_rows"][0]
+    patched = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"results_rows": [
+            {"id": only_first_row["id"], "section_key": only_first_row["section_key"], "row_number": only_first_row["row_number"], "row_data": {"c1": "1.00"}},
+        ]},
+        headers=headers,
+    )
+    assert patched.status_code == 200, patched.text
+
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+
+
+def test_completed_freezes_both_structure_and_captured_values(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
+    create_lab_external_sheet(client, headers, order_id, equipment_id)
+    put_structure(client, headers, order_id, equipment_id, ONE_GROUP_TWO_TABLES_STRUCTURE)
+    sheet = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).json()
+    first_row = sheet["results_rows"][0]
+    client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"results_rows": [
+            {"id": first_row["id"], "section_key": first_row["section_key"], "row_number": first_row["row_number"], "row_data": {"c1": "1.00"}},
+        ]},
+        headers=headers,
+    )
+    completed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/complete",
+        headers=headers,
+    )
+    assert completed.status_code == 200, completed.text
+
+    structure_blocked = put_structure(client, headers, order_id, equipment_id, ONE_GROUP_TWO_TABLES_STRUCTURE)
+    assert structure_blocked.status_code == 409, structure_blocked.text
+
+    values_blocked = client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"results_rows": [
+            {"id": first_row["id"], "section_key": first_row["section_key"], "row_number": first_row["row_number"], "row_data": {"c1": "OTRO VALOR"}},
+        ]},
+        headers=headers,
+    )
+    assert values_blocked.status_code == 409, values_blocked.text
+
+    with factory() as db:
+        frozen = db.get(FieldSheet, completed.json()["id"])
+        assert frozen.template_definition_json["groups"][0]["tables"][0]["row_count"] == 2
+        frozen_row = next(row for row in frozen.results_rows if row.id == first_row["id"])
+        assert frozen_row.row_data["c1"] == "1.00"
+
+
+# ---------------------------------------------------------------------------
 # FASE 5: prevalidación/cierre -- linked exige LAB EXTERNO completed
 # ---------------------------------------------------------------------------
 def test_linked_without_a_completed_lab_externo_sheet_blocks_closure(lab_context):
@@ -627,3 +722,126 @@ def test_reopen_correction_freezes_the_previous_structure_and_new_revision_start
         assert historical.is_current is False
         assert historical.status == "completed"
         assert historical.template_definition_json["groups"][0]["tables"][0]["row_count"] == 2
+
+
+# ---------------------------------------------------------------------------
+# PENDIENTE 7, auditoría 2026-09-17, sección 3: progreso de bandeja LAB
+# EXTERNO. _field_sheet_progress (lab_field_sheets.py) recorría
+# template_definition_json["result_sections"] -- LAB EXTERNO usa ["groups"],
+# así que aparecía 0/0 sin importar cuánto se hubiera capturado.
+# ---------------------------------------------------------------------------
+def _tray_entry(client, headers, equipment_id: int) -> dict:
+    tray = client.get(
+        "/api/mobile/v1/technician/lab-field-sheets?offset=0&limit=50", headers=headers,
+    )
+    assert tray.status_code == 200, tray.text
+    return next(item for item in tray.json()["items"] if item["equipment_id"] == equipment_id)
+
+
+def test_lab_externo_freshly_structured_shows_zero_of_n_in_the_tray(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
+    create_lab_external_sheet(client, headers, order_id, equipment_id)
+    put_structure(client, headers, order_id, equipment_id, ONE_GROUP_TWO_TABLES_STRUCTURE)
+
+    entry = _tray_entry(client, headers, equipment_id)
+    assert entry["progress_completed"] == 0
+    # ONE_GROUP_TWO_TABLES_STRUCTURE: g1_t1 (row_count=2) + g1_t2 (row_count=1) = 3.
+    assert entry["progress_required"] == 3
+
+
+def test_lab_externo_partial_capture_shows_x_of_n_in_the_tray(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
+    create_lab_external_sheet(client, headers, order_id, equipment_id)
+    put_structure(client, headers, order_id, equipment_id, ONE_GROUP_TWO_TABLES_STRUCTURE)
+    sheet = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).json()
+    one_row = next(row for row in sheet["results_rows"] if row["section_key"] == "g1_t1" and row["row_number"] == 1)
+    client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"results_rows": [
+            {"id": one_row["id"], "section_key": "g1_t1", "row_number": 1, "row_data": {"c1": "1.00"}},
+        ]},
+        headers=headers,
+    )
+
+    entry = _tray_entry(client, headers, equipment_id)
+    assert entry["progress_completed"] == 1
+    assert entry["progress_required"] == 3
+
+
+def test_lab_externo_full_capture_shows_n_of_n_in_the_tray(lab_context):
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
+    create_lab_external_sheet(client, headers, order_id, equipment_id)
+    put_structure(client, headers, order_id, equipment_id, ONE_GROUP_TWO_TABLES_STRUCTURE)
+    sheet = client.get(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        headers=headers,
+    ).json()
+    rows = [
+        {"id": row["id"], "section_key": row["section_key"], "row_number": row["row_number"], "row_data": {"c1": "1.00"}}
+        for row in sheet["results_rows"]
+    ]
+    client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"results_rows": rows}, headers=headers,
+    )
+
+    entry = _tray_entry(client, headers, equipment_id)
+    assert entry["progress_completed"] == 3
+    assert entry["progress_required"] == 3
+
+
+def test_internal_template_progress_unaffected_by_lab_externo_change(lab_context):
+    """Plantilla interna conserva su comportamiento existente
+    (template_definition_json["result_sections"]) -- la rama nueva de LAB
+    EXTERNO en _field_sheet_progress nunca se activa para ella."""
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order = client.post(
+        "/api/mobile/v1/technician/lab-work-orders", json=create_payload(), headers=headers
+    )
+    order_id = order.json()["id"]
+    added = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment",
+        json=equipment_payload(1), headers=headers,
+    )
+    equipment_id = added.json()["equipment"][-1]["id"]
+    client.put(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/service",
+        json={"service_type": "traceable", "linked_company_id": None}, headers=headers,
+    )
+    client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/signatures",
+        json=signatures_payload(), headers=headers,
+    )
+    created = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"template_key": "general"},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    sheet = created.json()
+
+    entry_before = _tray_entry(client, headers, equipment_id)
+    required_before = entry_before["progress_required"]
+    assert required_before > 0
+
+    first_row = sheet["results_rows"][0]
+    client.patch(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
+        json={"results_rows": [
+            {"id": first_row["id"], "section_key": first_row["section_key"], "row_number": first_row["row_number"], "row_data": {"simple_value": "1.00"}},
+        ]},
+        headers=headers,
+    )
+    entry_after = _tray_entry(client, headers, equipment_id)
+    assert entry_after["progress_required"] == required_before
+    assert entry_after["progress_completed"] >= 1

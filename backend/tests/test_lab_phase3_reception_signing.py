@@ -370,7 +370,10 @@ def test_signing_allows_linked_with_pending_folio(phase3_context):
 
 
 def test_signing_and_field_sheet_allow_linked_without_company(phase3_context):
-    """Vinculado sin empresa y con folio pendiente puede firmar y capturar."""
+    """Vinculado sin empresa y con folio pendiente puede firmar y capturar.
+    Auditoría 2026-09-17: un equipo linked exige LAB EXTERNO (contrato
+    bidireccional -- ver ensure_lab_field_sheet_template_matches_service),
+    nunca una plantilla interna como "general"."""
     client, factory, tokens, _tenants = phase3_context
     headers = auth(tokens["tech"])
     order_id = create_order(client, headers)
@@ -384,7 +387,7 @@ def test_signing_and_field_sheet_allow_linked_without_company(phase3_context):
     assert response.status_code == 200, response.text
     sheet = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"template_key": "general"},
+        json={"template_key": "lab_externo"},
         headers=headers,
     )
     assert sheet.status_code == 201, sheet.text

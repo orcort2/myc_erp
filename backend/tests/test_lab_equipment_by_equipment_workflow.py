@@ -197,7 +197,13 @@ def _capture_field_sheet_ready(client, headers, order_id: int, equipment_id: int
     completarse (_validate_ready_to_complete pasaría), pero SIN completarla
     -- eso es exactamente lo que el flujo equipo-por-equipo permite pre-firma
     (sección 8 del encargo): captura real, no sólo "preparar" una hoja
-    vacía."""
+    vacía.
+
+    template_key="lab_externo" (equipo linked, ver
+    ensure_lab_field_sheet_template_matches_service) necesita su propia
+    estructura mínima antes de poder capturar -- ninguna plantilla interna
+    la trae por catálogo (bootstrap_lab_external_definition arranca con
+    groups=[])."""
     created = client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
         json={"template_key": template_key},
@@ -205,12 +211,23 @@ def _capture_field_sheet_ready(client, headers, order_id: int, equipment_id: int
     )
     assert created.status_code == 201, created.text
     sheet = created.json()
+    if template_key == "lab_externo":
+        structured = client.put(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/lab-externo/structure",
+            json={"groups": [{
+                "id": "g1", "title": "Grupo 1", "orientation": "pattern_to_ibc",
+                "tables": [{"id": "g1_t1", "title": "Tabla 1", "columns": [{"key": "c1", "label": "C1"}], "row_count": 1}],
+            }]},
+            headers=headers,
+        )
+        assert structured.status_code == 200, structured.text
+        sheet = structured.json()
     rows = [
         {
             "id": row["id"],
             "section_key": row["section_key"],
             "row_number": row["row_number"],
-            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+            "row_data": ({"c1": "1.00"} if template_key == "lab_externo" else {"result": "1.00"}) if index == 0 else row["row_data"],
         }
         for index, row in enumerate(sheet["results_rows"])
     ]
@@ -490,7 +507,7 @@ def test_prevalidation_blocks_missing_sheet_incomplete_sheet_and_unresolved_foli
     assert next(
         item for item in detail["equipment"] if item["id"] == equipment_with_pending_folio
     )["folio_status"] == "pending"
-    _capture_field_sheet_ready(client, headers, order_id, equipment_with_pending_folio)
+    _capture_field_sheet_ready(client, headers, order_id, equipment_with_pending_folio, template_key="lab_externo")
 
     prevalidated = _prevalidate(client, headers, order_id)
     assert prevalidated.status_code == 200, prevalidated.text

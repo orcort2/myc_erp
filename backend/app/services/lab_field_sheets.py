@@ -33,7 +33,9 @@ from app.services.field_sheets import (
     _validate_ready_to_complete,
 )
 from app.services.lab_field_sheets_external import (
+    LAB_EXTERNAL_TEMPLATE_KEY,
     ensure_lab_field_sheet_template_matches_service,
+    lab_external_field_sheet_progress,
     resolve_lab_external_definition,
 )
 from app.services.institutional_configurations import (
@@ -87,6 +89,12 @@ def _field_sheet_progress(sheet: FieldSheet | None) -> tuple[int, int]:
     """Calcula progreso sólo contra el snapshot congelado de la hoja."""
     if sheet is None or not sheet.template_definition_json:
         return 0, 0
+    # Auditoría 2026-09-17 (sección 3): LAB EXTERNO usa
+    # template_definition_json["groups"], no ["result_sections"] -- sin
+    # esta rama, el cálculo de abajo nunca encuentra nada y toda hoja LAB
+    # EXTERNO aparece 0/0 en la bandeja sin importar cuánto se capturó.
+    if sheet.template_key == LAB_EXTERNAL_TEMPLATE_KEY:
+        return lab_external_field_sheet_progress(sheet)
     rows_by_section: dict[str, list[FieldSheetResult]] = {}
     for row in sheet.results_rows:
         rows_by_section.setdefault(row.section_key, []).append(row)
