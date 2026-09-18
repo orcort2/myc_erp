@@ -471,3 +471,11 @@ de carga/paginación existentes.
 Quedan fuera mapas/rastreo externo, Gmail, una plantilla institucional avanzada
 de nota, aceptación física y workflows de categorías distintas. El frente
 queda **EN REVISIÓN**.
+
+## Ajuste implementado post-PR #4 (2026-09-17)
+
+LAB EXTERNO usa captura canónica común y editor dinámico de resultados; su PDF
+reutiliza el formato general, sin logo y con título propio. Administradores
+internos con permiso efectivo pueden resolver sus propios linked_folio y
+manual_myc_folio. El alcance no incluye autoaprobación de reaperturas ni cierres.
+Pendiente aceptación en iOS/TestFlight; no cambia el estado global EN DESARROLLO.

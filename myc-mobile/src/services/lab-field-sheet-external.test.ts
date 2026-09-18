@@ -1,3 +1,4 @@
+import { labExternalTableProgress } from './lab-field-sheet-external';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -105,4 +106,14 @@ test('findRow/cellValue localizan por (table.id, row_number) y nunca fabrican un
 test('buildLabExternalValuesPatch reutiliza el PATCH existente -- sólo results_rows, sin endpoint nuevo', () => {
   const rows = [{ id: 1, section_key: 'g1_t1', row_number: 1, row_data: { c1: '1' } }];
   assert.deepEqual(buildLabExternalValuesPatch(rows), { results_rows: rows });
+});
+
+
+test('progreso dinámico cuenta filas y columnas declaradas, incluyendo cero', () => {
+  const table = { id: 't1', title: 'Tabla', row_count: 3, columns: [{ key: 'c1', label: 'Columna' }] };
+  assert.deepEqual(labExternalTableProgress(table, [
+    { section_key: 't1', row_number: 1, row_data: { c1: '0' } },
+    { section_key: 't1', row_number: 2, row_data: { c1: ' ', ajena: '7' } },
+    { section_key: 't1', row_number: 4, row_data: { c1: '8' } },
+  ]), { completed: 1, total: 3 });
 });

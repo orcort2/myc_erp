@@ -845,3 +845,65 @@ def test_internal_template_progress_unaffected_by_lab_externo_change(lab_context
     entry_after = _tray_entry(client, headers, equipment_id)
     assert entry_after["progress_required"] == required_before
     assert entry_after["progress_completed"] >= 1
+
+
+def test_external_pdf_reuses_all_general_fields_signatures_and_pagination(lab_context, tmp_path):
+    import io
+    import re
+    from datetime import date
+    from pypdf import PdfReader
+    from weasyprint import HTML
+    from app.services.field_sheet_pdfs import _render_html, _render_lab_externo_html
+    from app.services.field_sheet_templates import build_fallback_template_definition
+
+    client, factory, tokens = lab_context
+    headers = auth(tokens["tech"])
+    order_id, equipment_id = create_order_with_linked_equipment(client, headers, factory)
+    create_lab_external_sheet(client, headers, order_id, equipment_id)
+    put_structure(client, headers, order_id, equipment_id, ONE_GROUP_TWO_TABLES_STRUCTURE)
+    with factory() as db:
+        sheet = db.scalar(select(FieldSheet).where(FieldSheet.lab_equipment_id == equipment_id))
+        sheet.company = "CLIENTE COMUN"
+        sheet.address = "DOMICILIO COMUN"
+        sheet.attention = "CONTACTO COMUN"
+        sheet.calibration_date = date(2026, 9, 17)
+        sheet.next_calibration_date = date(2027, 9, 17)
+        sheet.calibration_place = "LABORATORIO COMUN"
+        sheet.environment_humidity_start = "45 %"
+        sheet.environment_temperature_start = "23 C"
+        sheet.equipment_general_condition = True
+        sheet.consider_equipment_deviations = True
+        sheet.observations = "OBSERVACION COMUN"
+        sheet.capture_values = {"scope": "ALCANCE COMUN", "internal_id": "ID COMUN"}
+        signatures = [{"display_label": "Calibró", "name": "TECNICO COMUN", "signed_at": None}]
+        institution = {"legal_name": "INSTITUCION COMUN"}
+        general = build_fallback_template_definition("general")
+        sheet.pdf_renderer_key = "field_sheet_engine"
+        general_html = _render_html(sheet, general, institution, signatures)
+        external_html = _render_lab_externo_html(sheet, sheet.template_definition_json, signatures, institution)
+        # Exact semantic field parity, including labels and values; no duplicated common HTML.
+        cells = lambda html: re.findall(r'<div class="field-cell [^"]*"[^>]*>(.*?)</div>', html, re.S)
+        assert cells(general_html) and cells(general_html) == cells(external_html)
+        for value in ("CLIENTE COMUN", "DOMICILIO COMUN", "CONTACTO COMUN", "ALCANCE COMUN",
+                      "ID COMUN", "LABORATORIO COMUN", "45 %", "23 C", "OBSERVACION COMUN", "TECNICO COMUN"):
+            assert value in general_html and value in external_html
+        assert 'class="logo"' not in external_html
+        assert 'HOJA DE CAMPO "LAB EXTERNO"' in external_html or 'HOJA DE CAMPO &#34;LAB EXTERNO&#34;' in external_html
+        assert "Patrón → IBC" in external_html and "Tabla 1" in external_html
+        # Exercise long tables with repeated headers and every declared row.
+        definition = dict(sheet.template_definition_json)
+        definition["groups"] = [dict(definition["groups"][0])]
+        table = dict(definition["groups"][0]["tables"][0])
+        table["row_count"] = 100
+        definition["groups"][0]["tables"] = [table]
+        sheet.results_rows = [FieldSheetResult(section_key=table["id"], row_number=index,
+                             row_data={"c1": f"VALOR-{index:03d}", "c2": "2.00"}) for index in range(1, 101)]
+        html = _render_lab_externo_html(sheet, definition, signatures, institution)
+        pdf = HTML(string=html).write_pdf()
+        reader = PdfReader(io.BytesIO(pdf))
+        text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        assert len(reader.pages) > 1
+        assert "VALOR-001" in text and "VALOR-100" in text
+        assert "TECNICO COMUN" in text and "OBSERVACION COMUN" in text
+        (tmp_path / "lab-externo.pdf").write_bytes(pdf)
+        (tmp_path / "general.pdf").write_bytes(HTML(string=general_html).write_pdf())

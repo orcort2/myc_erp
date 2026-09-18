@@ -18,6 +18,7 @@ class MobileUserRead(BaseModel):
     full_name: str
     is_active: bool
     permissions: list[str]
+    can_resolve_own_lab_folios: bool = False
     actor_type: Literal["internal", "client"]
     client_id: int | None = None
     membership_id: int | None = None

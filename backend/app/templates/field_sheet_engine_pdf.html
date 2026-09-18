@@ -25,6 +25,12 @@
     .control span + span { border-top: .25mm solid #344054; }
     h1 { color: {{ organization_profile.primary_color }}; font-size: 10pt; margin: 1mm 0 2mm; text-align: center; text-transform: uppercase; }
     .document-grid { display: grid; gap: 0 2mm; grid-template-columns: repeat({{ print_layout.document.grid_columns }}, minmax(0, 1fr)); }
+    {% if external_groups is not none %}
+    /* WeasyPrint no fragmenta una tabla larga dentro de CSS grid. Conserva
+       los grids de campos comunes; sólo el contenedor de flujo es block. */
+    .document-grid { display: block; }
+    .result-section .results-frame { overflow: visible; }
+    {% endif %}
     .block { break-inside: avoid; margin-top: 1.4mm; }
     .block:not(.without-border) { border-radius: 1.2mm; overflow: hidden; }
     .block-title, .section-title { background: {{ organization_profile.header_fill }}; border: .25mm solid #344054; font-weight: 700; line-height: 1.2; padding: 1mm 1.5mm; text-align: center; }
@@ -107,6 +113,9 @@
           {% for field in block.fields %}<div class="field-cell {{ field.label_position }}" style="grid-column: span {{ field.column_span }};"><strong>{{ field.label }}{% if field.label_position == 'inline' %}:{% endif %}</strong>{{ field.value }}</div>{% endfor %}
         </div>
       </section>
+      {% endif %}
+      {% if external_groups is not none and block.key == 'results' %}
+        {% include "field_sheet_lab_externo_pdf.html" %}
       {% endif %}
       {% for section in block.sections %}
       <section class="{{ block_classes }} result-section {{ 'break-auto' if section.break_inside == 'auto' else '' }} {{ 'page-break-before' if section.page_break_before else '' }}" data-block="{{ block.key }}" data-table-family="{{ block.table_family }}" style="grid-column: span {{ layout.column_span }}; margin-top: {{ layout.spacing_before }}mm; margin-bottom: {{ layout.spacing_after }}mm;">

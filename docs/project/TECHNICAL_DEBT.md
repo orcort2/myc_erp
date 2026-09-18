@@ -70,3 +70,16 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
 ## Deuda agregada 2026-09-17
 
 - TD-058 (P2): Optimización de latencia NIIMBOT B1 -- medir transporte BLE, fragmentación de 20 bytes, pacing de 10 ms, reconexión e identificación del dispositivo, y optimizar sin comprometer confiabilidad. `myc-mobile/src/services/labels/printers/adapters/niimbot-b1/` (`niimbot-b1-adapter.ts`, `protocol.ts`) y `myc-mobile/src/services/labels/printers/ble-transport.ts`/`ble-manager-transport.ts`; no tocar el protocolo de impresión, el pacing BLE ni el renderer de etiquetas fuera de una fase dedicada con mediciones físicas antes/después.
+
+## Validación pendiente post-PR #4 (2026-09-17)
+
+- Repetir apertura/captura/guardar/completar/PDF/reapertura de LAB EXTERNO y
+  auto-resolución administrativa en iPhone/TestFlight. La excepción JavaScript
+  se reproduce en la base y queda cubierta por test del componente, pero no se
+  verificaron aquí los `.ips` ni una nueva ejecución nativa release. No afirmar
+  que toda posible causa del SIGABRT nativo quedó descartada.
+
+- La suite completa detectó una aserción intermitente preexistente en
+  `test_maintenance_ets_execution.py::test_material_used_and_required_are_separate_and_report_has_no_internal_cost`:
+  busca la subcadena `80` en todo el HTML y falla si aparece en el timestamp.
+  No se modificó el test ni el módulo Mantenimiento en este hotfix.

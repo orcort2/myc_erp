@@ -26,6 +26,7 @@ export type MobileCapabilities = {
   canEditLabClients: boolean;
   canDeactivateLabClients: boolean;
   canResolveLabFolios: boolean;
+  canResolveOwnLabFolios: boolean;
   canReopenFieldSheetDirectly: boolean;
   canOverrideReceptionDate: boolean;
   canRegisterLabDelivery: boolean;
@@ -38,6 +39,9 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
   const permissions = user?.permissions ?? [];
   const hasLegacyLabAccess = hasPermission(permissions, 'lab_work_orders.use');
   return {
+    canResolveOwnLabFolios: user?.actor_type === 'internal'
+      && user.can_resolve_own_lab_folios === true
+      && hasPermission(permissions, 'lab_folios.resolve'),
     canAccessMobile: hasPermission(permissions, 'mobile.access'),
     canReadWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.read_organization'),
@@ -142,4 +146,17 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     // (tickets.review, mismo permiso ya usado por approve/reject de tickets).
     canRequestPartialDelivery: user?.actor_type === 'internal' && hasLegacyLabAccess,
   };
+}
+
+/** Presentación de la resolución; el endpoint vuelve a verificar autoridad. */
+export function canResolveOperationalTicket(user: AuthUser | null, ticket: {
+  type: string; status: string; requested_by_user_id: number;
+} | null): boolean {
+  if (!user || !ticket || ticket.status !== 'pending') return false;
+  const capabilities = deriveMobileCapabilities(user);
+  const canResolveType = ticket.type === 'reception_date_change'
+    ? capabilities.canOverrideReceptionDate : capabilities.canResolveLabFolios;
+  return canResolveType && (ticket.requested_by_user_id !== user.id || (
+    capabilities.canResolveOwnLabFolios && ['linked_folio', 'manual_myc_folio'].includes(ticket.type)
+  ));
 }

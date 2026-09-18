@@ -168,3 +168,17 @@ Este contrato se aplica al agregado temporal OT LAB. No cambia ServiceOrder,
 ServiceWorkOrder, firmas ETS, Motor de Resoluciones ni el ERP web. La revisión
 manual del nuevo sprint en dispositivos físicos y TestFlight sigue pendiente;
 no se ejecutó build EAS ni publicación.
+
+## Excepción acotada de folios propios (2026-09-17)
+
+`resolve_operational_ticket` permite resolver una solicitud propia únicamente
+para `linked_folio` y `manual_myc_folio`, en `pending`, si
+`user_can_resolve_own_lab_folios` confirma cuenta interna, rol real
+`Administrador` activo y permiso efectivo `lab_folios.resolve`. Ser interno o
+tener sólo el permiso no basta. No cambia rechazo ni aprobación de reapertura,
+cierre parcial, entrega parcial ni cualquier otro ticket: conservan
+`TICKET_SELF_APPROVAL_FORBIDDEN` para su solicitante. Un segundo revisor conserva
+las autoridades existentes. Se mantienen reviewed_by/reviewed_at/resolved_at,
+comentario, resolution_snapshot, auditoría, conversación y notificación.
+Mobile consume `can_resolve_own_lab_folios` emitida por login/refresh/me y muestra
+la acción por estado, tipo y capability; el endpoint vuelve a autorizar.

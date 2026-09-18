@@ -107,6 +107,8 @@ Estos documentos no sustituyen `PROJECT_STATUS.md`: una arquitectura puede estar
 
 ## Cierres técnicos
 
+Cierre acotado post-PR #4: [LAB EXTERNO y folios propios](../closures/LAB_EXTERNAL_POST_PR4_HOTFIX_2026-09-17.md), captura/PDF comunes, autorización y evidencia; no cambia el estado global del módulo.
+
 | Documento | Alcance del cierre |
 | --- | --- |
 | [`../closures/CLIENT_DELETION_CLOSURE.md`](../closures/CLIENT_DELETION_CLOSURE.md) | Semántica de eliminación, archivo y restauración de Clientes. |

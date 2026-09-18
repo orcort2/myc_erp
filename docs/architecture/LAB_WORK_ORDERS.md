@@ -882,22 +882,34 @@ propios del modelo `FieldSheet`.
 Integración con `service_type=linked`: al abrir por primera vez la captura de
 un equipo Vinculado, Mobile crea LAB EXTERNO automáticamente — nunca ofrece un
 selector de plantilla interna para ese equipo. La regla backend
-(`ensure_lab_field_sheet_template_matches_service`) es de un solo sentido:
-`template_key="lab_externo"` sólo puede usarse con `service_type=linked`. Lo
-contrario — un equipo Vinculado con una plantilla LAB interna — sigue siendo
-válido: es un flujo preexistente que ya tenía cobertura antes de esta
-capacidad y esta adición no lo redefine. El cierre exige una FieldSheet
+(`ensure_lab_field_sheet_template_matches_service`) es bidireccional:
+`linked` exige `lab_externo`; `accredited`/`traceable` exigen plantilla interna.
+El cierre exige una FieldSheet
 `completed` por equipo activo (`_missing_completed_sheets`, ya existente y
 agnóstica de `template_key`) — un equipo Vinculado sin LAB EXTERNO completada
 bloquea el cierre igual que cualquier otro equipo sin hoja completa; no se
 introdujo ninguna excepción de cierre sin hoja.
 
-El PDF de LAB EXTERNO tiene su propio encabezado ("Hoja de campo \"LAB
-EXTERNO\"") y nunca referencia el logo institucional — se renderiza con su
-propia plantilla (`app/templates/field_sheet_lab_externo_pdf.html`,
-`_render_lab_externo_html` en `field_sheet_pdfs.py`) en vez de forzar
-`_render_html` (pensada para secciones de columnas fijas Patrón/IBC-1-3, no
-para columnas dinámicas por tabla).
+Mobile reutiliza `LabTechnicalCapture` y su contrato canónico completo: cliente,
+equipo, calibración, condiciones, ambientales, observaciones, firmas, estados,
+revisión, guardado, completitud, reapertura y descarga. La fuente explícita
+para LAB EXTERNO es `CANONICAL_FIELDS` de `field-sheet-canonical-contract.ts`,
+con sus 24 descriptores y reglas readonly; no se filtra por blocks ausentes.
+Las plantillas internas conservan `canonicalFieldsForDefinition(blocks)`.
+Condición general/desviaciones son canónicas; initial_condition/final_condition
+son legacy especializados y no se incorporan al contrato común. `LabExternalFieldSheet`
+es sólo el editor de resultados dinámicos, recibe `readOnly` e informa cambios
+pendientes y la hoja persistida al padre. No evalúa el motor interno de
+`result_sections`; la selección de contrato sucede antes de calcular progreso.
+Los valores y la estructura se guardan explícitamente, sin perder cambios al
+completar ni sobrescribir filas con una copia anterior.
+
+El PDF usa `_render_html`, la definición general oficial y
+`field_sheet_engine_pdf.html`. El título es `HOJA DE CAMPO "LAB EXTERNO"`, no
+incluye logo y sólo los resultados usan el parcial
+`field_sheet_lab_externo_pdf.html`. Comparte campos, tipografía, firmas y pie;
+las tablas largas fluyen fuera de CSS grid para no truncarse en WeasyPrint.
+Los `final_pdf` ya congelados siguen entregándose intactos.
 
 ## Límites verificados
 

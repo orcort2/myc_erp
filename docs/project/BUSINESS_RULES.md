@@ -293,3 +293,17 @@ sólo a una FieldSheet genuinamente nueva (primera captura, o la hoja en
 blanco de un cambio de campo crítico). Toda estructura JSON mutable clonada
 usa copia profunda (`copy.deepcopy`), nunca superficial, para que N y la
 correctiva sean documentalmente independientes.
+
+## Hotfix LAB EXTERNO y folios propios (2026-09-17)
+
+- LAB EXTERNO reutiliza todos los campos y acciones comunes de la hoja general;
+  sólo los resultados usan grupos con orientación compartida, tablas y columnas
+  dinámicas. `linked` exige `lab_externo`; acreditado/trazable exigen plantilla interna.
+- El PDF comparte el formato general canónico, sin logo, con título
+  `HOJA DE CAMPO "LAB EXTERNO"` y resultados dinámicos. Conserva PDFs finales históricos.
+- Resolver un folio propio exige actor interno, rol Administrador activo y
+  `lab_folios.resolve`; sólo aplica a linked_folio/manual_myc_folio pending.
+  Otros tickets conservan la prohibición de autoaprobación.
+
+Contratos: `LAB_WORK_ORDERS.md`, `FIELD_SHEET_PDF_RENDERER.md`,
+`OPERATIONAL_TICKETS_AND_LAB_REOPENING.md` y `MOBILE_SECURITY_CONTEXT.md` en architecture.

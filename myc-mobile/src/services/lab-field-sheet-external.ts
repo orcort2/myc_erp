@@ -176,3 +176,13 @@ export function cellValue(rows: LabExternalRow[], tableId: string, rowNumber: nu
 export function buildLabExternalValuesPatch(rows: LabExternalRow[]): { results_rows: LabExternalRow[] } {
   return { results_rows: rows };
 }
+
+/** Misma semántica de progreso que backend: filas declaradas con al menos
+ * una columna declarada no vacía; celdas ajenas a la tabla no cuentan. */
+export function labExternalTableProgress(table: LabExternalTable, rows: LabExternalRow[]): { completed: number; total: number } {
+  let completed = 0;
+  for (let row = 1; row <= table.row_count; row += 1) {
+    if (table.columns.some((column) => cellValue(rows, table.id, row, column.key).trim() !== '')) completed += 1;
+  }
+  return { completed, total: table.row_count };
+}

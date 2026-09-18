@@ -29,7 +29,7 @@ from app.schemas.operational_ticket import (
     TicketResolve,
 )
 from app.services.audit_logs import write_audit_log
-from app.services.auth import user_has_permission
+from app.services.auth import user_can_resolve_own_lab_folios, user_has_permission
 from app.services.lab_field_sheets import _clone_field_sheet_for_correction
 from app.services.lab_work_orders import (
     _get,
@@ -982,7 +982,11 @@ def resolve_operational_ticket(
     ticket = _get_ticket(db, ticket_id, lock=True)
     if ticket.status != "pending":
         raise HTTPException(status_code=409, detail="TICKET_ALREADY_RESOLVED")
-    if ticket.requested_by_user_id == user.id:
+    can_resolve_own_folio = (
+        ticket.type in {"linked_folio", "manual_myc_folio"}
+        and user_can_resolve_own_lab_folios(user)
+    )
+    if ticket.requested_by_user_id == user.id and not can_resolve_own_folio:
         raise HTTPException(status_code=403, detail="TICKET_SELF_APPROVAL_FORBIDDEN")
     now = datetime.now(timezone.utc)
     if ticket.type == "reception_date_change":

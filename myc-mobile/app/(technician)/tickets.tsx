@@ -18,8 +18,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { BackButton } from '@/src/design/primitives';
-import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
-import { hasPermission } from '@/src/permissions/permissions';
+import { canResolveOperationalTicket, deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { affectsTickets, RefreshGate } from '@/src/notifications/refresh-policy';
 import { filterGroupRequests, filterTicketsByKind, type RequestInboxKind, visibleRequestKinds } from '@/src/requests/request-inbox';
@@ -319,10 +318,7 @@ export default function TicketsScreen() {
   if (authLoading) return <View style={styles.center}><ActivityIndicator /></View>;
   if (!user) return <Redirect href="/(auth)/login" />;
   const canReview = capabilities.canReviewTickets;
-  const canResolve = !!user && hasPermission(user.permissions, 'lab_folios.resolve');
-  const canResolveSelected = selected?.type === 'reception_date_change'
-    ? capabilities.canOverrideReceptionDate
-    : canResolve;
+  const canResolveSelected = canResolveOperationalTicket(user, selected);
   const requestVisibility = visibleRequestKinds(kind);
   const visibleTickets = filterTicketsByKind(items, kind);
   const visibleGroups = filterGroupRequests(groupRequests, status, debouncedSearch);

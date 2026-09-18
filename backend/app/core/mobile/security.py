@@ -23,7 +23,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.user import User
-from app.services.auth import effective_user_permissions
+from app.services.auth import effective_user_permissions, user_can_resolve_own_lab_folios
 from app.services.auth import resolve_access_token_user
 
 
@@ -113,6 +113,7 @@ def _token_response(context: MobileSecurityContext) -> dict:
             "full_name": context.user.full_name,
             "is_active": context.user.is_active,
             "permissions": sorted(context.permissions),
+            "can_resolve_own_lab_folios": context.actor_type == "internal" and user_can_resolve_own_lab_folios(context.user),
             "actor_type": context.actor_type,
             "client_id": context.client_id,
             "membership_id": context.membership_id,

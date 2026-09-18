@@ -534,3 +534,13 @@ independencia documental de estructuras anidadas -- se corrige a
 `copy.deepcopy`. Ambas correcciones con test explícito (valores de N y del
 equipo deliberadamente distintos; mutación de una estructura anidada en
 N+1 que no debe alcanzar N).
+
+## Decisión post-PR #4 (2026-09-17)
+
+La captura común de LAB EXTERNO pertenece a `LabTechnicalCapture`; su editor
+sólo especializa resultados y no mantiene lifecycle paralelo. El PDF compone
+el layout canónico general con un parcial de resultados dinámicos. Se conserva
+el contrato persistente groups/rows y la autoridad de FieldSheet existente.
+La excepción de folios propios es una policy administrativa backend reutilizada
+por autenticación Mobile y resolución; no se extiende a otros tipos de ticket.
+No se agregan tablas, estados, migraciones ni autoridades productivas.

@@ -784,3 +784,16 @@ primera y reparenta solicitud/cadena/recursos compartidos; sin sobrevivientes
 deja la raíz de la solicitud en `NULL` y conserva `approved`, decisión,
 participantes y conversación. Todo ocurre antes del `DELETE` y dentro del mismo
 commit. El secuenciador no se reduce ni reutiliza folios eliminados.
+
+## LAB EXTERNO y resolución propia (2026-09-17)
+
+Abrir equipo linked crea/carga LAB EXTERNO y entra al formulario común. Editar
+habilita datos y resultados conforme a permisos/estado. Guardar estructura
+reconcilia filas; guardar valores devuelve la hoja persistida al controlador.
+Guardar borrador/completar/reabrir/descargar usan las acciones generales.
+No se permite completar con cambios dinámicos sin guardar. El PDF presenta
+campos comunes y tablas dinámicas paginadas.
+
+En Solicitudes, un administrador interno autorizado ve Resolver para su propio
+folio pending; al ejecutar, backend revalida autoridad y conserva la auditoría,
+la notificación y el snapshot de resolución. El resto requiere otro revisor.

@@ -28,21 +28,13 @@ test('un equipo linked nunca ve el selector de plantilla interna -- LAB EXTERNO 
   assert.match(fn, /template_key: LAB_EXTERNAL_TEMPLATE_KEY/);
 });
 
-test('LabTechnicalCapture delega en LabExternalFieldSheet para un equipo linked, ANTES que cualquier flujo de ticketMode', () => {
-  const activeEquipmentBlock = captureSource.slice(captureSource.indexOf('if (activeEquipment) {'));
-  const externalBranchIndex = activeEquipmentBlock.indexOf('isLabExternalEquipment(activeEquipment)');
-  const firstTicketModeIndex = activeEquipmentBlock.indexOf("ticketMode === 'field_sheet_template'");
-  assert.notEqual(externalBranchIndex, -1);
-  assert.notEqual(firstTicketModeIndex, -1);
-  assert.ok(externalBranchIndex < firstTicketModeIndex, 'LAB EXTERNO debe resolverse antes que los flujos de ticketMode');
-});
-
-test('LabExternalFieldSheet recibe canReopenFieldSheetDirectly -- misma autoridad que el resto de la captura, sin permiso nuevo', () => {
-  const block = captureSource.slice(
-    captureSource.indexOf('isLabExternalEquipment(activeEquipment)) return'),
-    captureSource.indexOf('if (ticketMode === \'field_sheet_template\')'),
-  );
-  assert.match(block, /canReopenFieldSheetDirectly=\{canReopenFieldSheetDirectly\}/);
+// La decisión post-PR #4 reemplaza la pantalla independiente por resultados
+// especializados dentro del formulario común. Los endpoints no cambian.
+test('LAB EXTERNO especializa resultados dentro de la captura común', () => {
+  assert.match(captureSource, /const definition = labExternal \? undefined/);
+  assert.match(captureSource, /readOnly=\{!canCapture \|\| !editable\}/);
+  assert.match(captureSource, /onSaved=\{setSheet\}/);
+  assert.doesNotMatch(externalSource, /canReopenFieldSheetDirectly/);
 });
 
 test('la estructura se guarda con PUT .../field-sheet/lab-externo/structure, nunca un endpoint distinto', () => {
@@ -58,37 +50,24 @@ test('la estructura se guarda con PUT .../field-sheet/lab-externo/structure, nun
 test('los valores capturados reutilizan el PATCH .../field-sheet ya existente -- ningún endpoint nuevo para esto', () => {
   const fn = externalSource.slice(
     externalSource.indexOf('async function saveValues'),
-    externalSource.indexOf('async function completeSheet'),
+    externalSource.indexOf('  return ('),
   );
   assert.match(fn, /\$\{workOrder\.id\}\/equipment\/\$\{equipment\.id\}\/field-sheet`,\s*\n\s*\{ method: 'PATCH'/);
   assert.match(fn, /buildLabExternalValuesPatch\(rows\)/);
 });
 
-test('completar la hoja reutiliza POST .../field-sheet/complete ya existente, y exige guardar cambios pendientes primero', () => {
-  const fn = externalSource.slice(
-    externalSource.indexOf('async function completeSheet'),
-    externalSource.indexOf('return (\n    <View>'),
-  );
-  assert.match(fn, /if \(structureDirty \|\| valuesDirty\) \{/);
-  assert.match(fn, /\/field-sheet\/complete/);
-  assert.match(fn, /method:\s*'POST'/);
+test('completar y reabrir pertenecen al controlador común y protegen cambios pendientes', () => {
+  assert.match(captureSource, /if \(externalResultsDirty\)/);
+  assert.match(captureSource, /\/field-sheet\/complete/);
+  assert.match(captureSource, /\/field-sheet\/reopen/);
+  assert.doesNotMatch(externalSource, /async function (completeSheet|reopenSheet)/);
 });
 
-test('reabrir reutiliza POST .../field-sheet/reopen ya existente -- mismas reglas que cualquier otra hoja LAB', () => {
-  const fn = externalSource.slice(
-    externalSource.indexOf('async function reopenSheet'),
-    externalSource.indexOf('return (\n    <View>'),
-  );
-  assert.match(fn, /\/field-sheet\/reopen/);
-  assert.match(fn, /method:\s*'POST'/);
-  assert.match(fn, /reason: reopenReason\.trim\(\)/);
+test('resultados respetan permiso/modo de edición común y estado editable', () => {
+  assert.match(externalSource, /!readOnly && EDITABLE_STRUCTURE_STATUSES.has\(sheet.status\)/);
+  assert.match(externalSource, /onDirtyChange\(structureDirty \|\| valuesDirty\)/);
 });
 
-test('la estructura y los valores dejan de ser editables fuera de draft/in_progress -- nunca se edita una hoja completed', () => {
-  assert.match(externalSource, /const EDITABLE_STRUCTURE_STATUSES = new Set\(\['draft', 'in_progress'\]\);/);
-  assert.match(externalSource, /const editableStructure = EDITABLE_STRUCTURE_STATUSES\.has\(sheet\.status\);/);
-});
-
-test('el encabezado dice exactamente Hoja de campo "LAB EXTERNO"', () => {
-  assert.match(externalSource, /Hoja de campo "LAB EXTERNO"/);
+test('el encabezado común identifica LAB EXTERNO', () => {
+  assert.match(captureSource, /Hoja de campo "LAB EXTERNO"/);
 });

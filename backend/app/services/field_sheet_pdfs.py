@@ -22,6 +22,7 @@ from app.services.field_sheet_templates import (
     VECTOR_PDF_RENDERER_KEY,
     VECTOR_PDF_RENDERER_VERSION,
     get_field_sheet_template,
+    build_fallback_template_definition,
 )
 from app.services.field_sheet_layouts import (
     ROW_NUMBER_COLUMN_KEY,
@@ -409,7 +410,8 @@ def _resolve_field_sheet_signatures(db, field_sheet: FieldSheet) -> list:
 
 
 def _render_html(
-    field_sheet: FieldSheet, template_definition: dict, institution: dict, signatures: list
+    field_sheet: FieldSheet, template_definition: dict, institution: dict, signatures: list,
+    *, external_groups: list | None = None,
 ) -> str:
     lab_equipment = field_sheet.lab_equipment
     equipment = field_sheet.equipment or lab_equipment
@@ -435,7 +437,7 @@ def _render_html(
     )
     env.filters["date"] = _format_date
     _, _, template_name = resolve_field_sheet_pdf_renderer(field_sheet, template_definition)
-    template = env.get_template(template_name)
+    template = env.get_template(CANONICAL_PDF_TEMPLATE if external_groups is not None else template_name)
     client_name = (
         field_sheet.company
         if field_sheet.company
@@ -531,6 +533,7 @@ def _render_html(
     if organization_profile.get("logo_key") == "none":
         logo_path = None
     return template.render(
+        external_groups=external_groups,
         field_sheet=field_sheet,
         equipment=equipment_values,
         service_order=service_order,
@@ -557,7 +560,7 @@ def _render_html(
         ),
         row_number_column_key=ROW_NUMBER_COLUMN_KEY,
         checkbox=_checkbox,
-        logo_uri=logo_path.as_uri() if logo_path else None,
+        logo_uri=logo_path.as_uri() if logo_path and external_groups is None else None,
     )
 
 
@@ -567,25 +570,12 @@ _LAB_EXTERNAL_ORIENTATION_LABELS = {
 }
 
 
-def _render_lab_externo_html(field_sheet: FieldSheet, template_definition: dict, signatures: list) -> str:
-    """PENDIENTE 7 (encargo de corrección LAB): PDF de "LAB EXTERNO".
-    Encabezado propio -- la plantilla nunca referencia un logo, así que
-    nunca aparece el logo MYC, a diferencia de _render_html. Reconstruye
-    grupos -> tablas -> filas cruzando la ESTRUCTURA (template_definition
-    ["groups"], congelada por revisión) con los VALORES capturados
-    (field_sheet.results_rows, section_key=table.id, row_data por columna
-    dinámica) -- la misma separación estructura/datos del resto del
-    encargo, sin reutilizar _build_sections (asume columnas fijas
-    pattern/ibc_1-3, no columnas dinámicas por tabla)."""
-    lab_equipment = field_sheet.lab_equipment
-    order = lab_equipment.work_order if lab_equipment is not None else None
-    env = Environment(
-        loader=FileSystemLoader(str(TEMPLATE_DIR)),
-        autoescape=select_autoescape(("html", "xml")),
-    )
-    env.filters["date"] = _format_date
-    template = env.get_template("field_sheet_lab_externo_pdf.html")
+def _render_lab_externo_html(field_sheet: FieldSheet, template_definition: dict, signatures: list, institution: dict | None = None) -> str:
+    """Mismo layout canónico general; sólo branding y resultados especializados.
 
+    La definición histórica groups y sus filas se leen sin transformarlas ni
+    persistir un segundo contrato result_sections.
+    """
     rows_by_table: dict[str, list[FieldSheetResult]] = {}
     for row in field_sheet.results_rows:
         rows_by_table.setdefault(row.section_key, []).append(row)
@@ -627,19 +617,12 @@ def _render_lab_externo_html(field_sheet: FieldSheet, template_definition: dict,
             }
         )
 
-    return template.render(
-        field_sheet=field_sheet,
-        work_order=order,
-        lab_equipment=lab_equipment,
-        company=field_sheet.company,
-        address=field_sheet.address,
-        attention=field_sheet.attention,
-        reception_date=field_sheet.reception_date,
-        capture_values=field_sheet.capture_values or {},
-        groups=groups,
-        signatures=signatures,
-        revision_number=field_sheet.revision_number,
-        status=field_sheet.status,
+    common_definition = build_fallback_template_definition("general")
+    common_definition["name"] = 'HOJA DE CAMPO "LAB EXTERNO"'
+    common_definition["result_sections"] = []
+    return _render_html(
+        field_sheet, common_definition, institution or {}, signatures,
+        external_groups=groups,
     )
 
 
@@ -693,10 +676,9 @@ def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
             institution = institutional_snapshot(get_or_create_institutional_configuration(db))
         signatures = _resolve_field_sheet_signatures(db, field_sheet)
         if field_sheet.template_key == LAB_EXTERNAL_TEMPLATE_KEY:
-            # PENDIENTE 7: estructura de grupos/tablas dinámicas -- no encaja
-            # en result_sections (columnas fijas pattern/ibc_1-3), así que se
-            # renderiza aparte en vez de forzar _render_html.
-            html = _render_lab_externo_html(field_sheet, template_definition, signatures)
+            # Comparte el renderer general; adapta exclusivamente resultados
+            # dinámicos sin convertir el snapshot groups a result_sections.
+            html = _render_lab_externo_html(field_sheet, template_definition, signatures, institution)
         else:
             html = _render_html(field_sheet, template_definition, institution, signatures)
         pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
