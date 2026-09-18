@@ -136,3 +136,15 @@ vertical que podía cruzar texto al crecer una línea, mantiene continuidad y
 evita bordes dobles. WeasyPrint renderiza el radio mediante wrappers con
 `overflow: hidden`; no se redondea cada celda. Temperatura y Presión conservan
 una página Letter portrait y su composición declarativa aprobada.
+
+## LAB EXTERNO: composición común (2026-09-17)
+
+`_render_lab_externo_html` adapta grupos/tablas/columnas/filas históricos a
+`external_groups` y reutiliza `_render_html` con la definición oficial general.
+No persiste ni convierte resultados a `result_sections`. El engine canónico
+incluye el parcial `field_sheet_lab_externo_pdf.html` en resultados; comparte
+campos, firmas, tipografía y pie. Sólo omite logo, cambia título y especializa
+resultados. El contenedor externo usa flujo block para que WeasyPrint fragmente
+las tablas extensas y repita encabezados sin cortar filas. Los archivos finales
+congelados conservan bytes y checksum; no se regenera ningún histórico existente.
+La regresión compara todas las celdas comunes y verifica 100 filas en tres páginas.
