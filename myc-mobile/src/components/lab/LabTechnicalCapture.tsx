@@ -42,6 +42,8 @@ import {
 import { colors, spacing } from '@/src/design/tokens';
 import { FieldSheetResultsWorkspace } from '@/src/components/field-sheets/FieldSheetResultsWorkspace';
 import { MycDatePickerField } from '@/src/design/MycDatePickerField';
+import { LabExternalFieldSheet } from '@/src/components/lab/LabExternalFieldSheet';
+import { LAB_EXTERNAL_TEMPLATE_KEY, isLabExternalEquipment } from '@/src/services/lab-field-sheet-external';
 
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -177,6 +179,24 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     setActiveEquipment(equipment);
     setSelectedTemplate('');
     setTemplateSearch('');
+    // PENDIENTE 7 (encargo de corrección LAB, sección "INTEGRACIÓN
+    // LINKED"): un equipo Vinculado nunca pasa por el selector de
+    // plantilla interna -- LAB EXTERNO se crea de forma natural/automática
+    // en cuanto se abre por primera vez.
+    if (!equipment.field_sheet_id && isLabExternalEquipment(equipment)) {
+      setBusy(true);
+      try {
+        const created = await request<LabFieldSheet>(
+          `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
+          { method: 'POST', body: JSON.stringify({ template_key: LAB_EXTERNAL_TEMPLATE_KEY }) },
+        );
+        setSheet(created);
+      } catch (error) {
+        Alert.alert('No fue posible crear la hoja LAB EXTERNO', error instanceof Error ? error.message : 'Intenta nuevamente');
+        setActiveEquipment(null);
+      } finally { setBusy(false); }
+      return;
+    }
     if (!equipment.field_sheet_id) {
       setSheet(null);
       setValues({});
@@ -189,7 +209,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
       );
       setSheet(loaded);
       setSelectedTemplate(loaded.template_key);
-      setValues(buildValues(loaded));
+      if (!isLabExternalEquipment(equipment)) setValues(buildValues(loaded));
       // Reabrir una hoja ya existente entra en modo consulta -- "Editar"
       // vuelve a habilitar los inputs explícitamente (cierre UX 2026-09).
       setViewMode('view');
@@ -669,6 +689,21 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   }
 
   if (activeEquipment) {
+    if (isLabExternalEquipment(activeEquipment)) return (
+      <ScrollView contentContainerStyle={styles.panel}>
+        <LabExternalFieldSheet
+          busy={busy}
+          canReopenFieldSheetDirectly={canReopenFieldSheetDirectly}
+          equipment={activeEquipment}
+          onBack={() => { setActiveEquipment(null); setSheet(null); }}
+          onUpdated={onUpdated}
+          request={request}
+          setBusy={setBusy}
+          sheet={sheet}
+          workOrder={workOrder}
+        />
+      </ScrollView>
+    );
     if (ticketMode === 'field_sheet_template') return (
       <ScrollView contentContainerStyle={styles.panel}>
         <Text style={styles.title}>No encuentro la hoja necesaria</Text>
