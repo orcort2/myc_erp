@@ -10,6 +10,7 @@ export type AuthUser = {
   full_name: string;
   is_active: boolean;
   permissions: string[];
+  can_resolve_own_lab_folios?: boolean;
   roles?: Role[];
   actor_type: 'internal' | 'client';
   client_id: number | null;

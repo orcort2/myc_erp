@@ -838,3 +838,22 @@ def test_realtime_client_conversation_scope_is_permission_and_tenant_bound(
     assert not _can_access_conversation(
         db, conversation_id=internal.id, identity=authorized
     )
+
+
+@pytest.mark.parametrize("actor,expected", [("admin", True), ("staff", False), ("sr", False)])
+def test_own_folio_authority_is_derived_by_backend_on_login_refresh_and_me(mobile_security_api, actor, expected):
+    api, db, data = mobile_security_api
+    login = _login(api, data[actor].email)
+    assert login.status_code == 200, login.text
+    assert login.json()["user"]["can_resolve_own_lab_folios"] is expected
+    me = api.get("/api/mobile/v1/auth/me", headers=_headers(login))
+    assert me.status_code == 200, me.text
+    assert me.json()["can_resolve_own_lab_folios"] is expected
+    refreshed = api.post("/api/mobile/v1/auth/refresh", json={"refresh_token": login.json()["refresh_token"]})
+    assert refreshed.status_code == 200, refreshed.text
+    assert refreshed.json()["user"]["can_resolve_own_lab_folios"] is expected
+    if actor == "admin":
+        data[actor].roles[0].is_active = False
+        db.commit()
+        # Revoking the active role revokes all mobile authority, including self resolve.
+        assert api.get("/api/mobile/v1/auth/me", headers=_headers(login)).status_code == 403

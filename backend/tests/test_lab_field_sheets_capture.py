@@ -2259,12 +2259,14 @@ def test_lab_client_catalog_rejects_duplicate_identity_for_internal_null_scope(l
     ],
     ids=["reject_ticket", "resolve_operational_ticket", "approve_reopen_ticket"],
 )
-def test_ticket_requester_cannot_resolve_their_own_ticket(lab_context, resolver):
+def test_sensitive_ticket_requester_cannot_resolve_their_own_ticket(lab_context, resolver):
+    # POST-PR #4: folios propios del admin son una excepción explícita,
+    # cubierta en test_operational_ticket_self_resolution. Reaperturas no.
     _client, factory, _tokens = lab_context
     with factory() as db:
         admin = db.scalar(select(User).where(User.username == "lab-admin"))
         ticket = OperationalTicket(
-            type="manual_myc_folio",
+            type="field_sheet_reopen",
             status="pending",
             requested_by_user_id=admin.id,
             reason="Motivo de prueba",

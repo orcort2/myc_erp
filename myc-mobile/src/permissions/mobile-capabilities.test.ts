@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { deriveMobileCapabilities } from './mobile-capabilities';
+import { canResolveOperationalTicket, deriveMobileCapabilities } from './mobile-capabilities';
 import type { AuthUser } from '../types/auth';
 
 function user(
@@ -265,4 +265,29 @@ test('canVoidLabEquipmentEntry exige lab_work_orders.cancel y actor interno, igu
 
   const externalWithPermission = deriveMobileCapabilities(user('client', ['mobile.access', 'lab_work_orders.cancel']));
   assert.equal(externalWithPermission.canVoidLabEquipmentEntry, false);
+});
+
+test('auto-resolver folios requiere autoridad backend, actor interno y permiso', () => {
+  const admin = { ...user('internal', ['lab_folios.resolve']), can_resolve_own_lab_folios: true };
+  assert.equal(deriveMobileCapabilities(admin).canResolveOwnLabFolios, true);
+  assert.equal(deriveMobileCapabilities({ ...admin, can_resolve_own_lab_folios: false }).canResolveOwnLabFolios, false);
+  assert.equal(deriveMobileCapabilities({ ...admin, can_resolve_own_lab_folios: undefined }).canResolveOwnLabFolios, false);
+  assert.equal(deriveMobileCapabilities({ ...admin, permissions: [] }).canResolveOwnLabFolios, false);
+  assert.equal(deriveMobileCapabilities({ ...admin, actor_type: 'client' }).canResolveOwnLabFolios, false);
+});
+
+
+test('acción de resolución propia sólo en folios pending con autoridad backend', () => {
+  const admin = { ...user('internal', ['*']), can_resolve_own_lab_folios: true };
+  for (const type of ['linked_folio', 'manual_myc_folio']) {
+    const ticket = { type, status: 'pending', requested_by_user_id: admin.id };
+    assert.equal(canResolveOperationalTicket(admin, ticket), true);
+    assert.equal(canResolveOperationalTicket(admin, { ...ticket, status: 'resolved' }), false);
+    assert.equal(canResolveOperationalTicket({ ...admin, can_resolve_own_lab_folios: false }, ticket), false);
+    assert.equal(canResolveOperationalTicket({ ...admin, permissions: [] }, ticket), false);
+    assert.equal(canResolveOperationalTicket({ ...admin, id: 2, can_resolve_own_lab_folios: false }, ticket), true);
+  }
+  for (const type of ['reopen_work_order', 'field_sheet_reopen', 'partial_close', 'certificate_folio_block']) {
+    assert.equal(canResolveOperationalTicket(admin, { type, status: 'pending', requested_by_user_id: admin.id }), false);
+  }
 });

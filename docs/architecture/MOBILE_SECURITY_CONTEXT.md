@@ -112,3 +112,12 @@ ni cambios a ETS/Cotizaciones productivos. El grupo de rutas `(technician)` se
 conserva sólo como nombre organizativo. Los endpoints productivos Mobile quedan
 deny para `client`; exponerlos requiere una fase posterior con contrato por
 recurso, no sólo agregar permisos.
+
+## Autoridad de folios propios (2026-09-17)
+
+`MobileUserRead.can_resolve_own_lab_folios` se deriva en login, refresh y `/me`
+de la misma función backend que usa Tickets: actor interno, Administrador activo
+y `lab_folios.resolve`. No se infiere de account_type por sí solo, ni se confía
+en roles suministrados por Mobile. Su ausencia equivale a false. La capability
+sólo habilita presentación de solicitudes propias pending de linked_folio o
+manual_myc_folio; backend revalida rol/permiso vigente al ejecutar.

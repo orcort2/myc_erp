@@ -225,6 +225,15 @@ def user_has_permission(user: User, permission: str) -> bool:
     return False
 
 
+def user_can_resolve_own_lab_folios(user: User) -> bool:
+    """Autoridad interna explícita para solicitudes propias de folios LAB."""
+    return (
+        user.account_type == "internal"
+        and any(role.name == "Administrador" and role.is_active for role in user.roles)
+        and user_has_permission(user, "lab_folios.resolve")
+    )
+
+
 def effective_user_permissions(user: User) -> set[str]:
     permissions: set[str] = set()
     for role in user.roles:
