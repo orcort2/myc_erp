@@ -132,9 +132,19 @@ test('anular ingreso de equipo usa el endpoint administrativo void y nunca el DE
 });
 
 test('anular ingreso queda reservado a autoridad administrativa y exige confirmación explícita', () => {
+  // PENDIENTE 5 (encargo de corrección LAB): ya no gatea con canCancel
+  // (== hasPermission(lab_work_orders.cancel) sin actor interno) sino con
+  // canVoidLabEquipmentEntry, la capability dedicada que además exige
+  // actor_type === 'internal', igual que el backend
+  // (post_void_lab_equipment_entry) y que canVoidLabDelivery.
   assert.match(
     source,
-    /\{canCancel && \(\s*<OperationalActionStack>/,
+    /\{canVoidLabEquipmentEntry && \(\s*<OperationalActionStack>/,
+  );
+
+  assert.match(
+    source,
+    /function openVoidEquipmentDialog\(equipment: LabEquipment\) \{\s*if \(!canVoidLabEquipmentEntry\) return;/,
   );
 
   assert.match(
@@ -149,7 +159,7 @@ test('anular ingreso queda reservado a autoridad administrativa y exige confirma
 
   assert.match(
     source,
-    /ticketDialogMode === 'void_equipment' && canCancel/,
+    /ticketDialogMode === 'void_equipment' && canVoidLabEquipmentEntry/,
   );
 
   assert.match(
@@ -172,5 +182,18 @@ test('el diálogo identifica el equipo que será anulado y conserva el lenguaje 
   assert.match(
     source,
     /registro histórico se conservará/,
+  );
+});
+
+// PENDIENTE 2 (bug REVISION_CONFLICT productivo): reopen -> anular equipo ->
+// agregar reemplazo respondía 409 porque saveConfiguredEquipment() llamaba a
+// buildConfiguredEquipmentPayload() sin expected_edit_version. La OT
+// reabierta SÍ exige la versión (_check_edit_version en backend); el alta
+// debe leer siempre workOrder.edit_version fresco de la última respuesta, no
+// un valor cacheado.
+test('el alta de equipo (saveConfiguredEquipment) manda workOrder.edit_version para no producir REVISION_CONFLICT tras reabrir/anular', () => {
+  assert.match(
+    source,
+    /buildConfiguredEquipmentPayload\(values\.equipment, values\.documentaryClient, values\.service, workOrder\.edit_version\)/,
   );
 });

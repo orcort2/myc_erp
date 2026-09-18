@@ -2524,7 +2524,30 @@ def _sign_members_uncommitted(
             equipment.field_sheet is not None and equipment.field_sheet.status != "completed"
             for equipment in item.active_equipment
         )
-        item.status = "in_progress" if has_technical_capture_in_progress else "received_signed"
+        # Corrección 2026-09-17 (PENDIENTE 6 -- bug productivo confirmado,
+        # grupo 6455-6458): el criterio de arriba sólo distinguía "algo en
+        # progreso" de "todo lo demás" -- conflaba bajo received_signed dos
+        # situaciones opuestas: una OT firmando por PRIMERA vez (ningún
+        # equipo tiene hoja todavía, correcto) y una OT reabierta donde
+        # NINGÚN equipo necesitó tocarse (todas sus hojas vigentes YA
+        # estaban completed antes de reabrir). Para una OT que exige
+        # disciplina de hoja (_requires_field_sheet_discipline),
+        # received_signed nunca es cerrable (_closable_status) y nada más
+        # promueve el estado si ningún equipo vuelve a pasar por
+        # create_lab_field_sheet/_clone_field_sheet_for_correction -- quedaba
+        # varada para siempre pese a tener todo capturado. Re-derivar
+        # directamente con _missing_completed_sheets (la misma autoridad que
+        # ya exige hojas completas para cerrar) en vez de asumir
+        # "nada en progreso" == "nada capturado".
+        if (
+            _requires_field_sheet_discipline(item)
+            and item.active_equipment
+            and not has_technical_capture_in_progress
+            and not _missing_completed_sheets([item])
+        ):
+            item.status = "ready_to_close"
+        else:
+            item.status = "in_progress" if has_technical_capture_in_progress else "received_signed"
         item.signature_required = False
         item.signature_preserved = False
     write_audit_log(

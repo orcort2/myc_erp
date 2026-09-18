@@ -30,6 +30,7 @@ export type MobileCapabilities = {
   canOverrideReceptionDate: boolean;
   canRegisterLabDelivery: boolean;
   canVoidLabDelivery: boolean;
+  canVoidLabEquipmentEntry: boolean;
   canRequestPartialDelivery: boolean;
 };
 
@@ -126,6 +127,15 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
     ),
     canRegisterLabDelivery: user?.actor_type === 'internal' && hasLegacyLabAccess,
     canVoidLabDelivery: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'lab_work_orders.cancel'),
+    // PENDIENTE 5 (encargo de corrección LAB): "Anular ingreso" de un equipo
+    // usaba directamente canCancel (== hasPermission(lab_work_orders.cancel),
+    // sin exigir actor interno) para gatear su UI. El backend
+    // (POST .../equipment/{id}/void) sí exige actor_type == "internal" además
+    // del permiso -- esta capability dedicada refleja esa misma autoridad
+    // real, mismo patrón exacto que canVoidLabDelivery. lab_work_orders.cancel
+    // sigue siendo la autoridad base; no se creó ningún permiso nuevo.
+    canVoidLabEquipmentEntry: user?.actor_type === 'internal'
       && hasPermission(permissions, 'lab_work_orders.cancel'),
     // La entrega parcial es EXCEPCIONAL: sólo solicita autorización (ticket
     // type=partial_delivery); la aprobación reutiliza canReviewTickets

@@ -677,6 +677,101 @@ def test_new_pdf_after_reclosing_excludes_retired_equipment(lab_context):
 
 
 # ---------------------------------------------------------------------------
+# PENDIENTE 2 (bug REVISION_CONFLICT productivo): reopen -> anular equipo ->
+# agregar reemplazo con POST .../equipment/configured. _check_edit_version
+# exige expected_edit_version en cualquier OT reabierta (reopen_ticket_id o
+# reopened_at) -- estos tests fijan, a nivel de API, el contrato que Mobile
+# debe respetar (buildConfiguredEquipmentPayload ahora acepta
+# expectedEditVersion, ver lab-equipment-configured-payload.ts).
+# ---------------------------------------------------------------------------
+def test_reopen_void_and_add_replacement_with_current_edit_version_succeeds(lab_context):
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order = _create_order_with_equipment(client, tech_headers, count=1)
+    order_id = order["id"]
+    voided_equipment_id = order["equipment"][0]["id"]
+    _close_order(client, tech_headers, order_id)
+
+    reopened = _reopen_via_ticket(client, tech_headers, admin_headers, order_id, signature_policy="preserve")
+
+    voided = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{voided_equipment_id}/void",
+        json={"reason": "Equipo no correspondía a esta recepción", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
+    )
+    assert voided.status_code == 200, voided.text
+    bumped_edit_version = voided.json()["edit_version"]
+    assert bumped_edit_version > reopened["edit_version"], (
+        "anular equipo debe incrementar edit_version -- si no, el escenario productivo no se reproduce"
+    )
+
+    replacement = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/configured",
+        json={
+            "equipment": {**equipment_payload(2), "expected_edit_version": bumped_edit_version},
+            "service": {"service_type": "traceable", "linked_company_id": None},
+        },
+        headers=tech_headers,
+    )
+    assert replacement.status_code == 201, replacement.text
+    assert replacement.json()["edit_version"] > bumped_edit_version
+
+
+def test_reopen_void_and_add_replacement_without_edit_version_is_rejected(lab_context):
+    """Reproduce el bug productivo tal cual: Mobile construía el alta con
+    buildConfiguredEquipmentPayload() SIN expected_edit_version -- backend
+    correctamente lo rechaza con REVISION_CONFLICT en vez de aceptar un alta
+    ciega sobre una OT reabierta y mutada."""
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    admin_headers = auth(tokens["admin"])
+    order = _create_order_with_equipment(client, tech_headers, count=1)
+    order_id = order["id"]
+    voided_equipment_id = order["equipment"][0]["id"]
+    _close_order(client, tech_headers, order_id)
+
+    reopened = _reopen_via_ticket(client, tech_headers, admin_headers, order_id, signature_policy="preserve")
+    voided = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{voided_equipment_id}/void",
+        json={"reason": "Equipo no correspondía a esta recepción", "expected_edit_version": reopened["edit_version"]},
+        headers=admin_headers,
+    )
+    assert voided.status_code == 200, voided.text
+
+    rejected = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/configured",
+        json={
+            "equipment": equipment_payload(2),
+            "service": {"service_type": "traceable", "linked_company_id": None},
+        },
+        headers=tech_headers,
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["detail"]["code"] == "REVISION_CONFLICT"
+
+
+def test_add_equipment_on_a_never_reopened_order_still_works_without_edit_version(lab_context):
+    """_check_edit_version sólo exige la versión cuando la OT ya fue
+    reabierta -- un alta normal (nunca reabierta) sigue funcionando exactamente
+    igual que antes de este fix, sin necesidad de mandar la versión."""
+    client, _factory, tokens = lab_context
+    tech_headers = auth(tokens["tech"])
+    order = _create_order_with_equipment(client, tech_headers, count=1)
+    order_id = order["id"]
+
+    added = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/configured",
+        json={
+            "equipment": equipment_payload(2),
+            "service": {"service_type": "traceable", "linked_company_id": None},
+        },
+        headers=tech_headers,
+    )
+    assert added.status_code == 201, added.text
+
+
+# ---------------------------------------------------------------------------
 # Regresión PostgreSQL obligatoria: este bug ocurrió sobre PostgreSQL y
 # SQLite no basta para declararlo cerrado -- valida el CHECK constraint real
 # de FieldSheet, la FK real de lab_equipment_id, el índice parcial de

@@ -310,6 +310,44 @@ test('observations: el payload de alta/edición la conserva junto al resto del e
   assert.notEqual(payload.equipment.observations, payload.equipment.report_number);
 });
 
+// PENDIENTE 2 (bug REVISION_CONFLICT productivo): reopen -> anular equipo ->
+// agregar reemplazo respondía 409 porque buildConfiguredEquipmentPayload()
+// nunca mandaba expected_edit_version en el alta. _check_edit_version en
+// backend sí lo exige en cualquier OT reabierta (ver
+// test_lab_equipment_soft_delete.py). saveConfiguredEquipment() en
+// work-orders.tsx ahora pasa workOrder.edit_version.
+test('alta normal sin expectedEditVersion sigue sin mandar expected_edit_version (comportamiento previo intacto)', () => {
+  const payload = buildConfiguredEquipmentPayload(
+    equipment, defaultDocumentaryClient(), { serviceType: 'accredited', linkedCompanyId: null },
+  );
+  assert.equal('expected_edit_version' in payload.equipment, false);
+});
+
+test('alta con expectedEditVersion la incluye dentro de payload.equipment', () => {
+  const payload = buildConfiguredEquipmentPayload(
+    equipment, defaultDocumentaryClient(), { serviceType: 'accredited', linkedCompanyId: null }, 4,
+  );
+  assert.equal(payload.equipment.expected_edit_version, 4);
+  // El resto del equipo no se pierde ni se muta el objeto original.
+  assert.equal(payload.equipment.instrument, equipment.instrument);
+  assert.equal('expected_edit_version' in equipment, false);
+});
+
+test('tras anular un equipo, el alta de reemplazo debe usar el edit_version ya incrementado que devolvió backend', () => {
+  const beforeVoid = buildConfiguredEquipmentPayload(
+    equipment, defaultDocumentaryClient(), { serviceType: 'accredited', linkedCompanyId: null }, 3,
+  );
+  // El void devuelve un work order con edit_version incrementado (3 -> 4);
+  // saveConfiguredEquipment siempre lee workOrder.edit_version fresco de la
+  // última respuesta de backend, nunca un valor cacheado localmente.
+  const editVersionAfterVoid = 4;
+  const afterVoid = buildConfiguredEquipmentPayload(
+    equipment, defaultDocumentaryClient(), { serviceType: 'accredited', linkedCompanyId: null }, editVersionAfterVoid,
+  );
+  assert.equal(beforeVoid.equipment.expected_edit_version, 3);
+  assert.equal(afterVoid.equipment.expected_edit_version, editVersionAfterVoid);
+});
+
 test('observations: editar únicamente la observación se detecta como cambio real', () => {
   const initial = hydrateEquipmentFormValues(savedEquipment({ observations: null }));
   const edited = { ...initial, equipment: { ...initial.equipment, observations: 'No tiene empaque' } };
