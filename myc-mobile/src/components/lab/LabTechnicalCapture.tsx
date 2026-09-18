@@ -128,6 +128,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [viewMode, setViewMode] = useState<FieldSheetViewMode>(initialViewMode());
   const [resultsOpen, setResultsOpen] = useState(false);
+  const [externalResultsDirty, setExternalResultsDirty] = useState(false);
   const [ticketMode, setTicketMode] = useState<'manual_myc_folio' | 'field_sheet_template' | 'field_sheet_reopen' | 'reception_date_change' | null>(null);
   const [requestedFolio, setRequestedFolio] = useState('');
   const [ticketReason, setTicketReason] = useState('');
@@ -161,7 +162,9 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
       .finally(() => setTemplatesLoading(false));
   }, [request]);
 
-  const definition = sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
+  const labExternal = activeEquipment?.service_type === 'linked' || sheet?.template_key === LAB_EXTERNAL_TEMPLATE_KEY;
+  // Sólo las plantillas internas tienen blocks/result_sections.
+  const definition = labExternal ? undefined : sheet?.template_definition ?? templates.find((item) => item.template_key === selectedTemplate);
   // Cierre de contrato canónico LAB: los campos comunes (identidad/cliente/
   // equipo/calibración/ambientales/condición) ya NO se derivan de la
   // plantilla -- son fijos, ver field-sheet-canonical-contract.ts. La
@@ -171,11 +174,12 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
     .filter((field) => !SIGNATURE_AUTHORITY_KEYS.has(field.key));
   const canonicalFields = canonicalFieldsForDefinition(definition?.blocks);
   const overallProgress = definition ? computeOverallProgress(definition.result_sections, sheet?.results_rows ?? []) : null;
-  const editable = !!sheet && isFieldSheetEditable(sheet.status, viewMode);
+  const editable = canCapture && !!sheet && isFieldSheetEditable(sheet.status, viewMode);
   const visibleTemplates = filterFieldSheetTemplates(templates, templateSearch);
   const visibleChangeTemplateOptions = filterFieldSheetTemplates(templates, changingTemplateSearch);
 
   async function openSheet(equipment: LabEquipment) {
+    setExternalResultsDirty(false);
     setActiveEquipment(equipment);
     setSelectedTemplate('');
     setTemplateSearch('');
@@ -191,6 +195,8 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
           { method: 'POST', body: JSON.stringify({ template_key: LAB_EXTERNAL_TEMPLATE_KEY }) },
         );
         setSheet(created);
+        setValues(buildValues(created));
+        setViewMode(initialViewMode());
       } catch (error) {
         Alert.alert('No fue posible crear la hoja LAB EXTERNO', error instanceof Error ? error.message : 'Intenta nuevamente');
         setActiveEquipment(null);
@@ -209,7 +215,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
       );
       setSheet(loaded);
       setSelectedTemplate(loaded.template_key);
-      if (!isLabExternalEquipment(equipment)) setValues(buildValues(loaded));
+      setValues(buildValues(loaded));
       // Reabrir una hoja ya existente entra en modo consulta -- "Editar"
       // vuelve a habilitar los inputs explícitamente (cierre UX 2026-09).
       setViewMode('view');
@@ -374,6 +380,10 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
 
   async function saveSheet(complete = false) {
     if (!activeEquipment || !sheet) return;
+    if (externalResultsDirty) {
+      Alert.alert('Guarda los resultados primero', 'Hay cambios sin guardar en la estructura o los valores.');
+      return;
+    }
     setBusy(true);
     setFormError('');
     let saved: LabFieldSheet;
@@ -573,7 +583,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
               );
               const updated = await refreshWorkOrder();
               const refreshedEquipment = updated.equipment.find((item) => item.id === activeEquipment.id);
-              setActiveEquipment(refreshedEquipment ?? null);
+              setActiveEquipment(isLabExternalEquipment(activeEquipment) ? null : refreshedEquipment ?? null);
               setSheet(null);
               setSelectedTemplate('');
               setValues({});
@@ -689,21 +699,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
   }
 
   if (activeEquipment) {
-    if (isLabExternalEquipment(activeEquipment)) return (
-      <ScrollView contentContainerStyle={styles.panel}>
-        <LabExternalFieldSheet
-          busy={busy}
-          canReopenFieldSheetDirectly={canReopenFieldSheetDirectly}
-          equipment={activeEquipment}
-          onBack={() => { setActiveEquipment(null); setSheet(null); }}
-          onUpdated={onUpdated}
-          request={request}
-          setBusy={setBusy}
-          sheet={sheet}
-          workOrder={workOrder}
-        />
-      </ScrollView>
-    );
+    if (labExternal && !sheet) return <LoadingState label="Preparando hoja LAB EXTERNO..." />;
     if (ticketMode === 'field_sheet_template') return (
       <ScrollView contentContainerStyle={styles.panel}>
         <Text style={styles.title}>No encuentro la hoja necesaria</Text>
@@ -779,7 +775,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
         )}
         <FadeIn transitionKey={`${activeEquipment.id}:${sheet?.id ?? 'selector'}`}>
         <Text style={styles.eyebrow}>OT {workOrder.folio} · EQUIPO {activeEquipment.position}</Text>
-        <Text style={styles.title}>{activeEquipment.instrument}</Text>
+        <Text style={styles.title}>{labExternal ? 'Hoja de campo "LAB EXTERNO"' : activeEquipment.instrument}</Text>
 
         <Card>
           <ReadOnlyField label="Equipo" value={`${activeEquipment.brand} · ${activeEquipment.serial_number}`} />
@@ -940,6 +936,20 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
             <ReadOnlyField label="Elaboró informe" value={PENDING_SIGNATURE_LABEL} />
           </Section>
 
+          {labExternal && (
+            <LabExternalFieldSheet
+              busy={busy}
+              equipment={activeEquipment}
+              request={request}
+              setBusy={setBusy}
+              sheet={sheet}
+              workOrder={workOrder}
+              readOnly={!canCapture || !editable}
+              onSaved={setSheet}
+              onDirtyChange={setExternalResultsDirty}
+            />
+          )}
+
           {definition && definition.result_sections.length > 0 && overallProgress && (
             <Section title="Resultados">
               <Card>
@@ -964,7 +974,7 @@ export function LabTechnicalCapture({ accessToken, canCapture, canCreateTickets,
                   <SecondaryButton icon="content-save" label="Guardar borrador" loading={busy} onPress={() => saveSheet(false)} />
                   <PrimaryButton icon="check-circle" label="Completar hoja" loading={busy} onPress={() => saveSheet(true)} />
                 </ActionRow>
-                <SecondaryButton icon="swap-horizontal" label="Cambiar Hoja de Campo" disabled={busy} onPress={openChangeTemplate} />
+                {!labExternal && <SecondaryButton icon="swap-horizontal" label="Cambiar Hoja de Campo" disabled={busy} onPress={openChangeTemplate} />}
                 <DangerButton icon="trash-can-outline" label="Eliminar borrador" disabled={busy} onPress={confirmDiscardSheet} />
               </OperationalActionStack>
             ) : (

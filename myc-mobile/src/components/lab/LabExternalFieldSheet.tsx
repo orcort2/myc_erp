@@ -9,11 +9,8 @@ import {
   Field,
   LoadingState,
   OperationalActionStack,
-  PrimaryButton,
-  ReadOnlyField,
   Section,
   SecondaryButton,
-  StatusBadge,
 } from '@/src/design/primitives';
 import { colors, spacing } from '@/src/design/tokens';
 import {
@@ -25,6 +22,7 @@ import {
   emptyGroup,
   emptyTable,
   findRow,
+  labExternalTableProgress,
   readLabExternalDefinition,
   validateLabExternalStructure,
   type LabExternalGroup,
@@ -37,10 +35,10 @@ type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
 type Props = {
   busy: boolean;
-  canReopenFieldSheetDirectly: boolean;
+  readOnly: boolean;
+  onSaved(sheet: LabFieldSheet): void;
+  onDirtyChange(dirty: boolean): void;
   equipment: LabEquipment;
-  onBack(): void;
-  onUpdated(order: LabWorkOrder): void;
   request: Request;
   sheet: LabFieldSheet | null;
   setBusy(value: boolean): void;
@@ -49,24 +47,13 @@ type Props = {
 
 const EDITABLE_STRUCTURE_STATUSES = new Set(['draft', 'in_progress']);
 
-/**
- * PENDIENTE 7 (encargo de corrección LAB): pantalla dedicada de "LAB
- * EXTERNO" para un equipo service_type=linked. No reutiliza el renderer
- * genérico de LabTechnicalCapture (block/section fijo por plantilla) --
- * aquí la estructura (grupos -> tablas -> columnas, orientación por grupo)
- * la define el técnico, así que necesita su propio editor. Sí reutiliza
- * exactamente los mismos endpoints que cualquier otra hoja LAB para todo
- * lo demás: PATCH .../field-sheet para capturar valores (row_data),
- * POST .../field-sheet/complete para completar, y el propio FieldSheet/
- * revisiones/auditoría por debajo -- sólo la ESTRUCTURA usa el endpoint
- * nuevo PUT .../field-sheet/lab-externo/structure.
- */
-export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equipment, onBack, onUpdated, request, sheet, setBusy, workOrder }: Props) {
+/** Editor especializado de resultados; captura, estados y acciones viven en LabTechnicalCapture. */
+export function LabExternalFieldSheet({ busy, readOnly, onSaved, onDirtyChange, equipment, request, sheet, setBusy, workOrder }: Props) {
   const [groups, setGroups] = useState<LabExternalGroup[]>([]);
   const [rows, setRows] = useState<LabExternalRow[]>([]);
   const [structureDirty, setStructureDirty] = useState(false);
   const [valuesDirty, setValuesDirty] = useState(false);
-  const [reopenReason, setReopenReason] = useState('');
+  useEffect(() => { onDirtyChange(structureDirty || valuesDirty); }, [structureDirty, valuesDirty, onDirtyChange]);
 
   useEffect(() => {
     if (!sheet) return;
@@ -80,13 +67,9 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
     return <LoadingState label="Preparando hoja LAB EXTERNO..." />;
   }
 
-  const editableStructure = EDITABLE_STRUCTURE_STATUSES.has(sheet.status);
+  const editableValues = !busy && !readOnly && EDITABLE_STRUCTURE_STATUSES.has(sheet.status);
+  const editableStructure = editableValues && !valuesDirty;
   const issues = validateLabExternalStructure(groups);
-
-  async function refreshWorkOrder() {
-    const detail = await request<LabWorkOrder>(`/mobile/v1/technician/lab-work-orders/${workOrder.id}`);
-    onUpdated(detail);
-  }
 
   function updateGroup(groupId: string, patch: Partial<LabExternalGroup>) {
     setGroups((current) => current.map((group) => (group.id === groupId ? { ...group, ...patch } : group)));
@@ -94,7 +77,11 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
   }
 
   function addGroup() {
-    setGroups((current) => [...current, emptyGroup(current.map((item) => item.id), current.length + 1)]);
+    setGroups((current) => {
+      const group = emptyGroup(current.map((item) => item.id), current.length + 1);
+      group.tables = [emptyTable(current.flatMap((item) => item.tables.map((table) => table.id)), 1)];
+      return [...current, group];
+    });
     setStructureDirty(true);
   }
 
@@ -165,6 +152,7 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
   }
 
   async function saveStructure() {
+    if (!editableStructure || valuesDirty) return;
     if (issues.length) {
       Alert.alert('Revisa la estructura', issues[0]);
       return;
@@ -175,10 +163,10 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet/lab-externo/structure`,
         { method: 'PUT', body: JSON.stringify(buildLabExternalStructurePayload(groups)) },
       );
-      await refreshWorkOrder();
       const reloaded = await request<LabFieldSheet>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
       );
+      onSaved(reloaded);
       setRows(reloaded.results_rows as unknown as LabExternalRow[]);
       setStructureDirty(false);
     } catch (error) {
@@ -189,12 +177,14 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
   }
 
   async function saveValues() {
+    if (!editableValues || structureDirty) return;
     setBusy(true);
     try {
-      await request<LabFieldSheet>(
+      const saved = await request<LabFieldSheet>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
         { method: 'PATCH', body: JSON.stringify(buildLabExternalValuesPatch(rows)) },
       );
+      onSaved(saved);
       setValuesDirty(false);
     } catch (error) {
       Alert.alert('No fue posible guardar los valores', error instanceof Error ? error.message : 'Intenta nuevamente');
@@ -203,67 +193,13 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
     }
   }
 
-  async function completeSheet() {
-    if (structureDirty || valuesDirty) {
-      Alert.alert('Guarda tus cambios primero', 'Hay cambios sin guardar en la estructura o en los valores capturados.');
-      return;
-    }
-    setBusy(true);
-    try {
-      await request<LabFieldSheet>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet/complete`,
-        { method: 'POST' },
-      );
-      await refreshWorkOrder();
-      onBack();
-    } catch (error) {
-      Alert.alert('No fue posible completar la hoja', error instanceof Error ? error.message : 'Revisa que haya al menos un valor capturado');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function reopenSheet() {
-    if (!reopenReason.trim()) {
-      Alert.alert('Falta el motivo', 'Escribe el motivo de la reapertura antes de continuar.');
-      return;
-    }
-    setBusy(true);
-    try {
-      await request<LabFieldSheet>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet/reopen`,
-        { method: 'POST', body: JSON.stringify({ reason: reopenReason.trim() }) },
-      );
-      setReopenReason('');
-      await refreshWorkOrder();
-      const reloaded = await request<LabFieldSheet>(
-        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/${equipment.id}/field-sheet`,
-      );
-      setGroups(readLabExternalDefinition(reloaded.template_definition).groups);
-      setRows(reloaded.results_rows as unknown as LabExternalRow[]);
-    } catch (error) {
-      Alert.alert('No fue posible reabrir la hoja', error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <View>
-      <View style={styles.header}>
-        <Text style={styles.title}>{'Hoja de campo "LAB EXTERNO"'}</Text>
-        <StatusBadge label={sheet.status} tone={sheet.status === 'completed' ? 'success' : 'warning'} />
-      </View>
-      <Text style={styles.meta}>{equipment.instrument} · OT {workOrder.folio}</Text>
+      {!readOnly && (structureDirty || valuesDirty) && (
+        <AlertBanner tone="info">{structureDirty ? 'Guarda la estructura antes de capturar valores.' : 'Guarda los valores antes de cambiar la estructura.'}</AlertBanner>
+      )}
 
-      <Section title="Identificación">
-        <ReadOnlyField label="Cliente" value={sheet.company ?? ''} />
-        <ReadOnlyField label="Instrumento" value={equipment.instrument} />
-        <ReadOnlyField label="Marca / modelo" value={`${equipment.brand} / ${equipment.model ?? '-'}`} />
-        <ReadOnlyField label="Folio certificado" value={equipment.certificate_folio ?? 'Pendiente'} />
-      </Section>
-
-      {!editableStructure && (
+      {readOnly && (
         <AlertBanner tone="info">La estructura y los valores ya no pueden editarse desde este estado.</AlertBanner>
       )}
 
@@ -328,6 +264,9 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
                   <Text style={styles.tableTitleReadOnly}>{table.title}</Text>
                 )}
 
+                <Text style={styles.meta}>
+                  {labExternalTableProgress(table, rows).completed} / {table.row_count} filas capturadas
+                </Text>
                 <View style={styles.valuesTable}>
                   <View style={styles.valuesRow}>
                     <Text style={styles.valuesHeaderCell}>#</Text>
@@ -337,7 +276,7 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
                     <View key={rowNumber} style={styles.valuesRow}>
                       <Text style={styles.valuesRowNumber}>{rowNumber}</Text>
                       {table.columns.map((column) => (
-                        editableStructure ? (
+                        editableValues && !structureDirty ? (
                           <View key={column.key} style={styles.valuesCell}>
                             <Field
                               label=""
@@ -377,22 +316,13 @@ export function LabExternalFieldSheet({ busy, canReopenFieldSheetDirectly, equip
         <AlertBanner tone="danger">{issues[0]}</AlertBanner>
       )}
 
-      {editableStructure && (
+      {editableValues && (
         <OperationalActionStack>
-          <SecondaryButton disabled={busy || !structureDirty} icon="content-save-outline" label="Guardar estructura" loading={busy} onPress={saveStructure} />
-          <SecondaryButton disabled={busy || !valuesDirty} icon="content-save-outline" label="Guardar valores" loading={busy} onPress={saveValues} />
-          <PrimaryButton disabled={busy} icon="check-circle" label="Completar hoja" loading={busy} onPress={completeSheet} />
+          <SecondaryButton disabled={busy || !structureDirty || valuesDirty} icon="content-save-outline" label="Guardar estructura" loading={busy} onPress={saveStructure} />
+          <SecondaryButton disabled={busy || !valuesDirty || structureDirty} icon="content-save-outline" label="Guardar valores" loading={busy} onPress={saveValues} />
         </OperationalActionStack>
       )}
 
-      {sheet.status === 'completed' && canReopenFieldSheetDirectly && (
-        <Section title="Reabrir esta hoja" description="Misma autoridad y reglas que cualquier otra hoja LAB -- retira esta revisión como histórico y abre una nueva editable con la misma estructura.">
-          <Field label="Motivo" value={reopenReason} onChange={setReopenReason} />
-          <SecondaryButton disabled={busy} icon="lock-open-outline" label="Reabrir" loading={busy} onPress={reopenSheet} />
-        </Section>
-      )}
-
-      <SecondaryButton icon="arrow-left" label="Volver a equipos" onPress={onBack} />
     </View>
   );
 }
