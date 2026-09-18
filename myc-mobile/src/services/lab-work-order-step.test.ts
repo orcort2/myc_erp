@@ -145,12 +145,14 @@ test('11. received_signed oculta agregar equipo (editable gatea "+ Añadir equip
 
 test('12. received_signed oculta editar equipo (editable gatea abrir el editor de equipo)', () => {
   const source = screenSource();
-  // El flujo equipo-por-equipo (encargo posterior) necesitó una rama extra
-  // en el onPress (abrir captura directa cuando el equipo ya tiene acción de
-  // hoja asignada), así que la condición pasó de un && encadenado a un
-  // if -- la garantía real (editable && canManageEquipment sigue
-  // gateando showEquipmentEditor) es la misma en ambas formas.
-  assert.match(source, /editable && canManageEquipment[\s\S]{0,20}showEquipmentEditor\(item\)/);
+  // PENDIENTE 3 (encargo de corrección LAB): "Editar datos" pasó a ser una
+  // acción explícita, independiente del tap ambiguo de la fila (antes, en
+  // equipment_by_equipment, el tap SIEMPRE navegaba a captura técnica y
+  // JAMÁS ofrecía editar). La garantía real (editable && canManageEquipment
+  // sigue gateando showEquipmentEditor) es la misma; sólo cambió de forma --
+  // ahora vía la variable intermedia canEditThisEquipment.
+  assert.match(source, /const canEditThisEquipment = editable && canManageEquipment;/);
+  assert.match(source, /\{canEditThisEquipment && \([\s\S]{0,120}showEquipmentEditor\(item\)/);
 });
 
 test('editable se deriva de isReceptionEditable, no de una comparación de status suelta', () => {

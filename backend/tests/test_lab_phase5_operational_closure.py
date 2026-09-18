@@ -272,25 +272,42 @@ def create_and_sign_ready_order(
     return order_id, equipment_id
 
 
-def create_field_sheet(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int):
+def create_field_sheet(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int, *, template_key: str = "general"):
     return client.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"template_key": "general"},
+        json={"template_key": template_key},
         headers=headers,
     )
 
 
-def complete_field_sheet_fully(client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int) -> int:
-    created = create_field_sheet(client, headers, order_id, equipment_id)
+def complete_field_sheet_fully(
+    client: TestClient, headers: dict[str, str], order_id: int, equipment_id: int, *, template_key: str = "general",
+) -> int:
+    """template_key="lab_externo" (equipo linked, ver
+    ensure_lab_field_sheet_template_matches_service) necesita su propia
+    estructura mínima antes de capturar -- ninguna plantilla interna la
+    trae por catálogo."""
+    created = create_field_sheet(client, headers, order_id, equipment_id, template_key=template_key)
     assert created.status_code == 201, created.text
     sheet_json = created.json()
     sheet_id = sheet_json["id"]
+    if template_key == "lab_externo":
+        structured = client.put(
+            f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet/lab-externo/structure",
+            json={"groups": [{
+                "id": "g1", "title": "Grupo 1", "orientation": "pattern_to_ibc",
+                "tables": [{"id": "g1_t1", "title": "Tabla 1", "columns": [{"key": "c1", "label": "C1"}], "row_count": 1}],
+            }]},
+            headers=headers,
+        )
+        assert structured.status_code == 200, structured.text
+        sheet_json = structured.json()
     rows = [
         {
             "id": row["id"],
             "section_key": row["section_key"],
             "row_number": row["row_number"],
-            "row_data": {"result": "1.00"} if index == 0 else row["row_data"],
+            "row_data": ({"c1": "1.00"} if template_key == "lab_externo" else {"result": "1.00"}) if index == 0 else row["row_data"],
         }
         for index, row in enumerate(sheet_json["results_rows"])
     ]
@@ -561,7 +578,7 @@ def test_close_rejected_with_unresolved_linked_folio(phase5_context):
     ext_sr_headers = external_headers(client, "external_sr@client.example.com")
     # La captura externa SÍ puede completar la hoja con folio Vinculado
     # pendiente (Fase 3, deliberado) -- eso no es lo que se está probando.
-    completed_sheet = complete_field_sheet_fully(client, ext_sr_headers, order_id, equipment_id)
+    completed_sheet = complete_field_sheet_fully(client, ext_sr_headers, order_id, equipment_id, template_key="lab_externo")
     assert completed_sheet
     with factory() as db:
         assert db.get(LabWorkOrderEquipment, equipment_id).folio_status == "pending"
@@ -607,7 +624,7 @@ def test_linked_pending_capture_completes_then_blocks_close_until_authorized(pha
         assert ticket_id is not None
 
     # A) folio pendiente -> crear/guardar borrador/capturar resultados/completar.
-    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    sheet_id = complete_field_sheet_fully(client, headers, order_id, equipment_id, template_key="lab_externo")
     assert sheet_id
     with factory() as db:
         assert db.get(LabWorkOrderEquipment, equipment_id).folio_status == "pending"
@@ -1301,6 +1318,144 @@ def test_admin_reopens_directly_with_invalidate_policy_requires_new_signature(ph
         # La firma histórica de la revisión congelada nunca se pierde -- sólo
         # se retira de la OT vigente.
         assert order.revisions[0].signature_session_id == original_signature_session_id
+
+
+def test_resigning_after_reopen_with_everything_already_completed_reaches_ready_to_close_not_stuck(phase5_context):
+    """PENDIENTE 6 (encargo de corrección LAB, bug productivo confirmado --
+    grupo 6455-6458): _sign_members_uncommitted sólo distinguía dos casos --
+    "algún equipo activo tiene una hoja YA EXISTENTE pero no completed" (-> in_progress)
+    y todo lo demás (-> received_signed) -- conflando dos situaciones muy
+    distintas bajo "received_signed": una OT recién firmada por primera vez
+    (ningún equipo tiene hoja todavía, correcto) y una OT reabierta donde
+    NINGÚN equipo necesitó tocarse (todas sus hojas vigentes ya estaban
+    completed desde antes de reabrir). Para una OT moderna (lab_client_id no
+    nulo), _closable_status NUNCA considera "received_signed" cerrable, y
+    nada más dispara received_signed -> in_progress/ready_to_close si ningún
+    equipo vuelve a pasar por create_lab_field_sheet/_clone_field_sheet_for_correction
+    -- la OT queda varada para siempre, exactamente el síntoma reportado
+    (un miembro del grupo nunca llegaba a ready_to_close pese a tener sus 9
+    FieldSheets vigentes completed)."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id, equipment_id = create_and_sign_ready_order(client, headers, lab_client_id=lab_client_id)
+    complete_field_sheet_fully(client, headers, order_id, equipment_id)
+    closed = close_individual(client, headers, order_id)
+    assert closed.status_code == 200, closed.text
+
+    reopened = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{order_id}/reopen",
+        json={"requested_signature_policy": "invalidate", "reason": "Corrección administrativa sin tocar este equipo"},
+        headers=headers,
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["status"] == "draft"
+
+    # Nada tocó el equipo/su FieldSheet -- sigue "completed" tal cual quedó
+    # antes de reabrir. Sólo se re-firma, como exige la política 'invalidate'.
+    resigned = sign(client, headers, order_id)
+    assert resigned.status_code == 200, resigned.text
+    resigned_status = resigned.json()["status"]
+    assert resigned_status == "ready_to_close", (
+        f"la OT no debe quedar indebidamente en '{resigned_status}': su único equipo activo "
+        "ya tenía una FieldSheet vigente completed antes de re-firmar -- nada quedaba por capturar"
+    )
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, order_id).status == "ready_to_close"
+
+    reclosed = close_individual(client, headers, order_id)
+    assert reclosed.status_code == 200, reclosed.text
+    assert reclosed.json()["status"] == "completed"
+
+
+def test_resigning_after_reopen_with_some_equipment_still_capturing_stays_in_progress(phase5_context):
+    """Complemento del test anterior: si SÍ queda algo por capturar (una
+    hoja nueva/reabierta todavía no completed), re-firmar sigue produciendo
+    in_progress -- el fix no debe hacer que todo salte a ready_to_close a
+    ciegas, sólo cuando de verdad no falta ninguna hoja completed."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    order_id = create_order(client, headers, client_name="Cliente LAB", lab_client_id=lab_client_id)
+    first_equipment_id = add_equipment(client, headers, order_id, 1)
+    second_equipment_id = add_equipment(client, headers, order_id, 2)
+    set_service(client, headers, order_id, first_equipment_id, "traceable")
+    set_service(client, headers, order_id, second_equipment_id, "traceable")
+    signed = sign(client, headers, order_id)
+    assert signed.status_code == 200, signed.text
+
+    complete_field_sheet_fully(client, headers, order_id, first_equipment_id)
+    # El segundo equipo se queda con su hoja en borrador -- todavía falta
+    # captura real, la OT no puede cerrar todavía.
+    create_field_sheet(client, headers, order_id, second_equipment_id)
+
+    with factory() as db:
+        assert db.get(LabWorkOrder, order_id).status == "in_progress"
+
+
+def test_group_with_a_cancelled_member_still_closes_the_open_cohort_normally(phase5_context):
+    """PENDIENTE 6, escenario A (encargo de corrección LAB): un miembro
+    cancelado de un grupo NUNCA debe bloquear el cierre de los miembros
+    abiertos -- _open_group_members/_signature_cohort ya excluyen
+    'cancelled' explícitamente (igual que 'completed'/'partially_closed');
+    este test fija esa garantía como regresión explícita en vez de darla por
+    supuesta, replicando el grupo productivo 6455-6458 (uno de los cuatro
+    debía cancelarse; los otros tres debían poder cerrar igual)."""
+    client, factory, tokens, _tenants = phase5_context
+    headers = auth(tokens["admin"])
+    lab_client_id = make_lab_client_id(factory)
+    group = client.post(
+        "/api/mobile/v1/technician/lab-work-orders/groups",
+        json={**create_payload("Grupo con miembro cancelado"), "quantity": 4, "lab_client_id": lab_client_id},
+        headers=headers,
+    )
+    assert group.status_code == 201, group.text
+    members = group.json()["related_work_orders"]
+    assert len(members) == 4
+    root_id = group.json()["id"]
+
+    equipment_ids: dict[int, int] = {}
+    for member in members:
+        equipment_id = add_equipment(client, headers, member["id"], 1)
+        set_service(client, headers, member["id"], equipment_id, "traceable")
+        equipment_ids[member["id"]] = equipment_id
+
+    signed = sign(client, headers, root_id, individual=False)
+    assert signed.status_code == 200, signed.text
+
+    for member in members:
+        complete_field_sheet_fully(client, headers, member["id"], equipment_ids[member["id"]])
+
+    with factory() as db:
+        for member in members:
+            assert db.get(LabWorkOrder, member["id"]).status == "ready_to_close"
+
+    to_cancel = members[-1]["id"]
+    still_open = [member["id"] for member in members if member["id"] != to_cancel]
+
+    cancelled = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{to_cancel}/cancel",
+        json={"reason": "Este equipo ya no forma parte de la recepción"},
+        headers=headers,
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+
+    closed = client.post(
+        f"/api/mobile/v1/technician/lab-work-orders/{still_open[0]}/complete", headers=headers,
+    )
+    assert closed.status_code == 200, closed.text
+    body = closed.json()
+    assert body["status"] == "completed"
+    closed_ids = {item["id"] for item in body["related_work_orders"] if item["status"] == "completed"}
+    for member_id in still_open:
+        assert member_id in closed_ids or member_id == body["id"]
+
+    with factory() as db:
+        for member_id in still_open:
+            assert db.get(LabWorkOrder, member_id).status == "completed"
+        assert db.get(LabWorkOrder, to_cancel).status == "cancelled"
 
 
 def test_user_without_reopen_permission_cannot_reopen_directly(phase5_context):

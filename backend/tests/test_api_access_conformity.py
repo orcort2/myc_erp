@@ -21,11 +21,13 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    # 527 = 526 (corte previo) + POST
-    # /{work_order_id}/equipment/{equipment_id}/field-sheet/reopen
-    # ("Reabrir/desbloquear hoja" directo, BUG fix 2026-09) -- cae bajo la
-    # clasificación genérica /api/mobile/v1/ existente, sin override propio.
-    assert len(operations) == 527
+    # 529 = 528 (corte previo) + PUT
+    # /{work_order_id}/equipment/{equipment_id}/field-sheet/lab-externo/structure
+    # (PENDIENTE 7 -- "LAB EXTERNO": reemplaza la estructura de grupos/tablas
+    # dinámicas de una hoja LAB EXTERNO, ver
+    # app/services/lab_field_sheets_external.py) -- cae bajo la clasificación
+    # genérica /api/mobile/v1/ existente, sin override propio.
+    assert len(operations) == 529
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 

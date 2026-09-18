@@ -249,3 +249,20 @@ test('cierre UX 2026-09: canEditLabClients requiere lab_clients.update explícit
   const legacy = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_work_orders.use']));
   assert.equal(legacy.canEditLabClients, true);
 });
+
+// PENDIENTE 5 (encargo de corrección LAB): "Anular ingreso" de un equipo
+// exige la misma autoridad real que backend valida en
+// POST .../equipment/{id}/void (lab_work_orders.cancel + actor_type ==
+// "internal", ver post_void_lab_equipment_entry) -- mismo patrón exacto que
+// canVoidLabDelivery, ninguna capability nueva de permiso.
+test('canVoidLabEquipmentEntry exige lab_work_orders.cancel y actor interno, igual que canVoidLabDelivery', () => {
+  const internalWithPermission = deriveMobileCapabilities(user('internal', ['mobile.access', 'lab_work_orders.cancel']));
+  assert.equal(internalWithPermission.canVoidLabEquipmentEntry, true);
+  assert.equal(internalWithPermission.canVoidLabEquipmentEntry, internalWithPermission.canVoidLabDelivery);
+
+  const internalWithoutPermission = deriveMobileCapabilities(user('internal', ['mobile.access']));
+  assert.equal(internalWithoutPermission.canVoidLabEquipmentEntry, false);
+
+  const externalWithPermission = deriveMobileCapabilities(user('client', ['mobile.access', 'lab_work_orders.cancel']));
+  assert.equal(externalWithPermission.canVoidLabEquipmentEntry, false);
+});

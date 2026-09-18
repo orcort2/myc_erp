@@ -35,6 +35,7 @@ from app.services.institutional_configurations import (
     institutional_snapshot,
     resolve_logo_path,
 )
+from app.services.lab_field_sheets_external import LAB_EXTERNAL_TEMPLATE_KEY
 from app.services.storage_service import (
     require_deliverable_file,
     resolve_storage_path,
@@ -50,6 +51,10 @@ LEGACY_PDF_TEMPLATES = {
     "field_sheet_general_pdf.html",
     "field_sheet_anemometer_pdf.html",
     "field_sheet_electrical_pdf.html",
+    # PENDIENTE 7: LAB EXTERNO (ver app/services/lab_field_sheets_external.py)
+    # -- renderizada aparte en _render_pdf, nunca por _render_html (su
+    # estructura de grupos/tablas dinámicas no encaja en result_sections).
+    "field_sheet_lab_externo_pdf.html",
 }
 FIELD_LABELS = {
     "document_code": "Código documental",
@@ -556,6 +561,88 @@ def _render_html(
     )
 
 
+_LAB_EXTERNAL_ORIENTATION_LABELS = {
+    "pattern_to_ibc": "Patrón → IBC",
+    "ibc_to_pattern": "IBC → Patrón",
+}
+
+
+def _render_lab_externo_html(field_sheet: FieldSheet, template_definition: dict, signatures: list) -> str:
+    """PENDIENTE 7 (encargo de corrección LAB): PDF de "LAB EXTERNO".
+    Encabezado propio -- la plantilla nunca referencia un logo, así que
+    nunca aparece el logo MYC, a diferencia de _render_html. Reconstruye
+    grupos -> tablas -> filas cruzando la ESTRUCTURA (template_definition
+    ["groups"], congelada por revisión) con los VALORES capturados
+    (field_sheet.results_rows, section_key=table.id, row_data por columna
+    dinámica) -- la misma separación estructura/datos del resto del
+    encargo, sin reutilizar _build_sections (asume columnas fijas
+    pattern/ibc_1-3, no columnas dinámicas por tabla)."""
+    lab_equipment = field_sheet.lab_equipment
+    order = lab_equipment.work_order if lab_equipment is not None else None
+    env = Environment(
+        loader=FileSystemLoader(str(TEMPLATE_DIR)),
+        autoescape=select_autoescape(("html", "xml")),
+    )
+    env.filters["date"] = _format_date
+    template = env.get_template("field_sheet_lab_externo_pdf.html")
+
+    rows_by_table: dict[str, list[FieldSheetResult]] = {}
+    for row in field_sheet.results_rows:
+        rows_by_table.setdefault(row.section_key, []).append(row)
+    for rows in rows_by_table.values():
+        rows.sort(key=lambda item: item.row_number)
+
+    groups = []
+    for group in (template_definition or {}).get("groups") or []:
+        tables = []
+        for table in group.get("tables") or []:
+            columns = table.get("columns") or []
+            rows = rows_by_table.get(table.get("id"), [])
+            tables.append(
+                {
+                    "id": table.get("id"),
+                    "title": table.get("title"),
+                    "columns": columns,
+                    "rows": [
+                        {
+                            "row_number": row.row_number,
+                            # "cells", nunca "values": un dict Jinja2 resuelve
+                            # .values como el método builtin de dict antes que
+                            # como clave, así que "values" quedaría siempre
+                            # inaccesible desde la plantilla.
+                            "cells": [(row.row_data or {}).get(column["key"], "") for column in columns],
+                        }
+                        for row in rows
+                    ],
+                }
+            )
+        orientation = group.get("orientation")
+        groups.append(
+            {
+                "id": group.get("id"),
+                "title": group.get("title"),
+                "orientation": orientation,
+                "orientation_label": _LAB_EXTERNAL_ORIENTATION_LABELS.get(orientation, orientation),
+                "tables": tables,
+            }
+        )
+
+    return template.render(
+        field_sheet=field_sheet,
+        work_order=order,
+        lab_equipment=lab_equipment,
+        company=field_sheet.company,
+        address=field_sheet.address,
+        attention=field_sheet.attention,
+        reception_date=field_sheet.reception_date,
+        capture_values=field_sheet.capture_values or {},
+        groups=groups,
+        signatures=signatures,
+        revision_number=field_sheet.revision_number,
+        status=field_sheet.status,
+    )
+
+
 def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
     template_definition = field_sheet.template_definition_json or get_field_sheet_template(
         db,
@@ -605,7 +692,13 @@ def _render_pdf(db, field_sheet: FieldSheet) -> tuple[bytes, str]:
         if not institution:
             institution = institutional_snapshot(get_or_create_institutional_configuration(db))
         signatures = _resolve_field_sheet_signatures(db, field_sheet)
-        html = _render_html(field_sheet, template_definition, institution, signatures)
+        if field_sheet.template_key == LAB_EXTERNAL_TEMPLATE_KEY:
+            # PENDIENTE 7: estructura de grupos/tablas dinámicas -- no encaja
+            # en result_sections (columnas fijas pattern/ibc_1-3), así que se
+            # renderiza aparte en vez de forzar _render_html.
+            html = _render_lab_externo_html(field_sheet, template_definition, signatures)
+        else:
+            html = _render_html(field_sheet, template_definition, institution, signatures)
         pdf = HTML(string=html, base_url=str(APP_DIR)).write_pdf()
     equipment_name = (
         getattr(equipment, "name", None)

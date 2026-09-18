@@ -112,21 +112,27 @@ export function buildCertificateClientPayload(
 }
 
 export type ConfiguredEquipmentPayload = {
-  equipment: EquipmentBasicData;
+  equipment: EquipmentBasicData & { expected_edit_version?: number };
   certificate_client?: CertificateClientPayload;
   service: { service_type: LabServiceType; linked_company_id: number | null };
 };
 
 /** Builds the exact POST .../equipment/configured body. 'order' mode omits
  * certificate_client entirely (backend defaults to order with null snapshots,
- * matching Fase 1's invariant -- nothing is copied needlessly). */
+ * matching Fase 1's invariant -- nothing is copied needlessly).
+ *
+ * expectedEditVersion es opcional y sólo importa cuando la OT ya fue
+ * reabierta: _check_edit_version en backend únicamente exige la versión en
+ * ese caso (ver PENDIENTE 2, bug REVISION_CONFLICT), así que un alta normal
+ * (nunca reabierta) sigue funcionando igual sin pasarlo. */
 export function buildConfiguredEquipmentPayload(
   equipment: EquipmentBasicData,
   documentaryClient: DocumentaryClientSelection,
   service: ServiceSelection,
+  expectedEditVersion?: number,
 ): ConfiguredEquipmentPayload {
   const payload: ConfiguredEquipmentPayload = {
-    equipment,
+    equipment: expectedEditVersion == null ? equipment : { ...equipment, expected_edit_version: expectedEditVersion },
     service: {
       service_type: service.serviceType,
       linked_company_id: null,

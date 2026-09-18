@@ -74,3 +74,41 @@ test('el error de finalize conserva la firma capturada -- nunca limpia signature
   const catchBlock = fn.slice(fn.lastIndexOf('} catch (error) {'));
   assert.doesNotMatch(catchBlock, /setSignatureFlowState\(null\)/);
 });
+
+// PENDIENTE 3 (encargo de corrección LAB): describeEquipmentByEquipmentAction
+// nunca devuelve null en equipment_by_equipment, así que el tap de la fila
+// SIEMPRE navegaba a captura técnica en ese modo y jamás ofrecía editar --
+// no existía forma de corregir los datos de un equipo. Ahora "Editar datos"
+// es una acción explícita e independiente del tap de la fila.
+test('"Editar datos" es una acción explícita e independiente del tap ambiguo de la fila', () => {
+  const rowBlock = source.slice(
+    source.indexOf('{workOrder.equipment.map((item) => {'),
+    source.indexOf('{!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}'),
+  );
+
+  // El tap de la fila ya no decide entre dos conceptos (editar vs navegar):
+  // representa un único concepto (navegar cuando hay acción pendiente).
+  assert.match(rowBlock, /onPress=\{equipmentByEquipmentAction \? \(\) => setStep\('technical'\) : undefined\}/);
+  assert.doesNotMatch(rowBlock, /if \(editable && canManageEquipment\) showEquipmentEditor\(item\)/);
+
+  // "Editar datos" existe siempre (ambas modalidades) con los mismos
+  // permisos de siempre -- sin permisos nuevos.
+  assert.match(rowBlock, /const canEditThisEquipment = editable && canManageEquipment;/);
+  assert.match(rowBlock, /\{canEditThisEquipment && \(/);
+  assert.match(rowBlock, /onPress=\{\(\) => showEquipmentEditor\(item\)\}/);
+  assert.match(rowBlock, />Editar datos</);
+});
+
+test('en equipment_by_equipment, "Editar datos" está disponible aunque el equipo ya tenga una acción técnica pendiente (entrar a captura no bloquea corregir datos)', () => {
+  const rowBlock = source.slice(
+    source.indexOf('{workOrder.equipment.map((item) => {'),
+    source.indexOf('{!workOrder.equipment.length && <Text style={styles.empty}>Aún no hay equipos.</Text>}'),
+  );
+  // "Editar datos" está condicionado sólo a canEditThisEquipment, nunca a
+  // "!equipmentByEquipmentAction" -- por eso conviven con el badge de acción
+  // pendiente dentro del mismo bloque, sin exclusión mutua.
+  const editBlockStart = rowBlock.indexOf('{canEditThisEquipment && (');
+  const actionBlockStart = rowBlock.indexOf('{equipmentByEquipmentAction && (');
+  assert.notEqual(editBlockStart, -1);
+  assert.notEqual(actionBlockStart, -1);
+});

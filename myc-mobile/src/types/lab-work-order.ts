@@ -103,6 +103,16 @@ export type LabWorkOrder = {
   // input libre (ver LabTechnicalCapture, resolveSignerName). Opcional para
   // no romper los fixtures existentes que no modelan firmas.
   signature_session?: LabSignatureSession | null;
+  // PENDIENTE 4 (encargo de corrección LAB): evaluación en vivo (no
+  // persistida hasta "Completar cambios") de si algo sensible cambió desde
+  // el último cierre formalizado -- ver
+  // _pending_signature_impact_since_last_close en backend. Siempre presente
+  // en la respuesta (default_factory en LabPendingSignatureReviewRead), así
+  // que Mobile nunca necesita una llamada aparte para decidir el warning.
+  pending_signature_review: {
+    sensitive_fields: string[];
+    requires_new_signature: boolean;
+  };
 };
 
 // Fase Delivery: la entrega ya no es un dato binario por OT -- vive a nivel de

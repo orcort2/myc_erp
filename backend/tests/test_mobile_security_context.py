@@ -415,9 +415,11 @@ def test_external_linked_sheet_can_start_pending_but_close_stays_internal(mobile
     assert signed.status_code == 200, signed.text
     assert signed.json()["status"] == "received_signed"
 
+    # Auditoría 2026-09-17: este equipo es linked -- exige LAB EXTERNO
+    # (contrato bidireccional), nunca una plantilla interna.
     sheet = api.post(
         f"/api/mobile/v1/technician/lab-work-orders/{order_id}/equipment/{equipment_id}/field-sheet",
-        json={"template_key": "general"},
+        json={"template_key": "lab_externo"},
         headers=sr_headers,
     )
     assert sheet.status_code == 201, sheet.text

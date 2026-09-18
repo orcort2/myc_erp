@@ -53,6 +53,7 @@ import {
   type EquipmentFormValues,
 } from '@/src/services/lab-equipment-configured-payload';
 import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
+import { describePendingSignatureReviewFields } from '@/src/services/lab-pending-signature-review';
 import {
   reconcileSignatureFlowState,
   type SignatureFlowState,
@@ -462,6 +463,7 @@ export default function WorkOrdersScreen() {
     canOverrideReceptionDate,
     canRegisterLabDelivery,
     canVoidLabDelivery,
+    canVoidLabEquipmentEntry,
     canRequestPartialDelivery,
   } = capabilities;
   const editable = !!workOrder && isReceptionEditable(workOrder.status) && canExecuteWorkOrders;
@@ -1094,7 +1096,7 @@ export default function WorkOrdersScreen() {
     if (!workOrder) return;
     setBusy(true);
     try {
-      const payload = buildConfiguredEquipmentPayload(values.equipment, values.documentaryClient, values.service);
+      const payload = buildConfiguredEquipmentPayload(values.equipment, values.documentaryClient, values.service, workOrder.edit_version);
       const detail = await request<LabWorkOrder>(
         `/mobile/v1/technician/lab-work-orders/${workOrder.id}/equipment/configured`,
         { method: 'POST', body: JSON.stringify(payload) },
@@ -1114,7 +1116,7 @@ export default function WorkOrdersScreen() {
   }
 
   function openVoidEquipmentDialog(equipment: LabEquipment) {
-    if (!canCancel) return;
+    if (!canVoidLabEquipmentEntry) return;
 
     setVoidingEquipment(equipment);
     setEquipmentEditor(null);
@@ -1122,6 +1124,58 @@ export default function WorkOrdersScreen() {
     setTicketDescription('');
     setTicketDialogMode('void_equipment');
     setTicketOpen(true);
+  }
+
+  // PENDIENTE 4 (encargo de corrección LAB): "Completar cambios" cierra la
+  // SESIÓN de corrección de una OT reabierta -- endpoint autoritativo
+  // POST .../complete-corrections (complete_corrections en backend). No
+  // persiste nada nuevo por sí sola (cada PATCH ya se guardó y auditó al
+  // momento); sólo dispara la re-evaluación de firma contra
+  // pending_signature_review, que YA viaja fresco en cada respuesta de OT
+  // (nunca una llamada aparte). Si algo sensible cambió desde el último
+  // cierre formalizado, advierte con el detalle exacto ANTES de invalidar
+  // la firma vigente -- la evidencia de la firma anterior se conserva
+  // (invalidate_member_signatures), nunca se destruye.
+  function confirmCompleteCorrections() {
+    if (!workOrder) return;
+    const review = workOrder.pending_signature_review;
+    if (review.requires_new_signature) {
+      const fields = describePendingSignatureReviewFields(review, workOrder.equipment);
+      Alert.alert(
+        'Se requiere una nueva firma',
+        `Desde el último cierre firmado cambiaron datos que esa firma certificó:\n\n${fields.map((field) => `• ${field}`).join('\n')}\n\nAl completar los cambios, la firma vigente se invalidará (su historial se conserva) y deberás firmar de nuevo para poder cerrar esta OT.\n\n¿Deseas completar los cambios?`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Completar cambios', style: 'destructive', onPress: () => { void completeCorrections(); } },
+        ],
+      );
+      return;
+    }
+    Alert.alert(
+      'Completar cambios',
+      'Se cerrará la sesión de corrección de esta OT. Ningún dato sensible quedó distinto de lo que la firma vigente certificó, así que no se pedirá una nueva firma.\n\n¿Continuar?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Completar cambios', onPress: () => { void completeCorrections(); } },
+      ],
+    );
+  }
+
+  async function completeCorrections() {
+    if (!workOrder) return;
+    setBusy(true);
+    try {
+      const detail = await request<LabWorkOrder>(
+        `/mobile/v1/technician/lab-work-orders/${workOrder.id}/complete-corrections`,
+        { method: 'POST' },
+      );
+      setWorkOrder(detail);
+      publishLocalChange({ event_type: detail.signature_required ? 'ticket.signature_required' : 'work_order.updated', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
+    } catch (error) {
+      Alert.alert('No fue posible completar los cambios', error instanceof Error ? error.message : 'Intenta nuevamente');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function addAdditional(additionalWorkflowMode: LabWorkOrderWorkflowMode) {
@@ -1693,20 +1747,43 @@ export default function WorkOrdersScreen() {
                   {wasReopened(workOrder) && editable && (
                     <SecondaryButton icon="pencil-outline" label="Corregir datos de la orden" onPress={() => setStep('general')} />
                   )}
+                  {/* PENDIENTE 4: "Completar cambios" cierra la sesión de
+                      corrección -- mismo gate que "Corregir datos de la
+                      orden" (wasReopened == revision_number > 1, editable ==
+                      status draft + canExecuteWorkOrders), el mismo par de
+                      condiciones que exige complete_corrections en backend
+                      (_ensure_members_editable + revision_number > 1). */}
+                  {wasReopened(workOrder) && editable && (
+                    <PrimaryButton
+                      disabled={busy}
+                      icon="check-all"
+                      label="Completar cambios"
+                      loading={busy}
+                      onPress={confirmCompleteCorrections}
+                    />
+                  )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
                     const summary = describeEquipmentSummary(item, workOrder.client_name);
                     const equipmentByEquipmentAction = workOrder.workflow_mode === 'equipment_by_equipment'
                       ? describeEquipmentByEquipmentAction(item)
                       : null;
+                    const canEditThisEquipment = editable && canManageEquipment;
                     return (
+                      // PENDIENTE 3 (encargo de corrección LAB): el tap de la fila
+                      // ya NO decide entre dos conceptos. describeEquipmentByEquipmentAction
+                      // nunca devuelve null en equipment_by_equipment, así que antes el
+                      // tap SIEMPRE navegaba a captura técnica en ese modo y JAMÁS
+                      // ofrecía editar -- entrar al flujo técnico bloqueaba corregir
+                      // datos del equipo. Ahora el tap de la fila representa un único
+                      // concepto (navegar a la acción equipo-por-equipo pendiente,
+                      // cuando existe) y "Editar datos" es su propia acción explícita,
+                      // siempre visible con los mismos permisos de siempre
+                      // (editable && canManageEquipment, sin permisos nuevos).
                       <Pressable
                         key={item.id}
                         style={styles.equipmentRow}
-                        onPress={() => {
-                          if (equipmentByEquipmentAction) { setStep('technical'); return; }
-                          if (editable && canManageEquipment) showEquipmentEditor(item);
-                        }}
+                        onPress={equipmentByEquipmentAction ? () => setStep('technical') : undefined}
                       >
                         <View style={styles.flex}>
                           <Text style={styles.equipmentTitle}>{item.position}. {item.instrument}</Text>
@@ -1718,6 +1795,11 @@ export default function WorkOrdersScreen() {
                               de haber guardado el equipo hace un momento. */}
                           {equipmentByEquipmentAction && (
                             <Text style={styles.equipmentByEquipmentAction}>{equipmentByEquipmentAction.label}</Text>
+                          )}
+                          {canEditThisEquipment && (
+                            <Pressable onPress={() => showEquipmentEditor(item)} hitSlop={8} style={styles.equipmentEditAction}>
+                              <Text style={styles.equipmentEditActionLabel}>Editar datos</Text>
+                            </Pressable>
                           )}
                         </View>
                         <Text style={item.is_good_condition ? styles.good : styles.bad}>{item.is_good_condition ? '✓' : 'X'}</Text>
@@ -2251,7 +2333,7 @@ export default function WorkOrdersScreen() {
                         request={request}
                         workOrderClientName={workOrder?.client_name ?? ''}
                       />
-                      {canCancel && (
+                      {canVoidLabEquipmentEntry && (
                         <OperationalActionStack>
                           <DangerButton
                             disabled={busy}
@@ -2276,7 +2358,7 @@ export default function WorkOrdersScreen() {
             || (ticketDialogMode === 'cancel' && canCancel)
             || (ticketDialogMode === 'reopen_direct' && canReopenDirectly)
             || (ticketDialogMode === 'void_delivery' && canVoidLabDelivery)
-            || (ticketDialogMode === 'void_equipment' && canCancel)
+            || (ticketDialogMode === 'void_equipment' && canVoidLabEquipmentEntry)
             || (ticketDialogMode === 'change_workflow_mode' && canCancel)
           ) && (
             <View style={styles.overlay}>
@@ -3143,6 +3225,18 @@ const styles = StyleSheet.create({
     color: '#61717d',
     fontSize: 13,
     marginTop: 3,
+  },
+
+  equipmentEditAction: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingVertical: 2,
+  },
+
+  equipmentEditActionLabel: {
+    color: '#0067a8',
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   good: {
