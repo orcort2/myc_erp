@@ -13,6 +13,10 @@
 - Rama de trabajo: `feat/mobile-session-authority-biometric-1`.
 - Base: `main` en `57756cdbbbe89d8f65eca56fda1dcb5014f07ab0`, inicialmente
   limpia y alineada con `origin/main`. Un único commit de implementación.
+- Corrección de orden logout sobre `9002ff1c5c284c966d18b9815d2a783df06cb680`,
+  con rama inicialmente limpia y sincronizada con su origin: push antes de
+  auth, ambos best-effort y limpieza local en finally. Se conserva la carrera
+  protegida con refresh; sin cambios backend, esquema ni datos locales.
 - Sin push, merge ni despliegue en este trabajo.
 - Mobile incorpora identidad de instalación independiente, sesiones server-side,
   hashes SHA-256 de refresh opaco, rotación, detección de reuse, logout y
@@ -42,7 +46,8 @@
   reales de migración y concurrencia, además de contexto e inventario API.
 - Backend completo: 1269 passed, 16 skipped, 34 warnings, 19 subtests passed.
   Las omisiones pertenecen a otras suites; las nuevas pruebas PostgreSQL corrieron.
-- Mobile focalizado: 15 passed. Mobile completo: 680 passed.
+- Mobile focalizado de Fase 1: 15 passed. Corrección logout: suite completa
+  682 passed; cubre éxito, fallo push, fallo auth, ambos fallos y refresh en vuelo.
 - `npx tsc --noEmit` y `npm run lint`: exit 0, sin errores.
 - Inventario API regenerado: 530 operaciones, incluido logout autenticado.
 - Inventario funcional regenerado y filas revisadas; rutas existentes;
@@ -58,7 +63,8 @@
 - Retirar fallback legacy tras 2026-10-22 00:00 UTC, sin prorrogar la ventana.
   Access legacy sin sesión conserva validez hasta su expiración original.
 - Logout siempre limpia local, pero red fallida no prueba revocación remota.
-  La baja push posterior a la revocación es best-effort y puede recibir 401.
+  La baja push se intenta antes de revocar auth; sigue siendo best-effort
+  ante errores de red o refresh concurrente.
 - MYC Mobile permanece EN DESARROLLO como superficie completa. BIOMETRIC-2,
   TTL Mobile propio, panel de dispositivos e infraestructura están fuera de fase.
 - El estado global y pendientes ajenos a esta entrega permanecen bajo

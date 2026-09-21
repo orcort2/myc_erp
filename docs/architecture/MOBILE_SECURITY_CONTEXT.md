@@ -118,13 +118,15 @@ reutiliza el access ya renovado. `finally` libera la promesa y un fallo limpia
 la sesión. Referencias actuales, versión de sesión y escrituras serializadas
 impiden restaurar una sesión cerrada por logout mientras el refresh termina.
 
-Logout ejecuta revocación backend → desactivación push best-effort → limpieza
-local incluso ante error de red. Si una renovación ya estaba en vuelo, revoca
-su sucesor antes de terminar el logout. La revocación invalida el access usado
-por el DELETE push posterior: ese intento puede recibir 401 y no garantiza
-baja remota de PushDevice. No se introduce una excepción de autenticación ni se
-acopla la autoridad de sesión al subsistema de notificaciones. Sin conexión,
-la limpieza local no acredita revocación remota.
+Logout invalida inmediatamente la sesión en memoria, espera el refresh en vuelo
+y ejecuta desactivación push best-effort → revocación backend best-effort →
+limpieza local en finally. Así el logout normal desactiva push antes de invalidar
+su access. Fallar push no impide revocar auth; fallar auth no impide limpiar.
+Si una renovación ya estaba en vuelo, conserva la revocación de su sucesor y
+no restaura tokens locales; en esa carrera el access capturado puede haber sido
+consumido y la baja push sigue siendo best-effort. No se acoplan las autoridades
+ni se modifica deactivateCurrentDevice. Sin conexión, la limpieza local no
+acredita revocación remota.
 
 ### Validación y límites de fase
 

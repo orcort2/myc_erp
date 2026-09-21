@@ -32,7 +32,7 @@ const settle = () => new Promise<void>((done) => setImmediate(done));
 
 // Execute the real provider, auth service, HTTP client, storage and device helper.
 // Replace only React's hook scheduler and native/platform ports (same repo render-test pattern).
-function harness(request: typeof fetch, initial: TokenPair | null = tokenPair()) {
+function harness(request: typeof fetch, initial: TokenPair | null = tokenPair(), pushFails = false) {
   const store = new Map<string, string>();
   if (initial) store.set(sessionKey, JSON.stringify(initial));
   const events: string[] = [];
@@ -73,7 +73,11 @@ function harness(request: typeof fetch, initial: TokenPair | null = tokenPair())
     'expo-constants': { default: { expoConfig: { version: '1.0' } } },
     '@/src/config/environment': { API_BASE_URL: 'https://example.test/api' },
     '@/src/services/push-notifications': {
-      deactivateCurrentDevice: async () => { events.push('push:deactivate'); },
+      deactivateCurrentDevice: async (accessToken: string) => {
+        assert.equal(accessToken, initial?.access_token);
+        events.push('push:deactivate');
+        if (pushFails) throw new Error('push offline');
+      },
     },
   };
   function load(name: string): Record<string, unknown> {
@@ -161,18 +165,26 @@ test('refresh failure clears once, rejects all waiters and releases promise for 
   assert.equal(refreshCalls, 2);
 });
 
-for (const offline of [false, true]) {
-  test(`logout revokes backend, then push, then clears local (offline=${offline})`, async () => {
-    const app = harness((async (input) => {
+for (const { pushFails, logoutFails } of [
+  { pushFails: false, logoutFails: false },
+  { pushFails: true, logoutFails: false },
+  { pushFails: false, logoutFails: true },
+  { pushFails: true, logoutFails: true },
+]) {
+  test(`logout attempts push before auth and always clears (pushFails=${pushFails}, logoutFails=${logoutFails})`, async () => {
+    const app = harness((async (input, init) => {
       assert.match(String(input), /\/logout$/);
+      assert.equal(new Headers(init?.headers).get('Authorization'), 'Bearer old');
       app.events.push('auth:logout');
-      if (offline) throw new Error('offline');
+      if (logoutFails) throw new Error('logout offline');
       return new Response(null, { status: 204 });
-    }) as typeof fetch);
+    }) as typeof fetch, tokenPair(), pushFails);
     app.store.set(deviceKey, uuid);
     await settle();
-    await app.render().logout();
-    assert.deepEqual(app.events, ['auth:logout', 'push:deactivate', `clear:${sessionKey}`]);
+    const pending = app.render().logout();
+    assert.equal(app.render().session, null); // Invalidated before any network await.
+    await pending;
+    assert.deepEqual(app.events, ['push:deactivate', 'auth:logout', `clear:${sessionKey}`]);
     assert.equal(app.render().session, null);
     assert.equal(app.store.has(sessionKey), false);
     assert.equal(app.store.get(deviceKey), uuid);

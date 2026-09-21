@@ -810,5 +810,5 @@ histórico, usuario y permisos, consume el hash legacy una sola vez y entrega un
 refresh opaco ligado a dispositivo. Las siguientes renovaciones omiten device.
 La compatibilidad termina en el corte fijo del
 [contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md).
-Logout intenta revocar auth, luego desactivar push y finalmente borra tokens
+Logout intenta desactivar push, luego revocar auth y finalmente borra tokens
 locales; mantiene el UUID de instalación. Red fallida no impide limpieza local.

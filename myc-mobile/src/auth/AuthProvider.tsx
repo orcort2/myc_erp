@@ -119,8 +119,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
           // A refresh already in flight revokes its successor when it observes the version change.
           await refreshPromise.current?.catch(() => undefined);
           if (current) {
-            await logoutRequest(current.access_token).catch(() => undefined);
             await deactivateCurrentDevice(current.access_token).catch(() => undefined);
+            await logoutRequest(current.access_token).catch(() => undefined);
           }
         } finally {
           try { await persist(clearSession); }

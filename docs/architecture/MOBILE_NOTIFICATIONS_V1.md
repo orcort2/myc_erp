@@ -29,9 +29,9 @@ API autenticada  ← centro / detalle / contador no leído
   dispositivos activos por usuario. Un registro repetido actualiza el mismo
   token; si cambia de usuario, queda reasignado exclusivamente al nuevo.
 - Logout intenta desactivar PushDevice sin borrar historia. Desde BIOMETRIC-1
-  primero revoca la familia de autenticación; el DELETE push posterior es
-  best-effort y puede recibir 401 por access ya revocado. La baja remota no
-  está garantizada. Véase [autoridad de sesión Mobile](MOBILE_SECURITY_CONTEXT.md).
+  el DELETE push precede a la revocación de la familia de autenticación para
+  usar el access todavía válido en el logout normal. Ambos pasos son best-effort;
+  fallar push no bloquea revocación ni limpieza local. Véase [autoridad de sesión Mobile](MOBILE_SECURITY_CONTEXT.md).
 - MYC Mobile usa `/api/mobile/v1/notifications`; listado, contador, lectura y
   dispositivos filtran por el usuario del `MobileSecurityContext`.
   Administrar un dispositivo ajeno responde 404. Las rutas web internas

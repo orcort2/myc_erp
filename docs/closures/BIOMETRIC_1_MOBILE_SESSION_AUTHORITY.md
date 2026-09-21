@@ -101,9 +101,10 @@ qué dispositivo obtuvo originalmente ese JWT. No inventa esa relación.
 - Logout server-side, session binding, scope client y permisos internal probados.
 - Sin cambios a auth Web/Portal ni TTL global; sin biometría, passkeys, claves,
   SSH, consola SQL, lease, broker, logout-all o panel de dispositivos.
-- Logout sigue auth → push best-effort → limpieza local. El DELETE push puede
-  recibir 401 porque el access ya fue revocado; no garantiza baja remota push.
-  Un fallo de red tampoco permite afirmar que la revocación remota ocurrió.
+- Corrección posterior al commit 9002ff1: logout normal sigue push best-effort
+  → auth best-effort → limpieza local en finally, evitando usar un access que
+  el propio logout acaba de revocar. Se conserva la protección del refresh en
+  vuelo. Un fallo de red no permite afirmar que la revocación remota ocurrió.
 - SecureStore vacío genera UUID nuevo; iOS puede conservar Keychain al
   reinstalar. Se mantiene el UUID al cerrar sesión.
 - Pendiente aceptación física iOS/Android con build que incluya expo-crypto y
