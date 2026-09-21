@@ -53,6 +53,9 @@ PUBLIC_OPERATIONS = {
     ("POST", "/api/auth/refresh"),
     ("POST", "/api/mobile/v1/auth/login"),
     ("POST", "/api/mobile/v1/auth/refresh"),
+    # BIOMETRIC-2: exchange authenticates via the opaque biometric credential
+    # itself; a prior Mobile access token is never required, same as login.
+    ("POST", "/api/mobile/v1/auth/biometric/exchange"),
     ("POST", "/api/portal/auth/login"),
     ("POST", "/api/portal/auth/refresh"),
     ("POST", "/api/portal/registration"),

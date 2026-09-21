@@ -21,8 +21,8 @@ INVENTORY_PATH = (
 
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
-    # BIOMETRIC-1 adds authenticated Mobile logout.
-    assert len(operations) == 530
+    # BIOMETRIC-2 adds biometric enroll/exchange/delete under /mobile/v1/auth.
+    assert len(operations) == 533
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 
@@ -49,6 +49,7 @@ def test_public_allowlist_is_small_and_intentional():
         ("POST", "/api/auth/refresh"),
         ("POST", "/api/mobile/v1/auth/login"),
         ("POST", "/api/mobile/v1/auth/refresh"),
+        ("POST", "/api/mobile/v1/auth/biometric/exchange"),
         ("POST", "/api/portal/auth/login"),
         ("POST", "/api/portal/auth/refresh"),
         ("POST", "/api/portal/registration"),

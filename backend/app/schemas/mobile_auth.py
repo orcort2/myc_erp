@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -48,3 +49,14 @@ class MobileTokenPair(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: MobileUserRead
+
+
+class MobileBiometricEnrollResponse(BaseModel):
+    biometric_credential: str
+    expires_at: datetime
+
+
+class MobileBiometricExchangeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    biometric_credential: str = Field(min_length=1, max_length=8192)

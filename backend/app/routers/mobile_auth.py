@@ -3,6 +3,11 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.services.auth import user_can_resolve_own_lab_folios
+from app.core.mobile.biometric import (
+    enroll_biometric_credential,
+    exchange_biometric_credential,
+    revoke_biometric_credential,
+)
 from app.core.mobile.security import (
     MobileSecurityContext,
     authenticate_mobile_user,
@@ -11,6 +16,8 @@ from app.core.mobile.security import (
     logout_mobile_session,
 )
 from app.schemas.mobile_auth import (
+    MobileBiometricEnrollResponse,
+    MobileBiometricExchangeRequest,
     MobileLogin,
     MobileRefreshTokenRequest,
     MobileTokenPair,
@@ -57,4 +64,29 @@ def logout(
     db: Session = Depends(get_db),
 ) -> Response:
     logout_mobile_session(db, context)
+    return Response(status_code=204)
+
+
+@router.post("/biometric/enroll", response_model=MobileBiometricEnrollResponse)
+def enroll_biometric(
+    context: MobileSecurityContext = Depends(get_mobile_context),
+    db: Session = Depends(get_db),
+) -> MobileBiometricEnrollResponse:
+    return MobileBiometricEnrollResponse(**enroll_biometric_credential(db, context))
+
+
+@router.post("/biometric/exchange", response_model=MobileTokenPair)
+def exchange_biometric(
+    payload: MobileBiometricExchangeRequest,
+    db: Session = Depends(get_db),
+) -> MobileTokenPair:
+    return exchange_biometric_credential(db, payload.biometric_credential)
+
+
+@router.delete("/biometric", status_code=204)
+def delete_biometric(
+    context: MobileSecurityContext = Depends(get_mobile_context),
+    db: Session = Depends(get_db),
+) -> Response:
+    revoke_biometric_credential(db, context)
     return Response(status_code=204)

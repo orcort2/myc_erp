@@ -493,3 +493,24 @@ de un solo uso y tiene vencimiento fijo. Contrato y limitaciones en
 Web, Portal, TTL global y semántica de PushDevice se conservan. Biometría,
 passkeys, claves de dispositivo, lease, SSH, SQL Console, Infrastructure Broker,
 logout-all y panel de dispositivos siguen expresamente fuera de esta fase.
+
+## BIOMETRIC-2 — Biometric login (2026-09-21)
+
+Implementado login biométrico real (Face ID, Touch ID, biometría fuerte
+Android) sobre la Mobile Session Authority de BIOMETRIC-1, sin reemplazarla:
+`MobileBiometricCredential` es una autoridad opaca separada (enroll/exchange/
+revoke bajo `/mobile/v1/auth/biometric`), device-bound al mismo
+`MobileTrustedDevice`, con TTL propio de 90 días y revocación por cambio de
+contraseña. Mobile guarda perfil (no protegido) y credencial (protegida con
+`requireAuthentication` de SecureStore) por separado; con biometría activa deja
+de persistir el TokenPair operativo para cold-start automático. Incluye además
+la corrección del overscroll observado en la Home técnica en iPhone. Contrato
+completo en [Mobile Security Context](../architecture/MOBILE_SECURITY_CONTEXT.md)
+y cierre en
+[BIOMETRIC_2_BIOMETRIC_LOGIN](../closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md).
+
+Admin lease de 15 minutos, step-up de infraestructura, SSH, SQL Console,
+Infrastructure Broker, passkeys/WebAuthn, claves públicas device-bound,
+terminal embebida, panel de dispositivos y selector multi-cuenta biométrico
+siguen expresamente fuera de esta fase. Validación física iOS/Android
+pendiente.

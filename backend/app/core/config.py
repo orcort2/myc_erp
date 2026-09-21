@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     secret_key: str = "development-only-change-me"
     access_token_expire_minutes: int = 60 * 8
     refresh_token_expire_minutes: int = 60 * 24 * 30
+    # BIOMETRIC-2: independent of refresh_token_expire_minutes on purpose; a
+    # biometric credential unlocks the device, it is not a session lifetime.
+    mobile_biometric_credential_expire_days: int = 90
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

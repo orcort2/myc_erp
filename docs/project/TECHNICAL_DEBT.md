@@ -71,6 +71,28 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
 
 - TD-058 (P2): Optimización de latencia NIIMBOT B1 -- medir transporte BLE, fragmentación de 20 bytes, pacing de 10 ms, reconexión e identificación del dispositivo, y optimizar sin comprometer confiabilidad. `myc-mobile/src/services/labels/printers/adapters/niimbot-b1/` (`niimbot-b1-adapter.ts`, `protocol.ts`) y `myc-mobile/src/services/labels/printers/ble-transport.ts`/`ble-manager-transport.ts`; no tocar el protocolo de impresión, el pacing BLE ni el renderer de etiquetas fuera de una fase dedicada con mediciones físicas antes/después.
 
+## Deuda agregada BIOMETRIC-2 (2026-09-21)
+
+- TD-059 (P2): `disableBiometric()` limpia el enrolamiento local aunque el
+  `DELETE /mobile/v1/auth/biometric` falle por red (riesgo aceptado: la
+  credencial local desaparece de todas formas, así que ya no puede usarse
+  desde ese dispositivo aunque el registro server-side siga activo hasta su
+  expiración natural). No hay reconciliación posterior ni reintento en
+  background. `myc-mobile/src/auth/AuthProvider.tsx` (`disableBiometric`) |
+  Si se observa en producción que el registro server-side huérfano es un
+  problema real, diseñar un reintento/cola o un job de expiración más corto
+  para credenciales sin `last_used_at` reciente; no bloquear la limpieza
+  local mientras tanto.
+- TD-060 (P2): Enrolar biometría en una cuenta distinta a la ya recordada por
+  la instalación reemplaza el slot local (perfil/credencial), pero no puede
+  revocar server-side la credencial de la cuenta anterior porque el nuevo
+  contexto de sesión pertenece a otro usuario y `DELETE /biometric` sólo
+  revoca la credencial del actor autenticado actual. `backend/app/core/mobile/biometric.py`,
+  `myc-mobile/src/auth/AuthProvider.tsx` (`enableBiometric`) | Evaluar si vale
+  la pena un endpoint administrativo o un job de expiración natural (ya
+  existe TTL de 90 días); no diseñar un selector multi-cuenta para resolverlo
+  sin que el producto lo pida explícitamente.
+
 ## Validación pendiente post-PR #4 (2026-09-17)
 
 - Repetir apertura/captura/guardar/completar/PDF/reapertura de LAB EXTERNO y

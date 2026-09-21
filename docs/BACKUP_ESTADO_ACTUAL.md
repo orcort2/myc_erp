@@ -4,75 +4,106 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-21 — BIOMETRIC-1 / Fase 1
+> Corte: 2026-09-21 — BIOMETRIC-2 / Biometric login
 
 # Estado operativo actual del ERP MYC
 
 ## Repositorio y alcance verificado
 
-- Rama de trabajo: `feat/mobile-session-authority-biometric-1`.
-- Base: `main` en `57756cdbbbe89d8f65eca56fda1dcb5014f07ab0`, inicialmente
-  limpia y alineada con `origin/main`. Un único commit de implementación.
-- Corrección de orden logout sobre `9002ff1c5c284c966d18b9815d2a783df06cb680`,
-  con rama inicialmente limpia y sincronizada con su origin: push antes de
-  auth, ambos best-effort y limpieza local en finally. Se conserva la carrera
-  protegida con refresh; sin cambios backend, esquema ni datos locales.
+- Rama de trabajo: `feat/mobile-biometric-login-2`, creada desde
+  `feat/mobile-session-authority-biometric-1` en
+  `d94e35ae5a0710c9f31adb0a0c8f3299a4b603c9` (HEAD confirmado limpio antes de
+  modificar archivos, con `MobileTrustedDevice`/`MobileAuthSession`/
+  `refresh_credentials.py`/`AuthProvider` single-flight ya presentes).
 - Sin push, merge ni despliegue en este trabajo.
-- Mobile incorpora identidad de instalación independiente, sesiones server-side,
-  hashes SHA-256 de refresh opaco, rotación, detección de reuse, logout y
-  single-flight compartido con realtime; conserva identidad/permisos/scope.
-- La extensión autorizada exige device en migración legacy y lo prohíbe en
-  refresh opaco. La migración es de un solo uso, con vencimiento fijo y sin
-  asumir prueba retrospectiva del dispositivo original.
-- Auth Web, Portal, TTL global y PushDevice permanecen sin cambio de implementación.
-  No se implementa biometría ni capacidades de infraestructura.
+- BIOMETRIC-2 agrega login biométrico (Face ID/Touch ID/biometría fuerte
+  Android) sobre la Mobile Session Authority de BIOMETRIC-1, sin
+  reescribirla: `MobileBiometricCredential` es una autoridad opaca separada
+  (enroll/exchange/revoke), device-bound al mismo `MobileTrustedDevice`, con
+  TTL propio de 90 días y revocación por cambio de contraseña.
+- Mobile guarda perfil biométrico (no protegido) y credencial (protegida con
+  `requireAuthentication` de SecureStore) en claves separadas; con biometría
+  activa deja de persistir el `TokenPair` operativo para cold-start
+  automático, sin afectar el comportamiento previo cuando no hay biometría
+  habilitada.
+- Incluye además la corrección del overscroll observado físicamente en
+  iPhone en la Home técnica (`bounces`/`alwaysBounceVertical`/
+  `overScrollMode` en su `ScrollView` principal).
+- No se guardó contraseña ni dato biométrico nuevo; no se envía biometría al
+  backend. PushDevice nunca se usó como autoridad de seguridad. Auth Web,
+  Portal y TTL global permanecen sin cambio de implementación. No se
+  implementó admin lease, step-up de infraestructura, SSH, SQL Console,
+  Infrastructure Broker, passkeys/WebAuthn ni panel de dispositivos.
 
 ## Base de datos y respaldo
 
-- Revisión inicial local/código: `6640c526c412`, único head.
-- Migración nueva y única: `b10a1c202601`, padre `6640c526c412`.
-- Upgrade local aplicado; `alembic current` = `alembic heads` = `b10a1c202601`.
-- Tablas nuevas: `mobile_trusted_devices`, `mobile_auth_sessions`, con FKs,
-  checks, unicidades e índices de dispositivo, familia, hashes y vigencia.
-- Upgrade/downgrade/upgrade verificados en PostgreSQL aislado. Los esquemas
-  transitorios de prueba se eliminan al finalizar; no se reseteó la base ERP.
-- `backup_erp_myc_antes_prueba.sql` regenerado con `scripts/backup-db.sh`;
-  su `alembic_version` se extrajo y coincide con `b10a1c202601`.
-  El respaldo permanece local e ignorado por Git. Este documento no incluye datos sensibles.
+- Revisión inicial local/código: `b10a1c202601`, único head (BIOMETRIC-1).
+- Migración nueva y única: `9970e12e5f0d`, padre `b10a1c202601`.
+- Upgrade aplicado en este entorno; `alembic current` = `alembic heads` =
+  `9970e12e5f0d`.
+- Tabla nueva: `mobile_biometric_credentials`, con FKs a `users` y
+  `mobile_trusted_devices`, `credential_hash` UNIQUE e índices de usuario,
+  dispositivo, vencimiento y revocación.
+- Upgrade/downgrade/upgrade verificados contra PostgreSQL local de este
+  entorno. No se modificó ninguna migración histórica.
+- Este entorno remoto no tenía PostgreSQL en ejecución ni la base `erp_myc`;
+  se levantó el cluster local y se creó un rol/BD sólo para esta sesión de
+  trabajo. Credenciales en `backend/.env`, ignorado por Git; este documento
+  no incluye datos sensibles.
 
 ## Validación final
 
-- Backend focalizado: 66 passed, 2 warnings; incluye seis pruebas PostgreSQL
-  reales de migración y concurrencia, además de contexto e inventario API.
-- Backend completo: 1269 passed, 16 skipped, 34 warnings, 19 subtests passed.
-  Las omisiones pertenecen a otras suites; las nuevas pruebas PostgreSQL corrieron.
-- Mobile focalizado de Fase 1: 15 passed. Corrección logout: suite completa
-  682 passed; cubre éxito, fallo push, fallo auth, ambos fallos y refresh en vuelo.
-- `npx tsc --noEmit` y `npm run lint`: exit 0, sin errores.
-- Inventario API regenerado: 530 operaciones, incluido logout autenticado.
-- Inventario funcional regenerado y filas revisadas; rutas existentes;
-  `git diff --check` sin errores.
-- Revisado: sin refresh plaintext en DB, sin nuevas contraseñas persistidas,
-  sin cambio de auth Web/TTL ni acoplamiento con PushDevice.
-- Evidencia, comandos, contratos y diff:
-  [cierre BIOMETRIC-1](closures/BIOMETRIC_1_MOBILE_SESSION_AUTHORITY.md).
+- Backend focalizado: 78 passed, 2 warnings (`test_mobile_biometric.py` +
+  suites de sesión/seguridad/conformidad de acceso Mobile relacionadas).
+- Backend completo: 1277 passed, 4 failed, 22 skipped, 34 warnings, 19
+  subtests passed. De los 4 fallos: 3 son preexistentes y dependen de un
+  LibreOffice funcional no disponible en este sandbox (conversión
+  XLSX→PDF, ajenos a Mobile/biometría) y 1 es intermitente, confirmado
+  verde en ejecución aislada. Ninguno toca código modificado en esta
+  entrega. Detalle en el cierre BIOMETRIC-2.
+- Mobile focalizado de BIOMETRIC-2: 38 passed (AuthProvider + AuthProvider
+  biométrico + servicio nativo + storage biométrico + wiring overscroll).
+- Mobile completo: 709 passed (antes 682 en el corte BIOMETRIC-1; se
+  corrigió además un problema de infraestructura de pruebas preexistente en
+  la harness de `AuthProvider.test.ts` que hacía fallar sus 11 tests al
+  cargar un nuevo import transitivo, sin tocar su lógica de aserciones).
+- `npx tsc --noEmit`: 2 errores preexistentes en `realtime-client.ts`, ajenos
+  a este trabajo y no tocados.
+- `npm run lint`: exit 0, sin errores.
+- Inventario API regenerado: 533 operaciones (antes 530), incluidos enroll/
+  exchange/delete biométricos; `exchange` es público intencional como login.
+- Inventario funcional regenerado y filas revisadas; `git diff --check` sin
+  errores.
+- Revisado: sin contraseña ni dato biométrico nuevo persistido, sin
+  biometría enviada al backend, sin cambio de auth Web/TTL ni uso de
+  PushDevice como autoridad.
+- Evidencia, comandos, contratos y diff completo:
+  [cierre BIOMETRIC-2](closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md). El corte
+  BIOMETRIC-1 permanece en
+  [su propio cierre](closures/BIOMETRIC_1_MOBILE_SESSION_AUTHORITY.md).
 
 ## Pendientes y límites
 
-- Aceptación física iOS/Android; la build debe incluir expo-crypto SDK 54.
-- Retirar fallback legacy tras 2026-10-22 00:00 UTC, sin prorrogar la ventana.
-  Access legacy sin sesión conserva validez hasta su expiración original.
-- Logout siempre limpia local, pero red fallida no prueba revocación remota.
-  La baja push se intenta antes de revocar auth; sigue siendo best-effort
-  ante errores de red o refresh concurrente.
-- MYC Mobile permanece EN DESARROLLO como superficie completa. BIOMETRIC-2,
-  TTL Mobile propio, panel de dispositivos e infraestructura están fuera de fase.
+- Validación física iOS/Android pendiente (checklist detallado en el cierre
+  BIOMETRIC-2): Face ID/Touch ID/huella, cancelación, cold start, "Usar otra
+  cuenta", overscroll corregido, rotación de pantalla y fallback sin PIN
+  silencioso en Android.
+- Retirar fallback legacy de BIOMETRIC-1 tras 2026-10-22 00:00 UTC sigue
+  pendiente, sin cambios por este trabajo.
+- `disableBiometric()` limpia local aunque el `DELETE` remoto falle por red
+  (riesgo aceptado, documentado como TD-059); enrolar una cuenta distinta a
+  la ya recordada no puede revocar server-side la credencial de la cuenta
+  anterior (TD-060).
+- MYC Mobile permanece EN DESARROLLO como superficie completa. Admin lease,
+  step-up de infraestructura, SSH, SQL Console, Infrastructure Broker,
+  passkeys/WebAuthn, claves device-bound, terminal embebida, panel de
+  dispositivos y selector multi-cuenta biométrico están fuera de fase.
 - El estado global y pendientes ajenos a esta entrega permanecen bajo
   `project/PROJECT_STATUS.md` y `project/TECHNICAL_DEBT.md`.
 
 ## Autoridades documentales
 
-`project/DOCUMENTATION_INDEX.md` rige la jerarquía. El contrato de sesión está en
-`architecture/MOBILE_SECURITY_CONTEXT.md`; estado, alcance, flujo, reglas y
-decisiones se sincronizan en sus canónicos. Inventario en
+`project/DOCUMENTATION_INDEX.md` rige la jerarquía. El contrato de sesión y
+biometría está en `architecture/MOBILE_SECURITY_CONTEXT.md`; estado, alcance,
+flujo, reglas y decisiones se sincronizan en sus canónicos. Inventario en
 `PROJECT_FILE_REGISTRY.md`. El corte anterior permanece trazable en Git.

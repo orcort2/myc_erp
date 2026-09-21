@@ -331,3 +331,13 @@ concurrencia PostgreSQL verifican esta fase; no constituyen aceptación física
 iOS/Android ni sellado del módulo. Pendientes y fecha de retiro legacy:
 [contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md) y TD-035.
 Validaciones del trabajo en [estado operativo](../BACKUP_ESTADO_ACTUAL.md).
+
+## MYC Mobile — BIOMETRIC-2 (2026-09-21)
+
+**EN DESARROLLO.** Login biométrico (Face ID/Touch ID/biometría fuerte
+Android) implementado sobre BIOMETRIC-1: `MobileBiometricCredential` opaca y
+separada, enroll/exchange/revoke, storage local perfil/credencial separados,
+cold start sin restauración silenciosa con biometría activa, y overscroll de
+la Home técnica corregido. Suite backend/mobile verde; no constituye
+aceptación física iOS/Android ni sellado del módulo. Cierre en
+[BIOMETRIC_2_BIOMETRIC_LOGIN](../closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md).

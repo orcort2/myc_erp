@@ -21,7 +21,7 @@ import type { LabWorkOrderGroupRequest } from '@/src/types/lab-work-order';
 import type { OperationalTicket } from '@/src/types/operational-ticket';
 
 export default function TechnicianHome() {
-  const { authorizedFetch, isLoading, user, logout } = useAuth();
+  const { authorizedFetch, biometricProfile, disableBiometric, isLoading, user, logout } = useAuth();
   const { unreadCount } = useNotificationSync();
   const { unreadCount: communicationUnreadCount } = useCommunications();
 
@@ -73,7 +73,12 @@ export default function TechnicianHome() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        bounces={false}
+        alwaysBounceVertical={false}
+        overScrollMode="never"
+        contentContainerStyle={styles.content}
+      >
         <Text style={styles.eyebrow}>
           {user.actor_type === 'client' ? 'MYC · Organización vinculada' : 'MYC · Área técnica'}
         </Text>
@@ -161,6 +166,14 @@ export default function TechnicianHome() {
         >
           <Text style={styles.logout}>Cerrar sesión</Text>
         </Pressable>
+
+        {biometricProfile && (
+          <Pressable onPress={() => disableBiometric()}>
+            <Text style={styles.disableBiometric}>
+              Desactivar acceso biométrico en este dispositivo
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -237,5 +250,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginTop: 20,
+  },
+
+  disableBiometric: {
+    color: '#51606f',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 14,
   },
 });

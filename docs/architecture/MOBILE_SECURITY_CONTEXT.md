@@ -3,6 +3,8 @@
 > Tipo: Arquitectura vigente
 >
 > Corte de autenticación BIOMETRIC-1: 2026-09-21
+>
+> Corte de autenticación BIOMETRIC-2: 2026-09-21
 
 # Contexto de seguridad de MYC Mobile
 
@@ -55,6 +57,51 @@ usuario, dispositivo, vigencia, revocación y scope persistido.
 - Los registros consumidos se conservan para detectar reuse. Esta fase no
   incorpora un job de eliminación. La autoridad es PostgreSQL; SQLite se usa
   únicamente en pruebas funcionales sin garantía de locks equivalentes.
+
+### Biometría — BIOMETRIC-2
+
+- `MobileBiometricCredential` (`mobile_biometric_credentials`) es una
+  autoridad server-side separada: opaco de 48 bytes (`secrets.token_urlsafe`,
+  distinto del espacio de refresh), hash SHA-256 UNIQUE, `user_id`/`device_id`
+  (FK a `MobileTrustedDevice`, nunca crea dispositivo nuevo), `expires_at` (90
+  días, configurable vía `settings.mobile_biometric_credential_expire_days`,
+  TTL independiente del refresh), `revoked_at` y
+  `password_changed_at_snapshot`. Nunca guarda rostro, huella, plantilla
+  biométrica, clave pública/privada ni el token nativo de Face ID/Touch ID.
+- `POST /biometric/enroll` exige access Mobile ligado a `MobileAuthSession`;
+  resuelve el dispositivo de la sesión actual, revoca la credencial activa
+  previa de ese mismo usuario+dispositivo y devuelve el opaco en texto plano
+  una sola vez. `POST /biometric/exchange` no requiere access previo (misma
+  naturaleza pública que login): hashea, localiza la credencial, valida no
+  revocada/no expirada, dispositivo activo, usuario activo/`mobile.access`
+  vigente y `password_changed_at` no posterior al snapshot; reconstruye
+  `MobileSecurityContext` con el mismo helper de contexto que login/refresh y
+  emite un `MobileAuthSession`/TokenPair nuevo sobre el dispositivo existente.
+  Nunca acepta `device_uuid` del cliente. `DELETE /biometric` revoca sólo la
+  credencial activa del usuario+dispositivo actuales; no crea ni revoca
+  `MobileAuthSession`. PushDevice nunca se consulta como autoridad en ninguno
+  de los tres endpoints.
+- Mobile separa el secreto del perfil: `myc.biometric.profile.v1` (no
+  protegido; sólo nombre/correo/etiqueta para la UX del login) y
+  `myc.biometric.credential.v1` (protegido con `requireAuthentication: true`
+  de `expo-secure-store`, que exige Face ID/Touch ID/huella del sistema
+  operativo para leerlo). Ninguno guarda contraseña.
+- Con biometría habilitada para la instalación, `AuthProvider` deja de
+  persistir el `TokenPair` operativo en `myc.internal.session.v1`: vive sólo
+  en memoria mientras el proceso sigue vivo (refresh normal, sin fricción por
+  request), y un cold start nunca restaura sesión automáticamente; exige
+  `biometricLogin()` primero. Sin biometría habilitada, el comportamiento
+  BIOMETRIC-1 se conserva sin cambios. `applySession` es el único punto de
+  autoridad de sesión compartido por login por contraseña y login biométrico.
+- Logout nunca desactiva biometría (PushDevice deactivate → auth logout →
+  limpieza local, igual que BIOMETRIC-1); sólo la acción explícita
+  "Desactivar acceso biométrico en este dispositivo" llama `DELETE
+  /biometric` (best-effort ante fallo de red) y limpia ambas claves locales.
+  Un `401`/`403` del propio `exchange` (credencial inválida real) también
+  limpia el enrolamiento local. Una lectura de SecureStore que resuelve
+  `null` en vez de rechazar (contrato propio de `requireAuthentication`
+  cuando el conjunto biométrico del dispositivo cambió) se trata igual:
+  invalidación real, no cancelación del usuario.
 
 ### Contratos HTTP
 
@@ -139,10 +186,16 @@ deadlock por FK de usuario. Mobile ejecuta los módulos
 reales de AuthProvider, auth service, HTTP y SecureStore con puertos nativos
 sustituidos en `AuthProvider.test.ts`; no se limita a inspeccionar fuente.
 
-Fuera de esta fase: Face ID, Touch ID, Android biométrico, claves de dispositivo,
-passkeys, TTL Mobile específico, lease administrativo, logout-all, panel de
-dispositivos, SSH, SQL Console e Infrastructure Broker. Pendiente aceptación
-física iOS/Android con una build que incluya `expo-crypto`.
+Fuera de esta fase: claves públicas/privadas device-bound, passkeys/WebAuthn,
+selector multi-cuenta biométrico, lease administrativo de 15 minutos,
+step-up de infraestructura, logout-all, panel de dispositivos, SSH, SQL
+Console e Infrastructure Broker. Pendiente aceptación física iOS/Android con
+una build que incluya `expo-crypto` y `expo-local-authentication`.
+
+Face ID, Touch ID y biometría fuerte Android quedan implementados desde
+BIOMETRIC-2 (ver subsección "Biometría — BIOMETRIC-2" arriba); la validación
+física en dispositivo permanece pendiente y se documenta en
+`docs/closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md`.
 
 ## `MobileSecurityContext`
 

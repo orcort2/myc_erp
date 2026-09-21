@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -64,13 +64,27 @@ function harness(request: typeof fetch, initial: TokenPair | null = tokenPair(),
     'react/jsx-runtime': { jsx: (_type: unknown, props: unknown) => props },
     'react-native': { Platform: { OS: 'ios' } },
     'expo-secure-store': {
-      getItemAsync: async (key: string) => store.get(key) ?? null,
+      WHEN_UNLOCKED_THIS_DEVICE_ONLY: 0,
+      getItemAsync: async (key: string, options?: { requireAuthentication?: boolean }) => {
+        if (options?.requireAuthentication) events.push(`read-protected:${key}`);
+        return store.get(key) ?? null;
+      },
       setItemAsync: async (key: string, value: string) => { events.push(`write:${key}`); store.set(key, value); },
       deleteItemAsync: async (key: string) => { events.push(`clear:${key}`); store.delete(key); },
     },
     'expo-crypto': { randomUUID: () => { uuidCalls++; return uuid; } },
     'expo-device': { deviceName: 'Test phone' },
     'expo-constants': { default: { expoConfig: { version: '1.0' } } },
+    // These 19 pre-existing BIOMETRIC-1 tests never enroll biometry; the
+    // provider's mount-time getBiometricAvailability() call must simply
+    // resolve to "not available" without touching AuthenticationType.
+    'expo-local-authentication': {
+      AuthenticationType: { FINGERPRINT: 1, FACIAL_RECOGNITION: 2, IRIS: 3 },
+      hasHardwareAsync: async () => false,
+      isEnrolledAsync: async () => false,
+      supportedAuthenticationTypesAsync: async () => [],
+      authenticateAsync: async () => ({ success: false, error: 'not_available' as const }),
+    },
     '@/src/config/environment': { API_BASE_URL: 'https://example.test/api' },
     '@/src/services/push-notifications': {
       deactivateCurrentDevice: async (accessToken: string) => {
@@ -80,17 +94,31 @@ function harness(request: typeof fetch, initial: TokenPair | null = tokenPair(),
       },
     },
   };
-  function load(name: string): Record<string, unknown> {
-    if (ports[name]) return ports[name] as Record<string, unknown>;
-    if (modules.has(name)) return modules.get(name)!;
+  // A module loaded through the `@/src/` alias may itself import a sibling
+  // with a plain relative specifier (e.g. `../services/field-labels`); that
+  // must resolve against ITS OWN directory, not sourceRoot, or transitive
+  // imports of newly-added modules silently 404. Cache by resolved absolute
+  // path (not raw specifier) so both forms hitting the same file share one
+  // module instance.
+  function resolveModulePath(name: string, fromDir: string): string {
+    if (name.startsWith('.')) {
+      const base = resolve(fromDir, name);
+      return existsSync(`${base}.tsx`) ? `${base}.tsx` : `${base}.ts`;
+    }
     const relative = name.replace('@/src/', '');
-    const path = resolve(sourceRoot, relative + (relative === 'auth/AuthProvider' ? '.tsx' : '.ts'));
+    return resolve(sourceRoot, relative + (relative === 'auth/AuthProvider' ? '.tsx' : '.ts'));
+  }
+  function load(name: string, fromDir: string = sourceRoot): Record<string, unknown> {
+    if (ports[name]) return ports[name] as Record<string, unknown>;
+    const path = resolveModulePath(name, fromDir);
+    if (modules.has(path)) return modules.get(path)!;
     const javascript = ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: {
       target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX,
     } }).outputText;
     const exports: Record<string, unknown> = {};
-    new Function('require', 'exports', 'fetch', javascript)(load, exports, request);
-    modules.set(name, exports);
+    const moduleDir = dirname(path);
+    modules.set(path, exports);
+    new Function('require', 'exports', 'fetch', javascript)((dep: string) => load(dep, moduleDir), exports, request);
     return exports;
   }
   const provider = load('@/src/auth/AuthProvider').AuthProvider as (props: object) => { value: AuthValue };

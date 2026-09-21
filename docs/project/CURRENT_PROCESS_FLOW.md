@@ -812,3 +812,24 @@ La compatibilidad termina en el corte fijo del
 [contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md).
 Logout intenta desactivar push, luego revocar auth y finalmente borra tokens
 locales; mantiene el UUID de instalación. Red fallida no impide limpieza local.
+
+### Login biométrico y enrolamiento — BIOMETRIC-2
+
+Tras un login por contraseña exitoso, si hay hardware biométrico disponible y
+enrolado en el dispositivo y no existe enrolamiento local previo, la app ofrece
+"Protege tu acceso a MYC" (Activar/Ahora no); nunca se activa automáticamente.
+Activar ejecuta biometría local, llama `POST /biometric/enroll` con la sesión
+actual y guarda credencial (protegida) + perfil (no protegido) localmente sin
+cerrar la sesión.
+
+En cold start, si existe perfil biométrico local, el login muestra primero
+"Bienvenido, `<nombre>`" con el botón "Ingresar con `<Face ID/Touch ID/Huella>`"
+en vez del formulario; "Usar otra cuenta" muestra el formulario sin borrar el
+enrolamiento. Pulsar el botón lee la credencial protegida (exige biometría del
+sistema), llama `POST /biometric/exchange` y aplica la sesión resultante con la
+misma autoridad que el login normal. Cancelar el prompt conserva el
+enrolamiento y ofrece reintentar o usar contraseña; una credencial invalidada
+por el sistema operativo limpia el enrolamiento y pide reconfigurarla. Un
+`401`/`403` de `exchange` hace lo mismo. "Desactivar acceso biométrico en este
+dispositivo" (visible en Home tras iniciar sesión) revoca en backend
+(best-effort) y limpia ambas claves locales; logout nunca lo hace.
