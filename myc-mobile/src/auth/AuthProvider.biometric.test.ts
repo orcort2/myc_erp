@@ -46,6 +46,7 @@ type HarnessOptions = {
   authenticateResult?: boolean;
   protectedReadError?: Error | null;
   protectedReadResolvesNull?: boolean;
+  failWriteKey?: string | null;
 };
 
 // Executes the real provider, auth service, biometric service and storage
@@ -95,6 +96,9 @@ function harness(request: typeof fetch, options: HarnessOptions = {}) {
         return store.get(key) ?? null;
       },
       setItemAsync: async (key: string, value: string, opts?: { requireAuthentication?: boolean }) => {
+        if (options.failWriteKey && key === options.failWriteKey) {
+          throw new Error(`write failed for ${key}`);
+        }
         events.push(`write:${key}${opts?.requireAuthentication ? ':protected' : ''}`);
         store.set(key, value);
       },
@@ -190,6 +194,74 @@ test('enableBiometric ejecuta biometría local, llama a enroll y guarda credenci
   assert.deepEqual(storedProfile, { user_id: 7, email: 'user@example.com', full_name: 'User Example', biometric_label: 'Face ID' });
   assert.doesNotMatch(app.store.get(profileKey)!, /password/i);
   assert.equal(app.render().biometricProfile?.biometric_label, 'Face ID');
+});
+
+test('enableBiometric conserva la sesión activa en memoria', async () => {
+  const app = harness(router({
+    '/login': async () => Response.json(tokenPair()),
+    '/biometric/enroll': async () => Response.json({ biometric_credential: 'opaque-bio-credential', expires_at: '2027-01-01T00:00:00Z' }),
+  }));
+  await settle();
+  const auth = app.render();
+  await auth.login('user@example.com', 'password');
+  await auth.enableBiometric();
+  assert.equal(app.render().session?.access_token, 'access');
+  assert.equal(app.render().session?.user.email, 'user@example.com');
+});
+
+test('enableBiometric elimina la sesión persistida en disco (myc.internal.session.v1)', async () => {
+  const app = harness(router({
+    '/login': async () => Response.json(tokenPair()),
+    '/biometric/enroll': async () => Response.json({ biometric_credential: 'opaque-bio-credential', expires_at: '2027-01-01T00:00:00Z' }),
+  }));
+  await settle();
+  const auth = app.render();
+  await auth.login('user@example.com', 'password');
+  // Password login (no biometry enabled yet) persists the operational session.
+  assert.equal(app.store.has(sessionKey), true);
+  await auth.enableBiometric();
+  assert.equal(app.store.has(sessionKey), false);
+  assert.ok(app.events.includes(`clear:${sessionKey}`));
+});
+
+test('si el almacenamiento biométrico falla antes de completarse, no borra la sesión persistida prematuramente', async () => {
+  const app = harness(
+    router({
+      '/login': async () => Response.json(tokenPair()),
+      '/biometric/enroll': async () => Response.json({ biometric_credential: 'opaque-bio-credential', expires_at: '2027-01-01T00:00:00Z' }),
+    }),
+    { failWriteKey: profileKey },
+  );
+  await settle();
+  const auth = app.render();
+  await auth.login('user@example.com', 'password');
+  assert.equal(app.store.has(sessionKey), true);
+  await assert.rejects(auth.enableBiometric());
+  // Credential wrote fine (before the injected failure on the profile write);
+  // the persisted operational session must survive an incomplete enrollment.
+  assert.equal(app.store.get(credentialKey), 'opaque-bio-credential');
+  assert.equal(app.store.has(profileKey), false);
+  assert.equal(app.store.has(sessionKey), true);
+  assert.equal(app.render().biometricProfile, null);
+  assert.equal(app.render().session?.access_token, 'access');
+});
+
+test('logout tras habilitar biometría conserva el enrolamiento y no deja reaparecer una sesión residual', async () => {
+  const app = harness(router({
+    '/login': async () => Response.json(tokenPair()),
+    '/biometric/enroll': async () => Response.json({ biometric_credential: 'opaque-bio-credential', expires_at: '2027-01-01T00:00:00Z' }),
+    '/logout': async () => new Response(null, { status: 204 }),
+  }));
+  await settle();
+  const auth = app.render();
+  await auth.login('user@example.com', 'password');
+  await auth.enableBiometric();
+  assert.equal(app.store.has(sessionKey), false);
+  await auth.logout();
+  assert.equal(app.render().session, null);
+  assert.equal(app.store.has(sessionKey), false);
+  assert.equal(app.store.get(credentialKey), 'opaque-bio-credential');
+  assert.ok(app.store.has(profileKey));
 });
 
 test('cold start con biometría habilitada nunca restaura una sesión operativa en silencio', async () => {

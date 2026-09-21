@@ -36,8 +36,11 @@ def pg_engine():
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
     try:
+        # BIOMETRIC-2's mobile_biometric_credentials FKs to mobile_trusted_devices,
+        # which this fixture creates via the migration below, not create_all;
+        # excluded here too since this file never needs that table to exist.
         Base.metadata.create_all(engine, tables=[table for table in Base.metadata.tables.values()
-            if table.name not in {'mobile_auth_sessions', 'mobile_trusted_devices'}])
+            if table.name not in {'mobile_auth_sessions', 'mobile_trusted_devices', 'mobile_biometric_credentials'}])
         with engine.begin() as connection, Operations.context(MigrationContext.configure(connection)):
             migration.upgrade()
         yield engine, migration

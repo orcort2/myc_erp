@@ -28,9 +28,9 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 3 |
-| Configuración | 229 |
+| Configuración | 231 |
 | Documentación | 178 |
-| Pruebas | 105 |
+| Pruebas | 106 |
 
 ## Convenciones
 
@@ -1060,7 +1060,9 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/wiring-tests/lab-delivery-void-admin.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de lab delivery void admin.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/label-print-service.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de label print service.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/label-printer-setup.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de label printer setup.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
+| myc-mobile/src/wiring-tests/login-biometric-enrollment.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de login biometric enrollment.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/operational-action-stack.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de operational action stack.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
+| myc-mobile/src/wiring-tests/technician-home.disable-biometric.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de technician home.disable biometric.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/technician-home.overscroll.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de technician home.overscroll.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.complete-corrections.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.complete corrections.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/wiring-tests/work-orders.equipment-by-equipment.wiring.test.ts | myc-mobile/src/wiring-tests | Archivo de soporte | Mantiene la capacidad de work orders.equipment by equipment.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
@@ -1342,6 +1344,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/tests/test_maintenance_ets_execution.py | backend/tests/test_maintenance_ets_execution.py | Suite ETS Mantenimiento | Cubre preventivo/correctivo, laboratorio/campo, equipo/OT, pausas, materiales, alcance, investigación, PDF, firma, cierre, snapshot y ETS múltiple. | Pytest, SQLAlchemy, Pydantic y servicios ETS | Gate backend Mantenimiento | Crítico | En revisión |
 | backend/tests/test_master_template_fingerprints.py | Captura/Plantillas Maestras | Prueba automatizada | Verifica mapeo canónico, resistencia a cambios de leyenda/número, clasificación acreditada/trazable por snapshot, rechazo estructural y lectura sin mutación. | `master_template_fingerprints.py`, openpyxl y archivos temporales | pytest/unittest y mantenedores de Captura | Alto | Estable |
 | backend/tests/test_mobile_biometric.py | backend/tests/test_mobile_biometric.py | Prueba automatizada | Verifica el contrato operativo de test mobile biometric y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
+| backend/tests/test_mobile_biometric_postgres.py | backend/tests/test_mobile_biometric_postgres.py | Prueba automatizada | Verifica el contrato operativo de test mobile biometric postgres y previene regresiones del flujo asociado. | Módulos backend bajo prueba y fixtures | pytest/unittest en CI y desarrollo | Medio | Estable |
 | backend/tests/test_mobile_notifications.py | backend/tests/test_mobile_notifications.py | Suite Notifications V1 | Prueba devices, ownership, lectura/paginación, eventos Ticket, firma, multiusuario y resiliencia Expo sin Internet. | Pytest, TestClient, SQLAlchemy y mocks Expo | Gate backend móvil | Crítico | Estable |
 | backend/tests/test_mobile_security_context.py | backend/tests/test_mobile_security_context.py | Regresión de seguridad Mobile | Cubre identidad/scope staff-cliente y demuestra que Técnico internal crea grupo directo sin acceso al workflow administrativo externo, mientras cliente capaz solicita pero no materializa directo. | FastAPI, SQLite, RBAC interno/externo y agregado LAB | Gate backend de seguridad Mobile | Crítico | Estable |
 | backend/tests/test_mobile_session_authority.py | backend/tests/test_mobile_session_authority.py | Pruebas de sesión Mobile | Ejecuta login, rotación, reuse, expiración, permisos, scope, logout, device obligatorio, migración legacy única y rechazo de firma no canónica. | pytest, fixtures Mobile, API y SQLAlchemy | Suite backend de seguridad | Crítico | Estable |

@@ -178,6 +178,69 @@ biométrico en este dispositivo" limpia el enrolamiento, ver Revocación.
 `bounces={false}`, `alwaysBounceVertical={false}` y `overScrollMode="never"`.
 Sin cambios a módulos, permisos, navegación ni contenido de la Home.
 
+## Endurecimiento post-auditoría (P1/P2, mismo alcance)
+
+Una auditoría posterior a la entrega inicial encontró 3 defectos P1 y una
+mejora P2, corregidos en un segundo commit sobre esta misma rama sin ampliar
+contratos públicos, TTL ni endpoints (salvo el ajuste estrictamente necesario
+descrito abajo). No se rediseñó BIOMETRIC-1 ni BIOMETRIC-2.
+
+- **P1-1 — el modal de enrolamiento se perdía por navegación inmediata.**
+  `submit()` en `login.tsx` navegaba a Home justo después de pedir mostrar el
+  modal, desmontando `LoginScreen` antes de que el usuario pudiera decidir.
+  Ahora `shouldOfferBiometricEnrollment()` devuelve una decisión explícita:
+  si corresponde ofrecer biometría, el modal se muestra y la función retorna
+  sin navegar; sólo "Ahora no" (`dismissEnrollPrompt`) o un "Activar"
+  (`confirmEnrollBiometric`) exitoso navegan. Si `enableBiometric()` falla,
+  la sesión por contraseña permanece válida y se muestra un `Alert` con una
+  salida explícita ("Continuar sin biometría") que navega a Home sin dejar
+  al usuario atrapado.
+- **P1-2 — sesión residual en disco al activar biometría.** `enableBiometric()`
+  guardaba credencial y perfil biométricos pero nunca eliminaba el
+  `TokenPair` que el login por contraseña ya había persistido en
+  `myc.internal.session.v1`, violando la regla de cold-start biométrico. La
+  secuencia ahora es estrictamente: enroll backend → escribir credencial →
+  escribir perfil → **sólo entonces** `clearSession()` (vía la cola
+  `persist`, autoridad ya existente) → actualizar `biometricProfileRef`/state.
+  `sessionRef`/`session` en memoria nunca se tocan: la sesión activa del
+  proceso sigue viva. Si el almacenamiento biométrico falla antes de
+  completarse (por ejemplo falla `writeBiometricProfile`), la sesión
+  persistida NO se borra.
+- **P1-3 — enroll concurrente podía crear dos credenciales activas.**
+  `enroll_biometric_credential()` revocaba y creaba sin serializar por
+  dispositivo. Ahora reutiliza `_lock_device` de
+  `core/mobile/security.py` (la misma disciplina que BIOMETRIC-1 ya usa antes
+  de crear una generación de refresh): bloquea el `MobileTrustedDevice` de la
+  sesión actual con `SELECT ... FOR UPDATE`, revalida existencia/propietario/
+  actividad/no-revocado, y sólo entonces revoca la credencial previa e
+  inserta la nueva, todo bajo el mismo lock hasta el commit. No se importó
+  nada privado desde fuera del paquete `core/mobile`; no hay dependencia
+  circular. Un test PostgreSQL real (`test_mobile_biometric_postgres.py`)
+  fuerza dos `enroll` concurrentes con una barrera de sincronización sobre
+  `_lock_device` y verifica exactamente una credencial activa al final; se
+  confirmó manualmente que el mismo test falla (2 credenciales activas) si
+  se retira el lock, antes de aceptarlo como cobertura válida. Esto también
+  destapó que `test_mobile_session_postgres.py` nunca se había ejecutado con
+  `MOBILE_AUTH_POSTGRES_TEST_URL` establecido tras agregarse
+  `mobile_biometric_credentials` al `Base.metadata` (create_all intentaba
+  crear esa tabla, con FK a `mobile_trusted_devices`, antes de que la
+  migración de sesión creara esta última); se corrigió excluyéndola también
+  del `create_all` de ese fixture, igual que ya se excluían las dos tablas
+  de BIOMETRIC-1.
+- **P2 — desactivar biometría sin confirmación ni manejo de error.** El
+  `Pressable` de Home llamaba `disableBiometric()` directamente. Ahora exige
+  confirmación con `Alert.alert` nativo ("Desactivar acceso biométrico" /
+  "Necesitarás iniciar sesión con tu correo y contraseña la próxima vez.",
+  botones Cancelar/Desactivar) y, si el `disableBiometric()` local falla,
+  muestra un segundo `Alert` ("No fue posible desactivar el acceso
+  biométrico.") sin tocar la sesión activa. La política best-effort del
+  revoke server-side (TD-059) no cambió.
+
+Los 3 P1 y el P2 se verificaron además de forma negativa: cada corrección se
+revirtió temporalmente en un archivo de trabajo y se confirmó que su(s)
+test(s) nuevo(s) fallan exactamente por la causa esperada, antes de
+restaurar el código corregido y confirmar verde de nuevo.
+
 ## Límites y alcance NO implementado
 
 Sin cambios a: admin lease de 15 minutos, step-up de infraestructura, SSH,
@@ -205,38 +268,43 @@ desde `backend/`.
 | `python -m alembic upgrade head` | OK, head `9970e12e5f0d` |
 | `python -m alembic current` y `heads` | Único head, coinciden |
 | `python -m alembic downgrade -1` seguido de `upgrade head` | OK, ciclo completo probado |
-| `pytest -q tests/test_mobile_biometric.py tests/test_mobile_session_authority.py tests/test_mobile_security_context.py tests/test_api_access_conformity.py` | 78 passed |
-| `pytest -q` (suite completa) | 1277 passed, 4 failed, 22 skipped, 34 warnings, 19 subtests passed |
-| `npx tsx --test` (AuthProvider + AuthProvider.biometric + biometric-auth + biometric-storage + overscroll wiring) | 38 passed |
-| `npm test` en myc-mobile (suite completa) | 709 passed |
+| `MOBILE_AUTH_POSTGRES_TEST_URL=... pytest -q tests/test_mobile_biometric.py tests/test_mobile_session_postgres.py tests/test_mobile_biometric_postgres.py` | 25 passed (incluye las 6 pruebas reales de BIOMETRIC-1 y la nueva de concurrencia de enroll, antes omitidas por falta de la variable de entorno) |
+| `MOBILE_AUTH_POSTGRES_TEST_URL=... pytest -q` (suite completa) | 1285 passed, 3 failed, 16 skipped, 34 warnings, 19 subtests passed |
+| `npx tsx --test` focalizado (AuthProvider + AuthProvider.biometric + biometric-auth + biometric-storage + login-biometric-enrollment + technician-home.disable-biometric + overscroll wiring) | 51 passed |
+| `npm test` en myc-mobile (suite completa) | 722 passed |
 | `npx tsc --noEmit` | 2 errores preexistentes en `realtime-client.ts`, ajenos a este trabajo (no tocado) |
 | `npm run lint` | Exit 0, sin errores |
 | `python scripts/generate_project_file_registry.py` | OK, archivos nuevos registrados |
 | `git diff --check` | Sin errores |
 
-De los 4 fallos de la suite backend completa, 3 son fallos preexistentes de
+De los 3 fallos de la suite backend completa, todos son preexistentes de
 entorno ajenos a este trabajo (`test_certificate_authentication_from_master.py`
 ×2 y `test_sat_xls_source.py`: dependen de un LibreOffice funcional no
-disponible/roto en este sandbox) y 1 es intermitente
-(`test_maintenance_ets_execution.py::test_material_used_and_required_are_separate_and_report_has_no_internal_cost`,
-verificado pasando en ejecución aislada; no relacionado con Mobile/biometría).
-Ninguno de los 4 toca código modificado en esta entrega. No se ocultaron
-fallos propios para forzar verde.
+disponible/roto en este sandbox). La entrega original reportaba también un
+cuarto fallo intermitente en `test_maintenance_ets_execution.py`
+(confirmado pasando en ejecución aislada en su momento); en esta corrida pasó
+sin intervención, consistente con esa naturaleza intermitente. Ninguno de
+los 3 toca código modificado en esta entrega ni en la anterior. No se
+ocultaron fallos propios para forzar verde.
 
 ## Git
 
-Commit único de entrega: `feat(mobile-auth): add biometric login flow`.
-El SHA final se reporta en la entrega; el documento pertenece a ese mismo
-commit. **NO PUSH, NO MERGE, NO DESPLIEGUE.**
+Dos commits de entrega sobre `feat/mobile-biometric-login-2`:
+`feat(mobile-auth): add biometric login flow` (implementación inicial) y
+`fix(mobile-auth): harden biometric enrollment flow` (este endurecimiento
+P1/P2). Los SHA finales se reportan en la entrega; este documento pertenece
+a ambos commits acumulados. **NO PUSH, NO MERGE, NO DESPLIEGUE** en ninguno.
 
 ## Documentación actualizada
 
-Contrato Mobile (`architecture/MOBILE_SECURITY_CONTEXT.md`), alcance, flujo,
-estado, decisiones, deuda técnica (TD-059, TD-060), índice de documentación,
-inventario de acceso API (CSV + tests de conformidad) e inventario de
-archivos funcionales sincronizados. `BACKUP_ESTADO_ACTUAL.md` actualizado
-como snapshot operativo vigente (reemplaza el corte BIOMETRIC-1 anterior,
-trazable en Git).
+Este pase de endurecimiento actualiza este cierre (arquitectura, tabla de
+validación, diff), `docs/PROJECT_FILE_REGISTRY.md` (los 3 archivos de prueba
+nuevos) y `docs/BACKUP_ESTADO_ACTUAL.md` (exigencia automática del repo,
+`AGENTS.md`: todo cambio de código/prueba sincroniza ese snapshot en el mismo
+trabajo). Ningún comportamiento corregido volvió obsoleto lo ya documentado
+en `PROJECT_STATUS.md`, `CURRENT_SCOPE.md`, `DECISIONS.md` ni
+`TECHNICAL_DEBT.md` (TD-059/TD-060 siguen vigentes tal cual: ninguno de los
+tres P1 ni el P2 los toca), por lo que se dejan sin cambios en este pase.
 
 ## Validación física pendiente (checklist)
 
@@ -276,7 +344,15 @@ No puede automatizarse completamente; queda pendiente para dispositivo real.
 - `myc-mobile/src/storage/biometric-storage.ts`
 - `myc-mobile/src/wiring-tests/technician-home.overscroll.wiring.test.ts`
 
+Endurecimiento (segundo commit):
+
+- `backend/tests/test_mobile_biometric_postgres.py`
+- `myc-mobile/src/wiring-tests/login-biometric-enrollment.wiring.test.ts`
+- `myc-mobile/src/wiring-tests/technician-home.disable-biometric.wiring.test.ts`
+
 ### Archivos modificados
+
+Entrega original:
 
 - `backend/app/core/config.py`
 - `backend/app/models/__init__.py`
@@ -303,6 +379,18 @@ No puede automatizarse completamente; queda pendiente para dispositivo real.
 - `myc-mobile/src/auth/AuthProvider.tsx`
 - `myc-mobile/src/services/auth.service.ts`
 - `myc-mobile/src/services/mobile-auth-client.ts`
+
+Endurecimiento (segundo commit):
+
+- `backend/app/core/mobile/biometric.py` (P1-3: lock de dispositivo en enroll)
+- `backend/tests/test_mobile_session_postgres.py` (excluye `mobile_biometric_credentials` de su `create_all`, ver P1-3)
+- `docs/BACKUP_ESTADO_ACTUAL.md`
+- `docs/PROJECT_FILE_REGISTRY.md`
+- `docs/closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md`
+- `myc-mobile/app/(auth)/login.tsx` (P1-1)
+- `myc-mobile/app/(technician)/index.tsx` (P2)
+- `myc-mobile/src/auth/AuthProvider.biometric.test.ts` (nuevos tests P1-2)
+- `myc-mobile/src/auth/AuthProvider.tsx` (P1-2)
 
 No se versionó el respaldo de base de datos ni artefactos de prueba; el
 `.env` local con credenciales del PostgreSQL de este entorno permanece

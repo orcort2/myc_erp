@@ -2,6 +2,7 @@ import { Redirect, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -58,6 +59,30 @@ export default function TechnicianHome() {
       })))
       .catch(() => setPendingRequests(null));
   }, [authorizedFetch, canClaimWorkOrderGroupRequests, canReviewTickets, user]);
+
+  function confirmDisableBiometric() {
+    Alert.alert(
+      'Desactivar acceso biométrico',
+      'Necesitarás iniciar sesión con tu correo y contraseña la próxima vez.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desactivar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await disableBiometric();
+            } catch {
+              // The backend revoke inside disableBiometric() is already
+              // best-effort (TD-059); this only surfaces a local/SecureStore
+              // failure. The active session is never touched.
+              Alert.alert('No fue posible desactivar el acceso biométrico.');
+            }
+          },
+        },
+      ],
+    );
+  }
 
   if (isLoading) {
     return (
@@ -168,7 +193,7 @@ export default function TechnicianHome() {
         </Pressable>
 
         {biometricProfile && (
-          <Pressable onPress={() => disableBiometric()}>
+          <Pressable onPress={confirmDisableBiometric}>
             <Text style={styles.disableBiometric}>
               Desactivar acceso biométrico en este dispositivo
             </Text>

@@ -208,6 +208,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
         biometric_label: availability.label,
       };
       await writeBiometricProfile(profile);
+      // Biometric storage is now durable (credential + profile both written):
+      // only now is it safe to drop the plain password-login TokenPair that
+      // may have been persisted to disk before biometry was enabled, so a
+      // cold start relies on biometry instead of resurrecting it. The active
+      // session already in memory (sessionRef/session state) is untouched --
+      // this clears disk persistence only, never the in-flight session.
+      await persist(clearSession);
       biometricProfileRef.current = profile;
       setBiometricProfile(profile);
     },

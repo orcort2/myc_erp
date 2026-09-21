@@ -4,7 +4,7 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-21 — BIOMETRIC-2 / Biometric login
+> Corte: 2026-09-21 — BIOMETRIC-2 / Biometric login (incluye endurecimiento P1/P2)
 
 # Estado operativo actual del ERP MYC
 
@@ -34,6 +34,19 @@
   Portal y TTL global permanecen sin cambio de implementación. No se
   implementó admin lease, step-up de infraestructura, SSH, SQL Console,
   Infrastructure Broker, passkeys/WebAuthn ni panel de dispositivos.
+- Endurecimiento posterior (mismo alcance, segundo commit) corrigió 3
+  defectos P1 y una mejora P2 detectados por auditoría: el modal de
+  enrolamiento ya no se pierde por navegación inmediata (`login.tsx` navega
+  sólo tras la decisión del usuario, con salida explícita si falla
+  `enableBiometric()`); `enableBiometric()` ahora elimina
+  `myc.internal.session.v1` sólo después de que credencial y perfil
+  biométricos quedan guardados, sin tocar la sesión activa en memoria ni
+  borrar prematuramente si el almacenamiento falla antes de completarse;
+  `enroll_biometric_credential()` serializa por `MobileTrustedDevice` con
+  `_lock_device` (misma disciplina de BIOMETRIC-1, sin arquitectura nueva);
+  y desactivar biometría en Home exige confirmación nativa antes de
+  ejecutar, con manejo explícito de fallo local. Detalle completo en el
+  cierre BIOMETRIC-2.
 
 ## Base de datos y respaldo
 
@@ -53,27 +66,35 @@
 
 ## Validación final
 
-- Backend focalizado: 78 passed, 2 warnings (`test_mobile_biometric.py` +
-  suites de sesión/seguridad/conformidad de acceso Mobile relacionadas).
-- Backend completo: 1277 passed, 4 failed, 22 skipped, 34 warnings, 19
-  subtests passed. De los 4 fallos: 3 son preexistentes y dependen de un
+- Backend focalizado (con `MOBILE_AUTH_POSTGRES_TEST_URL` real): 25 passed
+  (`test_mobile_biometric.py`, `test_mobile_session_postgres.py` y la nueva
+  `test_mobile_biometric_postgres.py` de concurrencia real de enroll).
+- Backend completo: 1285 passed, 3 failed, 16 skipped, 34 warnings, 19
+  subtests passed. Los 3 fallos son preexistentes y dependen de un
   LibreOffice funcional no disponible en este sandbox (conversión
-  XLSX→PDF, ajenos a Mobile/biometría) y 1 es intermitente, confirmado
-  verde en ejecución aislada. Ninguno toca código modificado en esta
-  entrega. Detalle en el cierre BIOMETRIC-2.
-- Mobile focalizado de BIOMETRIC-2: 38 passed (AuthProvider + AuthProvider
-  biométrico + servicio nativo + storage biométrico + wiring overscroll).
-- Mobile completo: 709 passed (antes 682 en el corte BIOMETRIC-1; se
-  corrigió además un problema de infraestructura de pruebas preexistente en
-  la harness de `AuthProvider.test.ts` que hacía fallar sus 11 tests al
-  cargar un nuevo import transitivo, sin tocar su lógica de aserciones).
+  XLSX→PDF, ajenos a Mobile/biometría); el cuarto fallo intermitente del
+  corte anterior no se reprodujo en esta corrida. Ninguno toca código
+  modificado en esta entrega. Detalle en el cierre BIOMETRIC-2.
+- Mobile focalizado de BIOMETRIC-2 (con el endurecimiento): 51 passed
+  (AuthProvider + AuthProvider biométrico + servicio nativo + storage
+  biométrico + login-biometric-enrollment + technician-home.disable-biometric
+  + wiring overscroll).
+- Mobile completo: 722 passed (antes 682 en el corte BIOMETRIC-1, 709 en la
+  entrega inicial de BIOMETRIC-2; se corrigió además un problema de
+  infraestructura de pruebas preexistente en la harness de
+  `AuthProvider.test.ts` que hacía fallar sus 11 tests al cargar un nuevo
+  import transitivo, sin tocar su lógica de aserciones).
 - `npx tsc --noEmit`: 2 errores preexistentes en `realtime-client.ts`, ajenos
   a este trabajo y no tocados.
 - `npm run lint`: exit 0, sin errores.
-- Inventario API regenerado: 533 operaciones (antes 530), incluidos enroll/
-  exchange/delete biométricos; `exchange` es público intencional como login.
+- Inventario API regenerado: 533 operaciones (sin cambio en este pase; el
+  endurecimiento no tocó contratos ni endpoints), incluidos enroll/exchange/
+  delete biométricos; `exchange` es público intencional como login.
 - Inventario funcional regenerado y filas revisadas; `git diff --check` sin
   errores.
+- Cada uno de los 3 P1 y el P2 se verificó negativamente: se revirtió la
+  corrección temporalmente y se confirmó que su(s) test(s) nuevo(s) fallan
+  por la causa exacta esperada, antes de restaurar el código corregido.
 - Revisado: sin contraseña ni dato biométrico nuevo persistido, sin
   biometría enviada al backend, sin cambio de auth Web/TTL ni uso de
   PushDevice como autoridad.

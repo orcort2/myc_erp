@@ -23,6 +23,7 @@ from app.core.mobile.security import (
     _client_context,
     _ensure_mobile_access,
     _internal_context,
+    _lock_device,
     _new_session,
     _token_response,
 )
@@ -52,6 +53,18 @@ def _current_session_device_id(db: Session, context: MobileSecurityContext) -> i
 
 def enroll_biometric_credential(db: Session, context: MobileSecurityContext) -> dict:
     device_id = _current_session_device_id(db, context)
+    # Same lock BIOMETRIC-1 takes before creating a generation: held until
+    # commit, it serializes two concurrent enrolls for this device so the
+    # second only sees/revokes the first's row after it actually committed,
+    # never racing an INSERT against another INSERT.
+    device = _lock_device(db, device_id)
+    if (
+        device is None
+        or device.user_id != context.user.id
+        or not device.is_active
+        or device.revoked_at is not None
+    ):
+        raise _unauthorized("Se requiere una sesión Mobile vigente")
     now = utc_now()
     # Replace, never stack: only one active biometric credential per user+device.
     db.execute(

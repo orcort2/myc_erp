@@ -30,6 +30,7 @@ export default function LoginScreen() {
   const [biometricSubmitting, setBiometricSubmitting] = useState(false);
   const [showPasswordForm, setShowPasswordForm] = useState(!biometricProfile);
   const [enrollPromptVisible, setEnrollPromptVisible] = useState(false);
+  const [enrollSubmitting, setEnrollSubmitting] = useState(false);
 
   const showBiometricEntry = !!biometricProfile && !showPasswordForm;
 
@@ -37,12 +38,29 @@ export default function LoginScreen() {
     if (!biometricProfile) setShowPasswordForm(true);
   }, [biometricProfile]);
 
+  async function shouldOfferBiometricEnrollment(): Promise<boolean> {
+    if (biometricProfile) return false;
+    try {
+      const availability = await getBiometricAvailability();
+      return availability.available && availability.enrolled;
+    } catch {
+      // No biometric hardware info available; simply skip the offer.
+      return false;
+    }
+  }
+
   async function submit() {
     if (!email || !password) return;
     setSubmitting(true);
     try {
       await login(email, password);
-      await maybeOfferBiometricEnrollment();
+      const shouldOffer = await shouldOfferBiometricEnrollment();
+      if (shouldOffer) {
+        // The user must decide (Activar/Ahora no) before this screen
+        // unmounts; navigating now would take the modal down with it.
+        setEnrollPromptVisible(true);
+        return;
+      }
       router.replace('/(technician)');
     } catch (error) {
       Alert.alert(
@@ -51,16 +69,6 @@ export default function LoginScreen() {
       );
     } finally {
       setSubmitting(false);
-    }
-  }
-
-  async function maybeOfferBiometricEnrollment() {
-    if (biometricProfile) return;
-    try {
-      const availability = await getBiometricAvailability();
-      if (availability.available && availability.enrolled) setEnrollPromptVisible(true);
-    } catch {
-      // No biometric hardware info available; simply skip the offer.
     }
   }
 
@@ -79,15 +87,27 @@ export default function LoginScreen() {
     }
   }
 
-  async function confirmEnrollBiometric() {
+  function dismissEnrollPrompt() {
     setEnrollPromptVisible(false);
+    router.replace('/(technician)');
+  }
+
+  async function confirmEnrollBiometric() {
+    setEnrollSubmitting(true);
     try {
       await enableBiometric();
+      setEnrollPromptVisible(false);
+      router.replace('/(technician)');
     } catch (error) {
+      // The password session stays valid; never leave the user stuck on a
+      // failed biometric activation. Offer an explicit way out to Home.
       Alert.alert(
         'No fue posible activar el acceso biométrico',
         error instanceof Error ? error.message : 'Puedes intentarlo más tarde desde la app',
+        [{ text: 'Continuar sin biometría', onPress: dismissEnrollPrompt }],
       );
+    } finally {
+      setEnrollSubmitting(false);
     }
   }
 
@@ -239,7 +259,7 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      <Modal animationType="fade" onRequestClose={() => setEnrollPromptVisible(false)} transparent visible={enrollPromptVisible}>
+      <Modal animationType="fade" onRequestClose={dismissEnrollPrompt} transparent visible={enrollPromptVisible}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Protege tu acceso a MYC</Text>
@@ -248,14 +268,20 @@ export default function LoginScreen() {
             </Text>
             <Pressable
               accessibilityRole="button"
+              disabled={enrollSubmitting}
               onPress={confirmEnrollBiometric}
               style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, styles.modalButton]}
             >
-              <Text style={styles.buttonText}>Activar</Text>
+              {enrollSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.buttonText}>Activar</Text>
+              )}
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              onPress={() => setEnrollPromptVisible(false)}
+              disabled={enrollSubmitting}
+              onPress={dismissEnrollPrompt}
               style={styles.modalDismiss}
             >
               <Text style={styles.modalDismissText}>Ahora no</Text>
