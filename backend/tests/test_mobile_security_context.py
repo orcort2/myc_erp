@@ -120,7 +120,7 @@ def mobile_security_api():
 def _login(api: TestClient, email: str):
     return api.post(
         "/api/mobile/v1/auth/login",
-        json={"email": email, "password": PASSWORD},
+        json={"email": email, "password": PASSWORD, "device": {"device_uuid": "b51612b2-9930-465a-a1e5-114124132e00", "platform": "ios"}},
     )
 
 

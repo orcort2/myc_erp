@@ -206,7 +206,7 @@ por `equipment_id → service_order_id` y exige además `field_sheets.read`.
 Recursos ajenos, inactivos o sin asignación responden 404. Este flujo no cambia
 las rutas internas consumidas por el ERP web.
 
-El usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo
+En ERP Web, el usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo
 access autentica solicitudes y refresh se utiliza únicamente para renovar el
 par. El registro público no acepta roles solicitados y sólo crea el primer
 Administrador cuando no existe ningún usuario. La navegación autenticada carga
@@ -486,12 +486,17 @@ esa empresa y protege al último administrador activo.
 ## Flujo temporal OT LAB móvil
 
 ```text
-login Mobile
+Mobile obtiene/persiste UUID de seguridad de instalación
+→ login Mobile con device
 → backend autentica User
 → internal: permisos internos, sin Client
 → client: membership active única + Client activo + permisos externos
 → exige mobile.access
-→ access/refresh conserva actor; cada request revalida base
+→ backend resuelve dispositivo y crea familia/sesión
+→ entrega access JWT ligado a sesión y refresh opaco
+→ cada request revalida base, dispositivo y sesión
+→ refresh único en vuelo rota credential y consume generación anterior
+→ reuse revoca familia; logout revoca familia y limpia local
 ```
 
 Para cliente, crear/listar/abrir/modificar OT LAB deriva siempre
@@ -797,3 +802,13 @@ campos comunes y tablas dinámicas paginadas.
 En Solicitudes, un administrador interno autorizado ve Resolver para su propio
 folio pending; al ejecutar, backend revalida autoridad y conserva la auditoría,
 la notificación y el snapshot de resolución. El resto requiere otro revisor.
+
+### Transición de sesión legacy — BIOMETRIC-1
+
+La instalación agrega device sólo al refresh JWT legacy. Backend valida contexto
+histórico, usuario y permisos, consume el hash legacy una sola vez y entrega un
+refresh opaco ligado a dispositivo. Las siguientes renovaciones omiten device.
+La compatibilidad termina en el corte fijo del
+[contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md).
+Logout intenta revocar auth, luego desactivar push y finalmente borra tokens
+locales; mantiene el UUID de instalación. Red fallida no impide limpieza local.

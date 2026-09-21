@@ -479,3 +479,17 @@ reutiliza el formato general, sin logo y con título propio. Administradores
 internos con permiso efectivo pueden resolver sus propios linked_folio y
 manual_myc_folio. El alcance no incluye autoaprobación de reaperturas ni cierres.
 Pendiente aceptación en iOS/TestFlight; no cambia el estado global EN DESARROLLO.
+
+## BIOMETRIC-1 Fase 1 — Mobile Session Authority (2026-09-21)
+
+Implementados dispositivos de seguridad independientes de PushDevice, sesiones
+persistentes con scope original, refresh opaco almacenado sólo como SHA-256,
+rotación con bloqueo PostgreSQL, reuse con revocación de familia, access ligado
+a sesión, logout remoto y single-flight compartido con realtime. La extensión
+autorizada envía device sólo al migrar legacy, además del login; la migración es
+de un solo uso y tiene vencimiento fijo. Contrato y limitaciones en
+[Mobile Security Context](../architecture/MOBILE_SECURITY_CONTEXT.md).
+
+Web, Portal, TTL global y semántica de PushDevice se conservan. Biometría,
+passkeys, claves de dispositivo, lease, SSH, SQL Console, Infrastructure Broker,
+logout-all y panel de dispositivos siguen expresamente fuera de esta fase.

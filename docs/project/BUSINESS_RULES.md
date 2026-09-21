@@ -307,3 +307,17 @@ correctiva sean documentalmente independientes.
 
 Contratos: `LAB_WORK_ORDERS.md`, `FIELD_SHEET_PDF_RENDERER.md`,
 `OPERATIONAL_TICKETS_AND_LAB_REOPENING.md` y `MOBILE_SECURITY_CONTEXT.md` en architecture.
+
+## BIOMETRIC-1 — reglas de sesión Mobile (2026-09-21)
+
+Cada familia pertenece a un usuario y dispositivo de seguridad. Login crea
+familia; refresh conserva su identidad, scope y vencimiento absoluto. Reusar
+una generación consumida revoca toda esa familia, sin afectar otras familias.
+Logout revoca la familia actual y no desactiva el dispositivo de seguridad.
+Un dispositivo revocado no se reactiva por login o migración.
+
+`device` es obligatorio en login y migración legacy; está prohibido en refresh
+opaco. Sólo se persisten hashes de refresh. La migración legacy es temporal,
+de un solo uso por JWT y no demuestra la instalación histórica que lo recibió.
+Las restricciones HTTP y su fecha límite se definen una sola vez en el
+[contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md).

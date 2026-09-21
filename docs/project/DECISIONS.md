@@ -544,3 +544,21 @@ el contrato persistente groups/rows y la autoridad de FieldSheet existente.
 La excepción de folios propios es una policy administrativa backend reutilizada
 por autenticación Mobile y resolución; no se extiende a otros tipos de ticket.
 No se agregan tablas, estados, migraciones ni autoridades productivas.
+
+## BIOMETRIC-1 — autoridad de sesión Mobile (2026-09-21)
+
+Se conserva User y la resolución canónica de permisos/scope; se añaden
+MobileTrustedDevice y MobileAuthSession sin dependencia de PushDevice.
+Cada generación almacena hash, familia, dispositivo y scope original para
+impedir reasignaciones durante refresh. Los locks siguen el orden dispositivo
+→ generación y coordinan rotación/reuse/logout. El alta de dispositivo y la
+migración legacy se serializan además por usuario; los hashes legacy únicos
+impiden migraciones repetidas entre dispositivos y workers.
+
+La extensión de metadata en refresh legacy fue autorizada expresamente porque
+el JWT histórico carece de identidad de instalación. Se acepta la posesión del
+JWT y el UUID presentado, sin atestación retrospectiva. El fallback tiene fecha
+límite fija y no emite nuevos JWT refresh. El vencimiento de familia es absoluto:
+rotar no lo extiende. Single-flight vive en AuthProvider y lo reutiliza realtime.
+No se modifica auth Web, TTL global ni políticas de PushDevice. Contrato:
+[Mobile Security Context](../architecture/MOBILE_SECURITY_CONTEXT.md).

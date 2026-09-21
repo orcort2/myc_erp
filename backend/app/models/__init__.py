@@ -100,6 +100,8 @@ from app.models.repair_execution import (
     RepairWarrantyCycle,
 )
 from app.models.operational_ticket import OperationalTicket
+from app.models.mobile_trusted_device import MobileTrustedDevice
+from app.models.mobile_auth_session import MobileAuthSession
 from app.models.notification import Notification, PushDevice
 from app.models.portal_invitation import PortalInvitation
 from app.models.portal_invitation_role import PortalInvitationRole
@@ -323,6 +325,8 @@ __all__ = [
     "UncertaintyModel",
     "UncertaintyModelException",
     "UncertaintyModelVersion",
+    "MobileTrustedDevice",
+    "MobileAuthSession",
     "User",
     "UserPermissionOverride",
 ]

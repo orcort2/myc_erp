@@ -602,6 +602,30 @@ def section(path: Path) -> str:
     return "Configuración"
 
 
+
+MOBILE_SESSION_FILES = {
+    'backend/app/core/mobile/refresh_credentials.py': ('Credenciales refresh Mobile', 'Genera opacos criptográficos, calcula SHA-256 y delimita formato/corte legacy; rechaza firmas JWT no canónicas para proteger consumo único.', 'secrets, hashlib, base64 y datetime', 'Mobile Session Authority', 'Crítico'),
+    'backend/app/core/mobile/security.py': ('Autoridad de sesión Mobile', 'Autentica internal/client; registra dispositivo, emite sesiones con scope, rota refresh bajo locks, detecta reuse, migra legacy una vez y revoca familia por logout.', 'User, permisos, MobileTrustedDevice, MobileAuthSession y JWT access', 'API Mobile y autenticación realtime', 'Crítico'),
+    'backend/app/models/mobile_trusted_device.py': ('Identidad de instalación Mobile', 'Persiste dispositivo de seguridad por usuario/UUID con plataforma, metadata, confianza y revocación; independiente de PushDevice.', 'User, SQLAlchemy y TimestampMixin', 'Autoridad de sesión Mobile y Alembic', 'Crítico'),
+    'backend/app/models/mobile_auth_session.py': ('Generación de sesión Mobile', 'Persiste hashes únicos de refresh y migración legacy, familia, dispositivo, scope, expiración, sucesor y evidencia de reuse.', 'User, MobileTrustedDevice, ClientPortalMembership y SQLAlchemy', 'Autoridad de sesión Mobile y Alembic', 'Crítico'),
+    'backend/app/models/__init__.py': ('Registro ORM del ERP', 'Importa y exporta modelos del ERP para metadata compartida y Alembic, incluidos MobileTrustedDevice y MobileAuthSession independientes de notificaciones.', 'Modelos SQLAlchemy del ERP', 'Arranque backend, servicios, Alembic y pruebas', 'Crítico'),
+    'backend/app/routers/mobile_auth.py': ('API de sesión Mobile', 'Expone login con device, refresh con metadata sólo legacy, logout por sesión access y me con permisos y scope vigentes.', 'MobileSecurityContext, schemas Mobile y autoridad de sesión', 'MYC Mobile', 'Crítico'),
+    'backend/app/schemas/mobile_auth.py': ('Contrato HTTP Mobile', 'Valida metadata de seguridad reutilizada por login/migración; define refresh, TokenPair y usuario con actor/scope/capability de folios.', 'Pydantic, UUID y tipos de plataforma', 'Router Mobile auth', 'Crítico'),
+    'backend/migrations/versions/b10a1c202601_mobile_session_authority.py': ('Migración BIOMETRIC-1', 'Crea y revierte únicamente dispositivos de seguridad y sesiones Mobile con hashes, scope, FKs, unicidades, checks e índices.', 'Alembic y revisión 6640c526c412', 'Operación de base y pruebas PostgreSQL', 'Crítico'),
+    'backend/tests/test_mobile_session_authority.py': ('Pruebas de sesión Mobile', 'Ejecuta login, rotación, reuse, expiración, permisos, scope, logout, device obligatorio, migración legacy única y rechazo de firma no canónica.', 'pytest, fixtures Mobile, API y SQLAlchemy', 'Suite backend de seguridad', 'Crítico'),
+    'backend/tests/test_mobile_session_postgres.py': ('Concurrencia Mobile PostgreSQL', 'Valida upgrade/downgrade real y carreras entre rotación, reuse, logout y migración legacy en esquema aislado eliminable.', 'PostgreSQL, Alembic, ThreadPoolExecutor y MOBILE_AUTH_POSTGRES_TEST_URL', 'Gate backend BIOMETRIC-1', 'Crítico'),
+    'myc-mobile/src/auth/AuthProvider.tsx': ('Coordinador único de sesión Mobile', 'Restaura tokens, comparte refresh single-flight con HTTP/realtime, evita 401 tardíos y restauración tras logout; revoca auth, intenta baja push y limpia local.', 'React Context, auth.service, SecureStore y push-notifications', 'Todas las superficies MYC Mobile y RealtimeProvider', 'Crítico'),
+    'myc-mobile/src/auth/AuthProvider.test.ts': ('Regresión ejecutable auth Mobile', 'Ejecuta provider/servicios/storage reales con puertos simulados: tres 401, realtime, fallo compartido, logout en vuelo, UUID persistente y transición legacy/opaco.', 'node:test, TypeScript y módulos auth reales', 'Suite MYC Mobile', 'Crítico'),
+    'myc-mobile/src/services/security-device.ts': ('UUID de instalación seguro', 'Genera y persiste UUID criptográfico en SecureStore con promesa compartida; entrega metadata iOS/Android sin depender de Expo Push.', 'expo-crypto, expo-secure-store, expo-device y expo-constants', 'Login y migración legacy de auth.service', 'Crítico'),
+    'myc-mobile/src/services/auth.service.ts': ('Servicio de sesión Mobile', 'Obtiene metadata antes del login y sólo para refresh legacy; delega transporte y logout al cliente HTTP Mobile.', 'security-device, mobile-auth-client y environment', 'AuthProvider', 'Crítico'),
+    'myc-mobile/src/services/mobile-auth-client.ts': ('Transporte HTTP Mobile auth', 'Normaliza correo; envía device en login y sólo refresh JWT legacy, conserva TokenPair y revoca por access en logout.', 'Fetch y tipos de autenticación Mobile', 'auth.service y pruebas Mobile', 'Crítico'),
+    'myc-mobile/src/services/auth.service.test.ts': ('Pruebas de contrato Mobile auth', 'Verifica login con metadata, normalización, endpoint refresh, actor/scope client y errores backend.', 'node:test, tsx y mobile-auth-client', 'Suite MYC Mobile', 'Alto'),
+    'myc-mobile/src/types/auth.ts': ('Tipos de autenticación Mobile', 'Define metadata de dispositivo, TokenPair, actor/scope y capability de folios derivados del backend.', 'Contrato HTTP Mobile', 'AuthProvider, auth.service y capabilities', 'Alto'),
+    'myc-mobile/package.json': ('Dependencias y gates Mobile', 'Declara Expo SDK 54, expo-crypto para UUID de seguridad y scripts de tests, TypeScript y lint Mobile.', 'npm y Expo SDK 54', 'Desarrollo y builds iOS/Android', 'Crítico'),
+}
+FORCE_RECLASSIFY.update(MOBILE_SESSION_FILES)
+
+
 def words(path: Path) -> str:
     stem = path.stem.replace("_", " ").replace("-", " ")
     for old, new in {"pdfs": "PDF", "sat": "SAT", "cfdi": "CFDI", "api": "API", "ets": "ETS"}.items():
@@ -623,6 +647,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     value = path.as_posix()
     name = path.name
     subject = words(path)
+    if value in MOBILE_SESSION_FILES:
+        return MOBILE_SESSION_FILES[value]
     status = "Experimental" if "/labs/" in value or "Lab" in name else "Estable"
     if "facturama" in value.lower() or name == "integrations.py":
         status = "En desarrollo"

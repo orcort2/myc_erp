@@ -1,13 +1,18 @@
 import { API_BASE_URL } from '@/src/config/environment';
-import { createMobileAuthClient } from '@/src/services/mobile-auth-client';
+import { createMobileAuthClient, isLegacyRefreshToken } from '@/src/services/mobile-auth-client';
+import { getSecurityDevice } from '@/src/services/security-device';
 import type { TokenPair } from '@/src/types/auth';
 
 const mobileAuthClient = createMobileAuthClient(API_BASE_URL);
 
 export async function login(email: string, password: string): Promise<TokenPair> {
-  return mobileAuthClient.login(email, password);
+  return mobileAuthClient.login(email, password, await getSecurityDevice());
 }
 
 export async function refresh(refreshToken: string): Promise<TokenPair> {
-  return mobileAuthClient.refresh(refreshToken);
+  return mobileAuthClient.refresh(refreshToken, isLegacyRefreshToken(refreshToken) ? await getSecurityDevice() : undefined);
+}
+
+export async function logout(accessToken: string): Promise<void> {
+  return mobileAuthClient.logout(accessToken);
 }

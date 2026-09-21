@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -8,6 +8,7 @@ from app.core.mobile.security import (
     authenticate_mobile_user,
     get_mobile_context,
     refresh_mobile_tokens,
+    logout_mobile_session,
 )
 from app.schemas.mobile_auth import (
     MobileLogin,
@@ -22,7 +23,7 @@ router = APIRouter(prefix="/mobile/v1/auth", tags=["mobile-auth"])
 
 @router.post("/login", response_model=MobileTokenPair)
 def login(payload: MobileLogin, db: Session = Depends(get_db)) -> MobileTokenPair:
-    return authenticate_mobile_user(db, str(payload.email), payload.password)
+    return authenticate_mobile_user(db, str(payload.email), payload.password, payload.device)
 
 
 @router.post("/refresh", response_model=MobileTokenPair)
@@ -30,7 +31,9 @@ def refresh(
     payload: MobileRefreshTokenRequest,
     db: Session = Depends(get_db),
 ) -> MobileTokenPair:
-    return refresh_mobile_tokens(db, payload.refresh_token)
+    if payload.device is None and "device" in payload.model_fields_set:
+        raise HTTPException(status_code=422, detail="Omite device; null no identifica una instalación")
+    return refresh_mobile_tokens(db, payload.refresh_token, payload.device)
 
 
 @router.get("/me", response_model=MobileUserRead)
@@ -46,3 +49,12 @@ def me(context: MobileSecurityContext = Depends(get_mobile_context)) -> MobileUs
         client_id=context.client_id,
         membership_id=context.membership_id,
     )
+
+
+@router.post("/logout", status_code=204)
+def logout(
+    context: MobileSecurityContext = Depends(get_mobile_context),
+    db: Session = Depends(get_db),
+) -> Response:
+    logout_mobile_session(db, context)
+    return Response(status_code=204)

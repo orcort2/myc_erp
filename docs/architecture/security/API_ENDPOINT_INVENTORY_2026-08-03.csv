@@ -217,6 +217,7 @@ POST,/api/lab-work-order-groups/requests/{request_id}/reject,lab-work-order-grou
 POST,/api/metrology/calculate-preview,metrology,post_calculate_preview,authenticated_permission,access_jwt,metrology.execute,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 GET,/api/metrology/profiles,metrology,get_profiles,authenticated_permission,access_jwt,metrology.execute,,internal_user,no,required,required,not_applicable,AUD-001/AUD-011
 POST,/api/mobile/v1/auth/login,mobile-auth,login,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
+POST,/api/mobile/v1/auth/logout,mobile-auth,logout,mobile_context,mobile_access_jwt,mobile.access,MobileSecurityContext,mobile_actor,no,required,required,required,
 GET,/api/mobile/v1/auth/me,mobile-auth,me,mobile_context,mobile_access_jwt,mobile.access,,mobile_actor,no,required,required,not_applicable,
 POST,/api/mobile/v1/auth/refresh,mobile-auth,refresh,public_intentional,none,,,anonymous,yes,not_applicable,not_applicable,not_applicable,
 GET,/api/mobile/v1/notifications,mobile-notifications,get_mobile_notifications,mobile_context,mobile_access_jwt,mobile.access,MobileSecurityContext,mobile_actor,no,required,required,required,
