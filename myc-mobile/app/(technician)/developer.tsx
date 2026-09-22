@@ -27,10 +27,18 @@ export default function DeveloperScreen() {
     unlockDeveloper,
     lockDeveloper,
     dismissExpirationWarning,
+    refreshDeveloperStatus,
   } = useDeveloper();
 
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // (Re)entering the Developer Center reconciles an in-memory Developer token
+  // with the backend once per mount -- never per render, never polling.
+  // refreshDeveloperStatus is stable and a no-op while locked.
+  useEffect(() => {
+    refreshDeveloperStatus().catch(() => undefined);
+  }, [refreshDeveloperStatus]);
 
   // Exactly one Alert per expiration cycle -- DeveloperProvider only flips
   // showExpirationWarning back to true again for a NEW cycle (a fresh
@@ -50,7 +58,7 @@ export default function DeveloperScreen() {
           },
         },
         {
-          text: 'Extender con Face ID',
+          text: 'Extender con biometría',
           onPress: async () => {
             dismissExpirationWarning();
             try {
@@ -96,7 +104,7 @@ export default function DeveloperScreen() {
           {error && <Text style={styles.error}>{error}</Text>}
           <Pressable style={styles.unlockButton} onPress={handleUnlock} disabled={unlocking}>
             <Text style={styles.unlockButtonText}>
-              {unlocking ? 'Verificando…' : 'Desbloquear con Face ID'}
+              {unlocking ? 'Verificando…' : 'Desbloquear con biometría'}
             </Text>
           </Pressable>
         </View>

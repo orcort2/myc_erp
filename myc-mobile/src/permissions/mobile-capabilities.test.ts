@@ -292,10 +292,13 @@ test('acción de resolución propia sólo en folios pending con autoridad backen
   }
 });
 
-test('DEV-0: canAccessDeveloper exige actor interno y developer.access explícito', () => {
+test('DEV-0: canAccessDeveloper exige actor interno y developer.access explícito, nunca "*"', () => {
   assert.equal(deriveMobileCapabilities(user('internal', ['mobile.access', 'developer.access'])).canAccessDeveloper, true);
   assert.equal(deriveMobileCapabilities(user('internal', ['mobile.access'])).canAccessDeveloper, false);
   assert.equal(deriveMobileCapabilities(user('client', ['developer.access'])).canAccessDeveloper, false);
-  assert.equal(deriveMobileCapabilities(user('internal', ['*'])).canAccessDeveloper, true);
+  // Administrador ERP != Administrador de infraestructura: '*' alone never opens Developer.
+  assert.equal(deriveMobileCapabilities(user('internal', ['*'])).canAccessDeveloper, false);
+  assert.equal(deriveMobileCapabilities(user('internal', ['developer.*'])).canAccessDeveloper, false);
+  assert.equal(deriveMobileCapabilities(user('internal', ['*', 'developer.access'])).canAccessDeveloper, true);
   assert.equal(deriveMobileCapabilities(null).canAccessDeveloper, false);
 });

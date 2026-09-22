@@ -52,6 +52,7 @@ type DeveloperMock = {
   unlockDeveloper?: () => Promise<void>;
   lockDeveloper?: () => Promise<void>;
   dismissExpirationWarning?: () => void;
+  refreshDeveloperStatus?: () => Promise<void>;
 };
 
 function harness(developer: DeveloperMock = {}, user: unknown = {
@@ -78,6 +79,7 @@ function harness(developer: DeveloperMock = {}, user: unknown = {
     unlockDeveloper: async () => undefined,
     lockDeveloper: async () => undefined,
     dismissExpirationWarning: () => undefined,
+    refreshDeveloperStatus: async () => undefined,
     ...developer,
   };
 
@@ -133,15 +135,15 @@ test('locked: muestra "Developer / Acceso protegido" y el botón de desbloqueo',
   const tree = app.render();
   assert.ok(textExists(tree, 'Developer'));
   assert.ok(textExists(tree, 'Acceso protegido'));
-  assert.ok(pressableByText(tree, 'Desbloquear con Face ID'));
+  assert.ok(pressableByText(tree, 'Desbloquear con biometría'));
   assert.equal(pressableByText(tree, 'Developer Center'), undefined);
 });
 
-test('tocar "Desbloquear con Face ID" llama unlockDeveloper', async () => {
+test('tocar "Desbloquear con biometría" llama unlockDeveloper', async () => {
   let unlockCalled = false;
   const app = harness({ isDeveloperUnlocked: false, unlockDeveloper: async () => { unlockCalled = true; } });
   const tree = app.render();
-  const button = pressableByText(tree, 'Desbloquear con Face ID')!;
+  const button = pressableByText(tree, 'Desbloquear con biometría')!;
   await (button.props!.onPress as () => Promise<void>)();
   assert.equal(unlockCalled, true);
 });
@@ -149,7 +151,7 @@ test('tocar "Desbloquear con Face ID" llama unlockDeveloper', async () => {
 test('un fallo al desbloquear muestra un error explícito sin romper la pantalla', async () => {
   const app = harness({ isDeveloperUnlocked: false, unlockDeveloper: async () => { throw new Error('Credencial biométrica inválida'); } });
   const tree = app.render();
-  const button = pressableByText(tree, 'Desbloquear con Face ID')!;
+  const button = pressableByText(tree, 'Desbloquear con biometría')!;
   await (button.props!.onPress as () => Promise<void>)();
   const after = app.render();
   assert.ok(textExists(after, 'Credencial biométrica inválida'));
@@ -175,13 +177,13 @@ test('unlocked: "Bloquear Developer" llama lockDeveloper', async () => {
   assert.equal(lockCalled, true);
 });
 
-test('el warning de expiración muestra un Alert con "Extender con Face ID" y "Bloquear ahora"', () => {
+test('el warning de expiración muestra un Alert con "Extender con biometría" y "Bloquear ahora"', () => {
   const app = harness({ isDeveloperUnlocked: true, remainingSeconds: 45, showExpirationWarning: true });
   app.render();
   assert.equal(app.alerts.length, 1);
   assert.equal(app.alerts[0].title, 'Tu sesión Developer está por finalizar');
   const labels = app.alerts[0].buttons?.map((button) => button.text);
-  assert.deepEqual(labels, ['Bloquear ahora', 'Extender con Face ID']);
+  assert.deepEqual(labels, ['Bloquear ahora', 'Extender con biometría']);
 });
 
 test('sin warning, nunca se muestra el Alert', () => {
@@ -205,7 +207,7 @@ test('"Bloquear ahora" del warning descarta el aviso y bloquea', async () => {
   assert.equal(lockCalled, true);
 });
 
-test('"Extender con Face ID" del warning descarta el aviso y desbloquea de nuevo', async () => {
+test('"Extender con biometría" del warning descarta el aviso y desbloquea de nuevo', async () => {
   let unlockCalled = false;
   let dismissed = false;
   const app = harness({
@@ -214,7 +216,7 @@ test('"Extender con Face ID" del warning descarta el aviso y desbloquea de nuevo
     dismissExpirationWarning: () => { dismissed = true; },
   });
   app.render();
-  const button = app.alerts[0].buttons!.find((entry) => entry.text === 'Extender con Face ID')!;
+  const button = app.alerts[0].buttons!.find((entry) => entry.text === 'Extender con biometría')!;
   await button.onPress?.();
   assert.equal(dismissed, true);
   assert.equal(unlockCalled, true);
@@ -232,4 +234,19 @@ test('sin usuario, redirige a login', () => {
   const tree = app.render();
   assert.equal((tree as Node).type, 'Redirect');
   assert.equal((tree as Node).props?.href, '/(auth)/login');
+});
+
+test('entrar al Developer Center reconcilia el estado una vez por montaje, nunca por render', () => {
+  let reconciles = 0;
+  const refreshDeveloperStatus = async () => { reconciles += 1; };
+  const app = harness({ isDeveloperUnlocked: true, remainingSeconds: 300, refreshDeveloperStatus });
+  app.render();
+  app.render();
+  app.render();
+  assert.equal(reconciles, 1);
+});
+
+test('la etiqueta biométrica es genérica, nunca "Face ID" rígido', () => {
+  const source = readFileSync(resolve(here, '../../app/(technician)/developer.tsx'), 'utf8');
+  assert.equal(/'[^']*Face ID[^']*'/.test(source.replace(/\/\/.*$/gm, '')), false);
 });

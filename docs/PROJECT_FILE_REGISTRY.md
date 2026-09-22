@@ -24,11 +24,11 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 
 | Sección | Archivos |
 | --- | ---: |
-| Backend | 525 |
+| Backend | 527 |
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
-| Configuración | 240 |
+| Configuración | 241 |
 | Documentación | 179 |
 | Pruebas | 107 |
 
@@ -49,6 +49,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/app/core/__init__.py | backend/app/core | Inicializador de paquete | Declara el paquete core y expone las importaciones públicas que necesita su módulo. | Módulos del mismo paquete | Python y módulos que importan el paquete | Medio | Estable |
 | backend/app/core/config.py | backend/app/core | Configuración central | Define entorno, seguridad, storage, conversión y organización; impide producción con secreto JWT ausente, conocido, corto o de baja entropía y controla docs/portal técnico por entorno. | Pydantic Settings y variables de entorno | Main, servicios, workers y adaptadores del ERP | Crítico | Estable |
 | backend/app/core/db.py | backend/app/core | Infraestructura backend | Centraliza la infraestructura de db: configuración, seguridad, permisos, conexión o folios. | FastAPI, SQLAlchemy y variables de entorno | main, routers y servicios | Crítico | Estable |
+| backend/app/core/developer_policy.py | backend/app/core | Infraestructura backend | Centraliza la infraestructura de developer policy: configuración, seguridad, permisos, conexión o folios. | FastAPI, SQLAlchemy y variables de entorno | main, routers y servicios | Alto | Estable |
 | backend/app/core/folios.py | backend/app/core | Compatibilidad de folios | Conserva las funciones públicas de folios y delega el formato compacto de certificados al contrato institucional vigente. | Fechas, prefijos institucionales y servicios de certificados | Servicios legacy que aún importan helpers de folios | Alto | Estable |
 | backend/app/core/init_db.py | backend/app/core | Infraestructura backend | Centraliza la infraestructura de init db: configuración, seguridad, permisos, conexión o folios. | FastAPI, SQLAlchemy y variables de entorno | main, routers y servicios | Alto | Estable |
 | backend/app/core/login_policy.py | Autenticación/Seguridad | Política de bloqueo | Centraliza umbral de cinco fallos, bloqueo de quince minutos, normalización temporal, reinicio al autenticar y auditoría común sin mezclar los contextos interno y portal. | User, Session y audit_logs | auth.py y core.portal.security | Crítico | Estable |
@@ -513,6 +514,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | backend/migrations/versions/c3d4e5f6a7b8_add_document_templates.py | backend/migrations/versions | Migración Alembic | Aplica la revisión c3d4e5f6a7b8 add document templates del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/c3fb78821edc_add_service_order_signatures.py | backend/migrations/versions | Migración Alembic | Aplica la revisión c3fb78821edc add service order signatures del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/c4d5e6f7a8b9_version_uncertainty_models.py | backend/migrations/versions | Migración Alembic | Aplica la revisión c4d5e6f7a8b9 version uncertainty models del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
+| backend/migrations/versions/c4d8e2f1a7b3_dev_0_single_active_developer_session.py | backend/migrations/versions | Migración Alembic | Aplica la revisión c4d8e2f1a7b3 dev 0 single active developer session del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/c4e0ead1af28_fix_repair_timestamp_defaults.py | backend/migrations/versions | Migración Alembic | Aplica la revisión c4e0ead1af28 fix repair timestamp defaults del esquema y conserva la evolución reproducible de PostgreSQL. | Alembic, modelos ORM y base de datos | Alembic durante upgrade/downgrade y despliegues | Crítico | Estable |
 | backend/migrations/versions/c5d7e9f1a3b4_resolution_engine_phase_5_review.py | backend/migrations/versions | Migración correctiva de Fase 5 | Agrega de forma mínima y reversible failed_at al outbox para conservar la fecha de cada decisión de publicación fallida. | Alembic, PostgreSQL y modelo ResolutionOutboxEvent | Despliegues, restauraciones y auditoría del Motor | Crítico | Estable |
 | backend/migrations/versions/c6e8a1b4d2f9_create_lab_work_orders.py | backend/migrations/versions | Migración OT LAB | Fusiona los dos heads preservados y crea exclusivamente las cuatro tablas LAB, restricciones, índices y FKs trazables. | Alembic, PostgreSQL, a7c2e5f8b1d4 y fdc1c503a353 | Despliegue, rollback y validación de esquema | Crítico | Estable |
@@ -961,6 +963,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/notifications/NotificationSyncProvider.tsx | myc-mobile/src/notifications | Orquestador de sincronización móvil | Registra listeners push/AppState, badge, deep links pendientes e invalidaciones foreground/locales sin polling. | Expo Notifications, Expo Router, AuthProvider y API | Tickets, OT, centro y home móvil | Crítico | Estable |
 | myc-mobile/src/notifications/refresh-policy.test.ts | myc-mobile/src/notifications | Pruebas de sincronización móvil | Verifica invalidación de Tickets/OT, foreground, deduplicación y refresh forzado tras mutación propia. | Node test, tsx y refresh-policy | Gate móvil Notifications | Alto | Estable |
 | myc-mobile/src/notifications/refresh-policy.ts | myc-mobile/src/notifications | Política de refresco móvil | Clasifica eventos Tickets/OT y aplica deduplicación y throttle para evitar loops o ráfagas. | Tipos NotificationSyncEvent | Pantallas Tickets/OT y pruebas | Alto | Estable |
+| myc-mobile/src/permissions/developer-policy.ts | myc-mobile/src/permissions | Archivo de soporte | Mantiene la capacidad de developer policy dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/permissions/mobile-capabilities.test.ts | myc-mobile/src/permissions | Pruebas capabilities Mobile | Cubre fronteras internal/client, folios y override de fecha junto con capacidades existentes. | node:test y mobile-capabilities | Gate de autorización UI | Alto | Estable |
 | myc-mobile/src/permissions/mobile-capabilities.ts | myc-mobile/src/permissions | Capabilities Mobile | Deriva capacidades por actor y permisos; consume autoridad backend para folios propios y decide visibilidad por tipo, solicitante y estado pending. | AuthUser, permisos | Pantallas Mobile | Crítico | Estable |
 | myc-mobile/src/permissions/permissions.ts | myc-mobile/src/permissions | Evaluación visual de permisos | Resuelve permiso exacto, comodín global y comodín de namespace para ocultar navegación/acciones sin sustituir backend. | Permisos de AuthUser | Home y bandeja Tickets | Alto | Estable |

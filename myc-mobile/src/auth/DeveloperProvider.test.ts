@@ -5,6 +5,8 @@ import { mock, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
+import { hasDeveloperCapability } from '../permissions/developer-policy';
+
 /**
  * DEV-0: DeveloperProvider owns its own privilege-session lifecycle,
  * separate from AuthProvider. Executes the real DeveloperProvider.tsx
@@ -19,6 +21,8 @@ type AuthState = {
 };
 
 type Opened = { developer_token: string; expires_at: string; session_id: number };
+type Status = { active: boolean; expires_at: string | null; remaining_seconds: number | null; user_id: number | null; device_id: number | null };
+const INACTIVE: Status = { active: false, expires_at: null, remaining_seconds: null, user_id: null, device_id: null };
 
 function harness(initialAuth: AuthState) {
   const slots: unknown[] = [];
@@ -40,6 +44,10 @@ function harness(initialAuth: AuthState) {
   let credentialGate: Promise<string | null> | null = null;
   let openSequence: Opened[] = [];
   let lockShouldThrow = false;
+  let statusResponse: Status | Error = INACTIVE;
+  let statusGate: Promise<void> | null = null;
+  const appStateListeners = new Set<(state: string) => void>();
+  let appStateSubscriptions = 0;
 
   function shallowEqual(a: unknown[] | undefined, b: unknown[] | undefined): boolean {
     if (a === b) return true;
@@ -95,11 +103,20 @@ function harness(initialAuth: AuthState) {
       },
     },
     'react/jsx-runtime': { jsx, jsxs: jsx, Fragment: 'Fragment' },
-    '@/src/auth/AuthProvider': { useAuth: () => authState },
-    '@/src/permissions/permissions': {
-      hasPermission: (permissions: string[], permission: string) =>
-        permissions.includes('*') || permissions.includes(permission),
+    'react-native': {
+      AppState: {
+        currentState: 'active',
+        addEventListener: (event: string, listener: (state: string) => void) => {
+          assert.equal(event, 'change');
+          appStateSubscriptions += 1;
+          appStateListeners.add(listener);
+          return { remove: () => { appStateListeners.delete(listener); } };
+        },
+      },
     },
+    '@/src/auth/AuthProvider': { useAuth: () => authState },
+    // The REAL explicit Developer policy, never a wildcard-aware mock.
+    '@/src/permissions/developer-policy': { hasDeveloperCapability },
     '@/src/services/developer.service': {
       openDeveloperSession: async (accessToken: string, credential: string) => {
         calls.open.push({ accessToken, credential });
@@ -109,7 +126,9 @@ function harness(initialAuth: AuthState) {
       },
       getDeveloperSessionStatus: async (accessToken: string, developerToken: string) => {
         calls.status.push({ accessToken, developerToken });
-        return { active: false, expires_at: null, remaining_seconds: null, user_id: null, device_id: null };
+        if (statusGate) await statusGate;
+        if (statusResponse instanceof Error) throw statusResponse;
+        return statusResponse;
       },
       lockDeveloperSession: async (accessToken: string, developerToken: string) => {
         calls.lock.push({ accessToken, developerToken });
@@ -152,9 +171,25 @@ function harness(initialAuth: AuthState) {
     };
   }
 
+  function unmount() {
+    for (const slot of effectSlots) slot?.cleanup?.();
+  }
+
   return {
     render,
+    unmount,
     calls,
+    appState: {
+      emit(state: string) { for (const listener of [...appStateListeners]) listener(state); },
+      get listeners() { return appStateListeners.size; },
+      get subscriptions() { return appStateSubscriptions; },
+    },
+    setStatus(value: Status | Error) { statusResponse = value; },
+    deferStatus() {
+      let release!: () => void;
+      statusGate = new Promise<void>((resolveGate) => { release = resolveGate; });
+      return () => { release(); statusGate = null; };
+    },
     setAuth(next: AuthState) { authState = next; },
     setCredential(value: string | null) { credentialToReturn = value; },
     deferCredential() {
@@ -170,6 +205,8 @@ function harness(initialAuth: AuthState) {
 const settle = () => new Promise<void>((done) => setImmediate(done));
 
 const devUser = { permissions: ['mobile.access', 'developer.access'], actor_type: 'internal' as const };
+const adminOnlyWildcard = { permissions: ['*'], actor_type: 'internal' as const };
+const technicianUser = { permissions: ['mobile.access'], actor_type: 'internal' as const };
 const session = (token = 'access-1') => ({ access_token: token });
 
 function opened(token: string, secondsFromNow = 600, sessionId = 1): Opened {
@@ -246,10 +283,11 @@ test('el token nunca se persiste -- ningún import de storage-write, sólo la le
   const imports = [...source.matchAll(/from '([^']+)'/g)].map((match) => match[1]);
   assert.deepEqual(imports.sort(), [
     '@/src/auth/AuthProvider',
-    '@/src/permissions/permissions',
+    '@/src/permissions/developer-policy',
     '@/src/services/developer.service',
     '@/src/storage/biometric-storage',
     'react',
+    'react-native',
   ].sort());
 });
 
@@ -346,4 +384,239 @@ test('"Extender con Face ID" (unlockDeveloper de nuevo) obtiene una nueva Develo
   } finally {
     mock.timers.reset();
   }
+});
+
+const activeStatus = (secondsFromNow = 600): Status => ({
+  active: true,
+  expires_at: new Date(Date.now() + secondsFromNow * 1000).toISOString(),
+  remaining_seconds: secondsFromNow,
+  user_id: 1,
+  device_id: 1,
+});
+
+async function unlocked(app: ReturnType<typeof harness>, token = 'token-1', seconds = 600) {
+  app.queueOpen(opened(token, seconds));
+  await app.render().unlockDeveloper();
+  return app.render();
+}
+
+// --- P0: explicit Developer policy --------------------------------------------------
+
+test('P0: "*" (Administrador) por sí solo NO habilita Developer y unlock nunca llama al backend', async () => {
+  const app = harness({ session: session(), user: adminOnlyWildcard });
+  const value = app.render();
+  assert.equal(value.isDeveloperAvailable, false);
+  await assert.rejects(value.unlockDeveloper());
+  assert.equal(app.calls.readCredential, 0);
+  assert.equal(app.calls.open.length, 0);
+});
+
+test('P0: un actor client nunca tiene Developer aunque traiga developer.access', () => {
+  const app = harness({ session: session(), user: { permissions: ['developer.access'], actor_type: 'client' } });
+  assert.equal(app.render().isDeveloperAvailable, false);
+});
+
+// --- A. capability loss ---------------------------------------------------------------
+
+test('A: perder developer.access (true → false) bloquea de inmediato y revoca best-effort, sin esperar countdown', async () => {
+  const app = harness({ session: session('access-1'), user: devUser });
+  let value = await unlocked(app);
+  assert.equal(value.isDeveloperUnlocked, true);
+  app.setAuth({ session: session('access-1'), user: technicianUser });
+  app.render(); // capability-loss effect runs
+  value = app.render();
+  assert.equal(value.isDeveloperAvailable, false);
+  assert.equal(value.isDeveloperUnlocked, false);
+  assert.equal(value.remainingSeconds, null);
+  assert.deepEqual(app.calls.lock, [{ accessToken: 'access-1', developerToken: 'token-1' }]);
+  assert.equal(app.calls.status.length, 0);
+});
+
+test('A: quedar sólo con "*" tras refrescar permisos también bloquea', async () => {
+  const app = harness({ session: session('access-1'), user: devUser });
+  await unlocked(app);
+  app.setAuth({ session: session('access-1'), user: adminOnlyWildcard });
+  app.render();
+  assert.equal(app.render().isDeveloperUnlocked, false);
+});
+
+test('A: perder la capacidad mientras un unlock espera biometría descarta el resultado y revoca el huérfano', async () => {
+  const app = harness({ session: session('access-1'), user: devUser });
+  app.queueOpen(opened('token-1'));
+  const releaseCredential = app.deferCredential();
+  const pending = app.render().unlockDeveloper();
+  app.setAuth({ session: session('access-1'), user: technicianUser });
+  app.render();
+  releaseCredential('real-biometric-credential');
+  await assert.rejects(pending);
+  assert.equal(app.render().isDeveloperUnlocked, false);
+  assert.ok(app.calls.lock.some((call) => call.developerToken === 'token-1'));
+});
+
+test('A: sin token en memoria, perder la capacidad no genera requests', () => {
+  const app = harness({ session: session(), user: devUser });
+  app.render();
+  app.setAuth({ session: session(), user: technicianUser });
+  app.render();
+  app.render();
+  assert.equal(app.calls.lock.length, 0);
+  assert.equal(app.calls.status.length, 0);
+});
+
+// --- B. foreground reconciliation ------------------------------------------------------
+
+test('B: volver a foreground con token consulta el backend y active:false limpia Developer', async () => {
+  const app = harness({ session: session('access-1'), user: devUser });
+  await unlocked(app);
+  app.setStatus(INACTIVE);
+  app.appState.emit('active');
+  await settle();
+  const value = app.render();
+  assert.deepEqual(app.calls.status, [{ accessToken: 'access-1', developerToken: 'token-1' }]);
+  assert.equal(value.isDeveloperUnlocked, false);
+});
+
+test('B: foreground con sesión aún activa conserva Developer y re-sincroniza el reloj', async () => {
+  const app = harness({ session: session(), user: devUser });
+  await unlocked(app, 'token-1', 600);
+  app.setStatus(activeStatus(300)); // server says 300s left: the server wins
+  app.appState.emit('active');
+  await settle();
+  const value = app.render();
+  assert.equal(value.isDeveloperUnlocked, true);
+  assert.ok(value.remainingSeconds !== null && value.remainingSeconds <= 300 && value.remainingSeconds > 290);
+  await value.lockDeveloper();
+});
+
+test('B: una reconciliación de la MISMA sesión no vuelve a disparar el warning ya mostrado', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    const app = harness({ session: session(), user: devUser });
+    let value = await unlocked(app, 'token-1', 90);
+    mock.timers.tick(31_000);
+    value = app.render();
+    assert.equal(value.showExpirationWarning, true);
+    value.dismissExpirationWarning();
+    app.setStatus(activeStatus(59));
+    app.appState.emit('active');
+    await settle();
+    value = app.render();
+    assert.equal(value.isDeveloperUnlocked, true);
+    assert.equal(value.showExpirationWarning, false);
+    await value.lockDeveloper();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('B: foreground sin token en memoria, background o inactive nunca consultan el backend', async () => {
+  const app = harness({ session: session(), user: devUser });
+  app.render();
+  app.appState.emit('active');
+  await settle();
+  assert.equal(app.calls.status.length, 0);
+  await unlocked(app);
+  app.appState.emit('background');
+  app.appState.emit('inactive');
+  await settle();
+  assert.equal(app.calls.status.length, 0);
+  await app.render().lockDeveloper();
+});
+
+test('B: un error de red al reconciliar falla cerrado (bloquea)', async () => {
+  const app = harness({ session: session(), user: devUser });
+  await unlocked(app);
+  app.setStatus(new Error('network down'));
+  app.appState.emit('active');
+  await settle();
+  assert.equal(app.render().isDeveloperUnlocked, false);
+});
+
+test('B: un único listener AppState durante toda la vida del provider, removido al desmontar', async () => {
+  const app = harness({ session: session(), user: devUser });
+  await unlocked(app);
+  for (let index = 0; index < 5; index += 1) app.render();
+  assert.equal(app.appState.subscriptions, 1);
+  assert.equal(app.appState.listeners, 1);
+  await app.render().lockDeveloper();
+  app.unmount();
+  assert.equal(app.appState.listeners, 0);
+});
+
+test('B: foreground + reentrada simultáneas producen una sola consulta (dedupe)', async () => {
+  const app = harness({ session: session(), user: devUser });
+  const value = await unlocked(app);
+  app.setStatus(activeStatus(500));
+  const release = app.deferStatus();
+  app.appState.emit('active');
+  const entry = value.refreshDeveloperStatus();
+  release();
+  await entry;
+  await settle();
+  assert.equal(app.calls.status.length, 1);
+  await app.render().lockDeveloper();
+});
+
+test('B: una respuesta de reconciliación tardía nunca resucita Developer tras un lock', async () => {
+  const app = harness({ session: session(), user: devUser });
+  const value = await unlocked(app);
+  app.setStatus(activeStatus(500));
+  const release = app.deferStatus();
+  const reconcile = value.refreshDeveloperStatus();
+  await value.lockDeveloper();
+  release();
+  await reconcile;
+  assert.equal(app.render().isDeveloperUnlocked, false);
+});
+
+test('B: la respuesta tardía del token anterior no afecta al token nuevo tras "Extender"', async () => {
+  const app = harness({ session: session(), user: devUser });
+  const value = await unlocked(app, 'token-1');
+  app.setStatus(INACTIVE); // token-1 was superseded server-side
+  const release = app.deferStatus();
+  const reconcile = value.refreshDeveloperStatus();
+  app.queueOpen(opened('token-2'));
+  await app.render().unlockDeveloper();
+  release();
+  await reconcile;
+  const after = app.render();
+  assert.equal(after.isDeveloperUnlocked, true);
+  await after.lockDeveloper();
+  assert.equal(app.calls.lock.at(-1)?.developerToken, 'token-2');
+});
+
+// --- rotation of the Mobile access token -------------------------------------------------
+
+test('rotación del access token Mobile: reconcilia con el token nuevo y active:false limpia', async () => {
+  const app = harness({ session: session('access-1'), user: devUser });
+  await unlocked(app);
+  app.setStatus(INACTIVE);
+  app.setAuth({ session: session('access-2'), user: devUser });
+  app.render();
+  await settle();
+  assert.deepEqual(app.calls.status, [{ accessToken: 'access-2', developerToken: 'token-1' }]);
+  assert.equal(app.render().isDeveloperUnlocked, false);
+});
+
+// --- no polling ---------------------------------------------------------------------------
+
+test('el countdown local nunca hace polling al backend', async () => {
+  mock.timers.enable({ apis: ['setInterval', 'Date'] });
+  try {
+    const app = harness({ session: session(), user: devUser });
+    await unlocked(app, 'token-1', 600);
+    for (let second = 0; second < 120; second += 1) {
+      mock.timers.tick(1000);
+      app.render();
+    }
+    assert.equal(app.calls.status.length, 0);
+    await app.render().lockDeveloper();
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('el lifecycle no depende de eslint-disable para sus dependencias', () => {
+  const source = readFileSync(resolve(here, 'DeveloperProvider.tsx'), 'utf8');
+  assert.equal(source.includes('eslint-disable'), false);
 });

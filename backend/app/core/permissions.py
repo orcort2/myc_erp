@@ -264,7 +264,8 @@ ROLE_PERMISSIONS = {
         "mobile.access",
         # DEV-0: Developer infrastructure authority (Developer Center, DB
         # console, shell broker, logs, services, git). Explicit capabilities,
-        # never inferred from "*"/Administrador semantics for this gate --
+        # never inferred from "*"/Administrador semantics: enforced by the
+        # explicit policy in app/core/developer_policy.py --
         # see docs/architecture/MOBILE_DEVELOPER_AUTHORITY.md.
         "developer.access",
         "developer.database.read",

@@ -1,17 +1,16 @@
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.developer_policy import DEVELOPER_ACCESS
 from app.core.mobile.developer import (
     developer_session_status,
+    developer_token_header,
     lock_developer_session,
     open_developer_session,
+    require_mobile_developer_capability,
 )
-from app.core.mobile.security import (
-    MobileSecurityContext,
-    get_mobile_context,
-    require_internal_mobile_permission,
-)
+from app.core.mobile.security import MobileSecurityContext, get_mobile_context
 from app.schemas.mobile_developer import (
     DeveloperSessionOpened,
     DeveloperSessionStatus,
@@ -22,16 +21,10 @@ from app.schemas.mobile_developer import (
 router = APIRouter(prefix="/mobile/v1/developer", tags=["mobile-developer"])
 
 
-def _developer_token_header(
-    x_myc_developer_token: str = Header(..., alias="X-MYC-Developer-Token"),
-) -> str:
-    return x_myc_developer_token
-
-
 @router.post("/session", response_model=DeveloperSessionOpened)
 def unlock_developer_session(
     payload: DeveloperUnlockRequest,
-    context: MobileSecurityContext = Depends(require_internal_mobile_permission("developer.access")),
+    context: MobileSecurityContext = Depends(require_mobile_developer_capability(DEVELOPER_ACCESS)),
     db: Session = Depends(get_db),
 ) -> DeveloperSessionOpened:
     return DeveloperSessionOpened(
@@ -41,7 +34,7 @@ def unlock_developer_session(
 
 @router.get("/session", response_model=DeveloperSessionStatus)
 def read_developer_session_status(
-    developer_token: str = Depends(_developer_token_header),
+    developer_token: str = Depends(developer_token_header),
     context: MobileSecurityContext = Depends(get_mobile_context),
     db: Session = Depends(get_db),
 ) -> DeveloperSessionStatus:
@@ -52,7 +45,7 @@ def read_developer_session_status(
 
 @router.delete("/session", status_code=204)
 def lock_developer_session_endpoint(
-    developer_token: str = Depends(_developer_token_header),
+    developer_token: str = Depends(developer_token_header),
     context: MobileSecurityContext = Depends(get_mobile_context),
     db: Session = Depends(get_db),
 ) -> Response:
