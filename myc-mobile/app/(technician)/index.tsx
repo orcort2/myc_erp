@@ -99,10 +99,8 @@ export default function TechnicianHome() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView
-        bounces={false}
-        alwaysBounceVertical={false}
-        overScrollMode="never"
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       >
         <Text style={styles.eyebrow}>
           {user.actor_type === 'client' ? 'MYC · Organización vinculada' : 'MYC · Área técnica'}
@@ -186,7 +184,7 @@ export default function TechnicianHome() {
         <Pressable
           onPress={async () => {
             await logout();
-            router.replace('/(public)');
+            router.replace('/(auth)/login');
           }}
         >
           <Text style={styles.logout}>Cerrar sesión</Text>
@@ -217,7 +215,6 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 32,

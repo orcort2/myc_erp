@@ -1,6 +1,7 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +22,18 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { getBiometricAvailability } from '@/src/services/biometric-auth';
 
 const appVersion = Constants.expoConfig?.version;
+
+type BiometricIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+// biometric_label is the only signal the login screen has (BiometricProfile
+// never stores the raw availability `type`); mapped defensively so any label
+// this app can ever produce (see biometric-auth.ts's resolveTypeAndLabel)
+// gets a sensible vector icon instead of assuming Face ID.
+function resolveBiometricIconName(label: string): BiometricIconName {
+  if (label === 'Face ID') return 'face-recognition';
+  if (label === 'Touch ID' || label === 'Huella') return 'fingerprint';
+  return 'shield-lock-outline';
+}
 
 export default function LoginScreen() {
   const { biometricAvailable, biometricLogin, biometricProfile, enableBiometric, login } = useAuth();
@@ -133,7 +146,11 @@ export default function LoginScreen() {
               <ActivityIndicator color="#003DA5" />
             ) : (
               <>
-                <Text style={styles.biometricIcon}>🔐</Text>
+                <MaterialCommunityIcons
+                  color="#003DA5"
+                  name={resolveBiometricIconName(biometricProfile.biometric_label)}
+                  size={22}
+                />
                 <Text style={styles.biometricButtonText}>
                   Ingresar con {biometricProfile.biometric_label}
                 </Text>
@@ -403,9 +420,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 16,
     width: '100%',
-  },
-  biometricIcon: {
-    fontSize: 22,
   },
   biometricButtonText: {
     color: '#003DA5',

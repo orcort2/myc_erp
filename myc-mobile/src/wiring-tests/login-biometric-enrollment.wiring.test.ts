@@ -79,6 +79,7 @@ function harness(
       },
     },
     'react-native-safe-area-context': { SafeAreaView: 'SafeAreaView' },
+    '@expo/vector-icons': { MaterialCommunityIcons: 'MaterialCommunityIcons' },
     'expo-constants': { default: { expoConfig: { version: '1.0' } } },
     'expo-router': { router: { replace: (path: string) => { navigations.push(path); } } },
     '@/src/auth/AuthProvider': { useAuth: () => authContext },
@@ -176,3 +177,30 @@ test('"Activar" fallido conserva la sesión y ofrece una salida clara a Home', a
   exit!.onPress?.();
   assert.deepEqual(app.navigations, ['/(technician)']);
 });
+
+test('la vista de entrada biométrica ya no renderiza el emoji 🔐, usa un icono vectorial', () => {
+  const app = harness({
+    biometricProfile: { user_id: 1, email: 'staff@myc.example.com', full_name: 'Staff', biometric_label: 'Face ID' },
+  });
+  const tree = app.render();
+  const nodes = flatten(tree);
+  assert.ok(!nodes.some((node) => node.type === 'Text' && node.props?.children === '🔐'));
+  const icon = nodes.find((node) => node.type === 'MaterialCommunityIcons');
+  assert.ok(icon, 'esperaba un nodo MaterialCommunityIcons en la vista biométrica');
+  assert.equal(icon!.props?.name, 'face-recognition');
+});
+
+for (const [label, expectedIcon] of [
+  ['Face ID', 'face-recognition'],
+  ['Touch ID', 'fingerprint'],
+  ['Huella', 'fingerprint'],
+  ['Biometría', 'shield-lock-outline'],
+] as const) {
+  test(`el icono biométrico para "${label}" es "${expectedIcon}"`, () => {
+    const app = harness({
+      biometricProfile: { user_id: 1, email: 'staff@myc.example.com', full_name: 'Staff', biometric_label: label },
+    });
+    const icon = flatten(app.render()).find((node) => node.type === 'MaterialCommunityIcons');
+    assert.equal(icon?.props?.name, expectedIcon);
+  });
+}
