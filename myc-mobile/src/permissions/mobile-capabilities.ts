@@ -1,3 +1,4 @@
+import { hasDeveloperCapability } from '@/src/permissions/developer-policy';
 import { hasPermission } from '@/src/permissions/permissions';
 import type { AuthUser } from '@/src/types/auth';
 
@@ -33,6 +34,11 @@ export type MobileCapabilities = {
   canVoidLabDelivery: boolean;
   canVoidLabEquipmentEntry: boolean;
   canRequestPartialDelivery: boolean;
+  // DEV-0: gates the "Desarrollador" Home card/screen through the explicit
+  // Developer policy ('*' alone never grants it). The backend re-checks it on
+  // every Developer call (app/core/developer_policy.py) -- this only decides
+  // whether to offer the entry point.
+  canAccessDeveloper: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -43,6 +49,7 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       && user.can_resolve_own_lab_folios === true
       && hasPermission(permissions, 'lab_folios.resolve'),
     canAccessMobile: hasPermission(permissions, 'mobile.access'),
+    canAccessDeveloper: hasDeveloperCapability(user),
     canReadWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.read_organization'),
     canCreateWorkOrders: user?.actor_type === 'internal' && (

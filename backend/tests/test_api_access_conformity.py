@@ -22,7 +22,8 @@ INVENTORY_PATH = (
 def test_every_http_operation_has_an_explicit_access_classification():
     operations = assert_all_routes_classified(app)
     # BIOMETRIC-2 adds biometric enroll/exchange/delete under /mobile/v1/auth.
-    assert len(operations) == 533
+    # DEV-0 adds GET/POST/DELETE /mobile/v1/developer/session.
+    assert len(operations) == 536
     assert all(classify_operation(item.method, item.path, item.tags) for item in operations)
 
 
