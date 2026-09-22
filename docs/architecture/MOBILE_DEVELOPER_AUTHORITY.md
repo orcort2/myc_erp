@@ -69,9 +69,13 @@ debe lanzar `powershell.exe` (ni ningún subprocess) directamente**: heredaría
 
 El futuro Shell Broker (DEV-1+, `MYCDeveloperBroker`) será un **servicio
 Windows separado, con identidad dedicada**, nunca el propio proceso backend.
-El backend HTTP hablará con ese broker por un canal separado (WSS local o
-named pipe autenticado), nunca abriendo un shell dentro de su propio
-proceso. Ningún puerto de ese broker (p.ej. 8765) se implementa en esta fase.
+El backend HTTP hablará con ese broker por un canal separado, nunca
+abriendo un shell dentro de su propio proceso. **DEV-1A fijó el canal**:
+IPC local por Windows Named Pipe + ACL del SO + mensajes autenticados con
+HMAC; sin puerto (ni 8765 ni loopback TCP). El contrato, el cliente, el
+anti-replay y el endpoint `GET /developer/broker/health` están en
+[`MOBILE_DEVELOPER_BROKER.md`](MOBILE_DEVELOPER_BROKER.md); el adapter
+Windows y el servicio con identidad dedicada siguen pendientes (DEV-1B).
 
 No hay exposición directa de PostgreSQL ni se requiere SSH: toda futura
 consola de base de datos y toda futura terminal viajarán por el mismo túnel
@@ -238,7 +242,7 @@ permiso" para el ERP. Sólo los gates Developer usan la política explícita:
 | `POST /developer/session` (router) | `require_mobile_developer_capability(DEVELOPER_ACCESS)` |
 | `open_developer_session` (servicio) | `actor_has_developer_capability` (defensa en profundidad) |
 | Revalidación viva (`_live_authority`) | `user_has_developer_capability` sobre el usuario actual |
-| Operaciones DEV-1+ | `authorize_developer_operation` / `require_developer_session(capability)` |
+| Operaciones DEV-1+ | `authorize_developer_operation` / `require_developer_session(capability)` — primer uso real: `GET /developer/broker/health` con `developer.system.read` (DEV-1A) |
 | Mobile: `canAccessDeveloper`, `DeveloperProvider.isDeveloperAvailable`, navegación | `hasDeveloperCapability` (`myc-mobile/src/permissions/developer-policy.ts`) |
 
 Retirar la capacidad explícita después de abrir la sesión la invalida en
@@ -360,7 +364,9 @@ handler se ejecute.
 
 `authorize_developer_operation(db, context, developer_token, capability)` y
 su forma dependency `require_developer_session(capability)` (en
-`app/core/mobile/developer.py`; **no montado en ninguna ruta en DEV-0**) son
+`app/core/mobile/developer.py`; no montado en ninguna ruta en DEV-0; DEV-1A
+lo monta en `GET /developer/broker/health` con `developer.system.read`, ver
+[`MOBILE_DEVELOPER_BROKER.md`](MOBILE_DEVELOPER_BROKER.md)) son
 la única puerta aceptable para cualquier operación privilegiada futura.
 Exigen **ambas**:
 

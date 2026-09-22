@@ -590,3 +590,30 @@ puede tener éxito; una cancelación del prompt (rechazo, no `null`) conserva el
 enrolamiento intacto. Sólo se admite una cuenta biométrica recordada por
 instalación; no hay selector multi-cuenta en esta fase. Cierre:
 [BIOMETRIC_2_BIOMETRIC_LOGIN](../closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md).
+
+## D-2026-09-22 — DEV-1A: el Developer Broker es una frontera propia, no una capacidad de FastAPI
+
+Estado: EN REVISIÓN (sin commit, pendiente de auditoría humana).
+
+FastAPI nunca ejecuta procesos ni se convierte en shell remoto. Toda
+operación de infraestructura futura cruza una frontera explícita:
+`DeveloperSession + capacidad` (DEV-0, autoriza al usuario) →
+`BrokerClient` → `BrokerTransport` → `BrokerServer` (autentica al proceso
+llamante y valida su propio contrato). El Broker no conoce JWT, roles,
+wildcard, biometría ni `DeveloperSession`, y no importa SQLAlchemy,
+FastAPI, Mobile auth ni `app.realtime`.
+
+Transporte decidido: IPC local Windows Named Pipe + ACL del SO + HMAC de
+aplicación con secreto dedicado ERP↔Broker. Se rechaza explícitamente
+loopback TCP como sustituto y no se abre ningún puerto. Como el adapter
+Windows no puede validarse desde macOS, DEV-1A implementa sólo el puerto,
+el contrato y un transporte in-memory para pruebas; el adapter real queda
+para DEV-1B (sin dependencias nuevas hasta decidirlo).
+
+Contrato: `myc.developer-broker` v1, envelope con `request_id`,
+`timestamp`, `nonce`, `operation`, `payload` y firma HMAC-SHA256 sobre JSON
+canónico; respuestas también firmadas; anti-replay en el Broker (in-memory,
+acotado, con expiración) con ventana de 30 s / 5 s. Única operación:
+`broker.health`. El Broker correrá en el futuro bajo una identidad de
+servicio dedicada con least privilege, nunca `LocalSystem`. Detalle en
+`docs/architecture/MOBILE_DEVELOPER_BROKER.md`.
