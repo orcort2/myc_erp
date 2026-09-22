@@ -26,6 +26,16 @@ class Settings(BaseSettings):
     # authority, not an operational session -- it never renews silently and
     # never survives logout. See docs/architecture/MOBILE_DEVELOPER_AUTHORITY.md.
     developer_session_expire_minutes: int = 10
+    # DEV-1A: optional Developer Broker boundary. Disabled by default; the ERP
+    # starts normally without it and Broker routes fail closed (503). The
+    # HMAC secret and the pipe name come only from external configuration.
+    # "named_pipe" is the only target transport and its Windows adapter is
+    # still pending (DEV-1B). See docs/architecture/MOBILE_DEVELOPER_BROKER.md.
+    developer_broker_enabled: bool = False
+    developer_broker_transport: Literal["named_pipe"] = "named_pipe"
+    developer_broker_pipe_name: str = ""
+    developer_broker_secret: SecretStr = SecretStr("")
+    developer_broker_timeout_seconds: float = Field(default=5, gt=0)
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

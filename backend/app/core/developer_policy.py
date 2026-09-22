@@ -26,13 +26,14 @@ from app.services.auth import effective_user_permissions
 
 
 DEVELOPER_ACCESS = "developer.access"
+DEVELOPER_SYSTEM_READ = "developer.system.read"
 DEVELOPER_CAPABILITIES = frozenset({
     DEVELOPER_ACCESS,
     "developer.database.read",
     "developer.database.write",
     "developer.database.admin",
     "developer.shell.access",
-    "developer.system.read",
+    DEVELOPER_SYSTEM_READ,
     "developer.logs.read",
     "developer.services.execute",
     "developer.git.read",

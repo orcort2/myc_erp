@@ -4,9 +4,50 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-22 — DEV-0 (Developer Authority para MYC Mobile) + endurecimiento pre-cierre (sin commit; pendiente de auditoría humana; DEV-0 NO cerrado)
+> Corte: 2026-09-22 — DEV-1A (frontera Developer Broker, sin commit; pendiente de auditoría humana) sobre DEV-0 ya fusionado en `main` (PR #7, `91d7404`)
 
 # Estado operativo actual del ERP MYC
+
+## DEV-1A — Developer Broker boundary (EN REVISIÓN, sin commit)
+
+- Worktree `/Users/saulcortes/Developer/myc_erp-dev1`, rama
+  `feat/mobile-developer-shell-broker-dev1`, base `91d7404` (= `origin/main`,
+  merge de DEV-0). El checkout estable `myc_erp` (`main`) no se tocó.
+- Implementado: paquete `backend/app/developer_broker/` (contrato
+  `myc.developer-broker` v1, HMAC-SHA256 canónico con requests y responses
+  firmados, anti-replay in-memory acotado, `BrokerServer` con única
+  operación `broker.health`, puerto `BrokerTransport` + transporte
+  in-memory sólo para pruebas, `BrokerClient`), servicio
+  `app/services/developer_broker.py`, configuración opcional
+  `DEVELOPER_BROKER_*` (deshabilitada por defecto; el ERP arranca igual) y
+  `GET /api/mobile/v1/developer/broker/health` protegido con
+  `require_developer_session("developer.system.read")`.
+- Pendiente (DEV-1B): adapter Windows Named Pipe + ACL, servicio Windows con
+  identidad dedicada (no `LocalSystem`), `ShellSession`. Con el Broker
+  habilitado y el transporte `named_pipe`, la ruta falla cerrado (503,
+  `named_pipe_adapter_pending`).
+- Sin PowerShell, sin ejecución de procesos, sin sockets/puertos, sin
+  migraciones (head sigue `c4d8e2f1a7b3`), sin dependencias nuevas.
+- Inventario HTTP: 537 operaciones (536 + `broker/health`).
+- Validación: `test_developer_broker_contract.py` (73) +
+  `test_mobile_developer_broker_health.py` (10) = 83 passed; DEV-0 y
+  conformidad (`test_mobile_developer_session.py`, `test_mobile_biometric.py`,
+  `test_mobile_security_context.py`, `test_api_access_conformity.py`,
+  `test_capability_gate_reconciliation.py`) 97 passed, 1 skipped (PostgreSQL
+  real, requiere `LAB_POSTGRES_TEST_URL`); backend completo 1407 passed, 24 skipped, 0 failed
+  (baseline antes del cambio: 1324 passed, 24 skipped); `alembic heads` =
+  `c4d8e2f1a7b3`.
+- Endurecimiento post-auditoría (2026-09-22): ventana temporal half-open
+  `(now − 30 s, now + 5 s]` para cerrar el borde replay/freshness; el
+  cliente autentica la respuesta antes de interpretarla; contrato exacto
+  del resultado `broker.health` (sin campos extra/faltantes, sin `bool`
+  como entero, `instance_id` 32 hex); el Control Plane sólo registra
+  `exc.code`. Validación tras el endurecimiento: Broker 96 + endpoint 14 = 110 passed;
+  DEV-0 + conformidad 97 passed, 1 skipped; backend completo 1434 passed,
+  24 skipped, 0 failed; `alembic heads` = `c4d8e2f1a7b3`.
+- Detalle: [MOBILE_DEVELOPER_BROKER.md](architecture/MOBILE_DEVELOPER_BROKER.md).
+
+## DEV-0 (contexto previo, fusionado en `main` por PR #7)
 
 ## Repositorio y alcance verificado
 
