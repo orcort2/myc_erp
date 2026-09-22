@@ -7,6 +7,7 @@ import ast
 import json
 import logging
 import secrets
+import sys
 import uuid
 from pathlib import Path
 
@@ -576,8 +577,20 @@ def test_client_surfaces_authenticated_broker_rejection(secret):
         ({"developer_broker_enabled": True, "developer_broker_secret": "short"}, "secret_missing_or_too_short"),
         ({"developer_broker_enabled": True, "developer_broker_secret": "x" * 40}, "pipe_name_missing"),
         (
+            {"developer_broker_enabled": True, "developer_broker_secret": "x" * 40, "developer_broker_pipe_name": "myc/test"},
+            "pipe_name_invalid",
+        ),
+        (
             {"developer_broker_enabled": True, "developer_broker_secret": "x" * 40, "developer_broker_pipe_name": "myc-test"},
-            "named_pipe_adapter_pending",
+            "service_sid_missing",
+        ),
+        pytest.param(
+            {
+                "developer_broker_enabled": True, "developer_broker_secret": "x" * 40,
+                "developer_broker_pipe_name": "myc-test", "developer_broker_service_sid": "S-1-5-21-1-2-3-1001",
+            },
+            "platform_unsupported",
+            marks=pytest.mark.skipif(sys.platform == "win32", reason="fail-closed off Windows only"),
         ),
     ],
 )

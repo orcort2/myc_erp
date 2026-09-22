@@ -74,8 +74,10 @@ abriendo un shell dentro de su propio proceso. **DEV-1A fijó el canal**:
 IPC local por Windows Named Pipe + ACL del SO + mensajes autenticados con
 HMAC; sin puerto (ni 8765 ni loopback TCP). El contrato, el cliente, el
 anti-replay y el endpoint `GET /developer/broker/health` están en
-[`MOBILE_DEVELOPER_BROKER.md`](MOBILE_DEVELOPER_BROKER.md); el adapter
-Windows y el servicio con identidad dedicada siguen pendientes (DEV-1B).
+[`MOBILE_DEVELOPER_BROKER.md`](MOBILE_DEVELOPER_BROKER.md). DEV-1B agrega en
+código el adapter Named Pipe, el host del Broker y la frontera de identidad
+Windows (en revisión, pendiente de validación en Windows real); la
+instalación como servicio con identidad dedicada sigue pendiente.
 
 No hay exposición directa de PostgreSQL ni se requiere SSH: toda futura
 consola de base de datos y toda futura terminal viajarán por el mismo túnel

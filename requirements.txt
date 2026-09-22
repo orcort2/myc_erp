@@ -47,6 +47,7 @@ pytest==9.1.1
 python-dotenv==1.2.2
 python-jose==3.5.0
 python-multipart==0.0.32
+pywin32==312; sys_platform == "win32"
 qrcode==8.2
 reportlab==4.4.6
 rsa==4.9.1

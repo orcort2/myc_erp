@@ -593,7 +593,7 @@ instalación; no hay selector multi-cuenta en esta fase. Cierre:
 
 ## D-2026-09-22 — DEV-1A: el Developer Broker es una frontera propia, no una capacidad de FastAPI
 
-Estado: EN REVISIÓN (sin commit, pendiente de auditoría humana).
+Estado: VIGENTE — mergeado en `main` (PR #8, `5bf2349`).
 
 FastAPI nunca ejecuta procesos ni se convierte en shell remoto. Toda
 operación de infraestructura futura cruza una frontera explícita:
@@ -617,3 +617,33 @@ acotado, con expiración) con ventana de 30 s / 5 s. Única operación:
 `broker.health`. El Broker correrá en el futuro bajo una identidad de
 servicio dedicada con least privilege, nunca `LocalSystem`. Detalle en
 `docs/architecture/MOBILE_DEVELOPER_BROKER.md`.
+
+## D-2026-09-22 — DEV-1B: Named Pipe con pywin32, identidad del servidor verificada antes de escribir
+
+Estado: EN REVISIÓN (sin commit; código y pruebas cross-platform; pendiente
+de validación en Windows real).
+
+El transporte Broker es un Windows Named Pipe local implementado con
+`pywin32==312` (única dependencia nueva, sólo Windows por environment
+marker en el `requirements.txt` raíz), no `ctypes`,
+`multiprocessing.connection`, sockets, HTTP local ni archivos temporales:
+se necesita control explícito de `CreateNamedPipe`, DACL,
+`PIPE_REJECT_REMOTE_CLIENTS`, `FILE_FLAG_FIRST_PIPE_INSTANCE`,
+`GetNamedPipeServerProcessId` y tokens/SIDs.
+
+Decisiones: nombre lógico validado y ruta `\\.\pipe\<nombre>` construida
+por código; framing `uint32` big-endian + payload en el transporte (el
+protocolo DEV-1A no cambia); DACL explícita con exactamente dos SIDs
+configurados (ERP y Broker) y derechos mínimos (el ERP sin
+`FILE_CREATE_PIPE_INSTANCE`); primera instancia exclusiva (el Broker no
+arranca si el nombre existe); el cliente verifica el SID del proceso
+servidor antes de escribir cualquier byte y abre el pipe con nivel
+*identification* (el Broker puede identificar al ERP que corre como
+LocalSystem, nunca suplantarlo); el listener verifica además el SID del
+cliente tras leer el frame. El Broker corre como proceso independiente
+(`python -m app.developer_broker.host`) con configuración mínima propia
+leída del entorno, nunca del `.env` del ERP, y se niega a correr como
+LocalSystem/LocalService/NetworkService o bajo un SID distinto del
+configurado. La distinción ERP ≠ Broker (SIDs distintos) es política de
+despliegue exigida por el host y por FastAPI. Sin instalación de servicio
+en esta fase. Detalle en `docs/architecture/MOBILE_DEVELOPER_BROKER.md`.

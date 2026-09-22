@@ -11,10 +11,11 @@ Adapters:
   ``BrokerServer`` in the same process. For tests and local development of
   the contract only; it is NOT a production transport and FastAPI's
   configuration cannot select it.
-- Windows Named Pipe -- TARGET, NOT IMPLEMENTED (DEV-1B). Local-only IPC
-  protected by the pipe's OS ACL (only the ERP service identity may
-  connect) plus the HMAC authentication of the contract. It cannot be
-  validated from macOS, so it is deliberately not simulated here. There is
+- ``WindowsNamedPipeTransport`` (``windows_pipe.py``) -- DEV-1B. Local-only
+  IPC over the local ``pipe`` namespace (``\\\\.\\pipe\\<name>``) with length-prefixed framing
+  (``framing.py``), an explicit two-identity DACL, remote clients rejected,
+  and verification of the pipe server's Windows identity before any request
+  byte is written. Windows only; everywhere else it fails closed. There is
   no TCP/loopback fallback: a port is never opened as a substitute.
 """
 

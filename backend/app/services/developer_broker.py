@@ -1,4 +1,4 @@
-"""DEV-1A: Developer Control Plane side of the Broker boundary.
+"""DEV-1A/1B: Developer Control Plane side of the Broker boundary.
 
 Builds the ``BrokerClient`` from configuration and runs Broker operations on
 behalf of a request that the DEV-0 Developer authority has ALREADY
@@ -17,7 +17,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings, settings
 from app.developer_broker.client import BrokerClient
+from app.developer_broker.pipe_name import validate_pipe_name
 from app.developer_broker.protocol import BrokerConfigurationError, BrokerError, BrokerSecret
+from app.developer_broker.windows_pipe import (
+    WindowsNamedPipeTransport,
+    Win32Api,
+    load_win32_api,
+    validate_identity_sids,
+)
 from app.models.developer_session import DeveloperSession
 from app.services.audit_logs import write_audit_log
 
@@ -28,22 +35,48 @@ BROKER_UNAVAILABLE_DETAIL = "Developer Broker no disponible"
 # Stable, non-sensitive configuration codes this module raises itself. Any
 # other ``reason`` is never logged verbatim (it could carry transport or
 # host detail once the Windows adapter exists).
-CONFIGURATION_CODES = frozenset(
-    {"disabled", "secret_missing_or_too_short", "pipe_name_missing", "named_pipe_adapter_pending", "unknown_transport"}
-)
+CONFIGURATION_CODES = frozenset({
+    "disabled",
+    "secret_missing_or_too_short",
+    "unknown_transport",
+    "pipe_name_missing",
+    "pipe_name_invalid",
+    "platform_unsupported",
+    "win32_unavailable",
+    "service_sid_missing",
+    "service_sid_invalid",
+    "service_sid_not_allowed",
+    "client_sid_invalid",
+    "client_sid_not_allowed",
+    "sids_not_distinct",
+    "identity_unverifiable",
+    "client_identity_mismatch",
+})
 
 
-def build_developer_broker_client(config: Settings = settings) -> BrokerClient:
+def build_developer_broker_client(config: Settings = settings, api: Win32Api | None = None) -> BrokerClient:
+    """Fails closed (``BrokerConfigurationError``) unless the Broker is
+    enabled AND fully configured AND this is Windows. There is no other
+    transport and no TCP fallback."""
     if not config.developer_broker_enabled:
         raise BrokerConfigurationError("disabled")
     secret = BrokerSecret.from_text(config.developer_broker_secret.get_secret_value())
-    if config.developer_broker_transport == "named_pipe":
-        if not config.developer_broker_pipe_name.strip():
-            raise BrokerConfigurationError("pipe_name_missing")
-        # The Windows Named Pipe adapter is DEV-1B: it cannot be validated
-        # from macOS and is deliberately not simulated (no TCP fallback).
-        raise BrokerConfigurationError("named_pipe_adapter_pending")
-    raise BrokerConfigurationError("unknown_transport")
+    if config.developer_broker_transport != "named_pipe":
+        raise BrokerConfigurationError("unknown_transport")
+    pipe_name = validate_pipe_name(config.developer_broker_pipe_name)
+    if not config.developer_broker_service_sid.strip():
+        raise BrokerConfigurationError("service_sid_missing")
+    win32 = api if api is not None else load_win32_api()  # platform_unsupported off Windows
+    if config.developer_broker_client_sid.strip():
+        client_sid, _ = validate_identity_sids(
+            win32, config.developer_broker_client_sid, config.developer_broker_service_sid
+        )
+        if win32.current_process_user_sid() != client_sid:
+            raise BrokerConfigurationError("client_identity_mismatch")
+    transport = WindowsNamedPipeTransport(
+        pipe_name, expected_server_sid=config.developer_broker_service_sid, api=win32
+    )
+    return BrokerClient(transport, secret, timeout_seconds=config.developer_broker_timeout_seconds)
 
 
 def get_developer_broker_client() -> BrokerClient | None:

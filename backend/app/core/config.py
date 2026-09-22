@@ -26,16 +26,23 @@ class Settings(BaseSettings):
     # authority, not an operational session -- it never renews silently and
     # never survives logout. See docs/architecture/MOBILE_DEVELOPER_AUTHORITY.md.
     developer_session_expire_minutes: int = 10
-    # DEV-1A: optional Developer Broker boundary. Disabled by default; the ERP
-    # starts normally without it and Broker routes fail closed (503). The
-    # HMAC secret and the pipe name come only from external configuration.
-    # "named_pipe" is the only target transport and its Windows adapter is
-    # still pending (DEV-1B). See docs/architecture/MOBILE_DEVELOPER_BROKER.md.
+    # DEV-1A/1B: optional Developer Broker boundary. Disabled by default; the
+    # ERP starts normally without it and Broker routes fail closed (503). The
+    # HMAC secret, the LOGICAL pipe name (never a path) and the two Windows
+    # identities (canonical SIDs) come only from external configuration.
+    # "named_pipe" is the only transport; outside Windows it fails closed.
+    # See docs/architecture/MOBILE_DEVELOPER_BROKER.md.
     developer_broker_enabled: bool = False
     developer_broker_transport: Literal["named_pipe"] = "named_pipe"
     developer_broker_pipe_name: str = ""
     developer_broker_secret: SecretStr = SecretStr("")
     developer_broker_timeout_seconds: float = Field(default=5, gt=0)
+    # Expected identity of the Broker pipe SERVER: verified before any byte
+    # of a request is written (anti pipe-squatting).
+    developer_broker_service_sid: str = ""
+    # Identity this ERP process runs as (the pipe CLIENT). Optional here; when
+    # set, the ERP refuses to talk to the Broker unless it really runs as it.
+    developer_broker_client_sid: str = ""
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
