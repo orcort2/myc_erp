@@ -154,7 +154,7 @@ def auth(token: str) -> dict[str, str]:
 
 def external_headers(client: TestClient, email: str) -> dict[str, str]:
     response = client.post(
-        "/api/mobile/v1/auth/login", json={"email": email, "password": PASSWORD}
+        "/api/mobile/v1/auth/login", json={"email": email, "password": PASSWORD, "device": {"device_uuid": "b51612b2-9930-465a-a1e5-114124132e00", "platform": "ios"}}
     )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}

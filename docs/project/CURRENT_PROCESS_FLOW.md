@@ -206,7 +206,7 @@ por `equipment_id → service_order_id` y exige además `field_sheets.read`.
 Recursos ajenos, inactivos o sin asignación responden 404. Este flujo no cambia
 las rutas internas consumidas por el ERP web.
 
-El usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo
+En ERP Web, el usuario inicia sesión y recibe access/refresh JWT con tipos explícitos. Sólo
 access autentica solicitudes y refresh se utiliza únicamente para renovar el
 par. El registro público no acepta roles solicitados y sólo crea el primer
 Administrador cuando no existe ningún usuario. La navegación autenticada carga
@@ -486,12 +486,17 @@ esa empresa y protege al último administrador activo.
 ## Flujo temporal OT LAB móvil
 
 ```text
-login Mobile
+Mobile obtiene/persiste UUID de seguridad de instalación
+→ login Mobile con device
 → backend autentica User
 → internal: permisos internos, sin Client
 → client: membership active única + Client activo + permisos externos
 → exige mobile.access
-→ access/refresh conserva actor; cada request revalida base
+→ backend resuelve dispositivo y crea familia/sesión
+→ entrega access JWT ligado a sesión y refresh opaco
+→ cada request revalida base, dispositivo y sesión
+→ refresh único en vuelo rota credential y consume generación anterior
+→ reuse revoca familia; logout revoca familia y limpia local
 ```
 
 Para cliente, crear/listar/abrir/modificar OT LAB deriva siempre
@@ -797,3 +802,34 @@ campos comunes y tablas dinámicas paginadas.
 En Solicitudes, un administrador interno autorizado ve Resolver para su propio
 folio pending; al ejecutar, backend revalida autoridad y conserva la auditoría,
 la notificación y el snapshot de resolución. El resto requiere otro revisor.
+
+### Transición de sesión legacy — BIOMETRIC-1
+
+La instalación agrega device sólo al refresh JWT legacy. Backend valida contexto
+histórico, usuario y permisos, consume el hash legacy una sola vez y entrega un
+refresh opaco ligado a dispositivo. Las siguientes renovaciones omiten device.
+La compatibilidad termina en el corte fijo del
+[contrato Mobile](../architecture/MOBILE_SECURITY_CONTEXT.md).
+Logout intenta desactivar push, luego revocar auth y finalmente borra tokens
+locales; mantiene el UUID de instalación. Red fallida no impide limpieza local.
+
+### Login biométrico y enrolamiento — BIOMETRIC-2
+
+Tras un login por contraseña exitoso, si hay hardware biométrico disponible y
+enrolado en el dispositivo y no existe enrolamiento local previo, la app ofrece
+"Protege tu acceso a MYC" (Activar/Ahora no); nunca se activa automáticamente.
+Activar ejecuta biometría local, llama `POST /biometric/enroll` con la sesión
+actual y guarda credencial (protegida) + perfil (no protegido) localmente sin
+cerrar la sesión.
+
+En cold start, si existe perfil biométrico local, el login muestra primero
+"Bienvenido, `<nombre>`" con el botón "Ingresar con `<Face ID/Touch ID/Huella>`"
+en vez del formulario; "Usar otra cuenta" muestra el formulario sin borrar el
+enrolamiento. Pulsar el botón lee la credencial protegida (exige biometría del
+sistema), llama `POST /biometric/exchange` y aplica la sesión resultante con la
+misma autoridad que el login normal. Cancelar el prompt conserva el
+enrolamiento y ofrece reintentar o usar contraseña; una credencial invalidada
+por el sistema operativo limpia el enrolamiento y pide reconfigurarla. Un
+`401`/`403` de `exchange` hace lo mismo. "Desactivar acceso biométrico en este
+dispositivo" (visible en Home tras iniciar sesión) revoca en backend
+(best-effort) y limpia ambas claves locales; logout nunca lo hace.

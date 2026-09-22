@@ -52,8 +52,10 @@ validar el ámbito; nunca confía en una lista previa ni en el cliente móvil.
 
 La única escritura productiva es aceptar/agendar y confirmar una entrega Venta
 asignada; no permite registrar arribos, elegir mercancía, autorizar cambios ni
-operar otras partidas. El namespace no agrega sesión móvil, revocación,
-permisos por usuario, asignación multi-técnico por OT ni cambios al Motor. La fase LAB
+operar otras partidas. Autenticación y revocación son responsabilidad del
+[contexto de seguridad Mobile](MOBILE_SECURITY_CONTEXT.md), incluida la
+autoridad de sesiones BIOMETRIC-1; este namespace no las duplica ni agrega
+permisos por usuario, asignación multi-técnico por OT o cambios al Motor. La fase LAB
 actual de `myc-mobile` no consume estos endpoints para listado, detalle,
 documentos o eliminación; opera sólo sobre su namespace LAB temporal.
 

@@ -38,7 +38,7 @@ No incluye funcionalidades futuras. Cada elemento corresponde a una condición p
 | TD-032 | P1 | `ServiceTask` sólo materializa el atajo idempotente `#tarea`; faltan lifecycle de edición/cierre, fechas, reasignación y políticas de visibilidad. | modelos/servicio de ejecución y Activity | Diseñar el contrato transversal de tareas sobre la entidad existente, sin convertir Activity en gestor de tareas ni agregar NLP. |
 | TD-033 | P1 | Las decisiones por partida tienen origen interno; portal/app aún no aportan autenticación de intención, clave idempotente externa ni conciliación de respuestas inciertas. | Cotizaciones, Portal y futuro cliente móvil | Implementar adaptadores sobre `QuotationItemDecision`, con ownership, idempotencia y conciliación; no crear otra máquina comercial. |
 | TD-034 | P2 | El grafo referencial ETS/comercial es íntegro, pero Alembic advierte que no puede ordenar globalmente el ciclo `ServiceStage ↔ QuotationItemDecision/QuotationItem ↔ TechnicalServiceRequest/ServiceUnit`; hoy `alembic check` queda limpio, pero una versión futura de SQLAlchemy podría endurecer el warning. | modelos/migración Fase 1 y `migrations/env.py` | Evaluar `use_alter`/nombres explícitos o exclusión dirigida para autogenerate sin retirar FKs ni degradar reconstrucción histórica. |
-| TD-035 | P1 | El contexto Mobile internal/client y el scope externo LAB ya existen, pero se aceptan temporalmente JWT internos emitidos antes del cambio y no hay revocación individual por JTI. Las rutas productivas Mobile siguen bloqueadas para clientes porque aún no tienen contratos de ownership externo aprobados. | `core/mobile/security.py`, `mobile_technician.py`, MYC Mobile | Retirar la compatibilidad sólo después de caducar builds/sesiones antiguas; diseñar revocación y exponer cada recurso productivo en fases separadas con pruebas IDOR. |
+| TD-035 | P1 | BIOMETRIC-1 incorpora revocación server-side para sesiones Mobile nuevas. La compatibilidad legacy queda limitada por fecha fija, sólo puede asociar el UUID presentado actualmente y conserva access antiguos hasta expirar. No hay prueba retrospectiva del dispositivo original. Rutas productivas externas siguen cerradas. | `core/mobile/security.py`, `refresh_credentials.py`, contrato MOBILE_SECURITY_CONTEXT | Retirar fallback tras 2026-10-22 00:00 UTC y validar rollout físico iOS/Android; exponer recursos productivos sólo con contrato propio. |
 | TD-036 | P1 | Portal/app todavía no exponen un endpoint de decisión por partida con identidad de cliente, ownership de organización/cotización, idempotencia externa y conciliación. La ruta interna rechaza esos orígenes y sólo deriva `internal`. | futuro adapter de portal/app sobre `QuotationItemDecision` | Diseñar el contrato explícito en una fase posterior; no aceptar `source`, `client_id` ni ownership desde payload y no reutilizar el endpoint interno. |
 | TD-037 | P1 | La versión operativa anterior de OT LAB fue validada físicamente, pero Tickets/filtros/reapertura/revisiones, eliminación y Fase 3 recepción→FieldSheets→cierre aún no tienen repetición Android/iPhone/TestFlight ni pruebas automatizadas renderizadas de componentes React Native. Estados, contexto grupal/individual, doble firma local/un POST, read-only posterior a recepción, navegación pura, doble submit y lifecycle backend sí tienen regresión. Falta validar físicamente revisión completa, elección grupal/individual, pointerdown/move/up/postMessage, orientación, teclado, transición a captura, selección posterior de hermanas, PDF y carrera canvas/ScrollView. | `myc-mobile`, servicios LAB/Tickets y contratos | Ejecutar checklist físico nuevo —grupo parcial, ambas modalidades, dos firmas, POST, `received_signed`, primera/última FieldSheet, `ready_to_close`, cierre/PDF, preserve/invalidate, portrait/landscape, stroke/scroll/teclado/Back, refetch/hermanas y errores 409/422/500/red— antes de declarar cierre. |
 | TD-038 | P1 | Notifications V1 persiste antes de Expo y tolera fallos, pero el intento sigue en la petición, sin cola durable, retry ni consulta de receipts; `push_delivered_at` sólo representa aceptación de Expo. Tampoco existen preferencias, quiet hours o agrupación. | `push_notifications.py`, `Notification`, `PushDevice`, MYC Mobile | Validar físicamente iOS/Android y diseñar en fase propia una cola genérica/retry/receipts y preferencias; no reutilizar el worker del Motor ni volver el push fuente de verdad. |
@@ -70,6 +70,28 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
 ## Deuda agregada 2026-09-17
 
 - TD-058 (P2): Optimización de latencia NIIMBOT B1 -- medir transporte BLE, fragmentación de 20 bytes, pacing de 10 ms, reconexión e identificación del dispositivo, y optimizar sin comprometer confiabilidad. `myc-mobile/src/services/labels/printers/adapters/niimbot-b1/` (`niimbot-b1-adapter.ts`, `protocol.ts`) y `myc-mobile/src/services/labels/printers/ble-transport.ts`/`ble-manager-transport.ts`; no tocar el protocolo de impresión, el pacing BLE ni el renderer de etiquetas fuera de una fase dedicada con mediciones físicas antes/después.
+
+## Deuda agregada BIOMETRIC-2 (2026-09-21)
+
+- TD-059 (P2): `disableBiometric()` limpia el enrolamiento local aunque el
+  `DELETE /mobile/v1/auth/biometric` falle por red (riesgo aceptado: la
+  credencial local desaparece de todas formas, así que ya no puede usarse
+  desde ese dispositivo aunque el registro server-side siga activo hasta su
+  expiración natural). No hay reconciliación posterior ni reintento en
+  background. `myc-mobile/src/auth/AuthProvider.tsx` (`disableBiometric`) |
+  Si se observa en producción que el registro server-side huérfano es un
+  problema real, diseñar un reintento/cola o un job de expiración más corto
+  para credenciales sin `last_used_at` reciente; no bloquear la limpieza
+  local mientras tanto.
+- TD-060 (P2): Enrolar biometría en una cuenta distinta a la ya recordada por
+  la instalación reemplaza el slot local (perfil/credencial), pero no puede
+  revocar server-side la credencial de la cuenta anterior porque el nuevo
+  contexto de sesión pertenece a otro usuario y `DELETE /biometric` sólo
+  revoca la credencial del actor autenticado actual. `backend/app/core/mobile/biometric.py`,
+  `myc-mobile/src/auth/AuthProvider.tsx` (`enableBiometric`) | Evaluar si vale
+  la pena un endpoint administrativo o un job de expiración natural (ya
+  existe TTL de 90 días); no diseñar un selector multi-cuenta para resolverlo
+  sin que el producto lo pida explícitamente.
 
 ## Validación pendiente post-PR #4 (2026-09-17)
 

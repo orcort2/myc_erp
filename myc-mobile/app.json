@@ -47,6 +47,12 @@
       "expo-secure-store",
       "expo-notifications",
       [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "MYC utiliza Face ID para proteger el acceso a tu cuenta."
+        }
+      ],
+      [
         "react-native-ble-manager",
         {
           "bluetoothAlwaysPermission": "Se usa para conectar con la impresora de etiquetas térmicas MYC.",

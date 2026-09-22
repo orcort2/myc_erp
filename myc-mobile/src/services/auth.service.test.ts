@@ -3,6 +3,8 @@ import test from 'node:test';
 
 import { createMobileAuthClient } from './mobile-auth-client';
 
+const device = { device_uuid: '71ed56b4-516b-4705-a496-aebf294d32a4', platform: 'ios' as const, device_name: 'Phone', app_version: '1.0' };
+
 function tokenPair(actorType: 'internal' | 'client') {
   return {
     access_token: 'access-token',
@@ -28,12 +30,13 @@ test('login usa la autoridad Mobile y normaliza el correo', async () => {
     return Response.json(tokenPair('internal'));
   }) as typeof fetch);
 
-  const result = await auth.login(' Staff@MYC.Example.com ', 'secret');
+  const result = await auth.login(' Staff@MYC.Example.com ', 'secret', device);
 
   assert.match(request!.input, /\/mobile\/v1\/auth\/login$/);
   assert.deepEqual(JSON.parse(String(request!.init?.body)), {
     email: 'staff@myc.example.com',
     password: 'secret',
+    device,
   });
   assert.equal(result.user.actor_type, 'internal');
   assert.equal(result.user.client_id, null);
@@ -46,7 +49,7 @@ for (const profile of ['Viewer externo', 'Operativo Jr', 'Operativo Sr']) {
       (async () => Response.json(tokenPair('client'))) as typeof fetch,
     );
 
-    const result = await auth.login('external@example.com', 'secret');
+    const result = await auth.login('external@example.com', 'secret', device);
 
     assert.equal(result.user.actor_type, 'client');
     assert.equal(result.user.client_id, 31);
@@ -79,7 +82,7 @@ test('el detalle backend de acceso denegado llega intacto a la UX', async () => 
   );
 
   await assert.rejects(
-    auth.login('blocked@example.com', 'secret'),
+    auth.login('blocked@example.com', 'secret', device),
     /La cuenta no tiene acceso a MYC Mobile/,
   );
 });

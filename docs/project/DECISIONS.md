@@ -544,3 +544,49 @@ el contrato persistente groups/rows y la autoridad de FieldSheet existente.
 La excepción de folios propios es una policy administrativa backend reutilizada
 por autenticación Mobile y resolución; no se extiende a otros tipos de ticket.
 No se agregan tablas, estados, migraciones ni autoridades productivas.
+
+## BIOMETRIC-1 — autoridad de sesión Mobile (2026-09-21)
+
+Se conserva User y la resolución canónica de permisos/scope; se añaden
+MobileTrustedDevice y MobileAuthSession sin dependencia de PushDevice.
+Cada generación almacena hash, familia, dispositivo y scope original para
+impedir reasignaciones durante refresh. Los locks siguen el orden dispositivo
+→ generación y coordinan rotación/reuse/logout. El alta de dispositivo y la
+migración legacy se serializan además por usuario; los hashes legacy únicos
+impiden migraciones repetidas entre dispositivos y workers.
+
+La extensión de metadata en refresh legacy fue autorizada expresamente porque
+el JWT histórico carece de identidad de instalación. Se acepta la posesión del
+JWT y el UUID presentado, sin atestación retrospectiva. El fallback tiene fecha
+límite fija y no emite nuevos JWT refresh. El vencimiento de familia es absoluto:
+rotar no lo extiende. Single-flight vive en AuthProvider y lo reutiliza realtime.
+No se modifica auth Web, TTL global ni políticas de PushDevice. Contrato:
+[Mobile Security Context](../architecture/MOBILE_SECURITY_CONTEXT.md).
+
+## BIOMETRIC-2 — login biométrico device-bound (2026-09-21)
+
+`MobileBiometricCredential` es una autoridad opaca separada del refresh: no se
+reutiliza el token de refresh como credencial biométrica y nunca se persiste
+en texto plano. Se decidió que el credential expire con TTL propio (90 días,
+configurable), independiente del TTL de refresh, porque desbloquea el
+dispositivo, no representa la vida de una sesión. `password_changed_at`
+posterior al snapshot invalida la credencial sin intento de actualizarla
+automáticamente: el usuario reactiva biometría tras iniciar sesión con
+contraseña. `exchange` nunca acepta `device_uuid` del cliente ni consulta
+PushDevice como autoridad; reconstruye el `MobileSecurityContext` exactamente
+como login/refresh y crea una `MobileAuthSession` nueva sobre el mismo
+`MobileTrustedDevice`.
+
+Se decidió NO persistir el TokenPair operativo en disco mientras la
+instalación tiene biometría activa: vive en memoria durante la vida del
+proceso (sin fricción en cada refresh) y un cold start exige biometría de
+nuevo. Logout nunca desactiva biometría (son autoridades independientes);
+sólo la acción explícita "Desactivar acceso biométrico" revoca
+server-side (best-effort ante fallo de red, documentado como riesgo aceptado
+en el cierre) y limpia local. Una credencial invalidada por el sistema
+operativo (`SecureStore` resuelve `null`, no rechaza) se trata como inválida
+real y limpia perfil+credencial para evitar un botón de biometría que nunca
+puede tener éxito; una cancelación del prompt (rechazo, no `null`) conserva el
+enrolamiento intacto. Sólo se admite una cuenta biométrica recordada por
+instalación; no hay selector multi-cuenta en esta fase. Cierre:
+[BIOMETRIC_2_BIOMETRIC_LOGIN](../closures/BIOMETRIC_2_BIOMETRIC_LOGIN.md).

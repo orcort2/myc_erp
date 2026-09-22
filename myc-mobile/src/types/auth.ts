@@ -4,6 +4,13 @@ export type Role = {
   description?: string | null;
 };
 
+export type MobileSecurityDeviceInput = {
+  device_uuid: string;
+  platform: 'ios' | 'android';
+  device_name: string | null;
+  app_version: string | null;
+};
+
 export type AuthUser = {
   id: number;
   email: string;

@@ -1,11 +1,13 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState, type ComponentProps } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,20 +19,61 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/src/auth/AuthProvider';
+import { getBiometricAvailability } from '@/src/services/biometric-auth';
 
 const appVersion = Constants.expoConfig?.version;
 
+type BiometricIconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+// biometric_label is the only signal the login screen has (BiometricProfile
+// never stores the raw availability `type`); mapped defensively so any label
+// this app can ever produce (see biometric-auth.ts's resolveTypeAndLabel)
+// gets a sensible vector icon instead of assuming Face ID.
+function resolveBiometricIconName(label: string): BiometricIconName {
+  if (label === 'Face ID') return 'face-recognition';
+  if (label === 'Touch ID' || label === 'Huella') return 'fingerprint';
+  return 'shield-lock-outline';
+}
+
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { biometricAvailable, biometricLogin, biometricProfile, enableBiometric, login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [biometricSubmitting, setBiometricSubmitting] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(!biometricProfile);
+  const [enrollPromptVisible, setEnrollPromptVisible] = useState(false);
+  const [enrollSubmitting, setEnrollSubmitting] = useState(false);
+
+  const showBiometricEntry = !!biometricProfile && !showPasswordForm;
+
+  useEffect(() => {
+    if (!biometricProfile) setShowPasswordForm(true);
+  }, [biometricProfile]);
+
+  async function shouldOfferBiometricEnrollment(): Promise<boolean> {
+    if (biometricProfile) return false;
+    try {
+      const availability = await getBiometricAvailability();
+      return availability.available && availability.enrolled;
+    } catch {
+      // No biometric hardware info available; simply skip the offer.
+      return false;
+    }
+  }
 
   async function submit() {
     if (!email || !password) return;
     setSubmitting(true);
     try {
       await login(email, password);
+      const shouldOffer = await shouldOfferBiometricEnrollment();
+      if (shouldOffer) {
+        // The user must decide (Activar/Ahora no) before this screen
+        // unmounts; navigating now would take the modal down with it.
+        setEnrollPromptVisible(true);
+        return;
+      }
       router.replace('/(technician)');
     } catch (error) {
       Alert.alert(
@@ -40,6 +83,100 @@ export default function LoginScreen() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function submitBiometric() {
+    setBiometricSubmitting(true);
+    try {
+      await biometricLogin();
+      router.replace('/(technician)');
+    } catch (error) {
+      Alert.alert(
+        'No fue posible ingresar con biometría',
+        error instanceof Error ? error.message : 'Intenta nuevamente',
+      );
+    } finally {
+      setBiometricSubmitting(false);
+    }
+  }
+
+  function dismissEnrollPrompt() {
+    setEnrollPromptVisible(false);
+    router.replace('/(technician)');
+  }
+
+  async function confirmEnrollBiometric() {
+    setEnrollSubmitting(true);
+    try {
+      await enableBiometric();
+      setEnrollPromptVisible(false);
+      router.replace('/(technician)');
+    } catch (error) {
+      // The password session stays valid; never leave the user stuck on a
+      // failed biometric activation. Offer an explicit way out to Home.
+      Alert.alert(
+        'No fue posible activar el acceso biométrico',
+        error instanceof Error ? error.message : 'Puedes intentarlo más tarde desde la app',
+        [{ text: 'Continuar sin biometría', onPress: dismissEnrollPrompt }],
+      );
+    } finally {
+      setEnrollSubmitting(false);
+    }
+  }
+
+  if (showBiometricEntry && biometricProfile) {
+    return (
+      <SafeAreaView edges={['top', 'right', 'bottom', 'left']} style={styles.safeArea}>
+        <View style={styles.biometricMain}>
+          <Image
+            accessibilityLabel="Logotipo de MYC"
+            resizeMode="cover"
+            source={require('../../assets/images/splash-icon.png')}
+            style={styles.logo}
+          />
+          <Text style={styles.title}>Bienvenido, {biometricProfile.full_name}</Text>
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={biometricSubmitting || !biometricAvailable}
+            onPress={submitBiometric}
+            style={({ pressed }) => [styles.biometricButton, pressed && styles.buttonPressed]}
+          >
+            {biometricSubmitting ? (
+              <ActivityIndicator color="#003DA5" />
+            ) : (
+              <>
+                <MaterialCommunityIcons
+                  color="#003DA5"
+                  name={resolveBiometricIconName(biometricProfile.biometric_label)}
+                  size={22}
+                />
+                <Text style={styles.biometricButtonText}>
+                  Ingresar con {biometricProfile.biometric_label}
+                </Text>
+              </>
+            )}
+          </Pressable>
+
+          {!biometricAvailable && (
+            <Text style={styles.biometricUnavailable}>
+              La biometría de este dispositivo no está disponible en este momento.
+            </Text>
+          )}
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setShowPasswordForm(true)}
+            style={styles.useAnotherAccount}
+          >
+            <Text style={styles.useAnotherAccountText}>Usar otra cuenta</Text>
+          </Pressable>
+        </View>
+        <Text style={styles.version}>
+          MYC Mobile{appVersion ? ` · v${appVersion}` : ''}
+        </Text>
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -118,6 +255,18 @@ export default function LoginScreen() {
               >
                 <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
               </Pressable>
+
+              {biometricProfile && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setShowPasswordForm(false)}
+                  style={styles.useAnotherAccount}
+                >
+                  <Text style={styles.useAnotherAccountText}>
+                    Continuar con {biometricProfile.biometric_label}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           </View>
 
@@ -126,6 +275,37 @@ export default function LoginScreen() {
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal animationType="fade" onRequestClose={dismissEnrollPrompt} transparent visible={enrollPromptVisible}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Protege tu acceso a MYC</Text>
+            <Text style={styles.modalDescription}>
+              Usa Face ID / Touch ID / huella para ingresar sin escribir tu contraseña en este dispositivo.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              disabled={enrollSubmitting}
+              onPress={confirmEnrollBiometric}
+              style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, styles.modalButton]}
+            >
+              {enrollSubmitting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.buttonText}>Activar</Text>
+              )}
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              disabled={enrollSubmitting}
+              onPress={dismissEnrollPrompt}
+              style={styles.modalDismiss}
+            >
+              <Text style={styles.modalDismissText}>Ahora no</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -146,6 +326,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 28,
     width: '100%',
+  },
+  biometricMain: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
   },
   logo: {
     height: 150,
@@ -220,5 +406,78 @@ const styles = StyleSheet.create({
     paddingBottom: 22,
     paddingTop: 36,
     textAlign: 'center',
+  },
+  biometricButton: {
+    alignItems: 'center',
+    backgroundColor: '#EEF3FC',
+    borderColor: '#003DA5',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+    marginTop: 32,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    width: '100%',
+  },
+  biometricButtonText: {
+    color: '#003DA5',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  biometricUnavailable: {
+    color: '#6B7280',
+    fontSize: 13,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  useAnotherAccount: {
+    alignSelf: 'center',
+    marginTop: 22,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  useAnotherAccountText: {
+    color: '#003DA5',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(9, 9, 9, 0.5)',
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+  },
+  modalTitle: {
+    color: '#090909',
+    fontSize: 19,
+    fontWeight: '700',
+  },
+  modalDescription: {
+    color: '#2F3135',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  modalButton: {
+    marginTop: 20,
+  },
+  modalDismiss: {
+    alignItems: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  modalDismissText: {
+    color: '#6B7280',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

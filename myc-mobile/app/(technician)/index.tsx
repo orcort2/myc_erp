@@ -2,6 +2,7 @@ import { Redirect, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,7 +22,7 @@ import type { LabWorkOrderGroupRequest } from '@/src/types/lab-work-order';
 import type { OperationalTicket } from '@/src/types/operational-ticket';
 
 export default function TechnicianHome() {
-  const { authorizedFetch, isLoading, user, logout } = useAuth();
+  const { authorizedFetch, biometricProfile, disableBiometric, isLoading, user, logout } = useAuth();
   const { unreadCount } = useNotificationSync();
   const { unreadCount: communicationUnreadCount } = useCommunications();
 
@@ -59,6 +60,30 @@ export default function TechnicianHome() {
       .catch(() => setPendingRequests(null));
   }, [authorizedFetch, canClaimWorkOrderGroupRequests, canReviewTickets, user]);
 
+  function confirmDisableBiometric() {
+    Alert.alert(
+      'Desactivar acceso biométrico',
+      'Necesitarás iniciar sesión con tu correo y contraseña la próxima vez.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desactivar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await disableBiometric();
+            } catch {
+              // The backend revoke inside disableBiometric() is already
+              // best-effort (TD-059); this only surfaces a local/SecureStore
+              // failure. The active session is never touched.
+              Alert.alert('No fue posible desactivar el acceso biométrico.');
+            }
+          },
+        },
+      ],
+    );
+  }
+
   if (isLoading) {
     return (
       <View style={styles.center}>
@@ -73,7 +98,10 @@ export default function TechnicianHome() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.eyebrow}>
           {user.actor_type === 'client' ? 'MYC · Organización vinculada' : 'MYC · Área técnica'}
         </Text>
@@ -156,11 +184,19 @@ export default function TechnicianHome() {
         <Pressable
           onPress={async () => {
             await logout();
-            router.replace('/(public)');
+            router.replace('/(auth)/login');
           }}
         >
           <Text style={styles.logout}>Cerrar sesión</Text>
         </Pressable>
+
+        {biometricProfile && (
+          <Pressable onPress={confirmDisableBiometric}>
+            <Text style={styles.disableBiometric}>
+              Desactivar acceso biométrico en este dispositivo
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -179,7 +215,6 @@ const styles = StyleSheet.create({
   },
 
   content: {
-    flexGrow: 1,
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 32,
@@ -237,5 +272,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginTop: 20,
+  },
+
+  disableBiometric: {
+    color: '#51606f',
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 14,
   },
 });
