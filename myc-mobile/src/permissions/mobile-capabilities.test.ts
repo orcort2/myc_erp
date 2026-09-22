@@ -291,3 +291,11 @@ test('acción de resolución propia sólo en folios pending con autoridad backen
     assert.equal(canResolveOperationalTicket(admin, { type, status: 'pending', requested_by_user_id: admin.id }), false);
   }
 });
+
+test('DEV-0: canAccessDeveloper exige actor interno y developer.access explícito', () => {
+  assert.equal(deriveMobileCapabilities(user('internal', ['mobile.access', 'developer.access'])).canAccessDeveloper, true);
+  assert.equal(deriveMobileCapabilities(user('internal', ['mobile.access'])).canAccessDeveloper, false);
+  assert.equal(deriveMobileCapabilities(user('client', ['developer.access'])).canAccessDeveloper, false);
+  assert.equal(deriveMobileCapabilities(user('internal', ['*'])).canAccessDeveloper, true);
+  assert.equal(deriveMobileCapabilities(null).canAccessDeveloper, false);
+});

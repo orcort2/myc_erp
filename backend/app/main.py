@@ -49,6 +49,7 @@ from app.routers import (
     users,
     mobile_technician,
     mobile_auth,
+    mobile_developer,
     lab_work_orders,
     operational_tickets,
     verification,
@@ -180,6 +181,7 @@ include_api_router(verification.router)
 include_api_router(field_sheet_templates.router, prefix="/api")
 include_api_router(mobile_technician.router, prefix="/api")
 include_api_router(mobile_auth.router, prefix="/api")
+include_api_router(mobile_developer.router, prefix="/api")
 include_api_router(lab_work_orders.router, prefix="/api")
 include_api_router(lab_work_orders.staff_router, prefix="/api")
 include_api_router(operational_tickets.router, prefix="/api")

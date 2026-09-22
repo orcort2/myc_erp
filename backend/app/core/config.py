@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # BIOMETRIC-2: independent of refresh_token_expire_minutes on purpose; a
     # biometric credential unlocks the device, it is not a session lifetime.
     mobile_biometric_credential_expire_days: int = 90
+    # DEV-0: a DeveloperSession is a short-lived infrastructure-control
+    # authority, not an operational session -- it never renews silently and
+    # never survives logout. See docs/architecture/MOBILE_DEVELOPER_AUTHORITY.md.
+    developer_session_expire_minutes: int = 10
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",

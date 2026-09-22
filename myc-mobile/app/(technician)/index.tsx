@@ -29,6 +29,7 @@ export default function TechnicianHome() {
   const [pendingRequests, setPendingRequests] = useState<number | null>(null);
   const capabilities = deriveMobileCapabilities(user);
   const {
+    canAccessDeveloper,
     canCaptureFieldSheets,
     canClaimWorkOrderGroupRequests,
     canCreateWorkOrders,
@@ -178,6 +179,16 @@ export default function TechnicianHome() {
           >
             <Text style={styles.moduleTitle}>Centro de etiquetado</Text>
             <Text style={styles.moduleText}>Configurar, emparejar y probar impresoras térmicas 50×30</Text>
+          </Pressable>
+        )}
+
+        {canAccessDeveloper && (
+          <Pressable
+            style={styles.module}
+            onPress={() => router.push('/(technician)/developer')}
+          >
+            <Text style={styles.moduleTitle}>Desarrollador</Text>
+            <Text style={styles.moduleText}>Infraestructura, base de datos y herramientas técnicas</Text>
           </Pressable>
         )}
 

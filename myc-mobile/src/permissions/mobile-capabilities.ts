@@ -33,6 +33,11 @@ export type MobileCapabilities = {
   canVoidLabDelivery: boolean;
   canVoidLabEquipmentEntry: boolean;
   canRequestPartialDelivery: boolean;
+  // DEV-0: gates the "Desarrollador" Home card/screen. The backend re-checks
+  // developer.access + internal actor on every Developer call (see
+  // require_internal_mobile_permission in security.py) -- this only decides
+  // whether to offer the entry point.
+  canAccessDeveloper: boolean;
 };
 
 export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilities {
@@ -43,6 +48,8 @@ export function deriveMobileCapabilities(user: AuthUser | null): MobileCapabilit
       && user.can_resolve_own_lab_folios === true
       && hasPermission(permissions, 'lab_folios.resolve'),
     canAccessMobile: hasPermission(permissions, 'mobile.access'),
+    canAccessDeveloper: user?.actor_type === 'internal'
+      && hasPermission(permissions, 'developer.access'),
     canReadWorkOrders: hasLegacyLabAccess
       || hasPermission(permissions, 'work_orders.read_organization'),
     canCreateWorkOrders: user?.actor_type === 'internal' && (

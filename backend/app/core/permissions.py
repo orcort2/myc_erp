@@ -262,6 +262,19 @@ ROLE_PERMISSIONS = {
     },
     "Desarrollador": {
         "mobile.access",
+        # DEV-0: Developer infrastructure authority (Developer Center, DB
+        # console, shell broker, logs, services, git). Explicit capabilities,
+        # never inferred from "*"/Administrador semantics for this gate --
+        # see docs/architecture/MOBILE_DEVELOPER_AUTHORITY.md.
+        "developer.access",
+        "developer.database.read",
+        "developer.database.write",
+        "developer.database.admin",
+        "developer.shell.access",
+        "developer.system.read",
+        "developer.logs.read",
+        "developer.services.execute",
+        "developer.git.read",
         "resolution_center.*",
         "service_orders.administration.restore.propose",
         "service_orders.administration.restore.authorize",
@@ -576,4 +589,13 @@ PERMISSIONS = {
     "RESOLUTION_CENTER_EXECUTE": "resolution_center.execute",
     "RESOLUTION_CENTER_AUDIT": "resolution_center.audit",
     "RESOLUTION_CENTER_INFRASTRUCTURE": "resolution_center.infrastructure",
+    "DEVELOPER_ACCESS": "developer.access",
+    "DEVELOPER_DATABASE_READ": "developer.database.read",
+    "DEVELOPER_DATABASE_WRITE": "developer.database.write",
+    "DEVELOPER_DATABASE_ADMIN": "developer.database.admin",
+    "DEVELOPER_SHELL_ACCESS": "developer.shell.access",
+    "DEVELOPER_SYSTEM_READ": "developer.system.read",
+    "DEVELOPER_LOGS_READ": "developer.logs.read",
+    "DEVELOPER_SERVICES_EXECUTE": "developer.services.execute",
+    "DEVELOPER_GIT_READ": "developer.git.read",
 }

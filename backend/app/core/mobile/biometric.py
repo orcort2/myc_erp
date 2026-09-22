@@ -6,6 +6,7 @@ never consulted here, and no device_uuid is ever accepted from the exchange
 caller -- the trusted device always comes from the stored credential row.
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
@@ -99,7 +100,21 @@ def _password_changed_since_enrollment(user: User, record: MobileBiometricCreden
     return as_utc(user.password_changed_at) > as_utc(record.password_changed_at_snapshot)
 
 
-def exchange_biometric_credential(db: Session, credential: str) -> dict:
+@dataclass(frozen=True, slots=True)
+class ResolvedBiometricCredential:
+    """A biometric credential resolved down to its bound device and user,
+    fully validated -- but WITHOUT creating a new MobileAuthSession. Shared
+    authority for BIOMETRIC-2 exchange and DEV-0 Developer unlock; there is
+    still only one biometric authority, this just lets a second caller reuse
+    its validation instead of re-deriving it (or worse, trusting client
+    input) for a different purpose."""
+
+    record: MobileBiometricCredential
+    device: MobileTrustedDevice
+    user: User
+
+
+def resolve_biometric_credential(db: Session, credential: str) -> ResolvedBiometricCredential:
     credential_hash = hash_biometric_credential(credential)
     record = db.scalar(
         select(MobileBiometricCredential)
@@ -126,6 +141,13 @@ def exchange_biometric_credential(db: Session, credential: str) -> dict:
     if _password_changed_since_enrollment(user, record):
         raise _unauthorized("La contraseña cambió; vuelve a activar el acceso biométrico")
 
+    return ResolvedBiometricCredential(record=record, device=device, user=user)
+
+
+def exchange_biometric_credential(db: Session, credential: str) -> dict:
+    resolved = resolve_biometric_credential(db, credential)
+    record, device, user = resolved.record, resolved.device, resolved.user
+
     if user.account_type == PortalAccountType.INTERNAL.value:
         context = _internal_context(user)
     elif user.account_type == PortalAccountType.CLIENT_PORTAL.value:
@@ -137,7 +159,7 @@ def exchange_biometric_credential(db: Session, credential: str) -> dict:
     context = _ensure_mobile_access(context)
 
     session, session_credential = _new_session(db, context, device)
-    record.last_used_at = now
+    record.last_used_at = utc_now()
     response = _token_response(context, session, session_credential)
     db.commit()
     return response

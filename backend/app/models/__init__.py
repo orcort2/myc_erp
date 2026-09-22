@@ -103,6 +103,7 @@ from app.models.operational_ticket import OperationalTicket
 from app.models.mobile_trusted_device import MobileTrustedDevice
 from app.models.mobile_auth_session import MobileAuthSession
 from app.models.mobile_biometric_credential import MobileBiometricCredential
+from app.models.developer_session import DeveloperSession
 from app.models.notification import Notification, PushDevice
 from app.models.portal_invitation import PortalInvitation
 from app.models.portal_invitation_role import PortalInvitationRole
@@ -329,6 +330,7 @@ __all__ = [
     "MobileTrustedDevice",
     "MobileAuthSession",
     "MobileBiometricCredential",
+    "DeveloperSession",
     "User",
     "UserPermissionOverride",
 ]
