@@ -811,6 +811,290 @@ def test_every_reason_the_package_raises_is_loggable():
     assert transport_and_config <= LOGGABLE_REASONS, transport_and_config - LOGGABLE_REASONS
 
 
+# --- pywin32 module ownership (Windows-found regression) ------------------------
+
+# Where each pywin32 name ACTUALLY lives (pywin32 sources: win32pipe.i,
+# win32security.i, win32file.i, win32event.i, win32api.i, pywintypes).
+# Found on real Windows: ImpersonateNamedPipeClient was called through
+# win32pipe (AttributeError) instead of win32security. Every name the
+# adapter uses must be listed here with its owner module.
+PYWIN32_OWNERSHIP = {
+    "security": {
+        "ImpersonateNamedPipeClient", "RevertToSelf", "OpenThreadToken", "OpenProcessToken",
+        "GetTokenInformation", "TokenUser", "ConvertStringSidToSid", "ConvertSidToStringSid",
+        "ACL", "ACL_REVISION", "SECURITY_DESCRIPTOR", "SECURITY_ATTRIBUTES",
+    },
+    "pipe": {"CreateNamedPipe", "ConnectNamedPipe", "DisconnectNamedPipe", "WaitNamedPipe", "GetNamedPipeServerProcessId"},
+    "file": {"CreateFile", "ReadFile", "WriteFile", "GetOverlappedResult", "CancelIo", "AllocateReadBuffer"},
+    "event": {"CreateEvent", "WaitForSingleObject"},
+    "api": {"OpenProcess", "GetCurrentProcess", "GetCurrentThread"},
+    "types": {"error", "OVERLAPPED"},
+}
+
+
+def _pywin32_uses():
+    tree = ast.parse((BROKER_PACKAGE / "windows_pipe.py").read_text(encoding="utf-8"))
+    [port] = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) and node.name == "_PyWin32Api"]
+    uses = set()
+    for node in ast.walk(port):
+        # self.<module>.<Name>
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Attribute)
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "self"
+            and node.value.attr in PYWIN32_OWNERSHIP
+        ):
+            uses.add((node.value.attr, node.attr))
+        # getattr(self.<module>, "<Name>", ...)
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and isinstance(node.args[0], ast.Attribute)
+            and isinstance(node.args[0].value, ast.Name)
+            and node.args[0].value.id == "self"
+            and isinstance(node.args[1], ast.Constant)
+        ):
+            uses.add((node.args[0].attr, node.args[1].value))
+    return uses
+
+
+def test_impersonate_named_pipe_client_is_resolved_from_win32security():
+    uses = _pywin32_uses()
+    assert ("security", "ImpersonateNamedPipeClient") in uses
+    assert ("pipe", "ImpersonateNamedPipeClient") not in uses
+    assert {("security", "RevertToSelf"), ("security", "OpenThreadToken"), ("security", "GetTokenInformation")} <= uses
+
+
+def test_every_pywin32_name_is_used_through_its_owner_module():
+    uses = _pywin32_uses()
+    assert uses, "scan found no pywin32 usage"
+    owner = {name: module for module, names in PYWIN32_OWNERSHIP.items() for name in names}
+    wrong = {(module, name) for module, name in uses if name in owner and owner[name] != module}
+    unknown = {(module, name) for module, name in uses if name not in owner and not name.startswith("_")}
+    assert not wrong, f"pywin32 names used through the wrong module: {wrong}"
+    assert not unknown, f"new pywin32 names need an explicit owner in PYWIN32_OWNERSHIP: {unknown}"
+
+
+# --- client identity normalization (real _PyWin32Api logic, fake modules) ------------
+
+import traceback  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from app.developer_broker.windows_pipe import _PyWin32Api  # noqa: E402
+
+
+class FakeWinError(Exception):
+    """Stand-in for pywintypes.error (passed explicitly, never via sys.modules)."""
+
+
+class FakeToken:
+    def __init__(self):
+        self.closed = False
+
+    def Close(self):
+        self.closed = True
+
+
+class FakeSecurity:
+    TokenUser = 1
+
+    def __init__(self, fail=None, error=None):
+        self.fail, self.error = fail, error
+        self.calls = []
+        self.token = FakeToken()
+
+    def _step(self, name):
+        self.calls.append(name)
+        if self.fail == name:
+            raise self.error
+
+    def ImpersonateNamedPipeClient(self, handle):
+        self._step("impersonate")
+
+    def OpenThreadToken(self, thread, access, open_as_self):
+        self._step("open_thread_token")
+        assert open_as_self is True
+        return self.token
+
+    def GetTokenInformation(self, token, kind):
+        self._step("get_token_information")
+        return ("PySID", 0)
+
+    def ConvertSidToStringSid(self, sid):
+        self._step("convert_sid")
+        return CLIENT_SID
+
+    def RevertToSelf(self):
+        self._step("revert")
+
+
+def _port(security):
+    modules = SimpleNamespace(
+        types=SimpleNamespace(error=FakeWinError),
+        api=SimpleNamespace(GetCurrentThread=lambda: -2),
+        event=None, file=None, pipe=SimpleNamespace(), security=security,
+    )
+    return _PyWin32Api(modules)
+
+
+def _assert_no_leak(exc):
+    assert SENSITIVE not in str(exc) and SENSITIVE not in repr(exc)
+    assert exc.__cause__ is None
+    assert exc.__context__ is None or exc.__suppress_context__
+    assert SENSITIVE not in "".join(traceback.format_exception(exc))
+
+
+def test_client_identity_success_reverts_exactly_once():
+    security = FakeSecurity()
+    assert _port(security).client_user_sid(object()) == CLIENT_SID
+    assert security.calls == ["impersonate", "open_thread_token", "get_token_information", "convert_sid", "revert"]
+    assert security.token.closed
+
+
+def test_win32pipe_has_no_say_in_client_identity():
+    # The port's win32pipe stand-in has NO ImpersonateNamedPipeClient (as on
+    # real Windows); the lookup must still work because it goes to win32security.
+    assert _port(FakeSecurity()).client_user_sid(object()) == CLIENT_SID
+
+
+@pytest.mark.parametrize(
+    "fail, error",
+    [
+        ("impersonate", FakeWinError(5, "ImpersonateNamedPipeClient", SENSITIVE)),
+        ("impersonate", AttributeError(SENSITIVE)),
+        ("impersonate", RuntimeError(SENSITIVE)),
+    ],
+    ids=["winerror", "attributeerror", "unexpected"],
+)
+def test_impersonation_failure_is_normalized_and_never_reverts(fail, error):
+    """Not impersonating -> nothing to revert: RevertToSelf is called ZERO times."""
+    security = FakeSecurity(fail=fail, error=error)
+    with pytest.raises(BrokerUnavailableError) as rejected:
+        _port(security).client_user_sid(object())
+    assert rejected.value.reason == "client_identity_unverifiable"
+    _assert_no_leak(rejected.value)
+    assert security.calls == ["impersonate"]
+    assert security.calls.count("revert") == 0
+
+
+@pytest.mark.parametrize(
+    "fail, error",
+    [
+        ("open_thread_token", FakeWinError(1346, "OpenThreadToken", SENSITIVE)),
+        ("open_thread_token", RuntimeError(SENSITIVE)),
+        ("get_token_information", FakeWinError(87, "GetTokenInformation", SENSITIVE)),
+        ("get_token_information", RuntimeError(SENSITIVE)),
+        ("convert_sid", FakeWinError(1337, "ConvertSidToStringSid", SENSITIVE)),
+        ("convert_sid", TypeError(SENSITIVE)),
+    ],
+    ids=["winerror-token", "unexpected-token", "winerror-tokeninfo", "unexpected-tokeninfo", "winerror-convert", "unexpected-convert"],
+)
+def test_lookup_failure_after_impersonation_reverts_exactly_once(fail, error):
+    security = FakeSecurity(fail=fail, error=error)
+    with pytest.raises(BrokerUnavailableError) as rejected:
+        _port(security).client_user_sid(object())
+    assert rejected.value.reason == "client_identity_unverifiable"
+    _assert_no_leak(rejected.value)
+    assert security.calls[0] == "impersonate"
+    assert security.calls.count("revert") == 1 and security.calls[-1] == "revert"
+    if fail != "open_thread_token":
+        assert security.token.closed  # token cleanup even when the lookup fails
+
+
+@pytest.mark.parametrize("error", [FakeWinError(1, "RevertToSelf", SENSITIVE), RuntimeError(SENSITIVE)])
+def test_revert_to_self_failure_is_its_own_code(error):
+    security = FakeSecurity(fail="revert", error=error)
+    with pytest.raises(BrokerUnavailableError) as rejected:
+        _port(security).client_user_sid(object())
+    assert rejected.value.reason == "revert_to_self_failed"
+    _assert_no_leak(rejected.value)
+    assert security.calls == ["impersonate", "open_thread_token", "get_token_information", "convert_sid", "revert"]
+
+
+def test_revert_failure_wins_over_lookup_failure_with_a_single_attempt():
+    class DoubleFailure(FakeSecurity):
+        def GetTokenInformation(self, token, kind):
+            self.calls.append("get_token_information")
+            raise RuntimeError(SENSITIVE)
+
+    security = DoubleFailure(fail="revert", error=FakeWinError(1, "RevertToSelf", SENSITIVE))
+    with pytest.raises(BrokerUnavailableError) as rejected:
+        _port(security).client_user_sid(object())
+    assert rejected.value.reason == "revert_to_self_failed"
+    _assert_no_leak(rejected.value)
+    assert security.calls.count("revert") == 1
+    assert security.token.closed
+
+
+class IdentityPortApi(OneShotApi):
+    """Listener fake whose client identity lookup runs the REAL
+    _PyWin32Api.client_user_sid logic over fake security primitives."""
+
+    def __init__(self, request_bytes, ref, security):
+        super().__init__(request_bytes, ref)
+        self.identity_port = _port(security)
+
+    def client_user_sid(self, handle):
+        self.events.append(("client_sid",))
+        return self.identity_port.client_user_sid(handle)
+
+
+def _serve_with_identity(security, caplog):
+    ref = []
+    api = IdentityPortApi(framed(b'{"req":1}'), ref, security)
+    handler = RecordingHandler()
+    listener = _listener(api, handler)
+    ref.append(listener)
+    with caplog.at_level(logging.DEBUG):
+        worker = threading.Thread(target=listener.serve_forever)
+        worker.start()
+        worker.join(timeout=5)
+    assert not worker.is_alive()
+    return api, handler, listener, "\n".join(record.getMessage() for record in caplog.records)
+
+
+def test_unexpected_identity_error_is_controlled_through_the_listener(caplog):
+    api, handler, listener, logs = _serve_with_identity(
+        FakeSecurity(fail="get_token_information", error=RuntimeError(SENSITIVE)), caplog
+    )
+    assert handler.requests == []
+    assert api.handles[0].outbound == bytearray() and api.handles[0].closed
+    assert "reason=client_identity_unverifiable" in logs
+    assert "connection_failed" not in logs  # no longer falls into the generic handler
+    assert SENSITIVE not in logs
+
+
+def test_revert_failure_stops_the_listener_fail_closed(caplog):
+    api, handler, listener, logs = _serve_with_identity(
+        FakeSecurity(fail="revert", error=FakeWinError(1, "RevertToSelf", SENSITIVE)), caplog
+    )
+    assert handler.requests == []
+    assert listener._stop.is_set()
+    assert "reason=revert_to_self_failed" in logs and SENSITIVE not in logs
+
+
+def test_controlled_identity_error_from_the_port_stays_controlled(caplog):
+    class ControlledApi(OneShotApi):
+        def client_user_sid(self, handle):
+            raise BrokerUnavailableError("client_identity_unverifiable")
+
+    ref = []
+    api = ControlledApi(framed(b"{}"), ref)
+    handler = RecordingHandler()
+    listener = _listener(api, handler)
+    ref.append(listener)
+    with caplog.at_level(logging.DEBUG):
+        worker = threading.Thread(target=listener.serve_forever)
+        worker.start()
+        worker.join(timeout=5)
+    logs = "\n".join(record.getMessage() for record in caplog.records)
+    assert handler.requests == [] and "reason=client_identity_unverifiable" in logs
+    # A normal identity rejection never triggers the fail-closed stop of a failed revert.
+    assert "revert_to_self_failed" not in logs and "se detiene" not in logs
+
+
 # --- structural scans ---------------------------------------------------------------------
 
 def _module_imports(path: Path) -> set[str]:

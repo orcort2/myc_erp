@@ -1,4 +1,4 @@
-> Estado: DEV-1A MERGEADO en `main` (PR #8, `5bf2349`). DEV-1B EN REVISIÓN (sin commit; código + pruebas cross-platform; **pendiente validación en Windows real**, NO cerrado)
+> Estado: DEV-1A MERGEADO en `main` (PR #8, `5bf2349`). DEV-1B EN REVISIÓN (rama `feat/mobile-developer-named-pipe-dev1b`; primera ejecución real en Windows FALLÓ por un defecto ya corregido en el worktree, sin commit; **pendiente re-ejecución de la suite Windows**, NO cerrado)
 
 > Tipo: Arquitectura vigente
 
@@ -560,21 +560,70 @@ DEV-1A/1B no implementan `ShellSession`, pero el contrato no la impide:
 
 ## Validación de DEV-1B
 
-Ejecutado (macOS): suites anteriores + cross-platform con puerto falso.
-**Pendiente en Windows real** (nada de esto está probado aún):
+Ejecutado en macOS: suites anteriores + cross-platform con puerto Win32
+falso (lógica del adapter, no Named Pipes reales).
 
-1. `pip install -r requirements.txt` instala `pywin32==312`.
-2. `pytest backend/tests/test_developer_broker_windows.py -rs` con una
-   cuenta que no sea LocalSystem (incluye la creación real de instancias
-   posteriores bajo la DACL explícita, **no validada en macOS**).
-3. Prueba manual de proceso separado: consola A con
-   `DEVELOPER_BROKER_*` y `python -m app.developer_broker.host` bajo la
-   cuenta del Broker; consola B (cuenta ERP) llamando
-   `build_developer_broker_client(...).health()`.
-4. Con dos cuentas reales: la cuenta ERP conecta; una tercera cuenta
-   recibe `access_denied` (DACL); un servidor impostor recibe
-   `server_identity_mismatch` sin bytes escritos.
-5. Rechazo remoto (`PIPE_REJECT_REMOTE_CLIENTS`) desde otro host.
-6. Confirmar en la build de pywin32 la disponibilidad de
-   `GetNamedPipeServerProcessId` (si falta, el adapter falla cerrado con
-   `server_identity_unverifiable`).
+Primera ejecución real en Windows: commit `0b9572d`, Python 3.14.7 +
+pywin32, `test_developer_broker_windows.py` → 5 passed, 6 failed, 1
+skipped.
+
+### A. Validado por la primera ejecución real en Windows
+
+- `pywin32` se instala e importa; `load_win32_api` funciona.
+- Creación real de la primera instancia con `FILE_FLAG_FIRST_PIPE_INSTANCE`
+  y DACL explícita; una segunda "primera instancia" con el mismo nombre se
+  rechaza (`pipe_name_in_use`).
+- La DACL real del pipe contiene exactamente las dos ACE configuradas
+  (`0x0012019F` servicio, `0x00100083` cliente) y ningún SID amplio.
+- Pipe inexistente → `pipe_not_found`, rápido y controlado.
+- Timeout real del cliente con E/S overlapped (`timeout`).
+- Verificación de identidad del servidor: `GetNamedPipeServerProcessId`
+  existe en `win32pipe` y, con un SID esperado incorrecto, el cliente
+  aborta con `server_identity_mismatch` **sin escribir ningún byte**.
+
+### B. Falló por el defecto de pertenencia de módulo (causa raíz confirmada)
+
+Fallaron las 6 pruebas que pasan por `NamedPipeBrokerListener._serve_connection`:
+health por pipe real, instancias posteriores de `CreateNamedPipe`, builder
+FastAPI, HMAC incorrecto (0 requests en el handler), y recuperación tras
+frame excedido y truncado. El cliente veía `connection_closed` y el
+servidor registraba `connection_failed`.
+
+Causa raíz, confirmada con diagnóstico aislado en Windows:
+`_PyWin32Api.client_user_sid` llamaba `ImpersonateNamedPipeClient` a través
+de `win32pipe`, donde **no existe**; en pywin32 vive en `win32security`. El
+`AttributeError` no era `pywintypes.error` ni `BrokerError` y caía en el
+manejador genérico antes de invocar al handler. El mismo diagnóstico, usando
+`win32security`, confirmó impersonación, token *identification* con
+`OpenAsSelf=True`, `TokenUser` = `(PySID, int)`, SID correcto,
+`RevertToSelf`, escritura del servidor y lectura del cliente.
+
+Corrección (worktree, sin commit): llamada a través de `win32security`;
+un fallo al suplantar → `client_identity_unverifiable` **sin**
+`RevertToSelf`; tras suplantar con éxito, `RevertToSelf` exactamente una
+vez aunque falle la lectura del token/SID; un fallo de `RevertToSelf` →
+`revert_to_self_failed` y el listener deja de aceptar conexiones; prueba
+estructural de pertenencia de cada nombre pywin32 a su módulo real.
+
+### C. Pendiente hasta la re-ejecución en Windows tras la corrección
+
+1. Re-ejecutar sin cambios
+   `python -m pytest tests/test_developer_broker_windows.py -v -rs`
+   (desde `backend\`, cuenta que no sea LocalSystem). Esperado: 11 passed,
+   1 skipped. En particular deben pasar las 6 pruebas de B, incluida la
+   creación real de instancias posteriores bajo la DACL explícita (la
+   máscara `0x0012019F` para instancias adicionales aún no está probada).
+2. Prueba manual de proceso separado: consola A con `DEVELOPER_BROKER_*` y
+   `python -m app.developer_broker.host` bajo la cuenta del Broker;
+   consola B (cuenta ERP) llamando `build_developer_broker_client(...).health()`.
+3. Con dos cuentas reales: la cuenta ERP conecta; una tercera cuenta recibe
+   `access_denied` (DACL); un servidor impostor bajo otra cuenta provoca
+   `server_identity_mismatch` sin bytes escritos; el host se niega a correr
+   bajo un SID distinto del configurado.
+
+### D. Requiere un segundo host
+
+- Rechazo de clientes remotos (`PIPE_REJECT_REMOTE_CLIENTS`): la prueba
+  sigue omitida explícitamente; un fallo local al abrir
+  `\\localhost\pipe\…` no distingue el flag de un servicio Server
+  detenido.

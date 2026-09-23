@@ -4,11 +4,28 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-22 — DEV-1B (adapter Windows Named Pipe + host del Broker, sin commit; pendiente de auditoría y de validación en Windows real) sobre DEV-1A ya fusionado en `main` (PR #8, `5bf2349`)
+> Corte: 2026-09-22 — DEV-1B (adapter Windows Named Pipe + host del Broker; commit `0b9572d` validado en Windows con 6 fallos; corrección de causa raíz en el worktree, sin commit; pendiente re-ejecución de la suite Windows) sobre DEV-1A ya fusionado en `main` (PR #8, `5bf2349`)
 
 # Estado operativo actual del ERP MYC
 
-## DEV-1B — Windows Named Pipe + Broker host (EN REVISIÓN, sin commit)
+## DEV-1B — Windows Named Pipe + Broker host (EN REVISIÓN)
+
+- Validación real en Windows del commit `0b9572d` (Python 3.14.7 +
+  pywin32): 5 passed, 6 failed, 1 skipped. Causa raíz confirmada:
+  `ImpersonateNamedPipeClient` se llamaba desde `win32pipe` (no existe) en
+  vez de `win32security` → `AttributeError` → `connection_failed` antes del
+  handler. Corregido en el worktree (sin commit): `win32security`; fallo al
+  suplantar → `client_identity_unverifiable` sin `RevertToSelf`; tras
+  suplantar, `RevertToSelf` exactamente una vez; fallo de revert →
+  `revert_to_self_failed` y el listener deja de aceptar; prueba estructural
+  de pertenencia de módulos pywin32. **Pendiente re-ejecutar la suite
+  Windows sin cambios** (esperado 11 passed, 1 skipped). Qué validó ya la
+  primera ejecución real y qué queda pendiente:
+  `architecture/MOBILE_DEVELOPER_BROKER.md` ("Validación de DEV-1B", A–D).
+  Validación macOS tras la corrección: named_pipe 146 passed; contrato
+  102; endpoint 14; Windows 12 skipped; DEV-0 + conformidad 97 passed, 1
+  skipped; backend completo 1586 passed, 36 skipped, 0 failed;
+  `alembic heads` = `c4d8e2f1a7b3`.
 
 - Worktree `/Users/saulcortes/Developer/myc_erp-dev1`, rama
   `feat/mobile-developer-named-pipe-dev1b` creada desde `origin/main`
@@ -26,10 +43,9 @@
   `DEVELOPER_BROKER_CLIENT_SID`.
 - Dependencia nueva: `pywin32==312; sys_platform == "win32"` en el
   `requirements.txt` raíz; en macOS pip la ignora y no está instalada.
-- **No validado en Windows real**: las 11 pruebas de
-  `test_developer_broker_windows.py` se omiten fuera de Windows (skip, no
-  pass). La lista de validaciones pendientes está en
-  `architecture/MOBILE_DEVELOPER_BROKER.md` ("Validación de DEV-1B").
+- Windows real: validación parcial (primera ejecución, ver arriba); fuera
+  de Windows las pruebas de `test_developer_broker_windows.py` se omiten
+  (skip, no pass).
 - Sin shell, PowerShell, ejecución de procesos, sockets/puertos,
   servicio Windows, WinSW, registro, despliegue ni migraciones (head sigue
   `c4d8e2f1a7b3`).
@@ -39,15 +55,12 @@
   `PIPE_ACCESS_DUPLEX`); el cliente sigue en `0x00100083`, sin
   `FILE_CREATE_PIPE_INSTANCE`. Logging del adapter y del host centralizado en
   `loggable_reason` (sólo códigos conocidos). La creación real de instancias
-  posteriores sigue **sin validar en Windows**.
-- Validación tras la corrección (macOS): named_pipe 127 passed; contrato
-  102 passed; endpoint 14 passed; Windows 12 skipped; DEV-0 + conformidad
-  97 passed, 1 skipped; backend completo 1567 passed, 36 skipped (24
-  previos + 12 Windows), 0 failed; `alembic heads` = `c4d8e2f1a7b3`.
-- Validación inicial (macOS, antes de la corrección): Broker DEV-1A+1B 234 passed, 11 skipped (Windows);
-  DEV-0 + conformidad 97 passed, 1 skipped; backend completo 1558 passed,
-  35 skipped (24 previos + 11 Windows), 0 failed; `alembic heads` =
-  `c4d8e2f1a7b3`.
+  posteriores sigue **sin validar en Windows** (su prueba falló en la
+  primera ejecución real por el defecto de módulo, antes de poder probarla).
+- Validación vigente: la única es la validación macOS posterior a todas las
+  correcciones, registrada al inicio de esta sección (named_pipe 146
+  passed; backend completo 1586 passed, 36 skipped, 0 failed). Los cortes
+  intermedios quedan trazables en Git.
 
 ## DEV-1A — Developer Broker boundary (MERGEADO, PR #8)
 

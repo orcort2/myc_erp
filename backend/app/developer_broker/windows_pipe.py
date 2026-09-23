@@ -254,16 +254,23 @@ def _remaining_ms(deadline: float) -> int:
 
 
 class _PyWin32Api:
-    def __init__(self) -> None:
-        import pywintypes
-        import win32api
-        import win32event
-        import win32file
-        import win32pipe
-        import win32security
+    def __init__(self, modules: Any = None) -> None:
+        """``modules`` is only an explicit seam for cross-platform tests (an
+        object with ``types, api, event, file, pipe, security``); production
+        always imports the real pywin32 modules here."""
+        if modules is None:
+            import pywintypes
+            import win32api
+            import win32event
+            import win32file
+            import win32pipe
+            import win32security
 
-        self.types, self.api, self.event = pywintypes, win32api, win32event
-        self.file, self.pipe, self.security = win32file, win32pipe, win32security
+            self.types, self.api, self.event = pywintypes, win32api, win32event
+            self.file, self.pipe, self.security = win32file, win32pipe, win32security
+        else:
+            self.types, self.api, self.event = modules.types, modules.api, modules.event
+            self.file, self.pipe, self.security = modules.file, modules.pipe, modules.security
 
     # identities -----------------------------------------------------------
     def canonical_sid(self, text: str) -> str:
@@ -304,21 +311,36 @@ class _PyWin32Api:
             raise BrokerUnavailableError("server_identity_unverifiable") from None
 
     def client_user_sid(self, handle: Any) -> str:
+        """SID of the pipe client, read at IDENTIFICATION level.
+
+        Identity boundary: ANY failure (pywintypes.error or anything else,
+        e.g. a wrong pywin32 attribute) becomes ``client_identity_unverifiable``;
+        nothing raw escapes. ``ImpersonateNamedPipeClient``, ``OpenThreadToken``,
+        ``GetTokenInformation`` and ``RevertToSelf`` all live in
+        ``win32security`` (not ``win32pipe``).
+
+        ``RevertToSelf`` runs only if impersonation SUCCEEDED, and then exactly
+        once (``finally``), even if the token/SID lookup fails. If it fails the
+        caller gets ``revert_to_self_failed`` and must not reuse the thread."""
         try:
-            self.pipe.ImpersonateNamedPipeClient(handle)
-        except self.types.error:
+            self.security.ImpersonateNamedPipeClient(handle)
+        except Exception:  # noqa: BLE001 -- not impersonating: nothing to revert
             raise BrokerUnavailableError("client_identity_unverifiable") from None
+        sid: str | None = None
         try:
-            return self._token_user_sid(
+            sid = self._token_user_sid(
                 self.security.OpenThreadToken(self.api.GetCurrentThread(), TOKEN_QUERY, True)
             )
-        except self.types.error:
-            raise BrokerUnavailableError("client_identity_unverifiable") from None
+        except Exception:  # noqa: BLE001 -- normalized below, never logged raw
+            sid = None
         finally:
             try:
                 self.security.RevertToSelf()
-            except self.types.error:
+            except Exception:  # noqa: BLE001
                 raise BrokerUnavailableError("revert_to_self_failed") from None
+        if not isinstance(sid, str) or not sid:
+            raise BrokerUnavailableError("client_identity_unverifiable")
+        return sid
 
     # client ---------------------------------------------------------------
     def open_client(self, path: str, deadline: float) -> Any:
@@ -637,6 +659,11 @@ class NamedPipeBrokerListener:
             self._await_peer_close(handle, deadline)
         except BrokerError as exc:
             logger.warning("Developer Broker conexión rechazada: reason=%s", loggable_reason(exc))
+            if exc.reason == "revert_to_self_failed":
+                # This worker thread may still be impersonating the client: stop
+                # accepting so it never serves another connection (fail closed).
+                logger.error("Developer Broker se detiene: reason=revert_to_self_failed")
+                self._stop.set()
         except Exception:  # noqa: BLE001 -- one connection never takes the listener down
             logger.error("Developer Broker conexión falló: reason=connection_failed")
         finally:
