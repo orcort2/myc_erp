@@ -4,11 +4,65 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-22 — DEV-1A (frontera Developer Broker, sin commit; pendiente de auditoría humana) sobre DEV-0 ya fusionado en `main` (PR #7, `91d7404`)
+> Corte: 2026-09-22 — DEV-1B (adapter Windows Named Pipe + host del Broker; commit `0b9572d` validado en Windows con 6 fallos; corrección de causa raíz en el worktree, sin commit; pendiente re-ejecución de la suite Windows) sobre DEV-1A ya fusionado en `main` (PR #8, `5bf2349`)
 
 # Estado operativo actual del ERP MYC
 
-## DEV-1A — Developer Broker boundary (EN REVISIÓN, sin commit)
+## DEV-1B — Windows Named Pipe + Broker host (EN REVISIÓN)
+
+- Validación real en Windows del commit `0b9572d` (Python 3.14.7 +
+  pywin32): 5 passed, 6 failed, 1 skipped. Causa raíz confirmada:
+  `ImpersonateNamedPipeClient` se llamaba desde `win32pipe` (no existe) en
+  vez de `win32security` → `AttributeError` → `connection_failed` antes del
+  handler. Corregido en el worktree (sin commit): `win32security`; fallo al
+  suplantar → `client_identity_unverifiable` sin `RevertToSelf`; tras
+  suplantar, `RevertToSelf` exactamente una vez; fallo de revert →
+  `revert_to_self_failed` y el listener deja de aceptar; prueba estructural
+  de pertenencia de módulos pywin32. **Pendiente re-ejecutar la suite
+  Windows sin cambios** (esperado 11 passed, 1 skipped). Qué validó ya la
+  primera ejecución real y qué queda pendiente:
+  `architecture/MOBILE_DEVELOPER_BROKER.md` ("Validación de DEV-1B", A–D).
+  Validación macOS tras la corrección: named_pipe 146 passed; contrato
+  102; endpoint 14; Windows 12 skipped; DEV-0 + conformidad 97 passed, 1
+  skipped; backend completo 1586 passed, 36 skipped, 0 failed;
+  `alembic heads` = `c4d8e2f1a7b3`.
+
+- Worktree `/Users/saulcortes/Developer/myc_erp-dev1`, rama
+  `feat/mobile-developer-named-pipe-dev1b` creada desde `origin/main`
+  `5bf2349` (merge PR #8, DEV-1A). El checkout estable `myc_erp` no se tocó.
+- Implementado en código: `framing.py` (uint32 BE + payload),
+  `pipe_name.py` (nombre lógico → `\\.\pipe\<nombre>`),
+  `windows_pipe.py` (`WindowsNamedPipeTransport`,
+  `NamedPipeBrokerListener`, DACL explícita de dos SIDs, primera instancia
+  exclusiva, `PIPE_REJECT_REMOTE_CLIENTS`, verificación del SID del servidor
+  antes de escribir, nivel identification, verificación del SID del cliente)
+  y `host.py` (`python -m app.developer_broker.host`, configuración mínima
+  propia desde el entorno). `build_developer_broker_client` crea el
+  transporte real en Windows y falla cerrado fuera (`platform_unsupported`).
+- Settings nuevos: `DEVELOPER_BROKER_SERVICE_SID`,
+  `DEVELOPER_BROKER_CLIENT_SID`.
+- Dependencia nueva: `pywin32==312; sys_platform == "win32"` en el
+  `requirements.txt` raíz; en macOS pip la ignora y no está instalada.
+- Windows real: validación parcial (primera ejecución, ver arriba); fuera
+  de Windows las pruebas de `test_developer_broker_windows.py` se omiten
+  (skip, no pass).
+- Sin shell, PowerShell, ejecución de procesos, sockets/puertos,
+  servicio Windows, WinSW, registro, despliegue ni migraciones (head sigue
+  `c4d8e2f1a7b3`).
+- Corrección post-auditoría: la máscara DACL del Broker pasa de
+  `0x00120087` a `0x0012019F` (`FILE_GENERIC_READ` ∪ `FILE_GENERIC_WRITE`
+  como derechos específicos; necesaria para crear instancias adicionales con
+  `PIPE_ACCESS_DUPLEX`); el cliente sigue en `0x00100083`, sin
+  `FILE_CREATE_PIPE_INSTANCE`. Logging del adapter y del host centralizado en
+  `loggable_reason` (sólo códigos conocidos). La creación real de instancias
+  posteriores sigue **sin validar en Windows** (su prueba falló en la
+  primera ejecución real por el defecto de módulo, antes de poder probarla).
+- Validación vigente: la única es la validación macOS posterior a todas las
+  correcciones, registrada al inicio de esta sección (named_pipe 146
+  passed; backend completo 1586 passed, 36 skipped, 0 failed). Los cortes
+  intermedios quedan trazables en Git.
+
+## DEV-1A — Developer Broker boundary (MERGEADO, PR #8)
 
 - Worktree `/Users/saulcortes/Developer/myc_erp-dev1`, rama
   `feat/mobile-developer-shell-broker-dev1`, base `91d7404` (= `origin/main`,
@@ -22,7 +76,7 @@
   `DEVELOPER_BROKER_*` (deshabilitada por defecto; el ERP arranca igual) y
   `GET /api/mobile/v1/developer/broker/health` protegido con
   `require_developer_session("developer.system.read")`.
-- Pendiente (DEV-1B): adapter Windows Named Pipe + ACL, servicio Windows con
+- Pendiente al cierre de DEV-1A (el adapter ya existe en DEV-1B, arriba): adapter Windows Named Pipe + ACL, servicio Windows con
   identidad dedicada (no `LocalSystem`), `ShellSession`. Con el Broker
   habilitado y el transporte `named_pipe`, la ruta falla cerrado (503,
   `named_pipe_adapter_pending`).
