@@ -277,8 +277,9 @@ implementado y forma parte del alcance vigente.
 
 ## Alcance implementado 2026-08-14 — Tickets/reapertura móvil
 
-- Filtros backend y móviles separados por folio y cliente, combinables,
-  case-insensitive para cliente, con estado, debounce y paginación.
+- Buscador móvil único por folio o cliente (`q`, OR; cliente case-insensitive),
+  con estado, debounce de 400 ms y paginación. Backend conserva `folio` y
+  `client` como filtros específicos combinables por AND.
 - Tickets `REOPEN_WORK_ORDER`, bandeja propia/global y revisión por permiso.
 - Reapertura del grupo LAB con folio estable, revisión incremental, snapshot,
   PDF histórico y nueva generación al cerrar.

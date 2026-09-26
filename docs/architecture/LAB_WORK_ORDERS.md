@@ -734,9 +734,18 @@ sin importar cuál de los dos caminos abrió la revisión siguiente.
 
 ## API
 
+El listado acepta `q` opcional (máximo 255 caracteres): tras trim, busca por
+subcadena literal en folio **OR** `client_name` (case-insensitive). Vacío no
+filtra; `%` y `_` se tratan como texto. No busca dirección, contacto ni equipo.
+`folio`/`client` mantienen su semántica anterior y se intersectan por AND con
+`q`, estado y scope organizacional. Orden descendente por folio, offset y limit
+no cambian. Mobile usa un único input, debounce de 400 ms y limpiar restaura
+búsqueda vacía/Todas. Los accesos de generación son horizontales locales,
+con altura mínima de 52, mismos permisos y handlers; revisión visual pendiente.
+
 | Método | Ruta relativa | Efecto |
 | --- | --- | --- |
-| POST / GET | `/lab-work-orders` | crear raíz / listar con `folio`, `client`, `status`, `offset`, `limit` |
+| POST / GET | `/lab-work-orders` | crear raíz / listar con `q`, `folio`, `client`, `status`, `offset`, `limit` |
 | GET / PATCH | `/lab-work-orders/{id}` | detalle de grupo / propagar generales |
 | PATCH | `/lab-work-orders/{id}/reception-date` | actualizar fecha canónica y sincronizar hojas vigentes editables |
 | DELETE | `/lab-work-orders/{id}` | eliminar una OT individual y reparar/conservar el grupo |

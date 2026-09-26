@@ -18,10 +18,12 @@ const source = readFileSync(
 
 test('"Completar cambios" se muestra con el mismo gate que "Corregir datos de la orden" (wasReopened && editable)', () => {
   const block = source.slice(
-    source.indexOf("{wasReopened(workOrder) && editable && (\n                    <SecondaryButton icon=\"pencil-outline\" label=\"Corregir datos de la orden\""),
+    source.indexOf('{wasReopened(workOrder) && editable && (\n                    <View style={styles.correctionActions}>'),
     source.indexOf('<View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text>'),
   );
-  assert.match(block, /\{wasReopened\(workOrder\) && editable && \(\s*<PrimaryButton/);
+  assert.match(block, /\{wasReopened\(workOrder\) && editable && \(\s*<View style=\{styles\.correctionActions\}>/);
+  assert.match(block, /<SecondaryButton[^>]+label="Corregir datos de la orden"/);
+  assert.match(block, /<PrimaryButton/);
   assert.match(block, /label="Completar cambios"/);
   assert.match(block, /onPress=\{confirmCompleteCorrections\}/);
 });

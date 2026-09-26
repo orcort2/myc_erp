@@ -647,3 +647,11 @@ LocalSystem/LocalService/NetworkService o bajo un SID distinto del
 configurado. La distinción ERP ≠ Broker (SIDs distintos) es política de
 despliegue exigida por el host y por FastAPI. Sin instalación de servicio
 en esta fase. Detalle en `docs/architecture/MOBILE_DEVELOPER_BROKER.md`.
+
+## OT LAB — búsqueda unificada compatible (2026-09-25)
+
+El listado móvil usa `q` para folio OR cliente, sin ampliar a otros campos.
+Se conservan `folio` y `client` para consumidores anteriores, con su AND vigente;
+status, scope y paginación siguen independientes. Contrato detallado en
+[LAB_WORK_ORDERS.md](../architecture/LAB_WORK_ORDERS.md#api). La compactación de
+los accesos de generación usa estilos locales y conserva permisos/handlers.

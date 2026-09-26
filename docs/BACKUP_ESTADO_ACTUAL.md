@@ -8,6 +8,19 @@
 
 # Estado operativo actual del ERP MYC
 
+## OT LAB — buscador y cabecera compacta (2026-09-25, en revisión)
+
+- Implementados `q` compatible y accesos de generación horizontales; contrato
+  en `architecture/LAB_WORK_ORDERS.md#api`. Sin migraciones ni cambios de permisos.
+- Validación: filtros backend 3 passed; Mobile 784/784; lint y TypeScript OK.
+  Suite ampliada LAB/seguridad: 472 passed, 16 skipped y un fallo por ejecutar
+  desde raíz un test que lee rutas relativas a backend; repetido desde backend:
+  1 passed. No hay fallos funcionales pendientes en las suites ejecutadas.
+  `git diff --check` OK.
+- Teclado previo conservado; usuario reporta validación en iPhone 17e Simulator,
+  iOS 26.5. Pendiente revisión visual de la nueva cabecera y desplegar backend
+  con soporte `q` antes de usar esta versión móvil. Sin commit/push.
+
 ## DEV-1B — Windows Named Pipe + Broker host (EN REVISIÓN)
 
 - Validación real en Windows del commit `0b9572d` (Python 3.14.7 +
