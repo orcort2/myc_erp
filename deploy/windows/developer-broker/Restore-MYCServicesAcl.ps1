@@ -24,7 +24,7 @@
   No other path is touched. -WhatIf shows the plan.
 
 .EXAMPLE
-  .\Restore-MYCServicesAcl.ps1 -BackupFile 'C:\MYC\Deployment\developer-broker\acl-backups\services-20260925T120000Z.acl.json' -WhatIf
+  .\Restore-MYCServicesAcl.ps1 -BackupFile 'C:\MYC\Deployment\acl-backups\services-20260925T120000Z.acl.json' -WhatIf
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(

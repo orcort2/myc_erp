@@ -266,16 +266,18 @@ def directory_plan(deployment_root: str, services_root: str, logs_root: str) -> 
     r"""Which directories DEV-1C may protect (owner, inheritance, ACEs and
     descendants) and which it may only inspect.
 
-    DEV-1C owns exactly its own ``developer-broker`` children. Their parents
+    DEV-1C protects its ``developer-broker`` children and the persistent
+    deployment ``acl-backups`` directory (outside the Broker lifecycle). Their parents
     (``C:\MYC\Deployment``, ``C:\MYC\Logs``) may hold other components and
     are never re-ACLed; ``C:\MYC\Services`` is the one deliberate, global and
     backed-up hardening, kept separate from ownership.
     """
     deployment, services, logs = _win(deployment_root), _win(services_root), _win(logs_root)
     state_dir = deployment / DEPLOYMENT_COMPONENT
-    owned = [state_dir, state_dir / "acl-backups", services / DEPLOYMENT_COMPONENT, logs / DEPLOYMENT_COMPONENT]
+    owned = [state_dir, services / DEPLOYMENT_COMPONENT, logs / DEPLOYMENT_COMPONENT]
     return {
         "owned": [str(path) for path in owned],
+        "persistent_protected": [str(deployment / "acl-backups")],
         "inspect_only": [str(deployment), str(logs)],
         "global_hardening": [str(services)],
     }

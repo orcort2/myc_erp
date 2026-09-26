@@ -31,7 +31,7 @@
       -RemoveLogs. Kept otherwise, with a warning.
 
   NOT reverted: the C:\MYC\Services ACL hardening (a security fix). Its
-  pre-hardening ACL lives in C:\MYC\Deployment\developer-broker\acl-backups
+  pre-hardening ACL lives in C:\MYC\Deployment\acl-backups
   as per-entry SDDL (JSON); restoring it is an explicit, separate action:
   Restore-MYCServicesAcl.ps1 -BackupFile <file> (never run by Uninstall).
 
@@ -235,5 +235,9 @@ if ($RestartBackend -and $PSCmdlet.ShouldProcess($BackendServiceName, 'Reiniciar
         exit 3
     }
 }
-Write-Host 'MYCDeveloperBroker desinstalado. El endurecimiento de C:\MYC\Services se conserva (ver respaldo en acl-backups).'
+if ($WhatIfPreference) {
+    Write-Host 'Simulación de desinstalación de MYCDeveloperBroker completada (-WhatIf). No se ha desinstalado el Broker.'
+} else {
+    Write-Host 'MYCDeveloperBroker desinstalado. El endurecimiento de C:\MYC\Services se conserva (ver respaldo en acl-backups).'
+}
 exit 0

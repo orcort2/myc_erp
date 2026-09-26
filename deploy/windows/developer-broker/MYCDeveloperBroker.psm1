@@ -111,7 +111,7 @@ function Get-MYCBrokerLayout {
         DeploymentRoot = $DeploymentRoot
         StateDir      = $stateDir
         StateFile     = Join-Path $stateDir 'install-state.json'
-        AclBackupDir  = Join-Path $stateDir 'acl-backups'
+        AclBackupDir  = Join-Path $DeploymentRoot 'acl-backups'
     }
 }
 
@@ -554,22 +554,30 @@ function Set-MYCProtectedAcl {
 }
 
 function Get-MYCOwnedDirectories {
-    <# The only directories DEV-1C may protect (broker_deploy.py directory-plan). #>
+    <# Lifecycle-owned paths only; persistent backups never authorize deletion. #>
     param([Parameter(Mandatory = $true)]$Layout)
     $plan = Invoke-MYCDeployTool -Layout $Layout -Arguments @(
         'directory-plan', '--deployment-root', $Layout.DeploymentRoot, '--services-root', $Layout.ServicesRoot, '--logs-root', $Layout.LogsRoot)
     return @($plan.owned)
 }
 
+function Get-MYCProtectableDirectories {
+    <# ACL protection authority only; MUST NOT be used to authorize deletion. #>
+    param([Parameter(Mandatory = $true)]$Layout)
+    $plan = Invoke-MYCDeployTool -Layout $Layout -Arguments @(
+        'directory-plan', '--deployment-root', $Layout.DeploymentRoot, '--services-root', $Layout.ServicesRoot, '--logs-root', $Layout.LogsRoot)
+    return @($plan.owned) + @($plan.persistent_protected)
+}
+
 function New-MYCProtectedDirectory {
-    <# Creates (or re-protects) a directory OWNED by DEV-1C: owner
+    <# Creates (or re-protects) a lifecycle-owned or persistent-protected directory: owner
        Administrators, protected ACL, descendants reset. Refuses any path that
-       is not in the ownership plan (never a parent such as C:\MYC\Deployment)
+       is not in the protection plan (never a parent such as C:\MYC\Deployment)
        and a pre-existing directory with an untrusted owner unless -Adopt. #>
     param([Parameter(Mandatory = $true)]$Layout, [Parameter(Mandatory = $true)][string]$Path, [string[]]$Grants = @(), [switch]$Adopt)
-    $owned = @(Get-MYCOwnedDirectories -Layout $Layout | ForEach-Object { $_.TrimEnd('\') })
-    if ($owned -notcontains $Path.TrimEnd('\')) {
-        throw "Ruta fuera del alcance de propiedad de DEV-1C; no se modifica su ACL: $Path"
+    $protectable = @(Get-MYCProtectableDirectories -Layout $Layout | ForEach-Object { $_.TrimEnd('\') })
+    if ($protectable -notcontains $Path.TrimEnd('\')) {
+        throw "Ruta fuera del alcance de protección de DEV-1C; no se modifica su ACL: $Path"
     }
     Assert-MYCNoRedirectedPath -Path $Path
     if (Test-Path -LiteralPath $Path) {
@@ -644,7 +652,7 @@ function Initialize-MYCStateDirectory {
 function Backup-MYCAcl {
     <# Pre-hardening ACL backup WITHOUT icacls /save /T: the root and every
        entry from the no-follow walker, each as {path, sddl}, in a JSON file
-       inside the protected state directory. A reparse point aborts before
+       inside the protected deployment ACL-backup directory (outside Broker state). A reparse point aborts before
        anything is changed. Restore: Restore-MYCServicesAcl.ps1 (explicit,
        never automatic). #>
     param([Parameter(Mandatory = $true)]$Layout, [Parameter(Mandatory = $true)][string]$Path, [Parameter(Mandatory = $true)][string]$Label)

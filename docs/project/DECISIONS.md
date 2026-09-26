@@ -691,7 +691,8 @@ esquema/identidad; corrupto o ajeno → fallo cerrado) creado antes de la
 primera mutación con rollback; `SeServiceLogonRight` se registra `pending`
 antes de `secedit` y `added` tras verificar, nunca si ya era efectivo;
 uninstall deshace sólo lo registrado. (2) DEV-1C sólo re-protege sus
-directorios `developer-broker`; `C:\MYC\Deployment` y `C:\MYC\Logs` se
+directorios `developer-broker` y el backup persistente
+`C:\MYC\Deployment\acl-backups`; `C:\MYC\Deployment` y `C:\MYC\Logs` se
 inspeccionan, nunca se re-ACLan. (3) El aprovisionamiento XML + `.env` es
 transaccional con journal transitorio y recuperación.
 Segunda ronda de auditoría (2026-09-25): ledger esquema 3 con propiedad
@@ -730,3 +731,8 @@ es `pending → owned` con verificación exacta y se revoca sólo si sigue
 siendo exacta; la reinstalación no re-protege directorios propios; el
 respaldo ACL se restaura con `Restore-MYCServicesAcl.ps1`.
 Detalle en `docs/architecture/MOBILE_DEVELOPER_BROKER.md`.
+
+La autorización ACL de `Deployment/acl-backups` se representa como
+`persistent_protected`, separada de `owned`: permite crear/proteger, nunca
+borrarlo como recurso del lifecycle. Los consumidores de eliminación siguen
+consultando exclusivamente `owned`.

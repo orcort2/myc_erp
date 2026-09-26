@@ -18,7 +18,7 @@
   inherit (except developer-broker, which keeps its own protected ACL).
 
   The previous ACLs are saved first as per-entry SDDL (JSON, no-follow walk)
-  into C:\MYC\Deployment\developer-broker\acl-backups; restore explicitly
+  into C:\MYC\Deployment\acl-backups; restore explicitly
   with Restore-MYCServicesAcl.ps1 -BackupFile <file>. The root is closed first, then the tree is
   reset entry by entry, top-down, never following a reparse point.
   Without -Apply it only reports (read-only).
@@ -51,8 +51,8 @@ try {
         Write-Host 'Sólo lectura: vuelva a ejecutar con -Apply para endurecer (con respaldo previo).'
         exit 2
     }
-    # Backup-MYCAcl protects only C:\MYC\Deployment\developer-broker (its
-    # parent is inspected, never re-ACLed).
+    # Backup-MYCAcl protects the state and ACL-backup directories; their
+    # Deployment parent is inspected, never re-ACLed.
     $backup = Set-MYCServicesAclHardening -Layout $layout -AllowUsersRead:$AllowUsersRead
     Write-Host "Endurecido. ACL previa respaldada en: $backup"
     Get-Service -Name 'MYCBackend', 'MYCFrontend' -ErrorAction SilentlyContinue | Format-Table Name, Status -AutoSize | Out-String | Write-Host

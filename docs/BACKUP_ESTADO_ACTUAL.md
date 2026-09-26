@@ -8,6 +8,22 @@
 
 # Estado operativo actual del ERP MYC
 
+## DEV-1C — dos ajustes posteriores a la validación Windows
+
+- Base de esta revisión: `9b71c21`, worktree `myc_erp-dev1c`, rama
+  `feat/mobile-developer-broker-service-dev1c`; estado inicial limpio.
+- El usuario confirma instalación/reinstall idempotente, secreto reutilizado,
+  ledger 6 y uninstall real/WhatIf validados en Windows, con aislamiento y
+  hardening preservados. Ese reporte supera los pendientes de instalación del
+  corte anterior que se conserva debajo; estos dos ajustes aún requieren QA Windows.
+- Nuevos backups en `DeploymentRoot\acl-backups`; legacy intactos, restaurables
+  sólo mediante ruta explícita. Sin migración, borrado histórico ni restore automático.
+- Frontera ACL: backups en `persistent_protected`, fuera de `owned`; borrado
+  rechazado por `remove-owned-tree`. Misma ACL y compatibilidad legacy.
+- Mensaje final WhatIf corregido; ShouldProcess, schema 6 y SeServiceLogonRight intactos.
+- DEV-1C: 314 passed (incluye estáticos PowerShell). Regresión Broker:
+  262 passed, 12 skipped (Windows). git diff --check OK. Sin operaciones Windows reales, commit ni push en esta revisión.
+
 ## DEV-1C — Servicio Windows `MYCDeveloperBroker` / identidad dedicada (EN REVISIÓN)
 
 - Worktree `/Users/saulcortes/Developer/myc_erp-dev1c`, rama

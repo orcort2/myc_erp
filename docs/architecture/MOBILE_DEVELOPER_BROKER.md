@@ -590,9 +590,10 @@ recurso ni artefacto propio. Así una reinstalación reconoce esos
 directorios en lugar de rechazarlos como desconocidos, sin adoptar nada
 que DEV-1C no haya registrado.
 
-**Alcance de propiedad ACL** (`broker_deploy.py directory-plan`): DEV-1C
-sólo cambia owner/herencia/ACE/descendientes de sus cuatro directorios
-`developer-broker` (estado, `acl-backups`, servicio, logs);
+**Alcance de protección ACL** (`broker_deploy.py directory-plan`): DEV-1C
+sólo cambia owner/herencia/ACE/descendientes de sus tres directorios
+`developer-broker` (estado, servicio, logs) y del directorio persistente
+`C:\MYC\Deployment\acl-backups`;
 `New-MYCProtectedDirectory` rechaza cualquier otra ruta. `C:\MYC\Deployment`
 y `C:\MYC\Logs` son padres **sólo inspeccionados** (política
 `owned_parent`: dueño confiable y ningún principal no administrativo con
@@ -703,7 +704,7 @@ reemplazar un binario o configuración que corre como SYSTEM. No se
 normaliza como aceptable. Endurecimiento reproducible
 (`Set-MYCServicesAclHardening`, vía `-HardenServicesAcl` del instalador o
 `Set-MYCServicesAcl.ps1 -Apply`): respaldo previo por entrada (SDDL, JSON)
-en `C:\MYC\Deployment\developer-broker\acl-backups`; raíz cerrada primero y
+en `C:\MYC\Deployment\acl-backups`; raíz cerrada primero y
 luego owner Administrators entrada por entrada; herencia deshabilitada; SYSTEM y Administrators Full Control;
 `BUILTIN\Users` RX **sólo** con `-AllowUsersReadOnServices` (los servicios
 LocalSystem no lo necesitan); Authenticated Users y cualquier otro
@@ -1078,3 +1079,26 @@ manejador genérico antes del handler. `6a9374c` lo corrigió
 revert → `revert_to_self_failed` y el listener deja de aceptar; prueba
 estructural de pertenencia de nombres pywin32 a su módulo), y la
 re-ejecución quedó en 11 passed, 1 skipped, 0 failed.
+
+### Ajustes acotados posteriores a la validación DEV-1C
+
+Los backups nuevos del hardening global se guardan en
+`C:\MYC\Deployment\acl-backups` (o `DeploymentRoot\acl-backups` con raíz
+personalizada), fuera del lifecycle del Broker. Uninstall no los elimina ni
+restaura el ACL anterior. No cambia el ledger schema 6 ni SeServiceLogonRight.
+Los backups legacy en `C:\MYC\Deployment\developer-broker\acl-backups`
+permanecen intactos: no hay búsqueda automática, migración ni borrado; se pueden
+usar explícitamente con `Restore-MYCServicesAcl.ps1 -BackupFile <ruta legacy>`.
+No eliminar ese directorio si aún contiene históricos. Para instalaciones nuevas
+ya no es necesario conservarlo por los backups; el script sigue sin hacer una
+limpieza global del directorio de estado ni de otros artefactos históricos.
+El mensaje final de uninstall distingue `-WhatIf` (simulación completada, Broker
+no desinstalado) de la ejecución real (desinstalado); ShouldProcess no cambia.
+
+El plan distingue `owned` (sólo los tres directorios developer-broker de
+Deployment, Services y Logs), `persistent_protected` (Deployment/acl-backups),
+`inspect_only` (Deployment y Logs) y `global_hardening` (Services).
+`Get-MYCProtectableDirectories` reúne owned y persistent_protected únicamente
+para crear/proteger con la misma ACL. `Get-MYCOwnedDirectories` e
+`is_owned_directory` excluyen backups; `remove-owned-tree` rechaza su ruta con
+`path_not_owned`. No cambia uninstall, ledger 6 ni restauración legacy explícita.

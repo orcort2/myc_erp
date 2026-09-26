@@ -974,12 +974,13 @@ def test_logon_right_ownership_is_persisted_around_secedit():
 DEPLOYMENT_ROOT = r"C:\MYC\Deployment"
 
 
-def test_directory_plan_owns_only_developer_broker_children(tmp_path, capsys):
+def test_directory_plan_protects_broker_children_and_persistent_acl_backups(tmp_path, capsys):
     plan = bd.directory_plan(DEPLOYMENT_ROOT, r"C:\MYC\Services", r"C:\MYC\Logs")
     assert plan["owned"] == [
-        r"C:\MYC\Deployment\developer-broker", r"C:\MYC\Deployment\developer-broker\acl-backups",
+        r"C:\MYC\Deployment\developer-broker",
         r"C:\MYC\Services\developer-broker", r"C:\MYC\Logs\developer-broker",
     ]
+    assert plan["persistent_protected"] == [DEPLOYMENT_ROOT + r"\acl-backups"]
     assert plan["inspect_only"] == [DEPLOYMENT_ROOT, r"C:\MYC\Logs"]
     assert plan["global_hardening"] == [r"C:\MYC\Services"]
     for outside in (DEPLOYMENT_ROOT, DEPLOYMENT_ROOT + "\\", r"C:\MYC\Deployment\another-component",
@@ -994,9 +995,9 @@ def test_protection_is_refused_outside_the_ownership_plan():
     module = _ps(MODULE)
     body = module[module.index("function New-MYCProtectedDirectory"):]
     body = body[: body.index("\nfunction ")]
-    guard = body.index("if ($owned -notcontains $Path.TrimEnd('\\'))")
+    guard = body.index("if ($protectable -notcontains $Path.TrimEnd('\\'))")
     assert guard < body.index("New-Item") and guard < body.index("Set-MYCProtectedAcl")
-    assert "Get-MYCOwnedDirectories -Layout $Layout" in body
+    assert "Get-MYCProtectableDirectories -Layout $Layout" in body
 
 
 def test_deployment_root_and_siblings_are_never_in_a_mutation_call():
@@ -2377,3 +2378,87 @@ def test_docs_and_code_describe_the_current_backup_and_block_ownership_api():
         assert "Backup-MYCAcl" in row and "Restore-MYCServicesAcl.ps1" in row, name
     doc = (REPO / "docs/architecture/MOBILE_DEVELOPER_BROKER.md").read_text(encoding="utf-8")
     assert "marker +\n   fingerprint persistidos en el ledger" in doc
+
+
+# Persistent hardening backups are not Broker lifecycle artifacts.
+def test_acl_backup_layout_is_canonical_and_not_a_broker_child():
+    layout = _function("Get-MYCBrokerLayout")
+    assert "AclBackupDir  = Join-Path $DeploymentRoot 'acl-backups'" in layout
+    assert "AclBackupDir  = Join-Path $stateDir" not in layout
+    backup = _function("Backup-MYCAcl")
+    assert "New-MYCProtectedDirectory -Layout $Layout -Path $Layout.AclBackupDir" in backup
+    assert "$file = Join-Path $Layout.AclBackupDir" in backup
+    plan = bd.directory_plan(DEPLOYMENT_ROOT, SERVICES, r"C:\MYC\Logs")
+    assert not bd.is_owned_directory(DEPLOYMENT_ROOT + r"\developer-broker\acl-backups", plan)
+    uninstall = _ps_code(UNINSTALL)
+    assert "AclBackupDir" not in uninstall
+    assert "Remove-MYCOwnedTree -Layout $layout -Path $item.Path -Kind $item.Kind" in uninstall
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_state_cleanup_preserves_canonical_and_legacy_backups(tmp_path, capsys, legacy):
+    state_dir = tmp_path / "developer-broker"
+    state_dir.mkdir()
+    backup_dir = (state_dir if legacy else tmp_path) / "acl-backups"
+    backup_dir.mkdir()
+    backup = backup_dir / "services.acl.json"
+    contents = json.dumps(_backup({"path": SERVICES + r"\backend", "sddl": CHILD_SDDL}))
+    backup.write_text(contents)
+    ledger = state_dir / "install-state.json"
+    bd.save_state(ledger, bd.new_state(REPO_ROOT), REPO_ROOT)
+    code, _, result = _run(["state-delete", "--file", str(ledger), "--repo-root", REPO_ROOT], capsys)
+    assert code == 0 and result == {"deleted": True, "retained": False}
+    assert backup.read_text() == contents
+    # Explicit restore accepts either location, without moving historical data.
+    code, _, result = _run(["restore-plan", "--backup", str(backup), "--services-root", SERVICES, "--exclude", BROKER_DIR], capsys)
+    assert code == 0 and result["count"] == 2
+    if not legacy:
+        state_dir.rmdir()  # no dependency on Broker state remains for new backups
+        assert backup.read_text() == contents
+
+
+def test_uninstall_final_message_distinguishes_whatif_from_real_execution():
+    # Static PowerShell contract, not an execution of Windows uninstall.
+    code = _ps_code(UNINSTALL)
+    final = code[code.rindex("if ($WhatIfPreference) {"):]
+    simulated, real = final.split("} else {", 1)
+    assert "Simulación de desinstalación de MYCDeveloperBroker completada (-WhatIf)" in simulated
+    assert "No se ha desinstalado el Broker." in simulated
+    assert "MYCDeveloperBroker desinstalado." not in simulated
+    assert "MYCDeveloperBroker desinstalado." in real
+    assert final.rstrip().endswith("exit 0")
+    assert "$PSCmdlet.ShouldProcess" not in final
+
+
+@pytest.mark.parametrize('path', [
+    r'C:\MYC\Deployment\acl-backups',
+    'c:\\myc\\deployment\\ACL-BACKUPS\\',
+    r'C:\MYC\Deployment\acl-backups\services.acl.json',
+    r'C:\MYC\Deployment\developer-broker\acl-backups',
+])
+def test_backups_are_not_lifecycle_owned_or_deletable(path, capsys, monkeypatch):
+    plan = bd.directory_plan(DEPLOYMENT_ROOT, SERVICES, r'C:\MYC\Logs')
+    assert not bd.is_owned_directory(path, plan)
+
+    def unexpected_delete(_root):
+        pytest.fail('Backup deletion must be rejected before filesystem mutation')
+
+    monkeypatch.setattr(bd, 'remove_owned_tree', unexpected_delete)
+    code, _, result = _run([
+        'remove-owned-tree', '--path', path, '--deployment-root', DEPLOYMENT_ROOT,
+        '--services-root', SERVICES, '--logs-root', r'C:\MYC\Logs',
+    ], capsys)
+    assert code == 3 and result == {'error': 'path_not_owned'}
+
+
+def test_powershell_protection_and_deletion_use_separate_authorities():
+    assert 'return @($plan.owned) + @($plan.persistent_protected)' in _function('Get-MYCProtectableDirectories')
+    owned = _function('Get-MYCOwnedDirectories')
+    assert 'return @($plan.owned)' in owned and 'persistent_protected' not in owned
+    creation = _function('New-MYCProtectedDirectory')
+    assert 'Get-MYCProtectableDirectories -Layout $Layout' in creation
+    assert 'Set-MYCProtectedAcl -Path $Path -Grants $Grants' in creation
+    deletion = _function('Remove-MYCOwnedTree')
+    assert 'Get-MYCOwnedDirectories -Layout $Layout' in deletion
+    assert 'Get-MYCProtectableDirectories' not in deletion
+    assert deletion.index('if ($owned -notcontains') < deletion.index('Test-MYCDirectoryProof')
