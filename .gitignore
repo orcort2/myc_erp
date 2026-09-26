@@ -41,3 +41,7 @@ backend/resources/sat/catalogs.db-wal
 
 myc-mobile.zip
 backend/migrations.zip
+
+# DEV-1C: a rendered MYCDeveloperBroker WinSW XML carries the HMAC secret and
+# lives only on the Windows host; only the *.xml.template is versioned.
+deploy/windows/**/*.xml

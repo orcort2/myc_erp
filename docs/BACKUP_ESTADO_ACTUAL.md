@@ -4,63 +4,127 @@
 >
 > Autoridad: Media; no sustituye los documentos canónicos de project/
 >
-> Corte: 2026-09-22 — DEV-1B (adapter Windows Named Pipe + host del Broker; commit `0b9572d` validado en Windows con 6 fallos; corrección de causa raíz en el worktree, sin commit; pendiente re-ejecución de la suite Windows) sobre DEV-1A ya fusionado en `main` (PR #8, `5bf2349`)
+> Corte: 2026-09-25 — DEV-1C EN REVISIÓN (activos de despliegue del servicio Windows `MYCDeveloperBroker` bajo `NT SERVICE\MYCDeveloperBroker`, sin commit; instalación en Windows pendiente) sobre `main` `05f4c625` (DEV-1B mergeado, PR #9)
 
 # Estado operativo actual del ERP MYC
 
-## DEV-1B — Windows Named Pipe + Broker host (EN REVISIÓN)
+## DEV-1C — Servicio Windows `MYCDeveloperBroker` / identidad dedicada (EN REVISIÓN)
 
-- Validación real en Windows del commit `0b9572d` (Python 3.14.7 +
-  pywin32): 5 passed, 6 failed, 1 skipped. Causa raíz confirmada:
-  `ImpersonateNamedPipeClient` se llamaba desde `win32pipe` (no existe) en
-  vez de `win32security` → `AttributeError` → `connection_failed` antes del
-  handler. Corregido en el worktree (sin commit): `win32security`; fallo al
-  suplantar → `client_identity_unverifiable` sin `RevertToSelf`; tras
-  suplantar, `RevertToSelf` exactamente una vez; fallo de revert →
-  `revert_to_self_failed` y el listener deja de aceptar; prueba estructural
-  de pertenencia de módulos pywin32. **Pendiente re-ejecutar la suite
-  Windows sin cambios** (esperado 11 passed, 1 skipped). Qué validó ya la
-  primera ejecución real y qué queda pendiente:
-  `architecture/MOBILE_DEVELOPER_BROKER.md` ("Validación de DEV-1B", A–D).
-  Validación macOS tras la corrección: named_pipe 146 passed; contrato
-  102; endpoint 14; Windows 12 skipped; DEV-0 + conformidad 97 passed, 1
-  skipped; backend completo 1586 passed, 36 skipped, 0 failed;
-  `alembic heads` = `c4d8e2f1a7b3`.
+- Worktree `/Users/saulcortes/Developer/myc_erp-dev1c`, rama
+  `feat/mobile-developer-broker-service-dev1c`, base `05f4c625` (= `main`,
+  merge PR #9). Sin commit, sin push, sin PR. Producción no se tocó.
+- Implementado (sólo activos de despliegue; `backend/app/developer_broker/`
+  sin cambios): `deploy/windows/developer-broker/` con plantilla WinSW,
+  `broker_deploy.py` (plan/política ACL, veredicto de servicio, INF de
+  `SeServiceLogonRight`, render del XML, bloque gestionado de `backend\.env`,
+  secreto por generación/stdin/reuse), módulo PowerShell, instalador con
+  preflight, desinstalador acotado, validador post-instalación y
+  endurecimiento de `C:\MYC\Services`. `.gitignore` excluye cualquier XML
+  renderizado bajo `deploy/windows/`.
+- Identidad: cuenta virtual `NT SERVICE\MYCDeveloperBroker` registrada con
+  `sc.exe create … obj=` (nunca LocalSystem, ni transitoriamente); SID
+  resuelto en el host por LSA + SCM; cliente ERP `S-1-5-18` verificado.
+- Hallazgo de seguridad de producción: `C:\MYC\Services` con
+  `Authenticated Users: Modify` sobre wrappers/XML de servicios LocalSystem.
+  Endurecimiento reproducible con respaldo JSON por entrada (SDDL) y
+  restauración explícita con `Restore-MYCServicesAcl.ps1` (TD-061);
+  **no aplicado todavía** en `ADMIN`.
+- Configuración de producción: no existe aún ningún `DEVELOPER_BROKER_*`
+  en `backend/.env` del servidor; la escribirá el instalador (bloque
+  gestionado, deshabilitado hasta validar el Broker).
+- Correcciones de auditoría (2026-09-25, sin commit): ledger de propiedad
+  `install-state.json` incremental/atómico (P0: `SeServiceLogonRight`
+  `pending`→`added`, nunca si ya era efectivo; uninstall deshace sólo lo
+  registrado, también tras instalación parcial); alcance ACL reducido a los
+  directorios `developer-broker` (P1: `C:\MYC\Deployment` y
+  `C:\MYC\Logs` sólo se inspeccionan); aprovisionamiento XML + `.env`
+  transaccional con journal transitorio y recuperación (P1). Tras las
+  correcciones: despliegue 150 passed; contrato + named pipe + Windows +
+  endpoint 262 passed, 12 skipped; DEV-0 + conformidad 97 passed, 1 skipped.
+- Cierre DEV-1C (2026-09-25, sin commit): ledger esquema 6; propiedad del
+  bloque de `backend\.env` con marcador no secreto + huella PBKDF2 (un
+  `pending` nunca toca un bloque sin prueba; un `owned` alterado se
+  rechaza); `acl_grants` por concesión `pending → owned` con verificación
+  exacta y revocación sólo de la ACE exacta; reinstalación sin re-proteger
+  `ServiceDir`/`LogDir` propios; `Restore-MYCServicesAcl.ps1` para el
+  respaldo JSON por entrada (sin `icacls /restore`). Validación en el
+  reporte de cierre.
+- Quinta ronda de auditoría (2026-09-25, sin commit): ledger esquema 5;
+  directorios y bloque `backend\.env` con `none → pending → owned`
+  (prueba releída antes de `owned`; `pending` nunca borra); puerta SCM única
+  (`Invoke-MYCGuardedScm`) para stop/config/sidtype/description/failure/
+  failureflag/auto/start/delete y en el `catch`; hardening sin `/T` (raíz
+  primero, "bloquear y luego enumerar"), respaldo SDDL por entrada y borrado
+  sin seguir enlaces. Validación: despliegue 263 passed (incluye carreras
+  reproducidas con sistema de archivos real para el borrado); DEV-1A/1B 262
+  passed, 12 skipped; DEV-0 + conformidad 97 passed, 1 skipped. Residuales:
+  TD-062.
+- Cuarta ronda de auditoría (2026-09-25, sin commit): SCM re-consultado y
+  SID del ledger exigido justo antes de reconfigurar/detener/eliminar;
+  uninstall sin ledger es no-op (no toca `backend\.env`); normalización ACL
+  elimina Deny explícitos (`/remove:d`); cierre garantizado del handle LSA;
+  ejemplos del instalador con `-WinSWExpectedSha256`; config WinSW obsoleta
+  eliminada del destino. Validación: despliegue 226 passed; DEV-1A/1B 262
+  passed, 12 skipped; DEV-0 + conformidad 97 passed, 1 skipped.
+- Tercera ronda de auditoría (2026-09-25, sin commit): propiedad estricta
+  del servicio en reinstalación; rollback de `SeServiceLogonRight` como
+  único miembro vía LSA (pendiente de validar en Windows); lápida del
+  ledger con directorios retenidos; ACE externa exacta + `/grant:r`;
+  reinicio de `MYCBackend` como activación controlada (código 3); WinSW
+  sólo con SHA-256 de procedencia confiable (**P0 operativo pendiente
+  antes de Windows**); recorrido sin `Get-ChildItem -Recurse`; Deny
+  explícitos como violación; redacción exacta del manejo del secreto.
+  Validación: despliegue 218 passed; DEV-1A/1B 262 passed, 12 skipped;
+  DEV-0 + conformidad 97 passed, 1 skipped.
+- Segunda ronda de auditoría (2026-09-25, sin commit): propiedad del
+  servicio `none|pending|owned` con re-consulta del SCM (ledger esquema 3);
+  rechazo de ACE explícitas preexistentes del Broker en repo/venv/Python
+  home; rechazo de reparse points antes de operaciones recursivas y en
+  rutas externas; reversión verificada de `DEVELOPER_BROKER_ENABLED` en el
+  `catch`; código de salida explícito (`Invoke-MYCNativeResult`); limpieza
+  de temporales `secedit` en `finally`. Validación: despliegue 179 passed;
+  contrato + named pipe + Windows + endpoint 262 passed, 12 skipped; DEV-0
+  + conformidad 97 passed, 1 skipped.
+- Validación macOS previa a las correcciones (2026-09-25): despliegue
+  `test_developer_broker_deployment.py` 109 passed; contrato 102; named
+  pipe 146; Windows 12 skipped (no es Windows); endpoint health 14; DEV-0 +
+  conformidad 97 passed, 1 skipped; backend completo 1694 passed, 36
+  skipped, 1 failed — el fallo es ambiental
+  (`test_sat_xls_source.py::…regime_626…`: `backend/resources/sat/catalogo
+  sat.xlsx` está en `.gitignore` y no existe en el worktree; con una copia
+  temporal del archivo oficial pasa 4/4). `alembic heads` =
+  `c4d8e2f1a7b3` (sin migraciones); compileall e import smoke OK; escaneo
+  sin ejecución de procesos en el paquete del Broker ni en
+  `broker_deploy.py`; `broker.health` única operación; `git diff --check`
+  limpio.
+- **Pendiente**: ejecutar en Windows real el runbook de
+  `architecture/MOBILE_DEVELOPER_BROKER.md` ("Despliegue como servicio
+  Windows (DEV-1C)"): preflight, endurecimiento, instalación,
+  `Test-MYCDeveloperBroker.ps1`, reinicio de `MYCBackend`, health
+  end-to-end desde Mobile, y un ensayo de rollback. Nada de la parte
+  Windows de DEV-1C se ha ejecutado.
 
-- Worktree `/Users/saulcortes/Developer/myc_erp-dev1`, rama
-  `feat/mobile-developer-named-pipe-dev1b` creada desde `origin/main`
-  `5bf2349` (merge PR #8, DEV-1A). El checkout estable `myc_erp` no se tocó.
-- Implementado en código: `framing.py` (uint32 BE + payload),
-  `pipe_name.py` (nombre lógico → `\\.\pipe\<nombre>`),
-  `windows_pipe.py` (`WindowsNamedPipeTransport`,
-  `NamedPipeBrokerListener`, DACL explícita de dos SIDs, primera instancia
-  exclusiva, `PIPE_REJECT_REMOTE_CLIENTS`, verificación del SID del servidor
-  antes de escribir, nivel identification, verificación del SID del cliente)
-  y `host.py` (`python -m app.developer_broker.host`, configuración mínima
-  propia desde el entorno). `build_developer_broker_client` crea el
-  transporte real en Windows y falla cerrado fuera (`platform_unsupported`).
-- Settings nuevos: `DEVELOPER_BROKER_SERVICE_SID`,
-  `DEVELOPER_BROKER_CLIENT_SID`.
-- Dependencia nueva: `pywin32==312; sys_platform == "win32"` en el
-  `requirements.txt` raíz; en macOS pip la ignora y no está instalada.
-- Windows real: validación parcial (primera ejecución, ver arriba); fuera
-  de Windows las pruebas de `test_developer_broker_windows.py` se omiten
-  (skip, no pass).
-- Sin shell, PowerShell, ejecución de procesos, sockets/puertos,
-  servicio Windows, WinSW, registro, despliegue ni migraciones (head sigue
-  `c4d8e2f1a7b3`).
-- Corrección post-auditoría: la máscara DACL del Broker pasa de
-  `0x00120087` a `0x0012019F` (`FILE_GENERIC_READ` ∪ `FILE_GENERIC_WRITE`
-  como derechos específicos; necesaria para crear instancias adicionales con
-  `PIPE_ACCESS_DUPLEX`); el cliente sigue en `0x00100083`, sin
-  `FILE_CREATE_PIPE_INSTANCE`. Logging del adapter y del host centralizado en
-  `loggable_reason` (sólo códigos conocidos). La creación real de instancias
-  posteriores sigue **sin validar en Windows** (su prueba falló en la
-  primera ejecución real por el defecto de módulo, antes de poder probarla).
-- Validación vigente: la única es la validación macOS posterior a todas las
-  correcciones, registrada al inicio de esta sección (named_pipe 146
-  passed; backend completo 1586 passed, 36 skipped, 0 failed). Los cortes
-  intermedios quedan trazables en Git.
+## DEV-1B — Windows Named Pipe + Broker host (MERGEADO, PR #9)
+
+- `0b9572d` implementación inicial; `6a9374c` corrección de identidad del
+  cliente en Windows (`ImpersonateNamedPipeClient`/`RevertToSelf` vía
+  `win32security`). Re-ejecución real en Windows de
+  `test_developer_broker_windows.py`: **11 passed, 1 skipped, 0 failed** (el
+  skip es el rechazo de clientes remotos, que requiere un segundo host).
+- PR #9 mergeado; `main` = `05f4c625f5f9cd7620a1a84a543b7f31d787ee27`;
+  backend de producción desplegado en ese `main`.
+- Implementado: `framing.py`, `pipe_name.py`, `windows_pipe.py`
+  (`WindowsNamedPipeTransport`, `NamedPipeBrokerListener`, DACL explícita de
+  dos SIDs `0x0012019F`/`0x00100083`, primera instancia exclusiva,
+  `PIPE_REJECT_REMOTE_CLIENTS`, identidad del servidor verificada antes de
+  escribir, nivel identification, identidad del cliente verificada) y
+  `host.py`. Settings `DEVELOPER_BROKER_SERVICE_SID` y
+  `DEVELOPER_BROKER_CLIENT_SID`. Dependencia `pywin32==312;
+  sys_platform == "win32"`.
+- Histórico (no vigente): la primera ejecución real de `0b9572d` dio 5
+  passed, 6 failed, 1 skipped por el defecto de módulo pywin32 ya corregido
+  en `6a9374c`; detalle en `architecture/MOBILE_DEVELOPER_BROKER.md`
+  ("Validación de DEV-1B").
 
 ## DEV-1A — Developer Broker boundary (MERGEADO, PR #8)
 

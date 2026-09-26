@@ -1,0 +1,43 @@
+<!--
+  DEV-1C: WinSW configuration template for the MYCDeveloperBroker service.
+
+  Rendered ONLY by "broker_deploy.py provision" on the Windows host into
+  C:\MYC\Services\developer-broker\MYCDeveloperBroker.xml. The rendered file
+  carries the HMAC secret: it lives only in that directory (protected ACL:
+  SYSTEM and Administrators full control, the Broker identity read/execute)
+  and is never committed. This template holds placeholders only.
+
+  The service identity is deliberately NOT declared here (no serviceaccount
+  element): the installer registers the service with the SCM directly as
+  NT SERVICE\MYCDeveloperBroker, a virtual account, so the identity does not
+  depend on the WinSW major version's serviceaccount schema and is never
+  LocalSystem, not even transiently.
+
+  The Broker reads only DEVELOPER_BROKER_* from its process environment and
+  never loads backend\.env. It executes only broker.health.
+-->
+<service>
+  <id>MYCDeveloperBroker</id>
+  <name>MYC Developer Broker</name>
+  <description>MYC Developer Broker (Named Pipe + HMAC, broker.health only). Dedicated virtual account; never LocalSystem.</description>
+  <executable>{{PYTHON_EXE}}</executable>
+  <arguments>-B -s -m app.developer_broker.host</arguments>
+  <workingdirectory>{{WORKING_DIR}}</workingdirectory>
+  <startmode>Automatic</startmode>
+  <stoptimeout>15 sec</stoptimeout>
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <logpath>{{LOG_DIR}}</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  <env name="DEVELOPER_BROKER_PIPE_NAME" value="{{PIPE_NAME}}"/>
+  <env name="DEVELOPER_BROKER_SECRET" value="{{SECRET}}"/>
+  <env name="DEVELOPER_BROKER_CLIENT_SID" value="{{CLIENT_SID}}"/>
+  <env name="DEVELOPER_BROKER_SERVICE_SID" value="{{SERVICE_SID}}"/>
+  <env name="DEVELOPER_BROKER_IO_TIMEOUT_SECONDS" value="{{IO_TIMEOUT_SECONDS}}"/>
+  <env name="DEVELOPER_BROKER_MAX_CONNECTIONS" value="{{MAX_CONNECTIONS}}"/>
+</service>

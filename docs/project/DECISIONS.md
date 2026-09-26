@@ -620,8 +620,9 @@ servicio dedicada con least privilege, nunca `LocalSystem`. Detalle en
 
 ## D-2026-09-22 — DEV-1B: Named Pipe con pywin32, identidad del servidor verificada antes de escribir
 
-Estado: EN REVISIÓN (sin commit; código y pruebas cross-platform; pendiente
-de validación en Windows real).
+Estado: VIGENTE — mergeado en `main` (PR #9, `05f4c62`). `0b9572d`
+implementación inicial + `6a9374c` corrección de identidad del cliente;
+re-ejecución real en Windows: 11 passed, 1 skipped, 0 failed.
 
 El transporte Broker es un Windows Named Pipe local implementado con
 `pywin32==312` (única dependencia nueva, sólo Windows por environment
@@ -646,4 +647,86 @@ leída del entorno, nunca del `.env` del ERP, y se niega a correr como
 LocalSystem/LocalService/NetworkService o bajo un SID distinto del
 configurado. La distinción ERP ≠ Broker (SIDs distintos) es política de
 despliegue exigida por el host y por FastAPI. Sin instalación de servicio
-en esta fase. Detalle en `docs/architecture/MOBILE_DEVELOPER_BROKER.md`.
+en esta fase (ver DEV-1C). Detalle en `docs/architecture/MOBILE_DEVELOPER_BROKER.md`.
+
+## D-2026-09-25 — DEV-1C: `MYCDeveloperBroker` como servicio WinSW bajo cuenta virtual, registrado directamente en el SCM
+
+Estado: EN REVISIÓN (sin commit; activos de despliegue y pruebas
+cross-platform; instalación en Windows pendiente).
+
+Identidad: cuenta virtual `NT SERVICE\MYCDeveloperBroker` (SID estable
+`S-1-5-80-…`, sin contraseña, ACLable, no LocalSystem/LocalService/
+NetworkService/`SMM ADMIN`, sin Administrators). El servicio se crea con
+`sc.exe create … obj= "NT SERVICE\MYCDeveloperBroker"` y no con
+`MYCDeveloperBroker.exe install`/`<serviceaccount>`, porque el esquema de
+cuenta difiere entre WinSW v2 y v3 y la versión del servidor no está
+verificada: así la identidad es atómica y el servicio nunca existe como
+LocalSystem. WinSW sigue siendo el host del proceso (convención de
+`MYCBackend`). El SID se resuelve en el host (LSA + SCM deben coincidir);
+nunca se versiona ni se calcula.
+
+Mínimo privilegio para `broker.health`: RX en su directorio de servicio,
+en `backend` (sólo la carpeta), `backend\app` (carpeta + archivos directos),
+`backend\app\developer_broker`, el venv y el runtime base de Python;
+Modify sólo en su directorio de logs. No RX sobre todo el repo: `backend\.env`
+contiene los secretos del ERP y el Broker no debe poder leerlo.
+`SeServiceLogonRight` sólo si la política efectiva no lo cubre ya (vía
+`NT SERVICE\ALL SERVICES`), con `secedit` limitado a esa única línea; nunca
+`ntrights.exe`.
+
+Secreto: fuera de Git, nunca en línea de comandos ni logs. Broker: `<env>`
+del XML renderizado en un directorio con ACL protegida. ERP: bloque
+gestionado en `backend\.env`, escrito deshabilitado y habilitado sólo tras
+validar el Broker. El host sigue leyendo sólo `DEVELOPER_BROKER_*` de su
+entorno de proceso (sin cambios en `host.py`).
+
+`C:\MYC\Services` con `Authenticated Users: Modify` sobre servicios
+LocalSystem se trata como hallazgo de seguridad (TD-061): el despliegue
+exige endurecerlo (respaldo JSON por entrada con SDDL, restaurable con
+`Restore-MYCServicesAcl.ps1`; SYSTEM/Administrators Full
+Control; Users RX sólo si se pide) y el rollback del Broker no lo revierte.
+Correcciones de auditoría (2026-09-25): (1) `install-state.json` es un
+ledger de propiedad incremental (esquema 2, escritura atómica, validado por
+esquema/identidad; corrupto o ajeno → fallo cerrado) creado antes de la
+primera mutación con rollback; `SeServiceLogonRight` se registra `pending`
+antes de `secedit` y `added` tras verificar, nunca si ya era efectivo;
+uninstall deshace sólo lo registrado. (2) DEV-1C sólo re-protege sus
+directorios `developer-broker`; `C:\MYC\Deployment` y `C:\MYC\Logs` se
+inspeccionan, nunca se re-ACLan. (3) El aprovisionamiento XML + `.env` es
+transaccional con journal transitorio y recuperación.
+Segunda ronda de auditoría (2026-09-25): ledger esquema 3 con propiedad
+del servicio `none|pending|owned` (`owned` sólo tras re-consultar el SCM);
+fallo cerrado ante ACE explícitas preexistentes del SID del Broker en rutas
+no propias; rechazo de reparse points antes de toda operación recursiva y
+de rutas externas redirigidas; el `catch` del instalador revierte y
+verifica `DEVELOPER_BROKER_ENABLED` si ese intento lo habilitó.
+Tercera ronda (2026-09-25): ledger esquema 4. Un servicio compatible sólo
+se reconfigura si el ledger dice `owned` (`pending` → reconciliar;
+`none` → no demostrado propio). El rollback de `SeServiceLogonRight`
+restaura "derecho sin asignar" con `LsaRemoveAccountRights` cuando el
+Broker es el único miembro. Directorios propios registrados antes de
+crearse; con artefactos retenidos el ledger queda como lápida
+(`uninstalled`). Reinstalación sólo acepta la ACE externa exacta y aplica
+`/grant:r` + verificación. El reinicio de `MYCBackend` es activación
+separada (código 3). Integridad de WinSW por SHA-256 de procedencia
+confiable (P0 operativo). Deny explícitos en árboles protegidos son
+violación.
+Cuarta ronda (2026-09-25): re-consulta del SCM + SID del ledger
+inmediatamente antes de reconfigurar/detener/eliminar el servicio (nunca un
+veredicto previo); uninstall sin ledger no modifica nada, tampoco
+`backend\.env`; la normalización ACL elimina también Deny explícitos.
+Quinta ronda (2026-09-25): ledger esquema 5 (sin compatibilidad con 2–4:
+DEV-1C no está desplegado). Directorios y bloque de `backend\.env` siguen
+`none → pending → owned` (`owned` sólo tras releer y demostrar; `pending`
+nunca autoriza borrar/modificar). Toda mutación del servicio existente
+pasa por una única puerta SCM fresca (`Invoke-MYCGuardedScm`), también en el
+`catch`. Sin `/T`, sin `icacls /save`, sin `Remove-Item -Recurse`: raíz
+cerrada primero, "bloquear y luego enumerar", respaldo SDDL por entrada y
+borrado sin seguir enlaces en Python. Residuales en TD-062.
+Cierre DEV-1C (2026-09-25): ledger esquema 6 (sin compatibilidad con 5).
+El bloque de `backend\.env` sólo se toca con prueba persistida (marcador
+no secreto + huella PBKDF2 del bloque exacto); cada concesión ACL externa
+es `pending → owned` con verificación exacta y se revoca sólo si sigue
+siendo exacta; la reinstalación no re-protege directorios propios; el
+respaldo ACL se restaura con `Restore-MYCServicesAcl.ps1`.
+Detalle en `docs/architecture/MOBILE_DEVELOPER_BROKER.md`.

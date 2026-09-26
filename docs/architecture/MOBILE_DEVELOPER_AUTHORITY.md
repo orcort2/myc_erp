@@ -1,4 +1,4 @@
-> Estado: EN REVISIÓN — FASE DEV-0 (endurecimiento pre-cierre aplicado; pendiente de auditoría humana, NO cerrado)
+> Estado: DEV-0 MERGEADO en `main` (PR #7, `91d7404`); vigente como autoridad de usuario de DEV-1A/1B/1C
 
 > Tipo: Arquitectura vigente
 
@@ -74,10 +74,12 @@ abriendo un shell dentro de su propio proceso. **DEV-1A fijó el canal**:
 IPC local por Windows Named Pipe + ACL del SO + mensajes autenticados con
 HMAC; sin puerto (ni 8765 ni loopback TCP). El contrato, el cliente, el
 anti-replay y el endpoint `GET /developer/broker/health` están en
-[`MOBILE_DEVELOPER_BROKER.md`](MOBILE_DEVELOPER_BROKER.md). DEV-1B agrega en
-código el adapter Named Pipe, el host del Broker y la frontera de identidad
-Windows (en revisión, pendiente de validación en Windows real); la
-instalación como servicio con identidad dedicada sigue pendiente.
+[`MOBILE_DEVELOPER_BROKER.md`](MOBILE_DEVELOPER_BROKER.md). DEV-1B (mergeado,
+PR #9, validado en Windows real) agrega el adapter Named Pipe, el host del
+Broker y la frontera de identidad Windows. DEV-1C (en revisión) aporta los
+activos de despliegue del servicio `MYCDeveloperBroker` bajo la cuenta
+virtual `NT SERVICE\MYCDeveloperBroker`; su instalación en el servidor
+sigue pendiente.
 
 No hay exposición directa de PostgreSQL ni se requiere SSH: toda futura
 consola de base de datos y toda futura terminal viajarán por el mismo túnel
