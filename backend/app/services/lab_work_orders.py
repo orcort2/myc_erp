@@ -10,7 +10,7 @@ import zipfile
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import String, cast, delete, func, select, text, update
+from sqlalchemy import String, cast, delete, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -798,6 +798,7 @@ def reject_group_request(
 def list_work_orders(
     db: Session,
     *,
+    q: str | None = None,
     folio: str | None = None,
     client: str | None = None,
     work_order_status: str | None = None,
@@ -808,6 +809,12 @@ def list_work_orders(
     query = _query_with_relations()
     if operator_client_id is not None:
         query = query.where(LabWorkOrder.operator_client_id == operator_client_id)
+    if q and q.strip():
+        term = q.strip()
+        query = query.where(or_(
+            cast(LabWorkOrder.folio, String).contains(term, autoescape=True),
+            LabWorkOrder.client_name.icontains(term, autoescape=True),
+        ))
     if folio and folio.strip():
         query = query.where(cast(LabWorkOrder.folio, String).contains(folio.strip()))
     if client and client.strip():

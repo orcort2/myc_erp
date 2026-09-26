@@ -29,43 +29,30 @@ test('el flujo técnico usa el canon de botones acordado', () => {
   );
 });
 
-test('KeyboardAvoidingView es la única autoridad de teclado -- ningún ScrollView administrativo repite el ajuste automático', () => {
-  assert.equal(
-    source.includes('\n              automaticallyAdjustKeyboardInsets\n'),
-    false,
-  );
-
-  assert.equal(
-    source.includes('\n                  automaticallyAdjustKeyboardInsets\n'),
-    false,
-  );
-
-  const keyboardAvoidingOpenTags =
-    source.split('<KeyboardAvoidingView').length - 1;
-
-  assert.equal(
-    keyboardAvoidingOpenTags,
-    4,
-    'las 4 hojas administrativas deben seguir usando KeyboardAvoidingView',
-  );
+// Estas pruebas verifican cableado; no prueban geometría ni visibilidad nativa.
+test('los cuatro formularios tienen una sola autoridad por plataforma y conservan taps', () => {
+  const containers = [...source.matchAll(/<KeyboardAvoidingView([^>]+)>\s*<ScrollView([^>]+)>/g)];
+  assert.equal(containers.length, 4);
+  for (const [, kav, scroll] of containers) {
+    assert.match(kav, /enabled=\{Platform\.OS === 'android'\}/);
+    assert.match(kav, /behavior=\{Platform\.OS === 'android' \? 'height' : undefined\}/);
+    assert.match(scroll, /automaticallyAdjustKeyboardInsets=\{Platform\.OS === 'ios'\}/);
+    assert.match(scroll, /keyboardShouldPersistTaps="handled"/);
+    assert.doesNotMatch(scroll, /scrollEnabled=\{false\}/);
+  }
+  assert.doesNotMatch(source, /behavior=.*'padding'/);
+  assert.equal((source.match(/automaticallyAdjustKeyboardInsets=/g) ?? []).length, 4);
 });
 
-test('el modal principal, el editor de equipo, el diálogo administrativo compartido y la distribución de folios siguen permitiendo scroll con el campo activo visible', () => {
-  assert.match(
-    source,
-    /<ScrollView[\s\S]{0,80}contentContainerStyle=\{styles\.modalContent\}[\s\S]{0,200}keyboardShouldPersistTaps="handled"/,
-  );
+test('el formulario conserva scroll acotado y bloqueo exclusivo durante el trazo de firma', () => {
+  assert.match(source, /scrollEnabled=\{!signatureDrawing\}/);
+  assert.match(source, /contentContainerStyle=\{styles\.modalContent\}/);
+  assert.equal((source.match(/contentContainerStyle=\{styles\.overlayContent\}/g) ?? []).length, 3);
+  assert.match(source, /flex: \{\s*flex: 1/);
+});
 
-  const overlayScrolls =
-    source.split(
-      /<ScrollView\s*\n\s*contentContainerStyle=\{styles\.overlayContent\}/,
-    ).length - 1;
-
-  assert.equal(
-    overlayScrolls,
-    3,
-    'editor de equipo, diálogo compartido y distribución de folios comparten el mismo contrato de ScrollView',
-  );
+test('el ajuste no depende del modelo del dispositivo ni de offsets manuales', () => {
+  assert.doesNotMatch(source, /iPhone|modelName|modelId|deviceName|keyboardVerticalOffset|Keyboard\.addListener/);
 });
 
 test('datos generales y equipo presentan fieldErrors estructurados junto al control', () => {
@@ -196,4 +183,49 @@ test('el alta de equipo (saveConfiguredEquipment) manda workOrder.edit_version p
     source,
     /buildConfiguredEquipmentPayload\(values\.equipment, values\.documentaryClient, values\.service, workOrder\.edit_version\)/,
   );
+});
+
+// Contratos estáticos de la cabecera; no validan geometría en dispositivo.
+test('listado usa un input q, debounce de 400 ms y limpia búsqueda/estado', () => {
+  const header = source.slice(source.indexOf('<View style={styles.filters}>'), source.indexOf('<View style={styles.screenActions}>'));
+  assert.equal((header.match(/<TextInput/g) ?? []).length, 1);
+  assert.match(header, /placeholder="Buscar OT o cliente"/);
+  assert.match(header, /onChangeText=\{setSearchFilter\}/);
+  assert.doesNotMatch(source, /folioFilter|clientFilter|debouncedFolio|debouncedClient|`folio=|`client=/);
+  assert.match(source, /debouncedSearch \? `q=\$\{encodeURIComponent\(debouncedSearch\)\}`/);
+  assert.match(source, /setTimeout\(\(\) => \{\s*setDebouncedSearch\(searchFilter\.trim\(\)\);\s*}, 400\)/);
+  assert.match(source, /return \(\) => clearTimeout\(timer\)/);
+  assert.match(source, /function clearFilters\(\) \{\s*setSearchFilter\(''\);\s*setDebouncedSearch\(''\);\s*setStatusFilter\('all'\)/);
+  assert.match(header, /onPress=\{clearFilters\}/);
+  assert.match(header, /onPress=\{\(\) => setStatusFilter\(value\)\}/);
+  assert.match(source, /if \(user\) refresh\(true\);[\s\S]*?\[debouncedSearch, statusFilter, user\]/);
+});
+
+test('listado conserva offset, tamaño de página y append versus reset', () => {
+  assert.match(source, /const offset = reset \? 0 : itemCount\.current/);
+  assert.match(source, /`limit=\$\{PAGE_SIZE\}`/);
+  assert.match(source, /`offset=\$\{offset\}`/);
+  assert.match(source, /`status=\$\{statusFilter\}`/);
+  assert.match(source, /const updated = reset \? next : \[\.\.\.current, \.\.\.next\]/);
+  assert.match(source, /setHasMore\(next\.length === PAGE_SIZE\)/);
+  assert.match(source, /onPress=\{\(\) => refresh\(false\)\}/);
+});
+
+test('generación conserva dos targets, permisos y handlers con composición horizontal local', () => {
+  for (const [permission, label, handler] of [
+    ['canCreateWorkOrders', 'Generar orden', 'startNew'],
+    ['canCreateWorkOrderGroupsDirect', 'Generar grupo', 'startDirectGroup'],
+  ]) {
+    const start = source.indexOf(`{${permission} && (`);
+    const block = source.slice(start, source.indexOf('</Pressable>', start));
+    assert.match(block, /<Pressable/);
+    assert.ok(block.includes(`accessibilityLabel="${label}"`));
+    assert.ok(block.includes(`onPress={${handler}}`));
+    assert.match(block, /accessibilityRole="button"/);
+    assert.match(block, /styles.generateAction/);
+    assert.ok(block.indexOf('<MaterialCommunityIcons') < block.indexOf('<Text'));
+  }
+  assert.match(source, /generateAction: \{\s*flex: 1,\s*flexDirection: 'row',\s*alignItems: 'center'/);
+  assert.match(source, /minHeight: 52/);
+  assert.match(source, /screenActions: \{\s*flexDirection: 'row'/);
 });

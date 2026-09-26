@@ -282,6 +282,7 @@ def create_lab_work_order(
 
 @router.get("", response_model=list[LabWorkOrderListItem])
 def list_lab_work_orders(
+    q: str | None = Query(default=None, max_length=255),
     folio: str | None = Query(default=None, max_length=20),
     client: str | None = Query(default=None, max_length=255),
     status: Literal["all", "open", "completed"] = "all",
@@ -294,6 +295,7 @@ def list_lab_work_orders(
 ) -> list[LabWorkOrderListItem]:
     return list_work_orders(
         db,
+        q=q,
         folio=folio,
         client=client,
         work_order_status=status,

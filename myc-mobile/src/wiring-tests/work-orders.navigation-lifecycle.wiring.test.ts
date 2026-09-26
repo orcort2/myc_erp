@@ -93,7 +93,7 @@ test('los efectos sensibles a refresh/notificación/sesión nunca tocan setOpen'
   // de línea, para no ser frágil a reordenamientos) y confirma que ninguno
   // contiene setOpen(.
   const blocks: { label: string; start: string; end: string }[] = [
-    { label: 'refresh del listado (refresh)', start: 'const refresh = useCallback(async (reset = true) => {', end: '}, [debouncedClient, debouncedFolio, request, statusFilter]);' },
+    { label: 'refresh del listado (refresh)', start: 'const refresh = useCallback(async (reset = true) => {', end: '}, [debouncedSearch, request, statusFilter]);' },
     { label: 'refreshActive', start: 'const refreshActive = useCallback(async (force = false) => {', end: '}, [refresh]);' },
     { label: 'useFocusEffect', start: "useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));", end: "useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));" },
     { label: 'subscribe() -- notificación in-app', start: 'useEffect(() => subscribe((event) => {', end: '}), [closureScope, refreshActive, request, signatureFlowState?.rootWorkOrderId, subscribe, user?.full_name, workOrder]);' },

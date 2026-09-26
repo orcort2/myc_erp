@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AlertBanner, Card, EmptyState, LoadingState } from '@/src/design/primitives';
 import { colors, radius, spacing } from '@/src/design/tokens';
@@ -138,7 +138,7 @@ export function LabClientSelector({ onSelect, request }: Props) {
         ) : searchError ? (
           <AlertBanner tone="danger">{searchError}</AlertBanner>
         ) : visibleResults.length ? (
-          <ScrollView nestedScrollEnabled>
+          <View>
             {visibleResults.map((item) => (
               <Pressable
                 key={item.id}
@@ -153,7 +153,7 @@ export function LabClientSelector({ onSelect, request }: Props) {
                 {!!item.attention && <Text style={styles.resultMeta}>{item.attention}</Text>}
               </Pressable>
             ))}
-          </ScrollView>
+          </View>
         ) : (
           <EmptyState title="Sin resultados" description={state.searchTerm.trim() ? 'Prueba con otro nombre o crea el cliente.' : 'Escribe para buscar un cliente existente.'} />
         )}
@@ -179,7 +179,7 @@ function SelectorField({
 const styles = StyleSheet.create({
   title: { color: '#142b3a', fontSize: 16, fontWeight: '800', marginBottom: spacing.sm },
   search: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 9, borderWidth: 1, minHeight: 44, paddingHorizontal: 11 },
-  results: { marginTop: spacing.sm, maxHeight: 220 },
+  results: { marginTop: spacing.sm },
   resultRow: { borderBottomColor: '#e4ebf0', borderBottomWidth: 1, borderRadius: radius.sm, paddingHorizontal: spacing.xs, paddingVertical: 9 },
   resultRowSelected: { backgroundColor: '#eef6f5' },
   resultRowPressed: { backgroundColor: colors.background },

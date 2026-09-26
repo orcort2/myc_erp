@@ -1,3 +1,4 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -42,6 +43,7 @@ import {
   PrimaryButton,
   SecondaryButton,
 } from '@/src/design/primitives';
+import { colors } from '@/src/design/tokens';
 import { MycDatePickerField } from '@/src/design/MycDatePickerField';
 import {
   buildConfiguredEquipmentPayload,
@@ -237,10 +239,8 @@ export default function WorkOrdersScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [listError, setListError] = useState('');
   const [hasMore, setHasMore] = useState(false);
-  const [folioFilter, setFolioFilter] = useState('');
-  const [clientFilter, setClientFilter] = useState('');
-  const [debouncedFolio, setDebouncedFolio] = useState('');
-  const [debouncedClient, setDebouncedClient] = useState('');
+  const [searchFilter, setSearchFilter] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'completed'>('all');
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -354,8 +354,7 @@ export default function WorkOrdersScreen() {
         `limit=${PAGE_SIZE}`,
         `offset=${offset}`,
         `status=${statusFilter}`,
-        debouncedFolio ? `folio=${encodeURIComponent(debouncedFolio)}` : '',
-        debouncedClient ? `client=${encodeURIComponent(debouncedClient)}` : '',
+        debouncedSearch ? `q=${encodeURIComponent(debouncedSearch)}` : '',
       ].filter(Boolean).join('&');
       const next = await request<LabListItem[]>(`/mobile/v1/technician/lab-work-orders?${query}`);
       setItems((current) => {
@@ -370,7 +369,7 @@ export default function WorkOrdersScreen() {
       if (reset) setLoading(false);
       else setLoadingMore(false);
     }
-  }, [debouncedClient, debouncedFolio, request, statusFilter]);
+  }, [debouncedSearch, request, statusFilter]);
 
   const refreshActive = useCallback(async (force = false) => {
     if (!refreshGate.current.shouldRefresh(Date.now(), force)) return;
@@ -381,17 +380,16 @@ export default function WorkOrdersScreen() {
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedFolio(folioFilter.trim());
-      setDebouncedClient(clientFilter.trim());
+      setDebouncedSearch(searchFilter.trim());
     }, 400);
     return () => clearTimeout(timer);
-  }, [clientFilter, folioFilter]);
+  }, [searchFilter]);
 
   useEffect(() => {
     if (user) refresh(true);
     // refresh also depends on the current item count for pagination; filters are the trigger here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedClient, debouncedFolio, statusFilter, user]);
+  }, [debouncedSearch, statusFilter, user]);
 
   useEffect(() => {
     if (!capabilities.canRequestWorkOrderGroups) return;
@@ -538,8 +536,8 @@ export default function WorkOrdersScreen() {
   }
 
   function clearFilters() {
-    setFolioFilter('');
-    setClientFilter('');
+    setSearchFilter('');
+    setDebouncedSearch('');
     setStatusFilter('all');
   }
 
@@ -1486,28 +1484,16 @@ export default function WorkOrdersScreen() {
       </View>
 
       <View style={styles.filters}>
-        <View style={styles.filterRow}>
-          <View style={styles.filterField}>
-            <Text style={styles.filterLabel}>Folio</Text>
-            <TextInput
-              keyboardType="number-pad"
-              onChangeText={setFolioFilter}
-              placeholder="6401"
-              style={styles.filterInput}
-              value={folioFilter}
-            />
-          </View>
-
-          <View style={styles.filterField}>
-            <Text style={styles.filterLabel}>Cliente</Text>
-            <TextInput
-              autoCapitalize="words"
-              onChangeText={setClientFilter}
-              placeholder="Buscar cliente"
-              style={styles.filterInput}
-              value={clientFilter}
-            />
-          </View>
+        <View style={styles.searchField}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.textMuted} />
+          <TextInput
+            accessibilityLabel="Buscar OT o cliente"
+            autoCapitalize="none"
+            onChangeText={setSearchFilter}
+            placeholder="Buscar OT o cliente"
+            style={styles.searchInput}
+            value={searchFilter}
+          />
         </View>
 
         <View style={styles.filterFooter}>
@@ -1545,21 +1531,31 @@ export default function WorkOrdersScreen() {
 
       <View style={styles.screenActions}>
         {canCreateWorkOrders && (
-          <ActionTile
-            icon="file-document-plus-outline"
-            label="Generar orden"
+          <Pressable
+            accessibilityLabel="Generar orden"
+            accessibilityRole="button"
             onPress={startNew}
-            tone="primary"
-          />
+            style={({ pressed }) => [styles.generateAction, pressed && styles.generateActionPressed]}
+          >
+            <View style={[styles.generateIcon, styles.generateIconPrimary]}>
+              <MaterialCommunityIcons name="file-document-plus-outline" size={20} color="#fff" />
+            </View>
+            <Text style={styles.generateLabel}>Generar orden</Text>
+          </Pressable>
         )}
 
         {canCreateWorkOrderGroupsDirect && (
-          <ActionTile
-            icon="folder-multiple-plus-outline"
-            label="Generar grupo"
+          <Pressable
+            accessibilityLabel="Generar grupo"
+            accessibilityRole="button"
             onPress={startDirectGroup}
-            tone="secondary"
-          />
+            style={({ pressed }) => [styles.generateAction, pressed && styles.generateActionPressed]}
+          >
+            <View style={[styles.generateIcon, styles.generateIconSecondary]}>
+              <MaterialCommunityIcons name="folder-multiple-plus-outline" size={20} color="#fff" />
+            </View>
+            <Text style={styles.generateLabel}>Generar grupo</Text>
+          </Pressable>
         )}
 
         {canRequestWorkOrderGroups && (
@@ -1609,19 +1605,16 @@ export default function WorkOrdersScreen() {
             />
           </View>
           {busy && <View style={styles.busy}><ActivityIndicator color="#fff" /><Text style={styles.busyText}>{deleting ? 'Eliminando orden…' : 'Guardando…'}</Text></View>}
-          {/* Corrección 2026-09-08: KeyboardAvoidingView es la única
-              autoridad de ajuste de teclado en este archivo -- combinarlo
-              con ScrollView.automaticallyAdjustKeyboardInsets duplicaba la
-              compensación en iOS (ambos empujan el contenido hacia arriba a
-              la vez), haciendo que el sheet subiera de más y tapara
-              encabezado/campos. Ver también las 3 hojas administrativas más
-              abajo (editar equipo, ticket compartido, distribución de
-              folios) -- mismo patrón, misma corrección. */}
+          {/* Una autoridad por plataforma: iOS ajusta insets y foco en el
+              ScrollView nativo; Android conserva el ajuste de altura.
+              No combinar padding del contenedor con insets de teclado. */}
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            enabled={Platform.OS === 'android'}
+            behavior={Platform.OS === 'android' ? 'height' : undefined}
             style={styles.flex}
           >
             <ScrollView
+              automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
               contentContainerStyle={styles.modalContent}
               keyboardShouldPersistTaps="handled"
               nestedScrollEnabled
@@ -1745,22 +1738,17 @@ export default function WorkOrdersScreen() {
                       la misma señal que backend incrementa igual para
                       ambos caminos de reapertura. */}
                   {wasReopened(workOrder) && editable && (
-                    <SecondaryButton icon="pencil-outline" label="Corregir datos de la orden" onPress={() => setStep('general')} />
-                  )}
-                  {/* PENDIENTE 4: "Completar cambios" cierra la sesión de
-                      corrección -- mismo gate que "Corregir datos de la
-                      orden" (wasReopened == revision_number > 1, editable ==
-                      status draft + canExecuteWorkOrders), el mismo par de
-                      condiciones que exige complete_corrections en backend
-                      (_ensure_members_editable + revision_number > 1). */}
-                  {wasReopened(workOrder) && editable && (
-                    <PrimaryButton
-                      disabled={busy}
-                      icon="check-all"
-                      label="Completar cambios"
-                      loading={busy}
-                      onPress={confirmCompleteCorrections}
-                    />
+                    <View style={styles.correctionActions}>
+                      <SecondaryButton icon="pencil-outline" label="Corregir datos de la orden" onPress={() => setStep('general')} />
+                      {/* Ambas acciones pertenecen a la misma sesión de corrección. */}
+                      <PrimaryButton
+                        disabled={busy}
+                        icon="check-all"
+                        label="Completar cambios"
+                        loading={busy}
+                        onPress={confirmCompleteCorrections}
+                      />
+                    </View>
                   )}
                   <View style={styles.sectionRow}><Text style={styles.sectionTitle}>Equipos</Text><Text style={styles.counter}>{workOrder.equipment.length}/10</Text></View>
                   {workOrder.equipment.map((item) => {
@@ -2287,10 +2275,12 @@ export default function WorkOrdersScreen() {
           {equipmentEditor && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                enabled={Platform.OS === 'android'}
+                behavior={Platform.OS === 'android' ? 'height' : undefined}
                 style={styles.overlayCard}
               >
                 <ScrollView
+                  automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -2363,10 +2353,12 @@ export default function WorkOrdersScreen() {
           ) && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                enabled={Platform.OS === 'android'}
+                behavior={Platform.OS === 'android' ? 'height' : undefined}
                 style={styles.overlayCard}
               >
                 <ScrollView
+                  automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -2552,10 +2544,12 @@ export default function WorkOrdersScreen() {
           {folioDistributionOpen && canCancel && workOrder && (
             <View style={styles.overlay}>
               <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                enabled={Platform.OS === 'android'}
+                behavior={Platform.OS === 'android' ? 'height' : undefined}
                 style={styles.overlayCard}
               >
                 <ScrollView
+                  automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
                   contentContainerStyle={styles.overlayContent}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -2786,15 +2780,15 @@ const styles = StyleSheet.create({
     padding: 12,
   },
 
-  filterRow: {
+  searchField: {
+    alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-  },
-
-  filterField: {
-    flex: 1,
-    gap: 5,
-    minWidth: 0,
+    gap: 8,
+    backgroundColor: '#f8fafb',
+    borderColor: '#b9c8d2',
+    borderRadius: 9,
+    borderWidth: 1,
+    paddingHorizontal: 10,
   },
 
   filterLabel: {
@@ -2803,14 +2797,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  filterInput: {
-    backgroundColor: '#f8fafb',
-    borderColor: '#b9c8d2',
-    borderRadius: 9,
-    borderWidth: 1,
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
     fontSize: 14,
-    height: 40,
-    paddingHorizontal: 10,
+    minHeight: 44,
+    paddingVertical: 8,
   },
 
   filterFooter: {
@@ -2858,6 +2850,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
+
+  generateAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    minHeight: 52,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+  generateActionPressed: { opacity: 0.72 },
+  generateIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  generateIconPrimary: { backgroundColor: colors.primary },
+  generateIconSecondary: { backgroundColor: '#008f87' },
+  generateLabel: { color: colors.text, fontSize: 14, fontWeight: '800', flexShrink: 1 },
 
   screenActions: {
     flexDirection: 'row',
@@ -3060,7 +3078,13 @@ const styles = StyleSheet.create({
     marginTop: 3,
   },
 
+  correctionActions: {
+    gap: 10,
+    marginBottom: 16,
+  },
+
   selectedClient: {
+    marginBottom: 16,
     backgroundColor: '#e4f4ef',
     borderColor: '#75b9a7',
     borderRadius: 10,

@@ -2510,3 +2510,78 @@ def test_delete_lab_work_order_rolls_back_on_commit_failure(lab_context, monkeyp
 
     with factory() as db:
         assert db.get(LabWorkOrder, created["id"]) is not None
+
+
+def test_unified_work_order_search_preserves_legacy_status_and_pagination(lab_context):
+    client, factory, tokens = lab_context
+    url = "/api/mobile/v1/technician/lab-work-orders"
+    headers = auth(tokens["tech"])
+    for name in ("Honda de México", "HONDA Industrial", "Cliente 6400", "Otro cliente"):
+        response = client.post(url, json=create_payload(name), headers=headers)
+        assert response.status_code == 201, response.text
+    with factory() as db:
+        row = db.scalar(select(LabWorkOrder).where(LabWorkOrder.folio == 6401))
+        row.status = "completed"
+        db.commit()
+
+    def folios(**params):
+        response = client.get(url, params=params, headers=headers)
+        assert response.status_code == 200, response.text
+        return [item["folio"] for item in response.json()]
+
+    assert folios(q="6400") == [6402, 6400]  # OR: cliente o folio, no AND
+    assert folios(q="400") == [6402, 6400]
+    assert folios(q="Honda de México") == [6400]
+    assert folios(q="  hOnDa  ") == [6401, 6400]
+    assert folios(q="onda") == [6401, 6400]
+    assert folios(q="Honda", status="open") == [6400]
+    assert folios(q="Honda", status="completed") == [6401]
+    assert folios(q="640", status="all", offset=0, limit=2) == [6403, 6402]
+    assert folios(q="640", status="all", offset=2, limit=2) == [6401, 6400]
+    assert folios(q="640", offset=4, limit=2) == []
+    assert folios(q="   ") == folios()
+    assert folios(q="no existe") == []
+    assert folios(q="%") == []  # el texto no expande comodines SQL
+    assert folios(q="_") == []
+    assert folios(folio="6400") == [6400]
+    assert folios(client="honda") == [6401, 6400]
+    assert folios(folio="6402", client="honda") == []
+    assert folios(q="6400", client="Honda") == [6400]
+    assert folios(q="Honda", folio="6401") == [6401]
+    assert client.get(url, params={"q": "Honda"}).status_code == 401
+    assert client.get(url, params={"q": "x" * 256}, headers=headers).status_code == 422
+
+
+def test_unified_search_keeps_endpoint_permission_and_operator_scope(lab_context):
+    from app.core.mobile.security import MobileSecurityContext, get_mobile_context
+
+    client, factory, tokens = lab_context
+    url = "/api/mobile/v1/technician/lab-work-orders"
+    headers = auth(tokens["tech"])
+    for name in ("Honda propia", "Honda ajena", "Interna"):
+        assert client.post(url, json=create_payload(name), headers=headers).status_code == 201
+    with factory() as db:
+        operators = [Client(legal_name=name, commercial_name=name) for name in ("Uno", "Dos")]
+        db.add_all(operators)
+        db.flush()
+        rows = list(db.scalars(select(LabWorkOrder).order_by(LabWorkOrder.folio)).all())
+        rows[0].operator_client_id = operators[0].id
+        rows[1].operator_client_id = operators[1].id
+        db.commit()
+        context = MobileSecurityContext(
+            user=db.scalar(select(User).where(User.username == "lab-tech")),
+            actor_type="client", client_id=operators[0].id,
+            permissions=frozenset({"work_orders.read_organization"}),
+        )
+    # Simula sólo la identidad; ejecuta permiso, router, scope y consulta reales.
+    app.dependency_overrides[get_mobile_context] = lambda: context
+    try:
+        for term in ("Honda", "640"):
+            response = client.get(url, params={"q": term}, headers=headers)
+            assert response.status_code == 200
+            assert [row["folio"] for row in response.json()] == [6400]
+        denied = MobileSecurityContext(user=context.user, actor_type="client", client_id=context.client_id, permissions=frozenset())
+        app.dependency_overrides[get_mobile_context] = lambda: denied
+        assert client.get(url, params={"q": "Honda"}, headers=headers).status_code == 403
+    finally:
+        app.dependency_overrides.pop(get_mobile_context, None)

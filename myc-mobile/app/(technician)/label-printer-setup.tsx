@@ -1,6 +1,6 @@
 import { Redirect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/src/auth/AuthProvider';
@@ -165,7 +165,9 @@ export default function LabelPrinterSetupScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <Screen>
-        <BackButton />
+        <View style={styles.backNavigation}>
+          <BackButton />
+        </View>
 
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={styles.title}>Centro de etiquetado</Text>
@@ -324,6 +326,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  backNavigation: {
+    paddingLeft: spacing.lg,
   },
   content: {
     padding: spacing.lg,
