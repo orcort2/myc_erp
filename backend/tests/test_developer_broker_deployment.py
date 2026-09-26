@@ -103,6 +103,7 @@ def test_service_id_name_account_and_paths():
 def test_rendered_service_is_automatic_restarting_bounded_and_never_daemonizes():
     root = ElementTree.fromstring(_render())
     assert root.findtext("startmode") == "Automatic"
+    assert root.findtext("autoRefresh") == "false"
     assert root.findtext("arguments") == "-B -s -m app.developer_broker.host"
     assert [node.get("action") for node in root.findall("onfailure")] == ["restart"] * 3
     assert root.findtext("resetfailure") == "1 hour"

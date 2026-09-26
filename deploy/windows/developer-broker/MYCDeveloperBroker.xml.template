@@ -24,6 +24,7 @@
   <arguments>-B -s -m app.developer_broker.host</arguments>
   <workingdirectory>{{WORKING_DIR}}</workingdirectory>
   <startmode>Automatic</startmode>
+  <autoRefresh>false</autoRefresh>
   <stoptimeout>15 sec</stoptimeout>
   <onfailure action="restart" delay="10 sec"/>
   <onfailure action="restart" delay="30 sec"/>
