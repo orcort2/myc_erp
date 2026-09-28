@@ -17,10 +17,19 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { apiUrl, readApiError } from '@/src/api/client';
 import { useAuth } from '@/src/auth/AuthProvider';
-import { BackButton } from '@/src/design/primitives';
+import { BackButton, RefetchIndicator } from '@/src/design/primitives';
 import { canResolveOperationalTicket, deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import { useNotificationSync } from '@/src/notifications/NotificationSyncProvider';
 import { affectsTickets, RefreshGate } from '@/src/notifications/refresh-policy';
+import {
+  beginListFetch,
+  canLoadMore,
+  initialListLoadState,
+  settleListFetch,
+  showsInitialSpinner,
+  type ListFetchTrigger,
+  type ListLoadState,
+} from '@/src/sync/list-load-state';
 import { filterGroupRequests, filterTicketsByKind, type RequestInboxKind, visibleRequestKinds } from '@/src/requests/request-inbox';
 import type { LabWorkOrderGroupRequest } from '@/src/types/lab-work-order';
 import type { OperationalTicket, SignaturePolicy, TicketStatus } from '@/src/types/operational-ticket';
@@ -57,10 +66,11 @@ export default function TicketsScreen() {
   const { publishLocalChange, subscribe } = useNotificationSync();
   const params = useLocalSearchParams<{ ticketId?: string; groupRequestId?: string; requestKind?: string }>();
   const capabilities = deriveMobileCapabilities(user);
+  // Identidad estable frente a renovaciones silenciosas de sesión (ver work-orders.tsx).
+  const userId = user?.id ?? null;
   const [items, setItems] = useState<OperationalTicket[]>([]);
   const [groupRequests, setGroupRequests] = useState<LabWorkOrderGroupRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [listLoad, setListLoad] = useState<ListLoadState>(initialListLoadState);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState<TicketStatus | 'all'>('all');
@@ -75,8 +85,9 @@ export default function TicketsScreen() {
   const [accreditedQuantity, setAccreditedQuantity] = useState('0');
   const [traceableQuantity, setTraceableQuantity] = useState('0');
   const [authorizedFolio, setAuthorizedFolio] = useState('');
-  const [refreshing, setRefreshing] = useState(false);
   const itemCount = useRef(0);
+  const listLoadRef = useRef(listLoad);
+  const listRequestSequence = useRef(0);
   const refreshGate = useRef(new RefreshGate());
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
@@ -87,13 +98,31 @@ export default function TicketsScreen() {
     return response.json() as Promise<T>;
   }, [authorizedFetch]);
 
-  const load = useCallback(async (reset = true) => {
-    if (reset) setLoading(true); else setLoadingMore(true);
+  const commitListLoad = useCallback((next: ListLoadState) => {
+    listLoadRef.current = next;
+    setListLoad(next);
+  }, []);
+
+  // Misma política que la lista de OT (src/sync/list-load-state.ts): un
+  // refetch con datos conserva la lista; sólo la petición más reciente aplica.
+  const load = useCallback(async (trigger: ListFetchTrigger = 'background') => {
+    if (userId == null) return;
+    if (trigger === 'more' && !canLoadMore(listLoadRef.current)) return;
+    const plan = beginListFetch(listLoadRef.current, trigger, userId);
+    if (plan.discardData) {
+      setItems([]);
+      setGroupRequests([]);
+      itemCount.current = 0;
+      setHasMore(false);
+    }
+    commitListLoad(plan.next);
+    const append = plan.next.loadingMore;
+    const requestId = ++listRequestSequence.current;
     setError('');
     try {
       const query = [
         `limit=${PAGE_SIZE}`,
-        `offset=${reset ? 0 : itemCount.current}`,
+        `offset=${append ? itemCount.current : 0}`,
         status !== 'all' ? `status=${status}` : '',
         debouncedSearch ? `search=${encodeURIComponent(debouncedSearch)}` : '',
       ].filter(Boolean).join('&');
@@ -101,23 +130,25 @@ export default function TicketsScreen() {
         capabilities.canReadTickets
           ? request<OperationalTicket[]>(`/mobile/v1/technician/tickets?${query}`)
           : Promise.resolve([]),
-        reset && capabilities.canReadWorkOrderGroupRequests
+        !append && capabilities.canReadWorkOrderGroupRequests
           ? request<LabWorkOrderGroupRequest[]>('/mobile/v1/technician/lab-work-orders/group-requests/review')
           : Promise.resolve(null),
       ]);
+      if (requestId !== listRequestSequence.current) return;
       setItems((current) => {
-        const updated = reset ? next : [...current, ...next];
+        const updated = append ? [...current, ...next] : next;
         itemCount.current = updated.length;
         return updated;
       });
       if (groups) setGroupRequests(groups);
       setHasMore(next.length === PAGE_SIZE);
+      commitListLoad(settleListFetch(listLoadRef.current, 'success', userId));
     } catch (loadError) {
+      if (requestId !== listRequestSequence.current) return;
       setError(loadError instanceof Error ? loadError.message : 'Intenta nuevamente');
-    } finally {
-      if (reset) setLoading(false); else setLoadingMore(false);
+      commitListLoad(settleListFetch(listLoadRef.current, 'error', userId));
     }
-  }, [capabilities.canReadTickets, capabilities.canReadWorkOrderGroupRequests, debouncedSearch, request, status]);
+  }, [capabilities.canReadTickets, capabilities.canReadWorkOrderGroupRequests, commitListLoad, debouncedSearch, request, status, userId]);
 
   const refreshSelected = useCallback(async (ticketId?: number) => {
     const id = ticketId ?? selected?.id;
@@ -125,12 +156,12 @@ export default function TicketsScreen() {
     try { setSelected(await request<OperationalTicket>(`/mobile/v1/technician/tickets/${id}`)); } catch { /* ownership or deletion is reflected by the list */ }
   }, [request, selected?.id]);
 
-  const refreshActive = useCallback(async (force = false) => {
+  const refreshActive = useCallback(async (force = false, trigger: 'background' | 'pull' = 'background') => {
     if (!refreshGate.current.shouldRefresh(Date.now(), force)) return;
-    setRefreshing(true);
-    await Promise.all([load(true), refreshSelected()]);
-    setRefreshing(false);
+    await Promise.all([load(trigger), refreshSelected()]);
   }, [load, refreshSelected]);
+  const refreshActiveRef = useRef(refreshActive);
+  useEffect(() => { refreshActiveRef.current = refreshActive; }, [refreshActive]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 400);
@@ -138,11 +169,12 @@ export default function TicketsScreen() {
   }, [search]);
 
   useEffect(() => {
-    if (user && (capabilities.canReadTickets || capabilities.canReadWorkOrderGroupRequests)) load(true);
+    if (userId != null && (capabilities.canReadTickets || capabilities.canReadWorkOrderGroupRequests)) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, status, user]);
+  }, [debouncedSearch, status, userId]);
 
-  useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));
+  // Sólo la identidad re-dispara el focus; una renovación de sesión no.
+  useFocusEffect(useCallback(() => { if (userId != null) refreshActiveRef.current(); }, [userId]));
 
   useEffect(() => subscribe((event) => {
     if (!affectsTickets(event)) return;
@@ -188,7 +220,7 @@ export default function TicketsScreen() {
       );
       setSelected(updated);
       setComment('');
-      await load(true);
+      await load();
       publishLocalChange({
         event_type: `ticket.${action === 'approve' ? 'approved' : 'rejected'}`,
         entity_type: 'ticket',
@@ -224,7 +256,7 @@ export default function TicketsScreen() {
       setNewRequestOpen(false);
       setAccreditedQuantity('0');
       setTraceableQuantity('0');
-      await load(true);
+      await load();
       Alert.alert('Solicitud enviada', 'Admin resolverá el bloque y conservará la conversación y auditoría.');
     } catch (requestError) {
       Alert.alert('No fue posible crear la solicitud', requestError instanceof Error ? requestError.message : 'Intenta nuevamente');
@@ -241,7 +273,7 @@ export default function TicketsScreen() {
       );
       setSelected(updated);
       setComment('');
-      await load(true);
+      await load();
       publishLocalChange({
         event_type: 'ticket.approved',
         entity_type: 'ticket',
@@ -267,7 +299,7 @@ export default function TicketsScreen() {
       setSelected(updated);
       setAuthorizedFolio('');
       setComment('');
-      await load(true);
+      await load();
     } catch (resolveError) {
       Alert.alert('No fue posible resolver', resolveError instanceof Error ? resolveError.message : 'Intenta nuevamente');
     } finally { setBusy(false); }
@@ -282,7 +314,7 @@ export default function TicketsScreen() {
         { method: 'POST' },
       );
       setSelectedGroup(updated);
-      await load(true);
+      await load();
     } catch (claimError) {
       Alert.alert('No fue posible tomar la solicitud', claimError instanceof Error ? claimError.message : 'Intenta nuevamente');
     } finally {
@@ -307,7 +339,7 @@ export default function TicketsScreen() {
       );
       setSelectedGroup(updated);
       setComment('');
-      await load(true);
+      await load();
     } catch (decisionError) {
       Alert.alert('No fue posible decidir la solicitud', decisionError instanceof Error ? decisionError.message : 'Intenta nuevamente');
     } finally {
@@ -353,13 +385,14 @@ export default function TicketsScreen() {
           ))}
         </ScrollView>
       </View>
-      {loading ? <ActivityIndicator style={styles.loader} /> : (
-        <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
+      {showsInitialSpinner(listLoad) ? <ActivityIndicator style={styles.loader} /> : (
+        <View style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={listLoad.pullRefreshing} onRefresh={() => refreshActive(true, 'pull')} />}>
           {!!error && <Text style={styles.error}>{error}</Text>}
           {requestVisibility.showTickets && visibleTickets.map((ticket) => (
             <Pressable key={ticket.id} onPress={() => { setSelected(ticket); setComment(''); }} style={styles.card}>
               <View style={styles.cardTop}>
-                <Text style={styles.folio}>{TICKET_TYPE_LABELS[ticket.type]}{ticket.work_order_folio ? ` · OT ${ticket.work_order_folio}` : ''}</Text>
+                <Text style={[styles.folio, styles.cardTitle]}>{TICKET_TYPE_LABELS[ticket.type]}{ticket.work_order_folio ? ` · OT ${ticket.work_order_folio}` : ''}</Text>
                 <Text style={styles.status}>{STATUS_LABELS[ticket.status]}</Text>
               </View>
               {!!ticket.client_name && <Text style={styles.client}>{ticket.client_name}</Text>}
@@ -370,7 +403,7 @@ export default function TicketsScreen() {
           {requestVisibility.showGroups && visibleGroups.map((group) => (
             <Pressable key={`group-${group.id}`} onPress={() => { setSelectedGroup(group); setComment(''); }} style={styles.card}>
               <View style={styles.cardTop}>
-                <Text style={styles.folio}>Grupo anticipado · #{group.id}</Text>
+                <Text style={[styles.folio, styles.cardTitle]}>Grupo anticipado · #{group.id}</Text>
                 <Text style={styles.status}>{GROUP_STATUS_LABELS[group.status]}</Text>
               </View>
               <Text style={styles.client}>{group.client_name}</Text>
@@ -380,8 +413,10 @@ export default function TicketsScreen() {
             </Pressable>
           ))}
           {(!requestVisibility.showTickets || !visibleTickets.length) && (!requestVisibility.showGroups || !visibleGroups.length) && !error && <Text style={styles.empty}>No hay solicitudes que coincidan con los filtros.</Text>}
-          {requestVisibility.showTickets && hasMore && <Pressable disabled={loadingMore} onPress={() => load(false)} style={styles.more}>{loadingMore ? <ActivityIndicator /> : <Text style={styles.moreText}>Cargar más</Text>}</Pressable>}
+          {requestVisibility.showTickets && hasMore && <Pressable disabled={!canLoadMore(listLoad)} onPress={() => load('more')} style={styles.more}>{listLoad.loadingMore ? <ActivityIndicator /> : <Text style={styles.moreText}>Cargar más</Text>}</Pressable>}
         </ScrollView>
+        {listLoad.refetching && <RefetchIndicator />}
+        </View>
       )}
 
       <Modal animationType="slide" onRequestClose={() => setSelected(null)} visible={!!selected}>
@@ -511,8 +546,9 @@ export default function TicketsScreen() {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   center: { alignItems: 'center', flex: 1, justifyContent: 'center' }, screen: { backgroundColor: '#f4f7fa', flex: 1 }, header: { padding: 20 }, title: { color: '#142b3a', fontSize: 30, fontWeight: '800', marginTop: 12 }, subtitle: { color: '#667582', marginTop: 6 },
   filters: { gap: 12, paddingHorizontal: 20 }, input: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 11, borderWidth: 1, fontSize: 16, minHeight: 48, paddingHorizontal: 13 }, chip: { backgroundColor: '#e5ebef', borderRadius: 18, marginRight: 8, paddingHorizontal: 14, paddingVertical: 9 }, chipActive: { backgroundColor: '#0067a8' }, chipText: { color: '#425563', fontWeight: '700' }, chipTextActive: { color: '#fff' }, loader: { marginTop: 44 }, list: { gap: 10, padding: 20 },
-  card: { backgroundColor: '#fff', borderRadius: 13, padding: 16 }, cardTop: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, folio: { color: '#0067a8', fontSize: 19, fontWeight: '800' }, status: { backgroundColor: '#e7f0f5', borderRadius: 12, color: '#24516d', fontSize: 12, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5 }, client: { color: '#263b48', fontSize: 16, fontWeight: '700', marginTop: 8 }, reason: { color: '#51616c', marginTop: 5 }, meta: { color: '#7a8892', fontSize: 12, marginTop: 10 }, empty: { color: '#70808d', padding: 24, textAlign: 'center' }, error: { backgroundColor: '#fff0f0', borderRadius: 10, color: '#8d1f2d', padding: 14, textAlign: 'center' }, more: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: '#0067a8', fontWeight: '800' },
+  card: { backgroundColor: '#fff', borderRadius: 13, padding: 16 }, cardTop: { alignItems: 'flex-start', flexDirection: 'row', gap: 10 }, folio: { color: '#0067a8', fontSize: 19, fontWeight: '800' }, cardTitle: { flex: 1, flexShrink: 1 }, status: { backgroundColor: '#e7f0f5', borderRadius: 12, color: '#24516d', flexShrink: 0, fontSize: 12, fontWeight: '800', overflow: 'hidden', paddingHorizontal: 9, paddingVertical: 5 }, client: { color: '#263b48', fontSize: 16, fontWeight: '700', marginTop: 8 }, reason: { color: '#51616c', marginTop: 5 }, meta: { color: '#7a8892', fontSize: 12, marginTop: 10 }, empty: { color: '#70808d', padding: 24, textAlign: 'center' }, error: { backgroundColor: '#fff0f0', borderRadius: 10, color: '#8d1f2d', padding: 14, textAlign: 'center' }, more: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, minHeight: 46, justifyContent: 'center' }, moreText: { color: '#0067a8', fontWeight: '800' },
   modal: { backgroundColor: '#f4f7fa', flex: 1 }, modalHeader: { alignItems: 'center', backgroundColor: '#fff', borderBottomColor: '#dce3e9', borderBottomWidth: 1, flexDirection: 'row', justifyContent: 'space-between', padding: 20 }, modalTitle: { fontSize: 22, fontWeight: '800' }, close: { color: '#0067a8', fontSize: 16, fontWeight: '700' }, modalContent: { padding: 20 }, detailStatus: { color: '#24516d', fontWeight: '800', marginBottom: 18, marginTop: 8 }, detailLabel: { color: '#344553', fontSize: 13, fontWeight: '800', marginTop: 13, textTransform: 'uppercase' }, detail: { color: '#233944', fontSize: 16, lineHeight: 22, marginTop: 5 }, warning: { backgroundColor: '#fff5cf', borderRadius: 10, color: '#5f4d00', lineHeight: 21, marginTop: 24, padding: 14 }, comment: { marginTop: 16, minHeight: 90, paddingTop: 12, textAlignVertical: 'top' }, primary: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 11, justifyContent: 'center', marginTop: 14, minHeight: 52 }, primaryText: { color: '#fff', fontSize: 15, fontWeight: '800' }, secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 11, borderWidth: 1.5, justifyContent: 'center', marginTop: 10, minHeight: 52 }, secondaryText: { color: '#0067a8', fontSize: 15, fontWeight: '800' }, reject: { alignItems: 'center', marginTop: 18, padding: 12 }, rejectText: { color: '#a51c30', fontSize: 16, fontWeight: '800' },
 });

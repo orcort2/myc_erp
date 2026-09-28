@@ -8,6 +8,25 @@
 
 # Estado operativo actual del ERP MYC
 
+## MYC Mobile — refetch no destructivo y selector modal de cliente OT (2026-09-28, en revisión)
+
+- Rama `fix/mobile-refetch-and-lab-client-modal` sobre `main` `056cdbe`; sin
+  commit/push, sin migraciones, sin cambios backend ni de permisos.
+- Listas de OT, Tickets y Clientes: la revalidación (filtro, focus, realtime,
+  pull, renovación de sesión) conserva los datos mostrados; spinner sólo en la
+  primera carga (`src/sync/list-load-state.ts`). `authorizedFetch` conserva
+  identidad ante renovaciones y los disparadores usan `user.id`.
+- OT LAB: cliente receptor mediante `LabClientPickerModal`; “Cambiar cliente”
+  no borra el cliente previo; alta contextual con el término buscado; Back de
+  Android en el alta vuelve a búsqueda. Al elegir cliente, sus datos derivados
+  no mezclan valores del anterior (`lab-work-order-client.ts`). Equipos
+  conservan el selector inline.
+- Solicitudes: tarjetas con título flexible multilínea y badge de estado
+  estable; verificado visualmente en simuladores MYC iPhone 16e y SE 3.
+- Validación: Mobile 838/838, lint OK; TypeScript sólo con los 2 errores
+  preexistentes de `src/realtime/realtime-client.ts` (idénticos en `056cdbe`).
+  Pendiente validación en iPhone 17e Simulator e iPhone 16e físico (OBS-047).
+
 ## OT LAB — buscador y cabecera compacta (2026-09-25, en revisión)
 
 - Implementados `q` compatible y accesos de generación horizontales; contrato

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AlertBanner, Card, EmptyState, LoadingState } from '@/src/design/primitives';
@@ -6,28 +6,44 @@ import { colors, radius, spacing } from '@/src/design/tokens';
 import type { LabClient } from '@/src/types/lab-work-order';
 import {
   applyCreatedClient,
+  applySearchResults,
   buildLabClientSearchQuery,
   cancelInlineCreate,
+  contextualCreateCompany,
   initialSelectorState,
   limitVisibleResults,
   openInlineCreate,
+  resolveSearchView,
   shouldSearchLabClients,
   shouldResetFormAfterSubmit,
 } from '@/src/services/lab-client-selector';
 
 type Request = <T>(path: string, init?: RequestInit) => Promise<T>;
 
+/** Devuelve true si el selector consumió el "atrás" (p. ej. cancelar el alta). */
+export type LabClientSelectorBackHandler = () => boolean;
+
 type Props = {
   onSelect(client: LabClient): void;
   request: Request;
+  /**
+   * Opcional: el contenedor (LabClientPickerModal) consulta aquí el Back de
+   * Android antes de cerrarse. El modo búsqueda/alta sigue siendo estado
+   * exclusivo del selector; el padre nunca lo lee ni lo escribe.
+   */
+  backHandlerRef?: RefObject<LabClientSelectorBackHandler | null>;
 };
 
 /**
  * Selector de LabClient reutilizado tanto para el cliente receptor de la OT
  * (Fase 2A) como para el cliente documental "Otro cliente" de un equipo
  * (Fase 2C) -- mismo componente, un solo buscador, sin duplicar UI.
+ *
+ * Es la autoridad de contenido (búsqueda + alta). No decide su presentación:
+ * la OT lo envuelve en LabClientPickerModal; el formulario de equipo lo
+ * sigue mostrando inline.
  */
-export function LabClientSelector({ onSelect, request }: Props) {
+export function LabClientSelector({ onSelect, request, backHandlerRef }: Props) {
   const [state, setState] = useState(initialSelectorState());
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
@@ -41,18 +57,21 @@ export function LabClientSelector({ onSelect, request }: Props) {
 
   useEffect(() => {
     let active = true;
+    // Un error pertenece al término que lo produjo: al teclear otro, la vista
+    // vuelve a 'loading' hasta que responda el nuevo término.
+    setSearchError('');
     if (!shouldSearchLabClients(state.searchTerm)) {
       setLoading(false);
       setSearchError('');
-      setState((current) => current.results.length ? { ...current, results: [] } : current);
+      setState((current) => current.results.length ? { ...current, results: [], resultsTerm: '' } : current);
       return () => { active = false; };
     }
     const timer = setTimeout(() => {
       setLoading(true);
-      setSearchError('');
-      const query = buildLabClientSearchQuery(state.searchTerm);
+      const term = state.searchTerm;
+      const query = buildLabClientSearchQuery(term);
       request<LabClient[]>(`/mobile/v1/technician/lab-clients?${query}`)
-        .then((results) => { if (active) setState((current) => ({ ...current, results })); })
+        .then((results) => { if (active) setState((current) => applySearchResults(current, term, results)); })
         .catch((error) => {
           // La búsqueda ya no falla en silencio -- se muestra un estado de
           // error explícito sin tirar el formulario contenedor (OT/equipo).
@@ -62,6 +81,30 @@ export function LabClientSelector({ onSelect, request }: Props) {
     }, 300);
     return () => { active = false; clearTimeout(timer); };
   }, [state.searchTerm, request]);
+
+  // Única transición de salida del alta: la usan "Cancelar" y el Back del
+  // contenedor. Vuelve a búsqueda conservando término y resultados.
+  function cancelCreate() {
+    setState((current) => cancelInlineCreate(current));
+  }
+
+  useEffect(() => {
+    if (!backHandlerRef) return;
+    backHandlerRef.current = () => {
+      if (state.mode !== 'create') return false;
+      cancelCreate();
+      return true;
+    };
+    return () => { backHandlerRef.current = null; };
+  }, [backHandlerRef, state.mode]);
+
+  // Alta contextual desde una búsqueda sin coincidencias: misma alta que
+  // "+ Crear cliente", sólo precarga Empresa con el término buscado. No crea
+  // nada hasta que el usuario pulsa Guardar.
+  function openContextualCreate() {
+    setNewCompany(contextualCreateCompany(state));
+    setState(openInlineCreate(state));
+  }
 
   async function submitInlineCreate() {
     if (!newCompany.trim()) return;
@@ -108,10 +151,11 @@ export function LabClientSelector({ onSelect, request }: Props) {
         <SelectorField label="Estado" value={newState} onChange={setNewState} />
         <SelectorField label="Atención a" value={newAttention} onChange={setNewAttention} />
         <View style={styles.actionRow}>
-          <Pressable style={styles.cancel} onPress={() => setState(cancelInlineCreate(state))}>
+          <Pressable accessibilityRole="button" style={styles.cancel} onPress={cancelCreate}>
             <Text>Cancelar</Text>
           </Pressable>
           <Pressable
+            accessibilityRole="button"
             disabled={!newCompany.trim() || creating}
             style={[styles.save, (!newCompany.trim() || creating) && styles.disabled]}
             onPress={submitInlineCreate}
@@ -124,24 +168,28 @@ export function LabClientSelector({ onSelect, request }: Props) {
   }
 
   const visibleResults = limitVisibleResults(state.results);
+  const view = resolveSearchView(state, { loading, error: searchError });
+  const searchedTerm = contextualCreateCompany(state);
   return (
     <Card>
       <TextInput
+        accessibilityLabel="Buscar cliente"
         placeholder="Buscar cliente"
         style={styles.search}
         value={state.searchTerm}
         onChangeText={(value) => setState((current) => ({ ...current, searchTerm: value }))}
       />
       <View style={styles.results}>
-        {loading ? (
+        {view === 'loading' ? (
           <LoadingState label="Buscando clientes…" />
-        ) : searchError ? (
+        ) : view === 'error' ? (
           <AlertBanner tone="danger">{searchError}</AlertBanner>
-        ) : visibleResults.length ? (
+        ) : view === 'results' ? (
           <View>
             {visibleResults.map((item) => (
               <Pressable
                 key={item.id}
+                accessibilityRole="button"
                 style={({ pressed }) => [
                   styles.resultRow,
                   state.selectedClientId === item.id && styles.resultRowSelected,
@@ -154,11 +202,18 @@ export function LabClientSelector({ onSelect, request }: Props) {
               </Pressable>
             ))}
           </View>
+        ) : view === 'empty' ? (
+          <View>
+            <EmptyState title="Sin resultados" description="Ningún cliente coincide. Puedes crearlo con este nombre." />
+            <Pressable accessibilityRole="button" style={styles.contextualCreate} onPress={openContextualCreate}>
+              <Text style={styles.secondaryText}>{`+ Crear cliente "${searchedTerm}"`}</Text>
+            </Pressable>
+          </View>
         ) : (
-          <EmptyState title="Sin resultados" description={state.searchTerm.trim() ? 'Prueba con otro nombre o crea el cliente.' : 'Escribe para buscar un cliente existente.'} />
+          <EmptyState title="Buscar cliente" description="Escribe al menos 2 caracteres para buscar un cliente existente." />
         )}
       </View>
-      <Pressable style={styles.secondary} onPress={() => setState(openInlineCreate(state))}>
+      <Pressable accessibilityRole="button" style={styles.secondary} onPress={() => setState(openInlineCreate(state))}>
         <Text style={styles.secondaryText}>+ Crear cliente</Text>
       </Pressable>
     </Card>
@@ -180,19 +235,20 @@ const styles = StyleSheet.create({
   title: { color: '#142b3a', fontSize: 16, fontWeight: '800', marginBottom: spacing.sm },
   search: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 9, borderWidth: 1, minHeight: 44, paddingHorizontal: 11 },
   results: { marginTop: spacing.sm },
-  resultRow: { borderBottomColor: '#e4ebf0', borderBottomWidth: 1, borderRadius: radius.sm, paddingHorizontal: spacing.xs, paddingVertical: 9 },
+  resultRow: { borderBottomColor: '#e4ebf0', borderBottomWidth: 1, borderRadius: radius.sm, justifyContent: 'center', minHeight: 44, paddingHorizontal: spacing.xs, paddingVertical: 9 },
   resultRowSelected: { backgroundColor: '#eef6f5' },
   resultRowPressed: { backgroundColor: colors.background },
   resultCompany: { color: '#142b3a', fontWeight: '700' },
   resultMeta: { color: '#637280', fontSize: 12 },
   secondary: { alignItems: 'center', borderColor: '#0067a8', borderRadius: 10, borderWidth: 1, marginTop: spacing.sm, padding: 11 },
+  contextualCreate: { alignItems: 'center', backgroundColor: '#eaf3fa', borderRadius: 10, justifyContent: 'center', minHeight: 44, padding: 11 },
   secondaryText: { color: '#0067a8', fontWeight: '800' },
   fieldGroup: { gap: 4 },
   fieldLabel: { color: '#344553', fontSize: 12, fontWeight: '700' },
   fieldInput: { backgroundColor: '#fff', borderColor: '#b9c8d2', borderRadius: 9, borderWidth: 1, minHeight: 44, paddingHorizontal: 11 },
   actionRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  cancel: { alignItems: 'center', flex: 1, padding: 12 },
-  save: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 10, flex: 1, padding: 12 },
+  cancel: { alignItems: 'center', flex: 1, justifyContent: 'center', minHeight: 44, padding: 12 },
+  save: { alignItems: 'center', backgroundColor: '#0067a8', borderRadius: 10, flex: 1, justifyContent: 'center', minHeight: 44, padding: 12 },
   saveText: { color: '#fff', fontWeight: '800' },
   disabled: { opacity: 0.42 },
 });

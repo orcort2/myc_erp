@@ -12,6 +12,14 @@ import {
   mergeLabClientPage,
 } from '@/src/services/lab-client-selector';
 import type { LabClient } from '@/src/types/lab-work-order';
+import {
+  beginListFetch,
+  canLoadMore,
+  initialListLoadState,
+  settleListFetch,
+  showsInitialSpinner,
+  type ListLoadState,
+} from '@/src/sync/list-load-state';
 import { colors, layout, spacing, typography } from '@/src/design/tokens';
 import {
   ActionRow,
@@ -25,6 +33,7 @@ import {
   LoadingState,
   PrimaryButton,
   ReadOnlyField,
+  RefetchIndicator,
   Screen,
   SecondaryButton,
   Section,
@@ -67,6 +76,8 @@ function draftFromClient(client: LabClient): ClientDraft {
 export default function ClientsScreen() {
   const { authorizedFetch, isLoading, user } = useAuth();
   const capabilities = deriveMobileCapabilities(user);
+  // Identidad estable frente a renovaciones silenciosas de sesión (ver work-orders.tsx).
+  const userId = user?.id ?? null;
   const {
     canReadLabClients, canManageLabClients, canEditLabClients,
     canImportLabClients, canDeactivateLabClients,
@@ -76,8 +87,8 @@ export default function ClientsScreen() {
   const [results, setResults] = useState<LabClient[]>([]);
   const [showInactive, setShowInactive] = useState(false);
   const [inactiveCount, setInactiveCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [listLoad, setListLoad] = useState<ListLoadState>(initialListLoadState);
+  const [resultsKey, setResultsKey] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState('');
   const [mode, setMode] = useState<'list' | 'create' | 'edit'>('list');
@@ -87,6 +98,12 @@ export default function ClientsScreen() {
   const [importing, setImporting] = useState(false);
   const [busyClientId, setBusyClientId] = useState<number | null>(null);
   const requestSequence = useRef(0);
+  const listLoadRef = useRef(listLoad);
+
+  const commitListLoad = useCallback((next: ListLoadState) => {
+    listLoadRef.current = next;
+    setListLoad(next);
+  }, []);
 
   const load = useCallback(async (
     term: string,
@@ -94,33 +111,37 @@ export default function ClientsScreen() {
     offset = 0,
     append = false,
   ) => {
-    const requestId = ++requestSequence.current;
-    if (append) {
-      setLoadingMore(true);
-    } else {
-      setLoading(true);
-      setLoadingMore(false);
+    if (userId == null) return;
+    if (append && !canLoadMore(listLoadRef.current)) return;
+    // Misma política que OT/tickets (src/sync/list-load-state.ts): buscar o
+    // revalidar con resultados ya mostrados no los sustituye por un spinner.
+    const plan = beginListFetch(listLoadRef.current, append ? 'more' : 'background', userId);
+    if (plan.discardData) {
+      setResults([]);
+      setHasMore(false);
     }
+    commitListLoad(plan.next);
+    const appending = plan.next.loadingMore;
+    const requestId = ++requestSequence.current;
     setError('');
     try {
-      const queryString = buildLabClientListQuery(term, offset, includeInactive);
+      const queryString = buildLabClientListQuery(term, appending ? offset : 0, includeInactive);
       const response = await authorizedFetch(
         apiUrl(`/mobile/v1/technician/lab-clients?${queryString}`),
       );
       if (!response.ok) throw new Error(await readApiError(response));
       const page = await response.json() as LabClient[];
       if (requestId !== requestSequence.current) return;
-      setResults((current) => mergeLabClientPage(current, page, append) as LabClient[]);
+      setResults((current) => mergeLabClientPage(current, page, appending) as LabClient[]);
       setHasMore(page.length === LAB_CLIENTS_PAGE_SIZE);
+      if (!appending) setResultsKey(`${term.trim()}:${includeInactive}`);
+      commitListLoad(settleListFetch(listLoadRef.current, 'success', userId));
     } catch (requestError) {
       if (requestId !== requestSequence.current) return;
       setError(requestError instanceof Error ? requestError.message : 'No fue posible cargar los clientes');
-    } finally {
-      if (requestId === requestSequence.current) {
-        if (append) setLoadingMore(false); else setLoading(false);
-      }
+      commitListLoad(settleListFetch(listLoadRef.current, 'error', userId));
     }
-  }, [authorizedFetch]);
+  }, [authorizedFetch, commitListLoad, userId]);
 
   const loadInactiveCount = useCallback(async (): Promise<number> => {
     if (!canDeactivateLabClients) return 0;
@@ -139,15 +160,15 @@ export default function ClientsScreen() {
   }, [authorizedFetch, canDeactivateLabClients]);
 
   useEffect(() => {
-    if (!user) return;
+    if (userId == null) return;
     const timer = setTimeout(() => { void load(searchTerm, showInactive); }, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, showInactive, user]);
+  }, [searchTerm, showInactive, userId]);
 
   useEffect(() => {
-    if (user && canDeactivateLabClients) void loadInactiveCount();
-  }, [canDeactivateLabClients, loadInactiveCount, user]);
+    if (userId != null && canDeactivateLabClients) void loadInactiveCount();
+  }, [canDeactivateLabClients, loadInactiveCount, userId]);
 
   function startCreate() {
     setDraft(BLANK_DRAFT);
@@ -341,9 +362,10 @@ export default function ClientsScreen() {
           {!!error && <Text style={{ color: colors.danger, marginBottom: spacing.md }}>{error}</Text>}
 
           {mode === 'list' && (
-            loading ? <LoadingState label="Buscando clientes…" /> : (
-              results.length ? (
-                <FadeIn transitionKey={`${searchTerm}:${showInactive}`}>
+            showsInitialSpinner(listLoad) ? <LoadingState label="Buscando clientes…" /> : (
+              <View>
+              {results.length ? (
+                <FadeIn transitionKey={resultsKey}>
                   <View style={{ gap: layout.cardGap }}>
                     {results.map((client) => (
                       <Card key={client.id}>
@@ -383,7 +405,8 @@ export default function ClientsScreen() {
                     {hasMore && (
                       <SecondaryButton
                         label="Cargar más"
-                        loading={loadingMore}
+                        disabled={!canLoadMore(listLoad)}
+                        loading={listLoad.loadingMore}
                         onPress={() => void load(searchTerm, showInactive, results.length, true)}
                       />
                     )}
@@ -394,7 +417,9 @@ export default function ClientsScreen() {
                   title="Sin resultados"
                   description={searchTerm.trim() ? 'Ningún cliente coincide con la búsqueda.' : 'Todavía no hay clientes registrados.'}
                 />
-              )
+              )}
+              {listLoad.refetching && <RefetchIndicator />}
+              </View>
             )
           )}
         </Screen>

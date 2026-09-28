@@ -198,17 +198,17 @@ test('listado usa un input q, debounce de 400 ms y limpia búsqueda/estado', () 
   assert.match(source, /function clearFilters\(\) \{\s*setSearchFilter\(''\);\s*setDebouncedSearch\(''\);\s*setStatusFilter\('all'\)/);
   assert.match(header, /onPress=\{clearFilters\}/);
   assert.match(header, /onPress=\{\(\) => setStatusFilter\(value\)\}/);
-  assert.match(source, /if \(user\) refresh\(true\);[\s\S]*?\[debouncedSearch, statusFilter, user\]/);
+  assert.match(source, /if \(userId != null\) refresh\(\);[\s\S]*?\[debouncedSearch, statusFilter, userId\]/);
 });
 
 test('listado conserva offset, tamaño de página y append versus reset', () => {
-  assert.match(source, /const offset = reset \? 0 : itemCount\.current/);
+  assert.match(source, /const offset = append \? itemCount\.current : 0/);
   assert.match(source, /`limit=\$\{PAGE_SIZE\}`/);
   assert.match(source, /`offset=\$\{offset\}`/);
   assert.match(source, /`status=\$\{statusFilter\}`/);
-  assert.match(source, /const updated = reset \? next : \[\.\.\.current, \.\.\.next\]/);
+  assert.match(source, /const updated = append \? \[\.\.\.current, \.\.\.next\] : next/);
   assert.match(source, /setHasMore\(next\.length === PAGE_SIZE\)/);
-  assert.match(source, /onPress=\{\(\) => refresh\(false\)\}/);
+  assert.match(source, /onPress=\{\(\) => refresh\('more'\)\}/);
 });
 
 test('generación conserva dos targets, permisos y handlers con composición horizontal local', () => {

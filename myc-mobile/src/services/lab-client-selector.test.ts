@@ -62,7 +62,7 @@ test('el módulo Clientes conecta búsqueda remota, páginas de 25 y Cargar más
     resolve(dirname(fileURLToPath(import.meta.url)), '../../app/(technician)/clients.tsx'),
     'utf8',
   );
-  assert.match(source, /buildLabClientListQuery\(term, offset, includeInactive\)/);
+  assert.match(source, /buildLabClientListQuery\(term, appending \? offset : 0, includeInactive\)/);
   assert.match(source, /page\.length === LAB_CLIENTS_PAGE_SIZE/);
   assert.match(source, /label="Cargar más"/);
   assert.match(source, /results\.length, true/);

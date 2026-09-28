@@ -148,6 +148,28 @@ export function AuthProvider({ children }: PropsWithChildren) {
     return next.user;
   }, [persist, persistOperationalSession]);
 
+  // Identidad estable: sólo lee refs y refreshSession (estable). Si viviera
+  // dentro del useMemo de `value`, cada renovación silenciosa de sesión
+  // cambiaría su referencia y, en cascada, la de todo `request`/`load` que
+  // dependa de ella, re-ejecutando efectos de carga sin cambio real de
+  // usuario (contenido que desaparece al revalidar).
+  const authorizedFetch = useCallback(async (path: string, init: RequestInit = {}): Promise<Response> => {
+    const current = sessionRef.current;
+    const version = sessionVersion.current;
+    if (!current) throw new Error('Sesión no disponible');
+    const headers = new Headers(init.headers);
+    headers.set('Authorization', `Bearer ${current.access_token}`);
+    const response = await fetch(path, { ...init, headers });
+    if (response.status !== 401) return response;
+    if (version !== sessionVersion.current || !sessionRef.current) throw new Error('Sesión no disponible');
+    // A late 401 from the old token reuses the completed renewal, without rotating again.
+    const next = sessionRef.current.access_token !== current.access_token
+      ? sessionRef.current : await refreshSession();
+    if (version !== sessionVersion.current) throw new Error('Sesión no disponible');
+    headers.set('Authorization', `Bearer ${next.access_token}`);
+    return fetch(path, { ...init, headers });
+  }, [refreshSession]);
+
   const value = useMemo<AuthContextValue>(() => ({
     isLoading,
     session,
@@ -255,23 +277,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return pending;
     },
     refreshSession,
-    async authorizedFetch(path, init = {}) {
-      const current = sessionRef.current;
-      const version = sessionVersion.current;
-      if (!current) throw new Error('Sesión no disponible');
-      const headers = new Headers(init.headers);
-      headers.set('Authorization', `Bearer ${current.access_token}`);
-      const response = await fetch(path, { ...init, headers });
-      if (response.status !== 401) return response;
-      if (version !== sessionVersion.current || !sessionRef.current) throw new Error('Sesión no disponible');
-      // A late 401 from the old token reuses the completed renewal, without rotating again.
-      const next = sessionRef.current.access_token !== current.access_token
-        ? sessionRef.current : await refreshSession();
-      if (version !== sessionVersion.current) throw new Error('Sesión no disponible');
-      headers.set('Authorization', `Bearer ${next.access_token}`);
-      return fetch(path, { ...init, headers });
-    },
-  }), [isLoading, persist, applySession, refreshSession, session, biometricProfile, biometricAvailable]);
+    authorizedFetch,
+  }), [isLoading, persist, applySession, refreshSession, authorizedFetch, session, biometricProfile, biometricAvailable]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
