@@ -188,12 +188,16 @@ function Get-ChangedFilesBetween {
 
 function Test-AnyPathChanged {
     param(
-        [Parameter(Mandatory = $true)]
-        [string[]]$ChangedFiles,
+        [AllowEmptyCollection()]
+        [string[]]$ChangedFiles = @(),
 
         [Parameter(Mandatory = $true)]
         [string[]]$Prefixes
     )
+
+    if (-not $ChangedFiles -or $ChangedFiles.Count -eq 0) {
+        return $false
+    }
 
     foreach ($File in $ChangedFiles) {
         foreach ($Prefix in $Prefixes) {
@@ -391,9 +395,11 @@ try {
 
     Write-Host "HEAD nuevo: $NewHead"
 
-    $ChangedFiles = Get-ChangedFilesBetween `
-        -OldCommit $OldHead `
-        -NewCommit $NewHead
+    $ChangedFiles = @(
+        Get-ChangedFilesBetween `
+            -OldCommit $OldHead `
+            -NewCommit $NewHead
+    )
 
     $BackendChanged = Test-AnyPathChanged `
         -ChangedFiles $ChangedFiles `
