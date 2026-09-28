@@ -93,6 +93,41 @@ Una deuda se elimina sólo cuando la condición deja de existir y la validación
   existe TTL de 90 días); no diseñar un selector multi-cuenta para resolverlo
   sin que el producto lo pida explícitamente.
 
+## Deuda agregada DEV-1C (2026-09-25)
+
+- TD-061 (P1): `C:\MYC\Services` en el servidor `ADMIN` concede
+  `NT AUTHORITY\Authenticated Users: Modify` sobre el directorio que aloja
+  los wrappers WinSW y XML de `MYCBackend` y `MYCFrontend`, que corren como
+  LocalSystem: cualquier usuario local autenticado podría sustituir un
+  binario o una configuración que se ejecuta como SYSTEM. Corrección
+  reproducible ya disponible (`deploy/windows/developer-broker/Set-MYCServicesAcl.ps1 -Apply`
+  o `Install-MYCDeveloperBroker.ps1 -HardenServicesAcl`: respaldo JSON por
+  entrada (SDDL), restaurable con `Restore-MYCServicesAcl.ps1`, owner Administrators, herencia deshabilitada, SYSTEM y
+  Administrators Full Control, Users RX sólo si se pide, sin Authenticated
+  Users), **pendiente de aplicar en producción**. `C:\MYC` y
+  `C:\MYC\Logs` no fueron inspeccionados; el preflight reporta como WARN
+  cualquier principal amplio con escritura allí y debe revisarse en la
+  misma ventana. Se retira cuando `Test-MYCDeveloperBroker.ps1` reporte
+  `acl_services_root` PASS en `ADMIN`. **Consecuencia operativa P0**: como
+  cualquier usuario autenticado pudo sustituir los ejecutables WinSW
+  (`MYCBackend.exe`, `MYCFrontend.exe`) o sus configuraciones, su
+  integridad no está demostrada; antes de usar uno como origen del Broker
+  (y como higiene de los servicios existentes) debe compararse su SHA-256
+  con el release oficial de WinSW o reemplazarse por una copia verificada.
+  El instalador DEV-1C ya exige `-WinSWExpectedSha256`.
+
+- TD-062 (P2): riesgos residuales de DEV-1C que un script no puede
+  eliminar y que deben validarse en `ADMIN`: (a) la ventana mínima entre la
+  puerta SCM (`scm-guard`) y la llamada `sc.exe` que la sigue (no hay
+  operación atómica "verificar y reconfigurar" en el SCM); (b) la
+  propagación automática de herencia de Windows al cambiar una DACL
+  heredable (no es un recorrido `/T` de DEV-1C) y su comportamiento ante
+  reparse points; (c) `New-Item` como detector de "apareció entretanto"
+  (comprobación y creación no atómicas en PowerShell). Mitigación vigente:
+  raíz cerrada primero, "bloquear y luego enumerar", pruebas de propiedad
+  releídas y estados `pending` que nunca autorizan borrar. Se retira al
+  validar los ensayos de carrera del runbook DEV-1C en Windows.
+
 ## Validación pendiente post-PR #4 (2026-09-17)
 
 - Repetir apertura/captura/guardar/completar/PDF/reapertura de LAB EXTERNO y
