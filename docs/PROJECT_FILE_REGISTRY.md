@@ -28,7 +28,7 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | Frontend | 209 |
 | Scripts | 52 |
 | Recursos | 4 |
-| Configuración | 258 |
+| Configuración | 259 |
 | Documentación | 180 |
 | Pruebas | 112 |
 
@@ -976,10 +976,11 @@ El inventario se regenera con `python3 scripts/generate_project_file_registry.py
 | myc-mobile/src/components/signatures/signature-flow-state.test.ts | myc-mobile/src/components/signatures | Regresión de integridad de firmas | Verifica tap inválido, captura real, nombres, payload, locks y ocho escenarios de frontera raíz. | Node test, tsx y signature-flow-state | Gate móvil de firmas LAB | Alto | Estable |
 | myc-mobile/src/components/signatures/signature-flow-state.ts | myc-mobile/src/components/signatures | Estado puro de firma LAB | Reconcilia el borrador sólo por root_work_order_id y exige strokes significativos, nombres, PNG, payload y lock antes del envío. | TypeScript | MobileSignatureFlow, work-orders y pruebas | Crítico | Estable |
 | myc-mobile/src/config/environment.ts | myc-mobile/src/config | Archivo de soporte | Mantiene la capacidad de environment dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
+| myc-mobile/src/design/FadeIn.render.test.ts | myc-mobile/src/design | Regresión de accesibilidad de FadeIn | Ejecuta FadeIn real con Animated/AccessibilityInfo simulados: opacity 1 siempre, sin animación con Reduce Motion o preferencia desconocida, sólo translateY decorativo, cambio en caliente y consumidores intactos. | node:test, TypeScript y primitives.tsx | Gate Mobile | Alto | Estable |
 | myc-mobile/src/design/MycDatePickerField.tsx | myc-mobile/src/design | Selector de fecha MYC | Presenta calendario modal civil YYYY-MM-DD con hoy, selección y shortcuts opcionales. | React Native, tokens y civil-date | Formularios OT y FieldSheet | Alto | Estable |
 | myc-mobile/src/design/MycDatePickerField.wiring.test.ts | myc-mobile/src/design | Regresión de calendario MYC | Verifica modal, grilla de siete columnas, formato y shortcuts basados en calibración. | node:test y fuente del date picker | Gate Mobile | Medio | Estable |
 | myc-mobile/src/design/navigation-consistency.wiring.test.ts | myc-mobile/src/design | Archivo de soporte | Mantiene la capacidad de navigation consistency.wiring.test dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
-| myc-mobile/src/design/primitives.tsx | myc-mobile/src/design | Primitives visuales Mobile | Centraliza botones, banners, Field con error, hint, required y maxLength/contador opt-in, y el indicador flotante de refetch no destructivo. | React Native y tokens | Pantallas/componentes MYC Mobile | Crítico | Estable |
+| myc-mobile/src/design/primitives.tsx | myc-mobile/src/design | Primitives visuales Mobile | Centraliza botones, banners, Field con error, hint, required y maxLength/contador opt-in, el indicador flotante de refetch no destructivo y FadeIn decorativo (sólo translateY, opacity 1 permanente, respeta Reducir movimiento). | React Native y tokens | Pantallas/componentes MYC Mobile | Crítico | Estable |
 | myc-mobile/src/design/primitives.wiring.test.ts | myc-mobile/src/design | Regresión del primitive Field | Verifica que maxLength sea opt-in en Field, se propague al TextInput y active el contador N/max sin afectar a los callers existentes. | node:test y fuente de primitives.tsx | Gate Mobile | Medio | Estable |
 | myc-mobile/src/design/tokens.ts | myc-mobile/src/design | Archivo de soporte | Mantiene la capacidad de tokens dentro del proyecto. | Módulos relacionados | Mantenedores del proyecto | Bajo | Estable |
 | myc-mobile/src/notifications/NotificationSyncProvider.tsx | myc-mobile/src/notifications | Orquestador de sincronización móvil | Registra listeners push/AppState, badge, deep links pendientes e invalidaciones foreground/locales sin polling. | Expo Notifications, Expo Router, AuthProvider y API | Tickets, OT, centro y home móvil | Crítico | Estable |

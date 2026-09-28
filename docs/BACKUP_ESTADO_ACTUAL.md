@@ -10,8 +10,9 @@
 
 ## MYC Mobile — refetch no destructivo y selector modal de cliente OT (2026-09-28, en revisión)
 
-- Rama `fix/mobile-refetch-and-lab-client-modal` sobre `main` `056cdbe`; sin
-  commit/push, sin migraciones, sin cambios backend ni de permisos.
+- `fix/mobile-refetch-and-lab-client-modal` mergeada en `main` `807c957`.
+  Corrección de `FadeIn` en rama `fix/mobile-fadein-reduce-motion` sin
+  commit/push. Sin migraciones, sin cambios backend ni de permisos.
 - Listas de OT, Tickets y Clientes: la revalidación (filtro, focus, realtime,
   pull, renovación de sesión) conserva los datos mostrados; spinner sólo en la
   primera carga (`src/sync/list-load-state.ts`). `authorizedFetch` conserva
@@ -23,8 +24,14 @@
   conservan el selector inline.
 - Solicitudes: tarjetas con título flexible multilínea y badge de estado
   estable; verificado visualmente en simuladores MYC iPhone 16e y SE 3.
-- Validación: Mobile 838/838, lint OK; TypeScript sólo con los 2 errores
-  preexistentes de `src/realtime/realtime-client.ts` (idénticos en `056cdbe`).
+- `FadeIn`: causa física confirmada en iPhone 16e con “Reducir movimiento”
+  activo (contenido envuelto invisible). Ahora sólo anima `translateY`;
+  opacity 1 permanente; sin animación con Reduce Motion o preferencia aún
+  desconocida. Pendiente revalidar en el 16e con Reduce Motion activado.
+- Validación: Mobile 846/846, lint OK; TypeScript sólo con los 2 errores
+  preexistentes de `src/realtime/realtime-client.ts` (idénticos en `056cdbe`);
+  tras regenerarse los tipos locales de Expo (`expo-env.d.ts`, `.expo/types`,
+  no versionados) `tsc --noEmit` termina sin errores.
   Pendiente validación en iPhone 17e Simulator e iPhone 16e físico (OBS-047).
 
 ## OT LAB — buscador y cabecera compacta (2026-09-25, en revisión)
