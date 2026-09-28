@@ -458,6 +458,20 @@ export function LoadingState({ label }: { label?: string }) {
   );
 }
 
+/**
+ * Indicador no destructivo de revalidación en fondo (filtro, focus,
+ * realtime, sesión). Flota sobre la lista ya renderizada: no la desmonta ni
+ * desplaza su layout. La primera carga sin datos sigue usando LoadingState.
+ */
+export function RefetchIndicator({ label = 'Actualizando…' }: { label?: string }) {
+  return (
+    <View accessibilityLiveRegion="polite" pointerEvents="none" style={styles.refetchIndicator}>
+      <ActivityIndicator color={colors.primary} size="small" />
+      <Text style={styles.loadingLabel}>{label}</Text>
+    </View>
+  );
+}
+
 export function FadeIn({
   children,
   transitionKey,
@@ -865,5 +879,20 @@ const styles = StyleSheet.create({
   loadingLabel: {
     ...typography.meta,
     color: colors.textMuted,
+  },
+
+  refetchIndicator: {
+    alignItems: 'center',
+    alignSelf: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    position: 'absolute',
+    top: spacing.sm,
   },
 });

@@ -625,6 +625,28 @@ MOBILE_SESSION_FILES = {
 }
 FORCE_RECLASSIFY.update(MOBILE_SESSION_FILES)
 
+# 2026-09-28: refetch no destructivo de listas Mobile y selector modal de cliente OT LAB.
+MOBILE_REFETCH_CLIENT_PICKER_FILES = {
+    'myc-mobile/src/sync/list-load-state.ts': ('Estado de carga de listas Mobile', 'Distingue primera carga, refetch en fondo, pull-to-refresh y paginación; ata los datos a user.id para descartar sólo ante cambio real de usuario y nunca desmontar datos válidos al revalidar.', 'TypeScript puro', 'work-orders, tickets y clients', 'Alto'),
+    'myc-mobile/src/sync/list-load-state.test.ts': ('Regresión de estado de carga', 'Prueba spinner sólo sin datos, refetch/pull/error que conservan datos, paginación aislada, liquidación y descarte por cambio de usuario.', 'node:test y list-load-state', 'Gate Mobile', 'Alto'),
+    'myc-mobile/src/wiring-tests/list-refetch-policy.wiring.test.ts': ('Cableado de refetch no destructivo', 'Verifica en OT, tickets y clientes spinner inicial, indicador de refetch, secuencia de peticiones, disparadores por user.id, focus por ref y authorizedFetch estable; no es validación visual.', 'node:test y fuentes Mobile', 'Gate Mobile', 'Alto'),
+    'myc-mobile/src/services/lab-work-order-client.ts': ('Mapeo cliente → Datos generales OT', 'Única autoridad que aplica un LabClient a GeneralData: los campos derivados representan sólo al cliente elegido (faltantes quedan vacíos, sin datos híbridos del anterior) y conserva los no derivados.', 'Tipos LabClient y GeneralData', 'work-orders.tsx (selectLabClient) y pruebas', 'Alto'),
+    'myc-mobile/src/services/lab-work-order-client.test.ts': ('Regresión de mapeo de cliente OT', 'Prueba A → B con B mínimo del contrato sin supervivencia de datos de A, conservación de campos no derivados y aplicación completa.', 'node:test y lab-work-order-client', 'Gate Mobile', 'Alto'),
+    'myc-mobile/src/components/lab/LabClientPickerModal.tsx': ('Modal de cliente receptor OT LAB', 'Presenta LabClientSelector en Modal con SafeArea y una autoridad de teclado por plataforma; elegir o crear delega en onSelect y cierra, cerrar no modifica la OT. Back de Android cancela primero el alta del selector y sólo en búsqueda cierra.', 'React Native Modal, SafeAreaContext, LabClientSelector y primitives', 'LabWorkOrderClientField', 'Alto'),
+    'myc-mobile/src/components/lab/LabWorkOrderClientField.tsx': ('Campo Cliente de Datos generales OT', 'Muestra "Elegir cliente" o la tarjeta del cliente con "Cambiar cliente"; ambos abren el modal sin borrar el cliente actual hasta elegir otro.', 'LabClientPickerModal, iconos Expo y tokens', 'work-orders.tsx', 'Alto'),
+    'myc-mobile/src/components/lab/LabClientPickerModal.wiring.test.ts': ('Regresión del selector modal de cliente', 'Ejecuta campo, modal y selector reales sobre mini-runtime de hooks: abrir/cerrar, selección única, cambio transaccional, debounce, loading/error/vacío, alta normal y contextual, errores, Back Android, A → B sin datos híbridos y consumidor de equipos; no mide layout ni teclado nativo.', 'node:test, TypeScript, mock timers y fuentes Mobile', 'Gate Mobile LabClient', 'Alto'),
+    'myc-mobile/src/components/lab/LabClientSelector.tsx': ('Selector remoto LabClient', 'Autoridad de búsqueda y alta: mínimo de dos caracteres, debounce de 300 ms, máximo cinco resultados, estados explícitos idle/loading/error/vacío y alta contextual con Empresa precargada; sin Modal propio.', 'React Native, servicio selector y API LabClient', 'LabClientPickerModal (OT) e inline en LabEquipmentForm', 'Alto'),
+    'myc-mobile/src/components/lab/LabClientSelector.wiring.test.ts': ('Prueba de cableado del selector', 'Verifica tarjeta/estados, guarda mínima previa al request, debounce de 300 ms y ruta paginada del selector.', 'node:test y fuente LabClientSelector', 'Gate Mobile LabClient', 'Medio'),
+    'myc-mobile/src/services/lab-client-selector.ts': ('Contrato de consulta LabClient', 'Construye query selector limit=5 y administración limit=25/offset; decide mínimo de búsqueda, fusiona páginas sin duplicados y resuelve la vista del buscador según el término al que pertenecen los resultados.', 'URLSearchParams y tipos LabClient', 'Selector OT/equipo, módulo Clientes y pruebas', 'Alto'),
+    'myc-mobile/app/(technician)/work-orders.tsx': ('Flujo OT LAB móvil', 'Distingue grupo histórico y cohorte, evita recapturar firmas históricas preservadas durante CTA/open/realtime/navegación relacionada y restablece el flujo normal al invalidarse; ofrece cierre grupal/individual, explica faltantes y navega estado/PDF por folio. Cabecera con buscador q debounced y dos accesos horizontales locales; conserva ajuste de teclado por plataforma. El listado revalida sin desmontar datos (list-load-state, user.id) y el cliente receptor se elige en modal.', 'AuthProvider, API LAB, permisos, política/servicio de firma, Notifications, list-load-state, LabWorkOrderClientField y Expo', 'Técnicos y Administrador móvil', 'Crítico'),
+    'myc-mobile/src/wiring-tests/tickets.card-layout.wiring.test.ts': ('Cableado de tarjetas de Solicitudes', 'Verifica título flexible multilínea y badge de estado sin encogerse en tickets y grupos anticipados, sin truncamiento ni reducción de fuente; no mide layout real.', 'node:test y fuente tickets', 'Gate Mobile', 'Medio'),
+    'myc-mobile/app/(technician)/tickets.tsx': ('Bandeja móvil de Tickets', 'Presenta y atiende folios, reaperturas y solicitudes informativas de fecha según capacidad efectiva; revalida por foco, realtime o pull sin desmontar la lista ya cargada. Tarjetas con título flexible y badge de estado estable.', 'Expo Router, API, capabilities, list-load-state y tipos Ticket', 'Técnicos y staff revisor', 'Crítico'),
+    'myc-mobile/app/(technician)/clients.tsx': ('Administración móvil LabClient', 'Busca LabClient en servidor, reemplaza o agrega páginas de 25, evita respuestas obsoletas y conserva alta, edición, importación e inactivos según permisos; buscar o revalidar conserva los resultados mostrados.', 'AuthProvider, API LabClient, helpers de paginación, list-load-state y primitives', 'Staff Mobile autorizado', 'Alto'),
+    'myc-mobile/src/auth/AuthProvider.tsx': ('Coordinador único de sesión Mobile', 'Restaura tokens, comparte refresh single-flight con HTTP/realtime, evita 401 tardíos y restauración tras logout; intenta baja push antes de revocar auth y limpia local aun si ambos fallan. authorizedFetch conserva identidad estable ante renovaciones de sesión.', 'React Context, auth.service, SecureStore y push-notifications', 'Todas las superficies MYC Mobile y RealtimeProvider', 'Crítico'),
+    'myc-mobile/src/design/primitives.tsx': ('Primitives visuales Mobile', 'Centraliza botones, banners, Field con error, hint, required y maxLength/contador opt-in, y el indicador flotante de refetch no destructivo.', 'React Native y tokens', 'Pantallas/componentes MYC Mobile', 'Crítico'),
+}
+FORCE_RECLASSIFY.update(MOBILE_REFETCH_CLIENT_PICKER_FILES)
+
 
 def words(path: Path) -> str:
     stem = path.stem.replace("_", " ").replace("-", " ")
@@ -647,6 +669,8 @@ def classify(path: Path) -> tuple[str, str, str, str, str]:
     value = path.as_posix()
     name = path.name
     subject = words(path)
+    if value in MOBILE_REFETCH_CLIENT_PICKER_FILES:
+        return MOBILE_REFETCH_CLIENT_PICKER_FILES[value]
     if value in MOBILE_SESSION_FILES:
         return MOBILE_SESSION_FILES[value]
     status = "Experimental" if "/labs/" in value or "Lab" in name else "Estable"

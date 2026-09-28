@@ -63,11 +63,45 @@ export type LabClientSelectorState = {
   mode: 'search' | 'create';
   searchTerm: string;
   results: LabClientOption[];
+  /** Término (ya recortado) al que corresponden `results`. */
+  resultsTerm: string;
   selectedClientId: number | null;
 };
 
 export function initialSelectorState(): LabClientSelectorState {
-  return { mode: 'search', searchTerm: '', results: [], selectedClientId: null };
+  return { mode: 'search', searchTerm: '', results: [], resultsTerm: '', selectedClientId: null };
+}
+
+/** Aplica la respuesta de búsqueda recordando a qué término pertenece. */
+export function applySearchResults(
+  state: LabClientSelectorState,
+  term: string,
+  results: LabClientOption[],
+): LabClientSelectorState {
+  return { ...state, results, resultsTerm: term.trim() };
+}
+
+export type LabClientSearchView = 'idle' | 'loading' | 'error' | 'results' | 'empty';
+
+/**
+ * Estado visible del buscador. Mientras el debounce o la petición del
+ * término actual siguen pendientes, la vista es 'loading' -- nunca 'empty':
+ * así "Sin resultados" y la creación contextual sólo aparecen cuando el
+ * backend realmente respondió vacío para ese término.
+ */
+export function resolveSearchView(
+  state: LabClientSelectorState,
+  status: { loading: boolean; error: string },
+): LabClientSearchView {
+  if (!shouldSearchLabClients(state.searchTerm)) return 'idle';
+  if (status.error) return 'error';
+  if (status.loading || state.resultsTerm !== state.searchTerm.trim()) return 'loading';
+  return state.results.length ? 'results' : 'empty';
+}
+
+/** Empresa precargada al crear desde una búsqueda sin coincidencias. */
+export function contextualCreateCompany(state: LabClientSelectorState): string {
+  return state.searchTerm.trim();
 }
 
 /** Abrir "+ Crear cliente": sólo cambia el modo de la capa del selector.

@@ -52,7 +52,7 @@ test('cinco resultados sin scroll anidado, sin recorte y seleccionables', () => 
     id, company: `Cliente ${id}`, address: '', attention: 'Contacto',
     postal_code: null, city: null, state: null,
   }));
-  let state = { ...selector.initialSelectorState(), searchTerm: 'Cliente', results: clients };
+  let state = { ...selector.initialSelectorState(), searchTerm: 'Cliente', results: clients, resultsTerm: 'Cliente' };
   let cursor = 0;
   const selected: unknown[] = [];
   const jsx = (type: string, props: unknown) => ({ type, props });

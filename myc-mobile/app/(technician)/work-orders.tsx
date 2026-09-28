@@ -29,7 +29,7 @@ import { LabTechnicalCapture } from '@/src/components/lab/LabTechnicalCapture';
 import { LabEquipmentForm } from '@/src/components/lab/LabEquipmentForm';
 import { LabDeliveryFlow } from '@/src/components/lab/LabDeliveryFlow';
 import { LabPartialDeliveryRequest } from '@/src/components/lab/LabPartialDeliveryRequest';
-import { LabClientSelector } from '@/src/components/lab/LabClientSelector';
+import { LabWorkOrderClientField } from '@/src/components/lab/LabWorkOrderClientField';
 import {
   ActionRow,
   ActionTile,
@@ -41,6 +41,7 @@ import {
   FadeIn,
   OperationalActionStack,
   PrimaryButton,
+  RefetchIndicator,
   SecondaryButton,
 } from '@/src/design/primitives';
 import { colors } from '@/src/design/tokens';
@@ -55,6 +56,7 @@ import {
   type EquipmentFormValues,
 } from '@/src/services/lab-equipment-configured-payload';
 import { shouldResetFormAfterSubmit } from '@/src/services/lab-client-selector';
+import { generalWithLabClient } from '@/src/services/lab-work-order-client';
 import { describePendingSignatureReviewFields } from '@/src/services/lab-pending-signature-review';
 import {
   reconcileSignatureFlowState,
@@ -65,6 +67,15 @@ import { useNotificationSync } from '@/src/notifications/NotificationSyncProvide
 import { deriveMobileCapabilities } from '@/src/permissions/mobile-capabilities';
 import { hasPermission } from '@/src/permissions/permissions';
 import { affectsWorkOrders, RefreshGate } from '@/src/notifications/refresh-policy';
+import {
+  beginListFetch,
+  canLoadMore,
+  initialListLoadState,
+  settleListFetch,
+  showsInitialSpinner,
+  type ListFetchTrigger,
+  type ListLoadState,
+} from '@/src/sync/list-load-state';
 import {
   canDeleteLabWorkOrder,
   deleteLabWorkOrder,
@@ -235,8 +246,7 @@ export default function WorkOrdersScreen() {
   const [items, setItems] = useState<LabListItem[]>([]);
   const [groupRequests, setGroupRequests] = useState<LabWorkOrderGroupRequest[]>([]);
   const [selectedGroupRequest, setSelectedGroupRequest] = useState<LabWorkOrderGroupRequest | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [listLoad, setListLoad] = useState<ListLoadState>(initialListLoadState);
   const [listError, setListError] = useState('');
   const [hasMore, setHasMore] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
@@ -263,7 +273,6 @@ export default function WorkOrdersScreen() {
   const [reopenSignaturePolicy, setReopenSignaturePolicy] = useState<'preserve' | 'invalidate'>('preserve');
   const [newWorkflowMode, setNewWorkflowMode] = useState<LabWorkOrderWorkflowMode>('group');
   const [restoring, setRestoring] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [adminActionsOpen, setAdminActionsOpen] = useState(false);
   const [folioDistributionOpen, setFolioDistributionOpen] = useState(false);
@@ -278,10 +287,16 @@ export default function WorkOrdersScreen() {
   const [voidingDelivery, setVoidingDelivery] = useState<LabDelivery | null>(null);
   const [voidingEquipment, setVoidingEquipment] = useState<LabEquipment | null>(null);
   const itemCount = useRef(0);
+  const listLoadRef = useRef(listLoad);
+  const listRequestSequence = useRef(0);
   const refreshGate = useRef(new RefreshGate());
   const deletionCoordinator = useRef(new LabWorkOrderDeletionCoordinator());
   const signatureSubmitRef = useRef(false);
   const capabilities = deriveMobileCapabilities(user);
+  // Identidad estable: una renovación silenciosa reemplaza `session` (y con
+  // ello la referencia de `user`) sin cambiar de usuario. Los disparadores de
+  // recarga usan el id, nunca la referencia del objeto.
+  const userId = user?.id ?? null;
 
   const request = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
     const headers = new Headers(init?.headers);
@@ -344,12 +359,30 @@ export default function WorkOrdersScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workOrder?.id, workOrder?.status]);
 
-  const refresh = useCallback(async (reset = true) => {
-    if (reset) setLoading(true);
-    else setLoadingMore(true);
+  const commitListLoad = useCallback((next: ListLoadState) => {
+    listLoadRef.current = next;
+    setListLoad(next);
+  }, []);
+
+  // Política de recarga (src/sync/list-load-state.ts): la primera carga
+  // muestra spinner; un refetch con datos válidos conserva la lista y sólo
+  // enciende un indicador no destructivo. Sólo la petición más reciente
+  // aplica resultados, de modo que un filtro/focus concurrente no reordena.
+  const refresh = useCallback(async (trigger: ListFetchTrigger = 'background') => {
+    if (userId == null) return;
+    if (trigger === 'more' && !canLoadMore(listLoadRef.current)) return;
+    const plan = beginListFetch(listLoadRef.current, trigger, userId);
+    if (plan.discardData) {
+      setItems([]);
+      itemCount.current = 0;
+      setHasMore(false);
+    }
+    commitListLoad(plan.next);
+    const append = plan.next.loadingMore;
+    const requestId = ++listRequestSequence.current;
     setListError('');
     try {
-      const offset = reset ? 0 : itemCount.current;
+      const offset = append ? itemCount.current : 0;
       const query = [
         `limit=${PAGE_SIZE}`,
         `offset=${offset}`,
@@ -357,26 +390,27 @@ export default function WorkOrdersScreen() {
         debouncedSearch ? `q=${encodeURIComponent(debouncedSearch)}` : '',
       ].filter(Boolean).join('&');
       const next = await request<LabListItem[]>(`/mobile/v1/technician/lab-work-orders?${query}`);
+      if (requestId !== listRequestSequence.current) return;
       setItems((current) => {
-        const updated = reset ? next : [...current, ...next];
+        const updated = append ? [...current, ...next] : next;
         itemCount.current = updated.length;
         return updated;
       });
       setHasMore(next.length === PAGE_SIZE);
+      commitListLoad(settleListFetch(listLoadRef.current, 'success', userId));
     } catch (error) {
+      if (requestId !== listRequestSequence.current) return;
       setListError(error instanceof Error ? error.message : 'Intenta nuevamente');
-    } finally {
-      if (reset) setLoading(false);
-      else setLoadingMore(false);
+      commitListLoad(settleListFetch(listLoadRef.current, 'error', userId));
     }
-  }, [debouncedSearch, request, statusFilter]);
+  }, [commitListLoad, debouncedSearch, request, statusFilter, userId]);
 
-  const refreshActive = useCallback(async (force = false) => {
+  const refreshActive = useCallback(async (force = false, trigger: 'background' | 'pull' = 'background') => {
     if (!refreshGate.current.shouldRefresh(Date.now(), force)) return;
-    setRefreshing(true);
-    await refresh(true);
-    setRefreshing(false);
+    await refresh(trigger);
   }, [refresh]);
+  const refreshActiveRef = useRef(refreshActive);
+  useEffect(() => { refreshActiveRef.current = refreshActive; }, [refreshActive]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -386,10 +420,10 @@ export default function WorkOrdersScreen() {
   }, [searchFilter]);
 
   useEffect(() => {
-    if (user) refresh(true);
-    // refresh also depends on the current item count for pagination; filters are the trigger here.
+    if (userId != null) refresh();
+    // refresh also depends on the current item count for pagination; filters and identity are the trigger here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, statusFilter, user]);
+  }, [debouncedSearch, statusFilter, userId]);
 
   useEffect(() => {
     if (!capabilities.canRequestWorkOrderGroups) return;
@@ -403,7 +437,10 @@ export default function WorkOrdersScreen() {
     setSelectedGroupRequest(groupRequests.find((item) => item.id === requestId) ?? null);
   }, [groupRequests, params.groupRequestId]);
 
-  useFocusEffect(useCallback(() => { if (user) refreshActive(); }, [refreshActive, user]));
+  // El callback de focus depende sólo de la identidad: si dependiera de
+  // refreshActive/user, cada renovación de sesión lo re-ejecutaría estando
+  // la pantalla enfocada.
+  useFocusEffect(useCallback(() => { if (userId != null) refreshActiveRef.current(); }, [userId]));
 
   useEffect(() => subscribe((event) => {
     if (!affectsWorkOrders(event)) return;
@@ -512,17 +549,12 @@ export default function WorkOrdersScreen() {
   // mismo LabClientSelector que ya usaba el cliente documental del equipo
   // (LabEquipmentForm) -- ya no un segundo buscador/alta duplicado aquí. La
   // importación XLSX se movió al módulo Clientes (app/(technician)/clients.tsx).
+  // La OT lo presenta en LabClientPickerModal; esta función es el único punto
+  // de entrada al formulario y delega el mapeo exclusivo en
+  // generalWithLabClient (sin datos híbridos del cliente previo). Sólo se
+  // invoca al elegir/crear otro cliente ("Cambiar cliente" no borra).
   function selectLabClient(client: LabClient) {
-    setGeneral((current) => ({
-      ...current,
-      lab_client_id: client.id,
-      client_name: client.company,
-      address: client.address,
-      contact_name: client.attention,
-      postal_code: client.postal_code ?? current.postal_code,
-      city: client.city ?? current.city,
-      state_name: client.state ?? current.state_name,
-    }));
+    setGeneral((current) => generalWithLabClient(current, client));
   }
 
   function startGroupRequest() {
@@ -603,7 +635,7 @@ export default function WorkOrdersScreen() {
       setStep(inferStepForStatus(detail.status));
       publishLocalChange({ event_type: 'work_order.reopened', entity_type: 'work_order', entity_id: detail.id, work_order_id: detail.id });
       Alert.alert('OT reabierta', `La OT ${detail.folio} volvió a draft y puede editarse.`);
-      await refresh(true);
+      await refresh();
     } catch (error) {
       Alert.alert('No fue posible reabrir la OT', error instanceof Error ? error.message : 'Intenta nuevamente');
     } finally {
@@ -765,7 +797,7 @@ export default function WorkOrdersScreen() {
       setTicketReason('');
       setTicketDescription('');
 
-      await refresh(true);
+      await refresh();
     } catch (error) {
       Alert.alert(
         'No fue posible completar la acción',
@@ -916,7 +948,7 @@ export default function WorkOrdersScreen() {
       });
       await loadDeliveryStatus(workOrder.id);
       publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: workOrder.id, work_order_id: workOrder.id });
-      await refresh(true);
+      await refresh();
     } catch (error) {
       Alert.alert('No fue posible registrar la entrega', error instanceof Error ? error.message : 'Intenta nuevamente');
       throw error;
@@ -932,7 +964,7 @@ export default function WorkOrdersScreen() {
       });
       await loadDeliveryStatus(workOrder.id);
       publishLocalChange({ event_type: 'work_order.delivery_completed', entity_type: 'work_order', entity_id: workOrder.id, work_order_id: workOrder.id });
-      await refresh(true);
+      await refresh();
     } catch (error) {
       Alert.alert('No fue posible registrar la entrega parcial', error instanceof Error ? error.message : 'Intenta nuevamente');
       throw error;
@@ -1416,7 +1448,7 @@ export default function WorkOrdersScreen() {
         setSignatureDrawing(false);
         setEquipmentEditor(null);
         setTicketOpen(false);
-        await refresh(true);
+        await refresh();
         publishLocalChange({
           event_type: 'work_order.deleted',
           entity_type: 'lab_work_order',
@@ -1568,12 +1600,13 @@ export default function WorkOrdersScreen() {
         )}
       </View>
       {canRequestWorkOrderGroups && groupRequests.length > 0 && <View style={styles.filters}><Text style={styles.filterLabel}>Mis solicitudes de grupo</Text>{groupRequests.map((item) => <Pressable key={item.id} onPress={() => setSelectedGroupRequest(item)}><Text style={styles.status}>#{item.id} · {item.quantity} OT · {item.status}{item.folios.length ? ` · folios ${item.folios.join(', ')}` : ' · sin folios'}</Text></Pressable>)}</View>}
-      {loading ? <ActivityIndicator style={styles.loader} /> : (
-        <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => refreshActive(true)} />}>
+      {showsInitialSpinner(listLoad) ? <ActivityIndicator style={styles.loader} /> : (
+        <View style={styles.flex}>
+        <ScrollView contentContainerStyle={styles.list} refreshControl={<RefreshControl refreshing={listLoad.pullRefreshing} onRefresh={() => refreshActive(true, 'pull')} />}>
           {!!listError && (
             <View style={styles.errorState}>
               <Text style={styles.errorText}>{listError}</Text>
-              <Pressable onPress={() => refresh(true)}><Text style={styles.retry}>Reintentar</Text></Pressable>
+              <Pressable onPress={() => refresh()}><Text style={styles.retry}>Reintentar</Text></Pressable>
             </View>
           )}
           {items.map((item) => {
@@ -1586,11 +1619,13 @@ export default function WorkOrdersScreen() {
           );})}
           {!items.length && !listError && <Text style={styles.empty}>No hay órdenes que coincidan con los filtros.</Text>}
           {hasMore && (
-            <Pressable disabled={loadingMore} onPress={() => refresh(false)} style={styles.loadMore}>
-              {loadingMore ? <ActivityIndicator /> : <Text style={styles.secondaryText}>Cargar más</Text>}
+            <Pressable disabled={!canLoadMore(listLoad)} onPress={() => refresh('more')} style={styles.loadMore}>
+              {listLoad.loadingMore ? <ActivityIndicator /> : <Text style={styles.secondaryText}>Cargar más</Text>}
             </Pressable>
           )}
         </ScrollView>
+        {listLoad.refetching && <RefetchIndicator />}
+        </View>
       )}
 
       <Modal animationType="slide" onRequestClose={closeFlow} visible={open}>
@@ -1649,17 +1684,13 @@ export default function WorkOrdersScreen() {
                     {groupMode !== 'none' && <Field label="Cantidad de OT (1–50)" required keyboardType="phone-pad" value={groupQuantity} onChangeText={setGroupQuantity} />}
                     <MycDatePickerField error={generalErrors.reception_date} label="Fecha de recepción *" value={general.reception_date} onChange={(value) => { setGeneral({ ...general, reception_date: value }); setGeneralErrors((current) => ({ ...current, reception_date: '' })); }} />
                     <Text style={styles.fieldLabel}>Cliente *</Text>
-                    {general.lab_client_id ? (
-                      <View style={styles.selectedClient}>
-                        <Text style={styles.clientChoiceTitle}>{general.client_name}</Text>
-                        <Text style={styles.clientChoiceMeta}>{general.address}</Text>
-                        <Pressable onPress={() => setGeneral({ ...general, lab_client_id: null, client_name: '' })}>
-                          <Text style={styles.change}>Cambiar</Text>
-                        </Pressable>
-                      </View>
-                    ) : (
-                      <LabClientSelector request={request} onSelect={selectLabClient} />
-                    )}
+                    <LabWorkOrderClientField
+                      address={general.address}
+                      clientId={general.lab_client_id}
+                      clientName={general.client_name}
+                      onSelect={selectLabClient}
+                      request={request}
+                    />
                     <Field label="Atención / contacto" value={general.contact_name} onChangeText={(value) => setGeneral({ ...general, contact_name: value })} />
                   </FormSection>
                   <FormSection title="Ubicación y referencia">
@@ -3067,30 +3098,9 @@ const styles = StyleSheet.create({
     paddingTop: 18,
   },
 
-  clientChoiceTitle: {
-    color: '#142b3a',
-    fontWeight: '800',
-  },
-
-  clientChoiceMeta: {
-    color: '#667582',
-    fontSize: 12,
-    marginTop: 3,
-  },
-
   correctionActions: {
     gap: 10,
     marginBottom: 16,
-  },
-
-  selectedClient: {
-    marginBottom: 16,
-    backgroundColor: '#e4f4ef',
-    borderColor: '#75b9a7',
-    borderRadius: 10,
-    borderWidth: 1,
-    gap: 4,
-    padding: 11,
   },
 
   workflowModeCard: {
@@ -3122,11 +3132,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginTop: 2,
-  },
-
-  change: {
-    color: '#0067a8',
-    fontWeight: '700',
   },
 
   formSectionTitle: {

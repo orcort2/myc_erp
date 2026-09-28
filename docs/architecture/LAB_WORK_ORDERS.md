@@ -23,7 +23,14 @@ El listado conserva una respuesta directa `LabClient[]` y una sola ruta:
 activos/inactivos, `limit` (1..100, default 25) y `offset` se aplican en SQL.
 El selector de OT no consulta con menos de dos caracteres, usa debounce de
 300 ms y solicita cinco filas; el módulo Clientes solicita páginas de 25 y
-añade páginas mediante “Cargar más”.
+añade páginas mediante “Cargar más”. En Datos generales de la OT el selector
+se presenta en un modal (“Elegir cliente” / “Cambiar cliente”); cambiar de
+cliente nunca borra el actual antes de elegir otro, y al elegirlo los campos
+derivados (dirección, atención, C.P., ciudad, estado) representan sólo al
+nuevo cliente, vacíos si no los tiene. El alta (normal o contextual con el
+término buscado) es la misma de `LabClientSelector`; Back de Android cancela
+el alta antes de cerrar el modal. El cliente documental del equipo conserva
+el selector inline.
 
 ## Grupos anticipados (Bloque 2, 2026-08-26)
 
