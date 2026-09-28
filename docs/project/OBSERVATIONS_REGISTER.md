@@ -36,7 +36,7 @@ no se duplican aquí.
 | OBS-044 | Calidad UX | Anterior/Siguiente y retorno contextual están implementados; falta E2E autenticado con certificados reales visibles en la bandeja. | parcial | Navegación consecutiva de Calidad 2026-07-21 |
 | OBS-045 | Excepciones transversales | Equipo adicional usa el Motor y ETS separa solicitud/autorización/ejecución; los demás dominios requieren evaluación individual sin convertir el Motor en flujo fiscal o propietario. | parcial | Fase 14; Sprint Integridad ETS |
 | OBS-046 | Herramientas administrativas | ETS ya distingue restauración, reconstrucción y baja prístina mediante el Motor; faltan reparación estructural segura, búsquedas contextuales y adopción gradual en otros dominios. | parcial | Fase 15; auditoría administrativa 2026-08-25 |
-| OBS-047 | MYC Mobile | En iPhone 16e físico el contenido dinámico podía desaparecer temporalmente mientras lo estático seguía visible. Corregida la causa estructural confirmada (refetch que desmontaba listas y churn de identidad por renovación de sesión); falta validación física. | parcial | `BACKUP_ESTADO_ACTUAL.md` 2026-09-28; `src/sync/list-load-state.ts` |
+| OBS-047 | MYC Mobile | En iPhone 16e físico el contenido envuelto por `FadeIn` quedaba invisible con “Reducir movimiento” activo (causa reproducida físicamente); aparte, el refetch desmontaba listas. Ambas corregidas (`FadeIn` sólo anima translateY con opacity 1; refetch no destructivo); falta revalidar en el 16e con Reduce Motion activado. | parcial | `BACKUP_ESTADO_ACTUAL.md` 2026-09-28; `src/design/primitives.tsx`; `src/sync/list-load-state.ts` |
 
 ## Resoluciones retiradas del registro activo
 

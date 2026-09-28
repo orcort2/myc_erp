@@ -472,6 +472,27 @@ export function RefetchIndicator({ label = 'Actualizando…' }: { label?: string
   );
 }
 
+// Última preferencia "Reducir movimiento" conocida en esta sesión de la app:
+// permite que cada FadeIn nuevo (p. ej. al cambiar de paso) sepa si animar al
+// montar. null mientras la plataforma no haya respondido por primera vez.
+let lastKnownReduceMotion: boolean | null = null;
+
+function rememberReduceMotion(value: boolean) {
+  lastKnownReduceMotion = value;
+}
+
+/**
+ * Transición decorativa de entrada: sólo desliza el contenido unos puntos.
+ *
+ * La visibilidad NUNCA depende de una animación: el contenido tiene
+ * opacity 1 permanente. Antes, opacity partía de 0 y la detección asíncrona
+ * de "Reducir movimiento" competía con una animación nativa de opacity; con
+ * Reduce Motion activo el contenido funcional podía quedar invisible.
+ *
+ * - Reduce Motion activo → sin animación, translateY 0.
+ * - Preferencia aún no resuelta → sin animación (el contenido ya es visible).
+ * - Movimiento permitido → sólo translateY 6→0 al montar o cambiar `transitionKey`.
+ */
 export function FadeIn({
   children,
   transitionKey,
@@ -479,54 +500,56 @@ export function FadeIn({
   children: ReactNode;
   transitionKey?: string | number;
 }) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(6)).current;
-  const [reduceMotion, setReduceMotion] = useState(false);
+  const translateY = useRef(new Animated.Value(0)).current;
+  // null = preferencia todavía desconocida: se trata como "no animar".
+  const [reduceMotion, setReduceMotion] = useState<boolean | null>(lastKnownReduceMotion);
 
   useEffect(() => {
     let active = true;
 
     AccessibilityInfo.isReduceMotionEnabled?.()
       .then((value) => {
+        rememberReduceMotion(value);
         if (active) setReduceMotion(value);
       })
       .catch(() => undefined);
+    const subscription = AccessibilityInfo.addEventListener?.('reduceMotionChanged', (value: boolean) => {
+      rememberReduceMotion(value);
+      if (active) setReduceMotion(value);
+    });
 
     return () => {
       active = false;
+      subscription?.remove();
     };
   }, []);
 
+  // Reduce Motion activado (o desconocido) detiene cualquier desplazamiento en curso.
+  const reduceMotionRef = useRef(reduceMotion);
   useEffect(() => {
-    if (reduceMotion) {
-      opacity.setValue(1);
-      translateY.setValue(0);
-      return;
-    }
+    reduceMotionRef.current = reduceMotion;
+    if (reduceMotion !== false) translateY.setValue(0);
+  }, [reduceMotion, translateY]);
 
-    opacity.setValue(0);
+  // Sólo el montaje o un cambio de transitionKey animan; resolver la
+  // preferencia después no dispara una animación tardía sobre contenido ya
+  // mostrado.
+  useEffect(() => {
+    if (reduceMotionRef.current !== false) return;
     translateY.setValue(6);
-
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transitionKey, reduceMotion]);
+    const animation = Animated.timing(translateY, {
+      toValue: 0,
+      duration: 180,
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [transitionKey, translateY]);
 
   return (
     <Animated.View
       style={{
-        opacity,
+        opacity: 1,
         transform: [{ translateY }],
       }}
     >
